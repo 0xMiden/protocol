@@ -1,0 +1,160 @@
+use miden::protocol::active_note
+use miden::standards::faucets
+use miden::standards::faucets::network_fungible
+use miden::standards::access::ownable
+use miden::standards::access::pausable
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Checks if the faucet is not paused.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the faucet is paused (storage slot value is not zero).
+#!
+#! NOTE: Uses exec.pausable::is_not_paused to ensure it uses the same execution context
+#! and storage slot (PAUSABLE_SLOT) as defined in pausable.masm.
+pub use pausable::is_not_paused
+
+#! Returns the owner AccountId.
+#!
+#! Inputs:  []
+#! Outputs: [owner_prefix, owner_suffix]
+#!
+#! Invocation: call
+#!
+#! NOTE: Reuses network_fungible::get_owner
+pub use network_fungible::get_owner
+
+#! Distributes freshly minted fungible assets to the provided recipient.
+#!
+#! This procedure first checks if the note sender is the owner of the faucet, then
+#! checks if the faucet is not paused, and finally mints the asset and creates an
+#! output note with that asset for the recipient.
+#!
+#! Inputs:  [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - amount is the amount to be minted and sent.
+#! - tag is the tag to be included in the note.
+#! - aux is the auxiliary data to be included in the note.
+#! - note_type is the type of the note that holds the asset.
+#! - execution_hint is the execution hint of the note that holds the asset.
+#! - RECIPIENT is the recipient of the asset.
+#!
+#! Panics if:
+#! - the note sender is not the owner of this faucet.
+#! - the faucet is paused.
+#! - any of the validations in faucets::distribute fail.
+#!
+#! Invocation: call
+pub proc distribute
+    exec.ownable::verify_owner
+    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+
+    exec.is_not_paused
+    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+
+    exec.faucets::distribute
+    # => [pad(16)]
+end
+
+#! Burns the fungible asset from the active note.
+#!
+#! This procedure retrieves the asset from the active note and burns it. The note must contain
+#! exactly one asset, which must be a fungible asset issued by this faucet.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the faucet is paused.
+#! - the procedure is not called from a note context (active_note::get_assets will fail).
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#! - the amount about to be burned is greater than the outstanding supply of the asset.
+#!
+#! Invocation: call
+pub proc burn
+    exec.pausable::is_not_paused
+    # => [pad(16)]
+
+    exec.faucets::burn
+    # => [pad(16)]
+end
+
+#! Transfers ownership to a new account.
+#!
+#! Can only be called by the current owner.
+#!
+#! Inputs:  [new_owner_prefix, new_owner_suffix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - new_owner_{prefix, suffix} are the prefix and suffix felts of the new owner AccountId.
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+#!
+#! NOTE: Reuses network_fungible::transfer_ownership
+pub use network_fungible::transfer_ownership
+
+#! Renounces ownership, leaving the component without an owner.
+#!
+#! Can only be called by the current owner.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+#!
+#! NOTE: Reuses network_fungible::renounce_ownership
+pub use network_fungible::renounce_ownership
+
+#! Pauses the faucet, preventing minting and burning operations.
+#!
+#! Can only be called by the owner.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+pub proc pause
+    exec.ownable::verify_owner
+    # => [pad(16)]
+
+    exec.pausable::pause
+    # => [pad(16)]
+end
+
+#! Unpauses the faucet, allowing minting and burning operations to resume.
+#!
+#! Can only be called by the owner.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+pub proc unpause
+    exec.ownable::verify_owner
+    # => [pad(16)]
+
+    exec.pausable::unpause
+    # => [pad(16)]
+end

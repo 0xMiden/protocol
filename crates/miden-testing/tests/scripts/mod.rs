@@ -1,4 +1,6 @@
 mod faucet;
+mod faucet_access;
+mod faucet_regulated;
 mod fee;
 mod ownable2step;
 mod p2id;

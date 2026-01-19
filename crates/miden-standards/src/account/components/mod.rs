@@ -85,6 +85,16 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
+// Initialize the Regulated Network Fungible Faucet library only once.
+static REGULATED_NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/regulated_network_fungible_faucet.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Regulated Network Fungible Faucet library is well-formed")
+});
+
 // METADATA LIBRARIES
 // ================================================================================================
 
@@ -110,6 +120,11 @@ pub fn basic_fungible_faucet_library() -> Library {
 /// Returns the Network Fungible Faucet Library.
 pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
+}
+
+/// Returns the Regulated Network Fungible Faucet Library.
+pub fn regulated_network_fungible_faucet_library() -> Library {
+    REGULATED_NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
 /// Returns the Storage Schema Library.

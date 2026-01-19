@@ -1,0 +1,15 @@
+# The MASM code of the Regulated Network Fungible Faucet Account Component.
+#
+# This component extends NetworkFungibleFaucet with pausable functionality.
+# It uses both ownable and pausable modules, making it suitable for regulated
+# assets like stablecoins that require pause controls.
+#
+# This component re-exports procedures from regulated_network_fungible.masm,
+# which extends network_fungible.masm with pause checks in distribute and burn.
+
+pub use ::miden::standards::faucets::regulated_network_fungible::distribute
+pub use ::miden::standards::faucets::regulated_network_fungible::burn
+pub use ::miden::standards::faucets::regulated_network_fungible::transfer_ownership
+pub use ::miden::standards::faucets::regulated_network_fungible::renounce_ownership
+pub use ::miden::standards::faucets::regulated_network_fungible::pause
+pub use ::miden::standards::faucets::regulated_network_fungible::unpause
