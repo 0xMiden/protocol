@@ -30,7 +30,7 @@ async fn test_scale_up_helper(
         scale_exponent, miden_amount,
     );
 
-    let exec_output = execute_masm_script(&script_code, vec![]).await?;
+    let exec_output = execute_masm_script(&script_code).await?;
     let actual_result_u256 = stack_to_u256(&exec_output);
 
     assert_eq!(actual_result_u256, expected_result_u256);
@@ -89,7 +89,7 @@ async fn test_scale_up_exceeds_max_scale() {
         end
     ";
 
-    assert_execution_fails_with(script_code, vec![], "maximum scaling factor is 18").await;
+    assert_execution_fails_with(script_code, "maximum scaling factor is 18").await;
 }
 
 // ================================================================================================
@@ -128,7 +128,7 @@ async fn test_scale_down_helper(
         x_felts[0].as_int(),
     );
 
-    let exec_output = execute_masm_script(&script_code, vec![]).await?;
+    let exec_output = execute_masm_script(&script_code).await?;
 
     let actual_y = exec_output.stack[0].as_int();
     assert_eq!(actual_y, expected_y, "expected y={}, got y={}", expected_y, actual_y);
@@ -210,7 +210,7 @@ async fn test_scale_down_wrong_advice_y_minus_1() {
     );
 
     // Providing y-1 should fail with remainder too large
-    assert_execution_fails_with(&script_code, vec![], "remainder z must be < 10^s").await;
+    assert_execution_fails_with(&script_code, "remainder z must be < 10^s").await;
 }
 
 #[tokio::test]
@@ -247,7 +247,7 @@ async fn test_scale_down_wrong_advice_y_plus_1() {
     );
 
     // Providing y+1 should fail with underflow
-    assert_execution_fails_with(&script_code, vec![], "x < y*10^s (underflow detected)").await;
+    assert_execution_fails_with(&script_code, "x < y*10^s (underflow detected)").await;
 }
 
 #[tokio::test]
@@ -283,7 +283,7 @@ async fn test_scale_down_wrong_advice_with_remainder() {
         x_felts[0].as_int(),
     );
 
-    assert_execution_fails_with(&script_code_minus, vec![], "remainder z must be < 10^s").await;
+    assert_execution_fails_with(&script_code_minus, "remainder z must be < 10^s").await;
 
     // Test y+1 should fail
     let script_code_plus = format!(
@@ -309,7 +309,7 @@ async fn test_scale_down_wrong_advice_with_remainder() {
         x_felts[0].as_int(),
     );
 
-    assert_execution_fails_with(&script_code_plus, vec![], "x < y*10^s (underflow detected)").await;
+    assert_execution_fails_with(&script_code_plus, "x < y*10^s (underflow detected)").await;
 }
 
 // ================================================================================================
@@ -343,7 +343,7 @@ async fn test_scale_down_exceeds_max_scale() {
         x_felts[0].as_int(),
     );
 
-    assert_execution_fails_with(&script_code, vec![], "maximum scaling factor is 18").await;
+    assert_execution_fails_with(&script_code, "maximum scaling factor is 18").await;
 }
 
 #[tokio::test]
@@ -360,8 +360,7 @@ async fn test_scale_down_x_too_large() {
         end
     ";
 
-    assert_execution_fails_with(script_code, vec![], "x must fit into 128 bits (x4..x7 must be 0)")
-        .await;
+    assert_execution_fails_with(script_code, "x must fit into 128 bits (x4..x7 must be 0)").await;
 }
 
 // ================================================================================================
@@ -418,5 +417,5 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     );
 
     // Providing y (which is too small) should fail
-    assert_execution_fails_with(&script_code, vec![], "remainder z must be < 10^s").await;
+    assert_execution_fails_with(&script_code, "remainder z must be < 10^s").await;
 }
