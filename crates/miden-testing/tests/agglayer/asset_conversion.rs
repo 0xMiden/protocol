@@ -1,40 +1,21 @@
 extern crate alloc;
 
-use alloc::sync::Arc;
-
-use miden_agglayer::{agglayer_library, utils};
-use miden_assembly::{Assembler, DefaultSourceManager};
-use miden_core_lib::CoreLibrary;
-use miden_processor::fast::ExecutionOutput;
+use miden_agglayer::utils;
 use miden_protocol::Felt;
 use primitive_types::U256;
 
-use super::test_utils::execute_program_with_default_host;
+use super::test_utils::{assert_execution_fails_with, execute_masm_script, stack_to_u256};
 
-/// Convert a Vec<Felt> to a U256
-fn felts_to_u256(felts: Vec<Felt>) -> U256 {
-    assert_eq!(felts.len(), 8, "expected exactly 8 felts");
-    let array: [Felt; 8] =
-        [felts[0], felts[1], felts[2], felts[3], felts[4], felts[5], felts[6], felts[7]];
-    let bytes = utils::felts_to_u256_bytes(array);
-    U256::from_little_endian(&bytes)
-}
+// ================================================================================================
+// SCALE UP TESTS (Felt -> U256)
+// ================================================================================================
 
-/// Convert the top 8 u32 values from the execution stack to a U256
-fn stack_to_u256(exec_output: &ExecutionOutput) -> U256 {
-    let felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
-    felts_to_u256(felts)
-}
-
-/// Helper function to test convert_felt_to_u256_scaled with given parameters
-async fn test_convert_to_u256_helper(
+/// Helper function to test scale_native_amount_to_u256 with given parameters
+async fn test_scale_up_helper(
     miden_amount: Felt,
     scale_exponent: Felt,
-    expected_result_array: [u32; 8],
     expected_result_u256: U256,
 ) -> anyhow::Result<()> {
-    let asset_conversion_lib = agglayer_library();
-
     let script_code = format!(
         "
         use miden::core::sys
@@ -49,52 +30,23 @@ async fn test_convert_to_u256_helper(
         scale_exponent, miden_amount,
     );
 
-    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
-        .unwrap()
-        .with_dynamic_library(asset_conversion_lib.clone())
-        .unwrap()
-        .assemble_program(&script_code)
-        .unwrap();
-
-    let exec_output = execute_program_with_default_host(program, None).await?;
-
-    // Extract the first 8 u32 values from the stack (the U256 representation)
-    let actual_result: [u32; 8] = [
-        exec_output.stack[0].as_int() as u32,
-        exec_output.stack[1].as_int() as u32,
-        exec_output.stack[2].as_int() as u32,
-        exec_output.stack[3].as_int() as u32,
-        exec_output.stack[4].as_int() as u32,
-        exec_output.stack[5].as_int() as u32,
-        exec_output.stack[6].as_int() as u32,
-        exec_output.stack[7].as_int() as u32,
-    ];
-
+    let exec_output = execute_masm_script(&script_code, vec![]).await?;
     let actual_result_u256 = stack_to_u256(&exec_output);
 
-    assert_eq!(actual_result, expected_result_array);
     assert_eq!(actual_result_u256, expected_result_u256);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_convert_to_u256_basic_examples() -> anyhow::Result<()> {
+async fn test_scale_up_basic_examples() -> anyhow::Result<()> {
     // Test case 1: amount=1, no scaling (scale_exponent=0)
-    test_convert_to_u256_helper(
-        Felt::new(1),
-        Felt::new(0),
-        [1, 0, 0, 0, 0, 0, 0, 0],
-        U256::from(1u64),
-    )
-    .await?;
+    test_scale_up_helper(Felt::new(1), Felt::new(0), U256::from(1u64)).await?;
 
     // Test case 2: amount=1, scale to 1e18 (scale_exponent=18)
-    test_convert_to_u256_helper(
+    test_scale_up_helper(
         Felt::new(1),
         Felt::new(18),
-        [2808348672, 232830643, 0, 0, 0, 0, 0, 0],
         U256::from_dec_str("1000000000000000000").unwrap(),
     )
     .await?;
@@ -103,14 +55,54 @@ async fn test_convert_to_u256_basic_examples() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_convert_to_u256_scaled_eth() -> anyhow::Result<()> {
-    // 100 units base 1e6
-    let miden_amount = Felt::new(100_000_000);
+async fn test_scale_up_realistic_amounts() -> anyhow::Result<()> {
+    // 100 units base 1e6, scale to 1e18
+    test_scale_up_helper(
+        Felt::new(100_000_000),
+        Felt::new(12),
+        U256::from_dec_str("100000000000000000000").unwrap(),
+    )
+    .await?;
 
-    // scale to 1e18
-    let target_scale = Felt::new(12);
+    // Large amount: 1e18 units scaled by 8
+    test_scale_up_helper(
+        Felt::new(1000000000000000000),
+        Felt::new(8),
+        U256::from_dec_str("100000000000000000000000000").unwrap(),
+    )
+    .await?;
 
-    let asset_conversion_lib = agglayer_library();
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_scale_up_exceeds_max_scale() {
+    // scale_exp = 19 should fail
+    let script_code = "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.19.1
+            exec.asset_conversion::scale_native_amount_to_u256
+            exec.sys::truncate_stack
+        end
+    ";
+
+    assert_execution_fails_with(script_code, vec![], "maximum scaling factor is 18").await;
+}
+
+// ================================================================================================
+// SCALE DOWN TESTS (U256 -> Felt)
+// ================================================================================================
+
+/// Helper function to test scale_u256_to_native_amount with given parameters
+async fn test_scale_down_helper(
+    x_u256: U256,
+    scale_exp: u32,
+    expected_y: u64,
+) -> anyhow::Result<()> {
+    let x_felts = utils::u256_to_felts(x_u256);
 
     let script_code = format!(
         "
@@ -118,109 +110,291 @@ async fn test_convert_to_u256_scaled_eth() -> anyhow::Result<()> {
         use miden::agglayer::asset_conversion
         
         begin
-            push.{}.{}
-            exec.asset_conversion::scale_native_amount_to_u256
+            push.{}.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
             exec.sys::truncate_stack
         end
         ",
-        target_scale, miden_amount,
+        scale_exp,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
     );
 
-    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
-        .unwrap()
-        .with_dynamic_library(asset_conversion_lib.clone())
-        .unwrap()
-        .assemble_program(&script_code)
-        .unwrap();
+    let exec_output = execute_masm_script(&script_code, vec![expected_y]).await?;
 
-    let exec_output = execute_program_with_default_host(program, None).await?;
-
-    let expected_result = U256::from_dec_str("100000000000000000000").unwrap();
-    let actual_result = stack_to_u256(&exec_output);
-
-    assert_eq!(actual_result, expected_result);
+    let actual_y = exec_output.stack[0].as_int();
+    assert_eq!(actual_y, expected_y, "expected y={}, got y={}", expected_y, actual_y);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_convert_to_u256_scaled_large_amount() -> anyhow::Result<()> {
-    // 100,000,000 units (base 1e10)
-    let miden_amount = Felt::new(1000000000000000000);
+async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
+    // Test case 1: 1e18 scaled down by 18 = 1
+    test_scale_down_helper(U256::from_dec_str("1000000000000000000").unwrap(), 18, 1).await?;
 
-    // scale to base 1e18
-    let scale_exponent = Felt::new(8);
+    // Test case 2: 1000 scaled down by 0 = 1000 (no scaling)
+    test_scale_down_helper(U256::from(1000u64), 0, 1000).await?;
 
-    let asset_conversion_lib = agglayer_library();
+    // Test case 3: 10e18 scaled down by 18 = 10
+    test_scale_down_helper(U256::from_dec_str("10000000000000000000").unwrap(), 18, 10).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
+    // With remainder: 1.234e18 scaled down by 18 = 1
+    test_scale_down_helper(U256::from_dec_str("1234567890123456789").unwrap(), 18, 1).await?;
+
+    // ETH to Miden: 100 ETH (wei) scaled down by 12 = 100e6
+    test_scale_down_helper(U256::from_dec_str("100000000000000000000").unwrap(), 12, 100_000_000)
+        .await?;
+
+    // USDC (no scaling): 100 USDC
+    test_scale_down_helper(U256::from(100_000_000u64), 0, 100_000_000).await?;
+
+    // Zero amount
+    test_scale_down_helper(U256::zero(), 18, 0).await?;
+
+    Ok(())
+}
+
+// ================================================================================================
+// NEGATIVE TESTS - WRONG ADVICE
+// ================================================================================================
+
+#[tokio::test]
+async fn test_scale_down_wrong_advice_y_minus_1() {
+    // Use a clean example: 10e18 scaled down by 18 should give y=10
+    let x_u256 = U256::from_dec_str("10000000000000000000").unwrap();
+    let scale_exp = 18;
+    let correct_y = 10u64;
+    let wrong_y = correct_y - 1; // y=9 is incorrect
+
+    let x_felts = utils::u256_to_felts(x_u256);
 
     let script_code = format!(
         "
         use miden::core::sys
         use miden::agglayer::asset_conversion
-
+        
         begin
-            push.{}.{}
-
-            exec.asset_conversion::scale_native_amount_to_u256
+            push.{}.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
             exec.sys::truncate_stack
         end
         ",
-        scale_exponent, miden_amount,
+        scale_exp,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
     );
 
-    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
-        .unwrap()
-        .with_dynamic_library(asset_conversion_lib.clone())
-        .unwrap()
-        .assemble_program(&script_code)
-        .unwrap();
+    // Providing y-1 should fail with remainder too large
+    assert_execution_fails_with(&script_code, vec![wrong_y], "remainder z must be < 10^s").await;
+}
 
-    let exec_output = execute_program_with_default_host(program, None).await?;
+#[tokio::test]
+async fn test_scale_down_wrong_advice_y_plus_1() {
+    // Use a clean example: 10e18 scaled down by 18 should give y=10
+    let x_u256 = U256::from_dec_str("10000000000000000000").unwrap();
+    let scale_exp = 18;
+    let correct_y = 10u64;
+    let wrong_y = correct_y + 1; // y=11 is incorrect
 
-    let expected_result = U256::from_dec_str("100000000000000000000000000").unwrap();
-    let actual_result = stack_to_u256(&exec_output);
+    let x_felts = utils::u256_to_felts(x_u256);
 
-    assert_eq!(actual_result, expected_result);
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.{}.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
+            exec.sys::truncate_stack
+        end
+        ",
+        scale_exp,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
+    );
+
+    // Providing y+1 should fail with underflow
+    assert_execution_fails_with(&script_code, vec![wrong_y], "x < y*10^s (underflow detected)")
+        .await;
+}
+
+#[tokio::test]
+async fn test_scale_down_wrong_advice_with_remainder() {
+    // Example with remainder: 1.5e18 scaled down by 18 should give y=1
+    let x_u256 = U256::from_dec_str("1500000000000000000").unwrap();
+    let scale_exp = 18;
+    let correct_y = 1u64;
+
+    let x_felts = utils::u256_to_felts(x_u256);
+
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.{}.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
+            exec.sys::truncate_stack
+        end
+        ",
+        scale_exp,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
+    );
+
+    // y-1 should fail
+    assert_execution_fails_with(&script_code, vec![correct_y - 1], "remainder z must be < 10^s")
+        .await;
+
+    // y+1 should fail
+    assert_execution_fails_with(
+        &script_code,
+        vec![correct_y + 1],
+        "x < y*10^s (underflow detected)",
+    )
+    .await;
+}
+
+// ================================================================================================
+// NEGATIVE TESTS - BOUNDS
+// ================================================================================================
+
+#[tokio::test]
+async fn test_scale_down_exceeds_max_scale() {
+    // scale_exp = 19 should fail in pow10
+    let x_u256 = U256::from(1000u64);
+    let x_felts = utils::u256_to_felts(x_u256);
+
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.19.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
+            exec.sys::truncate_stack
+        end
+        ",
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
+    );
+
+    assert_execution_fails_with(&script_code, vec![1], "maximum scaling factor is 18").await;
+}
+
+#[tokio::test]
+async fn test_scale_down_x_too_large() {
+    // Construct x with x4 = 1 (i.e., >= 2^128)
+    let script_code = "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.0.0.0.0.1.0.0.0.0
+            exec.asset_conversion::scale_u256_to_native_amount
+            exec.sys::truncate_stack
+        end
+    ";
+
+    assert_execution_fails_with(
+        script_code,
+        vec![1],
+        "x must fit into 128 bits (x4..x7 must be 0)",
+    )
+    .await;
+}
+
+// ================================================================================================
+// REMAINDER EDGE TEST
+// ================================================================================================
+
+#[tokio::test]
+async fn test_scale_down_remainder_edge() -> anyhow::Result<()> {
+    // Force z = scale - 1: pick y=5, s=10, so scale=10^10
+    // Set x = y*scale + (scale-1) = 5*10^10 + (10^10 - 1) = 59999999999
+    let y = 5u64;
+    let s = 10u32;
+    let scale = 10u64.pow(s);
+    let x = y * scale + (scale - 1);
+
+    test_scale_down_helper(U256::from(x), s, y).await?;
 
     Ok(())
 }
 
-#[test]
-fn test_felts_to_u256_bytes_sequential_values() {
-    let limbs = [
-        Felt::new(1),
-        Felt::new(2),
-        Felt::new(3),
-        Felt::new(4),
-        Felt::new(5),
-        Felt::new(6),
-        Felt::new(7),
-        Felt::new(8),
-    ];
-    let result = utils::felts_to_u256_bytes(limbs);
-    assert_eq!(result.len(), 32);
+#[tokio::test]
+async fn test_scale_down_remainder_exactly_scale_fails() {
+    // If remainder z = scale, it should fail
+    // Pick y=5, s=10, x = y*scale + scale = (y+1)*scale
+    // This means the correct y should be y+1, so providing y should fail
+    let y = 5u64;
+    let s = 10u32;
+    let scale = 10u64.pow(s);
+    let x = y * scale + scale; // This is actually (y+1)*scale
 
-    // Verify the byte layout: limbs are processed in little-endian order, each as little-endian u32
-    // First byte should be 1 (limbs[0] = 1, least significant limb, least significant byte)
-    assert_eq!(result[0], 1);
-    // Byte at position 28 should be 8 (limbs[7] = 8, most significant limb, least significant
-    // byte)
-    assert_eq!(result[28], 8);
-}
+    let x_felts = utils::u256_to_felts(U256::from(x));
 
-#[test]
-fn test_felts_to_u256_bytes_edge_cases() {
-    // Test case 1: All zeros (minimum)
-    let limbs = [Felt::new(0); 8];
-    let result = utils::felts_to_u256_bytes(limbs);
-    assert_eq!(result.len(), 32);
-    assert!(result.iter().all(|&b| b == 0));
+    let script_code = format!(
+        "
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            push.{}.{}.{}.{}.{}.{}.{}.{}.{}
+            exec.asset_conversion::scale_u256_to_native_amount
+            exec.sys::truncate_stack
+        end
+        ",
+        s,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
+    );
 
-    // Test case 2: All max u32 values (maximum)
-    let limbs = [Felt::new(u32::MAX as u64); 8];
-    let result = utils::felts_to_u256_bytes(limbs);
-    assert_eq!(result.len(), 32);
-    assert!(result.iter().all(|&b| b == 255));
+    // Providing y (which is too small) should fail
+    assert_execution_fails_with(&script_code, vec![y], "remainder z must be < 10^s").await;
 }
