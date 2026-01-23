@@ -119,9 +119,8 @@ end
 #!
 #! NOTE: This verifier currently enforces x < 2^128 (x4..x7 == 0) to keep the proof cheap.
 #!
-#! Inputs:  [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp]
+#! Inputs:  [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
 #!          (x0 is least-significant limb; x0 is on top of the stack)
-#! AS:      [y]
 #! Outputs: [y]
 pub proc scale_u256_to_native_amount
     # --- enforce x < 2^128 (x4..x7 == 0) ---
@@ -130,24 +129,24 @@ pub proc scale_u256_to_native_amount
     dup.6 eq.0 assert.err=ERR_X_TOO_LARGE
     dup.7 eq.0 assert.err=ERR_X_TOO_LARGE
 
-    # drop x4..x7
+    # drop x4..x7 (keep scale_exp and y below)
     swapw dropw
-    # => [x0, x1, x2, x3, scale_exp]
+    # => [x0, x1, x2, x3, scale_exp, y]
 
     # make pairs: (x3,x2) and (x1,x0)
     exec.word::reverse
-    # => [x3, x2, x1, x0, scale_exp]
+    # => [x3, x2, x1, x0, scale_exp, y]
 
     # scale = 10^scale_exp (keep a copy for z<scale check)
     movup.4
     exec.pow10
-    # => [scale, x3, x2, x1, x0]
+    # => [scale, x3, x2, x1, x0, y]
 
     dup
-    # => [scale_mul, scale_cmp, x3, x2, x1, x0]
+    # => [scale_mul, scale_cmp, x3, x2, x1, x0, y]
 
-    # y from advice; duplicate so we can return it
-    adv_push.1
+    # y from operand stack (it's at depth 6 right now); duplicate so we can return it
+    movup.6
     dup
     # => [y_mul, y_ret, scale_mul, scale_cmp, x3, x2, x1, x0]
 
@@ -189,13 +188,11 @@ pub proc scale_u256_to_native_amount
     # => [z_hi, z_lo, z1, z0, y_ret, scale_cmp]
 
     # --- enforce z < scale_cmp (scale_cmp fits in u64) ---
-    # if z < scale_cmp <= 2^64, then high64(z) must be zero
     dup eq.0 assert.err=ERR_REMAINDER_TOO_LARGE
     dup.1 eq.0 assert.err=ERR_REMAINDER_TOO_LARGE
     drop drop
     # => [z1, z0, y_ret, scale_cmp]
 
-    # compare low64(z) < scale_cmp
     movup.3 u32split
     # => [scale_hi, scale_lo, z1, z0, y_ret]
 
