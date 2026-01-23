@@ -188,7 +188,7 @@ async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
 }
 
 // ================================================================================================
-// NEGATIVE TESTS - WRONG ADVICE
+// NEGATIVE TESTS
 // ================================================================================================
 
 #[tokio::test]
@@ -253,4 +253,69 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let x = U256::from(wrong_y * scale + scale); // This is actually (wrong_y+1)*scale
 
     assert_scale_down_fails(x, scale_exp, wrong_y, "remainder z must be < 10^s").await;
+}
+
+// ================================================================================================
+// INLINE SCALE DOWN TEST
+// ================================================================================================
+
+#[tokio::test]
+async fn test_scale_down_inline() -> anyhow::Result<()> {
+    // Test: Take 100 * 1e18 and scale to base 1e8
+    // This means we divide by 1e10 (scale_exp = 10)
+    // x = 100 * 1e18 = 100000000000000000000
+    // y = x / 1e10 = 10000000000 (100 * 1e8)
+
+    let x = U256::from_dec_str("100000000000000000000").unwrap();
+    let scale_exp = 10u32;
+    let y = 10000000000u64;
+
+    // Convert U256 to 8 u32 limbs (little-endian)
+    let x_felts = utils::u256_to_felts(x);
+
+    // Build the MASM script inline
+    let script_code = format!(
+        r#"
+        use miden::core::sys
+        use miden::agglayer::asset_conversion
+        
+        begin
+            # Push y (expected quotient)
+            push.{}
+            
+            # Push scale_exp
+            push.{}
+            
+            # Push x as 8 u32 limbs (little-endian, x0 at top)
+            push.{}.{}.{}.{}.{}.{}.{}.{}
+            
+            # Call the scale down procedure
+            exec.asset_conversion::scale_u256_to_native_amount
+            
+            # Truncate stack to just return y
+            exec.sys::truncate_stack
+        end
+        "#,
+        y,
+        scale_exp,
+        x_felts[7].as_int(),
+        x_felts[6].as_int(),
+        x_felts[5].as_int(),
+        x_felts[4].as_int(),
+        x_felts[3].as_int(),
+        x_felts[2].as_int(),
+        x_felts[1].as_int(),
+        x_felts[0].as_int(),
+    );
+
+    // Execute the script
+    let exec_output = execute_masm_script(&script_code).await?;
+
+    // Verify the result
+    let result = exec_output.stack[0].as_int();
+    assert_eq!(result, y, "Expected y={}, got {}", y, result);
+
+    println!("✓ Successfully scaled down 100 * 1e18 to {} (base 1e8)", result);
+
+    Ok(())
 }
