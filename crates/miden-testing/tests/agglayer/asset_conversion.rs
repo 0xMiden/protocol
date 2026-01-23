@@ -313,9 +313,7 @@ async fn test_scale_down_inline() -> anyhow::Result<()> {
 
     // Verify the result
     let result = exec_output.stack[0].as_int();
-    assert_eq!(result, y, "Expected y={}, got {}", y, result);
-
-    println!("✓ Successfully scaled down 100 * 1e18 to {} (base 1e8)", result);
+    assert_eq!(result, y);
 
     Ok(())
 }
