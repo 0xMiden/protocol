@@ -139,10 +139,11 @@ end
 #! - (x - y * 10^scale_exp) >= 10^scale_exp (remainder too large)
 pub proc scale_u256_to_native_amount
     # --- enforce x < 2^128 (x4..x7 == 0) ---
-    dup.4 eq.0 assert.err=ERR_X_TOO_LARGE
-    dup.5 eq.0 assert.err=ERR_X_TOO_LARGE
-    dup.6 eq.0 assert.err=ERR_X_TOO_LARGE
-    dup.7 eq.0 assert.err=ERR_X_TOO_LARGE
+    dup.4 assertz.err=ERR_X_TOO_LARGE
+    dup.5 assertz.err=ERR_X_TOO_LARGE
+    dup.6 assertz.err=ERR_X_TOO_LARGE
+    dup.7 assertz.err=ERR_X_TOO_LARGE
+    # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
 
     # drop x4..x7 (keep scale_exp and y below)
     swapw dropw
@@ -199,13 +200,13 @@ pub proc scale_u256_to_native_amount
 
     # underflow = under1 OR under2
     movup.3 or
-    eq.0 assert.err=ERR_UNDERFLOW
+    assertz.err=ERR_UNDERFLOW
     # => [z_hi, z_lo, z1, z0, y_ret, scale_cmp]
 
     # --- enforce rem < scale_cmp (scale_cmp fits in u64) ---
     # if rem < scale_cmp <= 2^64, then high64(rem) must be zero
-    dup eq.0 assert.err=ERR_REMAINDER_TOO_LARGE
-    dup.1 eq.0 assert.err=ERR_REMAINDER_TOO_LARGE
+    dup assertz.err=ERR_REMAINDER_TOO_LARGE
+    dup.1 assertz.err=ERR_REMAINDER_TOO_LARGE
     drop drop
     # => [z1, z0, y_ret, scale_cmp]
 

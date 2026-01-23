@@ -155,9 +155,13 @@ async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
     // With remainder: 1.234e18 scaled down by 18 = 1
     test_scale_down_helper(U256::from_dec_str("1234567890123456789").unwrap(), 18, 1).await?;
 
-    // ETH to Miden: 100 ETH (wei) scaled down by 12 = 100e6
-    test_scale_down_helper(U256::from_dec_str("100000000000000000000").unwrap(), 12, 100_000_000)
-        .await?;
+    // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
+    test_scale_down_helper(
+        U256::from_dec_str("100000000000000000000").unwrap(),
+        10,
+        10_000_000_000,
+    )
+    .await?;
 
     // USDC (no scaling): 100 USDC
     test_scale_down_helper(U256::from(100_000_000u64), 0, 100_000_000).await?;
