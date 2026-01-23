@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use miden_agglayer::eth_types::amount::EthAmount;
 use miden_agglayer::utils;
 use miden_protocol::Felt;
 use primitive_types::U256;
@@ -96,17 +97,11 @@ async fn test_scale_up_exceeds_max_scale() {
 // SCALE DOWN TESTS (U256 -> Felt)
 // ================================================================================================
 
-/// Helper function to test scale_u256_to_native_amount with given parameters
-async fn test_scale_down_helper(
-    x_u256: U256,
-    scale_exp: u32,
-    expected_y: u64,
-) -> anyhow::Result<()> {
-    let x_felts = utils::u256_to_felts(x_u256);
-
-    // Push y first so it ends up deepest; push x0 last so it's on top
-    let script_code = format!(
-        "
+/// Build MASM script for scale_u256_to_native_amount
+fn build_scale_down_script(x: U256, scale_exp: u32, y: u64) -> String {
+    let x_felts = utils::u256_to_felts(x);
+    format!(
+        r#"
         use miden::core::sys
         use miden::agglayer::asset_conversion
         
@@ -115,8 +110,8 @@ async fn test_scale_down_helper(
             exec.asset_conversion::scale_u256_to_native_amount
             exec.sys::truncate_stack
         end
-        ",
-        expected_y,
+        "#,
+        y,
         scale_exp,
         x_felts[7].as_int(),
         x_felts[6].as_int(),
@@ -126,49 +121,69 @@ async fn test_scale_down_helper(
         x_felts[2].as_int(),
         x_felts[1].as_int(),
         x_felts[0].as_int(),
-    );
+    )
+}
 
-    let exec_output = execute_masm_script(&script_code).await?;
+/// Compute the expected quotient using Rust implementation
+fn expected_y(x: U256, s: u32) -> u64 {
+    EthAmount::from_u256(x).scale_to_felt_deterministic(s).unwrap().as_int()
+}
 
-    let actual_y = exec_output.stack[0].as_int();
-    assert_eq!(actual_y, expected_y, "expected y={}, got y={}", expected_y, actual_y);
+/// Assert that scaling down succeeds with the correct result
+async fn assert_scale_down_ok(x: U256, s: u32) -> anyhow::Result<u64> {
+    let y = expected_y(x, s);
+    let script = build_scale_down_script(x, s, y);
+    let out = execute_masm_script(&script).await?;
+    assert_eq!(out.stack[0].as_int(), y);
+    Ok(y)
+}
 
+/// Assert that scaling down fails with the given y and expected error message
+async fn assert_scale_down_fails(x: U256, s: u32, y: u64, expected_msg: &str) {
+    let script = build_scale_down_script(x, s, y);
+    assert_execution_fails_with(&script, expected_msg).await;
+}
+
+/// Test that y-1 and y+1 both fail appropriately
+async fn assert_y_plus_minus_one_behavior(x: U256, s: u32) -> anyhow::Result<()> {
+    let y = assert_scale_down_ok(x, s).await?;
+    if y > 0 {
+        assert_scale_down_fails(x, s, y - 1, "remainder z must be < 10^s").await;
+    }
+    assert_scale_down_fails(x, s, y + 1, "underflow detected").await;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
-    // Test case 1: 1e18 scaled down by 18 = 1
-    test_scale_down_helper(U256::from_dec_str("1000000000000000000").unwrap(), 18, 1).await?;
+    let cases = [
+        (U256::from_dec_str("1000000000000000000").unwrap(), 18u32),
+        (U256::from(1000u64), 0u32),
+        (U256::from_dec_str("10000000000000000000").unwrap(), 18u32),
+    ];
 
-    // Test case 2: 1000 scaled down by 0 = 1000 (no scaling)
-    test_scale_down_helper(U256::from(1000u64), 0, 1000).await?;
-
-    // Test case 3: 10e18 scaled down by 18 = 10
-    test_scale_down_helper(U256::from_dec_str("10000000000000000000").unwrap(), 18, 10).await?;
-
+    for (x, s) in cases {
+        assert_scale_down_ok(x, s).await?;
+    }
     Ok(())
 }
 
 #[tokio::test]
 async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
-    // With remainder: 1.234e18 scaled down by 18 = 1
-    test_scale_down_helper(U256::from_dec_str("1234567890123456789").unwrap(), 18, 1).await?;
+    let cases = [
+        // With remainder: 1.234e18 scaled down by 18 = 1
+        (U256::from_dec_str("1234567890123456789").unwrap(), 18u32),
+        // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
+        (U256::from_dec_str("100000000000000000000").unwrap(), 10u32),
+        // USDC (no scaling): 100 USDC
+        (U256::from(100_000_000u64), 0u32),
+        // Zero amount
+        (U256::zero(), 18u32),
+    ];
 
-    // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
-    test_scale_down_helper(
-        U256::from_dec_str("100000000000000000000").unwrap(),
-        10,
-        10_000_000_000,
-    )
-    .await?;
-
-    // USDC (no scaling): 100 USDC
-    test_scale_down_helper(U256::from(100_000_000u64), 0, 100_000_000).await?;
-
-    // Zero amount
-    test_scale_down_helper(U256::zero(), 18, 0).await?;
-
+    for (x, s) in cases {
+        assert_scale_down_ok(x, s).await?;
+    }
     Ok(())
 }
 
@@ -177,139 +192,15 @@ async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_scale_down_wrong_advice_y_minus_1() {
-    // Use a clean example: 10e18 scaled down by 18 should give y=10
-    let x_u256 = U256::from_dec_str("10000000000000000000").unwrap();
-    let scale_exp = 18;
-    let correct_y = 10u64;
-    let wrong_y = correct_y - 1; // y=9 is incorrect
-
-    let x_felts = utils::u256_to_felts(x_u256);
-
-    let script_code = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        wrong_y,
-        scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    // Providing y-1 should fail with remainder too large
-    assert_execution_fails_with(&script_code, "remainder z must be < 10^s").await;
+async fn test_scale_down_wrong_y_clean_case() -> anyhow::Result<()> {
+    let x = U256::from_dec_str("10000000000000000000").unwrap();
+    assert_y_plus_minus_one_behavior(x, 18).await
 }
 
 #[tokio::test]
-async fn test_scale_down_wrong_advice_y_plus_1() {
-    // Use a clean example: 10e18 scaled down by 18 should give y=10
-    let x_u256 = U256::from_dec_str("10000000000000000000").unwrap();
-    let scale_exp = 18;
-    let correct_y = 10u64;
-    let wrong_y = correct_y + 1; // y=11 is incorrect
-
-    let x_felts = utils::u256_to_felts(x_u256);
-
-    let script_code = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        wrong_y,
-        scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    // Providing y+1 should fail with underflow
-    assert_execution_fails_with(&script_code, "x < y*10^s (underflow detected)").await;
-}
-
-#[tokio::test]
-async fn test_scale_down_wrong_advice_with_remainder() {
-    // Example with remainder: 1.5e18 scaled down by 18 should give y=1
-    let x_u256 = U256::from_dec_str("1500000000000000000").unwrap();
-    let scale_exp = 18;
-    let correct_y = 1u64;
-
-    let x_felts = utils::u256_to_felts(x_u256);
-
-    // Test y-1 should fail
-    let script_code_minus = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        correct_y - 1,
-        scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    assert_execution_fails_with(&script_code_minus, "remainder z must be < 10^s").await;
-
-    // Test y+1 should fail
-    let script_code_plus = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        correct_y + 1,
-        scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    assert_execution_fails_with(&script_code_plus, "x < y*10^s (underflow detected)").await;
+async fn test_scale_down_wrong_y_with_remainder() -> anyhow::Result<()> {
+    let x = U256::from_dec_str("1500000000000000000").unwrap();
+    assert_y_plus_minus_one_behavior(x, 18).await
 }
 
 // ================================================================================================
@@ -318,49 +209,19 @@ async fn test_scale_down_wrong_advice_with_remainder() {
 
 #[tokio::test]
 async fn test_scale_down_exceeds_max_scale() {
-    // scale_exp = 19 should fail in pow10
-    let x_u256 = U256::from(1000u64);
-    let x_felts = utils::u256_to_felts(x_u256);
-
-    let script_code = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.1.19.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    assert_execution_fails_with(&script_code, "maximum scaling factor is 18").await;
+    let x = U256::from(1000u64);
+    let s = 19u32;
+    let y = 1u64;
+    assert_scale_down_fails(x, s, y, "maximum scaling factor is 18").await;
 }
 
 #[tokio::test]
 async fn test_scale_down_x_too_large() {
-    // Construct x with x4 = 1 (i.e., >= 2^128)
-    let script_code = "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.1.0.0.0.0.1.0.0.0.0
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-    ";
-
-    assert_execution_fails_with(script_code, "x must fit into 128 bits (x4..x7 must be 0)").await;
+    // Construct x with upper limbs non-zero (>= 2^128)
+    let x = U256::from(1u64) << 128;
+    let s = 0u32;
+    let y = 0u64;
+    assert_scale_down_fails(x, s, y, "x must fit into 128 bits").await;
 }
 
 // ================================================================================================
@@ -372,12 +233,12 @@ async fn test_scale_down_remainder_edge() -> anyhow::Result<()> {
     // Force z = scale - 1: pick y=5, s=10, so scale=10^10
     // Set x = y*scale + (scale-1) = 5*10^10 + (10^10 - 1) = 59999999999
     let y = 5u64;
-    let s = 10u32;
-    let scale = 10u64.pow(s);
-    let x = y * scale + (scale - 1);
+    let scale_exp = 10u32;
+    let scale = 10u64.pow(scale_exp);
+    let x_val = y * scale + (scale - 1);
+    let x = U256::from(x_val);
 
-    test_scale_down_helper(U256::from(x), s, y).await?;
-
+    assert_scale_down_ok(x, scale_exp).await?;
     Ok(())
 }
 
@@ -386,36 +247,10 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     // If remainder z = scale, it should fail
     // Pick y=5, s=10, x = y*scale + scale = (y+1)*scale
     // This means the correct y should be y+1, so providing y should fail
-    let y = 5u64;
-    let s = 10u32;
-    let scale = 10u64.pow(s);
-    let x = y * scale + scale; // This is actually (y+1)*scale
+    let wrong_y = 5u64;
+    let scale_exp = 10u32;
+    let scale = 10u64.pow(scale_exp);
+    let x = U256::from(wrong_y * scale + scale); // This is actually (wrong_y+1)*scale
 
-    let x_felts = utils::u256_to_felts(U256::from(x));
-
-    let script_code = format!(
-        "
-        use miden::core::sys
-        use miden::agglayer::asset_conversion
-        
-        begin
-            push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
-            exec.asset_conversion::scale_u256_to_native_amount
-            exec.sys::truncate_stack
-        end
-        ",
-        y,
-        s,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
-    );
-
-    // Providing y (which is too small) should fail
-    assert_execution_fails_with(&script_code, "remainder z must be < 10^s").await;
+    assert_scale_down_fails(x, scale_exp, wrong_y, "remainder z must be < 10^s").await;
 }

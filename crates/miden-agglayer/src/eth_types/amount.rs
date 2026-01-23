@@ -50,6 +50,8 @@ impl fmt::Display for EthAmountError {
     }
 }
 
+impl core::error::Error for EthAmountError {}
+
 // ================================================================================================
 // ETHEREUM AMOUNT
 // ================================================================================================
@@ -216,40 +218,29 @@ impl EthAmount {
     ///
     /// This is the deterministic reference implementation that computes:
     /// - `y = floor(x / 10^scale_exp)` (the Miden amount as a Felt)
-    /// - `z = x - y * 10^scale_exp` (the remainder/truncated amount)
     ///
     /// # Arguments
     /// * `scale_exp` - The scaling exponent (0-18)
     ///
     /// # Returns
-    /// A tuple of `(Felt, u64)` where:
-    /// - The first element is the scaled-down Miden amount as a Felt
-    /// - The second element is the remainder (truncated precision)
+    /// The scaled-down Miden amount as a Felt
     ///
     /// # Errors
     /// - [`EthAmountError::ScaleTooLarge`] if scale_exp > 18
     /// - [`EthAmountError::YNotCanonicalFelt`] if the result doesn't fit in a canonical Felt
     /// - [`EthAmountError::YDoesNotFitU64`] if the result doesn't fit in a u64
-    /// - [`EthAmountError::RemainderTooLarge`] if the remainder doesn't fit in a u64
     ///
     /// # Example
     /// ```ignore
     /// let eth_amount = EthAmount::from_u64(1_000_000_000_000_000_000); // 1 ETH in wei
-    /// let (miden_amount, remainder) = eth_amount.scale_to_felt_deterministic(12)?;
-    /// // Result: 1_000_000 (1e6, Miden representation), remainder: 0
+    /// let miden_amount = eth_amount.scale_to_felt_deterministic(12)?;
+    /// // Result: 1_000_000 (1e6, Miden representation)
     /// ```
-    pub fn scale_to_felt_deterministic(
-        &self,
-        scale_exp: u32,
-    ) -> Result<(Felt, u64), EthAmountError> {
+    pub fn scale_to_felt_deterministic(&self, scale_exp: u32) -> Result<Felt, EthAmountError> {
         let x = limbs_le_to_u256(self.0);
         let scale = U256::from(pow10_u64(scale_exp)?);
 
         let y_u256 = x / scale;
-        let z_u256 = x - (y_u256 * scale);
-
-        // Remainder must fit into u64 because 10^s <= 1e18 < 2^64
-        let z_u64: u64 = z_u256.try_into().map_err(|_| EthAmountError::RemainderTooLarge)?;
 
         // y must fit into u64 and be canonical Felt (< p)
         let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::YDoesNotFitU64)?;
@@ -258,59 +249,7 @@ impl EthAmount {
             return Err(EthAmountError::YNotCanonicalFelt);
         }
 
-        Ok((Felt::new(y_u64), z_u64))
-    }
-
-    /// Verifies that a given y value is the correct scaled-down amount.
-    ///
-    /// This implements the verification logic used in the MASM procedure:
-    /// 1. Compute `prod = y * 10^scale_exp`
-    /// 2. Check that `x >= prod` (no underflow)
-    /// 3. Compute `z = x - prod`
-    /// 4. Check that `z < 10^scale_exp` (remainder bounds)
-    ///
-    /// # Arguments
-    /// * `scale_exp` - The scaling exponent (0-18)
-    /// * `y_u64` - The claimed Miden amount to verify
-    ///
-    /// # Returns
-    /// The remainder `z` if verification succeeds.
-    ///
-    /// # Errors
-    /// - [`EthAmountError::ScaleTooLarge`] if scale_exp > 18
-    /// - [`EthAmountError::YNotCanonicalFelt`] if y >= 2^64 - 2^32 + 1
-    /// - [`EthAmountError::Underflow`] if x < y * 10^scale_exp
-    /// - [`EthAmountError::RemainderTooLarge`] if z >= 10^scale_exp
-    pub fn verify_scaled_down_amount(
-        &self,
-        scale_exp: u32,
-        y_u64: u64,
-    ) -> Result<u64, EthAmountError> {
-        let x = limbs_le_to_u256(self.0);
-        let scale_u64 = pow10_u64(scale_exp)?;
-        let scale = U256::from(scale_u64);
-
-        if (y_u64 as u128) >= FELT_MODULUS {
-            return Err(EthAmountError::YNotCanonicalFelt);
-        }
-
-        // Compute y * 10^s (fits in u128, but embed into U256)
-        let prod_u256 = U256::from((y_u64 as u128) * (scale_u64 as u128));
-
-        if x < prod_u256 {
-            return Err(EthAmountError::Underflow);
-        }
-
-        let z = x - prod_u256;
-
-        // Must have z < 10^s
-        if z >= scale {
-            return Err(EthAmountError::RemainderTooLarge);
-        }
-
-        // Return remainder as u64 (safe since z < 10^s <= 1e18)
-        let z_u64: u64 = z.try_into().map_err(|_| EthAmountError::RemainderTooLarge)?;
-        Ok(z_u64)
+        Ok(Felt::new(y_u64))
     }
 
     /// Converts the EthAmount to a U256 for easier arithmetic operations.
