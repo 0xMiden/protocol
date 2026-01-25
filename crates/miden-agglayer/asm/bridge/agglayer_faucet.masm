@@ -189,7 +189,7 @@ proc build_p2id_output_note
     # => [AMOUNT[1], AMOUNT[0], tag, note_type, RECIPIENT]
 
     # TODO: implement scale down logic; stubbed out for now
-    exec.asset_conversion::scale_u256_to_native_amount_stubbed
+    exec.asset_conversion::verify_u256_to_native_amount_conversion_stubbed
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute

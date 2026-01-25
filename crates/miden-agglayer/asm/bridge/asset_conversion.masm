@@ -109,119 +109,188 @@ pub proc scale_native_amount_to_u256
     # => [RESULT_U256[0], RESULT_U256[1]]
 end
 
-#! Convert an AggLayer U256 amount to a Miden native amount (Felt) by scaling down.
+```masm
+#! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
 #!
-#! This procedure verifies a *provided* quotient for the division:
+#! Specification:
+#!     Verify that a provided y is the quotient of dividing x by 10^scale_exp:
+#!         y = floor(x / 10^scale_exp)
+#!
+#! This procedure does NOT perform division. It proves the quotient is correct by checking:
+#!   1) y is within the allowed fungible token amount range
+#!   2) y_scaled = y * 10^scale_exp          (computed via scale_native_amount_to_u256)
+#!   3) z        = x - y_scaled              (must not underflow, i.e. y_scaled <= x)
+#!   4) z fits in 64 bits                    (upper 192 bits are zero)
+#!   5) (z1, z0) < 10^scale_exp              (remainder bound)
+#!
+#! These conditions prove:
+#!     x = y_scaled + z, with 0 <= z < 10^scale_exp
+#! which uniquely implies:
 #!     y = floor(x / 10^scale_exp)
 #!
-#! It does not perform division directly. Instead, it proves correctness by checking:
-#! - scale = 10^scale_exp
-#! - prod = y * scale
-#! - rem  = x - prod            (must not underflow, i.e. prod <= x)
-#! - rem  < scale               (remainder bound)
+#! Example (ETH -> Miden base 1e8):
+#!   - EVM amount:   100 ETH = 100 * 10^18
+#!   - Miden amount: 100 ETH = 100 * 10^8
+#!   - Therefore the scale-down factor is:
+#!         scale = 10^(18 - 8) = 10^10
+#!         scale_exp = 10
+#!   - Inputs/expected values:
+#!         x        = 100 * 10^18
+#!         y        = floor(x / 10^10) = 100 * 10^8
+#!         y_scaled = y * 10^10 = 100 * 10^18
+#!         z        = x - y_scaled = 0
 #!
-#! Together these conditions prove:
-#!     x = y*scale + rem, with 0 <= rem < scale
-#! which uniquely implies y = floor(x / scale).
-#!
-#! NOTE: For efficiency, this verifier currently enforces x < 2^128 by requiring the
-#! upper 4 limbs to be zero (x4..x7 == 0).
+#! NOTE: For efficiency, this verifier enforces x < 2^128 by requiring x4..x7 == 0.
 #!
 #! Inputs:  [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
-#!          Where x is a U256 value encoded as 8 u32 limbs in little-endian order.
+#!          Where x is encoded as 8 u32 limbs in little-endian order.
 #!          (x0 is least significant limb and is at the top of the stack)
 #! Outputs: [y]
 #!
+#! Where:
+#!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
+#!        It is provided on the operand stack as 8 little-endian u32 limbs:
+#!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
+#!   - x0..x7: 32-bit limbs of x in little-endian order (x0 is least significant).
+#!   - scale_exp: The base-10 exponent used for scaling down (an integer in [0, 18]).
+#!   - y: The provided quotient (Miden native amount) as a Felt interpreted as an unsigned u64.
+#!   - y_scaled: The 256-bit value y * 10^scale_exp represented as 8 u32 limbs (little-endian).
+#!   - z: The remainder-like difference z = x - y_scaled. This verifier requires z < 10^scale_exp.
+#!
 #! Panics if:
 #! - scale_exp > 18
+#! - y exceeds the max fungible token amount
 #! - x does not fit into 128 bits (x4..x7 are not all zero)
 #! - x < y * 10^scale_exp (underflow)
-#! - (x - y * 10^scale_exp) >= 10^scale_exp (remainder too large)
-pub proc scale_u256_to_native_amount
-    # --- enforce x < 2^128 (x4..x7 == 0) ---
+#! - z does not fit in 64 bits
+#! - (z1, z0) >= 10^scale_exp (remainder too large)
+pub proc verify_u256_to_native_amount_conversion
+    # =============================================================================================
+    # Step 0: Enforce x < 2^128
+    #   Constraint: x4 == x5 == x6 == x7 == 0
+    # =============================================================================================
     dup.4 assertz.err=ERR_X_TOO_LARGE
     dup.5 assertz.err=ERR_X_TOO_LARGE
     dup.6 assertz.err=ERR_X_TOO_LARGE
     dup.7 assertz.err=ERR_X_TOO_LARGE
     # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
 
-    # drop x4..x7 (keep scale_exp and y below)
+    # Drop the upper 128 bits of x (x4..x7), keep scale_exp and y.
     swapw dropw
     # => [x0, x1, x2, x3, scale_exp, y]
 
-    # make pairs: (x3,x2) and (x1,x0)
-    exec.word::reverse
-    # => [x3, x2, x1, x0, scale_exp, y]
+    # =============================================================================================
+    # Step 1: Enforce y <= MAX_FUNGIBLE_TOKEN_AMOUNT
+    #   Constraint: y <= MAX_FUNGIBLE_TOKEN_AMOUNT
+    # =============================================================================================
+    dup.5 u32split
+    # => [y_hi, y_lo, x0, x1, x2, x3, scale_exp, y]
 
-    # scale = 10^scale_exp (keep a copy for rem < scale check)
+    push.MAX_FUNGIBLE_AMOUNT_LO
+    push.MAX_FUNGIBLE_AMOUNT_HI
+    # => [MAX_hi, MAX_lo, y_hi, y_lo, x0, x1, x2, x3, scale_exp, y]
+
+    exec.u64::lte
+    # => [is_lte, x0, x1, x2, x3, scale_exp, y]
+
+    assert.err=ERR_Y_TOO_LARGE
+    # => [x0, x1, x2, x3, scale_exp, y]
+
+    # =============================================================================================
+    # Step 2: Compute y_scaled = y * 10^scale_exp
+    #
+    # Call:
+    #   scale_native_amount_to_u256(amount=y, target_scale=scale_exp)
+    # =============================================================================================
     movup.4
-    exec.pow10
-    # => [scale, x3, x2, x1, x0, y]
+    movup.5
+    # => [y, scale_exp, x0, x1, x2, x3]
 
-    dup
-    # => [scale_mul, scale_cmp, x3, x2, x1, x0, y]
+    dup.1 dup.1
+    # => [y, scale_exp, y, scale_exp, x0, x1, x2, x3]
 
-    # y from operand stack (it's at depth 6 right now); duplicate so we can return it
-    movup.6
-    dup
-    # => [y_mul, y_ret, scale_mul, scale_cmp, x3, x2, x1, x0]
+    exec.scale_native_amount_to_u256
+    # => [y_scaled0..y_scaled7, y, scale_exp, x0, x1, x2, x3]
 
-    # --- prod = y * scale as 128-bit (4x u32 limbs) ---
-    u32split
-    # => [y_hi, y_lo, y_ret, scale_mul, scale_cmp, x3, x2, x1, x0]
+    # Because x < 2^128, require y_scaled < 2^128 as well:
+    #   Constraint: y_scaled4 == y_scaled5 == y_scaled6 == y_scaled7 == 0
+    dup.4 assertz.err=ERR_UNDERFLOW
+    dup.5 assertz.err=ERR_UNDERFLOW
+    dup.6 assertz.err=ERR_UNDERFLOW
+    dup.7 assertz.err=ERR_UNDERFLOW
 
-    movup.3 u32split
-    # => [scale_hi, scale_lo, y_hi, y_lo, y_ret, scale_cmp, x3, x2, x1, x0]
+    # Drop the upper 128 bits of y_scaled (y_scaled4..y_scaled7), keep only y_scaled0..y_scaled3.
+    swapw dropw
+    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, y, scale_exp, x0, x1, x2, x3]
 
-    exec.u64::overflowing_mul
-    # => [p3, p2, p1, p0, y_ret, scale_cmp, x3, x2, x1, x0]
+    # =============================================================================================
+    # Step 3: Compute z = x - y_scaled and prove no underflow
+    #   z := x - y_scaled
+    #   Constraint: y_scaled <= x
+    # =============================================================================================
 
-    # --- low64: (x1,x0) - (p1,p0) ---
-    movup.9     # x0
-    movup.9     # x1
-    movup.5     # p0
-    movup.5     # p1
+    # low64 subtraction:
+    #   (x1,x0) - (y_scaled1,y_scaled0) = (z1,z0)
+    #   borrow_from_low64 indicates whether the subtraction borrowed.
+    movup.6     # x0
+    movup.7     # x1
+    movup.2     # y_scaled0
+    movup.3     # y_scaled1
     exec.u64::overflowing_sub
-    # => [under0, z1, z0, p3, p2, y_ret, scale_cmp, x3, x2]
+    # => [borrow_from_low64, z1, z0, y_scaled2, y_scaled3, y, scale_exp, x2, x3]
 
-    # --- high64: (x3,x2) - (p3,p2) ---
-    movup.8     # x2
+    # high64 subtraction (raw, before applying borrow_from_low64):
+    #   (x3,x2) - (y_scaled3,y_scaled2) = (t_hi,t_lo)
+    #   underflow_high64_raw indicates whether this subtraction underflowed.
+    movup.7     # x2
     movup.8     # x3
-    movup.6     # p2
-    movup.6     # p3
+    movup.5     # y_scaled2
+    movup.6     # y_scaled3
     exec.u64::overflowing_sub
-    # => [under1, t_hi, t_lo, under0, z1, z0, y_ret, scale_cmp]
+    # => [underflow_high64_raw, t_hi, t_lo, borrow_from_low64, z1, z0, y, scale_exp]
 
-    # subtract borrow under0 from high64
+    # apply the propagated borrow from the low64 subtraction:
+    #   (t_hi,t_lo) - borrow_from_low64 = (z_hi,z_lo)
+    #   underflow_high64_after_borrow indicates whether this subtraction underflowed.
     swap.3
     push.0
     exec.u64::overflowing_sub
-    # => [under2, z_hi, z_lo, under1, z1, z0, y_ret, scale_cmp]
+    # => [underflow_high64_after_borrow, z_hi, z_lo, underflow_high64_raw, z1, z0, y, scale_exp]
 
-    # underflow = under1 OR under2
+    # overall underflow occurs if either high64 step underflowed:
+    #   underflow_detected = underflow_high64_raw OR underflow_high64_after_borrow
     movup.3 or
     assertz.err=ERR_UNDERFLOW
-    # => [z_hi, z_lo, z1, z0, y_ret, scale_cmp]
+    # => [z_hi, z_lo, z1, z0, y, scale_exp]
 
-    # --- enforce rem < scale_cmp (scale_cmp fits in u64) ---
-    # if rem < scale_cmp <= 2^64, then high64(rem) must be zero
-    dup assertz.err=ERR_REMAINDER_TOO_LARGE
-    dup.1 assertz.err=ERR_REMAINDER_TOO_LARGE
-    drop drop
-    # => [z1, z0, y_ret, scale_cmp]
+    # =============================================================================================
+    # Step 4: Enforce z fits in 64 bits
+    #   Constraint: the upper 64 bits of z are zero
+    #   i.e. z_hi == 0 and z_lo == 0
+    # =============================================================================================
+    assertz.err=ERR_REMAINDER_TOO_LARGE
+    assertz.err=ERR_REMAINDER_TOO_LARGE
+    # => [z1, z0, y, scale_exp]
 
-    # compare low64(rem) < scale_cmp
-    movup.3 u32split
-    # => [scale_hi, scale_lo, z1, z0, y_ret]
+    # =============================================================================================
+    # Step 5: Enforce (z1, z0) < 10^scale_exp
+    # =============================================================================================
+    movup.3
+    exec.pow10
+    # => [scale, z1, z0, y]
+
+    u32split
+    # => [scale_hi, scale_lo, z1, z0, y]
 
     exec.u64::lt
-    # => [is_lt, y_ret]
+    # => [is_lt, y]
 
     assert.err=ERR_REMAINDER_TOO_LARGE
-    # => [y_ret]
+    # => [y]
 end
 
-# TODO: Rm & use scale_u256_to_native_amount
-pub proc scale_u256_to_native_amount_stubbed
+
+# TODO: Rm & use verify_u256_to_native_amount_conversion
+pub proc verify_u256_to_native_amount_conversion_stubbed
     repeat.7 drop end
 end
