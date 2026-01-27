@@ -511,7 +511,8 @@ pub proc add_asset
         exec.asset_vault::build_fungible_asset_vault_key swapw
         # => [ASSET, ASSET_KEY]
 
-        drop drop drop movdn.4
+        exec.::$kernel::util::asset::get_balance_from_fungible_asset
+        movdn.4
         # => [ASSET_KEY, amount]
 
         exec.add_fungible_asset
@@ -541,7 +542,8 @@ pub proc remove_asset
         exec.asset_vault::build_fungible_asset_vault_key swapw
         # => [ASSET, ASSET_KEY]
 
-        drop drop drop movdn.4
+        exec.::$kernel::util::asset::get_balance_from_fungible_asset
+        movdn.4
         # => [ASSET_KEY, amount]
 
         exec.remove_fungible_asset
