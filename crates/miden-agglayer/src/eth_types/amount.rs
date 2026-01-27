@@ -1,6 +1,6 @@
 use core::fmt;
 
-use miden_core::{FieldElement, StarkField};
+use miden_core::FieldElement;
 use miden_protocol::Felt;
 use primitive_types::U256;
 
@@ -141,6 +141,26 @@ impl EthAmount {
         }
         result
     }
+
+    /// Converts the EthAmount to a U256 for easier arithmetic operations.
+    pub fn to_u256(&self) -> U256 {
+        limbs_le_to_u256(self.0)
+    }
+
+    /// Creates an EthAmount from a U256 value.
+    pub fn from_u256(value: U256) -> Self {
+        let mut limbs = [0u32; 8];
+
+        // U256 is stored as 4 u64 words in little-endian order
+        // We need to split each u64 into two u32 limbs
+        for i in 0..4 {
+            let word = value.0[i];
+            limbs[i * 2] = word as u32; // Low 32 bits
+            limbs[i * 2 + 1] = (word >> 32) as u32; // High 32 bits
+        }
+
+        Self(limbs)
+    }
 }
 
 impl From<[u32; 8]> for EthAmount {
@@ -182,9 +202,6 @@ impl fmt::Display for EthAmount {
 // U256 SCALING DOWN HELPERS
 // ================================================================================================
 
-/// Miden Felt modulus: p = 2^64 - 2^32 + 1
-const FELT_MODULUS: u128 = Felt::MODULUS as u128;
-
 /// Maximum scaling factor for decimal conversions
 const MAX_SCALING_FACTOR: u32 = 18;
 
@@ -196,11 +213,7 @@ fn pow10_u64(scale: u32) -> Result<u64, EthAmountError> {
     if scale > MAX_SCALING_FACTOR {
         return Err(EthAmountError::ScaleTooLarge);
     }
-    let mut acc: u64 = 1;
-    for _ in 0..scale {
-        acc = acc.saturating_mul(10);
-    }
-    Ok(acc)
+    Ok(10_u64.pow(scale))
 }
 
 /// Convert little-endian u32 limbs to U256.
@@ -245,30 +258,6 @@ impl EthAmount {
         // y must fit into u64 and be canonical Felt (< p)
         let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::YDoesNotFitU64)?;
 
-        if (y_u64 as u128) >= FELT_MODULUS {
-            return Err(EthAmountError::YNotCanonicalFelt);
-        }
-
-        Ok(Felt::new(y_u64))
-    }
-
-    /// Converts the EthAmount to a U256 for easier arithmetic operations.
-    pub fn to_u256(&self) -> U256 {
-        limbs_le_to_u256(self.0)
-    }
-
-    /// Creates an EthAmount from a U256 value.
-    pub fn from_u256(value: U256) -> Self {
-        let mut limbs = [0u32; 8];
-
-        // U256 is stored as 4 u64 words in little-endian order
-        // We need to split each u64 into two u32 limbs
-        for i in 0..4 {
-            let word = value.0[i];
-            limbs[i * 2] = word as u32; // Low 32 bits
-            limbs[i * 2 + 1] = (word >> 32) as u32; // High 32 bits
-        }
-
-        Self(limbs)
+        Felt::try_from(y_u64).map_err(|_| EthAmountError::YNotCanonicalFelt)
     }
 }
