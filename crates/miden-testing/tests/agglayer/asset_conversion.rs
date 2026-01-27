@@ -260,7 +260,7 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
 // ================================================================================================
 
 #[tokio::test]
-async fn test_scale_down_inline() -> anyhow::Result<()> {
+async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // Test: Take 100 * 1e18 and scale to base 1e8
     // This means we divide by 1e10 (scale_exp = 10)
     // x = 100 * 1e18 = 100000000000000000000
