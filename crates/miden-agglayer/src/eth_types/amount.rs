@@ -2,6 +2,7 @@ use core::fmt;
 
 use miden_core::FieldElement;
 use miden_protocol::Felt;
+use miden_protocol::asset::FungibleAsset;
 use primitive_types::U256;
 
 // ================================================================================================
@@ -15,14 +16,16 @@ pub enum EthAmountError {
     Overflow,
     /// The scaling factor is too large (> 18).
     ScaleTooLarge,
-    /// The computed y value is not a canonical Felt (>= 2^64 - 2^32 + 1).
-    YNotCanonicalFelt,
+    /// The scaled-down value is not a canonical Felt (>= 2^64 - 2^32 + 1).
+    ScaledValueNotCanonicalFelt,
     /// Underflow detected: x < y * 10^s.
     Underflow,
     /// The remainder is too large (>= 10^s).
     RemainderTooLarge,
-    /// The y value doesn't fit in a u64.
-    YDoesNotFitU64,
+    /// The scaled-down value doesn't fit in a u64.
+    ScaledValueDoesNotFitU64,
+    /// The scaled-down value exceeds the maximum fungible token amount.
+    ScaledValueExceedsMaxFungibleAmount,
 }
 
 impl fmt::Display for EthAmountError {
@@ -34,8 +37,8 @@ impl fmt::Display for EthAmountError {
             EthAmountError::ScaleTooLarge => {
                 write!(f, "scaling factor too large: maximum is 18")
             },
-            EthAmountError::YNotCanonicalFelt => {
-                write!(f, "y value is not a canonical Felt (must be < 2^64 - 2^32 + 1)")
+            EthAmountError::ScaledValueNotCanonicalFelt => {
+                write!(f, "scaled value is not a canonical Felt (must be < 2^64 - 2^32 + 1)")
             },
             EthAmountError::Underflow => {
                 write!(f, "underflow detected: x < y * 10^s")
@@ -43,8 +46,11 @@ impl fmt::Display for EthAmountError {
             EthAmountError::RemainderTooLarge => {
                 write!(f, "remainder too large: must be < 10^s")
             },
-            EthAmountError::YDoesNotFitU64 => {
-                write!(f, "y value doesn't fit in u64")
+            EthAmountError::ScaledValueDoesNotFitU64 => {
+                write!(f, "scaled value doesn't fit in u64")
+            },
+            EthAmountError::ScaledValueExceedsMaxFungibleAmount => {
+                write!(f, "scaled value exceeds the maximum fungible token amount")
             },
         }
     }
@@ -240,8 +246,11 @@ impl EthAmount {
     ///
     /// # Errors
     /// - [`EthAmountError::ScaleTooLarge`] if scale_exp > 18
-    /// - [`EthAmountError::YNotCanonicalFelt`] if the result doesn't fit in a canonical Felt
-    /// - [`EthAmountError::YDoesNotFitU64`] if the result doesn't fit in a u64
+    /// - [`EthAmountError::ScaledValueNotCanonicalFelt`] if the result doesn't fit in a canonical
+    ///   Felt
+    /// - [`EthAmountError::ScaledValueDoesNotFitU64`] if the result doesn't fit in a u64
+    /// - [`EthAmountError::ScaledValueExceedsMaxFungibleAmount`] if the scaled value exceeds the
+    ///   maximum fungible token amount
     ///
     /// # Example
     /// ```ignore
@@ -256,8 +265,12 @@ impl EthAmount {
         let y_u256 = x / scale;
 
         // y must fit into u64 and be canonical Felt (< p)
-        let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::YDoesNotFitU64)?;
+        let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::ScaledValueDoesNotFitU64)?;
 
-        Felt::try_from(y_u64).map_err(|_| EthAmountError::YNotCanonicalFelt)
+        if y_u64 > FungibleAsset::MAX_AMOUNT {
+            return Err(EthAmountError::ScaledValueExceedsMaxFungibleAmount);
+        }
+
+        Felt::try_from(y_u64).map_err(|_| EthAmountError::ScaledValueNotCanonicalFelt)
     }
 }
