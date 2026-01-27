@@ -110,7 +110,7 @@ impl EthAmount {
     /// # Errors
     /// Returns [`EthAmountError::Overflow`] if the amount doesn't fit in a u64
     /// (i.e., if any of the upper 6 u32 values are non-zero).
-    pub fn to_u64(&self) -> Result<u64, EthAmountError> {
+    pub fn try_to_u64(&self) -> Result<u64, EthAmountError> {
         if self.0[2..].iter().any(|&x| x != 0) {
             Err(EthAmountError::Overflow)
         } else {
@@ -123,7 +123,7 @@ impl EthAmount {
     /// # Errors
     /// Returns [`EthAmountError::Overflow`] if the amount doesn't fit in a u32
     /// (i.e., if any of the upper 7 u32 values are non-zero).
-    pub fn to_u32(&self) -> Result<u32, EthAmountError> {
+    pub fn try_to_u32(&self) -> Result<u32, EthAmountError> {
         if self.0[1..].iter().any(|&x| x != 0) {
             Err(EthAmountError::Overflow)
         } else {
