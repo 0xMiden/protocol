@@ -1,6 +1,6 @@
 use core::fmt;
 
-use miden_core::FieldElement;
+use miden_core::{FieldElement, StarkField};
 use miden_protocol::Felt;
 use primitive_types::U256;
 
@@ -183,7 +183,7 @@ impl fmt::Display for EthAmount {
 // ================================================================================================
 
 /// Miden Felt modulus: p = 2^64 - 2^32 + 1
-const FELT_MODULUS: u128 = (1u128 << 64) - (1u128 << 32) + 1;
+const FELT_MODULUS: u128 = Felt::MODULUS as u128;
 
 /// Maximum scaling factor for decimal conversions
 const MAX_SCALING_FACTOR: u32 = 18;
