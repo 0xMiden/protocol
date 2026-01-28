@@ -1,5 +1,7 @@
 use miden::core::crypto::hashes::keccak256
 use ::miden::agglayer::canonical_zeros::load_zeros_to_memory
+use ::miden::agglayer::utils::mem_store_double_word
+use ::miden::agglayer::utils::mem_load_double_word
 
 # An MMR Frontier is a data structure based on an MMR, which combines some features of an MMR and an
 # SMT.
@@ -317,28 +319,4 @@ proc store_canonical_zeros
     # clean the stack
     dropw dropw dropw drop
     # => []
-end
-
-#! Stores two words to the provided global memory address.
-#!
-#! Inputs:  [WORD_1, WORD_2, ptr]
-#! Outputs: [WORD_1, WORD_2, ptr]
-pub proc mem_store_double_word
-    dup.8 mem_storew_be swapw
-    # => [WORD_2, WORD_1, ptr]
-
-    dup.8 add.4 mem_storew_be swapw
-    # => [WORD_1, WORD_2, ptr]
-end
-
-#! Loads two words from the provided global memory address.
-#!
-#! Inputs:  [ptr]
-#! Outputs: [WORD_1, WORD_2]
-proc mem_load_double_word
-    padw dup.4 add.4 mem_loadw_be
-    # => [WORD_2, ptr]
-
-    padw movup.8 mem_loadw_be
-    # => [WORD_1, WORD_2]
 end

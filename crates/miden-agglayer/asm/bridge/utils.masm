@@ -1,0 +1,144 @@
+use miden::core::crypto::hashes::keccak256
+
+# Utility module containing helper functions for the SMT/MMR handling. 
+
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type MemoryAddress = u32
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SMT_ROOT_VERIFICATION_FAILED = "provided SMT root does not match the computed root"
+
+# PUBLIC API
+# =================================================================================================
+
+#! Verifies that the root, computed using the provided Merkle path and the leaf with its index,
+#! matches the provided root.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - expected_root_ptr is the pointer to the memory where the expected SMT root is stored.
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf which Merkle path was provided.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+#!
+#! Panics if:
+#! - The root stored in the `expected_root_ptr` is not equal to the computed root.
+pub proc verify_merkle_proof(leaf_value_lo: BeWord, leaf_value_hi: BeWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress)
+    # calculate the root of the SMT
+    exec.calculate_root
+    # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
+
+    # load the expected root onto the stack
+    movup.8 exec.mem_load_double_word
+    # => [EXPECTED_ROOT_LO, EXPECTED_ROOT_HI, CALCULATED_ROOT_LO, CALCULATED_ROOT_HI]
+
+    # assert the roots are equal
+    swapw.3
+    assert_eqw.err=ERR_SMT_ROOT_VERIFICATION_FAILED 
+    assert_eqw.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+    # => []
+end
+
+#! Stores two words to the provided global memory address.
+#!
+#! Inputs:  [WORD_1, WORD_2, ptr]
+#! Outputs: [WORD_1, WORD_2, ptr]
+pub proc mem_store_double_word
+    dup.8 mem_storew_be swapw
+    # => [WORD_2, WORD_1, ptr]
+
+    dup.8 add.4 mem_storew_be swapw
+    # => [WORD_1, WORD_2, ptr]
+end
+
+#! Loads two words from the provided global memory address.
+#!
+#! Inputs:  [ptr]
+#! Outputs: [WORD_1, WORD_2]
+pub proc mem_load_double_word
+    padw dup.4 add.4 mem_loadw_be
+    # => [WORD_2, ptr]
+
+    padw movup.8 mem_loadw_be
+    # => [WORD_1, WORD_2]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Computes the root of the SMT based on the provided Merkle path, leaf value and leaf index.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx]
+#! Outputs: [ROOT_LO, ROOT_HI]
+#!
+#! Where:
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf which Merkle path was provided.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+@locals(8) # current hash
+proc calculate_root(leaf_value_lo: BeWord, leaf_value_hi: BeWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32) -> (BeWord, BeWord)
+    # Store the leaf value to the local memory. This memory then will be used to store the current
+    # hash
+    loc_storew_be.0 dropw loc_storew_be.4 dropw
+    # => [merkle_path_ptr, leaf_idx]
+
+    # prepare the stack for the hash computation cycle
+    padw padw padw
+    # => [PAD, PAD, PAD, merkle_path_ptr, leaf_idx]
+
+    # Merkle path is guaranteed to contain 32 nodes
+    repeat.32
+        # load the Merkle path node onto the stack
+        mem_stream
+        # => [PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # determine whether the last `leaf_idx` bit is 1 (is `leaf_idx` odd)
+        dup.13 u32and.1
+        # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # depending on the `is_odd` flag, load the hash in the corresponding order
+        if.true
+            # load the hash of the current height from the local memory
+            padw loc_loadw_be.4 padw loc_loadw_be.0
+            # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+            
+            # rearrange the hashes: current position of the hash is odd, so it should be on the 
+            # right
+            swapdw
+            # => [PATH_NODE_LO, PATH_NODE_HI, CURR_HASH_LO, CURR_HASH_HI, PAD, merkle_path_ptr, leaf_idx]
+        else
+            # load the hash of the current height from the local memory
+            padw loc_loadw_be.4 padw loc_loadw_be.0
+            # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        end
+
+        # compute the next height hash
+        exec.keccak256::merge
+        # => [CURR_HASH_LO', CURR_HASH_HI', PAD, merkle_path_ptr, leaf_idx]
+
+        # store the resulting hash to the local memory 
+        loc_storew_be.0 swapw loc_storew_be.4
+        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx]
+
+        # update the `leaf_idx` (shift it right by 1 bit)
+        movup.13 u32shr.1 movdn.13
+        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx>>1]
+    end
+
+    # after all 32 hashes have been computed, the current hash stored in local memory represents
+    # the root of the SMT, which should be returned
+    #
+    # remove 6 elements from the stack so that exactly 8 are remaining and rewrite them with the
+    # root value from the local memory
+    dropw drop drop
+    loc_loadw_be.4 swapw loc_loadw_be.0
+    # => [ROOT_LO, ROOT_HI]
+end
