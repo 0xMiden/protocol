@@ -71,4 +71,56 @@ contract MMRTestVectors is Test, DepositContractBase {
         vm.writeJson(json, outputPath);
         console.log("Saved MMR frontier vectors to:", outputPath);
     }
+
+    /**
+     * @notice Generates vectors of leaves, roots and merkle paths and saves them to the JSON.
+     *         Notice that each value in the leaves/roots array corresponds to 32 values in the 
+     *         merkle paths array.
+     */
+    function test_generateVerificationProofData() public {
+        bytes32[] memory leaves = new bytes32[](32);
+        bytes32[] memory roots = new bytes32[](32);
+        bytes32[] memory merkle_paths = new bytes32[](1024);
+
+        // Generate the leaf, the root and the merkle path for the index = 0 manually.
+        //
+        // This is required because there is a shift between leaves/roots values and the _branch 
+        // (merkle path) values. This shift occurs because the i'th merkle path in the _branch array 
+        // is actually the merkle path for the leaf with index `i + 1`, not `i`. Luckily we won't 
+        // actually use the merkle path if `i == 0` (it will consist entirely from the canonical 
+        // zeros), so we can just leave them as zeros.
+
+        for (uint256 j = 0; j < 32; j++) {
+            merkle_paths[j] = bytes32(0);
+        }   
+
+        for (uint256 i = 0; i < 31; i++) {
+            bytes32 leaf = bytes32(i + 1);
+            _addLeaf(leaf);
+
+            leaves[i] = leaf;
+            roots[i] = getRoot();
+            for (uint256 j = 0; j < 32; j++) {
+                merkle_paths[(i + 1) * 32 + j] = _branch[j];
+            }   
+        }
+
+        uint256 last_iteration_index = 31;
+        bytes32 leaf = bytes32(last_iteration_index);
+        _addLeaf(leaf);
+
+        leaves[last_iteration_index] = leaf;
+        roots[last_iteration_index] = getRoot();
+
+        // Serialize parallel arrays to JSON
+        string memory obj = "root";
+        vm.serializeBytes32(obj, "leaves", leaves);
+        vm.serializeBytes32(obj, "roots", roots);
+        string memory json = vm.serializeBytes32(obj, "merkle_paths", merkle_paths);
+
+        // Save to file
+        string memory outputPath = "test-vectors/merkle_proof_vectors.json";
+        vm.writeJson(json, outputPath);
+        console.log("Saved Merkle path vectors to:", outputPath);
+    }
 }
