@@ -11,13 +11,14 @@ pub enum AuthScheme {
     /// account state.
     NoAuth,
     /// A single-key authentication scheme which relies on either RpoFalcon512 or ECDSA signatures.
-    BasicSignature { pub_key: PublicKeyCommitment },
+    SingleSig { pub_key: PublicKeyCommitment, scheme_id: u8 },
     /// A multi-signature authentication scheme using either RpoFalcon512 or ECDSA signatures.
     ///
     /// Requires a threshold number of signatures from the provided public keys.
     Multisig {
         threshold: u32,
         pub_keys: Vec<PublicKeyCommitment>,
+        scheme_ids: Vec<u8>,
     },
     /// A non-standard authentication scheme.
     Unknown,
@@ -30,7 +31,7 @@ impl AuthScheme {
     pub fn get_public_key_commitments(&self) -> Vec<PublicKeyCommitment> {
         match self {
             AuthScheme::NoAuth => Vec::new(),
-            AuthScheme::BasicSignature { pub_key } => vec![*pub_key],
+            AuthScheme::SingleSig { pub_key, .. } => vec![*pub_key],
             AuthScheme::Multisig { pub_keys, .. } => pub_keys.clone(),
             AuthScheme::Unknown => Vec::new(),
         }

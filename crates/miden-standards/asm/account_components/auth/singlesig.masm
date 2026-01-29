@@ -11,10 +11,10 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # =================================================================================================
 
 # The slot in this component's storage layout where the public key is stored.
-const PUBLIC_KEY_SLOT = word("miden::standards::auth::signature::public_key")
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig::public_key")
 
 # The slot in this component's storage layout where the corresponding signature scheme id is stored.
-const SCHEME_ID_SLOT = word("miden::standards::auth::signature::scheme_id")
+const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme_id")
 
 #! Authenticate a transaction using the ECDSA signature scheme.
 #!

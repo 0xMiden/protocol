@@ -13,12 +13,9 @@ use crate::account::components::{
     StandardAccountComponent,
     basic_fungible_faucet_library,
     basic_wallet_library,
-    ecdsa_k256_keccak_acl_library,
-    ecdsa_k256_keccak_library,
-    ecdsa_k256_keccak_multisig_library,
-    falcon_512_rpo_acl_library,
-    falcon_512_rpo_library,
-    falcon_512_rpo_multisig_library,
+    singlesig_acl_library,
+    singlesig_library,
+    multisig_library,
     network_fungible_faucet_library,
     no_auth_library,
 };
@@ -103,30 +100,17 @@ impl AccountInterfaceExt for AccountInterface {
                         network_fungible_faucet_library().mast_forest().procedure_digests(),
                     );
                 },
-                AccountComponentInterface::AuthEcdsaK256Keccak => {
+                AccountComponentInterface::AuthSingleSig => {
                     component_proc_digests
-                        .extend(ecdsa_k256_keccak_library().mast_forest().procedure_digests());
+                        .extend(singlesig_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::AuthEcdsaK256KeccakAcl => {
+                AccountComponentInterface::AuthSingleSigAcl => {
                     component_proc_digests
-                        .extend(ecdsa_k256_keccak_acl_library().mast_forest().procedure_digests());
+                        .extend(singlesig_acl_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::AuthEcdsaK256KeccakMultisig => {
+                AccountComponentInterface::AuthMultisig => {
                     component_proc_digests.extend(
-                        ecdsa_k256_keccak_multisig_library().mast_forest().procedure_digests(),
-                    );
-                },
-                AccountComponentInterface::AuthFalcon512Rpo => {
-                    component_proc_digests
-                        .extend(falcon_512_rpo_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthFalcon512RpoAcl => {
-                    component_proc_digests
-                        .extend(falcon_512_rpo_acl_library().mast_forest().procedure_digests());
-                },
-                AccountComponentInterface::AuthFalcon512RpoMultisig => {
-                    component_proc_digests.extend(
-                        falcon_512_rpo_multisig_library().mast_forest().procedure_digests(),
+                        multisig_library().mast_forest().procedure_digests(),
                     );
                 },
                 AccountComponentInterface::AuthNoAuth => {

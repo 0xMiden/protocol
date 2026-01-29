@@ -12,26 +12,31 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::ecdsa_k256_keccak_acl_library;
+use crate::account::components::singlesig_acl_library;
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_acl::public_key")
+    StorageSlotName::new("miden::standards::auth::singlesig_acl::public_key")
+        .expect("storage slot name should be valid")
+});
+
+static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::singlesig_acl::scheme_id")
         .expect("storage slot name should be valid")
 });
 
 static CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_acl::config")
+    StorageSlotName::new("miden::standards::auth::singlesig_acl::config")
         .expect("storage slot name should be valid")
 });
 
 static TRIGGER_PROCEDURE_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_acl::trigger_procedure_roots")
+    StorageSlotName::new("miden::standards::auth::singlesig_acl::trigger_procedure_roots")
         .expect("storage slot name should be valid")
 });
 
-/// Configuration for [`AuthEcdsaK256KeccakAcl`] component.
+/// Configuration for [`AuthSingleSigAcl`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthEcdsaK256KeccakAclConfig {
+pub struct AuthSingleSigAclConfig {
     /// List of procedure roots that require authentication when called.
     pub auth_trigger_procedures: Vec<Word>,
     /// When `false`, creating output notes (sending notes to other accounts) requires
@@ -42,7 +47,7 @@ pub struct AuthEcdsaK256KeccakAclConfig {
     pub allow_unauthorized_input_notes: bool,
 }
 
-impl AuthEcdsaK256KeccakAclConfig {
+impl AuthSingleSigAclConfig {
     /// Creates a new configuration with no trigger procedures and both flags set to `false` (most
     /// restrictive).
     pub fn new() -> Self {
@@ -72,7 +77,7 @@ impl AuthEcdsaK256KeccakAclConfig {
     }
 }
 
-impl Default for AuthEcdsaK256KeccakAclConfig {
+impl Default for AuthSingleSigAclConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -132,20 +137,22 @@ impl Default for AuthEcdsaK256KeccakAclConfig {
 /// procedures for authentication.
 ///
 /// This component supports all account types.
-pub struct AuthEcdsaK256KeccakAcl {
+pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
-    config: AuthEcdsaK256KeccakAclConfig,
+    scheme_id: u8,
+    config: AuthSingleSigAclConfig,
 }
 
-impl AuthEcdsaK256KeccakAcl {
-    /// Creates a new [`AuthEcdsaK256KeccakAcl`] component with the given `public_key` and
+impl AuthSingleSigAcl {
+    /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
     ///
     /// # Panics
     /// Panics if more than [AccountCode::MAX_NUM_PROCEDURES] procedures are specified.
     pub fn new(
         pub_key: PublicKeyCommitment,
-        config: AuthEcdsaK256KeccakAclConfig,
+        scheme_id: u8,
+        config: AuthSingleSigAclConfig,
     ) -> Result<Self, AccountError> {
         let max_procedures = AccountCode::MAX_NUM_PROCEDURES;
         if config.auth_trigger_procedures.len() > max_procedures {
@@ -154,12 +161,17 @@ impl AuthEcdsaK256KeccakAcl {
             )));
         }
 
-        Ok(Self { pub_key, config })
+        Ok(Self { pub_key, scheme_id, config })
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
     pub fn public_key_slot() -> &'static StorageSlotName {
         &PUBKEY_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the scheme ID is stored.
+    pub fn scheme_id_slot() -> &'static StorageSlotName {
+        &SCHEME_ID_SLOT_NAME
     }
 
     /// Returns the [`StorageSlotName`] where the component's configuration is stored.
@@ -173,24 +185,24 @@ impl AuthEcdsaK256KeccakAcl {
     }
 }
 
-impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
-    fn from(ecdsa: AuthEcdsaK256KeccakAcl) -> Self {
+impl From<AuthSingleSigAcl> for AccountComponent {
+    fn from(singlesig_acl: AuthSingleSigAcl) -> Self {
         let mut storage_slots = Vec::with_capacity(3);
 
         // Public key slot
         storage_slots.push(StorageSlot::with_value(
-            AuthEcdsaK256KeccakAcl::public_key_slot().clone(),
-            ecdsa.pub_key.into(),
+            AuthSingleSigAcl::public_key_slot().clone(),
+            singlesig_acl.pub_key.into(),
         ));
 
         // Config slot
-        let num_procs = ecdsa.config.auth_trigger_procedures.len() as u32;
+        let num_procs = singlesig_acl.config.auth_trigger_procedures.len() as u32;
         storage_slots.push(StorageSlot::with_value(
-            AuthEcdsaK256KeccakAcl::config_slot().clone(),
+            AuthSingleSigAcl::config_slot().clone(),
             Word::from([
                 num_procs,
-                u32::from(ecdsa.config.allow_unauthorized_output_notes),
-                u32::from(ecdsa.config.allow_unauthorized_input_notes),
+                u32::from(singlesig_acl.config.allow_unauthorized_output_notes),
+                u32::from(singlesig_acl.config.allow_unauthorized_input_notes),
                 0,
             ]),
         ));
@@ -198,7 +210,7 @@ impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
         // Trigger procedure roots slot
         // We add the map even if there are no trigger procedures, to always maintain the same
         // storage layout.
-        let map_entries = ecdsa
+        let map_entries = singlesig_acl
             .config
             .auth_trigger_procedures
             .iter()
@@ -207,11 +219,11 @@ impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
-            AuthEcdsaK256KeccakAcl::trigger_procedure_roots_slot().clone(),
+            AuthSingleSigAcl::trigger_procedure_roots_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        AccountComponent::new(ecdsa_k256_keccak_acl_library(), storage_slots)
+        AccountComponent::new(singlesig_acl_library(), storage_slots)
             .expect(
                 "ACL auth component should satisfy the requirements of a valid account component",
             )
@@ -253,9 +265,10 @@ mod tests {
     /// Parametrized test helper for ACL component testing
     fn test_acl_component(config: AclTestConfig) {
         let public_key = PublicKeyCommitment::from(Word::empty());
+        let scheme_id = 0u8;
 
         // Build the configuration
-        let mut acl_config = AuthEcdsaK256KeccakAclConfig::new()
+        let mut acl_config = AuthSingleSigAclConfig::new()
             .with_allow_unauthorized_output_notes(config.allow_unauthorized_output_notes)
             .with_allow_unauthorized_input_notes(config.allow_unauthorized_input_notes);
 
@@ -269,7 +282,7 @@ mod tests {
 
         // Create component and account
         let component =
-            AuthEcdsaK256KeccakAcl::new(public_key, acl_config).expect("component creation failed");
+            AuthSingleSigAcl::new(public_key, scheme_id, acl_config).expect("component creation failed");
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(component)
@@ -280,14 +293,14 @@ mod tests {
         // Check public key storage
         let public_key_slot = account
             .storage()
-            .get_item(AuthEcdsaK256KeccakAcl::public_key_slot())
+            .get_item(AuthSingleSigAcl::public_key_slot())
             .expect("public key storage slot access failed");
         assert_eq!(public_key_slot, public_key.into());
 
         // Check configuration storage
         let config_slot = account
             .storage()
-            .get_item(AuthEcdsaK256KeccakAcl::config_slot())
+            .get_item(AuthSingleSigAcl::config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, config.expected_config_slot);
 
@@ -297,7 +310,7 @@ mod tests {
                 let proc_root = account
                     .storage()
                     .get_map_item(
-                        AuthEcdsaK256KeccakAcl::trigger_procedure_roots_slot(),
+                        AuthSingleSigAcl::trigger_procedure_roots_slot(),
                         Word::from([i as u32, 0, 0, 0]),
                     )
                     .expect("storage map access failed");
@@ -307,7 +320,7 @@ mod tests {
             // When no procedures, the map should return empty for key [0,0,0,0]
             let proc_root = account
                 .storage()
-                .get_map_item(AuthEcdsaK256KeccakAcl::trigger_procedure_roots_slot(), Word::empty())
+                .get_map_item(AuthSingleSigAcl::trigger_procedure_roots_slot(), Word::empty())
                 .expect("storage map access failed");
             assert_eq!(proc_root, Word::empty());
         }
@@ -315,7 +328,7 @@ mod tests {
 
     /// Test ACL component with no procedures and both authorization flags set to false
     #[test]
-    fn test_ecdsa_k256_keccak_acl_no_procedures() {
+    fn test_singlesig_acl_no_procedures() {
         test_acl_component(AclTestConfig {
             with_procedures: false,
             allow_unauthorized_output_notes: false,
@@ -326,7 +339,7 @@ mod tests {
 
     /// Test ACL component with two procedures and both authorization flags set to false
     #[test]
-    fn test_ecdsa_k256_keccak_acl_with_two_procedures() {
+    fn test_singlesig_acl_with_two_procedures() {
         test_acl_component(AclTestConfig {
             with_procedures: true,
             allow_unauthorized_output_notes: false,

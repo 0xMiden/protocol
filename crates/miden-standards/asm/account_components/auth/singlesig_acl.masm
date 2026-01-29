@@ -1,6 +1,6 @@
-# The MASM code of the Falcon 512 RPO authentication Account Component with ACL.
+# The MASM code of the ECDSA K256 Keccak authentication Account Component with ACL.
 #
-# See the `AuthFalcon512RpoAcl` Rust type's documentation for more details.
+# See the `AuthEcdsaK256KeccakAcl` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -13,22 +13,25 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # ================================================================================================
 
 # The slot in this component's storage layout where the public key is stored.
-const PUBLIC_KEY_SLOT = word("miden::standards::auth::falcon512_rpo_acl::public_key")
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig_acl::public_key")
+
+# The slot in this component's storage layout where the corresponding signature scheme id is stored.
+const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig_acl::scheme_id")
 
 # The slot where the authentication configuration is stored.
-const AUTH_CONFIG_SLOT = word("miden::standards::auth::falcon512_rpo_acl::config")
+const AUTH_CONFIG_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_acl::config")
 
 # The slot where the map of auth trigger procedure roots is stored.
-const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::falcon512_rpo_acl::trigger_procedure_roots")
+const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_acl::trigger_procedure_roots")
 
-#! Authenticate a transaction using the Falcon signature scheme based on procedure calls and note usage.
+#! Authenticate a transaction using the ECDSA signature scheme based on procedure calls and note usage.
 #!
 #! This authentication procedure checks:
 #! 1. If any of the trigger procedures were called during the transaction
 #! 2. If input notes were consumed and allow_unauthorized_input_notes is false
 #! 3. If output notes were created and allow_unauthorized_output_notes is false
 #!
-#! If any of these conditions are true, standard Falcon512Rpo signature verification is performed.
+#! If any of these conditions are true, standard EcdsaK256Keccak signature verification is performed.
 #! Otherwise, only the nonce is incremented.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
@@ -36,7 +39,7 @@ const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::falcon512_rpo_
 #!
 #! Invocation: call
 @locals(2)
-pub proc auth_tx_falcon512_rpo_acl(auth_args: BeWord)
+pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
     dropw
     # => [pad(16)]
 
@@ -128,7 +131,7 @@ pub proc auth_tx_falcon512_rpo_acl(auth_args: BeWord)
         push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
         # => [PUB_KEY, pad(16)]
 
-        exec.::miden::standards::auth::falcon512_rpo::authenticate_transaction
+        exec.::miden::standards::auth::signature::authenticate_transaction
     else
         # ------ Check if initial account commitment differs from current commitment ------
 

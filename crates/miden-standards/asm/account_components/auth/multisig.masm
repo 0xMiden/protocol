@@ -29,19 +29,23 @@ const AUTH_UNAUTHORIZED_EVENT = event("miden::auth::unauthorized")
 # number of approvers are stored as:
 # [default_threshold, num_approvers, 0, 0].
 # The threshold is guaranteed to be less than or equal to num_approvers.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_multisig::threshold_config")
+const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
 
 # The slot in this component's storage layout where the public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
-const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_multisig::approver_public_keys")
+const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
+
+# The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
+# Map entries: APPROVER_PUBLIC_KEY => [scheme_id, 0, 0, 0]
+const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_scheme_id")
 
 # The slot in this component's storage layout where executed transactions are stored.
 # Map entries: transaction_message => [is_executed, 0, 0, 0]
-const EXECUTED_TXS_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_multisig::executed_transactions")
+const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
 
 # The slot in this component's storage layout where procedure thresholds are stored.
 # Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
-const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_multisig::procedure_thresholds")
+const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]

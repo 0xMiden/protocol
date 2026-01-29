@@ -14,10 +14,7 @@ use miden_protocol::{Felt, FieldElement, Word};
 use super::FungibleFaucetError;
 use crate::account::AuthScheme;
 use crate::account::auth::{
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakAclConfig,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoAclConfig,
+    AuthSingleSigAcl, AuthSingleSigAclConfig
 };
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -254,17 +251,10 @@ pub fn create_basic_fungible_faucet(
     let distribute_proc_root = BasicFungibleFaucet::distribute_digest();
 
     let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::Falcon512Rpo { pub_key } => AuthFalcon512RpoAcl::new(
+        AuthScheme::SingleSig { pub_key, scheme_id } => AuthSingleSigAcl::new(
             pub_key,
-            AuthFalcon512RpoAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthScheme::EcdsaK256Keccak { pub_key } => AuthEcdsaK256KeccakAcl::new(
-            pub_key,
-            AuthEcdsaK256KeccakAclConfig::new()
+            scheme_id,
+            AuthSingleSigAclConfig::new()
                 .with_auth_trigger_procedures(vec![distribute_proc_root])
                 .with_allow_unauthorized_input_notes(true),
         )
@@ -275,20 +265,15 @@ pub fn create_basic_fungible_faucet(
                 "basic fungible faucets cannot be created with NoAuth authentication scheme".into(),
             ));
         },
-        AuthScheme::Falcon512RpoMultisig { threshold: _, pub_keys: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "basic fungible faucets do not support multisig authentication".into(),
-            ));
-        },
         AuthScheme::Unknown => {
             return Err(FungibleFaucetError::UnsupportedAuthScheme(
                 "basic fungible faucets cannot be created with Unknown authentication scheme"
                     .into(),
             ));
         },
-        AuthScheme::EcdsaK256KeccakMultisig { threshold: _, pub_keys: _ } => {
+        AuthScheme::Multisig { threshold: _, pub_keys: _, scheme_ids: _ } => {
             return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "basic fungible faucets do not support EcdsaK256KeccakMultisig authentication"
+                "basic fungible faucets do not support Multisig authentication"
                     .into(),
             ));
         },

@@ -5,15 +5,15 @@ use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::basic_signature_library;
+use crate::account::components::singlesig_library;
 
-static BASIC_SIGNATURE_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::signature::public_key")
+static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::singlesig::public_key")
         .expect("storage slot name should be valid")
 });
 
-static BASIC_SIGNATURE_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::signature::scheme_id")
+static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::singlesig::scheme_id")
         .expect("storage slot name should be valid")
 });
 
@@ -32,41 +32,41 @@ static BASIC_SIGNATURE_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock
 /// This component supports all account types.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
-pub struct AuthBasicSignature {
+pub struct AuthSingleSig {
     pub_key: PublicKeyCommitment,
     scheme_id: u8,
 }
 
-impl AuthBasicSignature {
-    /// Creates a new [`AuthBasicSignature`] component with the given `public_key`.
+impl AuthSingleSig {
+    /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, scheme_id: u8) -> Self {
         Self { pub_key, scheme_id }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
     pub fn public_key_slot() -> &'static StorageSlotName {
-        &BASIC_SIGNATURE_PUBKEY_SLOT_NAME
+        &PUBKEY_SLOT_NAME
     }
 
     // Returns the [`StorageSlotName`] where the scheme ID is stored.
     pub fn scheme_id_slot() -> &'static StorageSlotName {
-        &BASIC_SIGNATURE_SCHEME_ID_SLOT_NAME
+        &SCHEME_ID_SLOT_NAME
     }
 }
 
-impl From<AuthBasicSignature> for AccountComponent {
-    fn from(basic_signature: AuthBasicSignature) -> Self {
+impl From<AuthSingleSig> for AccountComponent {
+    fn from(basic_signature: AuthSingleSig) -> Self {
         let mut storage_slots = Vec::with_capacity(2);
 
         // Public key slot
         storage_slots.push(StorageSlot::with_value(
-            AuthBasicSignature::public_key_slot().clone(),
+            AuthSingleSig::public_key_slot().clone(),
             basic_signature.pub_key.into(),
         ));
 
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
-            AuthBasicSignature::scheme_id_slot().clone(),
+            AuthSingleSig::scheme_id_slot().clone(),
             Word::from([
                 basic_signature.scheme_id,
                 0,
@@ -77,7 +77,7 @@ impl From<AuthBasicSignature> for AccountComponent {
 
         
 
-        AccountComponent::new(basic_signature_library(), storage_slots)
+        AccountComponent::new(singlesig_library(), storage_slots)
         .expect("signature verifier component should satisfy the requirements of a valid account component")
         .with_supports_all_types()
     }

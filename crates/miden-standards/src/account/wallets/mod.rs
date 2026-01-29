@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use super::AuthScheme;
 use crate::account::auth::{
-    AuthBasicSignature, AuthEcdsaK256KeccakMultisig, AuthEcdsaK256KeccakMultisigConfig, AuthFalcon512RpoMultisig, AuthFalcon512RpoMultisigConfig
+    AuthMultisig, AuthMultisigConfig, AuthSingleSig
 };
 use crate::account::components::basic_wallet_library;
 use crate::procedure_digest;
@@ -116,25 +116,14 @@ pub fn create_basic_wallet(
     }
 
     let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::BasicSignature { pub_key } => AuthBasicSignature::new(pub_key, 0).into(),
-        AuthScheme::RpoFalcon512 { pub_key } = AuthRp
-        AuthScheme::EcdsaK256KeccakMultisig { threshold, pub_keys } => {
-            let config = AuthEcdsaK256KeccakMultisigConfig::new(pub_keys, threshold)
+        AuthScheme::SingleSig { pub_key, scheme_id } => AuthSingleSig::new(pub_key, scheme_id).into(),
+        AuthScheme::Multisig { threshold, pub_keys, scheme_ids } => {
+            let config = AuthMultisigConfig::new(pub_keys, scheme_ids, threshold)
                 .and_then(|cfg| {
                     cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
                 })
                 .map_err(BasicWalletError::AccountError)?;
-            AuthEcdsaK256KeccakMultisig::new(config)
-                .map_err(BasicWalletError::AccountError)?
-                .into()
-        },
-        AuthScheme::Falcon512RpoMultisig { threshold, pub_keys } => {
-            let config = AuthFalcon512RpoMultisigConfig::new(pub_keys, threshold)
-                .and_then(|cfg| {
-                    cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
-                })
-                .map_err(BasicWalletError::AccountError)?;
-            AuthFalcon512RpoMultisig::new(config)
+            AuthMultisig::new(config)
                 .map_err(BasicWalletError::AccountError)?
                 .into()
         },

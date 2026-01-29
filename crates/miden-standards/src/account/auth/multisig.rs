@@ -7,45 +7,54 @@ use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, Storage
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::falcon_512_rpo_multisig_library;
+use crate::account::components::multisig_library;
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::falcon512_rpo_multisig::threshold_config")
+    StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
 });
 
 static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::falcon512_rpo_multisig::approver_public_keys")
+    StorageSlotName::new("miden::standards::auth::multisig::approver_public_keys")
+        .expect("storage slot name should be valid")
+});
+
+static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig::approver_scheme_id")
         .expect("storage slot name should be valid")
 });
 
 static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::falcon512_rpo_multisig::executed_transactions")
-        .expect("storage slot name should be valid")
+    StorageSlotName::new(
+        "miden::standards::auth::multisig::executed_transactions",
+    )
+    .expect("storage slot name should be valid")
 });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::falcon512_rpo_multisig::procedure_thresholds")
+    StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
         .expect("storage slot name should be valid")
 });
 
 // MULTISIG AUTHENTICATION COMPONENT
 // ================================================================================================
 
-/// Configuration for [`AuthFalcon512RpoMultisig`] component.
+/// Configuration for [`AuthEcdsaK256KeccakMultisig`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthFalcon512RpoMultisigConfig {
+pub struct AuthMultisigConfig {
     approvers: Vec<PublicKeyCommitment>,
+    scheme_ids: Vec<u8>,
     default_threshold: u32,
     proc_thresholds: Vec<(Word, u32)>,
 }
 
-impl AuthFalcon512RpoMultisigConfig {
+impl AuthMultisigConfig {
     /// Creates a new configuration with the given approvers and a default threshold.
     ///
     /// The `default_threshold` must be at least 1 and at most the number of approvers.
     pub fn new(
         approvers: Vec<PublicKeyCommitment>,
+        scheme_ids: Vec<u8>,
         default_threshold: u32,
     ) -> Result<Self, AccountError> {
         if default_threshold == 0 {
@@ -62,8 +71,16 @@ impl AuthFalcon512RpoMultisigConfig {
             return Err(AccountError::other("duplicate approver public keys are not allowed"));
         }
 
+        // Check for scheme_ids for each approver
+        if scheme_ids.len() != approvers.len() {
+            return Err(AccountError::other(
+                "number of scheme IDs must match number of approvers",
+            ));
+        }
+
         Ok(Self {
             approvers,
+            scheme_ids,
             default_threshold,
             proc_thresholds: vec![],
         })
@@ -93,6 +110,10 @@ impl AuthFalcon512RpoMultisigConfig {
         &self.approvers
     }
 
+    pub fn scheme_ids(&self) -> &[u8] {
+        &self.scheme_ids
+    }
+
     pub fn default_threshold(&self) -> u32 {
         self.default_threshold
     }
@@ -102,30 +123,28 @@ impl AuthFalcon512RpoMultisigConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing a multisig based on Falcon512Rpo signatures.
+/// An [`AccountComponent`] implementing a multisig based on ECDSA signatures.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure thresholds overrides. Non-uniform thresholds (especially a threshold of one)
 /// should be used with caution for private multisig accounts, as a single approver could withhold
 ///  the new state from other approvers, effectively locking them out.
 ///
-/// ## Storage Layout
-///
-/// - [`Self::threshold_config_slot`]: `[threshold, num_approvers, 0, 0]`
-/// - [`Self::approver_public_keys_slot`]: A map with approver public keys (index -> pubkey)
-/// - [`Self::executed_transactions_slot`]: A map which stores executed transactions
-/// - [`Self::procedure_thresholds_slot`]: A map which stores procedure thresholds (PROC_ROOT ->
-///   threshold)
+/// The storage layout is:
+/// - Slot 0(value): [threshold, num_approvers, 0, 0]
+/// - Slot 1(map): A map with approver public keys (index -> pubkey)
+/// - Slot 2(map): A map which stores executed transactions
+/// - Slot 3(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
 ///
 /// This component supports all account types.
 #[derive(Debug)]
-pub struct AuthFalcon512RpoMultisig {
-    config: AuthFalcon512RpoMultisigConfig,
+pub struct AuthMultisig {
+    config: AuthMultisigConfig,
 }
 
-impl AuthFalcon512RpoMultisig {
-    /// Creates a new [`AuthFalcon512RpoMultisig`] component from the provided configuration.
-    pub fn new(config: AuthFalcon512RpoMultisigConfig) -> Result<Self, AccountError> {
+impl AuthMultisig {
+    /// Creates a new [`AuthMultisig`] component from the provided configuration.
+    pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
         Ok(Self { config })
     }
 
@@ -139,6 +158,11 @@ impl AuthFalcon512RpoMultisig {
         &APPROVER_PUBKEYS_SLOT_NAME
     }
 
+    // Returns the [`StorageSlotName`] where the approver scheme IDs are stored.
+    pub fn approver_scheme_ids_slot() -> &'static StorageSlotName {
+        &APPROVER_SCHEME_ID_SLOT_NAME
+    }
+
     /// Returns the [`StorageSlotName`] where the executed transactions are stored.
     pub fn executed_transactions_slot() -> &'static StorageSlotName {
         &EXECUTED_TRANSACTIONS_SLOT_NAME
@@ -150,14 +174,14 @@ impl AuthFalcon512RpoMultisig {
     }
 }
 
-impl From<AuthFalcon512RpoMultisig> for AccountComponent {
-    fn from(multisig: AuthFalcon512RpoMultisig) -> Self {
+impl From<AuthMultisig> for AccountComponent {
+    fn from(multisig: AuthMultisig) -> Self {
         let mut storage_slots = Vec::with_capacity(3);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
         storage_slots.push(StorageSlot::with_value(
-            AuthFalcon512RpoMultisig::threshold_config_slot().clone(),
+            AuthMultisig::threshold_config_slot().clone(),
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
@@ -171,14 +195,31 @@ impl From<AuthFalcon512RpoMultisig> for AccountComponent {
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
-            AuthFalcon512RpoMultisig::approver_public_keys_slot().clone(),
+            AuthMultisig::approver_public_keys_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
+        ));
+
+        // Approver scheme IDs slot (map)
+        let scheme_id_entries = multisig
+            .config
+            .approvers()
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let pub_key = multisig.config.approvers()[i];
+                let scheme_id = multisig.config.scheme_ids()[i];
+                (Word::from(pub_key), Word::from([scheme_id as u32, 0, 0, 0]))
+            });
+
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisig::approver_scheme_ids_slot().clone(),
+            StorageMap::with_entries(scheme_id_entries).unwrap(),
         ));
 
         // Executed transactions slot (map)
         let executed_transactions = StorageMap::default();
         storage_slots.push(StorageSlot::with_map(
-            AuthFalcon512RpoMultisig::executed_transactions_slot().clone(),
+            AuthMultisig::executed_transactions_slot().clone(),
             executed_transactions,
         ));
 
@@ -192,11 +233,11 @@ impl From<AuthFalcon512RpoMultisig> for AccountComponent {
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
-            AuthFalcon512RpoMultisig::procedure_thresholds_slot().clone(),
+            AuthMultisig::procedure_thresholds_slot().clone(),
             proc_threshold_roots,
         ));
 
-        AccountComponent::new(falcon_512_rpo_multisig_library(), storage_slots)
+        AccountComponent::new(multisig_library(), storage_slots)
             .expect("Multisig auth component should satisfy the requirements of a valid account component")
             .with_supports_all_types()
     }
@@ -208,6 +249,7 @@ mod tests {
 
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
+    use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
     use crate::account::wallets::BasicWallet;
@@ -216,15 +258,23 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test public keys
-        let pub_key_1 = PublicKeyCommitment::from(Word::from([1u32, 0, 0, 0]));
-        let pub_key_2 = PublicKeyCommitment::from(Word::from([2u32, 0, 0, 0]));
-        let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
+        let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
+        let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
+        let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
         let approvers = vec![pub_key_1, pub_key_2, pub_key_3];
+
+        let scheme_id_0 = 0u8; // Falcon512Rpo
+        let scheme_id_1 = 0u8; // Falcon512Rpo
+        let scheme_id_2 = 0u8; // Falcon512Rpo
+
+        let scheme_ids = vec![scheme_id_0, scheme_id_1, scheme_id_2];
         let threshold = 2u32;
 
+        // How de we know the corresponding scheme IDs for the approvers? 0 for falcon, 1 for ecdsa
+
         // Create multisig component
-        let multisig_component = AuthFalcon512RpoMultisig::new(
-            AuthFalcon512RpoMultisigConfig::new(approvers.clone(), threshold)
+        let multisig_component = AuthMultisig::new(
+            AuthMultisigConfig::new(approvers.clone(),scheme_ids.clone(), threshold)
                 .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
@@ -239,7 +289,7 @@ mod tests {
         // Verify config slot: [threshold, num_approvers, 0, 0]
         let config_slot = account
             .storage()
-            .get_item(AuthFalcon512RpoMultisig::threshold_config_slot())
+            .get_item(AuthMultisig::threshold_config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
@@ -248,7 +298,7 @@ mod tests {
             let stored_pub_key = account
                 .storage()
                 .get_map_item(
-                    AuthFalcon512RpoMultisig::approver_public_keys_slot(),
+                    AuthMultisig::approver_public_keys_slot(),
                     Word::from([i as u32, 0, 0, 0]),
                 )
                 .expect("approver public key storage map access failed");
@@ -259,12 +309,13 @@ mod tests {
     /// Test multisig component with minimum threshold (1 of 1)
     #[test]
     fn test_multisig_component_minimum_threshold() {
-        let pub_key = PublicKeyCommitment::from(Word::from([42u32, 0, 0, 0]));
+        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
         let approvers = vec![pub_key];
+        let scheme_ids = vec![1u8]; 
         let threshold = 1u32;
 
-        let multisig_component = AuthFalcon512RpoMultisig::new(
-            AuthFalcon512RpoMultisigConfig::new(approvers.clone(), threshold)
+        let multisig_component = AuthMultisig::new(
+            AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), threshold)
                 .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
@@ -278,14 +329,14 @@ mod tests {
         // Verify storage layout
         let config_slot = account
             .storage()
-            .get_item(AuthFalcon512RpoMultisig::threshold_config_slot())
+            .get_item(AuthMultisig::threshold_config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
         let stored_pub_key = account
             .storage()
             .get_map_item(
-                AuthFalcon512RpoMultisig::approver_public_keys_slot(),
+                AuthMultisig::approver_public_keys_slot(),
                 Word::from([0u32, 0, 0, 0]),
             )
             .expect("approver pub keys storage map access failed");
@@ -295,15 +346,16 @@ mod tests {
     /// Test multisig component error cases
     #[test]
     fn test_multisig_component_error_cases() {
-        let pub_key = PublicKeyCommitment::from(Word::from([1u32, 0, 0, 0]));
+        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
         let approvers = vec![pub_key];
+        let scheme_ids = vec![1u8];
 
         // Test threshold = 0 (should fail)
-        let result = AuthFalcon512RpoMultisigConfig::new(approvers.clone(), 0);
+        let result = AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), 0);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
         // Test threshold > number of approvers (should fail)
-        let result = AuthFalcon512RpoMultisigConfig::new(approvers, 2);
+        let result = AuthMultisigConfig::new(approvers, scheme_ids, 2);
         assert!(
             result
                 .unwrap_err()
@@ -315,12 +367,13 @@ mod tests {
     /// Test multisig component with duplicate approvers (should fail)
     #[test]
     fn test_multisig_component_duplicate_approvers() {
-        let pub_key_1 = PublicKeyCommitment::from(Word::from([1u32, 0, 0, 0]));
-        let pub_key_2 = PublicKeyCommitment::from(Word::from([2u32, 0, 0, 0]));
+        let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
+        let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
 
         // Test with duplicate approvers (should fail)
         let approvers = vec![pub_key_1, pub_key_2, pub_key_1];
-        let result = AuthFalcon512RpoMultisigConfig::new(approvers, 2);
+        let scheme_ids = vec![1u8, 1u8, 1u8];
+        let result = AuthMultisigConfig::new(approvers, scheme_ids, 2);
         assert!(
             result
                 .unwrap_err()
