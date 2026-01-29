@@ -4,59 +4,37 @@ use miden_core::FieldElement;
 use miden_protocol::Felt;
 use miden_protocol::asset::FungibleAsset;
 use primitive_types::U256;
+use thiserror::Error;
 
 // ================================================================================================
 // ETHEREUM AMOUNT ERROR
 // ================================================================================================
 
 /// Error type for Ethereum amount conversions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum EthAmountError {
     /// The amount doesn't fit in the target type.
+    #[error("amount overflow: value doesn't fit in target type")]
     Overflow,
     /// The scaling factor is too large (> 18).
+    #[error("scaling factor too large: maximum is 18")]
     ScaleTooLarge,
     /// The scaled-down value is not a canonical Felt (>= 2^64 - 2^32 + 1).
+    #[error("scaled value is not a canonical Felt (must be < 2^64 - 2^32 + 1)")]
     ScaledValueNotCanonicalFelt,
     /// Underflow detected: x < y * 10^s.
+    #[error("underflow detected: x < y * 10^s")]
     Underflow,
     /// The remainder is too large (>= 10^s).
+    #[error("remainder too large: must be < 10^s")]
     RemainderTooLarge,
     /// The scaled-down value doesn't fit in a u64.
+    #[error("scaled value doesn't fit in u64")]
     ScaledValueDoesNotFitU64,
     /// The scaled-down value exceeds the maximum fungible token amount.
+    #[error("scaled value exceeds the maximum fungible token amount")]
     ScaledValueExceedsMaxFungibleAmount,
 }
-
-impl fmt::Display for EthAmountError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EthAmountError::Overflow => {
-                write!(f, "amount overflow: value doesn't fit in target type")
-            },
-            EthAmountError::ScaleTooLarge => {
-                write!(f, "scaling factor too large: maximum is 18")
-            },
-            EthAmountError::ScaledValueNotCanonicalFelt => {
-                write!(f, "scaled value is not a canonical Felt (must be < 2^64 - 2^32 + 1)")
-            },
-            EthAmountError::Underflow => {
-                write!(f, "underflow detected: x < y * 10^s")
-            },
-            EthAmountError::RemainderTooLarge => {
-                write!(f, "remainder too large: must be < 10^s")
-            },
-            EthAmountError::ScaledValueDoesNotFitU64 => {
-                write!(f, "scaled value doesn't fit in u64")
-            },
-            EthAmountError::ScaledValueExceedsMaxFungibleAmount => {
-                write!(f, "scaled value exceeds the maximum fungible token amount")
-            },
-        }
-    }
-}
-
-impl core::error::Error for EthAmountError {}
 
 // ================================================================================================
 // ETHEREUM AMOUNT
@@ -143,14 +121,19 @@ impl EthAmount {
     pub fn to_elements(&self) -> [Felt; 8] {
         let mut result = [Felt::ZERO; 8];
         for (i, &value) in self.0.iter().enumerate() {
-            result[i] = Felt::new(value as u64);
+            result[i] = Felt::from(value);
         }
         result
     }
 
     /// Converts the EthAmount to a U256 for easier arithmetic operations.
     pub fn to_u256(&self) -> U256 {
-        limbs_le_to_u256(self.0)
+        let mut bytes = [0u8; 32];
+        for (i, limb) in self.0.iter().enumerate() {
+            let b = limb.to_le_bytes();
+            bytes[i * 4..i * 4 + 4].copy_from_slice(&b);
+        }
+        U256::from_little_endian(&bytes)
     }
 
     /// Creates an EthAmount from a U256 value.
@@ -222,16 +205,6 @@ fn pow10_u64(scale: u32) -> Result<u64, EthAmountError> {
     Ok(10_u64.pow(scale))
 }
 
-/// Convert little-endian u32 limbs to U256.
-fn limbs_le_to_u256(limbs: [u32; 8]) -> U256 {
-    let mut bytes = [0u8; 32];
-    for (i, limb) in limbs.iter().enumerate() {
-        let b = limb.to_le_bytes();
-        bytes[i * 4..i * 4 + 4].copy_from_slice(&b);
-    }
-    U256::from_little_endian(&bytes)
-}
-
 impl EthAmount {
     /// Converts a U256 amount to a Miden Felt by scaling down by 10^scale_exp.
     ///
@@ -246,8 +219,6 @@ impl EthAmount {
     ///
     /// # Errors
     /// - [`EthAmountError::ScaleTooLarge`] if scale_exp > 18
-    /// - [`EthAmountError::ScaledValueNotCanonicalFelt`] if the result doesn't fit in a canonical
-    ///   Felt
     /// - [`EthAmountError::ScaledValueDoesNotFitU64`] if the result doesn't fit in a u64
     /// - [`EthAmountError::ScaledValueExceedsMaxFungibleAmount`] if the scaled value exceeds the
     ///   maximum fungible token amount
@@ -255,22 +226,24 @@ impl EthAmount {
     /// # Example
     /// ```ignore
     /// let eth_amount = EthAmount::from_u64(1_000_000_000_000_000_000); // 1 ETH in wei
-    /// let miden_amount = eth_amount.scale_to_felt_deterministic(12)?;
+    /// let miden_amount = eth_amount.scale_to_token_amount(12)?;
     /// // Result: 1_000_000 (1e6, Miden representation)
     /// ```
-    pub fn scale_to_felt_deterministic(&self, scale_exp: u32) -> Result<Felt, EthAmountError> {
-        let x = limbs_le_to_u256(self.0);
+    pub fn scale_to_token_amount(&self, scale_exp: u32) -> Result<Felt, EthAmountError> {
+        let x = self.to_u256();
         let scale = U256::from(pow10_u64(scale_exp)?);
 
         let y_u256 = x / scale;
 
-        // y must fit into u64 and be canonical Felt (< p)
+        // y must fit into u64; canonical Felt is guaranteed by max amount bound
         let y_u64: u64 = y_u256.try_into().map_err(|_| EthAmountError::ScaledValueDoesNotFitU64)?;
 
         if y_u64 > FungibleAsset::MAX_AMOUNT {
             return Err(EthAmountError::ScaledValueExceedsMaxFungibleAmount);
         }
 
-        Felt::try_from(y_u64).map_err(|_| EthAmountError::ScaledValueNotCanonicalFelt)
+        // Safe because FungibleAsset::MAX_AMOUNT < Felt modulus
+        let y_felt = Felt::try_from(y_u64).expect("scaled value must fit into canonical Felt");
+        Ok(y_felt)
     }
 }

@@ -30,6 +30,7 @@ miden-utils-sync = { workspace = true }
 
 # External dependencies
 primitive-types = { workspace = true }
+thiserror        = { workspace = true }
 
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }

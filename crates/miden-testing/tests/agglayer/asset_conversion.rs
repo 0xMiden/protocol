@@ -126,7 +126,7 @@ fn build_scale_down_script(x: U256, scale_exp: u32, y: u64) -> String {
 
 /// Compute the expected quotient using Rust implementation
 fn expected_y(x: U256, s: u32) -> u64 {
-    EthAmount::from_u256(x).scale_to_felt_deterministic(s).unwrap().as_int()
+    EthAmount::from_u256(x).scale_to_token_amount(s).unwrap().as_int()
 }
 
 /// Assert that scaling down succeeds with the correct result
