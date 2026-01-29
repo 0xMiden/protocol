@@ -128,7 +128,7 @@ pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
         push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
         # => [PUB_KEY, pad(16)]
 
-        exec.::miden::standards::auth::ecdsa_k256_keccak::authenticate_transaction
+        exec.::miden::standards::auth::signature::authenticate_transaction
     else
         # ------ Check if initial account commitment differs from current commitment ------
 

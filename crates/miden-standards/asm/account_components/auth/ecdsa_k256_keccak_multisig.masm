@@ -390,7 +390,7 @@ pub proc auth_tx_ecdsa_k256_keccak_multisig(salt: BeWord)
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
     # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    exec.::miden::standards::auth::ecdsa_k256_keccak::verify_signatures
+    exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------

@@ -8,12 +8,7 @@ use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::AuthScheme;
 use crate::account::auth::{
-    AuthEcdsaK256Keccak,
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakMultisig,
-    AuthFalcon512Rpo,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoMultisig,
+    AuthBasicSignature, AuthEcdsaK256Keccak, AuthEcdsaK256KeccakAcl, AuthEcdsaK256KeccakMultisig, AuthFalcon512Rpo, AuthFalcon512RpoAcl, AuthFalcon512RpoMultisig
 };
 use crate::account::interface::AccountInterfaceError;
 
@@ -32,8 +27,8 @@ pub enum AccountComponentInterface {
     /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
     NetworkFungibleFaucet,
     /// Exposes procedures from the
-    /// [`AuthEcdsaK256Keccak`][crate::account::auth::AuthEcdsaK256Keccak] module.
-    AuthEcdsaK256Keccak,
+    /// [`AuthBasicSignature`][crate::account::auth::AuthBasicSignature] module.
+    AuthBasicSignature,
     /// Exposes procedures from the
     /// [`AuthEcdsaK256KeccakAcl`][crate::account::auth::AuthEcdsaK256KeccakAcl] module.
     AuthEcdsaK256KeccakAcl,
@@ -74,7 +69,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::NetworkFungibleFaucet => {
                 "Network Fungible Faucet".to_string()
             },
-            AccountComponentInterface::AuthEcdsaK256Keccak => "ECDSA K256 Keccak".to_string(),
+            AccountComponentInterface::AuthBasicSignature => "Basic Signature".to_string(),
             AccountComponentInterface::AuthEcdsaK256KeccakAcl => {
                 "ECDSA K256 Keccak ACL".to_string()
             },
@@ -105,7 +100,7 @@ impl AccountComponentInterface {
     pub fn is_auth_component(&self) -> bool {
         matches!(
             self,
-            AccountComponentInterface::AuthEcdsaK256Keccak
+            AccountComponentInterface::AuthBasicSignature
                 | AccountComponentInterface::AuthEcdsaK256KeccakAcl
                 | AccountComponentInterface::AuthEcdsaK256KeccakMultisig
                 | AccountComponentInterface::AuthFalcon512Rpo
@@ -118,17 +113,17 @@ impl AccountComponentInterface {
     /// Returns the authentication schemes associated with this component interface.
     pub fn get_auth_schemes(&self, storage: &AccountStorage) -> Vec<AuthScheme> {
         match self {
-            AccountComponentInterface::AuthEcdsaK256Keccak => {
-                vec![AuthScheme::EcdsaK256Keccak {
+            AccountComponentInterface::AuthBasicSignature => {
+                vec![AuthScheme::BasicSignature {
                     pub_key: PublicKeyCommitment::from(
                         storage
-                            .get_item(AuthEcdsaK256Keccak::public_key_slot())
+                            .get_item(AuthBasicSignature::public_key_slot())
                             .expect("invalid storage index of the public key"),
                     ),
                 }]
             },
             AccountComponentInterface::AuthEcdsaK256KeccakAcl => {
-                vec![AuthScheme::EcdsaK256Keccak {
+                vec![AuthScheme::BasicSignature {
                     pub_key: PublicKeyCommitment::from(
                         storage
                             .get_item(AuthEcdsaK256KeccakAcl::public_key_slot())

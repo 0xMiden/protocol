@@ -26,7 +26,7 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // ================================================================================================
 
 /// Initialize the ECDSA K256 Keccak library only once.
-static ECDSA_K256_KECCAK_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static BASIC_SIGNATURE_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
         "/assets/account_components/auth/ecdsa_k256_keccak.masl"
@@ -140,9 +140,9 @@ pub fn storage_schema_library() -> Library {
     STORAGE_SCHEMA_LIBRARY.clone()
 }
 
-/// Returns the ECDSA K256 Keccak Library.
-pub fn ecdsa_k256_keccak_library() -> Library {
-    ECDSA_K256_KECCAK_LIBRARY.clone()
+/// Returns the Basic Signature Library.
+pub fn basic_signature_library() -> Library {
+    BASIC_SIGNATURE_LIBRARY.clone()
 }
 
 /// Returns the ECDSA K256 Keccak ACL Library.
@@ -184,7 +184,7 @@ pub enum StandardAccountComponent {
     BasicWallet,
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
-    AuthEcdsaK256Keccak,
+    AuthBasicSignature,
     AuthEcdsaK256KeccakAcl,
     AuthEcdsaK256KeccakMultisig,
     AuthFalcon512Rpo,
@@ -200,7 +200,7 @@ impl StandardAccountComponent {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
-            Self::AuthEcdsaK256Keccak => ECDSA_K256_KECCAK_LIBRARY.as_ref(),
+            Self::AuthBasicSignature => BASIC_SIGNATURE_LIBRARY.as_ref(),
             Self::AuthEcdsaK256KeccakAcl => ECDSA_K256_KECCAK_ACL_LIBRARY.as_ref(),
             Self::AuthEcdsaK256KeccakMultisig => ECDSA_K256_KECCAK_MULTISIG_LIBRARY.as_ref(),
             Self::AuthFalcon512Rpo => FALCON_512_RPO_LIBRARY.as_ref(),
@@ -249,8 +249,8 @@ impl StandardAccountComponent {
                 Self::NetworkFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
                 },
-                Self::AuthEcdsaK256Keccak => {
-                    component_interface_vec.push(AccountComponentInterface::AuthEcdsaK256Keccak)
+                Self::AuthBasicSignature => {
+                    component_interface_vec.push(AccountComponentInterface::AuthBasicSignature)
                 },
                 Self::AuthEcdsaK256KeccakAcl => {
                     component_interface_vec.push(AccountComponentInterface::AuthEcdsaK256KeccakAcl)
@@ -281,7 +281,7 @@ impl StandardAccountComponent {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
-        Self::AuthEcdsaK256Keccak.extract_component(procedures_set, component_interface_vec);
+        Self::AuthBasicSignature.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256KeccakAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256KeccakMultisig
             .extract_component(procedures_set, component_interface_vec);

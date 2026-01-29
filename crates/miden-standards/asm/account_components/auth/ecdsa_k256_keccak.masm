@@ -1,8 +1,8 @@
-# The MASM code of the ECDSA K256 Keccak authentication Account Component.
+# The MASM code of the BasicSignature Authentication Account Component.
 #
-# See the `AuthEcdsaK256Keccak` Rust type's documentation for more details.
+# See the `AuthBasicSignature` Rust type's documentation for more details.
 
-use miden::standards::auth::ecdsa_k256_keccak
+use miden::standards::auth::signature
 use miden::protocol::active_account
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
@@ -11,7 +11,10 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # =================================================================================================
 
 # The slot in this component's storage layout where the public key is stored.
-const PUBLIC_KEY_SLOT = word("miden::standards::auth::ecdsa_k256_keccak::public_key")
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::signature::public_key")
+
+# The slot in this component's storage layout where the corresponding signature scheme id is stored.
+const SCHEME_ID_SLOT = word("miden::standards::auth::signature::scheme_id")
 
 #! Authenticate a transaction using the ECDSA signature scheme.
 #!
@@ -38,6 +41,12 @@ pub proc auth_tx_ecdsa_k256_keccak(auth_args: BeWord)
     push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
     # => [PUB_KEY, pad(16)]
 
-    exec.ecdsa_k256_keccak::authenticate_transaction
+    push.SCHEME_ID_SLOT exec.active_account::get_item
+    # => [0, 0, 0, SCHEME_ID, PUB_KEY, pad(16)]
+
+    drop drop drop movdn.4
+    # => [PUB_KEY, SCHEME_ID, pad(16)]
+
+    exec.signature::authenticate_transaction
     # => [pad(16)]
 end
