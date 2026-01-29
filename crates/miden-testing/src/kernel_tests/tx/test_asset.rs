@@ -84,25 +84,29 @@ async fn test_validate_non_fungible_asset() -> anyhow::Result<()> {
     let tx_context =
         TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
-
-    let non_fungible_asset = Word::from(NonFungibleAsset::mock(&[1, 2, 3]));
+    let non_fungible_asset = NonFungibleAsset::mock(&[1, 2, 3]);
 
     let code = format!(
         "
         use $kernel::asset
 
         begin
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset::validate_non_fungible_asset
 
             # truncate the stack
-            swapw dropw
+            swapdw dropw dropw
         end
-        "
+        ",
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset);
+    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word_be(4), non_fungible_asset.to_value_word());
+
     Ok(())
 }

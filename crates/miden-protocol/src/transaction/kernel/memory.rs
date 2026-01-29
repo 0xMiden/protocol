@@ -434,6 +434,17 @@ pub const OUTPUT_NOTE_NUM_ASSETS_OFFSET: MemoryOffset = 20;
 pub const OUTPUT_NOTE_DIRTY_FLAG_OFFSET: MemoryOffset = 21;
 pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 24;
 
+// ASSETS
+// ------------------------------------------------------------------------------------------------
+
+/// The size of an asset's memory representation.
+#[cfg(any(feature = "testing", test))]
+pub const ASSET_SIZE: MemoryOffset = 8;
+
+/// The offset of the asset vaule in an asset's memory representation.
+#[cfg(any(feature = "testing", test))]
+pub const ASSET_VALUE_OFFSET: MemoryOffset = 4;
+
 // LINK MAP
 // ------------------------------------------------------------------------------------------------
 
