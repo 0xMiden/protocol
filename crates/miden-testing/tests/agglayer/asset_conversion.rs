@@ -145,12 +145,12 @@ async fn assert_scale_down_fails(x: U256, s: u32, y: u64, expected_msg: &str) {
 }
 
 /// Test that y-1 and y+1 both fail appropriately
-async fn assert_y_plus_minus_one_behavior(x: U256, s: u32) -> anyhow::Result<()> {
-    let y = assert_scale_down_ok(x, s).await?;
+async fn assert_y_plus_minus_one_behavior(x: U256, scale: u32) -> anyhow::Result<()> {
+    let y = assert_scale_down_ok(x, scale).await?;
     if y > 0 {
-        assert_scale_down_fails(x, s, y - 1, "remainder z must be < 10^s").await;
+        assert_scale_down_fails(x, scale, y - 1, "remainder z must be < 10^s").await;
     }
-    assert_scale_down_fails(x, s, y + 1, "underflow detected").await;
+    assert_scale_down_fails(x, scale, y + 1, "underflow detected").await;
     Ok(())
 }
 
