@@ -447,27 +447,29 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add non-fungible asset to the vault
-            exec.memory::get_input_vault_root_ptr push.{non_fungible_asset}
+            exec.memory::get_input_vault_root_ptr
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::add_non_fungible_asset dropw
 
             # check that the non-fungible asset is presented in the input vault
             exec.memory::get_input_vault_root_ptr
-            push.{ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="input vault should contain the asset"
 
             # burn the non-fungible asset
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
             call.mock_faucet::burn
 
             # assert the correct asset is returned
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="burnt asset does not match expected asset"
 
             # assert the input vault has been updated and does not have the burnt asset
             exec.memory::get_input_vault_root_ptr
-            push.{ASSET_KEY}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
             # the returned word should be empty, indicating the asset is absent
             padw assert_eqw.err="input vault should not contain burned asset"
@@ -475,8 +477,8 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             dropw
         end
         "#,
-        ASSET_KEY = non_fungible_asset_burnt.vault_key(),
-        non_fungible_asset = Word::from(non_fungible_asset_burnt),
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
     );
 
     tx_context.execute_code(&code).await?;
