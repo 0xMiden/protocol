@@ -126,6 +126,7 @@ impl AccountComponentInterface {
                     storage,
                     AuthMultisig::threshold_config_slot(),
                     AuthMultisig::approver_public_keys_slot(),
+                    AuthMultisig::approver_scheme_ids_slot(),
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthScheme::NoAuth],
@@ -281,6 +282,7 @@ fn extract_multisig_auth_scheme(
     storage: &AccountStorage,
     config_slot: &StorageSlotName,
     approver_public_keys_slot: &StorageSlotName,
+    approver_scheme_ids_slot: &StorageSlotName,
 ) -> AuthScheme {
     // Read the multisig configuration from the config slot
     // Format: [threshold, num_approvers, 0, 0]
@@ -292,27 +294,39 @@ fn extract_multisig_auth_scheme(
     let num_approvers = config[1].as_int() as u8;
 
     let mut pub_keys = Vec::new();
+    let mut scheme_ids = Vec::new();
 
     // Read each public key from the map
     for key_index in 0..num_approvers {
         // The multisig component stores keys using pattern [index, 0, 0, 0]
         let map_key = [Felt::new(key_index as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO];
 
-        match storage.get_map_item(approver_public_keys_slot, map_key.into()) {
-            Ok(pub_key) => {
-                pub_keys.push(PublicKeyCommitment::from(pub_key));
-            },
-            Err(_) => {
-                // If we can't read a public key, panic with a clear error message
+        let pub_key_word = storage
+            .get_map_item(approver_public_keys_slot, map_key.into())
+            .unwrap_or_else(|_| {
                 panic!(
                     "Failed to read public key {} from multisig configuration at storage slot {}. \
-                        Expected key pattern [index, 0, 0, 0]. \
-                        This indicates corrupted multisig storage or incorrect storage layout.",
+                     Expected key pattern [index, 0, 0, 0].",
                     key_index, approver_public_keys_slot
-                );
-            },
-        }
+                )
+            });
+
+        let pub_key = PublicKeyCommitment::from(pub_key_word);
+        pub_keys.push(pub_key);
+
+        let scheme_word = storage
+            .get_map_item(approver_scheme_ids_slot, pub_key_word)
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to read scheme id for approver {} from multisig configuration at storage slot {}.",
+                    key_index, approver_scheme_ids_slot
+                )
+            });
+
+        let scheme_id = scheme_word[0].as_int() as u8;
+        scheme_ids.push(scheme_id);
+
     }
 
-    AuthScheme::Multisig { threshold, pub_keys,  }
+    AuthScheme::Multisig { threshold, pub_keys, scheme_ids }
 }

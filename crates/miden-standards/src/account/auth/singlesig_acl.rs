@@ -45,6 +45,7 @@ pub struct AuthSingleSigAclConfig {
     /// When `false`, consuming input notes (processing notes sent to this account) requires
     /// authentication. When `true`, input notes can be consumed without authentication.
     pub allow_unauthorized_input_notes: bool,
+
 }
 
 impl AuthSingleSigAclConfig {
@@ -193,6 +194,17 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::public_key_slot().clone(),
             singlesig_acl.pub_key.into(),
+        ));
+
+        // Scheme ID slot
+        storage_slots.push(StorageSlot::with_value(
+            AuthSingleSigAcl::scheme_id_slot().clone(),
+            Word::from([
+                singlesig_acl.scheme_id,
+                0,
+                0,
+                0,
+            ]),
         ));
 
         // Config slot

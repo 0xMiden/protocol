@@ -130,7 +130,7 @@ pub fn verify_minted_output_note(
 #[tokio::test]
 async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -152,7 +152,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     // CONSTRUCT AND EXECUTE TX (Failure)
     // --------------------------------------------------------------------------------------------
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -206,7 +206,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 #[tokio::test]
 async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.create_new_faucet(Auth::BasicAuth, "TST", 200)?;
+    let faucet = builder.create_new_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -230,7 +230,7 @@ async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, Some(100))?;
+    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, Some(100))?;
 
     let fungible_asset = FungibleAsset::new(faucet.id(), 100).unwrap();
 
@@ -293,7 +293,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;

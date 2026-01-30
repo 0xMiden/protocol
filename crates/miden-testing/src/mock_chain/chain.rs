@@ -1184,8 +1184,9 @@ mod tests {
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
+        let scheme_id = 0u8;
         let account = builder.add_account_from_builder(
-            Auth::BasicAuth,
+            Auth::BasicAuth{scheme_id},
             account_builder,
             AccountState::New,
         )?;
@@ -1229,7 +1230,7 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth,
+                    Auth::BasicAuth{scheme_id: 0},
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

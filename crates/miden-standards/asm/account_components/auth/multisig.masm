@@ -101,7 +101,8 @@ end
 #! - new_num_of_approvers is the new number of approvers after the update
 proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
     dup.1 dup.1
-    u32assert2 u32lt
+    u32assert2
+    u32lt
     # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
 
     while.true
@@ -110,18 +111,39 @@ proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u3
         sub.1
         # => [i-1, new_num_of_approvers]
 
-        dup
+        dup 
         # => [i-1, i-1, new_num_of_approvers]
 
         push.0.0.0
         # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
 
-        padw swapw
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], i-1, new_num_of_approvers]
+
+        exec.active_account::get_initial_map_item
+        # => [OLD_PUB_KEY, i-1, new_num_of_approvers]
+
+        push.0.0.0.0 swapw
+        # => [OLD_PUB_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, OLD_PUB_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+        
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_of_approvers]
+       
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        dup push.0.0.0
+        # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
+
+        push.0.0.0.0 swapw
         # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
         # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
-
+        
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
 
@@ -134,8 +156,8 @@ proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u3
     end
 
     drop drop
-    # => []
 end
+
 
 #! Update threshold config and add / remove approvers
 #!
@@ -210,8 +232,29 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         swapw
         # => [[0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
 
+        dupw.1
+        # => [PUB_KEY, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+
+        swapw
+        # => [[0, 0, 0, i-1], PUB_KEY, PUB_KEY, i-1, pad(12)]
+
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        dropw
+        # => [PUB_KEY, i-1, pad(12)]
+
+        padw adv_loadw
+        # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+
+        swapw
+        # => [PUB_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, PUB_KEY, SCHEME_WORD, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -393,6 +436,9 @@ pub proc auth_tx_ecdsa_k256_keccak_multisig(salt: BeWord)
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
     # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [approver_scheme_id_slot_prefix, approver_scheme_id_slot_suffix, pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
     exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]

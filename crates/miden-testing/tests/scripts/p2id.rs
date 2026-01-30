@@ -30,9 +30,9 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth)?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -92,8 +92,8 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let target_account = builder.create_new_wallet(Auth::BasicAuth)?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -140,7 +140,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
     let mut builder = MockChain::builder();
-    let mut account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let mut account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
     let note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),
@@ -179,7 +179,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let mut account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(20)])?;
+        builder.add_existing_wallet_with_assets(Auth::BasicAuth{scheme_id: 0}, [FungibleAsset::mock(20)])?;
 
     let input_note_faucet_id = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
     let input_note_asset_1: Asset = FungibleAsset::new(input_note_faucet_id, 11)?.into();

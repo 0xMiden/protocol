@@ -1,6 +1,6 @@
 mod rpo_falcon_acl;
 
-mod multisig;
+mod rpo_falcon_multisig;
 
 mod ecdsa_acl;
 

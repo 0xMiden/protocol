@@ -147,7 +147,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth,
+        crate::Auth::BasicAuth{scheme_id: 0},
         [fungible_asset_0_double_amount, fungible_asset_1],
     )?;
 

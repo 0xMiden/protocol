@@ -13,7 +13,7 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement, Word};
-use miden_standards::account::auth::AuthEcdsaK256KeccakAcl;
+use miden_standards::account::auth::AuthSingleSigAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
@@ -52,11 +52,13 @@ fn setup_ecdsa_acl_test(
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
+    let scheme_id = 1u8;
 
-    let (auth_component, _authenticator) = Auth::EcdsaK256KeccakAcl {
+    let (auth_component, _authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
         allow_unauthorized_output_notes,
         allow_unauthorized_input_notes,
+        scheme_id,
     }
     .build_component();
 
@@ -94,11 +96,13 @@ async fn test_ecdsa_acl() -> anyhow::Result<()> {
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
+    let scheme_id = 1u8;
 
-    let (_, authenticator) = Auth::EcdsaK256KeccakAcl {
+    let (_, authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
         allow_unauthorized_output_notes: false,
         allow_unauthorized_input_notes: true,
+        scheme_id,
     }
     .build_component();
 
@@ -205,7 +209,7 @@ async fn test_ecdsa_acl_with_allow_unauthorized_output_notes() -> anyhow::Result
     // Verify the storage layout includes both authorization flags
     let config_slot = account
         .storage()
-        .get_item(AuthEcdsaK256KeccakAcl::config_slot())
+        .get_item(AuthSingleSigAcl::config_slot())
         .expect("config storage slot access failed");
     // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
     // allow_unauthorized_input_notes, 0] With 2 procedures,
@@ -245,7 +249,7 @@ async fn test_ecdsa_acl_with_disallow_unauthorized_input_notes() -> anyhow::Resu
     // Verify the storage layout includes both flags
     let config_slot = account
         .storage()
-        .get_item(AuthEcdsaK256KeccakAcl::config_slot())
+        .get_item(AuthSingleSigAcl::config_slot())
         .expect("config storage slot access failed");
     // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
     // allow_unauthorized_input_notes, 0] With 2 procedures,

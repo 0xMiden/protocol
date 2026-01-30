@@ -74,7 +74,6 @@ impl From<AuthSingleSig> for AccountComponent {
                 0,
             ]),
         ));
-
         
 
         AccountComponent::new(singlesig_library(), storage_slots)

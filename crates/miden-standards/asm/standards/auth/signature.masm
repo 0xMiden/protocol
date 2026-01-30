@@ -18,7 +18,8 @@ const PUB_KEY_SLOT_SUFFIX_LOC=4
 const PUB_KEY_SLOT_PREFIX_LOC=5
 const CURRENT_PK_LOC=8
 const SUCCESSFUL_VERIFICATIONS_LOC=12
-const SCHEME_ID_LOC=16
+const SCHEME_ID_SUFFIX_LOC=16
+const SCHEME_ID_PREFIX_LOC=17
 
 # ERRORS
 # =================================================================================================
@@ -127,8 +128,12 @@ end
 #!
 #! Inputs:  [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(16)
+@locals(20)
 pub proc verify_signatures
+    loc_store.SCHEME_ID_PREFIX_LOC
+    loc_store.SCHEME_ID_SUFFIX_LOC
+    # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, MSG]
+
     loc_store.PUB_KEY_SLOT_PREFIX_LOC
     loc_store.PUB_KEY_SLOT_SUFFIX_LOC
     # => [num_of_approvers, MSG]
@@ -199,10 +204,23 @@ pub proc verify_signatures
             emit.AUTH_REQUEST_EVENT
 
             swapw
-            # OS => [PUB_KEY, MSG, MSG, i-1]
+            # => [PUB_KEY, MSG, MSG, i-1]
+
+            dupw
+            # => [PUB_KEY, PUB_KEY, MSG, MSG, i-1]
+
+            loc_load.SCHEME_ID_SUFFIX_LOC loc_load.SCHEME_ID_PREFIX_LOC
+            # => [scheme_id_prefix_loc, scheme_id_suffix_loc, PUB_KEY, PUB_KEY, MSG, MSG, i-1]
+            
+            # Get scheme_id for the corresponding public key from initial storage state
+            exec.active_account::get_initial_map_item
+            # => [0, 0, 0, SCHEME_ID, PUB_KEY, MSG, MSG, i-1]
+
+            drop drop drop
+            # OS => [SCHEME_ID, PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 
-            exec.ecdsa_k256_keccak::verify
+            exec.verify_signature_by_scheme
             # => [MSG, i-1]
 
             loc_load.SUCCESSFUL_VERIFICATIONS_LOC

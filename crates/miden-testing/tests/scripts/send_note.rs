@@ -31,7 +31,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
     let sender_basic_wallet_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(100)])?;
+        builder.add_existing_wallet_with_assets(Auth::BasicAuth{scheme_id: 0}, [FungibleAsset::mock(100)])?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
@@ -88,7 +88,7 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_basic_fungible_faucet_account =
-        builder.add_existing_basic_faucet(Auth::BasicAuth, "POL", 200, None)?;
+        builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "POL", 200, None)?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface =

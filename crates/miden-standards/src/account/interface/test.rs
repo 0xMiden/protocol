@@ -22,11 +22,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthScheme;
 use crate::account::auth::{
-    AuthEcdsaK256Keccak,
-    AuthFalcon512Rpo,
-    AuthFalcon512RpoMultisig,
-    AuthFalcon512RpoMultisigConfig,
-    NoAuth,
+    AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth
 };
 use crate::account::faucets::BasicFungibleFaucet;
 use crate::account::interface::{
@@ -47,7 +43,7 @@ use crate::testing::account_interface::get_public_keys_from_account;
 fn test_basic_wallet_default_notes() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(20)])
         .build_existing()
@@ -58,7 +54,7 @@ fn test_basic_wallet_default_notes() {
     let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
             BasicFungibleFaucet::new(
                 TokenSymbol::new("POL").expect("invalid token symbol"),
@@ -158,7 +154,7 @@ fn test_custom_account_default_note() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(account_component.clone())
         .build_existing()
         .unwrap();
@@ -243,7 +239,7 @@ fn test_required_asset_same_as_offered() {
 fn test_basic_wallet_custom_notes() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(20)])
         .build_existing()
@@ -320,7 +316,7 @@ fn test_basic_fungible_faucet_custom_notes() {
     let mock_seed = Word::from([Felt::new(4), Felt::new(5), Felt::new(6), Felt::new(7)]).as_bytes();
     let faucet_account = AccountBuilder::new(mock_seed)
         .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
             BasicFungibleFaucet::new(
                 TokenSymbol::new("POL").expect("invalid token symbol"),
@@ -423,7 +419,7 @@ fn test_custom_account_custom_notes() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(account_component.clone())
         .build_existing()
         .unwrap();
@@ -431,7 +427,7 @@ fn test_custom_account_custom_notes() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let sender_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(20)])
         .build_existing()
@@ -526,7 +522,7 @@ fn test_custom_account_multiple_components_custom_notes() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(custom_component.clone())
         .with_component(BasicWallet)
         .build_existing()
@@ -535,7 +531,7 @@ fn test_custom_account_multiple_components_custom_notes() {
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let sender_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .with_assets(vec![FungibleAsset::mock(20)])
         .build_existing()
@@ -626,17 +622,17 @@ fn test_custom_account_multiple_components_custom_notes() {
 // ================================================================================================
 
 /// Helper function to create a mock auth component for testing
-fn get_mock_auth_component() -> AuthFalcon512Rpo {
+fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthFalcon512Rpo::new(mock_public_key)
+    AuthSingleSig::new(mock_public_key, 0)
 }
 
 /// Helper function to create a mock Ecdsa auth component for testing
-fn get_mock_ecdsa_auth_component() -> AuthEcdsaK256Keccak {
+fn get_mock_ecdsa_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthEcdsaK256Keccak::new(mock_public_key)
+    AuthSingleSig::new(mock_public_key, 1)
 }
 
 // GET AUTH SCHEME TESTS
@@ -657,7 +653,7 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
     let ecdsa_k256_keccak_component = wallet_account_interface
         .components()
         .iter()
-        .find(|component| matches!(component, AccountComponentInterface::AuthEcdsaK256Keccak))
+        .find(|component| matches!(component, AccountComponentInterface::AuthSingleSig))
         .expect("should have EcdsaK256Keccak component");
 
     // Test get_auth_schemes method
@@ -665,8 +661,9 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
     assert_eq!(auth_schemes.len(), 1);
     let auth_scheme = &auth_schemes[0];
     match auth_scheme {
-        AuthScheme::EcdsaK256Keccak { pub_key } => {
+        AuthScheme::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(*scheme_id, 1);
         },
         _ => panic!("Expected EcdsaK256Keccak auth scheme"),
     }
@@ -676,7 +673,7 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
 fn test_get_auth_scheme_falcon512_rpo() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -687,7 +684,7 @@ fn test_get_auth_scheme_falcon512_rpo() {
     let rpo_falcon_component = wallet_account_interface
         .components()
         .iter()
-        .find(|component| matches!(component, AccountComponentInterface::AuthFalcon512Rpo))
+        .find(|component| matches!(component, AccountComponentInterface::AuthSingleSig))
         .expect("should have Falcon512Rpo component");
 
     // Test get_auth_schemes method
@@ -695,8 +692,9 @@ fn test_get_auth_scheme_falcon512_rpo() {
     assert_eq!(auth_schemes.len(), 1);
     let auth_scheme = &auth_schemes[0];
     match auth_scheme {
-        AuthScheme::Falcon512Rpo { pub_key } => {
+        AuthScheme::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(*scheme_id, 0);
         },
         _ => panic!("Expected Falcon512Rpo auth scheme"),
     }
@@ -736,7 +734,7 @@ fn test_get_auth_scheme_non_auth_component() {
     let basic_wallet_component = AccountComponentInterface::BasicWallet;
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -750,7 +748,7 @@ fn test_get_auth_scheme_non_auth_component() {
 fn test_account_interface_from_account_uses_get_auth_scheme() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -761,11 +759,12 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(wallet_account_interface.auth().len(), 1);
 
     match &wallet_account_interface.auth()[0] {
-        AuthScheme::Falcon512Rpo { pub_key } => {
+        AuthScheme::SingleSig { pub_key, scheme_id } => {
             let expected_pub_key = PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32]));
             assert_eq!(*pub_key, expected_pub_key);
+            assert_eq!(*scheme_id, 0);
         },
-        _ => panic!("Expected Falcon512Rpo auth scheme"),
+        _ => panic!("Expected SingleSig auth scheme"),
     }
 
     // Test with NoAuth
@@ -791,7 +790,7 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
 fn test_account_interface_get_auth_scheme() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -801,10 +800,11 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(wallet_account_interface.auth().len(), 1);
     match &wallet_account_interface.auth()[0] {
-        AuthScheme::Falcon512Rpo { pub_key } => {
+        AuthScheme::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
+            assert_eq!(*scheme_id, 0);
         },
-        _ => panic!("Expected Falcon512Rpo auth scheme"),
+        _ => panic!("Expected SingleSig auth scheme"),
     }
 
     // Test AccountInterface.get_auth_scheme() method with NoAuth
@@ -831,7 +831,7 @@ fn test_account_interface_get_auth_scheme() {
 fn test_public_key_extraction_regular_account() {
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let wallet_account = AccountBuilder::new(mock_seed)
-        .with_auth_component(get_mock_auth_component())
+        .with_auth_component(get_mock_falcon_auth_component())
         .with_component(BasicWallet)
         .build_existing()
         .expect("failed to create wallet account");
@@ -850,11 +850,12 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_2 = PublicKeyCommitment::from(Word::from([2u32, 0, 0, 0]));
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
     let approvers = vec![pub_key_1, pub_key_2, pub_key_3];
+    let scheme_ids = vec![0u8, 0u8, 0u8];
     let threshold = 2u32;
 
     // Create multisig component
-    let multisig_component = AuthFalcon512RpoMultisig::new(
-        AuthFalcon512RpoMultisigConfig::new(approvers.clone(), threshold).unwrap(),
+    let multisig_component = AuthMultisig::new(
+        AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), threshold).unwrap(),
     )
     .expect("multisig component creation failed");
 

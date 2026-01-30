@@ -258,9 +258,9 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test public keys
-        let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
-        let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
-        let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key_commitment();
+        let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
+        let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
+        let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
         let approvers = vec![pub_key_1, pub_key_2, pub_key_3];
 
         let scheme_id_0 = 0u8; // Falcon512Rpo
@@ -309,7 +309,7 @@ mod tests {
     /// Test multisig component with minimum threshold (1 of 1)
     #[test]
     fn test_multisig_component_minimum_threshold() {
-        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
+        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let approvers = vec![pub_key];
         let scheme_ids = vec![1u8]; 
         let threshold = 1u32;
@@ -346,7 +346,7 @@ mod tests {
     /// Test multisig component error cases
     #[test]
     fn test_multisig_component_error_cases() {
-        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
+        let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let approvers = vec![pub_key];
         let scheme_ids = vec![1u8];
 
@@ -367,8 +367,8 @@ mod tests {
     /// Test multisig component with duplicate approvers (should fail)
     #[test]
     fn test_multisig_component_duplicate_approvers() {
-        let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
-        let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key_commitment();
+        let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
+        let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
 
         // Test with duplicate approvers (should fail)
         let approvers = vec![pub_key_1, pub_key_2, pub_key_1];

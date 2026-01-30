@@ -9,16 +9,17 @@ use rand_chacha::rand_core::SeedableRng;
 #[test]
 fn wallet_creation() {
     use miden_protocol::account::{AccountCode, AccountStorageMode, AccountType};
-    use miden_standards::account::auth::AuthFalcon512Rpo;
     use miden_standards::account::wallets::BasicWallet;
+    use miden_standards::account::auth::AuthSingleSig;
 
     // we need a Falcon Public Key to create the wallet account
     let seed = [0_u8; 32];
     let mut rng = ChaCha20Rng::from_seed(seed);
 
     let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
+    let scheme_id = 0u8;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_scheme: AuthScheme = AuthScheme::Falcon512Rpo { pub_key };
+    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id };
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
@@ -32,7 +33,7 @@ fn wallet_creation() {
     let wallet = create_basic_wallet(init_seed, auth_scheme, account_type, storage_mode).unwrap();
 
     let expected_code = AccountCode::from_components(
-        &[AuthFalcon512Rpo::new(pub_key).into(), BasicWallet.into()],
+        &[AuthSingleSig::new(pub_key, scheme_id).into(), BasicWallet.into()],
         AccountType::RegularAccountUpdatableCode,
     )
     .unwrap();
@@ -41,7 +42,7 @@ fn wallet_creation() {
     assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
-        wallet.storage().get_item(AuthFalcon512Rpo::public_key_slot()).unwrap(),
+        wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
         Word::from(pub_key)
     );
 }
@@ -50,15 +51,16 @@ fn wallet_creation() {
 #[test]
 fn wallet_creation_2() {
     use miden_protocol::account::{AccountCode, AccountStorageMode, AccountType};
-    use miden_standards::account::auth::AuthEcdsaK256Keccak;
+    use miden_standards::account::auth::AuthSingleSig;
     use miden_standards::account::wallets::BasicWallet;
 
     // we need a ECDSA Public Key to create the wallet account
     let seed = [0_u8; 32];
     let mut rng = ChaCha20Rng::from_seed(seed);
     let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
+    let scheme_id = 1u8;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_scheme: AuthScheme = AuthScheme::EcdsaK256Keccak { pub_key };
+    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id: scheme_id};
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
@@ -72,7 +74,7 @@ fn wallet_creation_2() {
     let wallet = create_basic_wallet(init_seed, auth_scheme, account_type, storage_mode).unwrap();
 
     let expected_code = AccountCode::from_components(
-        &[AuthEcdsaK256Keccak::new(pub_key).into(), BasicWallet.into()],
+        &[AuthSingleSig::new(pub_key, scheme_id).into(), BasicWallet.into()],
         AccountType::RegularAccountUpdatableCode,
     )
     .unwrap();
@@ -81,7 +83,7 @@ fn wallet_creation_2() {
     assert!(wallet.is_regular_account());
     assert_eq!(wallet.code().commitment(), expected_code_commitment);
     assert_eq!(
-        wallet.storage().get_item(AuthEcdsaK256Keccak::public_key_slot()).unwrap(),
+        wallet.storage().get_item(AuthSingleSig::public_key_slot()).unwrap(),
         Word::from(pub_key)
     );
 }

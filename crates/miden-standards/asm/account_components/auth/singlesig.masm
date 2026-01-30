@@ -41,7 +41,7 @@ pub proc auth_tx_ecdsa_k256_keccak(auth_args: BeWord)
     push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
     # => [PUB_KEY, pad(16)]
 
-    push.SCHEME_ID_SLOT exec.active_account::get_item
+    push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
     # => [0, 0, 0, SCHEME_ID, PUB_KEY, pad(16)]
 
     drop drop drop movdn.4

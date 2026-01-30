@@ -123,6 +123,32 @@ impl AuthSecretKey {
         Self::EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey::with_rng(rng))
     }
 
+    /// Generates a new secret key for the specified authentication scheme using the provided
+    /// random number generator.
+    /// Returns an error if the specified authentication scheme is not supported.
+    pub fn new_for_scheme_id_with_rng<R: Rng + CryptoRng>(
+        scheme: u8,
+        rng: &mut R,
+    ) -> Result<Self, AuthSchemeError> {
+        match scheme {
+            FALCON_512_RPO => Ok(Self::new_falcon512_rpo_with_rng(rng)),
+            ECDSA_K256_KECCAK => Ok(Self::new_ecdsa_k256_keccak_with_rng(rng)),
+            _ => Err(AuthSchemeError::InvalidAuthSchemeIdentifier(scheme)),
+        }
+    }
+
+    /// Generates a new secret key for the specified authentication scheme from the
+    /// OS-provided randomness.
+    /// Returns an error if the specified authentication scheme is not supported.
+    #[cfg(feature = "std")]
+    pub fn new_for_scheme_id(scheme: u8) -> Result<Self, AuthSchemeError> {
+        match scheme {
+            FALCON_512_RPO => Ok(Self::new_falcon512_rpo()),
+            ECDSA_K256_KECCAK => Ok(Self::new_ecdsa_k256_keccak()),
+            _ => Err(AuthSchemeError::InvalidAuthSchemeIdentifier(scheme)),
+        }
+    }
+
     /// Returns the authentication scheme of this secret key.
     pub fn auth_scheme(&self) -> AuthScheme {
         match self {

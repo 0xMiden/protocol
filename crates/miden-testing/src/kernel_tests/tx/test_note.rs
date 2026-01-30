@@ -47,7 +47,7 @@ use crate::{
 async fn test_note_setup() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -89,7 +89,7 @@ async fn test_note_setup() -> anyhow::Result<()> {
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     let mut tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -508,7 +508,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     let public_key = PublicKeyCommitment::from(sec_key.public_key());
     let public_key_value = Word::from(public_key);
 
-    let (rpo_component, authenticator) = Auth::BasicAuth.build_component();
+    let (rpo_component, authenticator) = Auth::BasicAuth{scheme_id: 0}.build_component();
 
     let mock_seed_1 = Word::from([1, 2, 3, 4u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed_1)

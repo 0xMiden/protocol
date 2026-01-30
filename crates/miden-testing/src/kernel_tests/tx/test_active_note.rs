@@ -37,7 +37,7 @@ use crate::{
 async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
     let p2id_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -169,7 +169,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -306,7 +306,7 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -466,7 +466,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -505,7 +505,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
