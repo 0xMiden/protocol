@@ -568,13 +568,13 @@ async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
             swapw dropw
         end
         ",
-            ASSETA = Word::from(asset_a),
-            ASSETB = Word::from(asset_b),
+            ASSETA = asset_a.to_value_word(),
+            ASSETB = asset_b.to_value_word(),
         );
 
         let exec_output = CodeExecutor::with_default_host().run(&code).await?;
 
-        assert_eq!(exec_output.get_stack_word_be(0), Word::from(merged_asset));
+        assert_eq!(exec_output.get_stack_word_be(0), merged_asset.to_value_word());
     }
 
     Ok(())
@@ -609,8 +609,8 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
             swapw dropw
         end
         ",
-            ASSETA = Word::from(asset_a),
-            ASSETB = Word::from(asset_b),
+            ASSETA = asset_a.to_value_word(),
+            ASSETB = asset_b.to_value_word(),
         );
 
         let exec_output = CodeExecutor::with_default_host().run(&code).await;
