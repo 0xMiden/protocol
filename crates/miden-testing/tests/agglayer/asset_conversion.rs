@@ -181,8 +181,8 @@ async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
         (U256::zero(), 18u32),
     ];
 
-    for (x, s) in cases {
-        assert_scale_down_ok(x, s).await?;
+    for (x, scale) in cases {
+        assert_scale_down_ok(x, scale).await?;
     }
     Ok(())
 }
