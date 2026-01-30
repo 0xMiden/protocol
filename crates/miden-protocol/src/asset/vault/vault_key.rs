@@ -111,9 +111,9 @@ impl TryFrom<Word> for AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - TODO(programmable_assets)
+    /// - TODO(expand_assets)
     fn try_from(key: Word) -> Result<Self, Self::Error> {
-        // TODO(programmable_assets): Implement validation once the new structure of the asset vault
+        // TODO(expand_assets): Implement validation once the new structure of the asset vault
         // key is defined.
 
         Ok(Self::new_unchecked(key))
