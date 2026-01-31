@@ -11,6 +11,7 @@
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
+- Added `p2id::new` MASM constructor procedure for creating P2ID notes from MASM code ([#2381](https://github.com/0xMiden/miden-base/pull/2381)).
 
 ### Changes
 

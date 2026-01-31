@@ -1,7 +1,7 @@
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
-use miden_protocol::note::{NoteAttachment, NoteType};
+use miden_protocol::note::{NoteAttachment, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -272,5 +272,98 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     assert_eq!(account.vault().get_balance(input_note_faucet_id)?, 111);
     assert_eq!(account.vault().get_balance(FungibleAsset::mock_issuer())?, 5);
+    Ok(())
+}
+
+/// Tests the P2ID `new` MASM constructor procedure.
+/// This test verifies that calling `p2id::new` from a transaction script creates an output note
+/// with the same recipient as `P2idNote::build_recipient` would create.
+#[tokio::test]
+async fn test_p2id_new_constructor() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let sender_account =
+        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(100)])?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    let mock_chain = builder.build()?;
+
+    // Create a serial number for the note
+    let serial_num = Word::from([1u32, 2u32, 3u32, 4u32]);
+
+    // Build the expected recipient using the Rust implementation
+    let expected_recipient = P2idNote::build_recipient(target_account.id(), serial_num)?;
+
+    // Create a note tag for the target account
+    let tag = NoteTag::with_account_target(target_account.id());
+
+    // Build a transaction script that uses p2id::new to create a note
+    let tx_script_src = format!(
+        r#"
+        use miden::standards::notes::p2id
+
+        begin
+            # Push inputs for p2id::new
+            # Inputs: [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+            push.{serial_num}
+            push.{note_type}
+            push.{tag}
+            push.{target_suffix}
+            push.{target_prefix}
+            # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+
+            exec.p2id::new
+            # => [note_idx]
+
+            # Add an asset to the created note
+            push.{asset}
+            call.::miden::standards::wallets::basic::move_asset_to_note
+
+            # Clean up stack
+            dropw dropw dropw dropw
+        end
+        "#,
+        target_prefix = target_account.id().prefix().as_felt(),
+        target_suffix = target_account.id().suffix(),
+        tag = Felt::from(tag),
+        note_type = NoteType::Public as u8,
+        serial_num = serial_num,
+        asset = Word::from(FungibleAsset::mock(50)),
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
+
+    // Build expected output note
+    let expected_output_note = P2idNote::create(
+        sender_account.id(),
+        target_account.id(),
+        vec![FungibleAsset::mock(50)],
+        NoteType::Public,
+        NoteAttachment::default(),
+        &mut RpoRandomCoin::new(serial_num),
+    )?;
+
+    let tx_context = mock_chain
+        .build_tx_context(sender_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .tx_script(tx_script)
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify that one note was created
+    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+
+    // Get the created note's recipient and verify it matches
+    let output_note = executed_transaction.output_notes().get_note(0);
+    let created_recipient = output_note.recipient().expect("output note should have recipient");
+
+    // Verify the recipient matches what we expected
+    assert_eq!(
+        created_recipient.digest(),
+        expected_recipient.digest(),
+        "The recipient created by p2id::new should match P2idNote::build_recipient"
+    );
+
     Ok(())
 }
