@@ -97,8 +97,59 @@ impl P2idNote {
         serial_num: Word,
     ) -> Result<NoteRecipient, NoteError> {
         let note_script = Self::script();
-        let note_storage = NoteStorage::new(vec![target.suffix(), target.prefix().as_felt()])?;
+        let storage = P2idNoteStorage::new(target);
 
-        Ok(NoteRecipient::new(serial_num, note_script, note_storage))
+        Ok(NoteRecipient::new(serial_num, note_script, storage.into()))
+    }
+}
+
+/// Storage layout for P2ID (Pay-to-ID) notes.
+///
+/// Layout (2 items):
+/// [0] target account ID suffix
+/// [1] target account ID prefix
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P2idNoteStorage {
+    target: AccountId,
+}
+
+impl P2idNoteStorage {
+    pub const NUM_STORAGE_ITEMS: usize = 2;
+
+    pub fn new(target: AccountId) -> Self {
+        Self { target }
+    }
+
+    pub fn target(&self) -> AccountId {
+        self.target
+    }
+}
+
+impl From<P2idNoteStorage> for NoteStorage {
+    fn from(storage: P2idNoteStorage) -> Self {
+        NoteStorage::new(vec![storage.target.suffix(), storage.target.prefix().as_felt()])
+            .expect("P2ID note storage is always valid")
+    }
+}
+
+impl TryFrom<NoteStorage> for P2idNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(storage: NoteStorage) -> Result<Self, Self::Error> {
+        let items = storage.items();
+
+        if items.len() != Self::NUM_STORAGE_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: Self::NUM_STORAGE_ITEMS,
+                actual: items.len(),
+            });
+        }
+
+        let suffix = items[0];
+        let prefix = items[1];
+
+        let target = AccountId::new(prefix, suffix).map_err(|_| NoteError::InvalidNoteStorage)?;
+
+        Ok(Self { target })
     }
 }

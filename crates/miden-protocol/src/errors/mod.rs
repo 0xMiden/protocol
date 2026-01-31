@@ -591,6 +591,11 @@ pub enum NoteError {
     TooManyAssets(usize),
     #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
     TooManyStorageItems(usize),
+    #[error("invalid note storage length: expected {expected} items, got {actual}")]
+    InvalidNoteStorageLength { expected: usize, actual: usize },
+
+    #[error("invalid note storage layout")]
+    InvalidNoteStorage,
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(

@@ -105,16 +105,102 @@ impl P2ideNote {
     ) -> Result<NoteRecipient, NoteError> {
         let note_script = Self::script();
 
-        let reclaim_height_u32 = reclaim_block_height.map_or(0, |bn| bn.as_u32());
-        let timelock_height_u32 = timelock_block_height.map_or(0, |bn| bn.as_u32());
+        let storage = P2ideNoteStorage::new(target, reclaim_block_height, timelock_block_height);
 
-        let note_storage = NoteStorage::new(vec![
-            target.suffix(),
-            target.prefix().into(),
-            Felt::new(reclaim_height_u32 as u64),
-            Felt::new(timelock_height_u32 as u64),
-        ])?;
+        Ok(NoteRecipient::new(serial_num, note_script, storage.into()))
+    }
+}
 
-        Ok(NoteRecipient::new(serial_num, note_script, note_storage))
+/// Storage layout for P2IDE (Pay-to-ID Extended) notes.
+///
+/// Layout (4 items):
+/// [0] target account ID suffix
+/// [1] target account ID prefix
+/// [2] reclaim block height (0 = disabled)
+/// [3] timelock block height (0 = disabled)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P2ideNoteStorage {
+    target: AccountId,
+    reclaim_block_height: Option<BlockNumber>,
+    timelock_block_height: Option<BlockNumber>,
+}
+
+impl P2ideNoteStorage {
+    pub const NUM_STORAGE_ITEMS: usize = 4;
+
+    pub fn new(
+        target: AccountId,
+        reclaim_block_height: Option<BlockNumber>,
+        timelock_block_height: Option<BlockNumber>,
+    ) -> Self {
+        Self {
+            target,
+            reclaim_block_height,
+            timelock_block_height,
+        }
+    }
+
+    pub fn target(&self) -> AccountId {
+        self.target
+    }
+
+    pub fn reclaim_block_height(&self) -> Option<BlockNumber> {
+        self.reclaim_block_height
+    }
+
+    pub fn timelock_block_height(&self) -> Option<BlockNumber> {
+        self.timelock_block_height
+    }
+}
+
+impl From<P2ideNoteStorage> for NoteStorage {
+    fn from(storage: P2ideNoteStorage) -> Self {
+        let reclaim_height = storage.reclaim_block_height.map_or(0, |bn| bn.as_u32());
+
+        let timelock_height = storage.timelock_block_height.map_or(0, |bn| bn.as_u32());
+
+        NoteStorage::new(vec![
+            storage.target.suffix(),
+            storage.target.prefix().as_felt(),
+            Felt::new(reclaim_height as u64),
+            Felt::new(timelock_height as u64),
+        ])
+        .expect("P2IDE note storage is always valid")
+    }
+}
+
+impl TryFrom<NoteStorage> for P2ideNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(storage: NoteStorage) -> Result<Self, Self::Error> {
+        let items = storage.items();
+
+        if items.len() != Self::NUM_STORAGE_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: Self::NUM_STORAGE_ITEMS,
+                actual: items.len(),
+            });
+        }
+
+        let target =
+            AccountId::new(items[1], items[0]).map_err(|_| NoteError::InvalidNoteStorage)?;
+
+        let reclaim_height = if items[2].as_u64() == 0 {
+            None
+        } else {
+            Some(BlockNumber::new(items[2].as_u64() as u32))
+        };
+
+        let timelock_height = if items[3].as_u64() == 0 {
+            None
+        } else {
+            Some(BlockNumber::new(items[3].as_u64() as u32))
+        };
+
+        Ok(Self {
+            target,
+            reclaim_block_height: reclaim_height,
+            timelock_block_height: timelock_height,
+        })
     }
 }
