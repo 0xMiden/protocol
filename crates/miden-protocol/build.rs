@@ -421,12 +421,7 @@ fn validate_tx_kernel_category(errors: &[shared::NamedError]) -> Result<()> {
 /// then generates the transaction_events.rs file with constants.
 fn generate_event_constants(asm_source_dir: &Path, target_dir: &Path) -> Result<()> {
     // Extract all event definitions from MASM files
-    let mut events = extract_all_event_definitions(asm_source_dir)?;
-
-    // Add two additional events we want in `TransactionEventId` that do not appear in kernel or
-    // protocol lib modules.
-    events.insert("miden::protocol::auth::request".to_owned(), "AUTH_REQUEST".to_owned());
-    events.insert("miden::protocol::auth::unauthorized".to_owned(), "AUTH_UNAUTHORIZED".to_owned());
+    let events = extract_all_event_definitions(asm_source_dir)?;
 
     // Generate the events file in OUT_DIR
     let event_file_content = generate_event_file_content(&events).into_diagnostic()?;
