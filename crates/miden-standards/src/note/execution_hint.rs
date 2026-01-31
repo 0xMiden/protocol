@@ -1,9 +1,9 @@
 // NOTE EXECUTION HINT
 // ================================================================================================
 
-use crate::Felt;
-use crate::block::BlockNumber;
-use crate::errors::NoteError;
+use miden_protocol::Felt;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::NoteError;
 
 /// Specifies the conditions under which a note is ready to be consumed.
 /// These conditions are meant to be encoded in the note script as well.
@@ -53,10 +53,10 @@ impl NoteExecutionHint {
     // CONSTANTS
     // ------------------------------------------------------------------------------------------------
 
-    pub(crate) const NONE_TAG: u8 = 0;
-    pub(crate) const ALWAYS_TAG: u8 = 1;
-    pub(crate) const AFTER_BLOCK_TAG: u8 = 2;
-    pub(crate) const ON_BLOCK_SLOT_TAG: u8 = 3;
+    pub const NONE_TAG: u8 = 0;
+    pub const ALWAYS_TAG: u8 = 1;
+    pub const AFTER_BLOCK_TAG: u8 = 2;
+    pub const ON_BLOCK_SLOT_TAG: u8 = 3;
 
     // CONSTRUCTORS
     // ------------------------------------------------------------------------------------------------
