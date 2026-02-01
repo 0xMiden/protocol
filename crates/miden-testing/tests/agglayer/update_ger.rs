@@ -1,4 +1,4 @@
-use miden_agglayer::{ExitRoot, create_existing_bridge_account, create_update_ger_note};
+use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_bridge_account};
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
@@ -30,7 +30,7 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
     ];
     let ger = ExitRoot::from(ger_bytes);
     let update_ger_note =
-        create_update_ger_note(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;

@@ -1,12 +1,7 @@
 extern crate alloc;
 
 use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
-use miden_agglayer::{
-    B2AggNoteStorage,
-    EthAddressFormat,
-    create_b2agg_note,
-    create_existing_bridge_account,
-};
+use miden_agglayer::{B2AggNote, EthAddressFormat, create_existing_bridge_account};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
@@ -57,12 +52,17 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
 
-    let storage = B2AggNoteStorage::new(destination_network, eth_address);
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note using the helper
-    let b2agg_note =
-        create_b2agg_note(storage, assets, bridge_account.id(), faucet.id(), builder.rng_mut())?;
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
+        assets,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
 
     // Add the B2AGG note to the mock chain
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
@@ -204,13 +204,13 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
 
-    let storage = B2AggNoteStorage::new(destination_network, eth_address);
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender
     // This is the key difference - the note sender will be the same as the consuming account
-    let b2agg_note = create_b2agg_note(
-        storage,
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
         assets,
         bridge_account.id(),
         user_account.id(),
@@ -312,12 +312,12 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
 
-    let storage = B2AggNoteStorage::new(destination_network, eth_address);
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note
-    let b2agg_note = create_b2agg_note(
-        storage,
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
         assets,
         bridge_account.id(),
         sender_account.id(),

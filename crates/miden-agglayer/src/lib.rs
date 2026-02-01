@@ -31,7 +31,7 @@ pub mod eth_types;
 pub mod update_ger_note;
 pub mod utils;
 
-pub use bridge_out::{B2AggNoteStorage, create_b2agg_note};
+pub use bridge_out::B2AggNote;
 pub use claim_note::{
     ClaimNoteStorage,
     ExitRoot,
@@ -42,21 +42,10 @@ pub use claim_note::{
     create_claim_note,
 };
 pub use eth_types::{EthAddressFormat, EthAmount, EthAmountError};
-pub use update_ger_note::create_update_ger_note;
+pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS
 // ================================================================================================
-
-// Initialize the B2AGG note script only once
-static B2AGG_SCRIPT: LazyLock<Program> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    Program::read_from_bytes(bytes).expect("Shipped B2AGG script is well-formed")
-});
-
-/// Returns the B2AGG (Bridge to AggLayer) note script.
-pub fn b2agg_script() -> Program {
-    B2AGG_SCRIPT.clone()
-}
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
@@ -68,19 +57,6 @@ static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Returns the CLAIM (Bridge from AggLayer) note script.
 pub fn claim_script() -> NoteScript {
     CLAIM_SCRIPT.clone()
-}
-
-// Initialize the UPDATE_GER note script only once
-static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/UPDATE_GER.masb"));
-    let program =
-        Program::read_from_bytes(bytes).expect("Shipped UPDATE_GER script is well-formed");
-    NoteScript::new(program)
-});
-
-/// Returns the UPDATE_GER note script.
-pub fn update_ger_script() -> NoteScript {
-    UPDATE_GER_SCRIPT.clone()
 }
 
 // AGGLAYER ACCOUNT COMPONENTS
