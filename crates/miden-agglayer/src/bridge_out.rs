@@ -99,7 +99,7 @@ pub fn create_b2agg_note<R: FeltRng>(
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage)?;
 
-    let tag = NoteTag::with_account_target(target_account_id);
+    let tag = NoteTag::new(0);
 
     let attachment = NoteAttachment::from(
         NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)

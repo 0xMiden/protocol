@@ -46,7 +46,7 @@ pub fn create_update_ger_note<R: FeltRng>(
         NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
             .map_err(|e| NoteError::other(e.to_string()))?,
     );
-    let note_tag = NoteTag::with_account_target(target_account_id);
+    let note_tag = NoteTag::new(0);
     let metadata = NoteMetadata::new(sender_account_id, NoteType::Public, note_tag)
         .with_attachment(attachment);
 
