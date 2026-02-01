@@ -37,7 +37,7 @@ use miden_standards::errors::standards::{
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{MintNoteStorage, StandardNote, create_burn_note, create_mint_note};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -512,7 +512,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
         mint_storage,
@@ -598,7 +598,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         owner_account_id,
         mint_inputs,
@@ -654,7 +654,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
 
     // Create mint note from NON-OWNER
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         non_owner_account_id,
         mint_inputs,
@@ -740,7 +740,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
@@ -808,7 +808,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Validation 1: Try to mint using the old owner - should fail
     let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
-    let mint_note_old_owner = create_mint_note(
+    let mint_note_old_owner = MintNote::create(
         updated_faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
@@ -829,7 +829,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Validation 2: Try to mint using the new owner - should succeed
     let mut rng = RpoRandomCoin::new([Felt::from(400u32); 4].into());
-    let mint_note_new_owner = create_mint_note(
+    let mint_note_new_owner = MintNote::create(
         updated_faucet.id(),
         new_owner_account_id,
         mint_inputs,
@@ -1081,7 +1081,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
     let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
-    let note = create_burn_note(
+    let note = BurnNote::create(
         faucet_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
@@ -1173,7 +1173,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     };
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
         mint_storage.clone(),

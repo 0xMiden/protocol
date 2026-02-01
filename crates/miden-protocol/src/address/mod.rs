@@ -78,9 +78,6 @@ impl Address {
     }
 
     /// Sets the routing parameters of the address.
-    /// Validation of tag length, interface, and encryption key is handled
-    /// internally by [`RoutingParameters`]. This method simply attaches the
-    /// provided parameters to the address.
     pub fn with_routing_parameters(mut self, routing_params: RoutingParameters) -> Self {
         self.routing_params = Some(routing_params);
         self
@@ -101,7 +98,7 @@ impl Address {
 
     /// Returns the preferred tag length.
     ///
-    /// This is guaranteed to be in range `0..=32` (e.g. the maximum of
+    /// This is guaranteed to be in range `0..=32` (i.e. at most
     /// [`NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH `]).
     pub fn note_tag_len(&self) -> u8 {
         self.routing_params
@@ -498,10 +495,11 @@ mod tests {
             .build_with_rng(&mut rand::rng());
 
         let address = Address::new(account_id).with_routing_parameters(
-            RoutingParameters::new(AddressInterface::BasicWallet).with_note_tag_len(32)?,
+            RoutingParameters::new(AddressInterface::BasicWallet)
+                .with_note_tag_len(NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)?,
         );
 
-        assert_eq!(address.note_tag_len(), 32);
+        assert_eq!(address.note_tag_len(), NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH);
 
         Ok(())
     }

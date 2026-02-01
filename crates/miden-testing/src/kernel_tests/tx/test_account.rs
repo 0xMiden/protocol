@@ -64,6 +64,7 @@ use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
     Auth,
+    ExecError,
     MockChain,
     TransactionContextBuilder,
     TxContextInput,
@@ -265,7 +266,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             .run(code)
             .await;
 
-        match (result, expected_error) {
+        match (result.map_err(ExecError::into_execution_error), expected_error) {
             (Ok(_), None) => (),
             (Ok(_), Some(err)) => {
                 anyhow::bail!("expected error {err} but validation was successful")
@@ -324,9 +325,7 @@ async fn test_is_faucet_procedure() -> anyhow::Result<()> {
             prefix = account_id.prefix().as_felt(),
         );
 
-        let exec_output = CodeExecutor::with_default_host().run(&code).await.map_err(|err| {
-            anyhow::anyhow!("failed to execute is_faucet procedure: {}", PrintDiagnostic::new(&err))
-        })?;
+        let exec_output = CodeExecutor::with_default_host().run(&code).await?;
 
         let is_faucet = account_id.is_faucet();
         assert_eq!(

@@ -1,6 +1,5 @@
 use miden::protocol::account_id
 use miden::core::crypto::hashes::rpo256
-use miden::core::math::u64
 use miden::core::mem
 
 # Re-export the max inputs per note constant.
@@ -237,33 +236,4 @@ pub proc extract_attachment_info_from_metadata
     # u32split splits into [high, low] where low is attachment_scheme
     u32split
     # => [attachment_kind, attachment_scheme]
-end
-
-#! Computes the tag for a network note for a given network account such that it is
-#! picked up by the network transaction builder.
-#!
-#! This procedure implements the same logic as in Rust in NoteTag::from_network_account_id().
-#! Note: This procedure does not check if the account id is a network account id.
-#!
-#! Inputs:  [account_id_prefix, account_id_suffix]
-#! Outputs: [network_account_tag]
-#!
-#! Where:
-#! - account_id_prefix, account_id_suffix is the account id to compute the note tag for.
-#! - network_account_tag is the computed network note tag.
-#!
-#! Invocation: exec
-pub proc build_note_tag_for_network_account
-    swap drop
-    # => [account_id_prefix]
-
-    u32split
-    # => [a_hi, a_lo]
-
-    # mask out the 14 (NoteTag::DEFAULT_ACCOUNT_TARGET_TAG_LENGTH) most significant bits
-    u32and.0xfffc0000
-    # => [a_hi_masked, a_lo]
-
-    swap drop
-    # => [network_account_tag]
 end

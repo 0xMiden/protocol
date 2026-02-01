@@ -21,6 +21,9 @@ pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str(
 /// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
 
+/// Error Message: "note tag length can be at most 32"
+pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError::from_static_str("note tag length can be at most 32");
+
 /// Error Message: "attachment is not a valid network account target"
 pub const ERR_NOT_NETWORK_ACCOUNT_TARGET: MasmError = MasmError::from_static_str("attachment is not a valid network account target");
 

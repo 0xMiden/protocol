@@ -50,7 +50,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, Transac
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word, ZERO};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{create_p2id_note, create_p2ide_note, create_swap_note};
+use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -549,7 +549,7 @@ impl MockChainBuilder {
         asset: &[Asset],
         note_type: NoteType,
     ) -> Result<Note, NoteError> {
-        let note = create_p2id_note(
+        let note = P2idNote::create(
             sender_account_id,
             target_account_id,
             asset.to_vec(),
@@ -576,7 +576,7 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
-        let note = create_p2ide_note(
+        let note = P2ideNote::create(
             sender_account_id,
             target_account_id,
             asset.to_vec(),
@@ -600,7 +600,7 @@ impl MockChainBuilder {
         requested_asset: Asset,
         payback_note_type: NoteType,
     ) -> anyhow::Result<(Note, NoteDetails)> {
-        let (swap_note, payback_note) = create_swap_note(
+        let (swap_note, payback_note) = SwapNote::create(
             sender,
             offered_asset,
             requested_asset,

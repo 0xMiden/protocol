@@ -45,7 +45,7 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
+use miden_standards::note::{NetworkAccountTarget, P2idNote};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -711,7 +711,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note_0 = create_p2id_note(
+    let output_note_0 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0],
@@ -720,7 +720,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
-    let output_note_1 = create_p2id_note(
+    let output_note_1 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0, fungible_asset_1],
@@ -833,7 +833,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![FungibleAsset::mock(5)],

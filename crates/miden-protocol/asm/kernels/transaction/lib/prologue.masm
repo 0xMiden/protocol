@@ -26,7 +26,7 @@ const MAX_BLOCK_NUM=0xFFFFFFFF
 #=================================================================================================
 
 # Emission of an equivalent to `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT`, use in `add_input_note_assets_to_vault`
-const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::account::vault_before_add_asset")
+const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::account::vault_before_add_asset")
 
 # ERRORS
 # =================================================================================================

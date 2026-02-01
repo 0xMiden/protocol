@@ -78,15 +78,8 @@ impl NoteTag {
 
     /// Constructs a note tag that targets the given `account_id`.
     ///
-    /// The tag is a 32-bit value constructed as follows:
-    ///
-    /// - The tag is derived from the account ID *prefix*.
-    /// - The most significant `DEFAULT_ACCOUNT_TARGET_TAG_LENGTH` bits of the 32-bit prefix are
-    ///   preserved.
-    /// - All remaining least significant bits are set to `0`.
-    ///
-    /// The number of account-prefix bits included in the tag is determined by
-    /// `DEFAULT_ACCOUNT_TARGET_TAG_LENGTH`.
+    /// The tag is a u32 constructed by taking the [`NoteTag::DEFAULT_ACCOUNT_TARGET_TAG_LENGTH`]
+    /// most significant bits of the account ID prefix and setting the remaining bits to zero.
     pub fn with_account_target(account_id: AccountId) -> Self {
         Self::with_custom_account_target(account_id, Self::DEFAULT_ACCOUNT_TARGET_TAG_LENGTH)
             .expect("default account target tag length must be valid")
@@ -94,10 +87,8 @@ impl NoteTag {
 
     /// Constructs a note tag that targets the given `account_id` with a custom `tag_len`.
     ///
-    /// The tag is constructed by:
-    /// - Setting the two most significant bits to zero.
-    /// - The next `tag_len` bits are set to the most significant bits of the account ID prefix.
-    /// - The remaining bits are set to zero.
+    /// The tag is a u32 constructed by taking the `tag_len` most significant bits of the account ID
+    /// prefix and setting the remaining bits to zero.
     ///
     /// # Errors
     ///
@@ -258,9 +249,11 @@ mod tests {
     #[test]
     fn from_custom_account_target() -> anyhow::Result<()> {
         let account_id = AccountId::try_from(ACCOUNT_ID_SENDER)?;
-        let len = 32;
 
-        let tag = NoteTag::with_custom_account_target(account_id, len)?;
+        let tag = NoteTag::with_custom_account_target(
+            account_id,
+            NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH,
+        )?;
 
         assert_eq!(
             (account_id.prefix().as_u64() >> 32) as u32,
