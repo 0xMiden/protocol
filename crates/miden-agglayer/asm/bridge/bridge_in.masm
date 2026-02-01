@@ -65,7 +65,14 @@ proc assert_valid_ger
     dropw dropw
 end
 
-#! Computes the leaf value and verifies it against the AggLayer bridge.
+#! Computes the leaf value and verifies it against the AggLayer bridge state.
+#!
+#! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
+#! The steps involved in verification are:
+#! 1. Compute the GER from the mainnet and rollup exit roots.
+#! 2. Assert that the computed GER is valid (exists in storage).
+#! 3. Process the global index to determine if it's a mainnet or rollup deposit.
+#! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
 #!
 #! Inputs:
 #!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
@@ -91,6 +98,11 @@ end
 #!
 #! Outputs: [pad(16)]
 #!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#!
 #! Invocation: call
 pub proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
@@ -109,6 +121,11 @@ end
 #!
 #! Inputs: [GLOBAL_INDEX[8]]
 #! Outputs: [leaf_index]
+#!
+#! Panics if:
+#! - the leading bits of the global index are not zero.
+#! - the mainnet flag is not 1.
+#! - the rollup index is not 0.
 #!
 #! Invocation: exec
 pub proc process_global_index_mainnet
@@ -137,6 +154,11 @@ end
 #!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
 #!
 #! Outputs: []
+#!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
 #! Invocation: exec
 proc verify_leaf
