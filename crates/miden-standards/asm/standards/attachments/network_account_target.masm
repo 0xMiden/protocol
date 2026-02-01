@@ -20,26 +20,24 @@ pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND = 1
 
 # ERRORS
 # ================================================================================================
-const ERR_ATTACHMENT_SCHEME_MISMATCH = "expected network account target attachment scheme"
-const ERR_ATTACHMENT_KIND_MISMATCH = "expected attachment kind to be Word for network account target"
+const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
 
-#! Asserts that the attachment scheme and kind match the expected values for a
-#! NetworkAccountTarget attachment.
+#! Returns a boolean indicating whether the attachment scheme and kind match the expected
+#! values for a NetworkAccountTarget attachment.
 #!
 #! Inputs:  [attachment_scheme, attachment_kind]
-#! Outputs: []
-#!
-#! Panics if:
-#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
-#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
+#! Outputs: [is_network_account_target]
 #!
 #! Invocation: exec
-pub proc assert_is_network_account_target
-    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME assert.err=ERR_ATTACHMENT_SCHEME_MISMATCH
-    # => [attachment_kind]
+pub proc is_network_account_target
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [is_scheme_valid, attachment_kind]
 
-    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND assert.err=ERR_ATTACHMENT_KIND_MISMATCH
-    # => []
+    swap eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
+    # => [is_kind_valid, is_scheme_valid]
+
+    and
+    # => [is_network_account_target]
 end
 
 #! Returns the account ID encoded in the attachment.
@@ -47,23 +45,20 @@ end
 #! The attachment is expected to have the following layout:
 #! [0, exec_hint_tag, account_id_prefix, account_id_suffix]
 #!
+#! WARNING: This procedure does not validate the attachment scheme or kind. The caller
+#! should validate these using `is_network_account_target` before calling this procedure.
+#!
 #! WARNING: This procedure does not validate that the returned account ID is well-formed.
 #! The caller should validate the account ID if needed using `account_id::validate`.
 #!
-#! Inputs:  [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+#! Inputs:  [NOTE_ATTACHMENT]
 #! Outputs: [account_id_prefix, account_id_suffix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
 #!
-#! Panics if:
-#! - the attachment scheme or kind are not compatible with a network account target.
-#!
 #! Invocation: exec
 pub proc get_id
-    # verify that the attachment scheme and kind are correct
-    exec.assert_is_network_account_target
-
     # => [NOTE_ATTACHMENT] = [0, exec_hint_tag, account_id_prefix, account_id_suffix]
 
     drop drop
@@ -101,7 +96,7 @@ end
 #! - is_equal is a boolean indicating whether the active account matches the target account.
 #!
 #! Panics if:
-#! - the attachment scheme or kind are not compatible with a network account target.
+#! - the attachment is not a valid network account target.
 #!
 #! Invocation: exec
 pub proc active_account_matches_target_account
@@ -119,10 +114,12 @@ pub proc active_account_matches_target_account
     # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
 
     # ensure the attachment is a network account target
-    exec.assert_is_network_account_target
+    exec.is_network_account_target assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
+
+    # => [NOTE_ATTACHMENT] = [0, exec_hint_tag, account_id_prefix, account_id_suffix]
 
     exec.get_id
-    # => [target_id_prefix, target_id_suffix]
+    # => [account_id_prefix, account_id_suffix]
 
     exec.active_account::get_id
     # => [account_id_prefix, account_id_suffix, target_id_prefix, target_id_suffix]

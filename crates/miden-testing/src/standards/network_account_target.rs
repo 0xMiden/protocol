@@ -26,12 +26,21 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
         use miden::standards::attachments::network_account_target
         use miden::protocol::note
 
+        const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
+
         begin
             push.{attachment_word}
             push.{metadata_header}
             exec.note::extract_attachment_info_from_metadata
             # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
+            swap
+            # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+            exec.network_account_target::is_network_account_target
+            # => [is_valid, NOTE_ATTACHMENT]
+            assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
+            # => [NOTE_ATTACHMENT]
             exec.network_account_target::get_id
+            # => [account_id_prefix, account_id_suffix]
             # cleanup stack
             movup.2 drop movup.2 drop
         end
@@ -104,6 +113,8 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
         r#"
         use miden::standards::attachments::network_account_target
 
+        const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network account target"
+
         begin
             push.{exec_hint}
             push.{target_id_suffix}
@@ -111,8 +122,13 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
             # => [target_id_prefix, target_id_suffix, exec_hint]
             exec.network_account_target::new
             # => [attachment_scheme, attachment_kind, ATTACHMENT]
+            exec.network_account_target::is_network_account_target
+            # => [is_valid, ATTACHMENT]
+            assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
+            # => [ATTACHMENT]
             exec.network_account_target::get_id
             # => [target_id_prefix, target_id_suffix]
+            # cleanup stack
             movup.2 drop movup.2 drop
         end
         "#,
