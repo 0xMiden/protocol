@@ -60,7 +60,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc assert_valid_ger
+proc assert_valid_ger
     # TODO verify that GER is in storage
     dropw dropw
 end
