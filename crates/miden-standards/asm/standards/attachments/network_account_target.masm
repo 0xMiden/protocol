@@ -23,6 +23,25 @@ pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND = 1
 const ERR_ATTACHMENT_SCHEME_MISMATCH = "expected network account target attachment scheme"
 const ERR_ATTACHMENT_KIND_MISMATCH = "expected attachment kind to be Word for network account target"
 
+#! Asserts that the attachment scheme and kind match the expected values for a
+#! NetworkAccountTarget attachment.
+#!
+#! Inputs:  [attachment_scheme, attachment_kind]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
+#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
+#!
+#! Invocation: exec
+pub proc assert_is_network_account_target
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME assert.err=ERR_ATTACHMENT_SCHEME_MISMATCH
+    # => [attachment_kind]
+
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND assert.err=ERR_ATTACHMENT_KIND_MISMATCH
+    # => []
+end
+
 #! Returns the account ID encoded in the attachment.
 #!
 #! The attachment is expected to have the following layout:
@@ -38,15 +57,13 @@ const ERR_ATTACHMENT_KIND_MISMATCH = "expected attachment kind to be Word for ne
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
 #!
 #! Panics if:
-#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
-#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
+#! - the attachment scheme or kind are not compatible with a network account target.
 #!
 #! Invocation: exec
 pub proc get_id
     # verify that the attachment scheme and kind are correct
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
-    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME assert.err=ERR_ATTACHMENT_SCHEME_MISMATCH
-    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND assert.err=ERR_ATTACHMENT_KIND_MISMATCH
+    exec.assert_is_network_account_target
+
     # => [NOTE_ATTACHMENT] = [0, exec_hint_tag, account_id_prefix, account_id_suffix]
 
     drop drop
@@ -84,12 +101,11 @@ end
 #! - is_equal is a boolean indicating whether the active account matches the target account.
 #!
 #! Panics if:
-#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
-#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
+#! - the attachment scheme or kind are not compatible with a network account target.
 #!
 #! Invocation: exec
 pub proc active_account_matches_target_account
-    # Ensure note attachment targets the consuming bridge account.
+    # ensure note attachment targets the consuming bridge account
     exec.active_note::get_metadata
     # => [NOTE_ATTACHMENT, METADATA_HEADER]
 
@@ -101,6 +117,9 @@ pub proc active_account_matches_target_account
 
     swap
     # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+
+    # ensure the attachment is a network account target
+    exec.assert_is_network_account_target
 
     exec.get_id
     # => [target_id_prefix, target_id_suffix]
