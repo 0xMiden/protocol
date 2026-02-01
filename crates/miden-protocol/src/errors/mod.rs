@@ -302,7 +302,7 @@ pub enum AccountTreeError {
 #[derive(Debug, Error)]
 pub enum AddressError {
     #[error("tag length {0} should be {expected} bits for network accounts",
-        expected = NoteTag::DEFAULT_NETWORK_ACCOUNT_TARGET_TAG_LENGTH
+        expected = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH
     )]
     CustomTagLengthNotAllowedForNetworkAccounts(u8),
     #[error("tag length {0} is too large, must be less than or equal to {max}",

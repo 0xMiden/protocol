@@ -84,7 +84,9 @@ pub mod vm {
         MastArtifact,
         Package,
         PackageExport,
+        PackageKind,
         PackageManifest,
+        ProcedureExport,
         Section,
         SectionId,
     };

@@ -260,12 +260,10 @@ pub proc build_note_tag_for_network_account
     u32split
     # => [a_hi, a_lo]
 
-    push.34
-    # => [b, a_hi, a_lo]
+    # mask out the 14 (NoteTag::DEFAULT_ACCOUNT_TARGET_TAG_LENGTH) most significant bits
+    u32and.0xfffc0000
+    # => [a_hi_masked, a_lo]
 
-    exec.u64::shr
-    # => [c_hi, c_lo]
-
-    drop
+    swap drop
     # => [network_account_tag]
 end
