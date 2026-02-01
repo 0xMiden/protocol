@@ -24,14 +24,14 @@ use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;
 use miden_utils_sync::LazyLock;
 
-pub mod bridge_out;
+pub mod b2agg_note;
 pub mod claim_note;
 pub mod errors;
 pub mod eth_types;
 pub mod update_ger_note;
 pub mod utils;
 
-pub use bridge_out::B2AggNote;
+pub use b2agg_note::B2AggNote;
 pub use claim_note::{
     ClaimNoteStorage,
     ExitRoot,
