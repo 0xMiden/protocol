@@ -60,8 +60,9 @@ pub struct TransactionContext {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) is_lazy_loading_enabled: bool,
     pub(super) note_scripts: BTreeMap<Word, NoteScript>,
+    pub(super) is_lazy_loading_enabled: bool,
+    pub(super) is_debug_mode_enabled: bool,
 }
 
 impl TransactionContext {
@@ -174,7 +175,6 @@ impl TransactionContext {
             .extend_advice_inputs(advice_inputs)
             .execute_program(program)
             .await
-            .map_err(ExecError::new)
     }
 
     /// Executes the transaction through a [TransactionExecutor]
@@ -184,9 +184,13 @@ impl TransactionContext {
         let notes = self.tx_inputs().input_notes().clone();
         let tx_args = self.tx_args().clone();
 
-        let mut tx_executor = TransactionExecutor::new(&self)
-            .with_source_manager(self.source_manager.clone())
-            .with_debug_mode();
+        let mut tx_executor =
+            TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
+
+        if self.is_debug_mode_enabled {
+            tx_executor = tx_executor.with_debug_mode();
+        }
+
         if let Some(authenticator) = self.authenticator() {
             tx_executor = tx_executor.with_authenticator(authenticator);
         }

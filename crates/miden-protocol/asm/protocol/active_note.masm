@@ -9,7 +9,7 @@ use miden::protocol::note
 
 const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the commitment"
 
-const ERR_NOTE_INVALID_NUMBER_OF_INPUTS="the specified number of note inputs does not match the actual number"
+const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note storage items does not match the actual number"
 
 # ACTIVE NOTE PROCEDURES
 # =================================================================================================
@@ -60,7 +60,7 @@ end
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
-#! - RECIPIENT is the commitment to the active note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the active note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - no note is currently active.
@@ -86,24 +86,24 @@ pub proc get_recipient
     # => [RECIPIENT]
 end
 
-#! Writes the active note's inputs to memory starting at the specified address.
+#! Writes the active note's storage to memory starting at the specified address.
 #!
 #! Inputs:
 #!   Stack: [dest_ptr]
-#!   Advice Map: { NOTE_INPUTS_COMMITMENT: [INPUTS] }
+#!   Advice Map: { NOTE_STORAGE_COMMITMENT: [STORAGE] }
 #! Outputs:
-#!   Stack: [num_inputs, dest_ptr]
+#!   Stack: [num_storage_items, dest_ptr]
 #!
 #! Where:
-#! - dest_ptr is the memory address to write the note inputs.
-#! - NOTE_INPUTS_COMMITMENT is the commitment to the note's inputs.
-#! - INPUTS is the data corresponding to the note's inputs.
+#! - dest_ptr is the memory address to write the note storage.
+#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - STORAGE is the data corresponding to the note's storage.
 #!
 #! Panics if:
 #! - no note is currently active.
 #!
 #! Invocation: exec
-pub proc get_inputs
+pub proc get_storage
     # pad the stack
     padw padw padw push.0.0
     # => [pad(14), dest_ptr]
@@ -112,20 +112,20 @@ pub proc get_inputs
     push.1
     # => [is_active_note = 1, pad(14), dest_ptr]
 
-    exec.kernel_proc_offsets::input_note_get_inputs_info_offset
+    exec.kernel_proc_offsets::input_note_get_storage_info_offset
     # => [offset, is_active_note = 1, pad(14), dest_ptr]
 
     syscall.exec_kernel_proc
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11), dest_ptr]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11), dest_ptr]
 
     # clean the stack
     swapdw dropw dropw
     movup.5 drop movup.5 drop movup.5 drop
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # write the inputs to the memory using the provided destination pointer
-    exec.write_inputs_to_memory
-    # => [num_inputs, dest_ptr]
+    exec.write_storage_to_memory
+    # => [num_storage_items, dest_ptr]
 end
 
 #! Returns the metadata of the active note.
@@ -250,84 +250,84 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Writes the note inputs stored in the advice map to the memory specified by the provided
+#! Writes the note storage stored in the advice map to the memory specified by the provided
 #! destination pointer.
 #!
 #! Inputs:
-#!   Operand stack: [NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+#!   Operand stack: [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 #!   Advice map: {
-#!     NOTE_INPUTS_COMMITMENT: [[INPUT_VALUES]]
+#!     NOTE_STORAGE_COMMITMENT: [[INPUT_VALUES]]
 #!   }
 #! Outputs:
-#!   Operand stack: [num_inputs, dest_ptr]
-proc write_inputs_to_memory
+#!   Operand stack: [num_storage_items, dest_ptr]
+proc write_storage_to_memory
     # load the inputs from the advice map to the advice stack
     # we pad the number of inputs to the next multiple of 8 so that we can use the
     # `pipe_double_words_to_memory` instruction. The padded zeros don't affect the commitment
     # computation.
 
     adv.push_mapvaln.8
-    # OS => [NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
-    # AS => [advice_num_inputs, [INPUT_VALUES]]
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [advice_num_storage_items, [INPUT_VALUES]]
 
     # move the number of inputs obtained from advice map to the operand stack
     adv_push.1 dup.5
-    # OS => [num_inputs, advice_num_inputs, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [num_storage_items, advice_num_storage_items, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
-    assert_eq.err=ERR_NOTE_INVALID_NUMBER_OF_INPUTS
-    # OS => [NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    assert_eq.err=ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # calculate the number of words required to store the inputs
     dup.4 u32divmod.4 neq.0 add
-    # OS => [num_words, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # round up the number of words to the next multiple of 2
     dup is_odd add
-    # OS => [even_num_words, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [even_num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # compute the end pointer for writing the padded inputs (even_num_words * 4 elements)
     dup.6 swap mul.4 add
-    # OS => [end_ptr, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # prepare the stack for the `pipe_double_words_to_memory` procedure.
     #
-    # To match `rpo256::hash_elements` (used for NOTE_INPUTS_COMMITMENT), we set the first capacity
-    # element to `num_inputs % 8`.
+    # To match `rpo256::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
+    # element to `num_storage_items % 8`.
     dup.6 dup.6
-    # OS => [num_inputs, write_ptr, end_ptr, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     u32divmod.8 swap drop
-    # OS => [num_inputs_mod_8, write_ptr, end_ptr, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     push.0.0.0
-    # OS => [A, write_ptr, end_ptr, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr], where A = [0, 0, 0, num_inputs_mod_8]
+    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [0, 0, 0, num_storage_items_mod_8]
     # AS => [[INPUT_VALUES]]
 
     padw padw
-    # OS => [PAD, PAD, A, write_ptr, end_ptr, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [PAD, PAD, A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # write the inputs from the advice stack into memory
     exec.mem::pipe_double_words_to_memory
-    # OS => [PERM, PERM, PERM, end_ptr', NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [PERM, PERM, PERM, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => []
 
     # extract the computed commitment from the hasher state
     exec.rpo256::squeeze_digest
-    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # drop end_ptr'
     movup.4 drop
-    # OS => [COMPUTED_COMMITMENT, NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # validate that the inputs written to memory match the inputs commitment
     assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
-    # => [num_inputs, dest_ptr]
+    # => [num_storage_items, dest_ptr]
 end

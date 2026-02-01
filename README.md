@@ -16,7 +16,7 @@ Miden is a zero-knowledge rollup for high-throughput and private applications. M
 
 If you want to join the technical discussion or learn more about the project, please check out
 
-- the [Documentation](https://0xMiden.github.io/miden-docs).
+- the [Documentation](https://docs.miden.xyz/miden-base/).
 - the [Telegram](https://t.me/BuildOnMiden)
 - the [Repo](https://github.com/0xMiden)
 - the [Roadmap](https://miden.xyz/roadmap)
@@ -71,7 +71,7 @@ Some of the functions in this project are computationally intensive and may take
 
 ## Documentation
 
-The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/miden-base/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
 
 ## License
 

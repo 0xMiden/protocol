@@ -13,6 +13,9 @@ pub use block_proof::BlockProof;
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
 
+mod signed_block;
+pub use signed_block::SignedBlock;
+
 mod proven_block;
 pub use proven_block::ProvenBlock;
 

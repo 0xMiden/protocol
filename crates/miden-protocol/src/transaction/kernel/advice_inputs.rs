@@ -3,11 +3,9 @@ use alloc::vec::Vec;
 use miden_processor::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
-use crate::asset::AssetWitness;
 use crate::block::account_tree::AccountWitness;
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::crypto::merkle::smt::SmtProof;
 use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
@@ -74,10 +72,6 @@ impl TransactionAdviceInputs {
                 inputs.add_map_entry(storage_map.root(), map_entries);
             }
         }
-
-        tx_inputs.asset_witnesses().iter().for_each(|asset_witness| {
-            inputs.add_asset_witness(asset_witness.clone());
-        });
 
         // Extend with extra user-supplied advice.
         inputs.extend(tx_inputs.tx_args().advice_inputs().clone());
@@ -309,14 +303,6 @@ impl TransactionAdviceInputs {
         self.extend_merkle_store(witness.authenticated_nodes());
     }
 
-    /// Adds an asset witness to the advice inputs.
-    fn add_asset_witness(&mut self, witness: AssetWitness) {
-        self.extend_merkle_store(witness.authenticated_nodes());
-
-        let smt_proof = SmtProof::from(witness);
-        self.extend_map([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements())]);
-    }
-
     // NOTE INJECTION
     // --------------------------------------------------------------------------------------------
 
@@ -350,8 +336,8 @@ impl TransactionAdviceInputs {
             let recipient = note.recipient();
             let note_arg = tx_inputs.tx_args().get_note_args(note.id()).unwrap_or(&EMPTY_WORD);
 
-            // recipient inputs
-            self.add_map_entry(recipient.inputs().commitment(), recipient.inputs().to_elements());
+            // recipient storage
+            self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
             self.add_map_entry(assets.commitment(), assets.to_padded_assets());
             // array attachments
@@ -367,12 +353,12 @@ impl TransactionAdviceInputs {
             // note details / metadata
             note_data.extend(recipient.serial_num());
             note_data.extend(*recipient.script().root());
-            note_data.extend(*recipient.inputs().commitment());
+            note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
             note_data.extend(note.metadata().to_header_word());
             note_data.extend(note.metadata().to_attachment_word());
-            note_data.push(recipient.inputs().num_values().into());
+            note_data.push(recipient.storage().num_items().into());
             note_data.push((assets.num_assets() as u32).into());
             note_data.extend(assets.to_padded_assets());
 

@@ -8,9 +8,9 @@ use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -223,7 +223,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         use miden::protocol::active_note
 
         proc process_note_0
-            # drop the note inputs
+            # drop the note storage
             dropw dropw dropw dropw
 
             # set the destination pointer for note 0 assets
@@ -246,7 +246,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         end
 
         proc process_note_1
-            # drop the note inputs
+            # drop the note storage
             dropw dropw dropw dropw
 
             # set the destination pointer for note 1 assets
@@ -321,17 +321,17 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             .build()?
     };
 
-    fn construct_inputs_assertions(note: &Note) -> String {
+    fn construct_storage_assertions(note: &Note) -> String {
         let mut code = String::new();
-        for inputs_chunk in note.inputs().values().chunks(WORD_SIZE) {
-            let mut inputs_word = EMPTY_WORD;
-            inputs_word.as_mut_slice()[..inputs_chunk.len()].copy_from_slice(inputs_chunk);
+        for storage_chunk in note.storage().items().chunks(WORD_SIZE) {
+            let mut storage_word = EMPTY_WORD;
+            storage_word.as_mut_slice()[..storage_chunk.len()].copy_from_slice(storage_chunk);
 
             code += &format!(
                 r#"
-                # assert the inputs are correct
+                # assert the storage items are correct
                 # => [dest_ptr]
-                dup padw movup.4 mem_loadw_be push.{inputs_word} assert_eqw.err="inputs are incorrect"
+                dup padw movup.4 mem_loadw_be push.{storage_word} assert_eqw.err="storage items are incorrect"
                 # => [dest_ptr]
 
                 push.4 add
@@ -362,17 +362,17 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             dropw dropw dropw dropw
             # => []
 
-            push.{NOTE_0_PTR} exec.active_note::get_inputs
-            # => [num_inputs, dest_ptr]
+            push.{NOTE_0_PTR} exec.active_note::get_storage
+            # => [num_storage_items, dest_ptr]
 
-            eq.{num_inputs} assert.err="unexpected num inputs"
+            eq.{num_storage_items} assert.err="unexpected num_storage_items"
             # => [dest_ptr]
 
             dup eq.{NOTE_0_PTR} assert.err="unexpected dest ptr"
             # => [dest_ptr]
 
-            # apply note 1 inputs assertions
-            {inputs_assertions}
+            # apply note 1 storage assertions
+            {storage_assertions}
             # => [dest_ptr]
 
             # clear the stack
@@ -380,8 +380,8 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             # => []
         end
         "#,
-        num_inputs = note0.inputs().num_values(),
-        inputs_assertions = construct_inputs_assertions(note0),
+        num_storage_items = note0.storage().num_items(),
+        storage_assertions = construct_storage_assertions(note0),
         NOTE_0_PTR = 100000000,
     );
 
@@ -389,12 +389,12 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the scenario when an input note has exactly 8 inputs, and the transaction
-/// script attempts to load the inputs to memory using the
+/// This test checks the scenario when an input note has exactly 8 storage items, and the
+/// transaction script attempts to load the storage to memory using the
 /// `miden::protocol::active_note::get_inputs` procedure.
 ///
-/// Previously this setup was leading to the incorrect number of note inputs computed during the
-/// `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/miden-base/issues/1363)
+/// Previously this setup was leading to the incorrect number of note storage items computed during
+/// the `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/miden-base/issues/1363)
 /// for more details.
 #[tokio::test]
 async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
@@ -414,12 +414,12 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
         .compile_note_script("begin nop end")
         .context("failed to parse note script")?;
 
-    // create a recipient with note inputs, which number divides by 8. For simplicity create 8 input
-    // values
+    // create a recipient with note storage, which number divides by 8. For simplicity create 8
+    // storage values
     let recipient = NoteRecipient::new(
         serial_num,
         note_script,
-        NoteInputs::new(vec![
+        NoteStorage::new(vec![
             ONE,
             Felt::new(2),
             Felt::new(3),
@@ -429,7 +429,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
             Felt::new(7),
             Felt::new(8),
         ])
-        .context("failed to create note inputs")?,
+        .context("failed to create note storage")?,
     );
     let input_note = Note::new(vault.clone(), metadata, recipient);
 
@@ -445,12 +445,12 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
             begin
                 exec.prologue::prepare_transaction
 
-                # execute the `get_inputs` procedure to trigger note inputs length assertion
-                push.0 exec.active_note::get_inputs
-                # => [num_inputs, 0]
+                # execute the `get_storage` procedure to trigger note number of storage items assertion
+                push.0 exec.active_note::get_storage
+                # => [num_storage_items, 0]
 
-                # assert that the inputs length is 8
-                push.8 assert_eq.err=\"number of inputs values should be equal to 8\"
+                # assert that the number of storage items is 8
+                push.8 assert_eq.err=\"number of storage values should be equal to 8\"
 
                 # clean the stack
                 drop

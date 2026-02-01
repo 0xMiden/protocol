@@ -26,7 +26,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteInputs, NoteMetadata, NoteRecipient};
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteStorage};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -375,7 +375,7 @@ where
         recipient_digest: Word,
         script_root: Word,
         metadata: NoteMetadata,
-        note_inputs: NoteInputs,
+        note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let note_script_result = self.base_host.store().get_note_script(script_root).await;
@@ -383,7 +383,7 @@ where
         match note_script_result {
             Ok(Some(note_script)) => {
                 let script_felts: Vec<Felt> = (&note_script).into();
-                let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+                let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
                     return Err(TransactionKernelError::other(format!(
@@ -581,14 +581,14 @@ where
                             recipient_digest,
                             serial_num,
                             script_root,
-                            note_inputs,
+                            note_storage,
                         } => {
                             self.on_note_script_requested(
                                 note_idx,
                                 recipient_digest,
                                 script_root,
                                 metadata,
-                                note_inputs,
+                                note_storage,
                                 serial_num,
                             )
                             .await

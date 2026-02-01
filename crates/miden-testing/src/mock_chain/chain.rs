@@ -1094,7 +1094,12 @@ impl Serializable for AccountAuthenticator {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.authenticator
             .as_ref()
-            .map(|auth| auth.keys().values().collect::<Vec<_>>())
+            .map(|auth| {
+                auth.keys()
+                    .values()
+                    .map(|(secret_key, public_key)| (secret_key, public_key.as_ref().clone()))
+                    .collect::<Vec<_>>()
+            })
             .write_into(target);
     }
 }

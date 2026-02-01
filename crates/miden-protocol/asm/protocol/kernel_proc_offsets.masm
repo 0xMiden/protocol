@@ -57,7 +57,7 @@ const FAUCET_IS_NON_FUNGIBLE_ASSET_ISSUED_OFFSET=29
 const INPUT_NOTE_GET_METADATA_OFFSET=30
 const INPUT_NOTE_GET_ASSETS_INFO_OFFSET=31
 const INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET=32
-const INPUT_NOTE_GET_INPUTS_INFO_OFFSET=33
+const INPUT_NOTE_GET_STORAGE_INFO_OFFSET=33
 const INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET=34
 const INPUT_NOTE_GET_RECIPIENT_OFFSET=35
 
@@ -584,16 +584,16 @@ pub proc input_note_get_serial_number_offset
     push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
 end
 
-#! Returns the offset of the `input_note_get_inputs_info` kernel procedure.
+#! Returns the offset of the `input_note_get_storage_info` kernel procedure.
 #!
 #! Inputs:  []
 #! Outputs: [proc_offset]
 #!
 #! Where:
-#! - proc_offset is the offset of the `input_note_get_inputs_info` kernel procedure required to get
+#! - proc_offset is the offset of the `input_note_get_storage_info` kernel procedure required to get
 #!   the address where this procedure is stored.
-pub proc input_note_get_inputs_info_offset
-    push.INPUT_NOTE_GET_INPUTS_INFO_OFFSET
+pub proc input_note_get_storage_info_offset
+    push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
 end
 
 #! Returns the offset of the `input_note_get_script_root` kernel procedure.

@@ -1,6 +1,6 @@
 use miden_processor::{ExecutionError, Felt, ProcessState};
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
-use miden_protocol::note::{NoteId, NoteInputs};
+use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
     ACCT_CODE_COMMITMENT_OFFSET,
@@ -47,12 +47,12 @@ pub(super) trait TransactionKernelProcess {
     fn read_note_recipient_info_from_adv_map(
         &self,
         recipient_digest: Word,
-    ) -> Result<(NoteInputs, Word, Word), TransactionKernelError>;
+    ) -> Result<(NoteStorage, Word, Word), TransactionKernelError>;
 
-    fn read_note_inputs_from_adv_map(
+    fn read_note_storage_from_adv_map(
         &self,
-        inputs_commitment: &Word,
-    ) -> Result<NoteInputs, TransactionKernelError>;
+        storage_commitment: &Word,
+    ) -> Result<NoteStorage, TransactionKernelError>;
 
     fn has_advice_map_entry(&self, key: Word) -> bool;
 
@@ -254,52 +254,53 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
     fn read_note_recipient_info_from_adv_map(
         &self,
         recipient_digest: Word,
-    ) -> Result<(NoteInputs, Word, Word), TransactionKernelError> {
-        let (sn_script_hash, inputs_commitment) =
+    ) -> Result<(NoteStorage, Word, Word), TransactionKernelError> {
+        let (sn_script_hash, storage_commitment) =
             read_double_word_from_adv_map(self, recipient_digest)?;
         let (sn_hash, script_root) = read_double_word_from_adv_map(self, sn_script_hash)?;
         let (serial_num, _) = read_double_word_from_adv_map(self, sn_hash)?;
 
-        let inputs = self.read_note_inputs_from_adv_map(&inputs_commitment)?;
+        let inputs = self.read_note_storage_from_adv_map(&storage_commitment)?;
 
         Ok((inputs, script_root, serial_num))
     }
 
-    /// Extracts and validates note inputs from the advice provider.
-    fn read_note_inputs_from_adv_map(
+    /// Extracts and validates note storage from the advice provider.
+    fn read_note_storage_from_adv_map(
         &self,
-        inputs_commitment: &Word,
-    ) -> Result<NoteInputs, TransactionKernelError> {
-        let inputs_data = self.advice_provider().get_mapped_values(inputs_commitment);
+        storage_commitment: &Word,
+    ) -> Result<NoteStorage, TransactionKernelError> {
+        let inputs_data = self.advice_provider().get_mapped_values(storage_commitment);
 
         match inputs_data {
-            None => Ok(NoteInputs::default()),
-            Some(inputs) => {
-                let inputs_commitment_hash = Hasher::hash_elements(inputs_commitment.as_elements());
-                let num_inputs = self
+            None => Ok(NoteStorage::default()),
+            Some(storage_items) => {
+                let storage_commitment_hash =
+                    Hasher::hash_elements(storage_commitment.as_elements());
+                let num_storage_items = self
                     .advice_provider()
-                    .get_mapped_values(&inputs_commitment_hash)
+                    .get_mapped_values(&storage_commitment_hash)
                     .ok_or_else(|| {
                         TransactionKernelError::other(
-                            "expected num_inputs to be present in advice provider",
+                            "expected num_storage_items to be present in advice provider",
                         )
                     })?;
-                if num_inputs.len() != 1 {
+                if num_storage_items.len() != 1 {
                     return Err(TransactionKernelError::other(
-                        "expected num_inputs advice entry to contain exactly one element",
+                        "expected num_storage_items advice entry to contain exactly one element",
                     ));
                 }
-                let num_inputs = num_inputs[0].as_int() as usize;
+                let num_storage_items = num_storage_items[0].as_int() as usize;
 
-                let note_inputs = NoteInputs::new(inputs[0..num_inputs].to_vec())
-                    .map_err(TransactionKernelError::MalformedNoteInputs)?;
+                let note_storage = NoteStorage::new(storage_items[0..num_storage_items].to_vec())
+                    .map_err(TransactionKernelError::MalformedNoteStorage)?;
 
-                if &note_inputs.commitment() == inputs_commitment {
-                    Ok(note_inputs)
+                if &note_storage.commitment() == storage_commitment {
+                    Ok(note_storage)
                 } else {
-                    Err(TransactionKernelError::InvalidNoteInputs {
-                        expected: *inputs_commitment,
-                        actual: note_inputs.commitment(),
+                    Err(TransactionKernelError::InvalidNoteStorage {
+                        expected: *storage_commitment,
+                        actual: note_storage.commitment(),
                     })
                 }
             },

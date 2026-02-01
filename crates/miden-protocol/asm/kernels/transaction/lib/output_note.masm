@@ -3,6 +3,9 @@ use $kernel::memory
 use $kernel::note
 use $kernel::asset
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use $kernel::util::note::ATTACHMENT_KIND_NONE
+use $kernel::util::note::ATTACHMENT_KIND_WORD
+use $kernel::util::note::ATTACHMENT_KIND_ARRAY
 use miden::core::mem
 use miden::core::word
 
@@ -12,12 +15,6 @@ use miden::core::word
 # Constants for different note types
 const PUBLIC_NOTE=1     # 0b01
 const PRIVATE_NOTE=2    # 0b10
-const ENCRYPTED_NOTE=3  # 0b11
-
-# Constants for note attachment kinds
-const ATTACHMENT_KIND_NONE=0
-const ATTACHMENT_KIND_WORD=1
-const ATTACHMENT_KIND_ARRAY=2
 
 # The default value of the felt at index 3 in the note metadata header when a new note is created.
 # All zeros sets the attachment kind to None and the user-defined attachment scheme to "none".
@@ -55,17 +52,17 @@ const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 mos
 # =================================================================================================
 
 # Event emitted before a new note is created.
-const NOTE_BEFORE_CREATED_EVENT=event("miden::note::before_created")
+const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
-const NOTE_AFTER_CREATED_EVENT=event("miden::note::after_created")
+const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
 
 # Event emitted before an ASSET is added to a note
-const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::note::before_add_asset")
+const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
 # Event emitted after an ASSET is added to a note
-const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::note::after_add_asset")
+const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
 
 # Event emitted before an ATTACHMENT is added to a note
-const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::note::before_set_attachment")
+const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::protocol::note::before_set_attachment")
 
 # OUTPUT NOTE PROCEDURES
 # =================================================================================================

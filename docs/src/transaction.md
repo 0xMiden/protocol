@@ -34,7 +34,7 @@ Every `Transaction` describes the process of an account changing its state. This
 A `Transaction` requires several inputs:
 
 - **Account**: A `Transaction` is always executed against a single account. The executor must have complete knowledge of the account's state.
-- **Notes**: A `Transaction` can consume and output up to `1024` notes. The executor must have complete knowledge of the note data, including note inputs, before consumption. For private notes, the data cannot be fetched from the blockchain and must be received through an off-chain channel.
+- **Notes**: A `Transaction` can consume and output up to `1024` notes. The executor must have complete knowledge of the note data, including note storage, before consumption. For private notes, the data cannot be fetched from the blockchain and must be received through an off-chain channel.
 - **Blockchain state**: The current reference block and information about the notes database used to authenticate notes to be consumed must be retrieved from the Miden operator before execution. Usually, notes to be consumed in a `Transaction` must have been created before the reference block.
 - **Transaction script (optional)**: The `Transaction` script is code defined by the executor. And like note scripts, they can invoke account methods, e.g., sign a transaction. There is no limit to the amount of code a `Transaction` script can hold.
 - **Transaction arguments (optional)**: For every note, the executor can inject transaction arguments that are present at runtime. If the note script — and therefore the note creator — allows, the note script can read those arguments to allow dynamic execution. See below for an example.
@@ -64,7 +64,7 @@ To illustrate the `Transaction` protocol, we provide two examples for a basic `T
 
 ### Creating a P2ID note
 
-Let's assume account A wants to create a P2ID note. P2ID notes are pay-to-ID notes that can only be consumed by a specified target account ID. Note creators can provide the target account ID using the [note inputs](note#inputs).
+Let's assume account A wants to create a P2ID note. P2ID notes are pay-to-ID notes that can only be consumed by a specified target account ID. Note creators can provide the target account ID using the [note storage](note#inputs).
 
 In this example, account A uses the basic wallet and the authentication component provided by `miden-standards`. The basic wallet component defines the methods `wallets::basic::create_note` and `wallets::basic::move_asset_to_note` to create notes with assets, and `wallets::basic::receive_asset` to receive assets. The authentication component exposes `auth::basic::auth_tx_falcon512_rpo` which allows for signing a transaction. Some account methods like `active_account::get_id` are always exposed.
 
@@ -80,7 +80,7 @@ To start the transaction process, the executor fetches and prepares all the inpu
 
 In the transaction's prologue the data is being authenticated by re-hashing the provided values and comparing them to the blockchain's data (this is how private data can be used and verified during the execution of transaction without actually revealing it to the network).
 
-Then the P2ID note script is being executed. The script starts by reading the note inputs `active_note::get_inputs` — in our case the account ID of the intended target account. It checks if the provided target account ID equals the account ID of the executing account. This is the first time the note invokes a method exposed by the `Transaction` kernel, `active_account::get_id`.
+Then the P2ID note script is being executed. The script starts by reading the note storage `active_note::get_storage` — in our case the account ID of the intended target account. It checks if the provided target account ID equals the account ID of the executing account. This is the first time the note invokes a method exposed by the `Transaction` kernel, `active_account::get_id`.
 
 If the check passes, the note script pushes the assets it holds into the account's vault. For every asset the note contains, the script calls the `wallets::basic::receive_asset` method exposed by the account's wallet component. The `wallets::basic::receive_asset` procedure calls `native_account::add_asset`, which cannot be called from the note itself. This allows accounts to control what functionality to expose, e.g. whether the account supports receiving assets or not, and the note cannot bypass that.
 

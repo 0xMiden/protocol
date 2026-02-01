@@ -1,5 +1,1 @@
-use miden::standards::notes::mint
-
-begin
-    exec.mint::main
-end
+pub use ::miden::standards::notes::mint::main

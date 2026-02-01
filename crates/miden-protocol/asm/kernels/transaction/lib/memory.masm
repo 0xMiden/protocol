@@ -221,13 +221,13 @@ const INPUT_NOTE_ID_OFFSET=0
 const INPUT_NOTE_CORE_DATA_OFFSET=4
 const INPUT_NOTE_SERIAL_NUM_OFFSET=4
 const INPUT_NOTE_SCRIPT_ROOT_OFFSET=8
-const INPUT_NOTE_INPUTS_COMMITMENT_OFFSET=12
+const INPUT_NOTE_STORAGE_COMMITMENT_OFFSET=12
 const INPUT_NOTE_ASSETS_COMMITMENT_OFFSET=16
 const INPUT_NOTE_RECIPIENT_OFFSET=20
 const INPUT_NOTE_METADATA_HEADER_OFFSET=24
 const INPUT_NOTE_ATTACHMENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
-const INPUT_NOTE_NUM_INPUTS_OFFSET=36
+const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
 const INPUT_NOTE_NUM_ASSETS_OFFSET=40
 const INPUT_NOTE_ASSETS_OFFSET=44
 
@@ -1596,14 +1596,14 @@ end
 #! Returns the inputs commitment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [INPUTS_COMMITMENT]
+#! Outputs: [STORAGE_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - INPUTS_COMMITMENT is the inputs commitment of the input note.
-pub proc get_input_note_inputs_commitment
+#! - STORAGE_COMMITMENT is the inputs commitment of the input note.
+pub proc get_input_note_storage_commitment
     padw
-    movup.4 add.INPUT_NOTE_INPUTS_COMMITMENT_OFFSET
+    movup.4 add.INPUT_NOTE_STORAGE_COMMITMENT_OFFSET
     mem_loadw_be
 end
 
@@ -1691,26 +1691,26 @@ end
 #! Returns the number of inputs of the note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [num_inputs]
+#! Outputs: [num_storage_items]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - num_inputs is the number of inputs in in the input note.
-pub proc get_input_note_num_inputs
-    add.INPUT_NOTE_NUM_INPUTS_OFFSET
+#! - num_storage_items is the number of storage items of the input note.
+pub proc get_input_note_num_storage_items
+    add.INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET
     mem_load
 end
 
 #! Sets the number of inputs for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, num_inputs]
+#! Inputs:  [note_ptr, num_storage_items]
 #! Outputs: []
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - num_inputs is the number of inputs in the input note.
-pub proc set_input_note_num_inputs
-    add.INPUT_NOTE_NUM_INPUTS_OFFSET
+#! - num_storage_items is the number of storage items of the input note.
+pub proc set_input_note_num_storage_items
+    add.INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET
     mem_store
 end
 
@@ -1760,7 +1760,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc get_input_note_recipient
     padw
     movup.4 add.INPUT_NOTE_RECIPIENT_OFFSET
@@ -1774,7 +1774,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc set_input_note_recipient
     add.INPUT_NOTE_RECIPIENT_OFFSET
     mem_storew_be
@@ -1842,7 +1842,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc get_output_note_recipient
     padw
     movup.4 add.OUTPUT_NOTE_RECIPIENT_OFFSET
@@ -1856,7 +1856,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc set_output_note_recipient
     add.OUTPUT_NOTE_RECIPIENT_OFFSET
     mem_storew_be

@@ -82,6 +82,11 @@ impl AssetVaultKey {
         }
     }
 
+    /// Returns a reference to the inner [Word] of this key.
+    pub fn as_word(&self) -> &Word {
+        &self.0
+    }
+
     /// Returns `true` if the asset key is for a fungible asset, `false` otherwise.
     fn is_fungible(&self) -> bool {
         self.0[0].as_int() == 0 && self.0[1].as_int() == 0

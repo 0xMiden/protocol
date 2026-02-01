@@ -78,7 +78,7 @@ async fn peek_balance_returns_correct_amount() -> anyhow::Result<()> {
 
             # emit an event to fetch the merkle path for the asset since peek_balance does not do
             # that
-            emit.event("miden::account::vault_before_get_balance")
+            emit.event("miden::protocol::account::vault_before_get_balance")
             # => [prefix, suffix, account_vault_root_ptr, balance]
 
             exec.asset_vault::peek_balance

@@ -9,10 +9,10 @@ pub const ACCOUNT_UPDATE_MAX_SIZE: u32 = 2u32.pow(18);
 /// The maximum number of assets that can be stored in a single note.
 pub const MAX_ASSETS_PER_NOTE: usize = 255;
 
-/// The maximum number of inputs that can accompany a single note.
+/// The maximum number of storage items that can accompany a single note.
 ///
 /// The value is set to 1024 so that it is evenly divisible by 8.
-pub const MAX_INPUTS_PER_NOTE: usize = 1024;
+pub const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
 
 /// The maximum number of notes that can be consumed by a single transaction.
 pub const MAX_INPUT_NOTES_PER_TX: usize = 1024;

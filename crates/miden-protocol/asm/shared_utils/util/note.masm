@@ -1,5 +1,12 @@
 # CONSTANTS
 # =================================================================================================
 
-# The maximum number of input values associated with a single note.
-pub const MAX_INPUTS_PER_NOTE = 1024
+# The maximum number of storage values associated with a single note.
+pub const MAX_NOTE_STORAGE_ITEMS = 1024
+
+#! Signals the absence of a note attachment.
+pub const ATTACHMENT_KIND_NONE=0
+#! A note attachment consisting of a single Word.
+pub const ATTACHMENT_KIND_WORD=1
+#! A note attachment consisting of the commitment to a set of felts.
+pub const ATTACHMENT_KIND_ARRAY=2

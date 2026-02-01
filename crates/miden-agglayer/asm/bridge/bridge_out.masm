@@ -1,5 +1,6 @@
 use miden::protocol::active_note
 use miden::protocol::note
+use miden::standards::note_tag
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
@@ -11,9 +12,8 @@ use miden::agglayer::local_exit_tree
 const MMR_PTR=42
 const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
 
-const BURN_NOTE_ROOT = [15615638671708113717, 1774623749760042586, 2028263167268363492, 12931944505143778072]
 const PUBLIC_NOTE=1
-const NUM_BURN_NOTE_INPUTS=0
+const BURN_NOTE_NUM_STORAGE_ITEMS=0
 const BURN_ASSET_MEM_PTR=24
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
@@ -56,7 +56,7 @@ proc create_burn_note
     movup.2 drop movup.2 drop
     # => [faucet_id_prefix, faucet_id_suffix, ASSET]
 
-    exec.note::build_note_tag_for_network_account
+    exec.note_tag::create_account_target
     # => [network_faucet_tag, ASSET]
 
     loc_store.5
@@ -65,11 +65,11 @@ proc create_burn_note
     exec.compute_burn_note_serial_num
     # => [SERIAL_NUM]
 
-    push.BURN_NOTE_ROOT swapw
+    procref.::miden::standards::notes::burn::main swapw
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
-    push.NUM_BURN_NOTE_INPUTS push.0
-    # => [inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    push.BURN_NOTE_NUM_STORAGE_ITEMS push.0
+    # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
     # => [RECIPIENT]

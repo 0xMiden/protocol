@@ -30,7 +30,7 @@ use crate::{EMPTY_WORD, MastForest, MastNodeId};
 ///   be used as a default value. If the [AdviceInputs] are propagated with some user defined map
 ///   entries, this script arguments word could be used as a key to access the corresponding value.
 /// - Note arguments: data put onto the stack right before a note script is executed. These are
-///   different from note inputs, as the user executing the transaction can specify arbitrary note
+///   different from note storage, as the user executing the transaction can specify arbitrary note
 ///   args.
 /// - Advice inputs: provides data needed by the runtime, like the details of public output notes.
 /// - Foreign account inputs: provides foreign account data that will be used during the foreign
@@ -155,14 +155,14 @@ impl TransactionArgs {
     /// Populates the advice inputs with the expected recipient data for creating output notes.
     ///
     /// The advice inputs' map is extended with the following entries:
-    /// - RECIPIENT: [SERIAL_SCRIPT_HASH, INPUTS_COMMITMENT]
+    /// - RECIPIENT: [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT]
     /// - SERIAL_SCRIPT_HASH: [SERIAL_HASH, SCRIPT_ROOT]
     /// - SERIAL_HASH: [SERIAL_NUM, EMPTY_WORD]
-    /// - inputs_commitment |-> inputs.
+    /// - storage_commitment |-> storage_items.
     /// - script_root |-> script.
     pub fn add_output_note_recipient<T: AsRef<NoteRecipient>>(&mut self, note_recipient: T) {
         let note_recipient = note_recipient.as_ref();
-        let inputs = note_recipient.inputs();
+        let storage = note_recipient.storage();
         let script = note_recipient.script();
         let script_encoded: Vec<Felt> = script.into();
 
@@ -173,11 +173,11 @@ impl TransactionArgs {
         let new_elements = vec![
             (sn_hash, concat_words(note_recipient.serial_num(), Word::empty())),
             (sn_script_hash, concat_words(sn_hash, script.root())),
-            (note_recipient.digest(), concat_words(sn_script_hash, inputs.commitment())),
-            (inputs.commitment(), inputs.to_elements()),
+            (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
+            (storage.commitment(), storage.to_elements()),
             (
-                Hasher::hash_elements(inputs.commitment().as_elements()),
-                vec![Felt::from(inputs.num_values())],
+                Hasher::hash_elements(storage.commitment().as_elements()),
+                vec![Felt::from(storage.num_items())],
             ),
             (script.root(), script_encoded),
         ];
@@ -207,7 +207,7 @@ impl TransactionArgs {
     /// The advice inputs' map is extended with the following keys:
     ///
     /// - recipient |-> recipient details (inputs_hash, script_root, serial_num).
-    /// - inputs_commitment |-> inputs.
+    /// - storage_commitment |-> storage_items.
     /// - script_root |-> script.
     pub fn extend_output_note_recipients<T, L>(&mut self, notes: L)
     where
@@ -324,6 +324,24 @@ impl TransactionScript {
     pub fn root(&self) -> Word {
         self.mast[self.entrypoint].digest()
     }
+
+    /// Returns a new [TransactionScript] with the provided advice map entries merged into the
+    /// underlying [MastForest].
+    ///
+    /// This allows adding advice map entries to an already-compiled transaction script,
+    /// which is useful when the entries are determined after script compilation.
+    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
+        if advice_map.is_empty() {
+            return self;
+        }
+
+        let mut mast = (*self.mast).clone();
+        mast.advice_map_mut().extend(advice_map);
+        Self {
+            mast: Arc::new(mast),
+            entrypoint: self.entrypoint,
+        }
+    }
 }
 
 // SERIALIZATION
@@ -359,5 +377,36 @@ mod tests {
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 
         assert_eq!(tx_args, decoded);
+    }
+
+    #[test]
+    fn test_transaction_script_with_advice_map() {
+        use miden_core::{Felt, Word};
+
+        use super::TransactionScript;
+        use crate::assembly::Assembler;
+
+        let assembler = Assembler::default();
+        let program = assembler.assemble_program("begin nop end").unwrap();
+        let script = TransactionScript::new(program);
+
+        assert!(script.mast().advice_map().is_empty());
+
+        // Empty advice map should be a no-op
+        let original_root = script.root();
+        let script = script.with_advice_map(AdviceMap::default());
+        assert_eq!(original_root, script.root());
+
+        // Non-empty advice map should add entries
+        let key = Word::from([1u32, 2, 3, 4]);
+        let value = vec![Felt::new(42), Felt::new(43)];
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(key, value.clone());
+
+        let script = script.with_advice_map(advice_map);
+
+        let mast = script.mast();
+        let stored = mast.advice_map().get(&key).expect("entry should be present");
+        assert_eq!(stored.as_ref(), value.as_slice());
     }
 }

@@ -29,8 +29,8 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM's target account address and trans
 #! Asserts that the consuming account matches the target agglayer faucet account.
 #!
 #! This procedure ensures that only the specified agglayer faucet account can consume
-#! this CLAIM note. It assumes that the note inputs have already been loaded into memory
-#! via active_note::get_inputs.
+#! this CLAIM note. It assumes that the note storage has already been loaded into memory
+#! via active_note::get_storage.
 #!
 #! Inputs: []
 #! Output: []
@@ -38,7 +38,7 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM's target account address and trans
 #! Panics if:
 #! - The consuming account ID does not match the target faucet account ID stored in memory
 proc assert_aggfaucet_is_consumer
-    # Load target faucet ID (assumes active_note::get_inputs has been called)
+    # Load target faucet ID (assumes active_note::get_storage has been called)
     mem_load.TARGET_FAUCET_SUFFIX_MEM_ADDR mem_load.TARGET_FAUCET_PREFIX_MEM_ADDR
     # => [target_faucet_prefix, target_faucet_suffix]
 
@@ -137,7 +137,7 @@ end
 #! Agglayer Faucet CLAIM script: claims assets by calling the agglayer faucet's claim function.
 #!
 #! This note can only be consumed by the specific agglayer faucet account whose ID is provided
-#! in the note inputs (target_faucet_account_id). Upon consumption, it will create a P2ID note.
+#! in the note storage (target_faucet_account_id). Upon consumption, it will create a P2ID note.
 #!
 #! Requires that the account exposes:
 #! - agglayer::agglayer_faucet::claim procedure.
@@ -145,7 +145,7 @@ end
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteInputs layout (575 felts total):
+#! NoteStorage layout (575 felts total):
 #! - smtProofLocalExitRoot      [0..255]  : 256 felts
 #! - smtProofRollupExitRoot     [256..511]: 256 felts
 #! - globalIndex                [512..519]: 8 felts
@@ -191,8 +191,8 @@ begin
     dropw
     # => [pad(16)]
 
-    # Load CLAIM note inputs into memory, starting at address 0
-    push.0 exec.active_note::get_inputs drop drop
+    # Load CLAIM note storage into memory, starting at address 0
+    push.0 exec.active_note::get_storage drop drop
     # => [pad(16)]
 
     # Check consuming account == aggfaucet

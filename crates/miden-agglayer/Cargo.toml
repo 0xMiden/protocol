@@ -31,7 +31,7 @@ miden-utils-sync = { workspace = true }
 miden-agglayer = { features = ["testing"], path = "." }
 
 [build-dependencies]
-fs-err          = { version = "3" }
+fs-err          = { workspace = true }
 miden-assembly  = { workspace = true }
 miden-core      = { workspace = true }
 miden-core-lib  = { workspace = true }

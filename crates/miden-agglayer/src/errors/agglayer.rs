@@ -12,10 +12,10 @@ use miden_protocol::errors::MasmError;
 /// Error Message: "most-significant 4 bytes (addr4) must be zero"
 pub const ERR_ADDR4_NONZERO: MasmError = MasmError::from_static_str("most-significant 4 bytes (addr4) must be zero");
 
+/// Error Message: "B2AGG script expects exactly 6 note storage items"
+pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("B2AGG script expects exactly 6 note storage items");
 /// Error Message: "B2AGG script requires exactly 1 note asset"
 pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("B2AGG script requires exactly 1 note asset");
-/// Error Message: "B2AGG script expects exactly 6 note inputs"
-pub const ERR_B2AGG_WRONG_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("B2AGG script expects exactly 6 note inputs");
 
 /// Error Message: "CLAIM's target account address and transaction address do not match"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM's target account address and transaction address do not match");

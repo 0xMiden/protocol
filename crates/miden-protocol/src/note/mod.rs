@@ -15,8 +15,8 @@ pub use details::NoteDetails;
 mod header;
 pub use header::{NoteHeader, compute_note_commitment};
 
-mod inputs;
-pub use inputs::NoteInputs;
+mod storage;
+pub use storage::NoteStorage;
 
 mod metadata;
 pub use metadata::NoteMetadata;
@@ -68,7 +68,7 @@ pub use file::NoteFile;
 ///
 /// Notes consist of note metadata and details. Note metadata is always public, but details may be
 /// either public, encrypted, or private, depending on the note type. Note details consist of note
-/// assets, script, inputs, and a serial number, the three latter grouped into a recipient object.
+/// assets, script, storage, and a serial number, the three latter grouped into a recipient object.
 ///
 /// Note details can be reduced to two unique identifiers: [NoteId] and [Nullifier]. The former is
 /// publicly associated with a note, while the latter is known only to entities which have access
@@ -78,10 +78,10 @@ pub use file::NoteFile;
 /// note's script determines the conditions required for the note consumption, i.e. the target
 /// account of a P2ID or conditions of a SWAP, and the effects of the note. The serial number has
 /// a double duty of preventing double spend, and providing unlikability to the consumer of a note.
-/// The note's inputs allow for customization of its script.
+/// The note's storage allows for customization of its script.
 ///
 /// To create a note, the kernel does not require all the information above, a user can create a
-/// note only with the commitment to the script, inputs, the serial number (i.e., the recipient),
+/// note only with the commitment to the script, storage, the serial number (i.e., the recipient),
 /// and the kernel only verifies the source account has the assets necessary for the note creation.
 /// See [NoteRecipient] for more details.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,9 +140,9 @@ impl Note {
         self.details.script()
     }
 
-    /// Returns the note's recipient inputs which customizes the script's behavior.
-    pub fn inputs(&self) -> &NoteInputs {
-        self.details.inputs()
+    /// Returns the note's recipient storage which customizes the script's behavior.
+    pub fn storage(&self) -> &NoteStorage {
+        self.details.storage()
     }
 
     /// Returns the note's recipient.

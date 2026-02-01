@@ -9,29 +9,29 @@ use $kernel::prologue
 # =================================================================================================
 
 # Event emitted to signal that an execution of the transaction prologue has started.
-const PROLOGUE_START_EVENT=event("miden::tx::prologue_start")
+const PROLOGUE_START_EVENT=event("miden::protocol::tx::prologue_start")
 # Event emitted to signal that an execution of the transaction prologue has ended.
-const PROLOGUE_END_EVENT=event("miden::tx::prologue_end")
+const PROLOGUE_END_EVENT=event("miden::protocol::tx::prologue_end")
 
 # Event emitted to signal that the notes processing has started.
-const NOTES_PROCESSING_START_EVENT=event("miden::tx::notes_processing_start")
+const NOTES_PROCESSING_START_EVENT=event("miden::protocol::tx::notes_processing_start")
 # Event emitted to signal that the notes processing has ended.
-const NOTES_PROCESSING_END_EVENT=event("miden::tx::notes_processing_end")
+const NOTES_PROCESSING_END_EVENT=event("miden::protocol::tx::notes_processing_end")
 
 # Event emitted to signal that the note consuming has started.
-const NOTE_EXECUTION_START_EVENT=event("miden::tx::note_execution_start")
+const NOTE_EXECUTION_START_EVENT=event("miden::protocol::tx::note_execution_start")
 # Event emitted to signal that the note consuming has ended.
-const NOTE_EXECUTION_END_EVENT=event("miden::tx::note_execution_end")
+const NOTE_EXECUTION_END_EVENT=event("miden::protocol::tx::note_execution_end")
 
 # Event emitted to signal that the transaction script processing has started.
-const TX_SCRIPT_PROCESSING_START_EVENT=event("miden::tx::tx_script_processing_start")
+const TX_SCRIPT_PROCESSING_START_EVENT=event("miden::protocol::tx::tx_script_processing_start")
 # Event emitted to signal that the transaction script processing has ended.
-const TX_SCRIPT_PROCESSING_END_EVENT=event("miden::tx::tx_script_processing_end")
+const TX_SCRIPT_PROCESSING_END_EVENT=event("miden::protocol::tx::tx_script_processing_end")
 
 # Event emitted to signal that an execution of the transaction epilogue has started.
-const EPILOGUE_START_EVENT=event("miden::tx::epilogue_start")
+const EPILOGUE_START_EVENT=event("miden::protocol::tx::epilogue_start")
 # Event emitted to signal that an execution of the transaction epilogue has ended.
-const EPILOGUE_END_EVENT=event("miden::tx::epilogue_end")
+const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 
 # MAIN
 # =================================================================================================

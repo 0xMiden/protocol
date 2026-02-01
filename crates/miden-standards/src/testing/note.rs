@@ -11,9 +11,9 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -29,7 +29,7 @@ use crate::code_builder::CodeBuilder;
 #[derive(Debug, Clone)]
 pub struct NoteBuilder {
     sender: AccountId,
-    inputs: Vec<Felt>,
+    storage: Vec<Felt>,
     assets: Vec<Asset>,
     note_type: NoteType,
     serial_num: Word,
@@ -51,7 +51,7 @@ impl NoteBuilder {
 
         Self {
             sender,
-            inputs: vec![],
+            storage: vec![],
             assets: vec![],
             note_type: NoteType::Public,
             serial_num,
@@ -64,15 +64,15 @@ impl NoteBuilder {
         }
     }
 
-    /// Set the note's input to `inputs`.
+    /// Set the note's storage to `storage`.
     ///
     /// Note: This overwrite the inputs, the previous input values are discarded.
-    pub fn note_inputs(
+    pub fn note_storage(
         mut self,
-        inputs: impl IntoIterator<Item = Felt>,
+        storage: impl IntoIterator<Item = Felt>,
     ) -> Result<Self, NoteError> {
-        let validate = NoteInputs::new(inputs.into_iter().collect())?;
-        self.inputs = validate.into();
+        let validate = NoteStorage::new(storage.into_iter().collect())?;
+        self.storage = validate.into();
         Ok(self)
     }
 
@@ -151,8 +151,8 @@ impl NoteBuilder {
         let vault = NoteAssets::new(self.assets)?;
         let metadata = NoteMetadata::new(self.sender, self.note_type, self.tag)
             .with_attachment(self.attachment);
-        let inputs = NoteInputs::new(self.inputs)?;
-        let recipient = NoteRecipient::new(self.serial_num, note_script, inputs);
+        let storage = NoteStorage::new(self.storage)?;
+        let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
 
         Ok(Note::new(vault, metadata, recipient))
     }

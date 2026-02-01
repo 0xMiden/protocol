@@ -10,10 +10,10 @@ use miden_protocol::note::{
     NoteAttachmentKind,
     NoteAttachmentScheme,
     NoteId,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -359,7 +359,7 @@ impl TransactionEvent {
 
                 // try to read the full recipient from the advice provider
                 let recipient_data = if process.has_advice_map_entry(recipient_digest) {
-                    let (note_inputs, script_root, serial_num) =
+                    let (note_storage, script_root, serial_num) =
                         process.read_note_recipient_info_from_adv_map(recipient_digest)?;
 
                     let note_script = process
@@ -378,7 +378,7 @@ impl TransactionEvent {
                     match note_script {
                         Some(note_script) => {
                             let recipient =
-                                NoteRecipient::new(serial_num, note_script, note_inputs);
+                                NoteRecipient::new(serial_num, note_script, note_storage);
 
                             if recipient.digest() != recipient_digest {
                                 return Err(TransactionKernelError::other(format!(
@@ -393,7 +393,7 @@ impl TransactionEvent {
                             recipient_digest,
                             serial_num,
                             script_root,
-                            note_inputs,
+                            note_storage,
                         },
                     }
                 } else {
@@ -557,7 +557,7 @@ pub(crate) enum RecipientData {
         recipient_digest: Word,
         serial_num: Word,
         script_root: Word,
-        note_inputs: NoteInputs,
+        note_storage: NoteStorage,
     },
 }
 

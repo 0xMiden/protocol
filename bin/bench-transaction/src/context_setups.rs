@@ -59,6 +59,7 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
         .tx_script(tx_script)
+        .disable_debug_mode()
         .build()
 }
 
@@ -86,7 +87,10 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
     let mock_chain = builder.build()?;
 
     // construct the transaction context
-    mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
+    mock_chain
+        .build_tx_context(target_account.clone(), &[note.id()], &[])?
+        .disable_debug_mode()
+        .build()
 }
 
 /// Returns the transaction context which could be used to run the transaction which consumes two
@@ -116,5 +120,6 @@ pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
     // construct the transaction context
     mock_chain
         .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .disable_debug_mode()
         .build()
 }

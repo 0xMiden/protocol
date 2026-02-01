@@ -1,0 +1,72 @@
+#! miden::standards::attachments::network_account_target
+#!
+#! Provides a standardized way to work with network account targets.
+
+use miden::protocol::active_note
+use miden::protocol::note
+
+# CONSTANTS
+# ================================================================================================
+
+#! The attachment scheme for NetworkAccountTarget attachments.
+#! This is a valid u32 that can be compared against an extracted attachment scheme.
+pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME = 1
+
+#! The attachment kind for NetworkAccountTarget attachments (Word = 1).
+#! This is a valid u32 that can be compared against an extracted attachment kind.
+pub const NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND = 1
+
+# ERRORS
+# ================================================================================================
+const ERR_ATTACHMENT_SCHEME_MISMATCH = "expected network account target attachment scheme"
+const ERR_ATTACHMENT_KIND_MISMATCH = "expected attachment kind to be Word for network account target"
+
+#! Returns the account ID encoded in the attachment.
+#!
+#! The attachment is expected to have the following layout:
+#! [0, exec_hint_tag, account_id_prefix, account_id_suffix]
+#!
+#! WARNING: This procedure does not validate that the returned account ID is well-formed.
+#! The caller should validate the account ID if needed using `account_id::validate`.
+#!
+#! Inputs:  [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+#! Outputs: [account_id_prefix, account_id_suffix]
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
+#!
+#! Panics if:
+#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
+#!
+#! Invocation: exec
+pub proc get_id
+    # verify that the attachment scheme and kind are correct
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME assert.err=ERR_ATTACHMENT_SCHEME_MISMATCH
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND assert.err=ERR_ATTACHMENT_KIND_MISMATCH
+    # => [NOTE_ATTACHMENT] = [0, exec_hint_tag, account_id_prefix, account_id_suffix]
+
+    drop drop
+    # => [account_id_prefix, account_id_suffix]
+end
+
+#! Creates a new attachment of type NetworkAccountTarget with the following layout:
+#! [0, exec_hint_tag, account_id_prefix, account_id_suffix]
+#!
+#! Inputs:  [account_id_prefix, account_id_suffix, exec_hint]
+#! Outputs: [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
+#! - exec_hint is the execution hint for the note.
+#! - attachment_kind is the attachment kind (Word = 1) for use with `output_note::set_attachment`.
+#! - attachment_scheme is the attachment scheme (1) for use with `output_note::set_attachment`.
+#!
+#! Invocation: exec
+pub proc new
+    movup.2
+    push.0
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [attachment_scheme, attachment_kind, ATTACHMENT]
+end

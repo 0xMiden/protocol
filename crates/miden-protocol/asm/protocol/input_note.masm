@@ -88,7 +88,7 @@ end
 #!
 #! Where:
 #! - note_index is the index of the input note whose recipient should be returned.
-#! - RECIPIENT is the commitment to the input note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -184,18 +184,18 @@ end
 #! Returns the inputs commitment and length of the input note with the specified index.
 #!
 #! Inputs:  [note_index]
-#! Outputs: [NOTE_INPUTS_COMMITMENT, num_inputs]
+#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items]
 #!
 #! Where:
 #! - note_index is the index of the input note whose data should be returned.
-#! - NOTE_INPUTS_COMMITMENT is the inputs commitment of the specified input note.
-#! - num_inputs is the number of input values of the specified input note.
+#! - NOTE_STORAGE_COMMITMENT is the inputs commitment of the specified input note.
+#! - num_storage_items is the number of input values of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
 #!
 #! Invocation: exec
-pub proc get_inputs_info
+pub proc get_storage_info
     # start padding the stack
     push.0 swap
     # => [note_index, 0]
@@ -205,7 +205,7 @@ pub proc get_inputs_info
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_inputs_info_offset
+    exec.kernel_proc_offsets::input_note_get_storage_info_offset
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -213,14 +213,14 @@ pub proc get_inputs_info
     # => [offset, is_active_note = 0, note_index, pad(13)]
 
     syscall.exec_kernel_proc
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11)]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 
     # clean the stack
     swapdw dropw dropw 
     repeat.3
         movup.5 drop
     end
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
 end
 
 #! Returns the script root of the input note with the specified index.

@@ -1,47 +1,46 @@
 use miden::protocol::account_id
 use miden::core::crypto::hashes::rpo256
-use miden::core::math::u64
 use miden::core::mem
 
 # Re-export the max inputs per note constant.
-pub use ::miden::protocol::util::note::MAX_INPUTS_PER_NOTE
+pub use ::miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 
 # ERRORS
 # =================================================================================================
 
-const ERR_PROLOGUE_NOTE_INPUTS_LEN_EXCEEDED_LIMIT="number of note inputs exceeded the maximum limit of 1024"
+const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage exceeded the maximum limit of 1024"
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================
 
-#! Computes the commitment to the note inputs starting at the specified memory address.
+#! Computes the commitment to the note storage starting at the specified memory address.
 #!
-#! This procedure checks that the provided number of note inputs is within limits and then computes
+#! This procedure checks that the provided number of note storage items is within limits and then computes
 #! the commitment.
 #!
-#! If the number of note inputs is 0, procedure returns the empty word: [0, 0, 0, 0].
+#! If the number of note storage items is 0, procedure returns the empty word: [0, 0, 0, 0].
 #!
-#! Inputs:  [inputs_ptr, num_inputs]
-#! Outputs: [INPUTS_COMMITMENT]
+#! Inputs:  [storage_ptr, num_storage_items]
+#! Outputs: [STORAGE_COMMITMENT]
 #!
 #! Cycles:
 #! - If number of elements divides by 8: 56 cycles + 3 * words
 #! - Else: 189 cycles + 3 * words
 #!
 #! Panics if:
-#! - inputs_ptr is not word-aligned (i.e., is not a multiple of 4).
-#! - num_inputs is greater than 1024.
+#! - storage_ptr is not word-aligned (i.e., is not a multiple of 4).
+#! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-pub proc compute_inputs_commitment
-    # check that number of inputs is less than or equal to MAX_INPUTS_PER_NOTE
-    dup.1 push.MAX_INPUTS_PER_NOTE u32assert2.err=ERR_PROLOGUE_NOTE_INPUTS_LEN_EXCEEDED_LIMIT
-    u32lte assert.err=ERR_PROLOGUE_NOTE_INPUTS_LEN_EXCEEDED_LIMIT
-    # => [inputs_ptr, num_inputs]
+pub proc compute_storage_commitment
+    # check that number of storage items is less than or equal to MAX_NOTE_STORAGE_ITEMS
+    dup.1 push.MAX_NOTE_STORAGE_ITEMS u32assert2.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
+    u32lte assert.err=ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT
+    # => [storage_ptr, num_storage_items]
 
-    # compute the inputs commitment (over the unpadded values)
+    # compute the storage commitment (over the unpadded values)
     exec.rpo256::hash_elements
-    # => [INPUTS_COMMITMENT]
+    # => [STORAGE_COMMITMENT]
 end
 
 #! Writes the assets data stored in the advice map to the memory specified by the provided
@@ -76,116 +75,116 @@ pub proc write_assets_to_memory
     # AS => []
 end
 
-#! Builds the recipient hash from note inputs, script root, and serial number.
+#! Builds the recipient hash from note storage, script root, and serial number.
 #!
-#! This procedure computes the commitment of the note inputs and then uses it to calculate the note
+#! This procedure computes the commitment of the note storage and then uses it to calculate the note
 #! recipient by hashing this commitment, the provided script root, and the serial number.
 #!
 #! Inputs:
-#!   Operand stack: [inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+#!   Operand stack: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 #!   Advice map: {
-#!      INPUTS_COMMITMENT: [INPUTS],
+#!      STORAGE_COMMITMENT: [INPUTS],
 #!   }
 #! Outputs:
 #!   Operand stack: [RECIPIENT]
 #!   Advice map: {
-#!      INPUTS_COMMITMENT: [INPUTS],
-#!      RECIPIENT: [SERIAL_SCRIPT_HASH, INPUTS_COMMITMENT],
+#!      STORAGE_COMMITMENT: [INPUTS],
+#!      RECIPIENT: [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT],
 #!      SERIAL_SCRIPT_HASH: [SERIAL_HASH, SCRIPT_ROOT],
 #!      SERIAL_HASH: [SERIAL_NUM, EMPTY_WORD],
 #!   }
 #!
 #! Where:
-#! - inputs_ptr is the memory address where the note inputs are stored.
-#! - num_inputs is the number of input values.
+#! - storage_ptr is the memory address where the note storage are stored.
+#! - num_storage_items is the number of input values.
 #! - SCRIPT_ROOT is the script root of the note.
 #! - SERIAL_NUM is the serial number of the note.
-#! - RECIPIENT is the commitment to the input note's script, inputs, and the serial number.
+#! - RECIPIENT is the commitment to the input note's script, storage, and the serial number.
 #!
 #! Locals:
-#! - 0: inputs_ptr
-#! - 1: num_inputs
+#! - 0: storage_ptr
+#! - 1: num_storage_items
 #!
 #! Panics if:
-#! - inputs_ptr is not word-aligned (i.e., is not a multiple of 4).
-#! - num_inputs is greater than 1024.
+#! - storage_ptr is not word-aligned (i.e., is not a multiple of 4).
+#! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
 @locals(1)
 pub proc build_recipient
     dup.1 dup.1
-    # => [inputs_ptr, num_inputs, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    exec.compute_inputs_commitment
-    # => [INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    exec.compute_storage_commitment
+    # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    # store num_inputs into local memory
+    # store num_storage_items into local memory
     dup.5 loc_store.0
-    # => [INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     locaddr.0 add.1
     locaddr.0
-    # => [num_inputs_start_ptr, num_inputs_end_ptr, INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [num_storage_items_start_ptr, num_storage_items_end_ptr, STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     dup.5 dup.5 dup.5 dup.5
-    # => [INPUTS_COMMITMENT, num_inputs_start_ptr, num_inputs_end_ptr,
-    #     INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, num_storage_items_start_ptr, num_storage_items_end_ptr,
+    #     STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    # compute the advice map key for num_inputs by hashing the inputs commitment
+    # compute the advice map key for num_storage_items by hashing the storage commitment
     exec.rpo256::hash
-    # => [hash(INPUTS_COMMITMENT), num_inputs_start_ptr, num_inputs_end_ptr,
-    #     INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [hash(STORAGE_COMMITMENT), num_storage_items_start_ptr, num_storage_items_end_ptr,
+    #     STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     adv.insert_mem
     dropw drop drop
-    # => [INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     movup.5 movup.5 dup movdn.2
-    # => [inputs_ptr, num_inputs, inputs_ptr, INPUTS_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
+    # => [storage_ptr, num_storage_items, storage_ptr, STORAGE_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
 
     add swap
-    # => [inputs_ptr, end_ptr, INPUTS_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
+    # => [storage_ptr, end_ptr, STORAGE_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
 
     movdn.5 movdn.5
-    # => [INPUTS_COMMITMENT, inputs_ptr, end_ptr, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, storage_ptr, end_ptr, SERIAL_NUM, SCRIPT_ROOT]
 
     adv.insert_mem
-    # => [INPUTS_COMMITMENT, inputs_ptr, end_ptr, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, storage_ptr, end_ptr, SERIAL_NUM, SCRIPT_ROOT]
 
     movup.4 drop movup.4 drop
-    # => [INPUTS_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
+    # => [STORAGE_COMMITMENT, SERIAL_NUM, SCRIPT_ROOT]
 
     movdnw.2
-    # => [SERIAL_NUM, SCRIPT_ROOT, INPUTS_COMMITMENT]
+    # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     padw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_HASH, SCRIPT_ROOT, INPUTS_COMMITMENT]
+    # => [SERIAL_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     swapw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_SCRIPT_HASH, INPUTS_COMMITMENT]
+    # => [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT]
 
     swapw adv.insert_hdword exec.rpo256::merge
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and inputs commitment.
+#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and storage commitment.
 #!
-#! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, INPUT_COMMITMENT]
+#! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
 #! - SERIAL_NUM is the serial number of the recipient.
 #! - SCRIPT_ROOT is the commitment of the note script.
-#! - INPUT_COMMITMENT is the commitment of the note inputs.
+#! - STORAGE_COMMITMENT is the commitment of the note storage.
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
 pub proc build_recipient_hash
     padw exec.rpo256::merge
-    # => [SERIAL_NUM_HASH, SCRIPT_ROOT, INPUT_COMMITMENT]
+    # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
     swapw exec.rpo256::merge
-    # => [MERGE_SCRIPT, INPUT_COMMITMENT]
+    # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
     swapw exec.rpo256::merge
     # [RECIPIENT]
@@ -216,33 +215,25 @@ pub proc extract_sender_from_metadata
     # => [sender_id_prefix, sender_id_suffix]
 end
 
-#! Computes the tag for a network note for a given network account such that it is
-#! picked up by the network transaction builder.
+#! Extracts the attachment kind and scheme from the provided metadata header.
 #!
-#! This procedure implements the same logic as in Rust in NoteTag::from_network_account_id().
-#! Note: This procedure does not check if the account id is a network account id.
-#!
-#! Inputs:  [account_id_prefix, account_id_suffix]
-#! Outputs: [network_account_tag]
+#! Inputs:  [METADATA_HEADER]
+#! Outputs: [attachment_kind, attachment_scheme]
 #!
 #! Where:
-#! - account_id_prefix, account_id_suffix is the account id to compute the note tag for.
-#! - network_account_tag is the computed network note tag.
+#! - METADATA_HEADER is the metadata of a note.
+#! - attachment_kind is the attachment kind of the note.
+#! - attachment_scheme is the attachment scheme of the note.
 #!
 #! Invocation: exec
-pub proc build_note_tag_for_network_account
-    swap drop
-    # => [account_id_prefix]
+pub proc extract_attachment_info_from_metadata
+    # => [attachment_kind_scheme, METADATA_HEADER[1..4]]
+    movdn.3 drop drop drop
+    # => [attachment_kind_scheme]
 
+    # deconstruct the attachment_kind_scheme to extract the attachment_scheme
+    # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
+    # u32split splits into [high, low] where low is attachment_scheme
     u32split
-    # => [a_hi, a_lo]
-
-    push.34
-    # => [b, a_hi, a_lo]
-
-    exec.u64::shr
-    # => [c_hi, c_lo]
-
-    drop
-    # => [network_account_tag]
+    # => [attachment_kind, attachment_scheme]
 end

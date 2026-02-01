@@ -30,7 +30,7 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #! - tag is the tag to be included in the note.
 #! - note_type is the type of the note that holds the asset.
 #! - RECIPIENT is the recipient of the asset, i.e.,
-#!   hash(hash(hash(serial_num, [0; 4]), script_root), input_commitment).
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:

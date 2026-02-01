@@ -5,6 +5,7 @@ use core::fmt::Display;
 use miden_processor::MastNodeExt;
 
 use super::Felt;
+use crate::assembly::Library;
 use crate::assembly::mast::{MastForest, MastNodeId};
 use crate::errors::NoteError;
 use crate::utils::serde::{
@@ -14,8 +15,11 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::vm::Program;
+use crate::vm::{AdviceMap, Program};
 use crate::{PrettyPrint, Word};
+
+/// The attribute name used to mark the entrypoint procedure in a note script library.
+const NOTE_SCRIPT_ATTRIBUTE: &str = "note_script";
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -59,6 +63,38 @@ impl NoteScript {
         Self { mast, entrypoint }
     }
 
+    /// Returns a new [NoteScript] instantiated from the provided library.
+    ///
+    /// The library must contain exactly one procedure with the `@note_script` attribute,
+    /// which will be used as the entrypoint.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The library does not contain a procedure with the `@note_script` attribute.
+    /// - The library contains multiple procedures with the `@note_script` attribute.
+    pub fn from_library(library: &Library) -> Result<Self, NoteError> {
+        let mut entrypoint = None;
+
+        for export in library.exports() {
+            if let Some(proc_export) = export.as_procedure() {
+                // Check for @note_script attribute
+                if proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
+                    if entrypoint.is_some() {
+                        return Err(NoteError::NoteScriptMultipleProceduresWithAttribute);
+                    }
+                    entrypoint = Some(proc_export.node);
+                }
+            }
+        }
+
+        let entrypoint = entrypoint.ok_or(NoteError::NoteScriptNoProcedureWithAttribute)?;
+
+        Ok(Self {
+            mast: library.mast_forest().clone(),
+            entrypoint,
+        })
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -75,6 +111,24 @@ impl NoteScript {
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
         self.entrypoint
+    }
+
+    /// Returns a new [NoteScript] with the provided advice map entries merged into the
+    /// underlying [MastForest].
+    ///
+    /// This allows adding advice map entries to an already-compiled note script,
+    /// which is useful when the entries are determined after script compilation.
+    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
+        if advice_map.is_empty() {
+            return self;
+        }
+
+        let mut mast = (*self.mast).clone();
+        mast.advice_map_mut().extend(advice_map);
+        Self {
+            mast: Arc::new(mast),
+            entrypoint: self.entrypoint,
+        }
     }
 }
 
@@ -216,5 +270,33 @@ mod tests {
         let decoded: NoteScript = encoded.try_into().unwrap();
 
         assert_eq!(note_script, decoded);
+    }
+
+    #[test]
+    fn test_note_script_with_advice_map() {
+        use miden_core::{AdviceMap, Word};
+
+        let assembler = Assembler::default();
+        let program = assembler.assemble_program("begin nop end").unwrap();
+        let script = NoteScript::new(program);
+
+        assert!(script.mast().advice_map().is_empty());
+
+        // Empty advice map should be a no-op
+        let original_root = script.root();
+        let script = script.with_advice_map(AdviceMap::default());
+        assert_eq!(original_root, script.root());
+
+        // Non-empty advice map should add entries
+        let key = Word::from([5u32, 6, 7, 8]);
+        let value = vec![Felt::new(100)];
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(key, value.clone());
+
+        let script = script.with_advice_map(advice_map);
+
+        let mast = script.mast();
+        let stored = mast.advice_map().get(&key).expect("entry should be present");
+        assert_eq!(stored.as_ref(), value.as_slice());
     }
 }

@@ -4,10 +4,10 @@ use miden::protocol::note
 # CONSTANTS
 # =================================================================================================
 
-# Constants for note attachment kinds
-pub const ATTACHMENT_KIND_NONE=0
-pub const ATTACHMENT_KIND_WORD=1
-pub const ATTACHMENT_KIND_ARRAY=2
+# Re-export constants for note attachment kinds
+pub use ::miden::protocol::util::note::ATTACHMENT_KIND_NONE
+pub use ::miden::protocol::util::note::ATTACHMENT_KIND_WORD
+pub use ::miden::protocol::util::note::ATTACHMENT_KIND_ARRAY
 
 # PROCEDURES
 # =================================================================================================
@@ -255,7 +255,7 @@ end
 #!
 #! Where:
 #! - note_index is the index of the output note whose recipient should be returned.
-#! - RECIPIENT is the commitment to the note note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the note note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.

@@ -10,9 +10,9 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -24,12 +24,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, StarkField, Word};
-use miden_standards::note::{
-    NoteConsumptionStatus,
-    WellKnownNote,
-    create_p2id_note,
-    create_p2ide_note,
-};
+use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
@@ -47,8 +42,8 @@ use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TransactionContextBuilder, TxContextInput};
 
 #[tokio::test]
-async fn check_note_consumability_well_known_notes_success() -> anyhow::Result<()> {
-    let p2id_note = create_p2id_note(
+async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()> {
+    let p2id_note = P2idNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -57,7 +52,7 @@ async fn check_note_consumability_well_known_notes_success() -> anyhow::Result<(
         &mut RpoRandomCoin::new(Word::from([2u32; 4])),
     )?;
 
-    let p2ide_note = create_p2ide_note(
+    let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -470,16 +465,16 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     // create notes for testing
     // --------------------------------------------------------------------------------------------
-    let p2ide_wrong_inputs_number = create_p2ide_note_with_inputs([1, 2, 3], sender_account_id);
+    let p2ide_wrong_inputs_number = create_p2ide_note_with_storage([1, 2, 3], sender_account_id);
 
-    let p2ide_invalid_target_id = create_p2ide_note_with_inputs([1, 2, 3, 4], sender_account_id);
+    let p2ide_invalid_target_id = create_p2ide_note_with_storage([1, 2, 3, 4], sender_account_id);
 
-    let p2ide_wrong_target = create_p2ide_note_with_inputs(
+    let p2ide_wrong_target = create_p2ide_note_with_storage(
         [wrong_target_id.suffix().as_int(), wrong_target_id.prefix().as_u64(), 3, 4],
         sender_account_id,
     );
 
-    let p2ide_invalid_reclaim = create_p2ide_note_with_inputs(
+    let p2ide_invalid_reclaim = create_p2ide_note_with_storage(
         [
             target_account_id.suffix().as_int(),
             target_account_id.prefix().as_u64(),
@@ -489,7 +484,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         sender_account_id,
     );
 
-    let p2ide_invalid_timelock = create_p2ide_note_with_inputs(
+    let p2ide_invalid_timelock = create_p2ide_note_with_storage(
         [
             target_account_id.suffix().as_int(),
             target_account_id.prefix().as_u64(),
@@ -535,9 +530,9 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
         assert_eq!(reason.to_string(), format!(
-                        "P2IDE note should have {} inputs, but {} was provided",
-                        WellKnownNote::P2IDE.num_expected_inputs(),
-                        p2ide_wrong_inputs_number.recipient().inputs().num_values()
+                        "P2IDE note should have {} storage items, but {} was provided",
+                        StandardNote::P2IDE.expected_num_storage_items(),
+                        p2ide_wrong_inputs_number.recipient().storage().num_items()
                     ));
     });
 
@@ -552,7 +547,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "failed to create an account ID from the first two note inputs");
+        assert_eq!(reason.to_string(), "failed to create an account ID from the first two note storage items");
     });
 
     // check the note with a wrong target account ID (target is neither the sender nor the receiver)
@@ -566,7 +561,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE inputs, nor the sender account");
+        assert_eq!(reason.to_string(), "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account");
     });
 
     // check the note with an invalid reclaim height
@@ -648,7 +643,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
     let target_account_id = account.id();
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
 
-    let p2ide = create_p2ide_note_with_inputs(
+    let p2ide = create_p2ide_note_with_storage(
         [
             target_account_id.suffix().as_int(),
             target_account_id.prefix().as_u64(),
@@ -738,7 +733,7 @@ async fn test_check_note_consumability_static_analysis_sender(
     let target_account_id: AccountId =
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
 
-    let p2ide = create_p2ide_note_with_inputs(
+    let p2ide = create_p2ide_note_with_storage(
         [
             target_account_id.suffix().as_int(),
             target_account_id.prefix().as_u64(),
@@ -782,14 +777,17 @@ async fn test_check_note_consumability_static_analysis_sender(
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Creates a mock P2IDE note with the specified note inputs.
-fn create_p2ide_note_with_inputs(inputs: impl IntoIterator<Item = u64>, sender: AccountId) -> Note {
+/// Creates a mock P2IDE note with the specified note storage.
+fn create_p2ide_note_with_storage(
+    storage: impl IntoIterator<Item = u64>,
+    sender: AccountId,
+) -> Note {
     let serial_num = RpoRandomCoin::new(Default::default()).draw_word();
-    let note_script = WellKnownNote::P2IDE.script();
+    let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,
         note_script,
-        NoteInputs::new(inputs.into_iter().map(Felt::new).collect()).unwrap(),
+        NoteStorage::new(storage.into_iter().map(Felt::new).collect()).unwrap(),
     );
 
     let tag = NoteTag::with_account_target(sender);

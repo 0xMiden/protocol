@@ -80,8 +80,9 @@ pub struct TransactionContextBuilder {
     tx_inputs: Option<TransactionInputs>,
     auth_args: Word,
     signatures: Vec<(PublicKeyCommitment, Word, Signature)>,
-    is_lazy_loading_enabled: bool,
     note_scripts: BTreeMap<Word, NoteScript>,
+    is_lazy_loading_enabled: bool,
+    is_debug_mode_enabled: bool,
 }
 
 impl TransactionContextBuilder {
@@ -100,8 +101,9 @@ impl TransactionContextBuilder {
             foreign_account_inputs: BTreeMap::new(),
             auth_args: EMPTY_WORD,
             signatures: Vec::new(),
-            is_lazy_loading_enabled: true,
             note_scripts: BTreeMap::new(),
+            is_lazy_loading_enabled: true,
+            is_debug_mode_enabled: true,
         }
     }
 
@@ -217,6 +219,15 @@ impl TransactionContextBuilder {
         self
     }
 
+    /// Disables debug mode.
+    ///
+    /// For performance-sensitive applications, debug mode should be disabled because executing in
+    /// debug mode may be up to 100x slower.
+    pub fn disable_debug_mode(mut self) -> Self {
+        self.is_debug_mode_enabled = false;
+        self
+    }
+
     /// Extend the note arguments map with the provided one.
     pub fn extend_note_args(mut self, note_args: BTreeMap<NoteId, Word>) -> Self {
         self.note_args.extend(note_args);
@@ -326,8 +337,9 @@ impl TransactionContextBuilder {
             mast_store,
             authenticator: self.authenticator,
             source_manager: self.source_manager,
-            is_lazy_loading_enabled: self.is_lazy_loading_enabled,
             note_scripts: self.note_scripts,
+            is_lazy_loading_enabled: self.is_lazy_loading_enabled,
+            is_debug_mode_enabled: self.is_debug_mode_enabled,
         })
     }
 }

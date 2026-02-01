@@ -30,8 +30,8 @@ pub const ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID: MasmError = Masm
 
 /// Error Message: "note data does not match the commitment"
 pub const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT: MasmError = MasmError::from_static_str("note data does not match the commitment");
-/// Error Message: "the specified number of note inputs does not match the actual number"
-pub const ERR_NOTE_INVALID_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("the specified number of note inputs does not match the actual number");
+/// Error Message: "the specified number of note storage items does not match the actual number"
+pub const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("the specified number of note storage items does not match the actual number");
 
-/// Error Message: "number of note inputs exceeded the maximum limit of 1024"
-pub const ERR_PROLOGUE_NOTE_INPUTS_LEN_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("number of note inputs exceeded the maximum limit of 1024");
+/// Error Message: "number of note storage exceeded the maximum limit of 1024"
+pub const ERR_PROLOGUE_NOTE_NUM_STORAGE_ITEMS_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("number of note storage exceeded the maximum limit of 1024");

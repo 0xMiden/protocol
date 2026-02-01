@@ -35,8 +35,7 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 548
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 552
 
 # P2ID output note constants
-const P2ID_SCRIPT_ROOT = [13362761878458161062, 15090726097241769395, 444910447169617901, 3558201871398422326]
-const P2ID_NOTE_NUM_INPUTS = 2
+const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 const EXECUTION_HINT_ALWAYS = 1
 const OUTPUT_NOTE_AUX = 0
@@ -140,23 +139,23 @@ end
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 proc build_p2id_output_note
     # Build P2ID output note
-    push.P2ID_SCRIPT_ROOT[0..4]
+    procref.::miden::standards::notes::p2id::main
     # => [SCRIPT_ROOT]
 
     swapw mem_loadw_be.OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
-    push.P2ID_NOTE_NUM_INPUTS
-    # => [num_output_note_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    push.P2ID_NOTE_NUM_STORAGE_ITEMS
+    # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.get_destination_account_id
-    # => [account_id_prefix, account_id_suffix, num_output_note_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [account_id_prefix, account_id_suffix, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     mem_store.0 mem_store.1
-    # => [num_output_note_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     push.OUTPUT_NOTE_INPUTS_MEM_ADDR
-    # => [inputs_ptr = 0, num_output_note_inputs, SERIAL_NUM, SCRIPT_ROOT]
+    # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
     # => [RECIPIENT]

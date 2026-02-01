@@ -55,7 +55,6 @@ fn test_read_foreign_account_inputs_missing_data() {
         tx_args: crate::transaction::TransactionArgs::default(),
         advice_inputs: crate::vm::AdviceInputs::default(),
         foreign_account_code: Vec::new(),
-        asset_witnesses: Vec::new(),
         foreign_account_slot_names: BTreeMap::new(),
     };
 
@@ -139,7 +138,6 @@ fn test_read_foreign_account_inputs_with_storage_data() {
         tx_args: crate::transaction::TransactionArgs::default(),
         advice_inputs,
         foreign_account_code: vec![code],
-        asset_witnesses: Vec::new(),
         foreign_account_slot_names,
     };
 
@@ -261,7 +259,6 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
         tx_args: crate::transaction::TransactionArgs::default(),
         advice_inputs,
         foreign_account_code: vec![code],
-        asset_witnesses: Vec::new(),
         foreign_account_slot_names: BTreeMap::new(),
     };
 
@@ -348,7 +345,6 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
         tx_args: crate::transaction::TransactionArgs::default(),
         advice_inputs: crate::vm::AdviceInputs::default(),
         foreign_account_code: Vec::new(),
-        asset_witnesses: Vec::new(),
         foreign_account_slot_names,
     };
 

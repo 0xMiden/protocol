@@ -10,7 +10,7 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::utils::Serializable;
-use miden_protocol::note::{Note, NoteAssets, NoteInputs, NoteMetadata, NoteRecipient, NoteType};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
 use miden_standards::code_builder::CodeBuilder;
@@ -63,7 +63,7 @@ pub fn get_note_with_fungible_asset_and_script(
 
     let vault = NoteAssets::new(vec![fungible_asset.into()]).unwrap();
     let metadata = NoteMetadata::new(sender_id, NoteType::Public, 1.into());
-    let inputs = NoteInputs::new(vec![]).unwrap();
+    let inputs = NoteStorage::new(vec![]).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
     Note::new(vault, metadata, recipient)

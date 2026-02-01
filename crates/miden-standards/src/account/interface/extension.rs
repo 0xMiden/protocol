@@ -10,7 +10,7 @@ use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthScheme;
 use crate::account::components::{
-    WellKnownComponent,
+    StandardAccountComponent,
     basic_fungible_faucet_library,
     basic_wallet_library,
     ecdsa_k256_keccak_acl_library,
@@ -27,7 +27,7 @@ use crate::account::interface::{
     AccountInterface,
     NoteAccountCompatibility,
 };
-use crate::note::WellKnownNote;
+use crate::note::StandardNote;
 
 // ACCOUNT INTERFACE EXTENSION TRAIT
 // ================================================================================================
@@ -75,8 +75,8 @@ impl AccountInterfaceExt for AccountInterface {
     /// Returns [NoteAccountCompatibility::Maybe] if the provided note is compatible with the
     /// current [AccountInterface], and [NoteAccountCompatibility::No] otherwise.
     fn is_compatible_with(&self, note: &Note) -> NoteAccountCompatibility {
-        if let Some(well_known_note) = WellKnownNote::from_note(note) {
-            if well_known_note.is_compatible_with(self) {
+        if let Some(standard_note) = StandardNote::from_note(note) {
+            if standard_note.is_compatible_with(self) {
                 NoteAccountCompatibility::Maybe
             } else {
                 NoteAccountCompatibility::No
@@ -158,12 +158,12 @@ impl AccountComponentInterfaceExt for AccountComponentInterface {
 
         let mut procedures = BTreeSet::from_iter(procedures.iter().copied());
 
-        // Well known component interfaces
+        // Standard component interfaces
         // ----------------------------------------------------------------------------------------
 
-        // Get all available well known components which could be constructed from the
+        // Get all available standard components which could be constructed from the
         // `procedures` map and push them to the `component_interface_vec`
-        WellKnownComponent::extract_well_known_components(
+        StandardAccountComponent::extract_standard_components(
             &mut procedures,
             &mut component_interface_vec,
         );

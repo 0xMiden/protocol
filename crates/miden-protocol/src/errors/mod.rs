@@ -48,7 +48,7 @@ use crate::{
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
     MAX_INPUT_NOTES_PER_TX,
-    MAX_INPUTS_PER_NOTE,
+    MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
 };
 
@@ -301,10 +301,6 @@ pub enum AccountTreeError {
 
 #[derive(Debug, Error)]
 pub enum AddressError {
-    #[error("tag length {0} should be {expected} bits for network accounts",
-        expected = NoteTag::DEFAULT_NETWORK_ACCOUNT_TARGET_TAG_LENGTH
-    )]
-    CustomTagLengthNotAllowedForNetworkAccounts(u8),
     #[error("tag length {0} is too large, must be less than or equal to {max}",
         max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH
     )]
@@ -320,7 +316,7 @@ pub enum AddressError {
     #[error("{error_msg}")]
     DecodeError {
         error_msg: Box<str>,
-        // thiserror will return this when calling Error::source on NoteError.
+        // thiserror will return this when calling Error::source on AddressError.
         source: Option<Box<dyn Error + Send + Sync + 'static>>,
     },
     #[error("found unknown routing parameter key {0}")]
@@ -548,6 +544,10 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
+    #[error("library does not contain a procedure with @note_script attribute")]
+    NoteScriptNoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @note_script attribute")]
+    NoteScriptMultipleProceduresWithAttribute,
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
@@ -570,10 +570,10 @@ pub enum NoteError {
     NoteExecutionHintAfterBlockCannotBeU32Max,
     #[error("invalid note execution hint payload {1} for tag {0}")]
     InvalidNoteExecutionHintPayload(u8, u32),
-    #[error("note type {0} does not match any of the valid note types {public}, {private} or {encrypted}",
-      public = NoteType::Public,
-      private = NoteType::Private,
-      encrypted = NoteType::Encrypted,
+    #[error(
+    "note type {0} does not match any of the valid note types {public} or {private}",
+    public = NoteType::Public,
+    private = NoteType::Private,
     )]
     UnknownNoteType(Box<str>),
     #[error("note location index {node_index_in_block} is out of bounds 0..={highest_index}")]
@@ -589,8 +589,8 @@ pub enum NoteError {
     NoteScriptDeserializationError(#[source] DeserializationError),
     #[error("note contains {0} assets which exceeds the maximum of {max}", max = NoteAssets::MAX_NUM_ASSETS)]
     TooManyAssets(usize),
-    #[error("note contains {0} inputs which exceeds the maximum of {max}", max = MAX_INPUTS_PER_NOTE)]
-    TooManyInputs(usize),
+    #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
+    TooManyStorageItems(usize),
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(
@@ -734,7 +734,7 @@ pub enum TransactionInputsExtractionError {
     MissingMapRoot,
     #[error("failed to construct SMT proof")]
     SmtProofError(#[from] SmtProofError),
-    #[error("failed to construct asset witness")]
+    #[error("failed to construct an asset")]
     AssetError(#[from] AssetError),
     #[error("failed to handle storage map data")]
     StorageMapError(#[from] StorageMapError),

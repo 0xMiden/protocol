@@ -9,6 +9,11 @@ use miden_protocol::errors::MasmError;
 // STANDARDS ERRORS
 // ================================================================================================
 
+/// Error Message: "expected attachment kind to be Word for network account target"
+pub const ERR_ATTACHMENT_KIND_MISMATCH: MasmError = MasmError::from_static_str("expected attachment kind to be Word for network account target");
+/// Error Message: "expected network account target attachment scheme"
+pub const ERR_ATTACHMENT_SCHEME_MISMATCH: MasmError = MasmError::from_static_str("expected network account target attachment scheme");
+
 /// Error Message: "burn requires exactly 1 note asset"
 pub const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
@@ -18,8 +23,11 @@ pub const ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED: M
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
 
-/// Error Message: "MINT script expects exactly 12 inputs for private or 16+ inputs for public output notes"
-pub const ERR_MINT_WRONG_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 inputs for private or 16+ inputs for public output notes");
+/// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
+pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
+
+/// Error Message: "note tag length can be at most 32"
+pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError::from_static_str("note tag length can be at most 32");
 
 /// Error Message: "failed to reclaim P2IDE note because the reclaiming account is not the sender"
 pub const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER: MasmError = MasmError::from_static_str("failed to reclaim P2IDE note because the reclaiming account is not the sender");
@@ -29,21 +37,21 @@ pub const ERR_P2IDE_RECLAIM_DISABLED: MasmError = MasmError::from_static_str("P2
 pub const ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED: MasmError = MasmError::from_static_str("failed to reclaim P2IDE note because the reclaim block height is not reached yet");
 /// Error Message: "failed to consume P2IDE note because the note is still timelocked"
 pub const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED: MasmError = MasmError::from_static_str("failed to consume P2IDE note because the note is still timelocked");
-/// Error Message: "P2IDE note expects exactly 4 note inputs"
-pub const ERR_P2IDE_WRONG_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("P2IDE note expects exactly 4 note inputs");
+/// Error Message: "P2IDE note expects exactly 4 note storage items"
+pub const ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("P2IDE note expects exactly 4 note storage items");
 
 /// Error Message: "P2ID's target account address and transaction address do not match"
 pub const ERR_P2ID_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("P2ID's target account address and transaction address do not match");
-/// Error Message: "P2ID note expects exactly 2 note inputs"
-pub const ERR_P2ID_WRONG_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("P2ID note expects exactly 2 note inputs");
+/// Error Message: "P2ID note expects exactly 2 note storage items"
+pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("P2ID note expects exactly 2 note storage items");
 
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
 
+/// Error Message: "SWAP script expects exactly 16 note storage items"
+pub const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("SWAP script expects exactly 16 note storage items");
 /// Error Message: "SWAP script requires exactly 1 note asset"
 pub const ERR_SWAP_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("SWAP script requires exactly 1 note asset");
-/// Error Message: "SWAP script expects exactly 16 note inputs"
-pub const ERR_SWAP_WRONG_NUMBER_OF_INPUTS: MasmError = MasmError::from_static_str("SWAP script expects exactly 16 note inputs");
 
 /// Error Message: "failed to approve multisig transaction as it was already executed"
 pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("failed to approve multisig transaction as it was already executed");

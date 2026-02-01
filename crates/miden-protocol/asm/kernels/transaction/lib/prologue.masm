@@ -10,7 +10,7 @@ use $kernel::asset_vault
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::MAX_INPUT_NOTES_PER_TX
-use $kernel::constants::MAX_INPUTS_PER_NOTE
+use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
 use $kernel::constants::NOTE_TREE_DEPTH
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
@@ -26,7 +26,7 @@ const MAX_BLOCK_NUM=0xFFFFFFFF
 #=================================================================================================
 
 # Emission of an equivalent to `ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT`, use in `add_input_note_assets_to_vault`
-const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::account::vault_before_add_asset")
+const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::account::vault_before_add_asset")
 
 # ERRORS
 # =================================================================================================
@@ -67,7 +67,7 @@ const ERR_PROLOGUE_INPUT_NOTES_COMMITMENT_MISMATCH="note commitment computed fro
 
 const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO="new account must have a zero nonce"
 
-const ERR_PROLOGUE_NUMBER_OF_NOTE_INPUTS_EXCEEDED_LIMIT="number of note inputs exceeded the maximum limit of 1024"
+const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT="number of note storage items exceeded the maximum limit of 1024"
 
 const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED="failed to authenticate note inclusion in block"
 
@@ -584,7 +584,7 @@ end
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
-#!      INPUTS_COMMITMENT,
+#!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
 #!   ]
 #! Outputs:
@@ -595,10 +595,10 @@ end
 #! - note_ptr is the memory location for the input note.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
-#! - INPUTS_COMMITMENT is the sequential hash of the padded note's inputs.
+#! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
 #! - NULLIFIER is the result of
-#!   `hash(SERIAL_NUMBER || SCRIPT_ROOT || INPUTS_COMMITMENT || ASSETS_COMMITMENT)`.
+#!   `hash(SERIAL_NUMBER || SCRIPT_ROOT || STORAGE_COMMITMENT || ASSETS_COMMITMENT)`.
 proc process_input_note_details
     exec.memory::get_input_note_core_ptr
     # => [note_data_ptr]
@@ -649,30 +649,30 @@ proc process_note_args_and_metadata
     # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
 end
 
-#! Checks that the number of note inputs is within limit and stores it to memory.
+#! Checks that the number of note storage is within limit and stores it to memory.
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [inputs_len]
+#!   Advice stack: [num_storage_items]
 #! Outputs:
 #!   Operand stack: [note_ptr]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - inputs_len is the note's input count.
-proc process_note_inputs_length
-    # move the inputs length from the advice stack to the operand stack
+#! - num_storage_items is the note's number of storage items.
+proc process_note_num_storage_items
+    # move the number of storage items from the advice stack to the operand stack
     adv_push.1
-    # => [inputs_len, note_ptr]
+    # => [num_storage_items, note_ptr]
 
-    # validate the input length
-    dup push.MAX_INPUTS_PER_NOTE lte
-    assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_INPUTS_EXCEEDED_LIMIT
-    # => [inputs_len, note_ptr]
+    # validate the number of storage items
+    dup push.MAX_NOTE_STORAGE_ITEMS lte
+    assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT
+    # => [num_storage_items, note_ptr]
 
-    # store the inputs length into the memory
-    dup.1 exec.memory::set_input_note_num_inputs
+    # store the number of storage items into the memory
+    dup.1 exec.memory::set_input_note_num_storage_items
     # => [note_ptr]
 end
 
@@ -828,8 +828,8 @@ proc compute_input_note_id
     dup.4 exec.memory::get_input_note_script_root exec.rpo256::merge
     # => [MERGE_SCRIPT, note_ptr]
 
-    # compute RECIPIENT: hash(MERGE_SCRIPT || INPUT_COMMITMENT)
-    dup.4 exec.memory::get_input_note_inputs_commitment exec.rpo256::merge
+    # compute RECIPIENT: hash(MERGE_SCRIPT || STORAGE_COMMITMENT)
+    dup.4 exec.memory::get_input_note_storage_commitment exec.rpo256::merge
     # => [RECIPIENT, note_ptr]
 
     # store the recipient in memory
@@ -853,7 +853,7 @@ end
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
-#!      INPUTS_COMMITMENT,
+#!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
 #!      NOTE_ARGS,
 #!      NOTE_METADATA_HEADER,
@@ -877,7 +877,7 @@ end
 #!   notes.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
-#! - INPUTS_COMMITMENT is the sequential hash of the padded note's inputs.
+#! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
 #! - NOTE_METADATA_HEADER is the note's metadata header.
 #! - NOTE_ATTACHMENT is the note's attachment.
@@ -919,10 +919,10 @@ proc process_input_note
     movup.4
     # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
-    # note inputs len
+    # note number of storage items
     # ---------------------------------------------------------------------------------------------
 
-    exec.process_note_inputs_length
+    exec.process_note_num_storage_items
     # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
     # note assets

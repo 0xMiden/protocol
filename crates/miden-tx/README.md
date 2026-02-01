@@ -6,7 +6,7 @@ This crate contains tool for creating, executing, and proving Miden blockchain t
 
 This crate exposes a few components to compile, run, and prove transactions.
 
-The first requirement is to have a `DataStore` implementation. `DataStore` objects are responsible to load the data needed by the transactions executor, especially the account's code, the reference block data, and the note's inputs.
+The first requirement is to have a `DataStore` implementation. `DataStore` objects are responsible to load the data needed by the transactions executor, especially the account's code, the reference block data, and the note's storage.
 
 ```rust
 let store = DataStore:new();

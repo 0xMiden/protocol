@@ -6,12 +6,12 @@ use miden::standards::wallets::basic->basic_wallet
 # ERRORS
 # =================================================================================================
 
-const ERR_P2ID_WRONG_NUMBER_OF_INPUTS="P2ID note expects exactly 2 note inputs"
+const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2ID note expects exactly 2 note storage items"
 
 const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transaction address do not match"
 
 #! Pay-to-ID script: adds all assets from the note to the account, assuming ID of the account
-#! matches target account ID specified by the note inputs.
+#! matches target account ID specified by the note storage.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -19,25 +19,26 @@ const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transacti
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Note inputs are assumed to be as follows:
+#! Note storage is assumed to be as follows:
 #! - target_account_id is the ID of the account for which the note is intended.
 #!
 #! Panics if:
 #! - Account does not expose miden::standards::wallets::basic::receive_asset procedure.
-#! - Account ID of executing account is not equal to the Account ID specified via note inputs.
+#! - Account ID of executing account is not equal to the Account ID specified via note storage.
 #! - The same non-fungible asset already exists in the account.
 #! - Adding a fungible asset would result in amount overflow, i.e., the total amount would be
 #!   greater than 2^63.
+@note_script
 pub proc main
-    # store the note inputs to memory starting at address 0
-    padw push.0 exec.active_note::get_inputs
-    # => [num_inputs, inputs_ptr, EMPTY_WORD]
+    # store the note storage to memory starting at address 0
+    padw push.0 exec.active_note::get_storage
+    # => [num_storage_items, storage_ptr, EMPTY_WORD]
 
-    # make sure the number of inputs is 2
-    eq.2 assert.err=ERR_P2ID_WRONG_NUMBER_OF_INPUTS
-    # => [inputs_ptr, EMPTY_WORD]
+    # make sure the number of storage items is 2
+    eq.2 assert.err=ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [storage_ptr, EMPTY_WORD]
 
-    # read the target account ID from the note inputs
+    # read the target account ID from the note storage
     mem_loadw_be drop drop
     # => [target_account_id_prefix, target_account_id_suffix]
 

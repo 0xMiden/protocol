@@ -14,17 +14,17 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::FungibleFaucetExt;
-use miden_standards::note::WellKnownNote;
+use miden_standards::note::StandardNote;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
@@ -74,7 +74,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Get the B2AGG note script
     let b2agg_script = b2agg_script();
 
-    // Create note inputs with destination network and address
+    // Create note storage with destination network and address
     // destination_network: u32 (AggLayer-assigned network ID)
     // destination_address: 20 bytes (Ethereum address) split into 5 u32 values
     let destination_network = Felt::new(1); // Example network ID
@@ -83,11 +83,11 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
     let address_felts = eth_address.to_elements().to_vec();
 
-    // Combine network ID and address felts into note inputs (6 felts total)
+    // Combine network ID and address felts into note storage (6 felts total)
     let mut input_felts = vec![destination_network];
     input_felts.extend(address_felts);
 
-    let inputs = NoteInputs::new(input_felts.clone())?;
+    let inputs = NoteStorage::new(input_felts.clone())?;
 
     // Create the B2AGG note with assets from the faucet
     let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type, tag);
@@ -102,7 +102,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
 
     // Get BURN note script to add to the transaction context
-    let burn_note_script: NoteScript = WellKnownNote::BURN.script();
+    let burn_note_script: NoteScript = StandardNote::BURN.script();
 
     // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
     // --------------------------------------------------------------------------------------------
@@ -232,18 +232,18 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     // Get the B2AGG note script
     let b2agg_script = b2agg_script();
 
-    // Create note inputs with destination network and address
+    // Create note storage with destination network and address
     let destination_network = Felt::new(1);
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
     let address_felts = eth_address.to_elements().to_vec();
 
-    // Combine network ID and address felts into note inputs (6 felts total)
+    // Combine network ID and address felts into note storage (6 felts total)
     let mut input_felts = vec![destination_network];
     input_felts.extend(address_felts);
 
-    let inputs = NoteInputs::new(input_felts.clone())?;
+    let inputs = NoteStorage::new(input_felts.clone())?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender
     // This is the key difference - the note sender will be the same as the consuming account

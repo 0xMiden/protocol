@@ -70,7 +70,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
     )?
     .with_supports_all_types();
 
-    // Build an account with both the Array component and the wrapper component
+    // Build an account with the wrapper component that uses the array utility
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
         .with_component(wrapper_component)

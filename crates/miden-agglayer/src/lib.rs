@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -24,15 +25,17 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteInputs,
+    NoteExecutionHint,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;
+use miden_standards::note::NetworkAccountTarget;
 use miden_utils_sync::LazyLock;
 
 pub mod errors;
@@ -400,36 +403,36 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
         )));
     }
     // Create claim inputs matching exactly the agglayer claimAsset function parameters
-    let mut claim_inputs = vec![];
+    let mut claim_storage_items = vec![];
 
     // 1) PROOF DATA
     // smtProofLocalExitRoot (256 felts) - first SMT proof parameter
-    claim_inputs.extend(params.smt_proof_local_exit_root);
+    claim_storage_items.extend(params.smt_proof_local_exit_root);
     // smtProofRollupExitRoot (256 felts) - second SMT proof parameter
-    claim_inputs.extend(params.smt_proof_rollup_exit_root);
+    claim_storage_items.extend(params.smt_proof_rollup_exit_root);
 
     // globalIndex (uint256 as 8 u32 felts)
-    claim_inputs.extend(params.global_index);
+    claim_storage_items.extend(params.global_index);
 
     // mainnetExitRoot (bytes32 as 8 u32 felts)
     let mainnet_exit_root_felts = bytes32_to_felts(params.mainnet_exit_root);
-    claim_inputs.extend(mainnet_exit_root_felts);
+    claim_storage_items.extend(mainnet_exit_root_felts);
 
     // rollupExitRoot (bytes32 as 8 u32 felts)
     let rollup_exit_root_felts = bytes32_to_felts(params.rollup_exit_root);
-    claim_inputs.extend(rollup_exit_root_felts);
+    claim_storage_items.extend(rollup_exit_root_felts);
 
     // 2) LEAF DATA
     // originNetwork (uint32 as Felt)
-    claim_inputs.push(params.origin_network);
+    claim_storage_items.push(params.origin_network);
 
     // originTokenAddress (address as 5 u32 felts)
     let origin_token_address_felts =
         EthAddressFormat::new(*params.origin_token_address).to_elements().to_vec();
-    claim_inputs.extend(origin_token_address_felts);
+    claim_storage_items.extend(origin_token_address_felts);
 
     // destinationNetwork (uint32 as Felt)
-    claim_inputs.push(params.destination_network);
+    claim_storage_items.push(params.destination_network);
 
     // destinationAddress (address as 5 u32 felts)
     // Use AccountId prefix and suffix directly to get [suffix, prefix, 0, 0, 0]
@@ -442,30 +445,30 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
         Felt::new(0),
         Felt::new(0),
     ];
-    claim_inputs.extend(destination_address_felts);
+    claim_storage_items.extend(destination_address_felts);
 
     // amount (uint256 as 8 u32 felts)
-    claim_inputs.extend(params.amount);
+    claim_storage_items.extend(params.amount);
 
     // metadata (fixed size of 8 felts)
-    claim_inputs.extend(params.metadata);
+    claim_storage_items.extend(params.metadata);
 
     let padding = vec![Felt::ZERO; 4];
-    claim_inputs.extend(padding);
+    claim_storage_items.extend(padding);
 
     // 3) CLAIM NOTE DATA
     // TODO: deterministically compute serial number of p2id hash(GER, leaf index)
     // output_p2id_serial_num (4 felts as Word)
-    claim_inputs.extend(params.p2id_serial_number);
+    claim_storage_items.extend(params.p2id_serial_number);
 
     // agglayer_faucet_account_id (2 felts: prefix and suffix)
-    claim_inputs.push(params.agglayer_faucet_account_id.prefix().as_felt());
-    claim_inputs.push(params.agglayer_faucet_account_id.suffix());
+    claim_storage_items.push(params.agglayer_faucet_account_id.prefix().as_felt());
+    claim_storage_items.push(params.agglayer_faucet_account_id.suffix());
 
     // output note tag
-    claim_inputs.push(params.output_note_tag.as_u32().into());
+    claim_storage_items.push(params.output_note_tag.as_u32().into());
 
-    let inputs = NoteInputs::new(claim_inputs)?;
+    let inputs = NoteStorage::new(claim_storage_items)?;
 
     let tag = NoteTag::with_account_target(params.agglayer_faucet_account_id);
 
@@ -474,8 +477,13 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
 
     let note_type = NoteType::Public;
 
+    let attachment =
+        NetworkAccountTarget::new(params.agglayer_faucet_account_id, NoteExecutionHint::Always)
+            .map_err(|e| NoteError::other(e.to_string()))?
+            .into();
     // Use a default sender since we don't have sender anymore - create from destination address
-    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type, tag);
+    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type, tag)
+        .with_attachment(attachment);
     let assets = NoteAssets::new(vec![])?;
     let recipient = NoteRecipient::new(serial_num, claim_script, inputs);
 

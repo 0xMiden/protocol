@@ -425,8 +425,8 @@ fn generate_event_constants(asm_source_dir: &Path, target_dir: &Path) -> Result<
 
     // Add two additional events we want in `TransactionEventId` that do not appear in kernel or
     // protocol lib modules.
-    events.insert("miden::auth::request".to_owned(), "AUTH_REQUEST".to_owned());
-    events.insert("miden::auth::unauthorized".to_owned(), "AUTH_UNAUTHORIZED".to_owned());
+    events.insert("miden::protocol::auth::request".to_owned(), "AUTH_REQUEST".to_owned());
+    events.insert("miden::protocol::auth::unauthorized".to_owned(), "AUTH_UNAUTHORIZED".to_owned());
 
     // Generate the events file in OUT_DIR
     let event_file_content = generate_event_file_content(&events).into_diagnostic()?;

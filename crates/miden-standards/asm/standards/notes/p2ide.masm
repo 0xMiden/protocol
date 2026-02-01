@@ -7,7 +7,7 @@ use miden::standards::wallets::basic->basic_wallet
 # ERRORS
 # =================================================================================================
 
-const ERR_P2IDE_WRONG_NUMBER_OF_INPUTS="P2IDE note expects exactly 4 note inputs"
+const ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="P2IDE note expects exactly 4 note storage items"
 
 const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER="failed to reclaim P2IDE note because the reclaiming account is not the sender"
 
@@ -84,7 +84,7 @@ end
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Note inputs are assumed to be as follows:
+#! Note storage is assumed to be as follows:
 #! - target_account_id is the ID of the account for which the note is intended.
 #! - reclaim_block_height is the block height at which the note can be reclaimed by the sender.
 #! - timelock_block_height is the block height at which the note can be consumed by the target.
@@ -100,16 +100,17 @@ end
 #! - The same non-fungible asset already exists in the account.
 #! - Adding a fungible asset would result in an amount overflow, i.e., the total amount would be
 #!   greater than 2^63.
+@note_script
 pub proc main
-    # store the note inputs to memory starting at address 0
-    push.0 exec.active_note::get_inputs
-    # => [num_inputs, inputs_ptr]
+    # store the note storage to memory starting at address 0
+    push.0 exec.active_note::get_storage
+    # => [num_storage_items, storage_ptr]
 
-    # make sure the number of inputs is 4
-    eq.4 assert.err=ERR_P2IDE_WRONG_NUMBER_OF_INPUTS
-    # => [inputs_ptr]
+    # make sure the number of storage items is 4
+    eq.4 assert.err=ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    # => [storage_ptr]
 
-    # read the reclaim block height, timelock_block_height, and target account ID from the note inputs
+    # read the reclaim block height, timelock_block_height, and target account ID from the note storage
     mem_loadw_be
     # => [timelock_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
 

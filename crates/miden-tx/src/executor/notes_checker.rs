@@ -13,7 +13,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
 };
 use miden_prover::AdviceInputs;
-use miden_standards::note::{NoteConsumptionStatus, WellKnownNote};
+use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
 use super::TransactionExecutor;
 use crate::auth::TransactionAuthenticator;
@@ -120,8 +120,8 @@ where
         if num_notes == 0 || num_notes > MAX_NUM_CHECKER_NOTES {
             return Err(NoteCheckerError::InputNoteCountOutOfRange(num_notes));
         }
-        // Ensure well-known notes are ordered first.
-        notes.sort_unstable_by_key(|note| WellKnownNote::from_note(note).is_none());
+        // Ensure standard notes are ordered first.
+        notes.sort_unstable_by_key(|note| StandardNote::from_note(note).is_none());
 
         let notes = InputNotes::from(notes);
         let tx_inputs = self
@@ -152,10 +152,10 @@ where
         note: InputNote,
         tx_args: TransactionArgs,
     ) -> Result<NoteConsumptionStatus, NoteCheckerError> {
-        // return the consumption status if we manage to determine it from the well-known note
-        if let Some(well_known_note) = WellKnownNote::from_note(note.note())
+        // Return the consumption status if we manage to determine it from the standard note
+        if let Some(standard_note) = StandardNote::from_note(note.note())
             && let Some(consumption_status) =
-                well_known_note.is_consumable(note.note(), target_account_id, block_ref)
+                standard_note.is_consumable(note.note(), target_account_id, block_ref)
         {
             return Ok(consumption_status);
         }

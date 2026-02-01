@@ -59,7 +59,7 @@ end
 #!   Operand stack: [is_valid]
 #!
 #! Where:
-#! - RPO_CLAIM_NOTE_INPUTS_COMMITMENT is the RPO hash commitment of all claim note inputs
+#! - RPO_CLAIM_NOTE_STORAGE_COMMITMENT is the RPO hash commitment of all claim note storage
 #! - leafType is the leaf type: [0] transfer Ether / ERC20 tokens, [1] message
 #! - originNetwork is the origin network identifier (u32 as Felt)
 #! - originAddress is the origin address (5 felts representing address)
