@@ -3,6 +3,17 @@ use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 use crate::block::{BlockBody, BlockHeader};
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
+// SIGNED BLOCK ERROR
+// ================================================================================================
+
+#[derive(Debug, thiserror::Error)]
+pub enum SignedBlockError {
+    #[error(
+        "block signature does not match the corresponding block header commitment and validator public key"
+    )]
+    InvalidSignature,
+}
+
 // SIGNED BLOCK
 // ================================================================================================
 
@@ -22,6 +33,22 @@ pub struct SignedBlock {
 }
 
 impl SignedBlock {
+    /// Returns a new [`SignedBlock`] instantiated from the provided components.
+    ///
+    /// Validates that the signature was produced from the commitment and public key from the
+    /// provided block header.
+    pub fn new(
+        header: BlockHeader,
+        body: BlockBody,
+        signature: Signature,
+    ) -> Result<Self, SignedBlockError> {
+        if !signature.verify(header.commitment(), header.validator_key()) {
+            Err(SignedBlockError::InvalidSignature)
+        } else {
+            Ok(Self { header, body, signature })
+        }
+    }
+
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
     ///
     /// # Warning
