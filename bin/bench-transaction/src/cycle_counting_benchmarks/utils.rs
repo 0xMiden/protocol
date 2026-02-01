@@ -11,7 +11,13 @@ use serde::Serialize;
 use serde_json::{Value, from_str, to_string_pretty};
 
 use super::ExecutionBenchmark;
-use crate::vm_profile::{VmProfile, TransactionKernelProfile, PhaseProfile, InstructionMix, ProcedureProfile};
+use crate::vm_profile::{
+    InstructionMix,
+    PhaseProfile,
+    ProcedureProfile,
+    TransactionKernelProfile,
+    VmProfile,
+};
 
 // MEASUREMENTS PRINTER
 // ================================================================================================
@@ -112,7 +118,7 @@ pub fn write_bench_results_to_json(
 /// generate representative synthetic benchmarks.
 pub fn write_vm_profile(
     path: &Path,
-    tx_benchmarks: &Vec<(ExecutionBenchmark, MeasurementsPrinter)>,
+    tx_benchmarks: &[(ExecutionBenchmark, MeasurementsPrinter)],
 ) -> anyhow::Result<()> {
     // Aggregate measurements across all benchmarks to create a representative profile
     let mut total_prologue = 0usize;
@@ -148,7 +154,8 @@ pub fn write_vm_profile(
         "prologue".to_string(),
         PhaseProfile {
             cycles: avg_prologue,
-            operations: HashMap::new(), // TODO: Add operation counting when VM instrumentation is available
+            operations: HashMap::new(), /* TODO: Add operation counting when VM instrumentation
+                                         * is available */
         },
     );
     phases.insert(
@@ -188,20 +195,18 @@ pub fn write_vm_profile(
     let remaining = 1.0 - signature_ratio;
     let instruction_mix = InstructionMix {
         signature_verify: signature_ratio,
-        hashing: remaining * 0.5,      // Hashing is significant in remaining work
-        memory: remaining * 0.2,       // Memory operations
+        hashing: remaining * 0.5, // Hashing is significant in remaining work
+        memory: remaining * 0.2,  // Memory operations
         control_flow: remaining * 0.2, // Loops, conditionals
-        arithmetic: remaining * 0.1,   // Basic arithmetic
+        arithmetic: remaining * 0.1, // Basic arithmetic
     };
 
     // Key procedures - auth is the heavyweight
-    let key_procedures = vec![
-        ProcedureProfile {
-            name: "auth_procedure".to_string(),
-            cycles: avg_auth,
-            invocations: 1,
-        },
-    ];
+    let key_procedures = vec![ProcedureProfile {
+        name: "auth_procedure".to_string(),
+        cycles: avg_auth,
+        invocations: 1,
+    }];
 
     let profile = VmProfile {
         profile_version: "1.0".to_string(),

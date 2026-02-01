@@ -1,7 +1,8 @@
 //! VM execution profile types for synthetic benchmark generation
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 /// Versioned VM profile exported from transaction kernel benchmarks
 #[derive(Debug, Clone, Serialize, Deserialize)]

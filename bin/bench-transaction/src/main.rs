@@ -53,7 +53,8 @@ async fn main() -> Result<()> {
         ),
     ];
 
-    // Export VM profile for synthetic benchmark generation (before write_bench_results_to_json consumes the data)
+    // Export VM profile for synthetic benchmark generation (before write_bench_results_to_json
+    // consumes the data)
     let profile_path = Path::new("bin/bench-transaction/bench-tx-vm-profile.json");
     write_vm_profile(profile_path, &benchmark_results)?;
 
