@@ -37,7 +37,7 @@ use crate::account::interface::{
 };
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
-use crate::note::{create_p2id_note, create_p2ide_note, create_swap_note};
+use crate::note::{P2idNote, P2ideNote, SwapNote};
 use crate::testing::account_interface::get_public_keys_from_account;
 
 // DEFAULT NOTES
@@ -71,7 +71,7 @@ fn test_basic_wallet_default_notes() {
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);
 
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -81,7 +81,7 @@ fn test_basic_wallet_default_notes() {
     )
     .unwrap();
 
-    let p2ide_note = create_p2ide_note(
+    let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -96,7 +96,7 @@ fn test_basic_wallet_default_notes() {
     let offered_asset = NonFungibleAsset::mock(&[5, 6, 7, 8]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let (swap_note, _) = create_swap_note(
+    let (swap_note, _) = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,
@@ -164,7 +164,7 @@ fn test_custom_account_default_note() {
         .unwrap();
     let target_account_interface = AccountInterface::from_account(&target_account);
 
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -174,7 +174,7 @@ fn test_custom_account_default_note() {
     )
     .unwrap();
 
-    let p2ide_note = create_p2ide_note(
+    let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -189,7 +189,7 @@ fn test_custom_account_default_note() {
     let offered_asset = NonFungibleAsset::mock(&[5, 6, 7, 8]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let (swap_note, _) = create_swap_note(
+    let (swap_note, _) = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,
@@ -222,7 +222,7 @@ fn test_required_asset_same_as_offered() {
     let offered_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let result = create_swap_note(
+    let result = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,

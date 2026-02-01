@@ -58,6 +58,7 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 1
 #! Panics if:
 #! - account does not expose distribute procedure.
 #! - the number of storage items is not exactly 12 for private or less than 16 for public output notes.
+@note_script
 pub proc main
     dropw
     # => [pad(16)]

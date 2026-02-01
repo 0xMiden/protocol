@@ -26,6 +26,9 @@ pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str(
 /// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
 
+/// Error Message: "note tag length can be at most 32"
+pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError::from_static_str("note tag length can be at most 32");
+
 /// Error Message: "failed to reclaim P2IDE note because the reclaiming account is not the sender"
 pub const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER: MasmError = MasmError::from_static_str("failed to reclaim P2IDE note because the reclaiming account is not the sender");
 /// Error Message: "P2IDE reclaim is disabled"

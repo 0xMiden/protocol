@@ -55,7 +55,7 @@ use miden_standards::AuthScheme;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::auth::UnreachableAuth;
@@ -412,7 +412,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
       use miden::protocol::tx
-      const AUTH_UNAUTHORIZED_EVENT=event("miden::auth::unauthorized")
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
       pub proc auth_abort_tx
@@ -452,7 +452,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     // Consume and create a note so the input and outputs notes commitment is not the empty word.
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],
@@ -495,7 +495,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::BasicAuth)?;
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],
@@ -559,7 +559,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::EcdsaK256KeccakAuth)?;
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],

@@ -49,6 +49,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #!   greater than 2^63.
 #! - the attachment kind or scheme does not fit into a u32.
 #! - the attachment kind is an unknown variant.
+@note_script
 pub proc main
     # dropping note args
     dropw

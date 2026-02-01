@@ -23,7 +23,7 @@ use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt}
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_TX_ALREADY_EXECUTED;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
 use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
@@ -538,7 +538,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     }
 
     // Create a new output note for the second transaction with new signers
-    let output_note_new = create_p2id_note(
+    let output_note_new = P2idNote::create(
         updated_multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
         vec![output_note_asset],
@@ -999,7 +999,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     let salt2 = Word::from([Felt::new(2); 4]);
 
     // Create output note to send 5 units from the account
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
         vec![FungibleAsset::mock(5)],

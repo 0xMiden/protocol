@@ -9,7 +9,7 @@ use miden::standards::auth
 # =================================================================================================
 
 # The event to request an authentication signature.
-const AUTH_REQUEST_EVENT=event("miden::auth::request")
+const AUTH_REQUEST_EVENT=event("miden::protocol::auth::request")
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0

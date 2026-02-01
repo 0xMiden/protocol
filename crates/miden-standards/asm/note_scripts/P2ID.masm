@@ -1,5 +1,1 @@
-use miden::standards::notes::p2id
-
-begin
-    exec.p2id::main
-end
+pub use ::miden::standards::notes::p2id::main

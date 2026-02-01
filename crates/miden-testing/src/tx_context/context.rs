@@ -175,7 +175,6 @@ impl TransactionContext {
             .extend_advice_inputs(advice_inputs)
             .execute_program(program)
             .await
-            .map_err(ExecError::new)
     }
 
     /// Executes the transaction through a [TransactionExecutor]
