@@ -15,6 +15,10 @@ pub enum SignedBlockError {
     InvalidSignature,
     #[error("invalid block transaction commitment: expected {expected}, actual {actual}")]
     InvalidTransactionCommitment { expected: Word, actual: Word },
+    #[error(
+        "signed block commitment does not match expected parent's : signed block commitment {signed_block}, parent {parent}"
+    )]
+    ParentMismatch { signed_block: Word, parent: Word },
 }
 
 // SIGNED BLOCK
@@ -90,6 +94,19 @@ impl SignedBlock {
     /// Destructures this signed block into individual parts.
     pub fn into_parts(self) -> (BlockHeader, BlockBody, Signature) {
         (self.header, self.body, self.signature)
+    }
+
+    /// Validates that the provided parent block's commitment matches the signed block's previous
+    /// block commitment.
+    pub fn validate_parent(&self, parent: &BlockHeader) -> Result<(), SignedBlockError> {
+        if self.header.prev_block_commitment() == parent.commitment() {
+            Ok(())
+        } else {
+            Err(SignedBlockError::ParentMismatch {
+                signed_block: self.header.prev_block_commitment(),
+                parent: parent.commitment(),
+            })
+        }
     }
 }
 
