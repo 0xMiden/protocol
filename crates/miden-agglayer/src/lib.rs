@@ -208,6 +208,20 @@ pub fn asset_conversion_component(storage_slots: Vec<StorageSlot>) -> AccountCom
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
 
+/// Creates a bridge account component with the standard bridge storage slot.
+///
+/// This is a convenience function that creates the bridge storage slot with the standard
+/// name "miden::agglayer::bridge" and returns the bridge_out component.
+///
+/// # Returns
+/// Returns an [`AccountComponent`] configured for bridge operations with MMR validation.
+pub fn create_bridge_account_component() -> AccountComponent {
+    let bridge_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge")
+        .expect("Bridge storage slot name should be valid");
+    let bridge_storage_slots = vec![StorageSlot::with_empty_map(bridge_storage_slot_name)];
+    bridge_out_component(bridge_storage_slots)
+}
+
 /// Creates an agglayer faucet account component with the specified configuration.
 ///
 /// This function creates all the necessary storage slots for an agglayer faucet:

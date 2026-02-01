@@ -75,7 +75,8 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
     // Create SMT proofs with 32 bytes32 values each (SMT path depth)
     let smt_proof_local_exit_root = vec![[0u8; 32]; 32];
     let smt_proof_rollup_exit_root = vec![[0u8; 32]; 32];
-    let global_index = [12345u32, 0, 0, 0, 0, 0, 0, 0];
+    // Global index format: [top 5 limbs = 0, mainnet_flag = 1, rollup_index = 0, leaf_index = 2]
+    let global_index = [0u32, 0, 0, 0, 0, 1, 0, 2];
 
     let mainnet_exit_root: [u8; 32] = [
         0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,

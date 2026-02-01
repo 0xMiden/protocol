@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use miden_agglayer::agglayer_library;
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
+use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::FieldElement;
 use miden_processor::AdviceInputs;
@@ -14,29 +15,9 @@ use miden_protocol::{Felt, Hasher, Word};
 
 use super::test_utils::execute_program_with_default_host;
 
-/// Convert bytes to field elements (u32 words packed into felts)
-fn bytes_to_felts(data: &[u8]) -> Vec<Felt> {
-    let mut felts = Vec::new();
-
-    // Pad data to multiple of 4 bytes
-    let mut padded_data = data.to_vec();
-    while !padded_data.len().is_multiple_of(4) {
-        padded_data.push(0);
-    }
-
-    // Convert to u32 words in little-endian format
-    for chunk in padded_data.chunks(4) {
-        let u32_value = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        felts.push(Felt::new(u32_value as u64));
-    }
-
-    // pad to next multiple of 4 felts
-    while felts.len() % 4 != 0 {
-        felts.push(Felt::ZERO);
-    }
-
-    felts
-}
+// LEAF_DATA_NUM_WORDS is defined as 8 in crypto_utils.masm, representing 8 Miden words of 4 felts
+// each
+const LEAF_DATA_FELTS: usize = 32;
 
 fn u32_words_to_solidity_bytes32_hex(words: &[u64]) -> String {
     assert_eq!(words.len(), 8, "expected 8 u32 words = 32 bytes");
@@ -101,8 +82,10 @@ async fn test_keccak_hash_get_leaf_value() -> anyhow::Result<()> {
     assert_eq!(len_bytes, 113);
 
     let preimage = KeccakPreimage::new(input_u8.clone());
-    let input_felts = bytes_to_felts(&input_u8);
-    assert_eq!(input_felts.len(), 32);
+    let mut input_felts = bytes_to_packed_u32_felts(&input_u8);
+    // Pad to LEAF_DATA_FELTS (128 bytes) as expected by the downstream code
+    input_felts.resize(LEAF_DATA_FELTS, Felt::ZERO);
+    assert_eq!(input_felts.len(), LEAF_DATA_FELTS);
 
     // Arbitrary key to store input in advice map (in prod this is RPO(input_felts))
     let key: Word = Hasher::hash_elements(&input_felts);

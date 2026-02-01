@@ -1,45 +1,70 @@
 use miden::agglayer::crypto_utils
+use miden::core::crypto::hashes::keccak256
+use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
 
+
 # CONSTANTS
 # =================================================================================================
+
+const PROOF_DATA_PTR = 0
+const PROOF_DATA_WORD_LEN = 134
+const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
+const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
+const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
+const MAINNET_EXIT_ROOT_PTR = GLOBAL_INDEX_PTR # it's the first exit root
+
 const GER_UPPER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_upper")
 const GER_LOWER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_lower")
 
-# Inputs: [GER_LOWER[4], GER_UPPER[4]]
-# Outputs: []
+# ERRORS
+# =================================================================================================
+
+const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
+const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
+const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Updates the Global Exit Root (GER) in the bridge account storage.
+#!
+#! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
 pub proc update_ger
     push.GER_LOWER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4]]
+    # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     exec.native_account::set_item
-    # => [OLD_VALUE, GER_UPPER[4]]
+    # => [OLD_VALUE, GER_UPPER[4], pad(8)]
 
     dropw
-    # => [GER_UPPER[4]]
+    # => [GER_UPPER[4], pad(12)]
 
     push.GER_UPPER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_UPPER[4]]
+    # => [slot_id_prefix, slot_id_suffix, GER_UPPER[4], pad(12)]
 
     exec.native_account::set_item
-    # => [OLD_VALUE]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
-    # => []
+    # => [pad(16)]
 end
 
-# Inputs: []
-# Output: [GER_ROOT[8]]
-pub proc get_rollup_exit_root
-    # Push dummy GER (8 elements)
-    push.0.0.0.0.0.0.0.0  # dummy GER
-end
-
-#! Checks the validity of the GET proof
+#! Computes the leaf value and verifies it against the AggLayer bridge state.
+#!
+#! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
+#! The steps involved in verification are:
+#! 1. Compute the GER from the mainnet and rollup exit roots.
+#! 2. Assert that the computed GER is valid (exists in storage).
+#! 3. Process the global index to determine if it's a mainnet or rollup deposit.
+#! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
 #!
 #! Inputs:
-#!   Operand stack: [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 #!   Advice map: {
 #!     PROOF_DATA_KEY => [
 #!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -60,14 +85,118 @@ end
 #!     ],
 #!   }
 #!
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#!
 #! Invocation: call
-pub proc check_claim_proof
-    exec.get_rollup_exit_root
-    # => [GER_ROOT[8], PROOF_DATA_KEY, LEAF_DATA_KEY]
+pub proc verify_leaf_bridge
+    # get the leaf value. We have all the necessary leaf data in the advice map
+    exec.crypto_utils::get_leaf_value
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(8)]
 
-    # Check CLAIM note proof data against current GER 
-    exec.crypto_utils::verify_claim_proof
-    # => [is_valid_claim_proof]
+    movupw.3 dropw
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
 
-    swap drop
+    # delegate proof verification
+    exec.verify_leaf
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that the provided GER is valid (exists in storage).
+#!
+#! Inputs: [GER_ROOT[8]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc assert_valid_ger
+    # TODO verify that GER is in storage
+    dropw dropw
+end
+
+#! Assert the global index is valid for a mainnet deposit.
+#!
+#! Inputs: [GLOBAL_INDEX[8]]
+#! Outputs: [leaf_index]
+#!
+#! Panics if:
+#! - the leading bits of the global index are not zero.
+#! - the mainnet flag is not 1.
+#! - the rollup index is not 0.
+#!
+#! Invocation: exec
+pub proc process_global_index_mainnet
+    # for v0.1, let's only implement the mainnet branch
+    # the top 191 bits of the global index are zero
+    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+
+    # the next element is a u32 mainnet flag bit
+    # enforce that this limb is one
+    # => [mainnet_flag, GLOBAL_INDEX[6..8], LEAF_VALUE[8]]
+    assert.err=ERR_BRIDGE_NOT_MAINNET
+
+    # the next element is a u32 rollup index, must be zero for a mainnet deposit
+    assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
+
+    # finally, the leaf index = lowest 32 bits = last limb
+    # => [leaf_index]
+end
+
+#! Verify leaf and checks that it has not been claimed.
+#!
+#! Inputs:
+#!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
+#!
+#! Outputs: []
+#!
+#! Panics if:
+#! - the computed GER is invalid (never injected).
+#! - the global index is invalid.
+#! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#!
+#! Invocation: exec
+proc verify_leaf
+    movupw.2
+    # load proof data from the advice map into memory
+    adv.push_mapval
+    # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
+
+    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.PROOF_DATA_WORD_LEN
+    exec.mem::pipe_preimage_to_memory drop
+
+    # 1. compute GER from mainnet + rollup exit roots
+    push.EXIT_ROOTS_PTR
+    # => [exit_roots_ptr, LEAF_VALUE[8]]
+    exec.crypto_utils::compute_ger
+    # => [GER[8], LEAF_VALUE[8]]
+
+    # 2. assert the GER is valid
+    exec.assert_valid_ger
+    # => [LEAF_VALUE[8]]
+
+    # 3. load global index from memory
+    padw mem_loadw_le.GLOBAL_INDEX_PTR
+    padw push.GLOBAL_INDEX_PTR add.4 mem_loadw_le swapw
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
+
+    # to see if we're dealing with a deposit from mainnet or from a rollup, process the global index
+    # TODO currently only implemented for mainnet deposits (mainnet flag must be 1)
+    exec.process_global_index_mainnet
+    # => [leaf_index]
+
+    # load the pointers to the merkle proof and root, to pass to `verify_merkle_proof`
+    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
+    push.MAINNET_EXIT_ROOT_PTR
+
+    # => [mainnet_exit_root_ptr, smt_proof_local_exit_root_ptr, leaf_index, LEAF_VALUE[8]]
+    movdn.10
+    # => [smt_proof_local_exit_root_ptr, leaf_index, LEAF_VALUE[8], mainnet_exit_root_ptr]
+    # delegate verification to crypto_utils::verify_merkle_proof (stubbed for now)
+    exec.crypto_utils::verify_merkle_proof
 end

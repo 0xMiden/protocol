@@ -55,7 +55,7 @@ const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
 
 const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY]
+#! Inputs:  [LEAF_DATA_KEY, PROOF_DATA_KEY]
 #! Outputs: []
 #!
 #! Panics if:
@@ -65,28 +65,23 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 #!
 #! Invocation: exec
 proc validate_claim
-    # Get bridge_in::check_claim_proof procedure MAST root
-    procref.bridge_in::check_claim_proof
-    # => [BRIDGE_PROC_MAST_ROOT]
+    # get bridge_in::verify_leaf_bridge procedure MAST root
+    procref.bridge_in::verify_leaf_bridge
+    # => [BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
     push.BRIDGE_ID_SLOT[0..2]
-    # => [bridge_id_idx, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_id_idx, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
-    # Get Bridge AccountId
+    # get bridge account ID
     exec.active_account::get_item
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
     movup.2 drop movup.2 drop
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
-    # Call check_claim_proof procedure on Bridge
-    # Calling: bridge_in::check_claim_proof
+    # call bridge_in::verify_leaf_bridge
     exec.tx::execute_foreign_procedure
-    # => [validation_result]
-
-    # Assert valid proof data
-    assert.err=ERR_INVALID_CLAIM_PROOF drop
-    # => [] 
+    # => []
 end
 
 # Inputs: []
@@ -248,20 +243,22 @@ end
 pub proc claim
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
-    # => []
+    # => [pad(16)]
 
     # VALIDATE CLAIM 
-    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR padw
-    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
+    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
+    # => [PROOF_DATA_KEY, pad(12)]
+    swapw
+    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Errors on invalid proof
     exec.validate_claim
-    # => []
+    # => [pad(16)]
 
     # Create P2ID output note
     exec.build_p2id_output_note
-    # => [] 
+    # => [pad(16)] 
 end
 
 #! Burns the fungible asset from the active note.

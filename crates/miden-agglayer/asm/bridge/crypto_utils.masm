@@ -19,7 +19,7 @@ const LEAF_DATA_START_PTR = 0
 #!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
 #!     ],
 #!   }
-#! Outputs: [LEAF_VALUE]
+#! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
 pub proc get_leaf_value
@@ -35,59 +35,33 @@ pub proc get_leaf_value
 
     exec.keccak256::hash_bytes
     # => [LEAF_VALUE[8]]
-
-    # truncate stack
-    swapdw dropw dropw
-    # => [LEAF_VALUE[8]]
 end
 
-#! Verify leaf and checks that it has not been claimed.
+#! Computes the Global Exit Tree (GET) root from the mainnet and rollup exit roots.
 #!
-#! This procedure verifies that a claim proof is valid against the Global Exit Tree (GET)
-#! and that the leaf has not been previously claimed.
+#! The mainnet exit root is expected at `exit_roots_ptr` and
+#! the rollup exit root is expected at `exit_roots_ptr + 8`.
 #!
-#! Inputs:
-#!   Operand stack: [GER_ROOT[8], PROOF_DATA_KEY, LEAF_DATA_KEY, pad(12)]
-#!   Advice map: {
-#!     PROOF_DATA_KEY => [
-#!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!       smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!       globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
-#!       mainnetExitRoot[8],              // Mainnet exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!       rollupExitRoot[8],               // Rollup exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!     ],
-#!     LEAF_DATA_KEY => [
-#!       originNetwork[1],                // Origin network identifier (1 felt, uint32)
-#!       originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
-#!       destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
-#!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
-#!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
-#!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!       EMPTY_WORD                       // padding
-#!     ],
-#!   }
-#! Outputs:
-#!   Operand stack: [is_valid]
-#!
-#! Where:
-#! - RPO_CLAIM_NOTE_STORAGE_COMMITMENT is the RPO hash commitment of all claim note storage
-#! - leafType is the leaf type: [0] transfer Ether / ERC20 tokens, [1] message
-#! - originNetwork is the origin network identifier (u32 as Felt)
-#! - originAddress is the origin address (5 felts representing address)
-#! - destinationNetwork is the destination network identifier (u32 as Felt)
-#! - destinationAddress is the destination address (5 felts representing address)
-#! - amount is the amount of tokens (u256 as Felt)
-#! - metadata is the metadata (4 felts representing 4 u32 0 values)
-#! - index is the index of the leaf (u32 as Felt)
-#! - claimRoot is the claim root (8 felts representing bytes32)
-#! - smtProof is the SMT proof data (570 felts)
-#! - is_valid is 1 if the leaf is valid and not claimed, 0 otherwise
+#! Inputs: [exit_roots_ptr]
+#! Outputs: [GER_ROOT[8]]
 #!
 #! Invocation: exec
-pub proc verify_claim_proof
-    # TODO: Implement actual Global Exit Tree proof verification
-    
-    # For now, drop all inputs and return 1 (valid)
-    dropw dropw dropw dropw
-    push.1
+pub proc compute_ger
+    push.64 swap
+    # => [exit_roots_ptr, len_bytes]
+    exec.keccak256::hash_bytes
+    # => [GER_ROOT[8]]
+end
+
+#! Verifies a Merkle proof for a leaf value against a root.
+#!
+#! Inputs:  [smt_proof_ptr, leaf_index, LEAF_VALUE[8], root_ptr]
+#! Outputs: []
+#!
+pub proc verify_merkle_proof
+    # TODO pending https://github.com/0xMiden/miden-base/issues/2278
+    drop
+    drop
+    dropw dropw
+    drop
 end
