@@ -1,3 +1,4 @@
+use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::block::{BlockBody, BlockHeader};
@@ -12,6 +13,8 @@ pub enum SignedBlockError {
         "block signature does not match the corresponding block header commitment and validator public key"
     )]
     InvalidSignature,
+    #[error("invalid block transaction commitment: expected {expected}, actual {actual}")]
+    InvalidTransactionCommitment { expected: Word, actual: Word },
 }
 
 // SIGNED BLOCK
@@ -35,18 +38,28 @@ pub struct SignedBlock {
 impl SignedBlock {
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
     ///
-    /// Validates that the signature was produced from the commitment and public key from the
-    /// provided block header.
+    /// Validates that the provided components correspond to each other by verifying the signature,
+    /// and checking for matching commitments.
     pub fn new(
         header: BlockHeader,
         body: BlockBody,
         signature: Signature,
     ) -> Result<Self, SignedBlockError> {
+        // Verify signature.
         if !signature.verify(header.commitment(), header.validator_key()) {
-            Err(SignedBlockError::InvalidSignature)
-        } else {
-            Ok(Self { header, body, signature })
+            return Err(SignedBlockError::InvalidSignature);
         }
+
+        // Validate header / body matching transaction commitments.
+        let tx_commitment = body.transactions().commitment();
+        if header.tx_commitment() != tx_commitment {
+            return Err(SignedBlockError::InvalidTransactionCommitment {
+                expected: tx_commitment,
+                actual: header.tx_commitment(),
+            });
+        }
+
+        Ok(Self { header, body, signature })
     }
 
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
