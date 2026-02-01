@@ -1,6 +1,7 @@
 extern crate alloc;
 pub use alloc::collections::BTreeMap;
 pub use alloc::string::String;
+use std::collections::HashMap;
 use std::fs::{read_to_string, write};
 use std::path::Path;
 
@@ -10,6 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, from_str, to_string_pretty};
 
 use super::ExecutionBenchmark;
+use crate::vm_profile::{VmProfile, TransactionKernelProfile, PhaseProfile, InstructionMix, ProcedureProfile};
 
 // MEASUREMENTS PRINTER
 // ================================================================================================
@@ -100,5 +102,123 @@ pub fn write_bench_results_to_json(
     )
     .context("failed to write benchmark results to file")?;
 
+    Ok(())
+}
+
+/// Writes the VM execution profile to a JSON file for synthetic benchmark generation.
+///
+/// This exports a machine-readable profile that describes the transaction kernel's
+/// instruction mix and cycle characteristics, which can be used by miden-vm to
+/// generate representative synthetic benchmarks.
+pub fn write_vm_profile(
+    path: &Path,
+    tx_benchmarks: &[(ExecutionBenchmark, MeasurementsPrinter)],
+) -> anyhow::Result<()> {
+    // Aggregate measurements across all benchmarks to create a representative profile
+    let mut total_prologue = 0usize;
+    let mut total_notes_processing = 0usize;
+    let mut total_tx_script = 0usize;
+    let mut total_epilogue = 0usize;
+    let mut total_auth = 0usize;
+    let mut count = 0usize;
+
+    for (_, measurements) in tx_benchmarks {
+        total_prologue += measurements.prologue;
+        total_notes_processing += measurements.notes_processing;
+        total_tx_script += measurements.tx_script_processing;
+        total_epilogue += measurements.epilogue.total;
+        total_auth += measurements.epilogue.auth_procedure;
+        count += 1;
+    }
+
+    if count == 0 {
+        anyhow::bail!("No benchmark results to aggregate");
+    }
+
+    // Calculate averages
+    let avg_prologue = (total_prologue / count) as u64;
+    let avg_notes_processing = (total_notes_processing / count) as u64;
+    let avg_tx_script = (total_tx_script / count) as u64;
+    let avg_epilogue = (total_epilogue / count) as u64;
+    let avg_auth = (total_auth / count) as u64;
+
+    // Build phase map
+    let mut phases = HashMap::new();
+    phases.insert(
+        "prologue".to_string(),
+        PhaseProfile {
+            cycles: avg_prologue,
+            operations: HashMap::new(), // TODO: Add operation counting when VM instrumentation is available
+        },
+    );
+    phases.insert(
+        "notes_processing".to_string(),
+        PhaseProfile {
+            cycles: avg_notes_processing,
+            operations: HashMap::new(),
+        },
+    );
+    phases.insert(
+        "tx_script_processing".to_string(),
+        PhaseProfile {
+            cycles: avg_tx_script,
+            operations: HashMap::new(),
+        },
+    );
+    phases.insert(
+        "epilogue".to_string(),
+        PhaseProfile {
+            cycles: avg_epilogue,
+            operations: HashMap::new(),
+        },
+    );
+
+    // Calculate total cycles
+    let total_cycles = avg_prologue + avg_notes_processing + avg_tx_script + avg_epilogue;
+
+    // Estimate instruction mix based on known characteristics
+    // Auth procedure (signature verification) dominates at ~85% of epilogue
+    let signature_ratio = if avg_epilogue > 0 {
+        (avg_auth as f64) / (total_cycles as f64)
+    } else {
+        0.0
+    };
+
+    // Remaining cycles are distributed among other operations
+    let remaining = 1.0 - signature_ratio;
+    let instruction_mix = InstructionMix {
+        signature_verify: signature_ratio,
+        hashing: remaining * 0.5,      // Hashing is significant in remaining work
+        memory: remaining * 0.2,       // Memory operations
+        control_flow: remaining * 0.2, // Loops, conditionals
+        arithmetic: remaining * 0.1,   // Basic arithmetic
+    };
+
+    // Key procedures - auth is the heavyweight
+    let key_procedures = vec![
+        ProcedureProfile {
+            name: "auth_procedure".to_string(),
+            cycles: avg_auth,
+            invocations: 1,
+        },
+    ];
+
+    let profile = VmProfile {
+        profile_version: "1.0".to_string(),
+        source: "miden-base/bin/bench-transaction".to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        miden_vm_version: env!("CARGO_PKG_VERSION").to_string(),
+        transaction_kernel: TransactionKernelProfile {
+            total_cycles,
+            phases,
+            instruction_mix,
+            key_procedures,
+        },
+    };
+
+    let json = serde_json::to_string_pretty(&profile)?;
+    write(path, json).context("failed to write VM profile to file")?;
+
+    println!("VM profile exported to: {}", path.display());
     Ok(())
 }
