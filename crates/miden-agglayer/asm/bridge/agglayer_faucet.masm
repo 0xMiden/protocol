@@ -243,20 +243,22 @@ end
 pub proc claim
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
-    # => []
+    # => [pad(16)]
 
     # VALIDATE CLAIM 
-    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR swapw
+    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
+    # => [PROOF_DATA_KEY, pad(12)]
+    swapw
     mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY]
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Errors on invalid proof
     exec.validate_claim
-    # => []
+    # => [pad(16)]
 
     # Create P2ID output note
     exec.build_p2id_output_note
-    # => [] 
+    # => [pad(16)] 
 end
 
 #! Burns the fungible asset from the active note.
