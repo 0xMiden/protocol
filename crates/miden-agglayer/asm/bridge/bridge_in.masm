@@ -33,7 +33,7 @@ const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet depos
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
 #! Outputs: [pad(16)]
 #!
-#! Invocation: exec
+#! Invocation: call
 pub proc update_ger
     push.GER_LOWER_STORAGE_SLOT[0..2]
     # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4], pad(8)]
