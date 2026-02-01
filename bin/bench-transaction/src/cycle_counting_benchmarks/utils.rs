@@ -112,7 +112,7 @@ pub fn write_bench_results_to_json(
 /// generate representative synthetic benchmarks.
 pub fn write_vm_profile(
     path: &Path,
-    tx_benchmarks: &[(ExecutionBenchmark, MeasurementsPrinter)],
+    tx_benchmarks: &Vec<(ExecutionBenchmark, MeasurementsPrinter)>,
 ) -> anyhow::Result<()> {
     // Aggregate measurements across all benchmarks to create a representative profile
     let mut total_prologue = 0usize;
