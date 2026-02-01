@@ -75,7 +75,7 @@ pub proc new
 end
 
 #! Returns a boolean indicating whether the active account matches the target account
-#! encoded in the note attachment.
+#! encoded in the active note's attachment.
 #!
 #! Inputs: []
 #! Outputs: [is_equal]
