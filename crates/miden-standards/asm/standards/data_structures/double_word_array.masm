@@ -12,6 +12,11 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 
+# Local Memory Addresses
+const SLOT_ID_PREFIX_LOC=0
+const SLOT_ID_SUFFIX_LOC=1
+const INDEX_LOC=2
+
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 type BeDoubleWord = struct @bigendian {
     a: felt,
@@ -50,18 +55,18 @@ pub proc set(
     value: BeDoubleWord
 ) -> BeDoubleWord
     # save inputs to locals for reuse
-    loc_store.0
-    loc_store.1
-    loc_store.2
+    loc_store.SLOT_ID_PREFIX_LOC
+    loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.INDEX_LOC
     # => [VALUE_0, VALUE_1]
 
     # Set the first word under key [index, 0, 0, 0].
     push.0.0.0
-    loc_load.2
+    loc_load.INDEX_LOC
     # => [index, 0, 0, 0, VALUE_0, VALUE_1]
 
-    loc_load.1
-    loc_load.0
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
     # => [slot_id_prefix, slot_id_suffix, KEY_0, VALUE_0, VALUE_1]
 
     exec.native_account::set_map_item
@@ -70,11 +75,11 @@ pub proc set(
 
     # Set the second word under key [index, 1, 0, 0].
     push.0.0.1
-    loc_load.2
+    loc_load.INDEX_LOC
     # => [index, 1, 0, 0, VALUE_1, OLD_VALUE_0]
 
-    loc_load.1
-    loc_load.0
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
     # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_1, OLD_VALUE_0]
 
     exec.native_account::set_map_item
@@ -97,18 +102,18 @@ end
 @locals(3)
 pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubleWord
     # Save inputs to locals for reuse.
-    loc_store.0
-    loc_store.1
-    loc_store.2
+    loc_store.SLOT_ID_PREFIX_LOC
+    loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.INDEX_LOC
     # => []
 
     # Get the first word from key [index, 0, 0, 0].
     push.0.0.0
-    loc_load.2
+    loc_load.INDEX_LOC
     # => [index, 0, 0, 0]
 
-    loc_load.1
-    loc_load.0
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
     # => [slot_id_prefix, slot_id_suffix, KEY_0]
 
     exec.active_account::get_map_item
@@ -116,11 +121,11 @@ pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubl
 
     # Get the second word from key [index, 1, 0, 0].
     push.0.0.1
-    loc_load.2
+    loc_load.INDEX_LOC
     # => [index, 1, 0, 0, VALUE_0]
 
-    loc_load.1
-    loc_load.0
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
     # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_0]
 
     exec.active_account::get_map_item
