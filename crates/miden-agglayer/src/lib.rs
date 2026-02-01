@@ -273,8 +273,8 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let ger_lower_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger_lower")
         .expect("Bridge storage slot name should be valid");
     let bridge_storage_slots = vec![
-        StorageSlot::with_value(ger_upper_storage_slot_name, Word::default()),
-        StorageSlot::with_value(ger_lower_storage_slot_name, Word::default()),
+        StorageSlot::with_value(ger_upper_storage_slot_name, Word::empty()),
+        StorageSlot::with_value(ger_lower_storage_slot_name, Word::empty()),
     ];
 
     let bridge_in_comp = bridge_in_component(bridge_storage_slots);
