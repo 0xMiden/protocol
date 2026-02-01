@@ -39,6 +39,7 @@ const ERR_ATTACHMENT_KIND_MISMATCH = "expected attachment kind to be Word for ne
 #!
 #! Panics if:
 #! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
+#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
 #!
 #! Invocation: exec
 pub proc get_id
