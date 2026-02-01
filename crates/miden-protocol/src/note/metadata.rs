@@ -156,23 +156,27 @@ impl NoteMetadata {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Overwrites the note's tag with the provided one.
+    /// Mutates the note's tag by setting it to the provided value.
     pub fn set_tag(&mut self, tag: NoteTag) {
         self.tag = tag;
     }
 
-    /// Overwrites the note's tag with the provided one.
+    /// Returns a new [`NoteMetadata`] with the tag set to the provided value.
+    ///
+    /// This is a builder method that consumes self and returns a new instance for method chaining.
     pub fn with_tag(mut self, tag: NoteTag) -> Self {
         self.tag = tag;
         self
     }
 
-    /// Overwrites the note's attachment with the provided one.
+    /// Mutates the note's attachment by setting it to the provided value.
     pub fn set_attachment(&mut self, attachment: NoteAttachment) {
         self.attachment = attachment;
     }
 
-    /// Overwrites the note's attachment with the provided one.
+    /// Returns a new [`NoteMetadata`] with the attachment set to the provided value.
+    ///
+    /// This is a builder method that consumes self and returns a new instance for method chaining.
     pub fn with_attachment(mut self, attachment: NoteAttachment) -> Self {
         self.attachment = attachment;
         self
