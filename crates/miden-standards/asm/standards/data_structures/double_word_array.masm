@@ -42,7 +42,7 @@ type BeDoubleWord = struct @bigendian {
 #! for the first and second word, respectively.
 #!
 #! Invocation: exec
-@locals(16)
+@locals(3)
 pub proc set(
     slot_id_prefix: felt,
     slot_id_suffix: felt,
@@ -94,7 +94,7 @@ end
 #! - VALUE_1 is the second word stored at the specified index (zero if not set).
 #!
 #! Invocation: exec
-@locals(12)
+@locals(3)
 pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubleWord
     # Save inputs to locals for reuse.
     loc_store.0
