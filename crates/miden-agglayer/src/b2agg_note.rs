@@ -127,10 +127,7 @@ fn build_note_storage(
 ) -> Result<NoteStorage, NoteError> {
     let mut elements = Vec::with_capacity(6);
 
-    // Destination network
     elements.push(Felt::new(destination_network as u64));
-
-    // Destination address (5 u32 felts)
     elements.extend(destination_address.to_elements());
 
     NoteStorage::new(elements)
