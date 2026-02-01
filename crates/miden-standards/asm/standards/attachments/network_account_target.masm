@@ -83,6 +83,10 @@ end
 #! Where:
 #! - is_equal is a boolean indicating whether the active account matches the target account.
 #!
+#! Panics if:
+#! - the attachment scheme does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME.
+#! - the attachment kind does not match NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND.
+#!
 #! Invocation: exec
 pub proc active_account_matches_target_account
     # Ensure note attachment targets the consuming bridge account.
