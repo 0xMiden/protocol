@@ -54,17 +54,6 @@ pub proc update_ger
     # => [pad(16)]
 end
 
-#! Asserts that the provided GER is valid (exists in storage).
-#!
-#! Inputs: [GER_ROOT[8]]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc assert_valid_ger
-    # TODO verify that GER is in storage
-    dropw dropw
-end
-
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
 #!
 #! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
@@ -117,6 +106,20 @@ pub proc verify_leaf_bridge
     # => [pad(16)]
 end
 
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Asserts that the provided GER is valid (exists in storage).
+#!
+#! Inputs: [GER_ROOT[8]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc assert_valid_ger
+    # TODO verify that GER is in storage
+    dropw dropw
+end
+
 #! Assert the global index is valid for a mainnet deposit.
 #!
 #! Inputs: [GLOBAL_INDEX[8]]
@@ -144,9 +147,6 @@ pub proc process_global_index_mainnet
     # finally, the leaf index = lowest 32 bits = last limb
     # => [leaf_index]
 end
-
-# HELPER PROCEDURES
-# =================================================================================================
 
 #! Verify leaf and checks that it has not been claimed.
 #!
