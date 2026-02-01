@@ -41,10 +41,12 @@ begin
 
     # Load GER_LOWER and GER_UPPER from note storage
     mem_loadw_be.STORAGE_PTR_GER_UPPER
-    swapw mem_loadw_be.STORAGE_PTR_GER_LOWER
-    # => [GER_LOWER[4], GER_UPPER[4]]
+    # => [GER_UPPER[4], pad(12)]
+    swapw
+    mem_loadw_be.STORAGE_PTR_GER_LOWER
+    # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     call.bridge_in::update_ger
-    # => []
+    # => [pad(16)]
 
 end

@@ -30,28 +30,28 @@ const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet depos
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
-#! Inputs: [GER_LOWER[4], GER_UPPER[4]]
-#! Outputs: []
+#! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
+#! Outputs: [pad(16)]
 #!
 #! Invocation: exec
 pub proc update_ger
     push.GER_LOWER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4]]
+    # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4], pad(8)]
 
     exec.native_account::set_item
-    # => [OLD_VALUE, GER_UPPER[4]]
+    # => [OLD_VALUE, GER_UPPER[4], pad(8)]
 
     dropw
-    # => [GER_UPPER[4]]
+    # => [GER_UPPER[4], pad(12)]
 
     push.GER_UPPER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_UPPER[4]]
+    # => [slot_id_prefix, slot_id_suffix, GER_UPPER[4], pad(12)]
 
     exec.native_account::set_item
-    # => [OLD_VALUE]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
-    # => []
+    # => [pad(16)]
 end
 
 #! Asserts that the provided GER is valid (exists in storage).
