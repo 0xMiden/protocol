@@ -29,8 +29,8 @@ type BeDoubleWord = struct @bigendian {
 
 #! Sets a double-word in the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index, VALUE_0, VALUE_1, pad(5)]
-#! Outputs: [OLD_VALUE_0, OLD_VALUE_1, pad(8)]
+#! Inputs:  [slot_id_prefix, slot_id_suffix, index, VALUE_0, VALUE_1]
+#! Outputs: [OLD_VALUE_0, OLD_VALUE_1]
 #!
 #! Where:
 #! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
@@ -41,7 +41,7 @@ type BeDoubleWord = struct @bigendian {
 #! Internally, the words are stored under keys [index, 0, 0, 0] and [index, 1, 0, 0],
 #! for the first and second word, respectively.
 #!
-#! Invocation: call
+#! Invocation: exec
 @locals(16)
 pub proc set(
     slot_id_prefix: felt,
@@ -53,39 +53,39 @@ pub proc set(
     loc_store.0
     loc_store.1
     loc_store.2
-    # => [VALUE_0, VALUE_1, pad(8)] auto-padding
+    # => [VALUE_0, VALUE_1]
 
     # Set the first word under key [index, 0, 0, 0].
     push.0.0.0
     loc_load.2
-    # => [index, 0, 0, 0, VALUE_0, VALUE_1, pad(8)]
+    # => [index, 0, 0, 0, VALUE_0, VALUE_1]
 
     loc_load.1
     loc_load.0
-    # => [slot_id_prefix, slot_id_suffix, KEY_0, VALUE_0, VALUE_1, pad(8)]
+    # => [slot_id_prefix, slot_id_suffix, KEY_0, VALUE_0, VALUE_1]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE_0, VALUE_1, pad(8)]
+    # => [OLD_VALUE_0, VALUE_1]
     swapw
 
     # Set the second word under key [index, 1, 0, 0].
     push.0.0.1
     loc_load.2
-    # => [index, 1, 0, 0, VALUE_1, OLD_VALUE_0, pad(8)]
+    # => [index, 1, 0, 0, VALUE_1, OLD_VALUE_0]
 
     loc_load.1
     loc_load.0
-    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_1, OLD_VALUE_0, pad(8)]
+    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_1, OLD_VALUE_0]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE_1, OLD_VALUE_0, pad(8)]
+    # => [OLD_VALUE_1, OLD_VALUE_0]
     swapw
 end
 
 #! Gets a double-word from the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index, pad(13)]
-#! Outputs: [VALUE_0, VALUE_1, pad(8)]
+#! Inputs:  [slot_id_prefix, slot_id_suffix, index]
+#! Outputs: [VALUE_0, VALUE_1]
 #!
 #! Where:
 #! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
@@ -93,38 +93,37 @@ end
 #! - VALUE_0 is the first word stored at the specified index (zero if not set).
 #! - VALUE_1 is the second word stored at the specified index (zero if not set).
 #!
-#! Invocation: call
+#! Invocation: exec
 @locals(12)
 pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubleWord
     # Save inputs to locals for reuse.
     loc_store.0
     loc_store.1
     loc_store.2
-    # => [pad(16)] auto-padding
+    # => []
 
     # Get the first word from key [index, 0, 0, 0].
     push.0.0.0
     loc_load.2
-    # => [index, 0, 0, 0, pad(16)]
+    # => [index, 0, 0, 0]
 
     loc_load.1
     loc_load.0
-    # => [slot_id_prefix, slot_id_suffix, KEY_0, pad(16)]
+    # => [slot_id_prefix, slot_id_suffix, KEY_0]
 
     exec.active_account::get_map_item
-    # => [VALUE_0, pad(16)]
+    # => [VALUE_0]
 
     # Get the second word from key [index, 1, 0, 0].
     push.0.0.1
     loc_load.2
-    # => [index, 1, 0, 0, pad(16)]
+    # => [index, 1, 0, 0, VALUE_0]
 
     loc_load.1
     loc_load.0
-    # => [slot_id_prefix, slot_id_suffix, KEY_1, pad(16)]
+    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_0]
 
     exec.active_account::get_map_item
     swapw
-    # => [VALUE_0, VALUE_1, pad(16)]
-    swapdw dropw dropw
+    # => [VALUE_0, VALUE_1]
 end
