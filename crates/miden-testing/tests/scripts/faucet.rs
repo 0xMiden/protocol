@@ -117,7 +117,7 @@ pub fn verify_minted_output_note(
     assert_eq!(output_note.id(), id);
     assert_eq!(
         output_note.metadata(),
-        &NoteMetadata::new(faucet.id(), params.note_type, params.tag)
+        &NoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
     );
 
     Ok(())
@@ -329,7 +329,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     let output_script_root = note_recipient.script().root();
 
     let asset = FungibleAsset::new(faucet.id(), amount.into())?;
-    let metadata = NoteMetadata::new(faucet.id(), note_type, tag);
+    let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
     let trigger_note_script_code = format!(

@@ -382,8 +382,8 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
     let test_metadata1 =
-        NoteMetadata::new(sender, NoteType::Private, NoteTag::with_account_target(receiver));
-    let test_metadata2 = NoteMetadata::new(sender, NoteType::Public, NoteTag::new(u32::MAX));
+        NoteMetadata::new(sender, NoteType::Private).with_tag(NoteTag::with_account_target(receiver));
+    let test_metadata2 = NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(u32::MAX));
 
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
