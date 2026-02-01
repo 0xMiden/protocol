@@ -129,7 +129,7 @@ end
 #!
 #! Invocation: exec
 pub proc process_global_index_mainnet
-# for v0.1, let's only implement the mainnet branch
+    # for v0.1, let's only implement the mainnet branch
     # the top 191 bits of the global index are zero
     repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
 
