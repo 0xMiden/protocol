@@ -77,8 +77,8 @@ impl NoteMetadata {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [`NoteMetadata`] instantiated with the specified parameters.
-    /// 
-    /// The tag defaults to [`NoteTag::default()`]. Use [`NoteMetadata::with_tag`] to set a 
+    ///
+    /// The tag defaults to [`NoteTag::default()`]. Use [`NoteMetadata::with_tag`] to set a
     /// specific tag if needed.
     pub fn new(sender: AccountId, note_type: NoteType) -> Self {
         Self {
@@ -365,7 +365,8 @@ mod tests {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let note_type = NoteType::Public;
         let tag = NoteTag::new(u32::MAX);
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
 
         // Serialization Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;

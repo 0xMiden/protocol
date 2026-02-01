@@ -250,8 +250,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let output_serial_no_1 = Word::from([8u32; 4]);
     let output_tag_1 = NoteTag::with_account_target(network_account);
     let assets = NoteAssets::new(vec![input_asset_1])?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public).with_tag(output_tag_1);
+    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
+        .with_tag(output_tag_1);
     let inputs = NoteStorage::new(vec![])?;
     let recipient = NoteRecipient::new(output_serial_no_1, input_note_1.script().clone(), inputs);
     let output_note_1 = Note::new(assets, metadata, recipient);
@@ -264,10 +264,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         NoteAttachmentScheme::new(5),
         [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
     )?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
-            .with_tag(output_tag_2)
-            .with_attachment(attachment);
+    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
+        .with_tag(output_tag_2)
+        .with_attachment(attachment);
     let inputs = NoteStorage::new(vec![])?;
     let recipient = NoteRecipient::new(output_serial_no_2, input_note_2.script().clone(), inputs);
     let output_note_2 = Note::new(assets, metadata, recipient);

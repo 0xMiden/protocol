@@ -97,10 +97,9 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
 
     let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
     let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100), Word::empty());
-    let metadata =
-        NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
-            .with_tag(tag)
-            .with_attachment(attachment);
+    let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
+        .with_tag(tag)
+        .with_attachment(attachment);
     let assets = NoteAssets::new(vec![Asset::Fungible(
         FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
     )])?;

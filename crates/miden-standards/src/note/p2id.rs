@@ -82,7 +82,8 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
         let vault = NoteAssets::new(assets)?;
 
         Ok(Note::new(vault, metadata, recipient))

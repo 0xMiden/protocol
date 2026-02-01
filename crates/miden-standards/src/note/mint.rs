@@ -99,7 +99,8 @@ impl MintNote {
 
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata = NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
         let assets = NoteAssets::new(vec![])?; // MINT notes have no assets
         let recipient = NoteRecipient::new(serial_num, note_script, storage);
 
