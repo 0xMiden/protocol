@@ -36,35 +36,43 @@ fn core_benchmarks(c: &mut Criterion) {
         .warm_up_time(Duration::from_millis(1000));
 
     execute_group.bench_function(BENCH_EXECUTE_TX_CONSUME_SINGLE_P2ID, |b| {
-        b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
-            .iter_batched(
-                || {
-                    // prepare the transaction context
-                    tx_consume_single_p2id_note()
-                        .expect("failed to create a context which consumes single P2ID note")
-                },
-                |tx_context| async move {
-                    // benchmark the transaction execution
-                    black_box(tx_context.execute().await)
-                },
-                BatchSize::SmallInput,
-            );
+        b.to_async(
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("failed to build tokio runtime"),
+        )
+        .iter_batched(
+            || {
+                // prepare the transaction context
+                tx_consume_single_p2id_note()
+                    .expect("failed to create a context which consumes single P2ID note")
+            },
+            |tx_context| async move {
+                // benchmark the transaction execution
+                black_box(tx_context.execute().await)
+            },
+            BatchSize::SmallInput,
+        );
     });
 
     execute_group.bench_function(BENCH_EXECUTE_TX_CONSUME_TWO_P2ID, |b| {
-        b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
-            .iter_batched(
-                || {
-                    // prepare the transaction context
-                    tx_consume_two_p2id_notes()
-                        .expect("failed to create a context which consumes two P2ID notes")
-                },
-                |tx_context| async move {
-                    // benchmark the transaction execution
-                    black_box(tx_context.execute().await)
-                },
-                BatchSize::SmallInput,
-            );
+        b.to_async(
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("failed to build tokio runtime"),
+        )
+        .iter_batched(
+            || {
+                // prepare the transaction context
+                tx_consume_two_p2id_notes()
+                    .expect("failed to create a context which consumes two P2ID notes")
+            },
+            |tx_context| async move {
+                // benchmark the transaction execution
+                black_box(tx_context.execute().await)
+            },
+            BatchSize::SmallInput,
+        );
     });
 
     execute_group.finish();
@@ -80,45 +88,53 @@ fn core_benchmarks(c: &mut Criterion) {
         .warm_up_time(Duration::from_millis(1000));
 
     execute_and_prove_group.bench_function(BENCH_EXECUTE_AND_PROVE_TX_CONSUME_SINGLE_P2ID, |b| {
-        b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
-            .iter_batched(
-                || {
-                    // prepare the transaction context
-                    tx_consume_single_p2id_note()
-                        .expect("failed to create a context which consumes single P2ID note")
-                },
-                |tx_context| async move {
-                    // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the single P2ID note consumption tx failed"),
-                    ))
-                },
-                BatchSize::SmallInput,
-            );
+        b.to_async(
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("failed to build tokio runtime"),
+        )
+        .iter_batched(
+            || {
+                // prepare the transaction context
+                tx_consume_single_p2id_note()
+                    .expect("failed to create a context which consumes single P2ID note")
+            },
+            |tx_context| async move {
+                // benchmark the transaction execution and proving
+                black_box(prove_transaction(
+                    tx_context
+                        .execute()
+                        .await
+                        .expect("execution of the single P2ID note consumption tx failed"),
+                ))
+            },
+            BatchSize::SmallInput,
+        );
     });
 
     execute_and_prove_group.bench_function(BENCH_EXECUTE_AND_PROVE_TX_CONSUME_TWO_P2ID, |b| {
-        b.to_async(tokio::runtime::Builder::new_current_thread().build().unwrap())
-            .iter_batched(
-                || {
-                    // prepare the transaction context
-                    tx_consume_two_p2id_notes()
-                        .expect("failed to create a context which consumes two P2ID notes")
-                },
-                |tx_context| async move {
-                    // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the two P2ID note consumption tx failed"),
-                    ))
-                },
-                BatchSize::SmallInput,
-            );
+        b.to_async(
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("failed to build tokio runtime"),
+        )
+        .iter_batched(
+            || {
+                // prepare the transaction context
+                tx_consume_two_p2id_notes()
+                    .expect("failed to create a context which consumes two P2ID notes")
+            },
+            |tx_context| async move {
+                // benchmark the transaction execution and proving
+                black_box(prove_transaction(
+                    tx_context
+                        .execute()
+                        .await
+                        .expect("execution of the two P2ID note consumption tx failed"),
+                ))
+            },
+            BatchSize::SmallInput,
+        );
     });
 
     execute_and_prove_group.finish();
