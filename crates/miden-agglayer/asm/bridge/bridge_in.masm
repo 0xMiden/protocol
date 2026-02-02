@@ -129,8 +129,25 @@ end
 #!
 #! Invocation: exec
 proc assert_valid_ger
-    # TODO verify that GER is in storage
-    dropw dropw
+    # Compute hash(GER) from the 8 felts (GER_LOWER, GER_UPPER)
+    exec.rpo256::merge
+    # => [GER_HASH[4]]
+
+    # Push slot identifiers
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH[4]]
+
+    # Lookup in map
+    exec.active_account::get_map_item
+    # => [VALUE[4]]
+
+    # Assert the GER is known (value should be [GER_KNOWN_VALUE, 0, 0, 0])
+    # Note: push.a.b.c.d results in stack [d, c, b, a, ...] and Word([a, b, c, d])
+    push.GER_KNOWN_VALUE.0.0.0
+    # => [0, 0, 0, GER_KNOWN_VALUE, VALUE[4]]
+
+    assert_eqw.err=ERR_GER_NOT_FOUND
+    # => []
 end
 
 #! Assert the global index is valid for a mainnet deposit.
