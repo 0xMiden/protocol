@@ -130,9 +130,9 @@ fn expected_y(x: U256, scale: u32) -> u64 {
 }
 
 /// Assert that scaling down succeeds with the correct result
-async fn assert_scale_down_ok(x: U256, s: u32) -> anyhow::Result<u64> {
-    let y = expected_y(x, s);
-    let script = build_scale_down_script(x, s, y);
+async fn assert_scale_down_ok(x: U256, scale: u32) -> anyhow::Result<u64> {
+    let y = expected_y(x, scale);
+    let script = build_scale_down_script(x, scale, y);
     let out = execute_masm_script(&script).await?;
     assert_eq!(out.stack[0].as_int(), y);
     Ok(y)
