@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -16,18 +17,22 @@ use miden_protocol::note::{
     NoteTag,
     NoteType,
 };
-use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Program;
+
+use crate::StandardsLib;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the P2ID note script procedure in the standards library.
+const P2ID_SCRIPT_PATH: &str = "::miden::standards::notes::p2id::main";
+
 // Initialize the P2ID note script only once
 static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/P2ID.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped P2ID script is well-formed");
-    NoteScript::new(program)
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(P2ID_SCRIPT_PATH);
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("Standards library contains P2ID note script procedure")
 });
 
 // P2ID NOTE
@@ -82,7 +87,8 @@ impl P2idNote {
 
         let tag = NoteTag::with_account_target(target);
 
-        let metadata = NoteMetadata::new(sender, note_type, tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
         let vault = NoteAssets::new(assets)?;
 
         Ok(Note::new(vault, metadata, recipient))

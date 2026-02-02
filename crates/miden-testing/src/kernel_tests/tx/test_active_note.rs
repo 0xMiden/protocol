@@ -408,7 +408,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     // prepare note data
     let serial_num = RpoRandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
         .compile_note_script("begin nop end")

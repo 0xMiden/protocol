@@ -3,19 +3,12 @@ use $kernel::account_id
 use $kernel::asset
 use $kernel::asset_vault
 use $kernel::memory
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # ERRORS
 # =================================================================================================
 
-const ERR_FAUCET_NEW_TOTAL_SUPPLY_WOULD_EXCEED_MAX_ASSET_AMOUNT="asset mint operation would cause the new total supply to exceed the maximum allowed asset amount"
-
-const ERR_FAUCET_BURN_CANNOT_EXCEED_EXISTING_TOTAL_SUPPLY="asset amount to burn can not exceed the existing total supply"
-
-const ERR_FAUCET_NON_FUNGIBLE_ASSET_ALREADY_ISSUED="failed to mint new non-fungible asset because it was already issued"
-
 const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET="the burn_non_fungible_asset procedure can only be called on a non-fungible faucet"
-
-const ERR_FAUCET_NON_FUNGIBLE_ASSET_TO_BURN_NOT_FOUND="failed to burn non-existent non-fungible asset in the vault"
 
 # FUNGIBLE ASSETS
 # ==================================================================================================
@@ -32,34 +25,21 @@ const ERR_FAUCET_NON_FUNGIBLE_ASSET_TO_BURN_NOT_FOUND="failed to burn non-existe
 #!
 #! Panics if:
 #! - the transaction is not being executed against a fungible faucet.
-#! - the fungible asset being minted is not associated with the faucet the transaction is being
-#!   executed against.
+#! - the fungible asset's faucet ID does not match the native account's ID.
 #! - the asset is not well formed.
-#! - the total issuance after minting is greater than the maximum amount allowed.
 pub proc mint_fungible_asset
-    # assert that the asset is associated with the faucet the transaction is being executed against
-    # and that the asset is valid
-    exec.account::get_id exec.asset::validate_fungible_asset_origin
+    # assert that the asset was issued by the faucet the transaction is being executed against and
+    # that the asset is valid
+    exec.account::get_id
+    exec.asset::validate_fungible_asset_origin
     # => [ASSET]
 
-    # get the current total issuance
-    exec.account::get_faucet_sysdata_slot_id exec.account::get_item
-    # => [TOTAL_ISSUANCE, ASSET]
+    exec.memory::get_input_vault_root_ptr
+    movdn.4
+    # => [ASSET, input_vault_root_ptr]
 
-    # prepare stack to ensure that minting the asset will not exceed the maximum
-    dup.7 dup exec.asset::get_fungible_asset_max_amount dup.3
-    # => [total_issuance, max_allowed_issuance, amount, amount, TOTAL_ISSUANCE, ASSET]
-
-    # compute difference to ensure that the total issuance will not exceed the maximum
-    sub lte assert.err=ERR_FAUCET_NEW_TOTAL_SUPPLY_WOULD_EXCEED_MAX_ASSET_AMOUNT
-    # => [amount, TOTAL_ISSUANCE, ASSET]
-
-    # update the total issuance
-    add exec.account::get_faucet_sysdata_slot_id exec.account::set_item dropw
-    # => [ASSET]
-
-    # add the asset to the input vault for asset preservation checks
-    dupw exec.memory::get_input_vault_root_ptr movdn.4 exec.asset_vault::add_fungible_asset dropw
+    # add the asset to the input vault for asset preservation
+    exec.asset_vault::add_fungible_asset
     # => [ASSET]
 end
 
@@ -77,46 +57,20 @@ end
 #! - the fungible asset being burned is not associated with the faucet the transaction is being
 #!   executed against.
 #! - the asset is not well formed.
-#! - the amount being burned is greater than the total input to the transaction.
 proc burn_fungible_asset
     # assert that the asset is associated with the faucet the transaction is being executed against
     # and that the asset is valid
-    exec.account::get_id exec.asset::validate_fungible_asset_origin
+    exec.account::get_id
+    exec.asset::validate_fungible_asset_origin
     # => [ASSET]
 
-    # fetch TOTAL_ISSUANCE such that we can compute the new total issuance
-    exec.account::get_faucet_sysdata_slot_id exec.account::get_item
-    # => [TOTAL_ISSUANCE, ASSET]
+    exec.memory::get_input_vault_root_ptr
+    movdn.4
+    # => [ASSET, input_vault_root_ptr]
 
-    # assert that the asset amount being burned is less or equal to the total issuance
-    dup.7 dup dup.2 lte assert.err=ERR_FAUCET_BURN_CANNOT_EXCEED_EXISTING_TOTAL_SUPPLY
-    # => [amount, TOTAL_ISSUANCE, ASSET]
-
-    # compute new total issuance
-    sub exec.account::get_faucet_sysdata_slot_id exec.account::set_item dropw
+    # remove the asset from the input vault for asset preservation
+    exec.asset_vault::remove_fungible_asset
     # => [ASSET]
-
-    # remove the asset from the input vault
-    dupw exec.memory::get_input_vault_root_ptr movdn.4 exec.asset_vault::remove_fungible_asset dropw
-    # => [ASSET]
-end
-
-#! Returns the total issuance of the fungible faucet the transaction is being executed against.
-#!
-#! Inputs:  []
-#! Outputs: [total_issuance]
-#!
-#! Where:
-#! - total_issuance is the total issuance of the fungible faucet the transaction is being executed
-#!   against.
-pub proc get_total_issuance
-    # fetch the TOTAL_ISSUANCE from storage
-    exec.account::get_faucet_sysdata_slot_id exec.account::get_item
-    # => [TOTAL_ISSUANCE]
-
-    # extract the total_issuance and purge the padding
-    movdn.3 drop drop drop
-    # => [total_issuance]
 end
 
 # NON-FUNGIBLE ASSETS
@@ -135,33 +89,22 @@ end
 #! - the transaction is not being executed against a non-fungible faucet.
 #! - the non-fungible asset being minted is not associated with the faucet the transaction is being
 #!   executed against.
-#! - the non-fungible asset being minted already exists.
 proc mint_non_fungible_asset
     # assert that the asset is associated with the faucet the transaction is being executed against
     # and that the asset is valid
-    exec.account::get_id swap drop exec.asset::validate_non_fungible_asset_origin
+    exec.account::get_id
+    swap drop
+    # => [faucet_id_prefix, ASSET]
+
+    exec.asset::validate_non_fungible_asset_origin
     # => [ASSET]
 
-    # duplicate the asset on the stack and get the non-fungible asset key
-    dupw dupw exec.asset_vault::build_non_fungible_asset_vault_key
-    # => [ASSET_KEY, ASSET, ASSET]
+    exec.memory::get_input_vault_root_ptr
+    movdn.4
+    # => [ASSET, input_vault_root_ptr]
 
-    # get the faucet storage data slot
-    exec.account::get_faucet_sysdata_slot_id
-    # => [faucet_slot_name_prefix, faucet_slot_name_suffix, ASSET_KEY, ASSET, ASSET]
-
-    # insert the non-fungible asset into the tracking SMT
-    exec.account::set_map_item
-    # => [OLD_VAL, ASSET]
-
-    # Assert the `OLD_VAL` is an EMPTY_WORD, indicating that the non-fungible asset has not been
-    # issued yet. We only need to check OLD_VAL[3] as this is always set to the faucet_id_prefix
-    # and can not be 0.
-    eq.0 assert.err=ERR_FAUCET_NON_FUNGIBLE_ASSET_ALREADY_ISSUED drop drop drop
-    # => [ASSET]
-
-    # add the non-fungible asset to the input vault for asset preservation checks
-    exec.memory::get_input_vault_root_ptr movdn.4 exec.asset_vault::add_non_fungible_asset
+    # add the non-fungible asset to the input vault for asset preservation
+    exec.asset_vault::add_non_fungible_asset
     # => [ASSET]
 end
 
@@ -178,77 +121,23 @@ end
 #! - the transaction is not being executed against a non-fungible faucet.
 #! - the non-fungible asset being burned is not associated with the faucet the transaction is being
 #!   executed against.
-#! - the non-fungible asset being burned does not exist or was not provided as input to the
-#!   transaction via a note or the accounts vault.
 proc burn_non_fungible_asset
-    # assert that we are executing a transaction against the non-fungible faucet (access checks)
-    exec.account::get_id swap drop exec.account_id::is_non_fungible_faucet
-    assert.err=ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET
+    # assert that the asset was issued by the faucet the transaction is being executed against and
+    # that the asset is valid
+    exec.account::get_id
+    swap drop
+    # => [faucet_id_prefix, ASSET]
+
+    exec.asset::validate_non_fungible_asset_origin
     # => [ASSET]
 
-    # get the non-fungible asset key
-    dupw exec.asset_vault::build_non_fungible_asset_vault_key
-    # => [ASSET_KEY, ASSET]
+    # remove the non-fungible asset from the input vault for asset preservation
+    exec.memory::get_input_vault_root_ptr
+    movdn.4
+    # => [ASSET, input_vault_root_ptr]
 
-    # add an empty word to the stack to overwrite the old value with
-    padw swapw
-    # => [ASSET_KEY, EMPTY_WORD, ASSET]
-
-    # get the faucet storage data slot
-    exec.account::get_faucet_sysdata_slot_id
-    # => [faucet_storage_data_slot, ASSET_KEY, EMPTY_WORD, ASSET]
-
-    # remove the non-fungible asset from the tracking SMT
-    exec.account::set_map_item
-    # => [OLD_VAL, ASSET]
-
-    # Assert the `OLD_VAL` is not an EMPTY_WORD, indicating that the non-fungible asset exists. We
-    # only need to check OLD_VAL[3] as this is always set to the faucet_id_prefix and can not be 0.
-    eq.0 not assert.err=ERR_FAUCET_NON_FUNGIBLE_ASSET_TO_BURN_NOT_FOUND drop drop drop
+    exec.asset_vault::remove_non_fungible_asset
     # => [ASSET]
-
-    # remove the non-fungible asset from the input vault for asset preservation checks
-    exec.memory::get_input_vault_root_ptr movdn.4 exec.asset_vault::remove_non_fungible_asset
-    # => [ASSET]
-end
-
-#! Returns a boolean indicating whether the provided non-fungible asset has been already issued by
-#! this faucet.
-#!
-#! Inputs:  [ASSET]
-#! Outputs: [is_issued]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset that is being checked.
-#! - is_issued is a boolean indicating whether the non-fungible asset has been issued.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-#! - the ASSET is not associated with the faucet the transaction is being executed against.
-pub proc is_non_fungible_asset_issued
-    # assert that the asset is associated with the faucet the transaction is being executed against
-    # and that the asset is valid
-    exec.account::get_id swap drop exec.asset::validate_non_fungible_asset_origin
-    # => [ASSET]
-
-    # get the asset vault key from the asset
-    exec.asset_vault::build_non_fungible_asset_vault_key
-    # => [ASSET_KEY]
-
-    # get the storage index where faucet's assets map is stored
-    exec.account::get_faucet_sysdata_slot_id
-    # => [map_slot_index, ASSET_KEY]
-
-    # get the non-fungible asset stored by the computed account key
-    exec.account::get_map_item
-    # => [STORED_ASSET]
-
-    # Check whether the `STORED_ASSET` is an EMPTY_WORD, indicating that the non-fungible asset has
-    # not been issued yet. We only need to check STORED_ASSET[3] as this is always set to the
-    # faucet_id_prefix and can not be 0 (in reversed stack order it will be top stack element).
-    # Equality of the STORED_ASSET[3] to zero will become a flag that this asset is not issued.
-    neq.0 movdn.3 drop drop drop
-    # => [is_issued]
 end
 
 # PUBLIC INTERFACE

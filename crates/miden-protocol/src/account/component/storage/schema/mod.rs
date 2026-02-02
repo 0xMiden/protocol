@@ -7,7 +7,6 @@ use miden_processor::DeserializationError;
 
 use super::type_registry::SchemaRequirement;
 use super::{InitStorageData, StorageValueName};
-use crate::account::storage::is_reserved_slot_name;
 use crate::account::{StorageSlot, StorageSlotName};
 use crate::crypto::utils::bytes_to_elements_with_padding;
 use crate::errors::AccountComponentTemplateError;
@@ -48,7 +47,6 @@ impl StorageSchema {
     ///
     /// # Errors
     /// - If `fields` contains duplicate slot names.
-    /// - If `fields` contains the protocol-reserved faucet metadata slot name.
     /// - If any slot schema is invalid.
     /// - If multiple schema fields map to the same init value name.
     pub fn new(
@@ -130,10 +128,6 @@ impl StorageSchema {
         let mut init_values = BTreeMap::new();
 
         for (slot_name, schema) in self.slots.iter() {
-            if is_reserved_slot_name(slot_name) {
-                return Err(AccountComponentTemplateError::ReservedSlotName(slot_name.clone()));
-            }
-
             schema.validate()?;
             schema.collect_init_value_requirements(slot_name, &mut init_values)?;
         }

@@ -64,11 +64,6 @@ const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account
 # CONSTANTS
 # =================================================================================================
 
-# The name of the account storage slot at which faucet data is stored.
-# Fungible faucet: The faucet data consists of [0, 0, 0, total_issuance]
-# Non-fungible faucet: The faucet data consists of SMT root containing minted non-fungible assets.
-const FAUCET_SYSDATA_SLOT=word("miden::protocol::faucet::sysdata")
-
 # The maximum storage slot index
 const MAX_STORAGE_SLOT_INDEX=254
 
@@ -181,20 +176,6 @@ const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT=event("miden::protocol::account::push_p
 
 # CONSTANT ACCESSORS
 # =================================================================================================
-
-#! Returns the account storage slot at which faucet data is stored.
-#! Fungible faucet: The faucet data consists of [0, 0, 0, total_issuance]
-#! Non-fungible faucet: The faucet data consists of SMT root containing minted non-fungible assets.
-#!
-#! Inputs:  []
-#! Outputs: [faucet_slot_id_prefix, faucet_slot_id_suffix]
-#!
-#! Where:
-#! - faucet_slot_id{prefix,suffix} are the prefix and suffix felts of the slot identifier, at which
-#!   faucet data is stored.
-pub proc get_faucet_sysdata_slot_id
-    push.FAUCET_SYSDATA_SLOT[0..2]
-end
 
 #! Returns the maximum number of account storage slots.
 #!
@@ -1426,31 +1407,6 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
-
-#! Returns 1 if the provided slot ID is equal to the reserved faucet storage data slot, 0
-#! otherwise.
-#!
-#! Inputs:  [slot_id_prefix, slot_id_suffix]
-#! Outputs: [is_faucet_storage_data_slot]
-#!
-#! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
-#! - is_faucet_storage_data_slot is a boolean value indicating whether the provided slot is the
-#!   reserved faucet data slot.
-pub proc is_faucet_storage_data_slot
-    exec.get_faucet_sysdata_slot_id
-    # => [faucet_slot_id_prefix, faucet_slot_id_suffix, slot_id_prefix, slot_id_suffix]
-
-    movup.2 eq
-    # => [prefix_eq, faucet_slot_id_suffix, slot_id_suffix]
-
-    movdn.2 eq
-    # => [prefix_eq, suffix_eq]
-
-    and
-    # => [is_faucet_storage_data_slot]
-end
 
 #! Gets the initial and current value of an item from the storage slot at the provided index for
 #! the native account.

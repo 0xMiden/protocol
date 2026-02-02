@@ -110,33 +110,11 @@ end
 #! - num_storage_items is greater than 1024.
 #!
 #! Invocation: exec
-@locals(1)
 pub proc build_recipient
     dup.1 dup.1
     # => [storage_ptr, num_storage_items, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.compute_storage_commitment
-    # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    # store num_storage_items into local memory
-    dup.5 loc_store.0
-    # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    locaddr.0 add.1
-    locaddr.0
-    # => [num_storage_items_start_ptr, num_storage_items_end_ptr, STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    dup.5 dup.5 dup.5 dup.5
-    # => [STORAGE_COMMITMENT, num_storage_items_start_ptr, num_storage_items_end_ptr,
-    #     STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    # compute the advice map key for num_storage_items by hashing the storage commitment
-    exec.rpo256::hash
-    # => [hash(STORAGE_COMMITMENT), num_storage_items_start_ptr, num_storage_items_end_ptr,
-    #     STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    adv.insert_mem
-    dropw drop drop
     # => [STORAGE_COMMITMENT, storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     movup.5 movup.5 dup movdn.2

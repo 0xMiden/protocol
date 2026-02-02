@@ -4,22 +4,10 @@
 # Specifies the maximum amount a fungible asset can represent.
 #
 # This is 2^63 - 2^31. See account_delta.masm for more details.
-const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
+pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
 
 # PROCEDURES
 # =================================================================================================
-
-#! Returns the maximum amount of a fungible asset.
-#!
-#! Inputs:  []
-#! Outputs: [fungible_asset_max_amount]
-#!
-#! Where:
-#! - fungible_asset_max_amount is the maximum amount of a fungible asset.
-pub proc get_fungible_asset_max_amount
-    push.FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [fungible_asset_max_amount]
-end
 
 #! Returns the balance of the given fungible asset.
 #!
