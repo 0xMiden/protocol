@@ -19,15 +19,6 @@ pub enum EthAmountError {
     /// The scaling factor is too large (> 18).
     #[error("scaling factor too large: maximum is 18")]
     ScaleTooLarge,
-    /// The scaled-down value is not a canonical Felt (>= 2^64 - 2^32 + 1).
-    #[error("scaled value is not a canonical Felt (must be < 2^64 - 2^32 + 1)")]
-    ScaledValueNotCanonicalFelt,
-    /// Underflow detected: x < y * 10^s.
-    #[error("underflow detected: x < y * 10^s")]
-    Underflow,
-    /// The remainder is too large (>= 10^s).
-    #[error("remainder too large: must be < 10^s")]
-    RemainderTooLarge,
     /// The scaled-down value doesn't fit in a u64.
     #[error("scaled value doesn't fit in u64")]
     ScaledValueDoesNotFitU64,
