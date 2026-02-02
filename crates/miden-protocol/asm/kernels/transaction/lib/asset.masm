@@ -20,14 +20,7 @@ const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungibl
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-#! Returns the maximum amount of a fungible asset.
-#!
-#! Inputs:  []
-#! Outputs: [fungible_asset_max_amount]
-#!
-#! Where:
-#! - fungible_asset_max_amount is the maximum amount of a fungible asset.
-pub use ::$kernel::util::asset::get_fungible_asset_max_amount
+pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # PROCEDURES
 # =================================================================================================
@@ -57,7 +50,7 @@ pub proc validate_fungible_asset
     # => [ASSET]
 
     # assert that the max amount (ASSET[0]) of a fungible asset is not exceeded
-    dup.3 exec.::$kernel::util::asset::get_fungible_asset_max_amount lte
+    dup.3 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS
     # => [ASSET]
 end

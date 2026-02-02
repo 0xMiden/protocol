@@ -12,9 +12,8 @@ use super::{
     Serializable,
     Word,
 };
-use crate::account::{AccountComponent, AccountType};
+use crate::account::AccountComponent;
 use crate::crypto::SequentialCommit;
-use crate::utils::sync::LazyLock;
 
 mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
@@ -27,19 +26,6 @@ pub use header::{AccountStorageHeader, StorageSlotHeader};
 
 mod partial;
 pub use partial::PartialStorage;
-
-static FAUCET_SYSDATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::protocol::faucet::sysdata")
-        .expect("storage slot name should be valid")
-});
-
-static RESERVED_SLOT_NAMES: LazyLock<Vec<StorageSlotName>> =
-    LazyLock::new(|| vec![FAUCET_SYSDATA_SLOT_NAME.clone()]);
-
-/// Returns `true` if the provided slot name is reserved by the protocol.
-pub fn is_reserved_slot_name(slot_name: &StorageSlotName) -> bool {
-    RESERVED_SLOT_NAMES.iter().any(|reserved| reserved.id() == slot_name.id())
-}
 
 // ACCOUNT STORAGE
 // ================================================================================================
@@ -105,53 +91,27 @@ impl AccountStorage {
 
     /// Creates an [`AccountStorage`] from the provided components' storage slots.
     ///
-    /// If the account type is faucet the reserved slot (slot 0) will be initialized.
-    /// - For Fungible Faucets the value is [`StorageSlot::empty_value`].
-    /// - For Non-Fungible Faucets the value is [`StorageSlot::empty_map`].
-    ///
-    /// If the storage needs to be initialized with certain values in that slot, those can be added
-    /// after construction with the standard set methods for items and maps.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The number of [`StorageSlot`]s of all components exceeds 255.
-    /// - Any component accesses [`AccountStorage::faucet_sysdata_slot`].
+    /// - There are multiple storage slots with the same [`StorageSlotName`].
     pub(super) fn from_components(
         components: Vec<AccountComponent>,
-        account_type: AccountType,
     ) -> Result<AccountStorage, AccountError> {
-        let mut storage_slots = match account_type {
-            AccountType::FungibleFaucet => {
-                vec![StorageSlot::with_empty_value(Self::faucet_sysdata_slot().clone())]
-            },
-            AccountType::NonFungibleFaucet => {
-                vec![StorageSlot::with_empty_map(Self::faucet_sysdata_slot().clone())]
-            },
-            _ => vec![],
-        };
-
-        for component_slot in components.into_iter().flat_map(|component| {
-            let AccountComponent { storage_slots, .. } = component;
-            storage_slots.into_iter()
-        }) {
-            if is_reserved_slot_name(component_slot.name()) {
-                return Err(AccountError::StorageSlotNameMustNotBeFaucetSysdata);
-            }
-
-            storage_slots.push(component_slot);
-        }
+        let storage_slots = components
+            .into_iter()
+            .flat_map(|component| {
+                let AccountComponent { storage_slots, .. } = component;
+                storage_slots.into_iter()
+            })
+            .collect();
 
         Self::new(storage_slots)
     }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
-
-    /// Returns the [`StorageSlotName`] of the faucet's protocol system data.
-    pub fn faucet_sysdata_slot() -> &'static StorageSlotName {
-        &FAUCET_SYSDATA_SLOT_NAME
-    }
 
     /// Converts storage slots of this account storage into a vector of field elements.
     ///

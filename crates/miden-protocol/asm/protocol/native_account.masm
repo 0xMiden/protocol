@@ -126,7 +126,6 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the native account is a faucet and the provided slot ID points to the reserved faucet storage slot.
 #!
 #! Invocation: exec
 pub proc set_item

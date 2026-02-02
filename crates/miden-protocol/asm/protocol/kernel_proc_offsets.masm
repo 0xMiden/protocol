@@ -48,49 +48,47 @@ const ACCOUNT_HAS_PROCEDURE_OFFSET=25
 ### Faucet ######################################
 const FAUCET_MINT_ASSET_OFFSET=26
 const FAUCET_BURN_ASSET_OFFSET=27
-const FAUCET_GET_TOTAL_FUNGIBLE_ASSET_ISSUANCE_OFFSET=28
-const FAUCET_IS_NON_FUNGIBLE_ASSET_ISSUED_OFFSET=29
 
 ### Note ########################################
 
 # input notes
-const INPUT_NOTE_GET_METADATA_OFFSET=30
-const INPUT_NOTE_GET_ASSETS_INFO_OFFSET=31
-const INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET=32
-const INPUT_NOTE_GET_STORAGE_INFO_OFFSET=33
-const INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET=34
-const INPUT_NOTE_GET_RECIPIENT_OFFSET=35
+const INPUT_NOTE_GET_METADATA_OFFSET=28
+const INPUT_NOTE_GET_ASSETS_INFO_OFFSET=29
+const INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET=30
+const INPUT_NOTE_GET_STORAGE_INFO_OFFSET=31
+const INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET=32
+const INPUT_NOTE_GET_RECIPIENT_OFFSET=33
 
 # output notes
-const OUTPUT_NOTE_CREATE_OFFSET=36
-const OUTPUT_NOTE_GET_METADATA_OFFSET=37
-const OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET=38
-const OUTPUT_NOTE_GET_RECIPIENT_OFFSET=39
-const OUTPUT_NOTE_ADD_ASSET_OFFSET=40
-const OUTPUT_NOTE_SET_ATTACHMENT_OFFSET=41
+const OUTPUT_NOTE_CREATE_OFFSET=34
+const OUTPUT_NOTE_GET_METADATA_OFFSET=35
+const OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET=36
+const OUTPUT_NOTE_GET_RECIPIENT_OFFSET=37
+const OUTPUT_NOTE_ADD_ASSET_OFFSET=38
+const OUTPUT_NOTE_SET_ATTACHMENT_OFFSET=39
 
 ### Tx ##########################################
 
 # input notes
-const TX_GET_NUM_INPUT_NOTES_OFFSET=42
-const TX_GET_INPUT_NOTES_COMMITMENT_OFFSET=43
+const TX_GET_NUM_INPUT_NOTES_OFFSET=40
+const TX_GET_INPUT_NOTES_COMMITMENT_OFFSET=41
 
 # output notes
-const TX_GET_NUM_OUTPUT_NOTES_OFFSET=44
-const TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET=45
+const TX_GET_NUM_OUTPUT_NOTES_OFFSET=42
+const TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET=43
 
 # block info
-const TX_GET_BLOCK_COMMITMENT_OFFSET=46
-const TX_GET_BLOCK_NUMBER_OFFSET=47
-const TX_GET_BLOCK_TIMESTAMP_OFFSET=48
+const TX_GET_BLOCK_COMMITMENT_OFFSET=44
+const TX_GET_BLOCK_NUMBER_OFFSET=45
+const TX_GET_BLOCK_TIMESTAMP_OFFSET=46
 
 # foreign context
-const TX_START_FOREIGN_CONTEXT_OFFSET=49
-const TX_END_FOREIGN_CONTEXT_OFFSET=50
+const TX_START_FOREIGN_CONTEXT_OFFSET=47
+const TX_END_FOREIGN_CONTEXT_OFFSET=48
 
 # expiration data
-const TX_GET_EXPIRATION_DELTA_OFFSET=51               # accessor
-const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=52      # mutator
+const TX_GET_EXPIRATION_DELTA_OFFSET=49               # accessor
+const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=50      # mutator
 
 # ACCESSORS
 # -------------------------------------------------------------------------------------------------
@@ -433,30 +431,6 @@ end
 #!   address where this procedure is stored.
 pub proc faucet_burn_asset_offset
     push.FAUCET_BURN_ASSET_OFFSET
-end
-
-#! Returns the offset of the `faucet_get_total_fungible_asset_issuance` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `faucet_get_total_fungible_asset_issuance` kernel procedure
-#!   required to get the address where this procedure is stored.
-pub proc faucet_get_total_fungible_asset_issuance_offset
-    push.FAUCET_GET_TOTAL_FUNGIBLE_ASSET_ISSUANCE_OFFSET
-end
-
-#! Returns the offset of the `faucet_is_non_fungible_asset_issued` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `faucet_is_non_fungible_asset_issued` kernel procedure
-#!   required to get the address where this procedure is stored.
-pub proc faucet_is_non_fungible_asset_issued_offset
-    push.FAUCET_IS_NON_FUNGIBLE_ASSET_ISSUED_OFFSET
 end
 
 ### OUTPUT NOTE ########################################

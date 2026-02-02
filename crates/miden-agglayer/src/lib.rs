@@ -233,10 +233,10 @@ pub fn create_agglayer_faucet_component(
     max_supply: Felt,
     bridge_account_id: AccountId,
 ) -> AccountComponent {
-    // Create network faucet metadata slot: [max_supply, decimals, token_symbol, 0]
+    // Create network faucet metadata slot: [0, max_supply, decimals, token_symbol]
     let token_symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
     let metadata_word =
-        Word::new([max_supply, Felt::from(decimals), token_symbol.into(), FieldElement::ZERO]);
+        Word::new([FieldElement::ZERO, max_supply, Felt::from(decimals), token_symbol.into()]);
     let metadata_slot =
         StorageSlot::with_value(NetworkFungibleFaucet::metadata_slot().clone(), metadata_word);
 
