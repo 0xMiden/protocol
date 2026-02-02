@@ -1,6 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -15,17 +15,22 @@ use miden_protocol::note::{
     NoteTag,
     NoteType,
 };
-use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
+
+use crate::StandardsLib;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the BURN note script procedure in the standards library.
+const BURN_SCRIPT_PATH: &str = "::miden::standards::notes::burn::main";
+
 // Initialize the BURN note script only once
 static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/burn.masl"));
-    let library = Library::read_from_bytes(bytes).expect("Shipped BURN library is well-formed");
-    NoteScript::from_library(&library).expect("BURN library contains note script procedure")
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(BURN_SCRIPT_PATH);
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("Standards library contains BURN note script procedure")
 });
 
 // BURN NOTE

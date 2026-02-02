@@ -35,7 +35,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_NONCE_AT_MAX,
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
-    ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED,
 };
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
@@ -564,36 +563,6 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME);
-
-    Ok(())
-}
-
-/// Tests that accessing the protocol-reserved faucet metadata slot fails with the expected error
-/// message.
-#[tokio::test]
-async fn test_account_set_item_fails_on_reserved_faucet_metadata_slot() -> anyhow::Result<()> {
-    let code = r#"
-            use miden::protocol::native_account
-
-            const FAUCET_SYSDATA_SLOT=word("miden::protocol::faucet::sysdata")
-
-            begin
-                push.FAUCET_SYSDATA_SLOT[0..2]
-                exec.native_account::set_item
-            end
-            "#;
-    let tx_script = CodeBuilder::default().compile_tx_script(code)?;
-
-    let tx_context = TransactionContextBuilder::with_fungible_faucet(
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        Felt::from(0u32),
-    )
-    .tx_script(tx_script)
-    .build()
-    .unwrap();
-
-    let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED);
 
     Ok(())
 }

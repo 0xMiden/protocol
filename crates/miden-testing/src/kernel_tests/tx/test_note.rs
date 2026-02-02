@@ -25,7 +25,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
 use miden_protocol::transaction::{OutputNote, TransactionArgs};
-use miden_protocol::{Felt, Hasher, Word, ZERO};
+use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
@@ -264,14 +264,6 @@ async fn test_build_recipient() -> anyhow::Result<()> {
             exec_output.advice.get_mapped_values(&inputs_advice_map_key).unwrap(),
             note_storage.1,
             "advice entry with note storage should contain the unpadded values"
-        );
-
-        let num_storage_items_advice_map_key =
-            Hasher::hash_elements(note_storage.0.commitment().as_elements());
-        assert_eq!(
-            exec_output.advice.get_mapped_values(&num_storage_items_advice_map_key).unwrap(),
-            &[Felt::from(note_storage.0.num_items())],
-            "advice entry with note number of storage items should contain the original number of values"
         );
     }
 

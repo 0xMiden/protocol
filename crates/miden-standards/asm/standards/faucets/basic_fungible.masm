@@ -1,47 +1,28 @@
 # BASIC FUNGIBLE FAUCET CONTRACT
-# =================================================================================================
-# This is a basic fungible faucet smart contract.
 #
-# It allows the owner of the faucet to mint, distribute, and burn tokens. Token metadata is stored
-# in account storage at position 1 as [max_supply, decimals, token_symbol, 0], where:
-# - max_supply is the maximum supply of the token.
-# - decimals are the decimals of the token.
-# - token_symbol as three chars encoded in a Felt.
+# See the `BasicFungibleFaucet` documentation for details.
+# =================================================================================================
 
 use miden::standards::faucets
 
-# CONSTANTS
-# =================================================================================================
-
-const PRIVATE_NOTE=2
-
-# ERRORS
-# =================================================================================================
-const ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED="distribute would cause the maximum supply to be exceeded"
-
-const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
-
-# CONSTANTS
+# PROCEDURES
 # =================================================================================================
 
 #! Distributes freshly minted fungible assets to the provided recipient by creating a note.
 #!
-#! Inputs:  [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
 #! - amount is the amount to be minted and sent.
 #! - tag is the tag to be included in the note.
-#! - aux is the auxiliary data to be included in the note.
 #! - note_type is the type of the note that holds the asset.
-#! - execution_hint is the execution hint of the note that holds the asset.
 #! - RECIPIENT is the recipient of the asset, i.e.,
 #!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
-#! - the transaction is being executed against an account that is not a fungible asset faucet.
-#! - the total issuance after minting is greater than the maximum allowed supply.
+#! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
 pub proc distribute

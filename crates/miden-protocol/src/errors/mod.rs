@@ -88,10 +88,6 @@ pub enum AccountComponentTemplateError {
     InitValueNotProvided(StorageValueName),
     #[error("invalid init storage value for `{0}`: {1}")]
     InvalidInitStorageValue(StorageValueName, String),
-    #[error(
-        "account component storage schema cannot contain a slot with name `{0}` as it is reserved by the protocol"
-    )]
-    ReservedSlotName(StorageSlotName),
     #[error("error converting value into expected type: {0}")]
     StorageValueParsingError(#[source] SchemaTypeError),
     #[error("storage map contains duplicate keys")]
@@ -165,11 +161,6 @@ pub enum AccountError {
     StorageSlotNotValue(StorageSlotName),
     #[error("storage slot name {0} is assigned to more than one slot")]
     DuplicateStorageSlotName(StorageSlotName),
-    #[error(
-        "account storage cannot contain a user-provided slot with name {} as it is reserved by the protocol",
-        AccountStorage::faucet_sysdata_slot()
-    )]
-    StorageSlotNameMustNotBeFaucetSysdata,
     #[error("storage does not contain a slot with name {slot_name}")]
     StorageSlotNameNotFound { slot_name: StorageSlotName },
     #[error("storage does not contain a slot with ID {slot_id}")]
@@ -548,6 +539,10 @@ pub enum NoteError {
     NoteScriptNoProcedureWithAttribute,
     #[error("library contains multiple procedures with @note_script attribute")]
     NoteScriptMultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    NoteScriptProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @note_script attribute")]
+    NoteScriptProcedureMissingAttribute(Box<str>),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
