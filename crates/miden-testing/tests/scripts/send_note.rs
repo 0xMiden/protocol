@@ -39,7 +39,8 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let tag = NoteTag::with_account_target(sender_basic_wallet_account.id());
     let elements = [9, 8, 7, 6, 5u32].map(Felt::from).to_vec();
     let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
-    let metadata = NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public, tag)
+    let metadata = NoteMetadata::new(sender_basic_wallet_account.id(), NoteType::Public)
+        .with_tag(tag)
         .with_attachment(attachment.clone());
     let assets = NoteAssets::new(vec![sent_asset]).unwrap();
     let note_script = CodeBuilder::default().compile_note_script("begin nop end").unwrap();
@@ -96,9 +97,9 @@ async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
 
     let tag = NoteTag::with_account_target(sender_basic_fungible_faucet_account.id());
     let attachment = NoteAttachment::new_word(NoteAttachmentScheme::new(100), Word::empty());
-    let metadata =
-        NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public, tag)
-            .with_attachment(attachment);
+    let metadata = NoteMetadata::new(sender_basic_fungible_faucet_account.id(), NoteType::Public)
+        .with_tag(tag)
+        .with_attachment(attachment);
     let assets = NoteAssets::new(vec![Asset::Fungible(
         FungibleAsset::new(sender_basic_fungible_faucet_account.id(), 10).unwrap(),
     )])?;

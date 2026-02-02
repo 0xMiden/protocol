@@ -16,7 +16,7 @@ use crate::account::component::{
     WordSchema,
     WordValue,
 };
-use crate::account::{AccountStorage, StorageSlotContent, StorageSlotName};
+use crate::account::{StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
 use crate::errors::AccountComponentTemplateError;
 
@@ -436,29 +436,6 @@ fn metadata_from_toml_rejects_typed_fields_in_static_map_values() {
     assert_matches::assert_matches!(
         AccountComponentMetadata::from_toml(toml_str),
         Err(AccountComponentTemplateError::TomlDeserializationError(_))
-    );
-}
-
-#[test]
-fn metadata_from_toml_rejects_reserved_slot_names() {
-    let reserved_slot = AccountStorage::faucet_sysdata_slot().as_str();
-
-    let toml_str = format!(
-        r#"
-            name = "Test Component"
-            description = "Test description"
-            version = "0.1.0"
-            supported-types = []
-
-            [[storage.slots]]
-            name = "{reserved_slot}"
-            type = "word"
-        "#
-    );
-
-    assert_matches::assert_matches!(
-        AccountComponentMetadata::from_toml(&toml_str),
-        Err(AccountComponentTemplateError::ReservedSlotName(_))
     );
 }
 

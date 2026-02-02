@@ -149,7 +149,8 @@ impl NoteBuilder {
             .compile_note_script(virtual_source_file)
             .expect("note script should compile");
         let vault = NoteAssets::new(self.assets)?;
-        let metadata = NoteMetadata::new(self.sender, self.note_type, self.tag)
+        let metadata = NoteMetadata::new(self.sender, self.note_type)
+            .with_tag(self.tag)
             .with_attachment(self.attachment);
         let storage = NoteStorage::new(self.storage)?;
         let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
