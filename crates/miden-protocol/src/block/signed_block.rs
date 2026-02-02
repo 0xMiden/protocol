@@ -147,7 +147,7 @@ impl SignedBlock {
     }
 
     /// Validates that the provided parent block's commitment and number correctly corresponds to
-    /// the signed block. block commitment.
+    /// the signed block.
     pub fn validate_parent(&self, parent: &BlockHeader) -> Result<(), SignedBlockError> {
         // Commitments.
         if self.header.prev_block_commitment() != parent.commitment() {
