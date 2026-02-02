@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -17,20 +17,24 @@ use miden_protocol::note::{
     NoteTag,
     NoteType,
 };
-use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::P2idNote;
+use crate::StandardsLib;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the SWAP note script procedure in the standards library.
+const SWAP_SCRIPT_PATH: &str = "::miden::standards::notes::swap::main";
+
 // Initialize the SWAP note script only once
 static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/swap.masl"));
-    let library = Library::read_from_bytes(bytes).expect("Shipped SWAP library is well-formed");
-    NoteScript::from_library(&library).expect("SWAP library contains note script procedure")
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(SWAP_SCRIPT_PATH);
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("Standards library contains SWAP note script procedure")
 });
 
 // SWAP NOTE
