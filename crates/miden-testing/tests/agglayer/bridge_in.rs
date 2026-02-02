@@ -3,6 +3,7 @@ extern crate alloc;
 use core::slice;
 
 use miden_agglayer::claim_note::{ExitRoot, SmtNode};
+use miden_agglayer::utils::felts_to_u256_bytes;
 use miden_agglayer::{
     ClaimNoteStorage,
     EthAddressFormat,
@@ -13,7 +14,9 @@ use miden_agglayer::{
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
+    create_update_ger_note,
 };
+use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -151,9 +154,40 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
 
+    // COMPUTE GER FROM EXIT ROOTS AND CREATE UPDATE_GER NOTE
+    // --------------------------------------------------------------------------------------------
+    // The GER is keccak256(mainnet_exit_root || rollup_exit_root)
+    // The MASM code reads the exit roots from memory where felts are stored.
+    // We use ExitRoot::to_elements() to get the same felt representation.
+
+    let mainnet_exit_root = ExitRoot::from(mainnet_exit_root).as_bytes().to_vec();
+    let rollup_exit_root = ExitRoot::from(rollup_exit_root).as_bytes().to_vec();
+
+    let ger_preimage = KeccakPreimage::new(
+        mainnet_exit_root.iter().chain(rollup_exit_root.iter()).copied().collect(),
+    );
+
+    // The GER digest is 8 u32 felts - convert to bytes matching bytes32_to_felts format
+    let ger_felts_digest = ger_preimage.digest();
+    // convert felts to bytes
+    let ger_bytes = felts_to_u256_bytes(ger_felts_digest.as_ref().try_into().unwrap());
+    let ger = ExitRoot::from(ger_bytes);
+
+    let update_ger_note = create_update_ger_note(ger, bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
     let mut mock_chain = builder.clone().build()?;
+
+    // EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // CREATE EXPECTED P2ID NOTE FOR VERIFICATION

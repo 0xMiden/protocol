@@ -16,6 +16,7 @@ use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
+use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
@@ -55,23 +56,28 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
-    // VERIFY GER WAS UPDATED IN STORAGE
+    // VERIFY GER HASH WAS STORED IN MAP
     // --------------------------------------------------------------------------------------------
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    let ger_upper = updated_bridge_account
+    // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
+    // Note: In MASM, when stack is [GER_LOWER, GER_UPPER], merge produces hash(GER_UPPER ||
+    // GER_LOWER) because the second word on stack is the first argument to merge
+    let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
+    let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
+    let ger_hash = Hasher::merge(&[ger_upper, ger_lower]);
+
+    // Look up the GER hash in the map storage
+    let ger_storage_slot = StorageSlotName::new("miden::agglayer::bridge::ger")?;
+    let stored_value = updated_bridge_account
         .storage()
-        .get_item(&StorageSlotName::new("miden::agglayer::bridge::ger_upper")?)
-        .unwrap();
-    let ger_lower = updated_bridge_account
-        .storage()
-        .get_item(&StorageSlotName::new("miden::agglayer::bridge::ger_lower")?)
-        .unwrap();
-    let expected_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
-    let expected_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
-    assert_eq!(ger_upper, expected_upper);
-    assert_eq!(ger_lower, expected_lower);
+        .get_map_item(&ger_storage_slot, ger_hash)
+        .expect("GER hash should be stored in the map");
+
+    // The stored value should be [GER_KNOWN_VALUE, 0, 0, 0] = [1, 0, 0, 0]
+    let expected_value: Word = [Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+    assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
 
     Ok(())
 }
