@@ -1,9 +1,27 @@
-use miden_agglayer::{ExitRoot, create_existing_bridge_account, create_update_ger_note};
+extern crate alloc;
+
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
+use miden_agglayer::{
+    ExitRoot,
+    agglayer_library,
+    create_existing_bridge_account,
+    create_update_ger_note,
+};
+use miden_assembly::{Assembler, DefaultSourceManager};
+use miden_core_lib::CoreLibrary;
+use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core_lib::handlers::keccak256::KeccakPreimage;
+use miden_crypto::Felt;
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
 use miden_testing::MockChain;
+
+use super::test_utils::execute_program_with_default_host;
 
 #[tokio::test]
 async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
@@ -53,6 +71,83 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
     let expected_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
     assert_eq!(ger_upper, expected_upper);
     assert_eq!(ger_lower, expected_lower);
+
+    Ok(())
+}
+
+/// Tests compute_ger with known mainnet and rollup exit roots.
+///
+/// The GER (Global Exit Root) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
+#[tokio::test]
+async fn test_compute_ger_basic() -> anyhow::Result<()> {
+    let agglayer_lib = agglayer_library();
+
+    // Define test exit roots (32 bytes each)
+    let mainnet_exit_root: [u8; 32] = [
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+        0x77, 0x88,
+    ];
+
+    let rollup_exit_root: [u8; 32] = [
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99,
+    ];
+
+    // Concatenate the two roots (64 bytes total)
+    let mut ger_preimage = Vec::with_capacity(64);
+    ger_preimage.extend_from_slice(&mainnet_exit_root);
+    ger_preimage.extend_from_slice(&rollup_exit_root);
+    assert_eq!(ger_preimage.len(), 64);
+
+    // Compute expected GER using Rust keccak256
+    let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
+    let expected_ger_felts: Vec<Felt> = expected_ger_preimage.digest().as_ref().to_vec();
+
+    // Convert exit roots to packed u32 felts for memory initialization
+    let mainnet_felts = bytes_to_packed_u32_felts(&mainnet_exit_root);
+    let rollup_felts = bytes_to_packed_u32_felts(&rollup_exit_root);
+
+    // Build memory initialization: mainnet at ptr 0, rollup at ptr 8
+    let mem_init: Vec<String> = mainnet_felts
+        .iter()
+        .chain(rollup_felts.iter())
+        .enumerate()
+        .map(|(i, f)| format!("push.{} mem_store.{}", f.as_int(), i))
+        .collect();
+    let mem_init_code = mem_init.join("\n                ");
+
+    let source = format!(
+        r#"
+            use miden::core::sys
+            use miden::agglayer::crypto_utils
+
+            begin
+                # Initialize memory with exit roots
+                {mem_init_code}
+
+                # Call compute_ger with pointer to exit roots
+                push.0
+                exec.crypto_utils::compute_ger
+                exec.sys::truncate_stack
+            end
+        "#
+    );
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib.clone())
+        .unwrap()
+        .assemble_program(&source)
+        .unwrap();
+
+    let exec_output = execute_program_with_default_host(program, None).await?;
+
+    let result_digest: Vec<Felt> = exec_output.stack[0..8].to_vec();
+
+    assert_eq!(result_digest, expected_ger_felts);
 
     Ok(())
 }
