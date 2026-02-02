@@ -20,12 +20,6 @@ use $kernel::tx
 # ERRORS
 # =================================================================================================
 
-const ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED="for faucets the FAUCET_STORAGE_DATA_SLOT storage slot is reserved and can not be used with set_account_item"
-
-const ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET="the faucet_get_total_fungible_asset_issuance procedure can only be called on a fungible faucet"
-
-const ERR_FAUCET_IS_NF_ASSET_ISSUED_PROC_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET="the faucet_is_non_fungible_asset_issued procedure can only be called on a non-fungible faucet"
-
 const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS="provided kernel procedure offset is out of bounds"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note assets of active note because no note is currently being processed"
@@ -366,23 +360,11 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the native account is a faucet and the provided slot ID points to the reserved faucet storage slot.
 #!
 #! Invocation: dynexec
 pub proc account_set_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    # if the transaction is being executed against a faucet account then assert
-    # the slot that is being written to is not the reserved faucet slot.
-    dup.1 dup.1 exec.account::is_faucet_storage_data_slot
-    # => [is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    exec.account::get_id swap drop exec.account_id::is_faucet
-    # => [is_faucet_account, is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    and assertz.err=ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED
     # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -829,64 +811,6 @@ pub proc faucet_burn_asset
     # burn the asset
     exec.faucet::burn
     # => [ASSET, pad(12)]
-end
-
-#! Returns the total issuance of the fungible faucet the transaction is being executed against.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [total_issuance, pad(15)]
-#!
-#! Where:
-#! - total_issuance is the total issuance of the fungible faucet the transaction is being executed
-#!   against.
-#!
-#! Panics if:
-#! - the transaction is not being executed against a fungible faucet.
-#!
-#! Invocation: dynexec
-pub proc faucet_get_total_fungible_asset_issuance
-    # assert that we are executing a transaction against a fungible faucet (access checks)
-    exec.account::get_id swap drop exec.account_id::is_fungible_faucet
-    assert.err=ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET
-    # => [pad(16)]
-
-    # get the total issuance
-    exec.faucet::get_total_issuance
-    # => [total_issuance, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [total_issuance, pad(15)]
-end
-
-#! Returns a boolean indicating whether the provided non-fungible asset has been already issued by
-#! this faucet.
-#!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [is_issued, pad(15)]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset that is being checked.
-#! - is_issued is a boolean indicating whether the non-fungible asset has been issued.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-#! - the ASSET is not associated with the faucet the transaction is being executed against.
-#!
-#! Invocation: dynexec
-pub proc faucet_is_non_fungible_asset_issued
-    # assert that we are executing a transaction against a non-fungible faucet (access checks)
-    exec.account::get_id swap drop exec.account_id::is_non_fungible_faucet
-    assert.err=ERR_FAUCET_IS_NF_ASSET_ISSUED_PROC_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET
-    # => [ASSET, pad(12)]
-
-    # get the issuance flag
-    exec.faucet::is_non_fungible_asset_issued
-    # => [is_issued, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [is_issued, pad(15)]
 end
 
 # INPUT NOTE

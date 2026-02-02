@@ -233,10 +233,10 @@ pub fn create_agglayer_faucet_component(
     max_supply: Felt,
     bridge_account_id: AccountId,
 ) -> AccountComponent {
-    // Create network faucet metadata slot: [max_supply, decimals, token_symbol, 0]
+    // Create network faucet metadata slot: [0, max_supply, decimals, token_symbol]
     let token_symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
     let metadata_word =
-        Word::new([max_supply, Felt::from(decimals), token_symbol.into(), FieldElement::ZERO]);
+        Word::new([FieldElement::ZERO, max_supply, Felt::from(decimals), token_symbol.into()]);
     let metadata_slot =
         StorageSlot::with_value(NetworkFungibleFaucet::metadata_slot().clone(), metadata_word);
 
@@ -482,7 +482,8 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
             .map_err(|e| NoteError::other(e.to_string()))?
             .into();
     // Use a default sender since we don't have sender anymore - create from destination address
-    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type, tag)
+    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type)
+        .with_tag(tag)
         .with_attachment(attachment);
     let assets = NoteAssets::new(vec![])?;
     let recipient = NoteRecipient::new(serial_num, claim_script, inputs);
