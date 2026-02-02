@@ -4,14 +4,7 @@ use alloc::vec;
 
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 
 use crate::{ExitRoot, update_ger_script};
 
