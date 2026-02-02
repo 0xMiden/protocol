@@ -21,7 +21,6 @@
 - [BREAKING] Changed note scripts to be compiled as libraries with `@note_script` annotation for marking the entrypoint procedure ([#2339](https://github.com/0xMiden/miden-base/issues/2339), [#2374](https://github.com/0xMiden/miden-base/pull/2374)).
 - Remove protocol-reserved faucet sysdata storage slot ([#2335](https://github.com/0xMiden/miden-base/pull/2335)).
 - Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
-- [BREAKING] Changed note scripts to be compiled as libraries with `@note_script` annotation for marking the entrypoint procedure ([#2339](https://github.com/0xMiden/miden-base/issues/2339)).
 - [BREAKING] Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
