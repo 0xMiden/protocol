@@ -4,6 +4,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_agglayer::utils::felts_to_u256_bytes;
 use miden_agglayer::{
     ExitRoot,
     agglayer_library,
@@ -99,11 +100,16 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let mut ger_preimage = Vec::with_capacity(64);
     ger_preimage.extend_from_slice(&mainnet_exit_root);
     ger_preimage.extend_from_slice(&rollup_exit_root);
-    assert_eq!(ger_preimage.len(), 64);
 
-    // Compute expected GER using Rust keccak256
+    // Compute expected GER using keccak256
     let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
-    let expected_ger_felts: Vec<Felt> = expected_ger_preimage.digest().as_ref().to_vec();
+    let expected_ger_felts: [Felt; 8] = expected_ger_preimage.digest().as_ref().try_into().unwrap();
+
+    let ger_bytes = felts_to_u256_bytes(expected_ger_felts);
+
+    let ger = ExitRoot::from(ger_bytes);
+    // sanity check
+    assert_eq!(ger.to_elements(), expected_ger_felts);
 
     // Convert exit roots to packed u32 felts for memory initialization
     let mainnet_felts = bytes_to_packed_u32_felts(&mainnet_exit_root);
