@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
-use miden_protocol::assembly::Library;
+use miden_protocol::assembly::Path;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
@@ -15,18 +15,23 @@ use miden_protocol::note::{
     NoteTag,
     NoteType,
 };
-use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, MAX_NOTE_STORAGE_ITEMS, Word};
+
+use crate::StandardsLib;
 
 // NOTE SCRIPT
 // ================================================================================================
 
+/// Path to the MINT note script procedure in the standards library.
+const MINT_SCRIPT_PATH: &str = "::miden::standards::notes::mint::main";
+
 // Initialize the MINT note script only once
 static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/mint.masl"));
-    let library = Library::read_from_bytes(bytes).expect("Shipped MINT library is well-formed");
-    NoteScript::from_library(&library).expect("MINT library contains note script procedure")
+    let standards_lib = StandardsLib::default();
+    let path = Path::new(MINT_SCRIPT_PATH);
+    NoteScript::from_library_reference(standards_lib.as_ref(), path)
+        .expect("Standards library contains MINT note script procedure")
 });
 
 // MINT NOTE
