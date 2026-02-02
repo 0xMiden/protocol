@@ -304,7 +304,7 @@ fn parse_p2ide_storage(
 /// Reads the account ID from the first two note storage values.
 ///
 /// Returns None if the note storage values used to construct the account ID are invalid.
-fn try_read_account_id_from_storage(
+pub(crate) fn try_read_account_id_from_storage(
     note_storage: &[Felt],
 ) -> Result<AccountId, StaticAnalysisError> {
     if note_storage.len() < 2 {
@@ -368,7 +368,7 @@ impl Clone for NoteConsumptionStatus {
 
 #[derive(thiserror::Error, Debug)]
 #[error("{message}")]
-struct StaticAnalysisError {
+pub(crate) struct StaticAnalysisError {
     /// Stack size of `Box<str>` is smaller than String.
     message: Box<str>,
     /// thiserror will return this when calling Error::source on StaticAnalysisError.

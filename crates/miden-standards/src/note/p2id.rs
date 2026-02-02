@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Library;
 use miden_protocol::asset::Asset;
@@ -19,6 +18,9 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
+
+use super::try_read_account_id_from_storage;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -96,30 +98,41 @@ impl P2idNote {
         target: AccountId,
         serial_num: Word,
     ) -> Result<NoteRecipient, NoteError> {
-        let note_script = Self::script();
-        let storage = P2idNoteStorage::new(target);
-
-        Ok(NoteRecipient::new(serial_num, note_script, storage.into()))
+        Ok(P2idNoteStorage::new(target).into_recipient(serial_num))
     }
 }
 
-/// Storage layout for P2ID (Pay-to-ID) notes.
+// P2ID NOTE STORAGE
+// ================================================================================================
+
+/// Canonical storage representation for a P2ID note.
 ///
-/// Layout (2 items):
-/// [0] target account ID suffix
-/// [1] target account ID prefix
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// P2ID note storage consists of exactly two elements:
+/// 1. Account ID suffix
+/// 2. Account ID prefix
+///
+/// The layout is defined **once** in the `From<P2idNoteStorage> for NoteStorage` implementation
+/// and reused everywhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteStorage {
     target: AccountId,
 }
 
 impl P2idNoteStorage {
-    pub const NUM_STORAGE_ITEMS: usize = 2;
-
+    /// Creates new P2ID note storage targeting the given account.
     pub fn new(target: AccountId) -> Self {
         Self { target }
     }
 
+    /// Consumes the storage and returns a P2ID [`NoteRecipient`] with the provided serial number.
+    ///
+    /// Notes created with this recipient will be P2ID notes consumable by the specified target
+    /// account stored in this [`P2idNoteStorage`].
+    pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
+        NoteRecipient::new(serial_num, P2idNote::script(), NoteStorage::from(self))
+    }
+
+    /// Returns the target account ID.
     pub fn target(&self) -> AccountId {
         self.target
     }
@@ -127,28 +140,26 @@ impl P2idNoteStorage {
 
 impl From<P2idNoteStorage> for NoteStorage {
     fn from(storage: P2idNoteStorage) -> Self {
+        // Storage layout:
+        // [ account_id_suffix, account_id_prefix ]
         NoteStorage::new(vec![storage.target.suffix(), storage.target.prefix().as_felt()])
-            .expect("P2ID note storage is always valid")
+            .expect("number of storage items should not exceed max storage items")
     }
 }
 
-impl TryFrom<NoteStorage> for P2idNoteStorage {
+impl TryFrom<&[Felt]> for P2idNoteStorage {
     type Error = NoteError;
 
-    fn try_from(storage: NoteStorage) -> Result<Self, Self::Error> {
-        let items = storage.items();
-
-        if items.len() != Self::NUM_STORAGE_ITEMS {
+    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
+        if note_storage.len() != P2idNote::NUM_STORAGE_ITEMS {
             return Err(NoteError::InvalidNoteStorageLength {
-                expected: Self::NUM_STORAGE_ITEMS,
-                actual: items.len(),
+                expected: P2idNote::NUM_STORAGE_ITEMS,
+                actual: note_storage.len(),
             });
         }
 
-        let suffix = items[0];
-        let prefix = items[1];
-
-        let target = AccountId::new(prefix, suffix).map_err(|_| NoteError::InvalidNoteStorage)?;
+        let target = try_read_account_id_from_storage(note_storage)
+            .map_err(|_| NoteError::InvalidNoteStorage)?;
 
         Ok(Self { target })
     }
