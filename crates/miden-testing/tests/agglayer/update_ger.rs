@@ -15,7 +15,7 @@ use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::Felt;
+use miden_crypto::{Felt, FieldElement};
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
@@ -76,7 +76,7 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
         .expect("GER hash should be stored in the map");
 
     // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
-    let expected_value: Word = [Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+    let expected_value: Word = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
     assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
 
     Ok(())
