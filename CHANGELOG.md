@@ -13,6 +13,7 @@
 
 ### Changes
 
+- Made kernel procedure offset constants public for use outside the kernel ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
 - [BREAKING] Simplified `NoteMetadata::new()` constructor to not require tag parameter; tag defaults to zero and can be set via `with_tag()` builder method ([#2384](https://github.com/0xMiden/miden-base/pull/2384)).
