@@ -6,6 +6,7 @@ use miden::core::mem
 # =================================================================================================
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
 type MemoryAddress = u32
 
 # ERRORS
@@ -81,7 +82,7 @@ end
 #!
 #! Where:
 #! - expected_root_ptr is the pointer to the memory where the expected SMT root is stored.
-#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf which Merkle path was provided.
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
 #! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
 #!   represented as 32 Keccak256Digest values (64 words).
 #! - leaf_idx is the index of the provided leaf in the SMT.
@@ -89,7 +90,7 @@ end
 #!
 #! Panics if:
 #! - The root stored in the `expected_root_ptr` is not equal to the computed root.
-pub proc verify_merkle_proof(leaf_value_lo: BeWord, leaf_value_hi: BeWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress)
+pub proc verify_merkle_proof(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress)
     # calculate the root of the SMT
     exec.calculate_root
     # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
@@ -114,15 +115,14 @@ end
 #! Outputs: [ROOT_LO, ROOT_HI]
 #!
 #! Where:
-#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf which Merkle path was provided.
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
 #! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
 #!   represented as 32 Keccak256Digest values (64 words).
 #! - leaf_idx is the index of the provided leaf in the SMT.
 #! - [ROOT_LO, ROOT_HI] is the calculated root.
 @locals(8) # current hash
-proc calculate_root(leaf_value_lo: BeWord, leaf_value_hi: BeWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32) -> (BeWord, BeWord)
-    # Store the leaf value to the local memory. This memory then will be used to store the current
-    # hash
+proc calculate_root(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32) -> DoubleWord
+    # Local memory stores the current hash. It is initialized to the leaf value
     loc_storew_be.0 dropw loc_storew_be.4 dropw
     # => [merkle_path_ptr, leaf_idx]
 
