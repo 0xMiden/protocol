@@ -360,7 +360,7 @@ fn merkle_proof_verification_code(
 
     format!(
         "
-        use miden::agglayer::utils
+        use miden::agglayer::crypto_utils
         
         begin
             # store the merkle path to the memory (double word slots from 0 to 248)
@@ -379,7 +379,7 @@ fn merkle_proof_verification_code(
             push.[{leaf_hi}] push.[{leaf_lo}] # provided leaf value
             # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
 
-            exec.utils::verify_merkle_proof
+            exec.crypto_utils::verify_merkle_proof
             # => []
         end
     "
