@@ -29,6 +29,10 @@ pub enum SignedBlockError {
         signed_block: BlockNumber,
         parent: BlockNumber,
     },
+    #[error(
+        "signed block header note root ({header_root}) does not match the corresponding body's note root ({body_root})"
+    )]
+    NoteRootMismatch { header_root: Word, body_root: Word },
 }
 
 // SIGNED BLOCK
@@ -53,7 +57,10 @@ impl SignedBlock {
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
     ///
     /// Validates that the provided components correspond to each other by verifying the signature,
-    /// and checking for matching commitments.
+    /// and checking for matching commitments and note roots.
+    ///
+    /// Involves non-trivial computation. If some checks are unnecessary, [`Self::new_unchecked`]
+    /// can be used instead, alongside subsequent calls of relevant `Self::validate_*` methods.
     pub fn new(
         header: BlockHeader,
         body: BlockBody,
@@ -64,8 +71,11 @@ impl SignedBlock {
         // Verify signature.
         signed_block.validate_signature()?;
 
-        // Validate header / body matching transaction commitments.
+        // Validate that header / body transaction commitments match.
         signed_block.validate_tx_commitment()?;
+
+        // Validate that header / body note roots match.
+        signed_block.validate_note_root()?;
 
         Ok(signed_block)
     }
@@ -111,11 +121,26 @@ impl SignedBlock {
 
     /// Validates that the transaction commitments between the header and body match for this signed
     /// block.
+    ///
+    /// Involves non-trivial computation of the body's transaction commitment.
     pub fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
         let header_tx_commitment = self.header.tx_commitment();
         let body_tx_commitment = self.body.transactions().commitment();
         if header_tx_commitment != body_tx_commitment {
             Err(SignedBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates that the header's note tree root matches that of the body.
+    ///
+    /// Involves non-trivial computation of the body's note tree.
+    pub fn validate_note_root(&self) -> Result<(), SignedBlockError> {
+        let header_root = self.header.note_root();
+        let body_root = self.body.compute_block_note_tree().root();
+        if header_root != body_root {
+            Err(SignedBlockError::NoteRootMismatch { header_root, body_root })
         } else {
             Ok(())
         }
