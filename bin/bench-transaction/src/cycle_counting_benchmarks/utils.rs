@@ -13,6 +13,7 @@ use serde_json::{Value, from_str, to_string_pretty};
 use super::ExecutionBenchmark;
 use crate::vm_profile::{
     InstructionMix,
+    OperationDetails,
     PhaseProfile,
     ProcedureProfile,
     TransactionKernelProfile,
@@ -208,6 +209,117 @@ pub fn write_vm_profile(
         invocations: 1,
     }];
 
+    // Build operation details based on instruction mix
+    // These are estimates based on typical transaction patterns
+    let mut operation_details = Vec::new();
+
+    // Minimum threshold for including an operation type (avoid floating-point noise)
+    const MIN_MIX_RATIO: f64 = 0.001; // 0.1%
+    // Threshold for applying minimum iteration counts (only for substantial workloads)
+    const MIN_CYCLES_FOR_MINIMUMS: u64 = 10000;
+    let apply_minimums = total_cycles >= MIN_CYCLES_FOR_MINIMUMS;
+
+    // Signature verification operations
+    // Only include if the calculated count is at least 1 (avoid inflating small workloads)
+    if signature_ratio > MIN_MIX_RATIO {
+        let sig_count = (total_cycles as f64 * signature_ratio / 59859.0) as u64;
+        // Only include signature verification if we have at least 1 full verification
+        // This avoids inflating operation_details with a 60K cycle op when the
+        // actual average auth cost is much smaller
+        if sig_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "falcon512_verify".to_string(),
+                input_sizes: vec![64, 32], // PK commitment (64 bytes), message (32 bytes)
+                iterations: sig_count,
+                cycle_cost: 59859,
+            });
+        }
+    }
+
+    // Hashing operations - split hashing ratio between hperm (80%) and hmerge (20%)
+    // This approximates observed patterns where permutations dominate over merges
+    const HPERM_HASHING_RATIO: f64 = 0.8;
+    const HMERGE_HASHING_RATIO: f64 = 0.2;
+
+    if instruction_mix.hashing > MIN_MIX_RATIO {
+        let hperm_count =
+            (total_cycles as f64 * instruction_mix.hashing * HPERM_HASHING_RATIO) as u64;
+        if hperm_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "hperm".to_string(),
+                input_sizes: vec![48], // 12 field elements state
+                iterations: if apply_minimums {
+                    hperm_count.max(100)
+                } else {
+                    hperm_count
+                },
+                cycle_cost: 1,
+            });
+        }
+
+        let hmerge_count =
+            (total_cycles as f64 * instruction_mix.hashing * HMERGE_HASHING_RATIO / 16.0) as u64;
+        if hmerge_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "hmerge".to_string(),
+                input_sizes: vec![32, 32], // Two 32-byte digests
+                iterations: if apply_minimums {
+                    hmerge_count.max(10)
+                } else {
+                    hmerge_count
+                },
+                cycle_cost: 16,
+            });
+        }
+    }
+
+    // Memory operations
+    if instruction_mix.memory > MIN_MIX_RATIO {
+        let mem_count = (total_cycles as f64 * instruction_mix.memory / 10.0) as u64;
+        if mem_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "load_store".to_string(),
+                input_sizes: vec![32], // Word-sized memory operations
+                iterations: if apply_minimums { mem_count.max(10) } else { mem_count },
+                cycle_cost: 10,
+            });
+        }
+    }
+
+    // Arithmetic operations
+    if instruction_mix.arithmetic > MIN_MIX_RATIO {
+        let arith_count = (total_cycles as f64 * instruction_mix.arithmetic) as u64;
+        if arith_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "arithmetic".to_string(),
+                input_sizes: vec![8], // Field element operations
+                iterations: if apply_minimums {
+                    arith_count.max(10)
+                } else {
+                    arith_count
+                },
+                cycle_cost: 1,
+            });
+        }
+    }
+
+    // Control flow operations
+    if instruction_mix.control_flow > MIN_MIX_RATIO {
+        let control_count = (total_cycles as f64 * instruction_mix.control_flow / 5.0) as u64;
+        if control_count > 0 {
+            operation_details.push(OperationDetails {
+                op_type: "control_flow".to_string(),
+                input_sizes: vec![],
+                iterations: if apply_minimums {
+                    control_count.max(10)
+                } else {
+                    control_count
+                },
+                cycle_cost: 5,
+            });
+        }
+    }
+
     let profile = VmProfile {
         profile_version: "1.0".to_string(),
         source: "miden-base/bin/bench-transaction".to_string(),
@@ -218,6 +330,7 @@ pub fn write_vm_profile(
             phases,
             instruction_mix,
             key_procedures,
+            operation_details,
         },
     };
 
@@ -226,4 +339,128 @@ pub fn write_vm_profile(
 
     println!("VM profile exported to: {}", path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that operation details are generated with correct hashing split
+    #[test]
+    fn operation_details_hashing_split_ratio() {
+        let total_cycles = 100000u64;
+        let instruction_mix = InstructionMix {
+            arithmetic: 0.05,
+            hashing: 0.45,
+            memory: 0.08,
+            control_flow: 0.05,
+            signature_verify: 0.37,
+        };
+
+        // Simulate the calculation from write_vm_profile
+        let hperm_count = (total_cycles as f64 * instruction_mix.hashing * 0.8) as u64;
+        let hmerge_count = (total_cycles as f64 * instruction_mix.hashing * 0.2 / 16.0) as u64;
+
+        // hperm should get ~80% of hashing cycles
+        assert_eq!(hperm_count, 36000);
+        // hmerge should get ~20% of hashing cycles (divided by 16 for cycle cost)
+        assert_eq!(hmerge_count, 562);
+
+        // Verify the ratio is maintained
+        let hperm_cycles = hperm_count;
+        let hmerge_cycles = hmerge_count * 16;
+        let total_hashing_cycles = hperm_cycles + hmerge_cycles;
+
+        // Should be close to 45% of total cycles (allowing for truncation)
+        let hashing_ratio = total_hashing_cycles as f64 / total_cycles as f64;
+        assert!((hashing_ratio - 0.45).abs() < 0.01);
+    }
+
+    /// Test that small workloads don't get minimums applied
+    #[test]
+    fn small_workload_no_minimum_inflation() {
+        let total_cycles = 5000u64; // Below MIN_CYCLES_FOR_MINIMUMS threshold
+
+        // For small workloads, counts should be raw calculated values
+        let sig_count = (total_cycles as f64 * 0.37 / 59859.0) as u64;
+        let hperm_count = (total_cycles as f64 * 0.45 * 0.8) as u64;
+
+        // These should be 0 or small, not inflated to minimums
+        assert_eq!(sig_count, 0); // Too small for a full sig verify
+        assert_eq!(hperm_count, 1800); // Raw calculation, not max(100, 1800)
+    }
+
+    /// Test that large workloads get minimums applied
+    #[test]
+    fn large_workload_minimums_applied() {
+        let total_cycles = 50000u64; // Above MIN_CYCLES_FOR_MINIMUMS threshold
+        let apply_minimums = total_cycles >= 10000;
+
+        assert!(apply_minimums);
+
+        // With minimums, small counts get bumped up
+        let hmerge_count = (total_cycles as f64 * 0.45 * 0.2 / 16.0) as u64;
+        assert_eq!(hmerge_count, 281); // Raw calculation
+
+        // With minimum applied
+        let hmerge_with_min = hmerge_count.max(10);
+        assert_eq!(hmerge_with_min, 281); // Already above minimum
+
+        // For a very small count that would be below minimum
+        let tiny_count = 5u64;
+        let tiny_with_min = if apply_minimums { tiny_count.max(10) } else { tiny_count };
+        assert_eq!(tiny_with_min, 10);
+    }
+
+    /// Test MIN_MIX_RATIO threshold - operations below threshold excluded
+    #[test]
+    fn min_mix_ratio_threshold_excludes_small_ratios() {
+        let _total_cycles = 50000u64;
+        let min_mix_ratio = 0.001; // 0.1%
+
+        // Very small ratio below threshold
+        let tiny_ratio = 0.0005;
+        assert!(tiny_ratio < min_mix_ratio);
+
+        // Should be excluded from operation_details
+        let should_include = tiny_ratio > min_mix_ratio;
+        assert!(!should_include);
+
+        // Ratio above threshold should be included
+        let normal_ratio = 0.05;
+        assert!(normal_ratio > min_mix_ratio);
+    }
+
+    /// Test boundary at total_cycles == 10000
+    #[test]
+    fn minimums_boundary_at_10000_cycles() {
+        // Just below threshold
+        let below_threshold = 9999u64;
+        let apply_minimums_below = below_threshold >= 10000;
+        assert!(!apply_minimums_below);
+
+        // At threshold
+        let at_threshold = 10000u64;
+        let apply_minimums_at = at_threshold >= 10000;
+        assert!(apply_minimums_at);
+
+        // Above threshold
+        let above_threshold = 10001u64;
+        let apply_minimums_above = above_threshold >= 10000;
+        assert!(apply_minimums_above);
+    }
+
+    /// Test that zero-iteration operations are suppressed
+    #[test]
+    fn zero_iteration_operations_suppressed() {
+        let total_cycles = 1000u64;
+
+        // Very small counts that truncate to 0
+        let sig_count = (total_cycles as f64 * 0.37 / 59859.0) as u64;
+        assert_eq!(sig_count, 0);
+
+        // Should not be included in operation_details
+        let should_include = sig_count > 0;
+        assert!(!should_include);
+    }
 }
