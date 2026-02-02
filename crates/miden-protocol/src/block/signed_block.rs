@@ -21,12 +21,12 @@ pub enum SignedBlockError {
         body_tx_commitment: Word,
     },
     #[error(
-        "signed block commitment ({signed_block}) does not match expected parent's block commitment ({parent})"
+        "signed block previous block commitment ({expected}) does not match expected parent's block commitment ({parent})"
     )]
-    ParentCommitmentMismatch { signed_block: Word, parent: Word },
-    #[error("signed block num ({signed_block}) is not parent block num + 1 ({parent})")]
+    ParentCommitmentMismatch { expected: Word, parent: Word },
+    #[error("parent block number ({parent}) is not signed block number - 1 ({expected})")]
     ParentNumberMismatch {
-        signed_block: BlockNumber,
+        expected: BlockNumber,
         parent: BlockNumber,
     },
     #[error(
@@ -148,22 +148,26 @@ impl SignedBlock {
 
     /// Validates that the provided parent block's commitment and number correctly corresponds to
     /// the signed block.
-    pub fn validate_parent(&self, parent: &BlockHeader) -> Result<(), SignedBlockError> {
-        // Commitments.
-        if self.header.prev_block_commitment() != parent.commitment() {
-            return Err(SignedBlockError::ParentCommitmentMismatch {
-                signed_block: self.header.prev_block_commitment(),
-                parent: parent.commitment(),
-            });
+    pub fn validate_parent(&self, parent_block: &BlockHeader) -> Result<(), SignedBlockError> {
+        // Check commitments.
+        let expected = self.header.prev_block_commitment();
+        let parent = parent_block.commitment();
+        if expected != parent {
+            return Err(SignedBlockError::ParentCommitmentMismatch { expected, parent });
         }
-        // Block numbers.
-        if self.header.block_num() != parent.block_num() + 1 {
-            return Err(SignedBlockError::ParentNumberMismatch {
-                signed_block: self.header.block_num(),
-                parent: parent.block_num(),
-            });
+
+        // Check block numbers.
+        if let Some(expected) = self.header.block_num().checked_sub(1) {
+            let parent = parent_block.block_num();
+            if expected != parent {
+                Err(SignedBlockError::ParentNumberMismatch { expected, parent })
+            } else {
+                Ok(())
+            }
+        } else {
+            // Block 0 does not have a parent.
+            Ok(())
         }
-        Ok(())
     }
 }
 
