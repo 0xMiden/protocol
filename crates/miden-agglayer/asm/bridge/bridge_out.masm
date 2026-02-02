@@ -12,7 +12,6 @@ use miden::agglayer::local_exit_tree
 const MMR_PTR=42
 const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
 
-const BURN_NOTE_ROOT = [17098383953222967067, 1224327935608911643, 4488720205646517963, 272195893247840531]
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 const BURN_ASSET_MEM_PTR=24
@@ -66,7 +65,7 @@ proc create_burn_note
     exec.compute_burn_note_serial_num
     # => [SERIAL_NUM]
 
-    push.BURN_NOTE_ROOT swapw
+    procref.::miden::standards::notes::burn::main swapw
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     push.BURN_NOTE_NUM_STORAGE_ITEMS push.0

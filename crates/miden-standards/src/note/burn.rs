@@ -1,5 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -16,16 +17,15 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Program;
 
 // NOTE SCRIPT
 // ================================================================================================
 
 // Initialize the BURN note script only once
 static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/BURN.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped BURN script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/burn.masl"));
+    let library = Library::read_from_bytes(bytes).expect("Shipped BURN library is well-formed");
+    NoteScript::from_library(&library).expect("BURN library contains note script procedure")
 });
 
 // BURN NOTE

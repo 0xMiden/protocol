@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -18,7 +19,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Program;
 use miden_protocol::{Felt, Word};
 
 use super::P2idNote;
@@ -28,9 +28,9 @@ use super::P2idNote;
 
 // Initialize the SWAP note script only once
 static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/SWAP.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped SWAP script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/swap.masl"));
+    let library = Library::read_from_bytes(bytes).expect("Shipped SWAP library is well-formed");
+    NoteScript::from_library(&library).expect("SWAP library contains note script procedure")
 });
 
 // SWAP NOTE
