@@ -21,9 +21,9 @@ pub type StorageSlot = u8;
 // | Kernel data        | 1_600         | 140              | 34 procedures in total, 4 elements each    |
 // | Accounts data      | 8_192         | 524_288          | 64 accounts max, 8192 elements each        |
 // | Account delta      | 532_480       | 263              |                                            |
-// | Input notes        | 4_194_304     | 2_162_688        | nullifiers data segment + 1024 input notes |
-// |                    |               |                  | max, 2048 elements each                    |
-// | Output notes       | 16_777_216    | 2_097_152        | 1024 output notes max, 2048 elements each  |
+// | Input notes        | 4_194_304     | 3_211_264        | nullifiers data segment (2^16 elements)    |
+// |                    |               |                  | + 1024 input notes max, 3072 elements each |
+// | Output notes       | 16_777_216    | 3_145_728        | 1024 output notes max, 3072 elements each  |
 // | Link Map Memory    | 33_554_432    | 33_554_432       | Enough for 2_097_151 key-value pairs       |
 
 // Relative layout of one account
@@ -324,7 +324,7 @@ pub const NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR: MemoryAddress =
 // ================================================================================================
 
 /// The size of the memory segment allocated to each note.
-pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
+pub const NOTE_MEM_SIZE: MemoryAddress = 3072;
 
 #[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]
@@ -338,11 +338,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
 // │   NUM   │  NOTE 0   │  NOTE 1   │ ... │  NOTE n   │ PADDING │ NOTE 0 │ NOTE 1 │  ...  │ NOTE n │
 // │  NOTES  │ NULLIFIER │ NULLIFIER │     │ NULLIFIER │         │  DATA  │  DATA  │       │  DATA  │
 // └─────────┴───────────┴───────────┴─────┴───────────┴─────────┴────────┴────────┴───────┴────────┘
-//  4_194_304 4_194_308   4_194_312         4_194_304+4(n+1)  4_259_840   +2048    +4096   +2048n
+//  4_194_304 4_194_308   4_194_312         4_194_304+4(n+1)  4_259_840   +3072    +6144   +3072n
 //
 // Here `n` represents number of input notes.
 //
-// Each nullifier occupies a single word. A data section for each note consists of exactly 2048
+// Each nullifier occupies a single word. A data section for each note consists of exactly 3072
 // elements and is laid out like so:
 //
 // ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬─────────┬────────┬───────┬─────┬───────┬─────────┬
@@ -399,7 +399,7 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 //     ┌─────────────┬─────────────┬───────────────┬─────────────┐
 //     │ NOTE 0 DATA │ NOTE 1 DATA │      ...      │ NOTE n DATA │
 //     └─────────────┴─────────────┴───────────────┴─────────────┘
-// 16_777_216      +2048         +4096           +2048n
+// 16_777_216      +3072         +6144           +3072n
 //
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
@@ -441,7 +441,7 @@ pub const OUTPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 24;
 #[cfg(any(feature = "testing", test))]
 pub const ASSET_SIZE: MemoryOffset = 8;
 
-/// The offset of the asset vaule in an asset's memory representation.
+/// The offset of the asset value in an asset's memory representation.
 #[cfg(any(feature = "testing", test))]
 pub const ASSET_VALUE_OFFSET: MemoryOffset = 4;
 
