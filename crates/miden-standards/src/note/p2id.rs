@@ -20,7 +20,6 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::try_read_account_id_from_storage;
-
 use crate::StandardsLib;
 
 // NOTE SCRIPT
