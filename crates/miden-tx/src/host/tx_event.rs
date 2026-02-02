@@ -377,9 +377,9 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET, note_ptr, num_of_assets, note_idx]
-                let note_idx = process.get_stack_item(7).as_int() as usize;
-                let asset_value = process.get_stack_word_be(1);
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_ptr]
+                let asset_value = process.get_stack_word_be(5);
+                let note_ptr = process.get_stack_item(9);
 
                 let asset = Asset::try_from(asset_value).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
@@ -387,6 +387,7 @@ impl TransactionEvent {
                         source,
                     }
                 })?;
+                let note_idx = note_ptr_to_idx(note_ptr)? as usize;
 
                 Some(TransactionEvent::NoteBeforeAddAsset { note_idx, asset })
             },
