@@ -12,6 +12,7 @@
 
 ### Changes
 
+- Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
 - [BREAKING] Renamed `WellKnownComponent` to `StandardAccountComponent`, `WellKnownNote` to `StandardNote`, and `WellKnownNoteAttachment` to `StandardNoteAttachment` ([#2332](https://github.com/0xMiden/miden-base/pull/2332)).
 - Skip requests to the `DataStore` for asset vault witnesses which are already in transaction inputs ([#2298](https://github.com/0xMiden/miden-base/pull/2298)).
