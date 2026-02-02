@@ -10,7 +10,6 @@ use miden_protocol::note::{
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
-    NoteTag,
     NoteType,
 };
 
@@ -37,8 +36,7 @@ pub fn create_update_ger_note<R: FeltRng>(
     let recipient = NoteRecipient::new(serial_num, update_ger_script, note_storage);
 
     // Create note metadata - use a simple public tag
-    let note_tag = NoteTag::new(0);
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public, note_tag);
+    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public);
 
     // UPDATE_GER notes don't carry assets
     let assets = NoteAssets::new(vec![])?;
