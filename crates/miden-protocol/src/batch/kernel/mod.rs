@@ -23,8 +23,7 @@ pub use advice_inputs::BatchAdviceInputs;
 static BATCH_KERNEL_MAIN: LazyLock<Program> = LazyLock::new(|| {
     let kernel_main_bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/batch_kernel.masb"));
-    Program::read_from_bytes(kernel_main_bytes)
-        .expect("failed to deserialize batch kernel runtime")
+    Program::read_from_bytes(kernel_main_bytes).expect("failed to deserialize batch kernel runtime")
 });
 
 // BATCH KERNEL ERROR
@@ -119,28 +118,30 @@ impl BatchKernel {
         // Output stack layout:
         // [INPUT_NOTES_COMMITMENT (0-3), OUTPUT_NOTES_SMT_ROOT (4-7), batch_expiration (8), ...]
 
-        let input_notes_commitment = outputs
-            .get_stack_word_be(0)
-            .ok_or_else(|| BatchKernelError::InvalidOutputStack(
+        let input_notes_commitment = outputs.get_stack_word_be(0).ok_or_else(|| {
+            BatchKernelError::InvalidOutputStack(
                 "input_notes_commitment (first word) missing".to_string(),
-            ))?;
+            )
+        })?;
 
-        let output_notes_smt_root = outputs
-            .get_stack_word_be(4)
-            .ok_or_else(|| BatchKernelError::InvalidOutputStack(
+        let output_notes_smt_root = outputs.get_stack_word_be(4).ok_or_else(|| {
+            BatchKernelError::InvalidOutputStack(
                 "output_notes_smt_root (second word) missing".to_string(),
-            ))?;
+            )
+        })?;
 
-        let batch_expiration_felt = outputs
-            .get_stack_item(8)
-            .ok_or_else(|| BatchKernelError::InvalidOutputStack(
+        let batch_expiration_felt = outputs.get_stack_item(8).ok_or_else(|| {
+            BatchKernelError::InvalidOutputStack(
                 "batch_expiration_block_num (element at index 8) missing".to_string(),
-            ))?;
+            )
+        })?;
 
         let batch_expiration_block_num: BlockNumber = u32::try_from(batch_expiration_felt.as_int())
-            .map_err(|_| BatchKernelError::InvalidOutputStack(
-                "batch expiration block number should be smaller than u32::MAX".to_string(),
-            ))?
+            .map_err(|_| {
+                BatchKernelError::InvalidOutputStack(
+                    "batch expiration block number should be smaller than u32::MAX".to_string(),
+                )
+            })?
             .into();
 
         Ok(BatchKernelOutputs {

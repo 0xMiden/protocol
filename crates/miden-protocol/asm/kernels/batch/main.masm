@@ -74,7 +74,13 @@ proc main
     # Check note constraints (no duplicates, counts within limits)
     exec.note::validate_notes
 
-    # PHASE 4: EPILOGUE
+    # PHASE 4: VERIFY TRANSACTION PROOFS
+    # -------------------------------------------------------------------------
+    # TODO: Recursive STARK verification of transaction proofs goes here.
+    # This is expensive and runs AFTER all cheap validation passes.
+    # Currently stubbed - using tx_id as commitment without proof verification.
+
+    # PHASE 5: EPILOGUE
     # -------------------------------------------------------------------------
     # Compute output commitments
     # - INPUT_NOTES_COMMITMENT

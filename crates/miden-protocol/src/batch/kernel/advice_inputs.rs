@@ -33,24 +33,20 @@ impl BatchAdviceInputs {
     ///
     /// This method extracts all the data needed by the batch kernel and organizes it
     /// into the advice stack and advice map.
-    ///
-    pub fn new(
-        block_header: &BlockHeader,
-        transactions: &[Arc<ProvenTransaction>],
-    ) -> Self {
+    pub fn new(block_header: &BlockHeader, transactions: &[Arc<ProvenTransaction>]) -> Self {
         let mut advice_stack: Vec<Felt> = Vec::new();
         let advice_map = alloc::collections::BTreeMap::new();
 
         // Build advice stack in the order MASM will pop it
         // (element 0 = top of advice stack = first popped)
-        
+
         // Block header data
         advice_stack.push(Felt::from(block_header.block_num()));
         advice_stack.extend(block_header.chain_commitment());
 
         // Transaction count
         advice_stack.push(Felt::new(transactions.len() as u64));
-        
+
         // Transaction list data (TX_ID, account_id for each tx)
         for tx in transactions {
             advice_stack.extend(tx.id().as_elements());
@@ -72,18 +68,17 @@ impl BatchAdviceInputs {
         for tx in transactions {
             let input_notes = tx.input_notes();
             advice_stack.push(Felt::new(input_notes.num_notes() as u64));
-            
+
             for note in input_notes.iter() {
                 advice_stack.extend(note.nullifier().as_elements());
-                // TODO: For unauthenticated notes, use hash(note_id, note_metadata) instead of zeros
+                // TODO: For unauthenticated notes, use hash(note_id, note_metadata) instead of
+                // zeros
                 advice_stack.extend([ZERO; 4]);
             }
         }
 
         Self {
-            inner: AdviceInputs::default()
-                .with_stack(advice_stack)
-                .with_map(advice_map),
+            inner: AdviceInputs::default().with_stack(advice_stack).with_map(advice_map),
         }
     }
 

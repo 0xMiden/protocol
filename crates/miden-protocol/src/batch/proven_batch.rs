@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use crate::Word;
 use crate::account::AccountId;
 use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::BlockNumber;
@@ -10,7 +11,6 @@ use crate::note::Nullifier;
 use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 use crate::vm::ExecutionProof;
-use crate::Word;
 
 /// A transaction batch with an execution proof.
 ///
@@ -42,6 +42,7 @@ impl ProvenBatch {
     ///
     /// Returns an error if the batch expiration block number is not greater than the reference
     /// block number.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: BatchId,
         reference_block_commitment: Word,
