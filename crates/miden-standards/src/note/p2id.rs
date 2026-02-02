@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -18,16 +19,15 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Program;
 
 // NOTE SCRIPT
 // ================================================================================================
 
 // Initialize the P2ID note script only once
 static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/P2ID.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped P2ID script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/p2id.masl"));
+    let library = Library::read_from_bytes(bytes).expect("Shipped P2ID library is well-formed");
+    NoteScript::from_library(&library).expect("P2ID library contains note script procedure")
 });
 
 // P2ID NOTE

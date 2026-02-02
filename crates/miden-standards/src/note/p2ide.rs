@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::account::AccountId;
+use miden_protocol::assembly::Library;
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
@@ -18,7 +19,6 @@ use miden_protocol::note::{
 };
 use miden_protocol::utils::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::vm::Program;
 use miden_protocol::{Felt, Word};
 
 // NOTE SCRIPT
@@ -26,9 +26,9 @@ use miden_protocol::{Felt, Word};
 
 // Initialize the P2IDE note script only once
 static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/P2IDE.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped P2IDE script is well-formed");
-    NoteScript::new(program)
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/p2ide.masl"));
+    let library = Library::read_from_bytes(bytes).expect("Shipped P2IDE library is well-formed");
+    NoteScript::from_library(&library).expect("P2IDE library contains note script procedure")
 });
 
 // P2IDE NOTE

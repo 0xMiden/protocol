@@ -535,6 +535,10 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
+    #[error("library does not contain a procedure with @note_script attribute")]
+    NoteScriptNoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @note_script attribute")]
+    NoteScriptMultipleProceduresWithAttribute,
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
