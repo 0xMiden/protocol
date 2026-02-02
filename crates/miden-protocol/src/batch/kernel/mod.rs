@@ -90,12 +90,12 @@ impl BatchKernel {
     /// [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
     /// ```
     pub fn build_input_stack(block_hash: Word, batch_id: BatchId) -> StackInputs {
-        let mut inputs: Vec<Felt> = Vec::with_capacity(8);
-        // BatchId (TRANSACTIONS_COMMITMENT) - will be below block_hash
-        inputs.extend(batch_id.as_elements());
-        // Block hash - will be at top of stack
+        let mut inputs: Vec<Felt> = Vec::with_capacity(16);
         inputs.extend(block_hash);
-        // VM auto-pads to 16 elements with zeros
+        // Reverse BatchId to match MASM rpo256::hash_elements output order
+        inputs.extend(batch_id.as_elements().iter().rev());
+        // Pad to 16 elements (required for correct stack positioning)
+        inputs.resize(16, Felt::from(0_u32));
 
         StackInputs::new(inputs)
             .map_err(|e| e.to_string())

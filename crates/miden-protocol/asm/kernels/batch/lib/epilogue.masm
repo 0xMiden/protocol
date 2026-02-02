@@ -10,14 +10,25 @@ use miden::core::sys
 
 #! Computes output commitments and builds the output stack.
 #!
-#! Output stack layout:
-#! [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, ...]
+#! Output stack layout (positions 0-15, top to bottom):
+#! [INPUT_NOTES_COMMITMENT(4), OUTPUT_NOTES_SMT_ROOT(4), batch_expiration(1), zeros(7)]
 #!
-#! Inputs: []
-#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, ...]
+#! Inputs:
+#!   Operand stack: []
+#! Outputs:
+#!   Operand stack: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, ...]
 pub proc finalize_batch
+    # Build output stack by pushing values (last pushed = top)
     exec.memory::get_batch_expiration_block_num
+    # => [batch_expiration_block_num]
+
     padw  # TODO: compute OUTPUT_NOTES_SMT_ROOT
+    # => [OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num]
+
     padw  # TODO: compute INPUT_NOTES_COMMITMENT
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num]
+
+    # Ensure exactly 16 elements on stack
     exec.sys::truncate_stack
+    # => [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, 0, 0, 0, 0, 0, 0, 0]
 end
