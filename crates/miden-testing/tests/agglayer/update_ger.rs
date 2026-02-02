@@ -122,7 +122,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
         .enumerate()
         .map(|(i, f)| format!("push.{} mem_store.{}", f.as_int(), i))
         .collect();
-    let mem_init_code = mem_init.join("\n                ");
+    let mem_init_code = mem_init.join("\n");
 
     let source = format!(
         r#"
