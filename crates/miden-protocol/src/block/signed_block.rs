@@ -10,7 +10,7 @@ use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError,
 #[derive(Debug, thiserror::Error)]
 pub enum SignedBlockError {
     #[error(
-        "block signature does not match the corresponding block header commitment and validator public key"
+        "ECDSA signature verification failed based on the signed block's header commitment, validator public key and signature"
     )]
     InvalidSignature,
     #[error(
