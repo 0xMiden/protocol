@@ -139,8 +139,8 @@ async fn assert_scale_down_ok(x: U256, scale: u32) -> anyhow::Result<u64> {
 }
 
 /// Assert that scaling down fails with the given y and expected error message
-async fn assert_scale_down_fails(x: U256, s: u32, y: u64, expected_msg: &str) {
-    let script = build_scale_down_script(x, s, y);
+async fn assert_scale_down_fails(x: U256, scale: u32, y: u64, expected_msg: &str) {
+    let script = build_scale_down_script(x, scale, y);
     assert_execution_fails_with(&script, expected_msg).await;
 }
 
