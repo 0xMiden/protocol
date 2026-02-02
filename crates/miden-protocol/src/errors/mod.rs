@@ -539,6 +539,10 @@ pub enum NoteError {
     NoteScriptNoProcedureWithAttribute,
     #[error("library contains multiple procedures with @note_script attribute")]
     NoteScriptMultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    NoteScriptProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @note_script attribute")]
+    NoteScriptProcedureMissingAttribute(Box<str>),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]

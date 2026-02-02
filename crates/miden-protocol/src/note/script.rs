@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
@@ -5,8 +6,8 @@ use core::fmt::Display;
 use miden_processor::MastNodeExt;
 
 use super::Felt;
-use crate::assembly::Library;
-use crate::assembly::mast::{MastForest, MastNodeId};
+use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
+use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
 use crate::utils::serde::{
     ByteReader,
@@ -93,6 +94,48 @@ impl NoteScript {
             mast: library.mast_forest().clone(),
             entrypoint,
         })
+    }
+
+    /// Returns a new [NoteScript] containing only a reference to a procedure in the provided
+    /// library.
+    ///
+    /// This method is useful when a library contains multiple note scripts and you need to
+    /// extract a specific one by its fully qualified path (e.g.,
+    /// `miden::standards::notes::burn::main`).
+    ///
+    /// The procedure at the specified path must have the `@note_script` attribute.
+    ///
+    /// Note: This method creates a minimal [MastForest] containing only an external node
+    /// referencing the procedure's digest, rather than copying the entire library. The actual
+    /// procedure code will be resolved at runtime via the `MastForestStore`.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The library does not contain a procedure at the specified path.
+    /// - The procedure at the specified path does not have the `@note_script` attribute.
+    pub fn from_library_reference(library: &Library, path: &Path) -> Result<Self, NoteError> {
+        // Find the export matching the path
+        let export = library
+            .exports()
+            .find(|e| e.path().as_ref() == path)
+            .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
+
+        // Get the procedure export and verify it has the @note_script attribute
+        let proc_export = export
+            .as_procedure()
+            .ok_or_else(|| NoteError::NoteScriptProcedureNotFound(path.to_string().into()))?;
+
+        if !proc_export.attributes.has(NOTE_SCRIPT_ATTRIBUTE) {
+            return Err(NoteError::NoteScriptProcedureMissingAttribute(path.to_string().into()));
+        }
+
+        // Get the digest of the procedure from the library
+        let digest = library.mast_forest()[proc_export.node].digest();
+
+        // Create a minimal MastForest with just an external node referencing the digest
+        let (mast, entrypoint) = create_external_node_forest(digest);
+
+        Ok(Self { mast: Arc::new(mast), entrypoint })
     }
 
     // PUBLIC ACCESSORS
@@ -248,6 +291,23 @@ impl Display for NoteScript {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.pretty_print(f)
     }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Creates a minimal [MastForest] containing only an external node referencing the given digest.
+///
+/// This is useful for creating lightweight references to procedures without copying entire
+/// libraries. The external reference will be resolved at runtime, assuming the source library
+/// is loaded into the VM's MastForestStore.
+fn create_external_node_forest(digest: Word) -> (MastForest, MastNodeId) {
+    let mut mast = MastForest::new();
+    let node_id = ExternalNodeBuilder::new(digest)
+        .add_to_forest(&mut mast)
+        .expect("adding external node to empty forest should not fail");
+    mast.make_root(node_id);
+    (mast, node_id)
 }
 
 // TESTS
