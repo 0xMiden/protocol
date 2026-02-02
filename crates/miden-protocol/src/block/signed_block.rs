@@ -1,7 +1,7 @@
 use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
-use crate::block::{BlockBody, BlockHeader};
+use crate::block::{BlockBody, BlockHeader, BlockNumber};
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
 // SIGNED BLOCK ERROR
@@ -13,12 +13,22 @@ pub enum SignedBlockError {
         "block signature does not match the corresponding block header commitment and validator public key"
     )]
     InvalidSignature,
-    #[error("invalid block transaction commitment: expected {expected}, actual {actual}")]
-    InvalidTransactionCommitment { expected: Word, actual: Word },
     #[error(
-        "signed block commitment does not match expected parent's : signed block commitment {signed_block}, parent {parent}"
+        "header tx commitment ({header_tx_commitment}) does not match body tx commitment ({body_tx_commitment})"
     )]
-    ParentMismatch { signed_block: Word, parent: Word },
+    TxCommitmentMismatch {
+        header_tx_commitment: Word,
+        body_tx_commitment: Word,
+    },
+    #[error(
+        "signed block commitment ({signed_block}) does not match expected parent's block commitment ({parent})"
+    )]
+    ParentCommitmentMismatch { signed_block: Word, parent: Word },
+    #[error("signed block num ({signed_block}) is not parent block num + 1 ({parent})")]
+    ParentNumberMismatch {
+        signed_block: BlockNumber,
+        parent: BlockNumber,
+    },
 }
 
 // SIGNED BLOCK
@@ -49,21 +59,15 @@ impl SignedBlock {
         body: BlockBody,
         signature: Signature,
     ) -> Result<Self, SignedBlockError> {
+        let signed_block = Self { header, body, signature };
+
         // Verify signature.
-        if !signature.verify(header.commitment(), header.validator_key()) {
-            return Err(SignedBlockError::InvalidSignature);
-        }
+        signed_block.validate_signature()?;
 
         // Validate header / body matching transaction commitments.
-        let tx_commitment = body.transactions().commitment();
-        if header.tx_commitment() != tx_commitment {
-            return Err(SignedBlockError::InvalidTransactionCommitment {
-                expected: tx_commitment,
-                actual: header.tx_commitment(),
-            });
-        }
+        signed_block.validate_tx_commitment()?;
 
-        Ok(Self { header, body, signature })
+        Ok(signed_block)
     }
 
     /// Returns a new [`SignedBlock`] instantiated from the provided components.
@@ -96,17 +100,45 @@ impl SignedBlock {
         (self.header, self.body, self.signature)
     }
 
-    /// Validates that the provided parent block's commitment matches the signed block's previous
-    /// block commitment.
-    pub fn validate_parent(&self, parent: &BlockHeader) -> Result<(), SignedBlockError> {
-        if self.header.prev_block_commitment() == parent.commitment() {
-            Ok(())
+    /// Performs ECDSA signature verification against the header commitment and validator key.
+    pub fn validate_signature(&self) -> Result<(), SignedBlockError> {
+        if !self.signature.verify(self.header.commitment(), self.header.validator_key()) {
+            Err(SignedBlockError::InvalidSignature)
         } else {
-            Err(SignedBlockError::ParentMismatch {
+            Ok(())
+        }
+    }
+
+    /// Validates that the transaction commitments between the header and body match for this signed
+    /// block.
+    pub fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
+        let header_tx_commitment = self.header.tx_commitment();
+        let body_tx_commitment = self.body.transactions().commitment();
+        if header_tx_commitment != body_tx_commitment {
+            Err(SignedBlockError::TxCommitmentMismatch { header_tx_commitment, body_tx_commitment })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates that the provided parent block's commitment and number correctly corresponds to
+    /// the signed block. block commitment.
+    pub fn validate_parent(&self, parent: &BlockHeader) -> Result<(), SignedBlockError> {
+        // Commitments.
+        if self.header.prev_block_commitment() != parent.commitment() {
+            return Err(SignedBlockError::ParentCommitmentMismatch {
                 signed_block: self.header.prev_block_commitment(),
                 parent: parent.commitment(),
-            })
+            });
         }
+        // Block numbers.
+        if self.header.block_num() != parent.block_num() + 1 {
+            return Err(SignedBlockError::ParentNumberMismatch {
+                signed_block: self.header.block_num(),
+                parent: parent.block_num(),
+            });
+        }
+        Ok(())
     }
 }
 
