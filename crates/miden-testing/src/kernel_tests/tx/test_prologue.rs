@@ -21,6 +21,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
+    ASSET_VALUE_OFFSET,
     BLOCK_COMMITMENT_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
@@ -516,14 +517,22 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let word: Word = asset.into();
+            let asset_key: Word = *asset.vault_key().as_word();
+            let asset_value: Word = asset.into();
+
+            let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * WORD_SIZE as u32;
+            let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;
+
             assert_eq!(
-                exec_output.get_note_mem_word(
-                    note_idx,
-                    INPUT_NOTE_ASSETS_OFFSET + asset_idx * WORD_SIZE as u32
-                ),
-                word,
-                "assets should be stored at (INPUT_NOTES_DATA_OFFSET + note_index * 2048 + 32 + asset_idx * 4)"
+                exec_output.get_note_mem_word(note_idx, asset_key_addr),
+                asset_key,
+                "asset key should be stored at the correct offset"
+            );
+
+            assert_eq!(
+                exec_output.get_note_mem_word(note_idx, asset_value_addr),
+                asset_value,
+                "asset value should be stored at the correct offset"
             );
         }
     }

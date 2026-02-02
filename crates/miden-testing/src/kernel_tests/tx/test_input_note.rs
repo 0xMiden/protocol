@@ -2,6 +2,7 @@ use alloc::string::String;
 
 use miden_protocol::Word;
 use miden_protocol::note::Note;
+use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_standards::code_builder::CodeBuilder;
 
 use super::{TestSetup, setup_test};
@@ -234,20 +235,32 @@ async fn test_get_assets() -> anyhow::Result<()> {
         for (asset_index, asset) in note.assets().iter().enumerate() {
             check_assets_code.push_str(&format!(
                 r#"
-                    # load the asset stored in memory
+                    # load the asset key stored in memory
                     padw dup.4 mem_loadw_be
-                    # => [STORED_ASSET, dest_ptr, note_index]
+                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
-                    # assert the asset
-                    push.{NOTE_ASSET}
-                    assert_eqw.err="asset {asset_index} of the note {note_index} is incorrect"
+                    # assert the asset key matches
+                    push.{NOTE_ASSET_KEY}
+                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # => [dest_ptr, note_index]
+
+                    # load the asset value stored in memory
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be
+                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+
+                    # assert the asset value matches
+                    push.{NOTE_ASSET_VALUE}
+                    assert_eqw.err="expected asset value at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_VALUE}"
                     # => [dest_ptr, note_index]
 
                     # move the pointer
-                    add.4
-                    # => [dest_ptr+4, note_index]
+                    add.{ASSET_SIZE}
+                    # => [dest_ptr+ASSET_SIZE, note_index]
                 "#,
-                NOTE_ASSET = Word::from(*asset),
+                NOTE_ASSET_KEY = asset.vault_key().as_word(),
+                NOTE_ASSET_VALUE = Word::from(*asset),
                 asset_index = asset_index,
                 note_index = note_index,
             ));
@@ -272,8 +285,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         end
     ",
         check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
-        check_note_1 = check_assets_code(1, 4, &p2id_note_1_asset),
-        check_note_2 = check_assets_code(2, 8, &p2id_note_2_assets),
+        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
+        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
