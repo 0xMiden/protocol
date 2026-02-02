@@ -1,5 +1,10 @@
 use miden::protocol::account_id
 
+# RE-EXPORTS
+# =================================================================================================
+
+pub use ::miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+
 # ERRORS
 # =================================================================================================
 
@@ -30,7 +35,7 @@ pub proc build_fungible_asset
     # => [faucet_id_prefix, faucet_id_suffix, amount]
 
     # assert the amount is valid
-    dup.2 exec.get_fungible_asset_max_amount lte
+    dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [faucet_id_prefix, faucet_id_suffix, amount]
 
@@ -62,11 +67,3 @@ pub proc build_non_fungible_asset
     # => [faucet_id_prefix, hash2, hash1, hash0]
     # => [ASSET]
 end
-
-#! Returns the maximum amount of a fungible asset.
-#!
-#! Stack: []
-#! Outputs: [fungible_asset_max_amount]
-#!
-#! fungible_asset_max_amount is the maximum amount of a fungible asset.
-pub use ::miden::protocol::util::asset::get_fungible_asset_max_amount

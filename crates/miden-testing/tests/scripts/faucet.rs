@@ -27,14 +27,11 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::{
-    BasicFungibleFaucet,
-    FungibleFaucetExt,
-    NetworkFungibleFaucet,
-};
+use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED,
+    ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
+    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
@@ -147,6 +144,7 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
     Ok(())
 }
 
+/// Tests that distribute fails when the minted amount would exceed the max supply.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyhow::Result<()> {
     // CONSTRUCT AND EXECUTE TX (Failure)
@@ -191,11 +189,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
         .execute()
         .await;
 
-    // Execute the transaction and get the witness
-    assert_transaction_executor_error!(
-        tx,
-        ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED
-    );
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
     Ok(())
 }
 
@@ -229,8 +223,16 @@ async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
 /// Tests that burning a fungible asset on an existing faucet succeeds and proves the transaction.
 #[tokio::test]
 async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
+    let max_supply = 200u32;
+    let token_supply = 100u32;
+
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, Some(100))?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth,
+        "TST",
+        max_supply.into(),
+        Some(token_supply.into()),
+    )?;
 
     let fungible_asset = FungibleAsset::new(faucet.id(), 100).unwrap();
 
@@ -254,16 +256,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     builder.add_output_note(OutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
+    let basic_faucet = BasicFungibleFaucet::try_from(&faucet)?;
+
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(
-        faucet.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap()[0],
-        Felt::new(200)
-    );
+    assert_eq!(basic_faucet.max_supply(), Felt::from(max_supply));
 
-    // Check that the faucet reserved slot has been correctly initialized.
+    // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(faucet.get_token_issuance().unwrap(), Felt::new(100));
+    assert_eq!(basic_faucet.token_supply(), Felt::from(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -279,6 +280,53 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
+    Ok(())
+}
+
+/// Tests that burning a fungible asset fails when the amount exceeds the token supply.
+#[tokio::test]
+async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyhow::Result<()> {
+    let max_supply = 200u32;
+    let token_supply = 50u32;
+
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth,
+        "TST",
+        max_supply.into(),
+        Some(token_supply.into()),
+    )?;
+
+    // Try to burn 100 tokens when only 50 have been issued
+    let burn_amount = 100u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+
+    let burn_note_script_code = "
+        # burn the asset
+        begin
+            dropw
+            # => []
+
+            call.::miden::standards::faucets::basic_fungible::burn
+            # => [ASSET]
+
+            # truncate the stack
+            dropw
+        end
+        ";
+
+    let note = get_note_with_fungible_asset_and_script(fungible_asset, burn_note_script_code);
+
+    builder.add_output_note(OutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx = mock_chain
+        .build_tx_context(faucet.id(), &[note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
     Ok(())
 }
 
@@ -457,6 +505,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 /// Tests minting on network faucet
 #[tokio::test]
 async fn network_faucet_mint() -> anyhow::Result<()> {
+    let max_supply = 1000u64;
+    let token_supply = 50u64;
+
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id = AccountId::dummy(
@@ -466,18 +517,19 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet =
-        builder.add_existing_network_faucet("NET", 1000, faucet_owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        max_supply,
+        faucet_owner_account_id,
+        Some(token_supply),
+    )?;
 
     // Create a target account to consume the minted note
     let mut target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    // The Network Fungible Faucet component is added as the second component after auth, so its
-    // storage slot offset will be 2. Check that max_supply at the word's index 0 is 200.
-    assert_eq!(
-        faucet.storage().get_item(NetworkFungibleFaucet::metadata_slot()).unwrap()[0],
-        Felt::new(1000)
-    );
+    // Check the Network Fungible Faucet's max supply.
+    let actual_max_supply = NetworkFungibleFaucet::try_from(&faucet)?.max_supply();
+    assert_eq!(actual_max_supply.as_int(), max_supply);
 
     // Check that the creator account ID is stored in slot 2 (second storage slot of the component)
     // The owner_account_id is stored as Word [0, 0, suffix, prefix]
@@ -486,9 +538,10 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     assert_eq!(stored_owner_id[3], faucet_owner_account_id.prefix().as_felt());
     assert_eq!(stored_owner_id[2], Felt::new(faucet_owner_account_id.suffix().as_int()));
 
-    // Check that the faucet reserved slot has been correctly initialized.
+    // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
-    assert_eq!(faucet.get_token_issuance().unwrap(), Felt::new(50));
+    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    assert_eq!(initial_token_supply.as_int(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
@@ -1094,8 +1147,8 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Check the initial token issuance before burning
-    let initial_issuance = faucet.get_token_issuance().unwrap();
-    assert_eq!(initial_issuance, Felt::new(100));
+    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    assert_eq!(initial_token_supply, Felt::new(100));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
@@ -1111,8 +1164,8 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Apply the delta to the faucet account and verify the token issuance decreased
     faucet.apply_delta(executed_transaction.account_delta())?;
-    let final_issuance = faucet.get_token_issuance().unwrap();
-    assert_eq!(final_issuance, Felt::new(initial_issuance.as_int() - burn_amount));
+    let final_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    assert_eq!(final_token_supply, Felt::new(initial_token_supply.as_int() - burn_amount));
 
     Ok(())
 }

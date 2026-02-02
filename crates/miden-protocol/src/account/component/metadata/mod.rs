@@ -26,7 +26,6 @@ use crate::errors::AccountError;
 /// # Guarantees
 ///
 /// - The metadata's storage schema does not contain duplicate slot names.
-/// - The schema cannot contain protocol-reserved slot names.
 /// - Each init-time value name uniquely identifies a single value. The expected init-time metadata
 ///   can be retrieved with [AccountComponentMetadata::schema_requirements()], which returns a map
 ///   from keys to [SchemaRequirement] (which indicates the expected value type and optional
