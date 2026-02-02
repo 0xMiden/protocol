@@ -53,10 +53,10 @@ impl NoteExecutionHint {
     // CONSTANTS
     // ------------------------------------------------------------------------------------------------
 
-    pub const NONE_TAG: u8 = 0;
-    pub const ALWAYS_TAG: u8 = 1;
-    pub const AFTER_BLOCK_TAG: u8 = 2;
-    pub const ON_BLOCK_SLOT_TAG: u8 = 3;
+    pub(crate) const NONE_TAG: u8 = 0;
+    pub(crate) const ALWAYS_TAG: u8 = 1;
+    pub(crate) const AFTER_BLOCK_TAG: u8 = 2;
+    pub(crate) const ON_BLOCK_SLOT_TAG: u8 = 3;
 
     // CONSTRUCTORS
     // ------------------------------------------------------------------------------------------------
@@ -110,7 +110,9 @@ impl NoteExecutionHint {
 
                 Ok(hint)
             },
-            _ => Err(NoteError::NoteExecutionHintTagOutOfRange(tag)),
+            _ => Err(NoteError::other(format!(
+                "note execution hint tag {tag} must be in range 0..=3"
+            ))),
         }
     }
 

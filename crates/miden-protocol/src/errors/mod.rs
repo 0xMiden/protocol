@@ -548,8 +548,6 @@ pub enum NoteError {
     AddFungibleAssetBalanceError(#[source] AssetError),
     #[error("note sender is not a valid account ID")]
     NoteSenderInvalidAccountId(#[source] AccountIdError),
-    #[error("note execution hint tag {0} must be in range 0..=3")]
-    NoteExecutionHintTagOutOfRange(u8),
     #[error("note execution hint after block variant cannot contain u32::MAX")]
     NoteExecutionHintAfterBlockCannotBeU32Max,
     #[error("invalid note execution hint payload {1} for tag {0}")]
