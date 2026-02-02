@@ -118,8 +118,9 @@ impl SwapNote {
         let serial_num = rng.draw_word();
 
         // build the outgoing note
-        let metadata =
-            NoteMetadata::new(sender, swap_note_type, tag).with_attachment(swap_note_attachment);
+        let metadata = NoteMetadata::new(sender, swap_note_type)
+            .with_tag(tag)
+            .with_attachment(swap_note_attachment);
         let assets = NoteAssets::new(vec![offered_asset])?;
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
         let note = Note::new(assets, metadata, recipient);

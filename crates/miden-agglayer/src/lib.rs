@@ -482,7 +482,8 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
             .map_err(|e| NoteError::other(e.to_string()))?
             .into();
     // Use a default sender since we don't have sender anymore - create from destination address
-    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type, tag)
+    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type)
+        .with_tag(tag)
         .with_attachment(attachment);
     let assets = NoteAssets::new(vec![])?;
     let recipient = NoteRecipient::new(serial_num, claim_script, inputs);
