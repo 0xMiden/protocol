@@ -99,7 +99,8 @@ impl BurnNote {
         let inputs = NoteStorage::new(vec![])?;
         let tag = NoteTag::with_account_target(faucet_id);
 
-        let metadata = NoteMetadata::new(sender, note_type, tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
         let assets = NoteAssets::new(vec![fungible_asset])?; // BURN notes contain the asset to burn
         let recipient = NoteRecipient::new(serial_num, note_script, inputs);
 

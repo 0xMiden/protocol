@@ -77,11 +77,14 @@ impl NoteMetadata {
     // --------------------------------------------------------------------------------------------
 
     /// Returns a new [`NoteMetadata`] instantiated with the specified parameters.
-    pub fn new(sender: AccountId, note_type: NoteType, tag: NoteTag) -> Self {
+    ///
+    /// The tag defaults to [`NoteTag::default()`]. Use [`NoteMetadata::with_tag`] to set a
+    /// specific tag if needed.
+    pub fn new(sender: AccountId, note_type: NoteType) -> Self {
         Self {
             sender,
             note_type,
-            tag,
+            tag: NoteTag::default(),
             attachment: NoteAttachment::default(),
         }
     }
@@ -153,12 +156,27 @@ impl NoteMetadata {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Overwrites the note's attachment with the provided one.
+    /// Mutates the note's tag by setting it to the provided value.
+    pub fn set_tag(&mut self, tag: NoteTag) {
+        self.tag = tag;
+    }
+
+    /// Returns a new [`NoteMetadata`] with the tag set to the provided value.
+    ///
+    /// This is a builder method that consumes self and returns a new instance for method chaining.
+    pub fn with_tag(mut self, tag: NoteTag) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    /// Mutates the note's attachment by setting it to the provided value.
     pub fn set_attachment(&mut self, attachment: NoteAttachment) {
         self.attachment = attachment;
     }
 
-    /// Overwrites the note's attachment with the provided one.
+    /// Returns a new [`NoteMetadata`] with the attachment set to the provided value.
+    ///
+    /// This is a builder method that consumes self and returns a new instance for method chaining.
     pub fn with_attachment(mut self, attachment: NoteAttachment) -> Self {
         self.attachment = attachment;
         self
@@ -184,7 +202,7 @@ impl Deserializable for NoteMetadata {
         let tag = NoteTag::read_from(source)?;
         let attachment = NoteAttachment::read_from(source)?;
 
-        Ok(NoteMetadata::new(sender, note_type, tag).with_attachment(attachment))
+        Ok(NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment))
     }
 }
 
@@ -351,7 +369,8 @@ mod tests {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let note_type = NoteType::Public;
         let tag = NoteTag::new(u32::MAX);
-        let metadata = NoteMetadata::new(sender, note_type, tag).with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
 
         // Serialization Roundtrip
         let deserialized = NoteMetadata::read_from_bytes(&metadata.to_bytes())?;

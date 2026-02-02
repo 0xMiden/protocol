@@ -791,7 +791,7 @@ fn create_p2ide_note_with_storage(
     );
 
     let tag = NoteTag::with_account_target(sender);
-    let metadata = NoteMetadata::new(sender, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender, NoteType::Public).with_tag(tag);
 
     Note::new(NoteAssets::default(), metadata, recipient)
 }

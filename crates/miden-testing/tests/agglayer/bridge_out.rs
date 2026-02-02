@@ -90,7 +90,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let inputs = NoteStorage::new(input_felts.clone())?;
 
     // Create the B2AGG note with assets from the faucet
-    let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type, tag);
+    let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
     let serial_num = Word::from([1, 2, 3, 4u32]);
     let b2agg_note_script = NoteScript::new(b2agg_script);
@@ -248,7 +248,7 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Create the B2AGG note with the USER ACCOUNT as the sender
     // This is the key difference - the note sender will be the same as the consuming account
-    let b2agg_note_metadata = NoteMetadata::new(user_account.id(), note_type, tag);
+    let b2agg_note_metadata = NoteMetadata::new(user_account.id(), note_type).with_tag(tag);
     let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
     let serial_num = Word::from([1, 2, 3, 4u32]);
     let b2agg_note_script = NoteScript::new(b2agg_script);

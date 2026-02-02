@@ -373,9 +373,10 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
     let receiver = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE)
         .map_err(|e| anyhow::anyhow!("Failed to convert account ID: {}", e))?;
 
-    let test_metadata1 =
-        NoteMetadata::new(sender, NoteType::Private, NoteTag::with_account_target(receiver));
-    let test_metadata2 = NoteMetadata::new(sender, NoteType::Public, NoteTag::new(u32::MAX));
+    let test_metadata1 = NoteMetadata::new(sender, NoteType::Private)
+        .with_tag(NoteTag::with_account_target(receiver));
+    let test_metadata2 =
+        NoteMetadata::new(sender, NoteType::Public).with_tag(NoteTag::new(u32::MAX));
 
     for (iteration, test_metadata) in [test_metadata1, test_metadata2].into_iter().enumerate() {
         let code = format!(
@@ -516,7 +517,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
 
     let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
     let note_script = CodeBuilder::default().compile_note_script("begin nop end")?;
     let recipient =

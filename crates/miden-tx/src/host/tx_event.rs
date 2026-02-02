@@ -724,7 +724,7 @@ fn build_note_metadata(
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
-    Ok(NoteMetadata::new(sender, note_type, tag))
+    Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
 }
 
 fn extract_note_attachment(
