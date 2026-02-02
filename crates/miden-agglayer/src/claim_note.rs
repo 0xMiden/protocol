@@ -40,7 +40,7 @@ impl SmtNode {
         &self.0
     }
 
-    /// Converts the SMT node to 8 Felt elements (32-byte value as 8 u32 values in big-endian)
+    /// Converts the SMT node to 8 Felt elements (32-byte value as 8 u32 values in little-endian)
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
