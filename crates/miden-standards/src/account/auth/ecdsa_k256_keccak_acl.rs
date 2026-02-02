@@ -118,10 +118,10 @@ impl Default for AuthEcdsaK256KeccakAclConfig {
 ///   allowing free note processing.
 ///
 /// ## Storage Layout
-/// - Slot 0(value): Public key (same as EcdsaK256Keccak)
-/// - Slot 1(value): [num_trigger_procs, allow_unauthorized_output_notes,
-///   allow_unauthorized_input_notes, 0]
-/// - Slot 2(map): A map with trigger procedure roots
+/// - [`Self::public_key_slot`]: Public key
+/// - [`Self::config_slot`]: `[num_trigger_procs, allow_unauthorized_output_notes,
+///   allow_unauthorized_input_notes, 0]`
+/// - [`Self::trigger_procedure_roots_slot`]: A map with trigger procedure roots
 ///
 /// ## Important Note on Procedure Detection
 /// The procedure-based authentication relies on the `was_procedure_called` kernel function,

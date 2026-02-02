@@ -163,7 +163,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let output_note_tag = NoteTag::with_account_target(user_account.id());
     let expected_p2id_note = Note::new(
         NoteAssets::new(vec![mint_asset])?,
-        NoteMetadata::new(agglayer_faucet.id(), NoteType::Public, output_note_tag),
+        NoteMetadata::new(agglayer_faucet.id(), NoteType::Public).with_tag(output_note_tag),
         p2id_recipient,
     );
 

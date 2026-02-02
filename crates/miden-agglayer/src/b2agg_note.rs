@@ -20,7 +20,6 @@ use miden_protocol::note::{
     NoteRecipient,
     NoteScript,
     NoteStorage,
-    NoteTag,
     NoteType,
 };
 use miden_standards::note::NetworkAccountTarget;
@@ -97,15 +96,13 @@ impl B2AggNote {
     ) -> Result<Note, NoteError> {
         let note_storage = build_note_storage(destination_network, destination_address)?;
 
-        let tag = NoteTag::new(0);
-
         let attachment = NoteAttachment::from(
             NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
                 .map_err(|e| NoteError::other(e.to_string()))?,
         );
 
         let metadata =
-            NoteMetadata::new(sender_account_id, NoteType::Public, tag).with_attachment(attachment);
+            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
 
         let recipient = NoteRecipient::new(rng.draw_word(), Self::script(), note_storage);
 

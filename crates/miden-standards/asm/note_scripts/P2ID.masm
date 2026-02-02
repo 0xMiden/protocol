@@ -1,1 +1,0 @@
-pub use ::miden::standards::notes::p2id::main

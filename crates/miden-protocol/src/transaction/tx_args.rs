@@ -175,10 +175,6 @@ impl TransactionArgs {
             (sn_script_hash, concat_words(sn_hash, script.root())),
             (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
             (storage.commitment(), storage.to_elements()),
-            (
-                Hasher::hash_elements(storage.commitment().as_elements()),
-                vec![Felt::from(storage.num_items())],
-            ),
             (script.root(), script_encoded),
         ];
 

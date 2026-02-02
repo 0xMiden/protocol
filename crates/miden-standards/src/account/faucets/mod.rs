@@ -1,7 +1,6 @@
 use alloc::string::String;
 
-use miden_protocol::Felt;
-use miden_protocol::account::{Account, AccountStorage, AccountType, StorageSlotName};
+use miden_protocol::account::StorageSlotName;
 use miden_protocol::errors::{AccountError, TokenSymbolError};
 use miden_protocol::utils::sync::LazyLock;
 use thiserror::Error;
@@ -17,40 +16,6 @@ static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("storage slot name should be valid")
 });
 
-// FUNGIBLE FAUCET
-// ================================================================================================
-
-/// Extension trait for fungible faucet accounts. Provides methods to access the fungible faucet
-/// account's reserved storage slot.
-pub trait FungibleFaucetExt {
-    const ISSUANCE_ELEMENT_INDEX: usize;
-
-    /// Returns the amount of tokens (in base units) issued from this fungible faucet.
-    ///
-    /// # Errors
-    /// Returns an error if the account is not a fungible faucet account.
-    fn get_token_issuance(&self) -> Result<Felt, FungibleFaucetError>;
-}
-
-impl FungibleFaucetExt for Account {
-    const ISSUANCE_ELEMENT_INDEX: usize = 3;
-
-    fn get_token_issuance(&self) -> Result<Felt, FungibleFaucetError> {
-        if self.account_type() != AccountType::FungibleFaucet {
-            return Err(FungibleFaucetError::NotAFungibleFaucetAccount);
-        }
-
-        let slot =
-            self.storage().get_item(AccountStorage::faucet_sysdata_slot()).map_err(|err| {
-                FungibleFaucetError::StorageLookupFailed {
-                    slot_name: AccountStorage::faucet_sysdata_slot().clone(),
-                    source: err,
-                }
-            })?;
-        Ok(slot[Self::ISSUANCE_ELEMENT_INDEX])
-    }
-}
-
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================
 
@@ -61,10 +26,16 @@ pub enum FungibleFaucetError {
     TooManyDecimals { actual: u64, max: u8 },
     #[error("faucet metadata max supply is {actual} which exceeds max value of {max}")]
     MaxSupplyTooLarge { actual: u64, max: u64 },
+    #[error("token supply {token_supply} exceeds max_supply {max_supply}")]
+    TokenSupplyExceedsMaxSupply { token_supply: u64, max_supply: u64 },
     #[error(
-        "account interface provided for faucet creation does not have basic fungible faucet component"
+        "account interface does not have the procedures of the basic fungible faucet component"
     )]
-    NoAvailableInterface,
+    MissingBasicFungibleFaucetInterface,
+    #[error(
+        "account interface does not have the procedures of the network fungible faucet component"
+    )]
+    MissingNetworkFungibleFaucetInterface,
     #[error("failed to retrieve storage slot with name {slot_name}")]
     StorageLookupFailed {
         slot_name: StorageSlotName,

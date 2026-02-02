@@ -4,6 +4,7 @@ use miden::core::word
 use $kernel::account_id
 use $kernel::asset
 use $kernel::memory
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # ERRORS
 # =================================================================================================
@@ -223,7 +224,7 @@ pub proc add_fungible_asset
     # => [amount, amount, cur_amount, faucet_id_prefix, faucet_id_suffix, 0, VAULT_ROOT, CUR_VAULT_VALUE, vault_root_ptr]
 
     # compute max_amount - cur_amount
-    exec.asset::get_fungible_asset_max_amount dup.3 sub
+    push.FUNGIBLE_ASSET_MAX_AMOUNT dup.3 sub
     # => [(max_amount - cur_amount), amount, amount, cur_amount, faucet_id_prefix, faucet_id_suffix, 0, VAULT_ROOT,
     #     CUR_VAULT_VALUE, vault_root_ptr]
 

@@ -22,7 +22,6 @@ use miden_protocol::note::{
     NoteRecipient,
     NoteScript,
     NoteStorage,
-    NoteTag,
     NoteType,
 };
 use miden_standards::note::NetworkAccountTarget;
@@ -105,9 +104,8 @@ impl UpdateGerNote {
             NetworkAccountTarget::new(target_account_id, NoteExecutionHint::Always)
                 .map_err(|e| NoteError::other(e.to_string()))?,
         );
-        let note_tag = NoteTag::new(0);
-        let metadata = NoteMetadata::new(sender_account_id, NoteType::Public, note_tag)
-            .with_attachment(attachment);
+        let metadata =
+            NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
 
         // UPDATE_GER notes don't carry assets
         let assets = NoteAssets::new(vec![])?;

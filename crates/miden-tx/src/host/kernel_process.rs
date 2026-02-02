@@ -1,4 +1,5 @@
 use miden_processor::{ExecutionError, Felt, ProcessState};
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
@@ -12,7 +13,6 @@ use miden_protocol::transaction::memory::{
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
 };
-use miden_protocol::{Hasher, Word};
 
 use crate::errors::TransactionKernelError;
 
@@ -275,24 +275,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         match inputs_data {
             None => Ok(NoteStorage::default()),
             Some(storage_items) => {
-                let storage_commitment_hash =
-                    Hasher::hash_elements(storage_commitment.as_elements());
-                let num_storage_items = self
-                    .advice_provider()
-                    .get_mapped_values(&storage_commitment_hash)
-                    .ok_or_else(|| {
-                        TransactionKernelError::other(
-                            "expected num_storage_items to be present in advice provider",
-                        )
-                    })?;
-                if num_storage_items.len() != 1 {
-                    return Err(TransactionKernelError::other(
-                        "expected num_storage_items advice entry to contain exactly one element",
-                    ));
-                }
-                let num_storage_items = num_storage_items[0].as_int() as usize;
-
-                let note_storage = NoteStorage::new(storage_items[0..num_storage_items].to_vec())
+                let note_storage = NoteStorage::new(storage_items.to_vec())
                     .map_err(TransactionKernelError::MalformedNoteStorage)?;
 
                 if &note_storage.commitment() == storage_commitment {

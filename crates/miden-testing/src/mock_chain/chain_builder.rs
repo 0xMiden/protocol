@@ -20,7 +20,6 @@ use miden_protocol::account::{
     AccountBuilder,
     AccountDelta,
     AccountId,
-    AccountStorage,
     AccountStorageMode,
     AccountType,
     StorageSlot,
@@ -47,7 +46,7 @@ use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_signer::RandomBlockSigner;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
-use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word, ZERO};
+use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
@@ -333,35 +332,26 @@ impl MockChainBuilder {
         auth_method: Auth,
         token_symbol: &str,
         max_supply: u64,
-        total_issuance: Option<u64>,
+        token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let token_symbol = TokenSymbol::new(token_symbol).context("invalid argument")?;
+        let max_supply = Felt::try_from(max_supply)
+            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
+            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let token_symbol =
+            TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
+
         let basic_faucet =
-            BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, Felt::new(max_supply))
-                .context("invalid argument")?;
+            BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+                .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+                .context("failed to create basic fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
             .account_type(AccountType::FungibleFaucet);
 
-        let mut account =
-            self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)?;
-
-        // The faucet's sysdata slot is initialized to an empty word by default.
-        // If total_issuance is set, overwrite it and reinsert the account.
-        if let Some(issuance) = total_issuance {
-            account
-                .storage_mut()
-                .set_item(
-                    AccountStorage::faucet_sysdata_slot(),
-                    Word::from([ZERO, ZERO, ZERO, Felt::new(issuance)]),
-                )
-                .context("failed to set faucet storage")?;
-            self.accounts.insert(account.id(), account.clone());
-        }
-
-        Ok(account)
+        self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
     }
 
     /// Adds an existing [`NetworkFungibleFaucet`] account to the initial chain state.
@@ -372,40 +362,31 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
         owner_account_id: AccountId,
-        total_issuance: Option<u64>,
+        token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let token_symbol = TokenSymbol::new(token_symbol).context("invalid argument")?;
+        let max_supply = Felt::try_from(max_supply)
+            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
+            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let token_symbol =
+            TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
+
         let network_faucet = NetworkFungibleFaucet::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
-            Felt::new(max_supply),
+            max_supply,
             owner_account_id,
         )
-        .context("invalid argument")?;
+        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+        .context("failed to create network fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
             .account_type(AccountType::FungibleFaucet);
 
-        // Network faucets always use Noop auth (no authentication)
-        let mut account =
-            self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
-
-        // The faucet's sysdata slot is initialized to an empty word by default.
-        // If total_issuance is set, overwrite it and reinsert the account.
-        if let Some(issuance) = total_issuance {
-            account
-                .storage_mut()
-                .set_item(
-                    AccountStorage::faucet_sysdata_slot(),
-                    Word::from([ZERO, ZERO, ZERO, Felt::new(issuance)]),
-                )
-                .context("failed to set faucet storage")?;
-            self.accounts.insert(account.id(), account.clone());
-        }
-
-        Ok(account)
+        // Network faucets always use IncrNonce auth (no authentication)
+        self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
     }
 
     /// Creates a new public account with an [`MockAccountComponent`] and registers the
