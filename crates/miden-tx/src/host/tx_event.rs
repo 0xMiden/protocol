@@ -442,7 +442,6 @@ impl TransactionEvent {
             TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
                 // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
 
-                let fee_asset_key = process.get_stack_word_be(1);
                 let fee_asset_value = process.get_stack_word_be(5);
 
                 let fee_asset = FungibleAsset::try_from(fee_asset_value)
