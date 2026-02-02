@@ -3,6 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, FieldElement, Word};
+use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -19,7 +20,6 @@ use miden_protocol::note::{
 };
 use miden_standards::note::NetworkAccountTarget;
 
-use crate::utils::bytes32_to_felts;
 use crate::{EthAddressFormat, EthAmount, claim_script};
 
 // CLAIM NOTE STRUCTURES
@@ -41,8 +41,8 @@ impl SmtNode {
     }
 
     /// Converts the SMT node to 8 Felt elements (32-byte value as 8 u32 values in big-endian)
-    pub fn to_elements(&self) -> [Felt; 8] {
-        bytes32_to_felts(&self.0)
+    pub fn to_elements(&self) -> Vec<Felt> {
+        bytes_to_packed_u32_felts(&self.0)
     }
 }
 
@@ -68,8 +68,8 @@ impl ExitRoot {
     }
 
     /// Converts the exit root to 8 Felt elements
-    pub fn to_elements(&self) -> [Felt; 8] {
-        bytes32_to_felts(&self.0)
+    pub fn to_elements(&self) -> Vec<Felt> {
+        bytes_to_packed_u32_felts(&self.0)
     }
 }
 
