@@ -75,7 +75,7 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
         .get_map_item(&ger_storage_slot, ger_hash)
         .expect("GER hash should be stored in the map");
 
-    // The stored value should be [GER_KNOWN_VALUE, 0, 0, 0] = [1, 0, 0, 0]
+    // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
     let expected_value: Word = [Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)].into();
     assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
 

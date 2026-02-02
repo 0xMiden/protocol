@@ -18,7 +18,7 @@ const MAINNET_EXIT_ROOT_PTR = GLOBAL_INDEX_PTR # it's the first exit root
 
 const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
 # TODO rename to GER_KNOWN_FLAG
-const GER_KNOWN_VALUE=1
+const GER_KNOWN_FLAG=1
 
 # ERRORS
 # =================================================================================================
@@ -34,7 +34,7 @@ const ERR_GER_NOT_FOUND = "GER not found in storage"
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
 #! Computes hash(GER) = rpo256::merge(GER_LOWER, GER_UPPER) and stores it in a map
-#! with value [GER_KNOWN_VALUE, 0, 0, 0] to indicate the GER is known.
+#! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
 #!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
 #! Outputs: [pad(16)]
@@ -45,14 +45,14 @@ pub proc update_ger
     exec.rpo256::merge
     # => [GER_HASH[4], pad(12)]
 
-    # Prepare VALUE = [GER_KNOWN_VALUE, 0, 0, 0]
+    # Prepare VALUE = [GER_KNOWN_FLAG, 0, 0, 0]
     # Note: push.a.b.c.d results in stack [d, c, b, a, ...] and Word([a, b, c, d])
-    push.GER_KNOWN_VALUE.0.0.0
-    # => [0, 0, 0, GER_KNOWN_VALUE, GER_HASH[4], pad(12)]
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, GER_HASH[4], pad(12)]
 
     # Swap so KEY (GER_HASH) comes before VALUE
     swapw
-    # => [GER_HASH[4], GER_KNOWN_VALUE, 0, 0, 0, pad(12)]
+    # => [GER_HASH[4], GER_KNOWN_FLAG, 0, 0, 0, pad(12)]
 
     # Push slot identifiers
     push.GER_STORAGE_SLOT[0..2]
@@ -141,10 +141,10 @@ proc assert_valid_ger
     exec.active_account::get_map_item
     # => [VALUE[4]]
 
-    # Assert the GER is known (value should be [GER_KNOWN_VALUE, 0, 0, 0])
+    # Assert the GER is known (value should be [GER_KNOWN_FLAG, 0, 0, 0])
     # Note: push.a.b.c.d results in stack [d, c, b, a, ...] and Word([a, b, c, d])
-    push.GER_KNOWN_VALUE.0.0.0
-    # => [0, 0, 0, GER_KNOWN_VALUE, VALUE[4]]
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE[4]]
 
     assert_eqw.err=ERR_GER_NOT_FOUND
     # => []
