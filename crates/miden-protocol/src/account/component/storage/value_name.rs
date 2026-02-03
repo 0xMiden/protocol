@@ -207,7 +207,7 @@ impl Deserializable for StorageValueName {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum StorageValueNameError {
     #[error("key suffix is empty")]
     EmptySuffix,

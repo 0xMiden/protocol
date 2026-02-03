@@ -330,7 +330,7 @@ impl InitStorageData {
 // ====================================================================================================
 
 /// Error returned when creating [`InitStorageData`] with invalid entries.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum InitStorageDataError {
     #[error("duplicate init key `{0}`")]
     DuplicateKey(String),
