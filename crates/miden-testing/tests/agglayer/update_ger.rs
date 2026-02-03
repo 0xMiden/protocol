@@ -13,8 +13,8 @@ use miden_agglayer::{
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::{Felt, FieldElement};
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
+use miden_crypto::{Felt, FieldElement};
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
@@ -87,10 +87,12 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
     // Note: In MASM, when stack is [GER_LOWER, GER_UPPER], merge produces hash(GER_UPPER ||
     // GER_LOWER) because the second word on stack is the first argument to merge
-    let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
-    let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
-    let ger_hash = Hasher::merge(&[ger_upper, ger_lower]);
+    let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
+    let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
+    ger_lower.reverse();
+    ger_upper.reverse();
 
+    let ger_hash = Hasher::merge(&[ger_upper.into(), ger_lower.into()]);
     // Look up the GER hash in the map storage
     let ger_storage_slot = StorageSlotName::new("miden::agglayer::bridge::ger")?;
     let stored_value = updated_bridge_account
