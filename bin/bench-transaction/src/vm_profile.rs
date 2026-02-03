@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn deserialize_profile_with_operation_details() {
         let json = r#"{
-            "profile_version": "1.1",
+            "profile_version": "1.0",
             "source": "test",
             "timestamp": "2025-01-01T00:00:00Z",
             "miden_vm_version": "0.20.0",
@@ -148,7 +148,7 @@ mod tests {
     fn operation_details_consistent_with_total_cycles() {
         // Profile with realistic operation mix
         let profile = VmProfile {
-            profile_version: "1.1".to_string(),
+            profile_version: "1.0".to_string(),
             source: "test".to_string(),
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             miden_vm_version: "0.20.0".to_string(),
@@ -205,7 +205,7 @@ mod tests {
     fn tiny_workload_no_minimum_inflation() {
         // Small profile with low operation counts
         let profile = VmProfile {
-            profile_version: "1.1".to_string(),
+            profile_version: "1.0".to_string(),
             source: "test".to_string(),
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             miden_vm_version: "0.20.0".to_string(),

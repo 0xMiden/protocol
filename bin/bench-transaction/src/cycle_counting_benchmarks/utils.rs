@@ -312,7 +312,7 @@ pub fn write_vm_profile(
     }
 
     let profile = VmProfile {
-        profile_version: "1.1".to_string(),
+        profile_version: "1.0".to_string(),
         source: "miden-base/bin/bench-transaction".to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         miden_vm_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -367,6 +367,7 @@ fn signature_verify_count(total_cycles: u64, instruction_mix: &InstructionMix) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context_setups::tx_consume_single_p2id_note;
 
     /// Test that operation details are generated with correct hashing split
     #[test]
@@ -567,6 +568,34 @@ mod tests {
                 .iter()
                 .all(|detail| detail.iterations > 0)
         );
+    }
 
+    /// Test that ratios can be extracted from the real transaction kernel
+    #[tokio::test(flavor = "current_thread")]
+    async fn write_vm_profile_extracts_real_kernel_mix() {
+        let measurements = tx_consume_single_p2id_note()
+            .expect("build tx")
+            .execute()
+            .await
+            .map(miden_protocol::transaction::TransactionMeasurements::from)
+            .expect("execute tx");
+
+        let tx_benchmarks =
+            vec![(ExecutionBenchmark::ConsumeSingleP2ID, MeasurementsPrinter::from(measurements))];
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let path = temp_dir.path().join("vm_profile_real_kernel.json");
+        write_vm_profile(&path, &tx_benchmarks).expect("write vm profile");
+
+        let json = read_to_string(&path).expect("read vm profile");
+        let profile: VmProfile = serde_json::from_str(&json).expect("deserialize vm profile");
+
+        let mix = &profile.transaction_kernel.instruction_mix;
+        let mix_sum =
+            mix.arithmetic + mix.hashing + mix.memory + mix.control_flow + mix.signature_verify;
+        assert!(mix_sum.is_finite());
+        assert!((mix_sum - 1.0).abs() < MIX_SUM_TOLERANCE);
+        assert!(profile.transaction_kernel.total_cycles > 0);
+        assert!(!profile.transaction_kernel.operation_details.is_empty());
     }
 }
