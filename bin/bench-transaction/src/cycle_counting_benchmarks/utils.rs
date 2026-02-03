@@ -194,13 +194,28 @@ pub fn write_vm_profile(
 
     // Remaining cycles are distributed among other operations
     let remaining = 1.0 - signature_ratio;
-    let instruction_mix = InstructionMix {
+    let mut instruction_mix = InstructionMix {
         signature_verify: signature_ratio,
         hashing: remaining * 0.5, // Hashing is significant in remaining work
         memory: remaining * 0.2,  // Memory operations
         control_flow: remaining * 0.2, // Loops, conditionals
         arithmetic: remaining * 0.1, // Basic arithmetic
     };
+    const MIX_SUM_TOLERANCE: f64 = 0.001;
+    let mix_sum = instruction_mix.arithmetic
+        + instruction_mix.hashing
+        + instruction_mix.memory
+        + instruction_mix.control_flow
+        + instruction_mix.signature_verify;
+    if mix_sum > 0.0 && (mix_sum - 1.0).abs() > MIX_SUM_TOLERANCE {
+        instruction_mix = InstructionMix {
+            arithmetic: instruction_mix.arithmetic / mix_sum,
+            hashing: instruction_mix.hashing / mix_sum,
+            memory: instruction_mix.memory / mix_sum,
+            control_flow: instruction_mix.control_flow / mix_sum,
+            signature_verify: instruction_mix.signature_verify / mix_sum,
+        };
+    }
 
     // Key procedures - auth is the heavyweight
     let key_procedures = vec![ProcedureProfile {
@@ -218,6 +233,13 @@ pub fn write_vm_profile(
     // Threshold for applying minimum iteration counts (only for substantial workloads)
     const MIN_CYCLES_FOR_MINIMUMS: u64 = 10000;
     let apply_minimums = total_cycles >= MIN_CYCLES_FOR_MINIMUMS;
+    let apply_minimum = |raw: u64, minimum: u64| -> u64 {
+        if apply_minimums && raw >= minimum / 2 {
+            raw.max(minimum)
+        } else {
+            raw
+        }
+    };
 
     // Signature verification operations
     // Only include if the calculated count is at least 1 (avoid inflating small workloads)
@@ -248,11 +270,7 @@ pub fn write_vm_profile(
             operation_details.push(OperationDetails {
                 op_type: "hperm".to_string(),
                 input_sizes: vec![48], // 12 field elements state
-                iterations: if apply_minimums {
-                    hperm_count.max(100)
-                } else {
-                    hperm_count
-                },
+                iterations: apply_minimum(hperm_count, 100),
                 cycle_cost: 1,
             });
         }
@@ -263,11 +281,7 @@ pub fn write_vm_profile(
             operation_details.push(OperationDetails {
                 op_type: "hmerge".to_string(),
                 input_sizes: vec![32, 32], // Two 32-byte digests
-                iterations: if apply_minimums {
-                    hmerge_count.max(10)
-                } else {
-                    hmerge_count
-                },
+                iterations: apply_minimum(hmerge_count, 10),
                 cycle_cost: 16,
             });
         }
@@ -280,7 +294,7 @@ pub fn write_vm_profile(
             operation_details.push(OperationDetails {
                 op_type: "load_store".to_string(),
                 input_sizes: vec![32], // Word-sized memory operations
-                iterations: if apply_minimums { mem_count.max(10) } else { mem_count },
+                iterations: apply_minimum(mem_count, 10),
                 cycle_cost: 10,
             });
         }
@@ -293,11 +307,7 @@ pub fn write_vm_profile(
             operation_details.push(OperationDetails {
                 op_type: "arithmetic".to_string(),
                 input_sizes: vec![8], // Field element operations
-                iterations: if apply_minimums {
-                    arith_count.max(10)
-                } else {
-                    arith_count
-                },
+                iterations: apply_minimum(arith_count, 10),
                 cycle_cost: 1,
             });
         }
@@ -310,11 +320,7 @@ pub fn write_vm_profile(
             operation_details.push(OperationDetails {
                 op_type: "control_flow".to_string(),
                 input_sizes: vec![],
-                iterations: if apply_minimums {
-                    control_count.max(10)
-                } else {
-                    control_count
-                },
+                iterations: apply_minimum(control_count, 10),
                 cycle_cost: 5,
             });
         }
@@ -402,14 +408,39 @@ mod tests {
         let hmerge_count = (total_cycles as f64 * 0.45 * 0.2 / 16.0) as u64;
         assert_eq!(hmerge_count, 281); // Raw calculation
 
-        // With minimum applied
-        let hmerge_with_min = hmerge_count.max(10);
+        // With minimum applied (raw count already above half-minimum)
+        let hmerge_with_min = if apply_minimums && hmerge_count >= 5 {
+            hmerge_count.max(10)
+        } else {
+            hmerge_count
+        };
         assert_eq!(hmerge_with_min, 281); // Already above minimum
 
         // For a very small count that would be below minimum
         let tiny_count = 5u64;
-        let tiny_with_min = if apply_minimums { tiny_count.max(10) } else { tiny_count };
+        let tiny_with_min = if apply_minimums && tiny_count >= 5 {
+            tiny_count.max(10)
+        } else {
+            tiny_count
+        };
         assert_eq!(tiny_with_min, 10);
+    }
+
+    /// Test that minimums are skipped when raw count is far below minimum
+    #[test]
+    fn minimums_skipped_when_raw_far_below_minimum() {
+        let total_cycles = 10000u64; // Apply minimums
+        let apply_minimums = total_cycles >= 10000;
+
+        let raw_count = 11u64;
+        let minimum = 100u64;
+        let adjusted = if apply_minimums && raw_count >= minimum / 2 {
+            raw_count.max(minimum)
+        } else {
+            raw_count
+        };
+
+        assert_eq!(adjusted, 11);
     }
 
     /// Test MIN_MIX_RATIO threshold - operations below threshold excluded
@@ -462,5 +493,44 @@ mod tests {
         // Should not be included in operation_details
         let should_include = sig_count > 0;
         assert!(!should_include);
+    }
+
+    /// Test that write_vm_profile emits operation_details in the exported profile
+    #[test]
+    fn write_vm_profile_emits_operation_details() {
+        let measurements = MeasurementsPrinter {
+            prologue: 1000,
+            notes_processing: 1000,
+            note_execution: BTreeMap::new(),
+            tx_script_processing: 1000,
+            epilogue: EpilogueMeasurements::from_parts(7000, 1000, 0),
+        };
+
+        let tx_benchmarks = vec![(ExecutionBenchmark::ConsumeSingleP2ID, measurements)];
+        let mut path = std::env::temp_dir();
+        path.push(format!("vm_profile_write_test_{}.json", std::process::id()));
+
+        write_vm_profile(&path, &tx_benchmarks).expect("write vm profile");
+
+        let json = read_to_string(&path).expect("read vm profile");
+        let profile: VmProfile = serde_json::from_str(&json).expect("deserialize vm profile");
+
+        assert!(!profile.transaction_kernel.operation_details.is_empty());
+        assert!(
+            profile
+                .transaction_kernel
+                .operation_details
+                .iter()
+                .all(|detail| detail.iterations > 0)
+        );
+        assert!(
+            profile
+                .transaction_kernel
+                .operation_details
+                .iter()
+                .all(|detail| detail.op_type != "falcon512_verify")
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 }
