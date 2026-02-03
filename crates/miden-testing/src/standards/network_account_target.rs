@@ -2,9 +2,9 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
-use miden_protocol::note::{NoteAttachment, NoteExecutionHint, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{NoteAttachment, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
 use crate::executor::CodeExecutor;
 
