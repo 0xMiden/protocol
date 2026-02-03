@@ -1,6 +1,7 @@
 use miden::protocol::active_note
 use miden::protocol::output_note
 use miden::standards::wallets::basic->wallet
+use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # CONSTANTS
 # =================================================================================================
@@ -117,11 +118,11 @@ pub proc main
     assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS
     # => [ptr, pad(12)]
 
-    # load the ASSET
-    mem_loadw_be
-    # => [ASSET, pad(12)]
+    # load asset value from 0 + ASSET_VALUE_MEMORY_OFFSET
+    mem_loadw_be.ASSET_VALUE_MEMORY_OFFSET
+    # => [ASSET_VALUE, pad(12)]
 
-    # add the ASSET to the account
+    # add the asset to the account
     call.wallet::receive_asset
     # => [pad(16)]
 

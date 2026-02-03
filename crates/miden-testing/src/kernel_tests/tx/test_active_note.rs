@@ -213,8 +213,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
 
                 add.{ASSET_SIZE}
                 "#,
-                ASSET_KEY = asset.vault_key().as_word(),
-                ASSET_VALUE = Word::from(asset),
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             );
         }
         code
