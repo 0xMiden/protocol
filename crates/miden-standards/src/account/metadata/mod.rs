@@ -3,7 +3,7 @@ use alloc::collections::BTreeMap;
 use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
-use miden_protocol::errors::AccountComponentTemplateError;
+use miden_protocol::errors::ComponentMetadataError;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::storage_schema_library;
@@ -37,16 +37,14 @@ impl AccountSchemaCommitment {
     /// # Errors
     ///
     /// Returns an error if the schemas contain conflicting definitions for the same slot name.
-    pub fn new(schemas: &[StorageSchema]) -> Result<Self, AccountComponentTemplateError> {
+    pub fn new(schemas: &[StorageSchema]) -> Result<Self, ComponentMetadataError> {
         Ok(Self {
             schema_commitment: compute_schema_commitment(schemas)?,
         })
     }
 
     /// Creates a new [`AccountSchemaCommitment`] component from a [`StorageSchema`].
-    pub fn from_schema(
-        storage_schema: &StorageSchema,
-    ) -> Result<Self, AccountComponentTemplateError> {
+    pub fn from_schema(storage_schema: &StorageSchema) -> Result<Self, ComponentMetadataError> {
         Self::new(core::slice::from_ref(storage_schema))
     }
 
@@ -80,9 +78,7 @@ impl From<AccountSchemaCommitment> for AccountComponent {
 ///
 /// The account schema commitment is computed from the merged schema commitment.
 /// If the passed list of schemas is empty, [`Word::empty()`] is returned.
-fn compute_schema_commitment(
-    schemas: &[StorageSchema],
-) -> Result<Word, AccountComponentTemplateError> {
+fn compute_schema_commitment(schemas: &[StorageSchema]) -> Result<Word, ComponentMetadataError> {
     if schemas.is_empty() {
         return Ok(Word::empty());
     }
@@ -97,7 +93,7 @@ fn compute_schema_commitment(
                 // Slot exists, check if the schema is the same before erroring
                 Some(existing) => {
                     if existing != slot_schema {
-                        return Err(AccountComponentTemplateError::InvalidSchema(format!(
+                        return Err(ComponentMetadataError::InvalidSchema(format!(
                             "conflicting definitions for storage slot `{slot_name}`",
                         )));
                     }
