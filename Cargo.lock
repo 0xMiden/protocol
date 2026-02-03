@@ -241,6 +241,7 @@ dependencies = [
  "miden-tx",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

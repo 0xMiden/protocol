@@ -1,5 +1,5 @@
 {
-  "profile_version": "1.0",
+  "profile_version": "1.1",
   "source": "miden-base/bin/bench-transaction",
   "timestamp": "2026-02-02T10:13:46.584544+00:00",
   "miden_vm_version": "0.1.0",

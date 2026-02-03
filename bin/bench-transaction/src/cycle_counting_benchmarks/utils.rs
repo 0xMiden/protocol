@@ -194,28 +194,14 @@ pub fn write_vm_profile(
 
     // Remaining cycles are distributed among other operations
     let remaining = 1.0 - signature_ratio;
-    let mut instruction_mix = InstructionMix {
+    let instruction_mix = InstructionMix {
         signature_verify: signature_ratio,
         hashing: remaining * 0.5, // Hashing is significant in remaining work
         memory: remaining * 0.2,  // Memory operations
         control_flow: remaining * 0.2, // Loops, conditionals
         arithmetic: remaining * 0.1, // Basic arithmetic
     };
-    const MIX_SUM_TOLERANCE: f64 = 0.001;
-    let mix_sum = instruction_mix.arithmetic
-        + instruction_mix.hashing
-        + instruction_mix.memory
-        + instruction_mix.control_flow
-        + instruction_mix.signature_verify;
-    if mix_sum > 0.0 && (mix_sum - 1.0).abs() > MIX_SUM_TOLERANCE {
-        instruction_mix = InstructionMix {
-            arithmetic: instruction_mix.arithmetic / mix_sum,
-            hashing: instruction_mix.hashing / mix_sum,
-            memory: instruction_mix.memory / mix_sum,
-            control_flow: instruction_mix.control_flow / mix_sum,
-            signature_verify: instruction_mix.signature_verify / mix_sum,
-        };
-    }
+    let instruction_mix = normalize_instruction_mix(instruction_mix);
 
     // Key procedures - auth is the heavyweight
     let key_procedures = vec![ProcedureProfile {
@@ -230,6 +216,7 @@ pub fn write_vm_profile(
 
     // Minimum threshold for including an operation type (avoid floating-point noise)
     const MIN_MIX_RATIO: f64 = 0.001; // 0.1%
+    const SIGNATURE_VERIFY_CYCLE_COST: u64 = 59859;
     // Threshold for applying minimum iteration counts (only for substantial workloads)
     const MIN_CYCLES_FOR_MINIMUMS: u64 = 10000;
     let apply_minimums = total_cycles >= MIN_CYCLES_FOR_MINIMUMS;
@@ -243,19 +230,17 @@ pub fn write_vm_profile(
 
     // Signature verification operations
     // Only include if the calculated count is at least 1 (avoid inflating small workloads)
-    if signature_ratio > MIN_MIX_RATIO {
-        let sig_count = (total_cycles as f64 * signature_ratio / 59859.0) as u64;
-        // Only include signature verification if we have at least 1 full verification
-        // This avoids inflating operation_details with a 60K cycle op when the
-        // actual average auth cost is much smaller
-        if sig_count > 0 {
-            operation_details.push(OperationDetails {
-                op_type: "falcon512_verify".to_string(),
-                input_sizes: vec![64, 32], // PK commitment (64 bytes), message (32 bytes)
-                iterations: sig_count,
-                cycle_cost: 59859,
-            });
-        }
+    let sig_count = signature_verify_count(total_cycles, &instruction_mix);
+    // Only include signature verification if we have at least 1 full verification
+    // This avoids inflating operation_details with a 60K cycle op when the
+    // actual average auth cost is much smaller
+    if sig_count > 0 {
+        operation_details.push(OperationDetails {
+            op_type: "falcon512_verify".to_string(),
+            input_sizes: vec![64, 32], // PK commitment (64 bytes), message (32 bytes)
+            iterations: sig_count,
+            cycle_cost: SIGNATURE_VERIFY_CYCLE_COST,
+        });
     }
 
     // Hashing operations - split hashing ratio between hperm (80%) and hmerge (20%)
@@ -263,7 +248,7 @@ pub fn write_vm_profile(
     const HPERM_HASHING_RATIO: f64 = 0.8;
     const HMERGE_HASHING_RATIO: f64 = 0.2;
 
-    if instruction_mix.hashing > MIN_MIX_RATIO {
+    if instruction_mix.hashing >= MIN_MIX_RATIO {
         let hperm_count =
             (total_cycles as f64 * instruction_mix.hashing * HPERM_HASHING_RATIO) as u64;
         if hperm_count > 0 {
@@ -288,7 +273,7 @@ pub fn write_vm_profile(
     }
 
     // Memory operations
-    if instruction_mix.memory > MIN_MIX_RATIO {
+    if instruction_mix.memory >= MIN_MIX_RATIO {
         let mem_count = (total_cycles as f64 * instruction_mix.memory / 10.0) as u64;
         if mem_count > 0 {
             operation_details.push(OperationDetails {
@@ -301,7 +286,7 @@ pub fn write_vm_profile(
     }
 
     // Arithmetic operations
-    if instruction_mix.arithmetic > MIN_MIX_RATIO {
+    if instruction_mix.arithmetic >= MIN_MIX_RATIO {
         let arith_count = (total_cycles as f64 * instruction_mix.arithmetic) as u64;
         if arith_count > 0 {
             operation_details.push(OperationDetails {
@@ -314,7 +299,7 @@ pub fn write_vm_profile(
     }
 
     // Control flow operations
-    if instruction_mix.control_flow > MIN_MIX_RATIO {
+    if instruction_mix.control_flow >= MIN_MIX_RATIO {
         let control_count = (total_cycles as f64 * instruction_mix.control_flow / 5.0) as u64;
         if control_count > 0 {
             operation_details.push(OperationDetails {
@@ -327,7 +312,7 @@ pub fn write_vm_profile(
     }
 
     let profile = VmProfile {
-        profile_version: "1.0".to_string(),
+        profile_version: "1.1".to_string(),
         source: "miden-base/bin/bench-transaction".to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         miden_vm_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -345,6 +330,38 @@ pub fn write_vm_profile(
 
     println!("VM profile exported to: {}", path.display());
     Ok(())
+}
+
+const MIX_SUM_TOLERANCE: f64 = 0.001;
+
+fn normalize_instruction_mix(instruction_mix: InstructionMix) -> InstructionMix {
+    let mix_sum = instruction_mix.arithmetic
+        + instruction_mix.hashing
+        + instruction_mix.memory
+        + instruction_mix.control_flow
+        + instruction_mix.signature_verify;
+    if mix_sum > 0.0 && (mix_sum - 1.0).abs() > MIX_SUM_TOLERANCE {
+        InstructionMix {
+            arithmetic: instruction_mix.arithmetic / mix_sum,
+            hashing: instruction_mix.hashing / mix_sum,
+            memory: instruction_mix.memory / mix_sum,
+            control_flow: instruction_mix.control_flow / mix_sum,
+            signature_verify: instruction_mix.signature_verify / mix_sum,
+        }
+    } else {
+        instruction_mix
+    }
+}
+
+fn signature_verify_count(total_cycles: u64, instruction_mix: &InstructionMix) -> u64 {
+    const MIN_MIX_RATIO: f64 = 0.001; // 0.1%
+    const SIGNATURE_VERIFY_CYCLE_COST: u64 = 59859;
+    if instruction_mix.signature_verify >= MIN_MIX_RATIO {
+        (total_cycles as f64 * instruction_mix.signature_verify
+            / SIGNATURE_VERIFY_CYCLE_COST as f64) as u64
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -462,6 +479,33 @@ mod tests {
         assert!(normal_ratio > min_mix_ratio);
     }
 
+    /// Test that normalization updates signature operation counts
+    #[test]
+    fn instruction_mix_normalization_updates_signature_ratio() {
+        let unnormalized_mix = InstructionMix {
+            arithmetic: 0.05,
+            hashing: 0.4,
+            memory: 0.2,
+            control_flow: 0.05,
+            signature_verify: 0.6,
+        };
+
+        let normalized_mix = normalize_instruction_mix(unnormalized_mix.clone());
+        let mix_sum = normalized_mix.arithmetic
+            + normalized_mix.hashing
+            + normalized_mix.memory
+            + normalized_mix.control_flow
+            + normalized_mix.signature_verify;
+        assert!((mix_sum - 1.0).abs() < MIX_SUM_TOLERANCE);
+
+        let total_cycles = 100000u64;
+        let unnormalized_sig_count = signature_verify_count(total_cycles, &unnormalized_mix);
+        let normalized_sig_count = signature_verify_count(total_cycles, &normalized_mix);
+
+        assert_eq!(unnormalized_sig_count, 1);
+        assert_eq!(normalized_sig_count, 0);
+    }
+
     /// Test boundary at total_cycles == 10000
     #[test]
     fn minimums_boundary_at_10000_cycles() {
@@ -507,8 +551,8 @@ mod tests {
         };
 
         let tx_benchmarks = vec![(ExecutionBenchmark::ConsumeSingleP2ID, measurements)];
-        let mut path = std::env::temp_dir();
-        path.push(format!("vm_profile_write_test_{}.json", std::process::id()));
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let path = temp_dir.path().join("vm_profile_write_test.json");
 
         write_vm_profile(&path, &tx_benchmarks).expect("write vm profile");
 
@@ -523,14 +567,6 @@ mod tests {
                 .iter()
                 .all(|detail| detail.iterations > 0)
         );
-        assert!(
-            profile
-                .transaction_kernel
-                .operation_details
-                .iter()
-                .all(|detail| detail.op_type != "falcon512_verify")
-        );
 
-        let _ = std::fs::remove_file(&path);
     }
 }

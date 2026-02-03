@@ -31,3 +31,4 @@ tokio      = { features = ["macros", "rt"], workspace = true }
 
 [dev-dependencies]
 criterion = { features = ["async_tokio", "html_reports"], version = "0.6" }
+tempfile  = { version = "3.19" }
