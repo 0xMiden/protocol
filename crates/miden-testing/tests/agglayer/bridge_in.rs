@@ -168,9 +168,17 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     );
 
     // The GER digest is 8 u32 felts - convert to bytes matching bytes32_to_felts format
-    let ger_felts_digest = ger_preimage.digest();
+    // Reverse the felts within each word (4-felt chunks)
+    let ger_felts_digest: Vec<Felt> = ger_preimage.digest().as_ref().to_vec();
+
+    let ger_felts_digest: [Felt; 8] = ger_felts_digest
+        .chunks(4)
+        .flat_map(|chunk| chunk.iter().rev().copied())
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
     // convert felts to bytes
-    let ger_bytes = felts_to_u256_bytes(ger_felts_digest.as_ref().try_into().unwrap());
+    let ger_bytes = felts_to_u256_bytes(ger_felts_digest);
     let ger = ExitRoot::from(ger_bytes);
 
     let update_ger_note = create_update_ger_note(ger, bridge_account.id(), builder.rng_mut())?;
