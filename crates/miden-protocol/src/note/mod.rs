@@ -30,9 +30,6 @@ pub use attachment::{
     NoteAttachmentScheme,
 };
 
-mod execution_hint;
-pub use execution_hint::NoteExecutionHint;
-
 mod note_id;
 pub use note_id::NoteId;
 
