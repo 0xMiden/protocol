@@ -61,8 +61,8 @@ impl SignedBlock {
     /// Validates that the provided components correspond to each other by verifying the signature,
     /// and checking for matching commitments and note roots.
     ///
-    /// Involves non-trivial computation. If some checks are unnecessary, [`Self::new_unchecked`]
-    /// can be used instead, alongside subsequent calls of relevant `Self::validate_*` methods.
+    /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
+    /// necessary.
     pub fn new(
         header: BlockHeader,
         body: BlockBody,
@@ -113,7 +113,7 @@ impl SignedBlock {
     }
 
     /// Performs ECDSA signature verification against the header commitment and validator key.
-    pub fn validate_signature(&self) -> Result<(), SignedBlockError> {
+    fn validate_signature(&self) -> Result<(), SignedBlockError> {
         if !self.signature.verify(self.header.commitment(), self.header.validator_key()) {
             Err(SignedBlockError::InvalidSignature)
         } else {
@@ -125,7 +125,7 @@ impl SignedBlock {
     /// block.
     ///
     /// Involves non-trivial computation of the body's transaction commitment.
-    pub fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
+    fn validate_tx_commitment(&self) -> Result<(), SignedBlockError> {
         let header_tx_commitment = self.header.tx_commitment();
         let body_tx_commitment = self.body.transactions().commitment();
         if header_tx_commitment != body_tx_commitment {
@@ -138,7 +138,7 @@ impl SignedBlock {
     /// Validates that the header's note tree root matches that of the body.
     ///
     /// Involves non-trivial computation of the body's note tree.
-    pub fn validate_note_root(&self) -> Result<(), SignedBlockError> {
+    fn validate_note_root(&self) -> Result<(), SignedBlockError> {
         let header_root = self.header.note_root();
         let body_root = self.body.compute_block_note_tree().root();
         if header_root != body_root {
