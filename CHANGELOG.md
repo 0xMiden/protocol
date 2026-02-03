@@ -10,10 +10,12 @@
 - Added double-word array data structure abstraction over storage maps ([#2299](https://github.com/0xMiden/miden-base/pull/2299)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
+- [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
 
 ### Changes
 
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
+- Added `miden::protocol::auth` module with public auth event constants ([#2377](https://github.com/0xMiden/miden-base/pull/2377)).
 - [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
 - [BREAKING] Simplified `NoteMetadata::new()` constructor to not require tag parameter; tag defaults to zero and can be set via `with_tag()` builder method ([#2384](https://github.com/0xMiden/miden-base/pull/2384)).
 - [BREAKING] Renamed `WellKnownComponent` to `StandardAccountComponent`, `WellKnownNote` to `StandardNote`, and `WellKnownNoteAttachment` to `StandardNoteAttachment` ([#2332](https://github.com/0xMiden/miden-base/pull/2332)).

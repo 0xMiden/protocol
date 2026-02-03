@@ -1280,6 +1280,88 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// This test checks the correctness of the `miden::protocol::active_account::get_initial_asset`
+/// procedure creating a note which removes an asset from the account vault.
+///
+/// As part of the test pipeline it also checks the correctness of the
+/// `miden::protocol::active_account::get_asset` procedure.
+#[tokio::test]
+async fn test_get_init_asset() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let faucet_existing_asset =
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).context("id should be valid")?;
+
+    let fungible_asset_for_account = Asset::Fungible(
+        FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
+    );
+    let account = builder
+        .add_existing_wallet_with_assets(crate::Auth::BasicAuth, [fungible_asset_for_account])?;
+
+    let fungible_asset_for_note_existing = Asset::Fungible(
+        FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
+    );
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let final_asset = fungible_asset_for_account
+        .unwrap_fungible()
+        .sub(fungible_asset_for_note_existing.unwrap_fungible())?;
+
+    let expected_output_note =
+        create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [fungible_asset_for_note_existing]);
+
+    let remove_existing_source = format!(
+        r#"
+        use miden::protocol::active_account
+        use miden::standards::wallets::basic->wallet
+        use mock::util
+
+        begin
+            # create default note and move the asset into it
+            exec.util::create_default_note
+            # => [note_idx]
+
+            push.{REMOVED_ASSET}
+            call.wallet::move_asset_to_note dropw drop
+            # => []
+
+            # get the current asset
+            push.{ASSET_KEY} exec.active_account::get_asset
+            # => [ASSET]
+
+            push.{FINAL_ASSET}
+            assert_eqw.err="final asset is incorrect"
+            # => []
+
+            # get the initial asset
+            push.{ASSET_KEY} exec.active_account::get_initial_asset
+            # => [INITIAL_ASSET]
+
+            push.{INITIAL_ASSET}
+            assert_eqw.err="initial asset is incorrect"
+        end
+    "#,
+        ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
+        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        INITIAL_ASSET = Word::from(fungible_asset_for_account),
+        FINAL_ASSET = Word::from(final_asset),
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
+
+    mock_chain
+        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[])?
+        .tx_script(tx_script)
+        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 // PROCEDURE AUTHENTICATION TESTS
 // ================================================================================================
 

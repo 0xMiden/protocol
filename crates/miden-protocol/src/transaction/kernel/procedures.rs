@@ -6,7 +6,7 @@ use crate::{Word, word};
 // ================================================================================================
 
 /// Hashes of all dynamically executed kernel procedures.
-pub const KERNEL_PROCEDURES: [Word; 51] = [
+pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_get_initial_commitment
     word!("0x1de52b747e823a098f3e146cf2e2b7c3f585a4424ec54c9022414d9ca2574375"),
     // account_compute_commitment
@@ -43,12 +43,10 @@ pub const KERNEL_PROCEDURES: [Word; 51] = [
     word!("0x91a5276ebe971b2c25ec59e3226553aa4168d4ac68c0bcbdbc211d7b437bf7bd"),
     // account_remove_asset
     word!("0xc0d6a0f9d42cf16b8196663f63bd58bf19638e4abe7a7ab4d83c0d109bef9b76"),
-    // account_get_balance
-    word!("0xb8a59b7f07f9e7aae0d1521b7592d9f95213c51d629baca0cec5b2f9e71f8d1b"),
-    // account_get_initial_balance
-    word!("0xc44af880ba63ed676f68a2cc6dd2de00807e21ad17ac85127fcaa9886c6f4d54"),
-    // account_has_non_fungible_asset
-    word!("0x2d9a0faa6162eb2b47dce76e197f9af6d7dd5958581ae2432dd5e9739b86445c"),
+    // account_get_asset
+    word!("0x21dc0ef7e3475f28fbcf26636d9b58c3f7e349da7c7a36e85c1b49e50437fa65"),
+    // account_get_initial_asset
+    word!("0x8e1fabe016fa23523489a8aec0a0cc3804610b75c8b4a1774e46eb6a9d205cb5"),
     // account_compute_delta_commitment
     word!("0x09767ee5e29aeca91a57f3af3871bbfb3037681e193444b3f7af878894c1aaa3"),
     // account_get_num_procedures
