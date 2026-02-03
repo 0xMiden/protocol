@@ -1,6 +1,4 @@
-use miden::core::crypto::hashes::keccak256
-
-# Utility module containing helper functions for the SMT/MMR handling. 
+# Utility module containing helper procedures for the double word handling.
 
 # PUBLIC INTERFACE
 # =================================================================================================

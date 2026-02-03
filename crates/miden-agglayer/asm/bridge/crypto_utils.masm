@@ -92,9 +92,6 @@ end
 #! - leaf_idx is the index of the provided leaf in the SMT.
 #! - [ROOT_LO, ROOT_HI] is the calculated root.
 #! - verification_flag is the binary flag indicating whether the verification was successful.
-#!
-#! Panics if:
-#! - The root stored in the `expected_root_ptr` is not equal to the computed root.
 pub proc verify_merkle_proof(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress) -> i1
     # calculate the root of the SMT
     exec.calculate_root
