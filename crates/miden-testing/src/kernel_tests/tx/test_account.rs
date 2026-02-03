@@ -1546,9 +1546,11 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
             call.account_module::custom_setter
           end";
 
-    let account_component =
-        AccountComponent::new(account_component_lib.clone(), AccountStorage::mock_storage_slots())?
-            .with_supports_all_types();
+    let account_component = AccountComponent::new(
+        account_component_lib.clone(),
+        AccountStorage::mock_storage_slots(),
+        super::test_metadata("account_module"),
+    )?;
 
     // Build an existing account with nonce 1.
     let native_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -1594,7 +1596,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     let faulty_auth_code =
         CodeBuilder::default().compile_component_code("test::faulty_auth", source_code)?;
     let faulty_auth_component =
-        AccountComponent::new(faulty_auth_code, vec![])?.with_supports_all_types();
+        AccountComponent::new(faulty_auth_code, vec![], super::test_metadata("test::faulty_auth"))?;
     let account = AccountBuilder::new([5; 32])
         .with_auth_component(faulty_auth_component)
         .with_component(MockAccountComponent::with_empty_slots())
@@ -1879,9 +1881,12 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
     impl From<CustomComponent1> for AccountComponent {
         fn from(component: CustomComponent1) -> AccountComponent {
-            AccountComponent::new(COMPONENT_1_LIBRARY.clone(), vec![component.slot])
-                .expect("should be valid")
-                .with_supports_all_types()
+            AccountComponent::new(
+                COMPONENT_1_LIBRARY.clone(),
+                vec![component.slot],
+                super::test_metadata("component1::interface"),
+            )
+            .expect("should be valid")
         }
     }
 
@@ -1889,9 +1894,12 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
     impl From<CustomComponent2> for AccountComponent {
         fn from(_component: CustomComponent2) -> AccountComponent {
-            AccountComponent::new(COMPONENT_2_LIBRARY.clone(), vec![])
-                .expect("should be valid")
-                .with_supports_all_types()
+            AccountComponent::new(
+                COMPONENT_2_LIBRARY.clone(),
+                vec![],
+                super::test_metadata("component2::interface"),
+            )
+            .expect("should be valid")
         }
     }
 

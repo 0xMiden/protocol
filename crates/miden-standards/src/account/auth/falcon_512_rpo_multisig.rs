@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -196,9 +197,13 @@ impl From<AuthFalcon512RpoMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        AccountComponent::new(falcon_512_rpo_multisig_library(), storage_slots)
-            .expect("Multisig auth component should satisfy the requirements of a valid account component")
-            .with_supports_all_types()
+        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo_multisig")
+            .with_description("Multisig authentication component using Falcon512 signature scheme")
+            .with_supports_all_types();
+
+        AccountComponent::new(falcon_512_rpo_multisig_library(), storage_slots, metadata).expect(
+            "Multisig auth component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

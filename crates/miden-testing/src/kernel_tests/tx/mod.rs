@@ -1,6 +1,7 @@
 use anyhow::Context;
 use miden_processor::ContextId;
 use miden_processor::fast::ExecutionOutput;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
@@ -14,6 +15,11 @@ use miden_protocol::vm::StackInputs;
 use miden_protocol::{Felt, Word, ZERO};
 
 use crate::MockChain;
+
+/// Creates a test metadata for account components that supports all account types.
+pub fn test_metadata(name: &str) -> AccountComponentMetadata {
+    AccountComponentMetadata::new(name).with_supports_all_types()
+}
 
 mod test_account;
 mod test_account_delta;

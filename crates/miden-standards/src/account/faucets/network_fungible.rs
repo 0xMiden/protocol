@@ -1,3 +1,4 @@
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -238,12 +239,16 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             owner_account_id_word,
         );
 
+        let metadata = AccountComponentMetadata::new("miden::network_fungible_faucet")
+            .with_description("Network fungible faucet component for minting and burning tokens")
+            .with_supported_type(AccountType::FungibleFaucet);
+
         AccountComponent::new(
             network_fungible_faucet_library(),
-            vec![metadata_slot, owner_slot]
+            vec![metadata_slot, owner_slot],
+            metadata,
         )
-            .expect("network fungible faucet component should satisfy the requirements of a valid account component")
-            .with_supported_type(AccountType::FungibleFaucet)
+        .expect("network fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 

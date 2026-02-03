@@ -1,4 +1,5 @@
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -46,14 +47,18 @@ impl AuthFalcon512Rpo {
 
 impl From<AuthFalcon512Rpo> for AccountComponent {
     fn from(falcon: AuthFalcon512Rpo) -> Self {
+        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo")
+            .with_description("Authentication component using Falcon512 signature scheme")
+            .with_supports_all_types();
+
         AccountComponent::new(
             falcon_512_rpo_library(),
             vec![StorageSlot::with_value(
                 AuthFalcon512Rpo::public_key_slot().clone(),
                 falcon.pub_key.into(),
             )],
+            metadata,
         )
         .expect("falcon component should satisfy the requirements of a valid account component")
-        .with_supports_all_types()
     }
 }

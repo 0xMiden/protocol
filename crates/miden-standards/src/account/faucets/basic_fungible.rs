@@ -1,3 +1,4 @@
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -266,9 +267,12 @@ impl From<BasicFungibleFaucet> for AccountComponent {
         let storage_slot =
             StorageSlot::with_value(BasicFungibleFaucet::metadata_slot().clone(), metadata_word);
 
-        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot])
+        let metadata = AccountComponentMetadata::new("miden::basic_fungible_faucet")
+            .with_description("Basic fungible faucet component for minting and burning tokens")
+            .with_supported_type(AccountType::FungibleFaucet);
+
+        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
-            .with_supported_type(AccountType::FungibleFaucet)
     }
 }
 

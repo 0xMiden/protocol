@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
@@ -212,11 +213,13 @@ impl From<AuthFalcon512RpoAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        AccountComponent::new(falcon_512_rpo_acl_library(), storage_slots)
-            .expect(
-                "ACL auth component should satisfy the requirements of a valid account component",
-            )
-            .with_supports_all_types()
+        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo_acl")
+            .with_description("ACL authentication component using Falcon512 signature scheme")
+            .with_supports_all_types();
+
+        AccountComponent::new(falcon_512_rpo_acl_library(), storage_slots, metadata).expect(
+            "ACL auth component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

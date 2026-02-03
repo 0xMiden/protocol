@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
@@ -211,11 +212,15 @@ impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        AccountComponent::new(ecdsa_k256_keccak_acl_library(), storage_slots)
-            .expect(
-                "ACL auth component should satisfy the requirements of a valid account component",
+        let metadata = AccountComponentMetadata::new("miden::auth::ecdsa_k256_keccak_acl")
+            .with_description(
+                "ACL authentication component using ECDSA K256 Keccak signature scheme",
             )
-            .with_supports_all_types()
+            .with_supports_all_types();
+
+        AccountComponent::new(ecdsa_k256_keccak_acl_library(), storage_slots, metadata).expect(
+            "ACL auth component should satisfy the requirements of a valid account component",
+        )
     }
 }
 
