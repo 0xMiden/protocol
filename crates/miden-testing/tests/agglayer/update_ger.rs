@@ -13,8 +13,8 @@ use miden_agglayer::{
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_crypto::{Felt, FieldElement};
+use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
