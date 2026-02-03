@@ -33,6 +33,8 @@ pub enum SignedBlockError {
         "signed block header note root ({header_root}) does not match the corresponding body's note root ({body_root})"
     )]
     NoteRootMismatch { header_root: Word, body_root: Word },
+    #[error("supplied parent block ({parent}) cannot be parent to genesis block")]
+    GenesisBlockHasNoParent { parent: BlockNumber },
 }
 
 // SIGNED BLOCK
@@ -148,25 +150,34 @@ impl SignedBlock {
 
     /// Validates that the provided parent block's commitment and number correctly corresponds to
     /// the signed block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The signed block is the genesis block.
+    /// - The parent block number is not the signed block number - 1.
+    /// - The parent block's commitment is not equal to the signed block's previous block
+    ///   commitment.
     pub fn validate_parent(&self, parent_block: &BlockHeader) -> Result<(), SignedBlockError> {
-        // Check commitments.
-        let expected = self.header.prev_block_commitment();
-        let parent = parent_block.commitment();
-        if expected != parent {
-            return Err(SignedBlockError::ParentCommitmentMismatch { expected, parent });
-        }
-
         // Check block numbers.
         if let Some(expected) = self.header.block_num().checked_sub(1) {
             let parent = parent_block.block_num();
             if expected != parent {
-                Err(SignedBlockError::ParentNumberMismatch { expected, parent })
-            } else {
-                Ok(())
+                return Err(SignedBlockError::ParentNumberMismatch { expected, parent });
             }
+
+            // Check commitments.
+            let expected = self.header.prev_block_commitment();
+            let parent = parent_block.commitment();
+            if expected != parent {
+                return Err(SignedBlockError::ParentCommitmentMismatch { expected, parent });
+            }
+
+            Ok(())
         } else {
             // Block 0 does not have a parent.
-            Ok(())
+            let parent = parent_block.block_num();
+            Err(SignedBlockError::GenesisBlockHasNoParent { parent })
         }
     }
 }
