@@ -276,9 +276,9 @@ async fn test_raw_bytes_to_felts_load_return_ordering() -> anyhow::Result<()> {
 
     // mem_loadw_be loads [felt_n+3, felt_n+2, felt_n+1, felt_n] for address n
     // After loading address 0: stack = [felt_3, felt_2, felt_1, felt_0]
-    // After loading address 4: stack = [felt_7, felt_6, felt_5, felt_4, felt_3, felt_2, felt_1, felt_0]
-    // So the stack top-to-bottom is: felt_7, felt_6, felt_5, felt_4, felt_3, felt_2, felt_1, felt_0
-    // which is: [input_felts[7], input_felts[6], ..., input_felts[0]]
+    // After loading address 4: stack = [felt_7, felt_6, felt_5, felt_4, felt_3, felt_2, felt_1,
+    // felt_0] So the stack top-to-bottom is: felt_7, felt_6, felt_5, felt_4, felt_3, felt_2,
+    // felt_1, felt_0 which is: [input_felts[7], input_felts[6], ..., input_felts[0]]
     let expected_stack: Vec<Felt> = input_felts.iter().rev().copied().collect();
 
     assert_eq!(
