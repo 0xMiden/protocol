@@ -29,11 +29,12 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
             // use bytes32(i + 1) as leaf here just to avoid the zero leaf
             bytes32 leaf = bytes32(i + 1);
 
-            // Merkle path in the _branch array with index `i` actually corresponds to the leaf and
-            // root with index `i - 1` (because the merkle path is computed based not on the index
-            // of the last leaf, but on the overall number of leaves), so we first update the
-            // merkle_paths array and only after that actually add a leaf. Luckily the empty SMT
-            // has the _branch array instantiated with zeros, which is what we need.
+            // Merkle path in the _branch array during the `i`th iteration actually corresponds to
+            // the leaf and root with indexes `i - 1` (because the merkle path is computed based on
+            // the overall number of leaves in the SMT instead of the index of the last leaf), so we
+            // first update the merkle_paths array and only after that actually add a leaf and
+            // recompute the _branch. Luckily the empty SMT has the _branch array instantiated with
+            // zeros, so we can safely use its values during the 0th iteration.
             for (uint256 j = 0; j < 32; j++) {
                 merkle_paths[i * 32 + j] = _branch[j];
             }
