@@ -9,12 +9,6 @@ use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 # ERRORS
 # =================================================================================================
 
-const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="get_balance can only be called on a fungible asset"
-
-const ERR_VAULT_PEEK_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET="peek_balance can only be called on a fungible asset"
-
-const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET="the has_non_fungible_asset procedure can only be called on a non-fungible faucet"
-
 const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the vault would exceed the max amount of 9223372036854775807"
 
 const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to add fungible asset to the asset vault due to the initial value being invalid"
@@ -36,78 +30,57 @@ const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
 # ACCESSORS
 # =================================================================================================
 
-#! Returns the balance of a fungible asset associated with a faucet_id.
+#! Returns the ASSET associated with the provided asset vault key.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-#! Outputs: [balance]
+#! Inputs:  [ASSET_KEY, vault_root_ptr]
+#! Outputs: [ASSET]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
-pub proc get_balance
-    # assert that the faucet id is a fungible faucet
-    dup exec.account_id::is_fungible_faucet
-    assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_asset
     # load the asset vault root from memory
-    padw movup.6 mem_loadw_be
-    # => [ASSET_VAULT_ROOT, faucet_id_prefix, faucet_id_suffix]
+    padw movup.8 mem_loadw_be
+    # => [ASSET_VAULT_ROOT, ASSET_KEY]
 
-    # prepare the key for fungible asset lookup (pad least significant elements with zeros)
-    push.0.0 movup.7 movup.7
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, ASSET_VAULT_ROOT]
+    swapw
+    # => [ASSET_KEY, ASSET_VAULT_ROOT]
 
     # lookup asset
     exec.smt::get swapw dropw
     # => [ASSET]
-
-    # extract the asset's balance
-    exec.::$kernel::util::asset::get_balance_from_fungible_asset
-    # => [balance]
 end
 
-#! Returns the _peeked_ balance of a fungible asset associated with the provided faucet_id.
+#! Returns the _peeked_ ASSET associated with the provided asset vault key.
 #!
-#! WARNING: Peeked means the balance is loaded from the advice provider, which is susceptible to
+#! WARNING: Peeked means the asset is loaded from the advice provider, which is susceptible to
 #! manipulation from a malicious host. Therefore this should only be used when the inclusion of the
-#! peeked balance is verified at a later point.
+#! peeked asset is verified at a later point.
+#!
+#! To get the verified asset, use get_asset. peek_asset is useful when updating a value in an SMT
+#! with smt::set, which returns the previous value. As long as that previous value is the same as
+#! the peeked value, using peek_asset is safe from manipulation. Using smt::get instead would work
+#! as well, but since both smt::get and smt::set prove inclusion of the current/previous value,
+#! this is unnecessary double work that can be skipped by peeking.
 #!
 #! WARNING: This is a generic vault procedure and so it cannot emit an event to lazy load asset
 #! merkle paths from the merkle store, since this is only possible for the account vault. Ensure
 #! that the merkle paths are present prior to calling.
 #!
-#! To get the verified balance, use get_balance.
-#!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-#! Outputs: [balance]
+#! Inputs:  [ASSET_KEY, vault_root_ptr]
+#! Outputs: [ASSET]
 #!
 #! Where:
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the asset is not a fungible asset.
-pub proc peek_balance
-    # assert that the faucet id is a fungible faucet
-    dup exec.account_id::is_fungible_faucet
-    assert.err=ERR_VAULT_PEEK_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the retrieved ASSET.
+pub proc peek_asset
     # load the asset vault root from memory
-    padw movup.6 mem_loadw_be
-    # => [ASSET_VAULT_ROOT, faucet_id_prefix, faucet_id_suffix]
+    padw movup.8 mem_loadw_be
+    # => [ASSET_VAULT_ROOT, ASSET_KEY]
 
-    # prepare the vault key for fungible asset lookup (pad least significant elements with zeros)
-    push.0.0 movup.7 movup.7
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, ASSET_VAULT_ROOT]
+    swapw
     # => [ASSET_KEY, ASSET_VAULT_ROOT]
 
     # lookup asset
@@ -123,45 +96,6 @@ pub proc peek_balance
     adv_loadw
     # OS => [ASSET]
     # AS => []
-
-    # extract the asset's balance
-    exec.::$kernel::util::asset::get_balance_from_fungible_asset
-    # => [balance]
-end
-
-#! Returns a boolean indicating whether the non-fungible asset is present in the vault.
-#!
-#! Inputs:  [ASSET, vault_root_ptr]
-#! Outputs: [has_asset]
-#!
-#! Where:
-#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - ASSET is the non-fungible asset of interest
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-pub proc has_non_fungible_asset
-    # check if the asset is a non-fungible asset
-    exec.asset::is_non_fungible_asset
-    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET, vault_root_ptr]
-
-    # build the asset key from the non-fungible asset
-    exec.build_non_fungible_asset_vault_key
-    # => [ASSET_KEY, vault_root_ptr]
-
-    # prepare the stack to read non-fungible asset from vault
-    padw movup.8 mem_loadw_be swapw
-    # => [ASSET_KEY, ACCT_VAULT_ROOT]
-
-    # lookup asset
-    exec.smt::get swapw dropw
-    # => [ASSET]
-
-    # compare with EMPTY_WORD to assess if the asset exists in the vault
-    exec.word::eqz not
-    # => [has_asset]
 end
 
 # ADD ASSET
@@ -515,41 +449,6 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
-
-#! Returns the _peeked_ asset associated with the provided faucet_id.
-#!
-#! Note that ASSET can be the EMPTY_WORD if the value at the provided ASSET_KEY does not exist.
-#!
-#! Inputs:  [ASSET_KEY, vault_root_ptr]
-#! Outputs: [ASSET]
-#!
-#! Where:
-#! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - asset is the peeked asset from the vault.
-proc peek_asset
-    # load the asset vault root from memory
-    padw movup.8 mem_loadw_be
-    # => [ASSET_VAULT_ROOT, ASSET_KEY]
-
-    swapw
-    # => [ASSET_KEY, ASSET_VAULT_ROOT]
-
-    # lookup asset
-    exec.smt::peek
-    # OS => [ASSET_KEY, ASSET_VAULT_ROOT]
-    # AS => [ASSET]
-
-    dropw
-    # OS => [ASSET_VAULT_ROOT]
-    # AS => [ASSET]
-
-    # this overwrites the vault root
-    adv_loadw
-    # OS => [ASSET]
-    # AS => []
-end
 
 #! Builds the vault key of a non fungible asset. The asset is NOT validated and therefore must
 #! be a valid non-fungible asset.

@@ -146,11 +146,8 @@ const ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT=event("miden::protocol::account::v
 # Event emitted after an asset is removed from the account vault.
 const ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT=event("miden::protocol::account::vault_after_remove_asset")
 
-# Event emitted before a fungible asset's balance is fetched from the account vault.
-const ACCOUNT_VAULT_BEFORE_GET_BALANCE_EVENT=event("miden::protocol::account::vault_before_get_balance")
-
-# Event emitted before it is checked whether a non-fungible asset exists in the account vault.
-const ACCOUNT_VAULT_BEFORE_HAS_NON_FUNGIBLE_ASSET_EVENT=event("miden::protocol::account::vault_before_has_non_fungible_asset")
+# Event emitted before an asset is fetched from the account vault.
+const ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT=event("miden::protocol::account::vault_before_get_asset")
 
 # Event emitted before an account storage item is updated.
 const ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT=event("miden::protocol::account::storage_before_set_item")
@@ -727,84 +724,49 @@ pub proc remove_asset_from_vault
     # => [ASSET]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active
-#! account's vault.
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
-#! Outputs: [balance]
-#!
-#! Where:
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
-pub proc get_balance
-    # get the vault root
-    exec.memory::get_account_vault_root_ptr movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-
-    # emit event to signal that an asset's balance is requested
-    emit.ACCOUNT_VAULT_BEFORE_GET_BALANCE_EVENT
-    # => [faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-
-    # get the asset balance
-    exec.asset_vault::get_balance
-    # => [balance]
-end
-
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active 
-#! account's vault at the beginning of the transaction.
-#!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
-#! Outputs: [init_balance]
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET]
 #!
 #! Where:
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
-pub proc get_initial_balance
-    # get the vault root associated with the initial vault root of the native account
-    exec.memory::get_account_initial_vault_root_ptr movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, init_native_vault_root_ptr]
-
-    # emit event to signal that an asset's balance is requested
-    emit.ACCOUNT_VAULT_BEFORE_GET_BALANCE_EVENT
-    # => [faucet_id_prefix, faucet_id_suffix, init_native_vault_root_ptr]
-
-    # get the asset balance
-    exec.asset_vault::get_balance
-    # => [init_balance]
-end
-
-#! Returns a boolean indicating whether the non-fungible asset is present in the active account's
-#! vault.
-#!
-#! Inputs:  [ASSET]
-#! Outputs: [has_asset]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset of interest.
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-pub proc has_non_fungible_asset
-    # get the vault root
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_asset
+    # get the vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.4
-    # => [ASSET, vault_root_ptr]
+    # => [ASSET_KEY, vault_root_ptr]
 
-    # emit event to signal that an asset's presence is being checked
-    emit.ACCOUNT_VAULT_BEFORE_HAS_NON_FUNGIBLE_ASSET_EVENT
-    # => [ASSET, vault_root_ptr]
+    # emit event to signal that an asset is requested
+    emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
+    # => [ASSET_KEY, vault_root_ptr]
 
-    # check if the account vault has the non-fungible asset
-    exec.asset_vault::has_non_fungible_asset
-    # => [has_asset]
+    # get the asset
+    exec.asset_vault::get_asset
+    # => [ASSET]
+end
+
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET]
+#!
+#! Where:
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_initial_asset
+    # get the vault root associated with the initial vault root of the native account
+    exec.memory::get_account_initial_vault_root_ptr movdn.4
+    # => [ASSET_KEY, init_native_vault_root_ptr]
+
+    # emit event to signal that an asset is requested
+    emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
+    # => [ASSET_KEY, init_native_vault_root_ptr]
+
+    # get the asset
+    exec.asset_vault::get_asset
+    # => [ASSET]
 end
 
 # CODE

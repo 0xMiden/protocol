@@ -251,7 +251,8 @@ pub const KERNEL_PROCEDURES: [Word; {proc_count}] = [
 }
 
 fn parse_proc_offsets(filename: impl AsRef<Path>) -> Result<BTreeMap<String, usize>> {
-    let regex: Regex = Regex::new(r"^const\s*(?P<name>\w+)_OFFSET\s*=\s*(?P<offset>\d+)").unwrap();
+    let regex: Regex =
+        Regex::new(r"^(pub )?const\s*(?P<name>\w+)_OFFSET\s*=\s*(?P<offset>\d+)").unwrap();
     let mut result = BTreeMap::new();
     for line in fs::read_to_string(filename).into_diagnostic()?.lines() {
         if let Some(captures) = regex.captures(line) {
@@ -421,12 +422,7 @@ fn validate_tx_kernel_category(errors: &[shared::NamedError]) -> Result<()> {
 /// then generates the transaction_events.rs file with constants.
 fn generate_event_constants(asm_source_dir: &Path, target_dir: &Path) -> Result<()> {
     // Extract all event definitions from MASM files
-    let mut events = extract_all_event_definitions(asm_source_dir)?;
-
-    // Add two additional events we want in `TransactionEventId` that do not appear in kernel or
-    // protocol lib modules.
-    events.insert("miden::protocol::auth::request".to_owned(), "AUTH_REQUEST".to_owned());
-    events.insert("miden::protocol::auth::unauthorized".to_owned(), "AUTH_UNAUTHORIZED".to_owned());
+    let events = extract_all_event_definitions(asm_source_dir)?;
 
     // Generate the events file in OUT_DIR
     let event_file_content = generate_event_file_content(&events).into_diagnostic()?;
