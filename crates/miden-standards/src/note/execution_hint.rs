@@ -111,7 +111,8 @@ impl NoteExecutionHint {
                 Ok(hint)
             },
             _ => Err(NoteError::other(format!(
-                "note execution hint tag {tag} must be in range 0..=3"
+                "note execution hint tag {tag} must be in range 0..={}",
+                Self::ON_BLOCK_SLOT_TAG
             ))),
         }
     }
