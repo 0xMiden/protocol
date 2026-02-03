@@ -242,7 +242,6 @@ fn test_solidity_mmr_frontier_compatibility() {
 #[tokio::test]
 async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
     let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;
-    let canonical_zeros = &*SOLIDITY_CANONICAL_ZEROS;
 
     // Validate array lengths
     assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
@@ -251,7 +250,7 @@ async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()>
     assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
 
     for leaf_index in 0..32 {
-        let source = merkle_proof_verification_code(leaf_index, merkle_paths, canonical_zeros);
+        let source = merkle_proof_verification_code(leaf_index, merkle_paths);
 
         let tx_script = CodeBuilder::new()
             .with_statically_linked_library(&agglayer_library())?
@@ -322,21 +321,13 @@ fn leaf_assertion_code(
 fn merkle_proof_verification_code(
     index: usize,
     merkle_paths: &MerkleProofVerificationFile,
-    canonical_zeros: &CanonicalZerosFile,
 ) -> String {
     // generate the code which stores the merkle path to the memory
     let mut store_path_source = String::new();
     for height in 0..32 {
-        // use merkle path node if it was updated during the leaf insertion
-        let path_node = if (index >> height) & 1 == 1 {
+        let path_node =
             Keccak256Digest::try_from(merkle_paths.merkle_paths[index * 32 + height].as_str())
-                .unwrap()
-        } else
-        // otherwise use canonical zero
-        {
-            Keccak256Digest::try_from(canonical_zeros.canonical_zeros[height].as_str()).unwrap()
-        };
-
+                .unwrap();
         let (node_hi, node_lo) = keccak_digest_to_word_strings(path_node);
         // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
         // memory pointers for the merkle path and the expected root never change
@@ -359,7 +350,7 @@ fn merkle_proof_verification_code(
     let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
 
     format!(
-        "
+        r#"
         use miden::agglayer::crypto_utils
         
         begin
@@ -380,8 +371,11 @@ fn merkle_proof_verification_code(
             # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
 
             exec.crypto_utils::verify_merkle_proof
+            # => [verification_flag]
+
+            assert.err="verification failed"
             # => []
         end
-    "
+    "#
     )
 }

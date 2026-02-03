@@ -10,6 +10,7 @@ use miden::protocol::native_account
 const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
+const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 
 # CONSTANTS
 # =================================================================================================
@@ -201,5 +202,10 @@ proc verify_leaf
 
     # delegate verification to crypto_utils::verify_merkle_proof
     exec.crypto_utils::verify_merkle_proof
+    # => [verification_flag]
+
+    # verify_merkle_proof procedure returns `true` if the verification was successful and `false` 
+    # otherwise. Assert that `true` was returned.
+    assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
     # => []
 end

@@ -1,4 +1,5 @@
 use miden::core::crypto::hashes::keccak256
+use miden::core::word
 use miden::agglayer::utils
 use miden::core::mem
 
@@ -8,11 +9,6 @@ use miden::core::mem
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
 type MemoryAddress = u32
-
-# ERRORS
-# =================================================================================================
-
-const ERR_SMT_ROOT_VERIFICATION_FAILED = "provided SMT root does not match the computed root"
 
 # CONSTANTS
 # =================================================================================================
@@ -86,7 +82,7 @@ end
 #! matches the provided root.
 #!
 #! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
-#! Outputs: []
+#! Outputs: [verification_flag]
 #!
 #! Where:
 #! - expected_root_ptr is the pointer to the memory where the expected SMT root is stored.
@@ -95,10 +91,11 @@ end
 #!   represented as 32 Keccak256Digest values (64 words).
 #! - leaf_idx is the index of the provided leaf in the SMT.
 #! - [ROOT_LO, ROOT_HI] is the calculated root.
+#! - verification_flag is the binary flag indicating whether the verification was successful.
 #!
 #! Panics if:
 #! - The root stored in the `expected_root_ptr` is not equal to the computed root.
-pub proc verify_merkle_proof(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress)
+pub proc verify_merkle_proof(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddress, leaf_idx: u32, expected_root_ptr: MemoryAddress) -> i1
     # calculate the root of the SMT
     exec.calculate_root
     # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
@@ -108,10 +105,11 @@ pub proc verify_merkle_proof(leaf_value: DoubleWord, merkle_path_ptr: MemoryAddr
     # => [EXPECTED_ROOT_LO, EXPECTED_ROOT_HI, CALCULATED_ROOT_LO, CALCULATED_ROOT_HI]
 
     # assert the roots are equal
-    swapw.3
-    assert_eqw.err=ERR_SMT_ROOT_VERIFICATION_FAILED 
-    assert_eqw.err=ERR_SMT_ROOT_VERIFICATION_FAILED
-    # => []
+    swapw.3 exec.word::eq
+    # => [exp_hi_equal_calc_hi, CALCULATED_ROOT_LO, EXPECTED_ROOT_LO]
+
+    movdn.8 exec.word::eq and
+    # => [verification_flag]
 end
 
 # HELPER PROCEDURES

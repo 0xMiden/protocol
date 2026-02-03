@@ -44,8 +44,8 @@ pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rol
 /// Error Message: "maximum scaling factor is 18"
 pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("maximum scaling factor is 18");
 
-/// Error Message: "provided SMT root does not match the computed root"
-pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("provided SMT root does not match the computed root");
+/// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
+pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
 
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"
 pub const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("UPDATE_GER script expects exactly 8 note storage items");
