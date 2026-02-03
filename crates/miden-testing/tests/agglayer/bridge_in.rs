@@ -3,7 +3,6 @@ extern crate alloc;
 use core::slice;
 
 use miden_agglayer::claim_note::{ExitRoot, SmtNode};
-use miden_agglayer::utils::felts_to_u256_bytes;
 use miden_agglayer::{
     ClaimNoteStorage,
     EthAddressFormat,
@@ -16,7 +15,6 @@ use miden_agglayer::{
     create_existing_bridge_account,
     create_update_ger_note,
 };
-use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -88,6 +86,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         global_index,
         mainnet_exit_root,
         rollup_exit_root,
+        global_exit_root,
         origin_network,
         origin_token_address,
         destination_network,
@@ -154,32 +153,9 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
 
-    // COMPUTE GER FROM EXIT ROOTS AND CREATE UPDATE_GER NOTE
+    // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
-    // The GER is keccak256(mainnet_exit_root || rollup_exit_root)
-    // The MASM code reads the exit roots from memory where felts are stored.
-    // We use ExitRoot::to_elements() to get the same felt representation.
-
-    let mainnet_exit_root = ExitRoot::from(mainnet_exit_root).as_bytes().to_vec();
-    let rollup_exit_root = ExitRoot::from(rollup_exit_root).as_bytes().to_vec();
-
-    let ger_preimage = KeccakPreimage::new(
-        mainnet_exit_root.iter().chain(rollup_exit_root.iter()).copied().collect(),
-    );
-
-    // The GER digest is 8 u32 felts - convert to bytes matching bytes32_to_felts format
-    // Reverse the felts within each word (4-felt chunks)
-    let ger_felts_digest: Vec<Felt> = ger_preimage.digest().as_ref().to_vec();
-
-    let ger_felts_digest: [Felt; 8] = ger_felts_digest
-        .chunks(4)
-        .flat_map(|chunk| chunk.iter().rev().copied())
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    // convert felts to bytes
-    let ger_bytes = felts_to_u256_bytes(ger_felts_digest);
-    let ger = ExitRoot::from(ger_bytes);
+    let ger = ExitRoot::from(global_exit_root);
 
     let update_ger_note = create_update_ger_note(ger, bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
