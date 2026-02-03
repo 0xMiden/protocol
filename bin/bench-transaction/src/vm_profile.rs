@@ -17,6 +17,10 @@ pub struct VmProfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionKernelProfile {
     pub total_cycles: u64,
+    #[serde(default)]
+    pub trace_main_len: Option<u64>,
+    #[serde(default)]
+    pub trace_padded_len: Option<u64>,
     pub phases: HashMap<String, PhaseProfile>,
     pub instruction_mix: InstructionMix,
     pub key_procedures: Vec<ProcedureProfile>,
@@ -154,6 +158,8 @@ mod tests {
             miden_vm_version: "0.20.0".to_string(),
             transaction_kernel: TransactionKernelProfile {
                 total_cycles: 73123,
+                trace_main_len: None,
+                trace_padded_len: None,
                 phases: HashMap::new(),
                 instruction_mix: InstructionMix {
                     arithmetic: 0.05,
@@ -211,6 +217,8 @@ mod tests {
             miden_vm_version: "0.20.0".to_string(),
             transaction_kernel: TransactionKernelProfile {
                 total_cycles: 100, // Very small workload
+                trace_main_len: None,
+                trace_padded_len: None,
                 phases: HashMap::new(),
                 instruction_mix: InstructionMix {
                     arithmetic: 0.5,

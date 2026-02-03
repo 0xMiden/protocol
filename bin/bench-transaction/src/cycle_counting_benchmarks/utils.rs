@@ -183,6 +183,8 @@ pub fn write_vm_profile(
 
     // Calculate total cycles
     let total_cycles = avg_prologue + avg_notes_processing + avg_tx_script + avg_epilogue;
+    let trace_main_len = total_cycles;
+    let trace_padded_len = total_cycles.next_power_of_two();
 
     // Estimate instruction mix based on known characteristics
     // Auth procedure (signature verification) dominates at ~85% of epilogue
@@ -318,6 +320,8 @@ pub fn write_vm_profile(
         miden_vm_version: env!("CARGO_PKG_VERSION").to_string(),
         transaction_kernel: TransactionKernelProfile {
             total_cycles,
+            trace_main_len: Some(trace_main_len),
+            trace_padded_len: Some(trace_padded_len),
             phases,
             instruction_mix,
             key_procedures,
