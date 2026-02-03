@@ -57,15 +57,5 @@ contract ExitRootsTestVectors is Test {
         string memory outputPath = "test-vectors/exit_roots.json";
         vm.writeJson(json, outputPath);
         console.log("Saved exit root vectors to:", outputPath);
-        
-        // Also log the results for verification
-        for (uint256 i = 0; i < mainnetExitRoots.length; i++) {
-            console.log("---");
-            console.log("Pair", i);
-            console.logBytes32(mainnetExitRoots[i]);
-            console.logBytes32(rollupExitRoots[i]);
-            console.log("Global Exit Root:");
-            console.logBytes32(globalExitRoots[i]);
-        }
     }
 }
