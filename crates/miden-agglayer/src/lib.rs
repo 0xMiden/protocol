@@ -25,7 +25,6 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteExecutionHint,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -35,7 +34,7 @@ use miden_protocol::note::{
 };
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
 pub mod errors;

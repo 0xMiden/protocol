@@ -28,9 +28,7 @@ pub enum TransactionEventId {
     AccountVaultBeforeRemoveAsset = ACCOUNT_VAULT_BEFORE_REMOVE_ASSET,
     AccountVaultAfterRemoveAsset = ACCOUNT_VAULT_AFTER_REMOVE_ASSET,
 
-    AccountVaultBeforeGetBalance = ACCOUNT_VAULT_BEFORE_GET_BALANCE,
-
-    AccountVaultBeforeHasNonFungibleAsset = ACCOUNT_VAULT_BEFORE_HAS_NON_FUNGIBLE_ASSET,
+    AccountVaultBeforeGetAsset = ACCOUNT_VAULT_BEFORE_GET_ASSET,
 
     AccountStorageBeforeSetItem = ACCOUNT_STORAGE_BEFORE_SET_ITEM,
     AccountStorageAfterSetItem = ACCOUNT_STORAGE_AFTER_SET_ITEM,
@@ -123,13 +121,7 @@ impl TryFrom<EventId> for TransactionEventId {
                 Ok(TransactionEventId::AccountVaultAfterRemoveAsset)
             },
 
-            ACCOUNT_VAULT_BEFORE_GET_BALANCE => {
-                Ok(TransactionEventId::AccountVaultBeforeGetBalance)
-            },
-
-            ACCOUNT_VAULT_BEFORE_HAS_NON_FUNGIBLE_ASSET => {
-                Ok(TransactionEventId::AccountVaultBeforeHasNonFungibleAsset)
-            },
+            ACCOUNT_VAULT_BEFORE_GET_ASSET => Ok(TransactionEventId::AccountVaultBeforeGetAsset),
 
             ACCOUNT_STORAGE_BEFORE_SET_ITEM => Ok(TransactionEventId::AccountStorageBeforeSetItem),
             ACCOUNT_STORAGE_AFTER_SET_ITEM => Ok(TransactionEventId::AccountStorageAfterSetItem),

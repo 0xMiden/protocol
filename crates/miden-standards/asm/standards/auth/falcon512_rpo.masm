@@ -8,8 +8,8 @@ use miden::standards::auth
 # CONSTANTS
 # =================================================================================================
 
-# The event to request an authentication signature.
-const AUTH_REQUEST_EVENT=event("miden::protocol::auth::request")
+# Auth event constant (workaround for linker bug - see https://github.com/0xMiden/miden-base/pull/2377)
+const AUTH_REQUEST_EVENT = ::miden::protocol::auth::AUTH_REQUEST_EVENT
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0
