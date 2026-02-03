@@ -1,14 +1,14 @@
 use alloc::format;
 use alloc::string::ToString;
 
-use anyhow::Context;
 use miden_agglayer::agglayer_library;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
-use miden_protocol::Felt;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
 use serde::Deserialize;
+
+use super::test_utils::keccak_digest_to_word_strings;
 
 // KECCAK MMR FRONTIER
 // ================================================================================================
@@ -145,10 +145,6 @@ const CANONICAL_ZEROS_JSON: &str =
 const MMR_FRONTIER_VECTORS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
 
-/// Merkle proof verification vectors JSON embedded at compile time from the Foundry-generated file.
-const MERKLE_PROOF_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/merkle_proof_vectors.json");
-
 /// Deserialized canonical zeros from Solidity DepositContractBase.sol
 #[derive(Debug, Deserialize)]
 struct CanonicalZerosFile {
@@ -164,16 +160,6 @@ struct MmrFrontierVectorsFile {
     counts: Vec<u32>,
 }
 
-/// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol
-/// Uses parallel arrays for leaves and roots. For each element from leaves/roots there are 32
-/// elements from merkle_paths, which represent the merkle path for that leaf + root.
-#[derive(Debug, Deserialize)]
-struct MerkleProofVerificationFile {
-    leaves: Vec<String>,
-    roots: Vec<String>,
-    merkle_paths: Vec<String>,
-}
-
 /// Lazily parsed canonical zeros from the JSON file.
 static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::new(|| {
     serde_json::from_str(CANONICAL_ZEROS_JSON).expect("Failed to parse canonical zeros JSON")
@@ -183,12 +169,6 @@ static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::new(||
 static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
     serde_json::from_str(MMR_FRONTIER_VECTORS_JSON)
         .expect("failed to parse MMR frontier vectors JSON")
-});
-
-/// Lazily parsed Merkle proof vectors from the JSON file.
-static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> = LazyLock::new(|| {
-    serde_json::from_str(MERKLE_PROOF_VECTORS_JSON)
-        .expect("failed to parse Merkle proof vectors JSON")
 });
 
 /// Verifies that the Rust KeccakMmrFrontier32 produces the same canonical zeros as Solidity.
@@ -239,47 +219,8 @@ fn test_solidity_mmr_frontier_compatibility() {
     }
 }
 
-#[tokio::test]
-async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
-    let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;
-
-    // Validate array lengths
-    assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
-    // paths have 32 nodes for each leaf/root, so the overall paths length should be 32 times longer
-    // than leaves/roots length
-    assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
-
-    for leaf_index in 0..32 {
-        let source = merkle_proof_verification_code(leaf_index, merkle_paths);
-
-        let tx_script = CodeBuilder::new()
-            .with_statically_linked_library(&agglayer_library())?
-            .compile_tx_script(source)?;
-
-        TransactionContextBuilder::with_existing_mock_account()
-            .tx_script(tx_script.clone())
-            .build()?
-            .execute()
-            .await
-            .context(format!("failed to execute transaction with leaf index {leaf_index}"))?;
-    }
-
-    Ok(())
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
-fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
-    let double_word = (*digest)
-        .chunks(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
-        .rev()
-        .collect::<Vec<_>>();
-
-    (double_word[0..4].join(", "), double_word[4..8].join(", "))
-}
 
 fn leaf_assertion_code(
     leaf: Keccak256Digest,
@@ -315,67 +256,5 @@ fn leaf_assertion_code(
             push.{num_leaves}
             assert_eq.err="new leaf count is incorrect"
         "#
-    )
-}
-
-fn merkle_proof_verification_code(
-    index: usize,
-    merkle_paths: &MerkleProofVerificationFile,
-) -> String {
-    // generate the code which stores the merkle path to the memory
-    let mut store_path_source = String::new();
-    for height in 0..32 {
-        let path_node =
-            Keccak256Digest::try_from(merkle_paths.merkle_paths[index * 32 + height].as_str())
-                .unwrap();
-        let (node_hi, node_lo) = keccak_digest_to_word_strings(path_node);
-        // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
-        // memory pointers for the merkle path and the expected root never change
-        store_path_source.push_str(&format!(
-            "
-\tpush.[{node_hi}] mem_storew_be.{} dropw 
-\tpush.[{node_lo}] mem_storew_be.{} dropw
-    ",
-            height * 8,
-            height * 8 + 4
-        ));
-    }
-
-    // prepare the root for the provided index
-    let root = Keccak256Digest::try_from(merkle_paths.roots[index].as_str()).unwrap();
-    let (root_hi, root_lo) = keccak_digest_to_word_strings(root);
-
-    // prepare the leaf for the provided index
-    let leaf = Keccak256Digest::try_from(merkle_paths.leaves[index].as_str()).unwrap();
-    let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
-
-    format!(
-        r#"
-        use miden::agglayer::crypto_utils
-        
-        begin
-            # store the merkle path to the memory (double word slots from 0 to 248)
-            {store_path_source}
-            # => []
-
-            # store the root to the memory (double word slot 256)
-            push.[{root_lo}] mem_storew_be.256 dropw 
-            push.[{root_hi}] mem_storew_be.260 dropw
-            # => []
-
-            # prepare the stack for the `verify_merkle_proof` procedure
-            push.256                          # expected root memory pointer
-            push.{index}                      # provided leaf index
-            push.0                            # Merkle path memory pointer
-            push.[{leaf_hi}] push.[{leaf_lo}] # provided leaf value
-            # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
-
-            exec.crypto_utils::verify_merkle_proof
-            # => [verification_flag]
-
-            assert.err="verification failed"
-            # => []
-        end
-    "#
     )
 }

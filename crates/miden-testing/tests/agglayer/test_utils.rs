@@ -5,9 +5,21 @@ use alloc::vec::Vec;
 
 use miden_agglayer::agglayer_library;
 use miden_core_lib::CoreLibrary;
+use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
+
+/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
+pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
+    let double_word = (*digest)
+        .chunks(4)
+        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
+        .rev()
+        .collect::<Vec<_>>();
+
+    (double_word[0..4].join(", "), double_word[4..8].join(", "))
+}
 
 /// Execute a program with default host and optional advice inputs
 pub async fn execute_program_with_default_host(
