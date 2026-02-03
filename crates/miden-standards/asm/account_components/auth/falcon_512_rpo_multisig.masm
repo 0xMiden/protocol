@@ -11,10 +11,8 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # CONSTANTS
 # =================================================================================================
 
-# Auth Request Constants
-
-# The event emitted when a signature is not found for a required signer.
-const AUTH_UNAUTHORIZED_EVENT = event("miden::protocol::auth::unauthorized")
+# Auth event constant (workaround for linker bug - see https://github.com/0xMiden/miden-base/pull/2377)
+const AUTH_UNAUTHORIZED_EVENT = ::miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 
 # Storage Layout Constants
 #
