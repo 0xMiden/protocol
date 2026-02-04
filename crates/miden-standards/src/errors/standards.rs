@@ -33,6 +33,7 @@ pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
 
+
 /// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
 
@@ -68,3 +69,9 @@ pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("faile
 
 /// Error Message: "number of approvers or threshold must not be zero"
 pub const ERR_ZERO_IN_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers or threshold must not be zero");
+
+/// Error Message: "invalid scheme ID word format expected three zero values followed by the scheme ID"
+pub const ERR_INVALID_SCHEME_ID_WORD: MasmError = MasmError::from_static_str("invalid scheme ID word format expected three zero values followed by the scheme ID");
+
+/// Error Message: "invalid scheme id for multisig signer"
+pub const ERR_INVALID_APPROVER_SCHEME_ID: MasmError = MasmError::from_static_str("invalid scheme id for multisig signer");

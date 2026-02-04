@@ -57,6 +57,10 @@ const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or g
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
+const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three zero values followed by the scheme ID"
+
+const ERR_INVALID_APPROVER_SCHEME_ID = "invalid scheme id for multisig signer"
+
 #! Check if transaction has already been executed and add it to executed transactions for replay protection.
 #!
 #! Inputs:  [MSG]
@@ -85,11 +89,12 @@ proc assert_new_tx(msg: BeWord)
     # => []
 end
 
-#! Remove old approver public keys from the approver public key mapping.
+#! Remove old approver public keys and the corresponding scheme ids 
+#! from the approver public key and scheme id mappings.
 #!
-#! This procedure cleans up the storage by removing public keys of approvers that are no longer
-#! part of the multisig configuration. This procedure assumes that init_num_of_approvers and
-#! new_num_of_approvers are u32 values.
+#! This procedure cleans up the storage by removing public keys and signature scheme ids of approvers 
+#! that are no longer part of the multisig configuration. This procedure assumes that 
+#! init_num_of_approvers and new_num_of_approvers are u32 values.
 #!
 #! Inputs: [init_num_of_approvers, new_num_of_approvers]
 #! Outputs: []
@@ -97,7 +102,7 @@ end
 #! Where:
 #! - init_num_of_approvers is the original number of approvers before the update
 #! - new_num_of_approvers is the new number of approvers after the update
-proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
     dup.1 dup.1
     u32assert2
     u32lt
@@ -157,8 +162,9 @@ proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u3
 end
 
 
-#! Update threshold config and add / remove approvers
-#!
+#! Update threshold config, add / remove approvers,
+#! and update the approver scheme ids
+#! 
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
 #!   Advice map: {
@@ -255,6 +261,21 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         padw adv_loadw
         # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
 
+        # validate the word shape
+        dup.0 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+        dup.1 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+        dup.2 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+
+        # validate the scheme id is either 1 or 2
+        dup.3 dup.4 eq.1
+        # => [is_equal_to_1, scheme_id, SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+
+        swap eq.2
+        # => [is_equal_to_2, is_equal_to_1, SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+
+        add eq.0 assertz.err=ERR_INVALID_APPROVER_SCHEME_ID
+        # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+
         swapw
         # => [PUB_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
@@ -281,7 +302,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     loc_load.0 loc_load.1
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    exec.cleanup_pubkey_mapping
+    exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
 end
 
