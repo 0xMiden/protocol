@@ -136,6 +136,7 @@ generate-solidity-test-vectors: ## Regenerate Solidity MMR test vectors using Fo
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVectors
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateCanonicalZeros
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateLeafValueVectors
 
 # --- benchmarking --------------------------------------------------------------------------------
 
