@@ -130,16 +130,13 @@ impl SequentialCommit for LeafData {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 3 + 1 + 5 + 1 + 5 + 8 + 8 (leafType + padding + networks + addresses + amount + metadata)
+        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 1 + 5 + 1 + 5 + 8 + 8 + 3 (leafType + networks + addresses + amount + metadata + padding)
         let mut elements = Vec::with_capacity(LEAF_DATA_ELEMENT_COUNT);
 
         // LeafType (uint32 as Felt): 0u32 for transfer Ether / ERC20 tokens, 1u32 for message
         // passing.
         // for a `CLAIM` note, leafType is always 0 (transfer Ether / ERC20 tokens)
         elements.push(Felt::ZERO);
-
-        // Padding
-        elements.extend(vec![Felt::ZERO; 3]);
 
         // Origin network
         elements.push(Felt::new(self.origin_network as u64));
@@ -159,10 +156,12 @@ impl SequentialCommit for LeafData {
         // Metadata (8 u32 felts)
         elements.extend(self.metadata.iter().map(|&v| Felt::new(v as u64)));
 
+        // Padding
+        elements.extend(vec![Felt::ZERO; 3]);
+
         elements
     }
 }
-
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
 /// TODO: Remove all but target_faucet_account_id

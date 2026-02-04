@@ -34,12 +34,14 @@ const CUR_HASH_HI_LOCAL = 4
 #!   Operand stack: [LEAF_DATA_KEY]
 #!   Advice map: {
 #!     LEAF_DATA_KEY => [
+#!       leafType[1],                     // Leaf type (1 felt, uint8)
 #!       originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!       originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
 #!       destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
 #!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!       padding[3],                      // padding (3 felts) - not used in the hash
 #!     ],
 #!   }
 #! Outputs: [LEAF_VALUE[8]]

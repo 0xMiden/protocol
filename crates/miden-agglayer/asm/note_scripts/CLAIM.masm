@@ -69,13 +69,13 @@ end
 #!
 #! LEAF_DATA_KEY => [
 #!   leafType[1],                     // Leaf type (1 felt, uint32)
-#!   padding[3],                      // padding (3 felts)
 #!   originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!   originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
 #!   destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
 #!   destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!   amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!   metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!   padding[3],                      // padding (3 felts)
 #! ]
 #!
 #! TODO: Will be removed in future PR
@@ -154,13 +154,13 @@ end
 #! - mainnetExitRoot            [520..527]: 8 felts
 #! - rollupExitRoot             [528..535]: 8 felts
 #! - leafType                   [536]     : 1 felt
-#! - padding                    [537..539]: 3 felts
-#! - originNetwork              [540]     : 1 felt
-#! - originTokenAddress         [541..545]: 5 felts
-#! - destinationNetwork         [546]     : 1 felt
-#! - destinationAddress         [547..551]: 5 felts
-#! - amount                     [552..559]: 8 felts
-#! - metadata                   [560..567]: 8 felts
+#! - originNetwork              [537]     : 1 felt
+#! - originTokenAddress         [538..542]: 5 felts
+#! - destinationNetwork         [543]     : 1 felt
+#! - destinationAddress         [544..548]: 5 felts
+#! - amount                     [549..556]: 8 felts
+#! - metadata                   [557..564]: 8 felts
+#! - padding                    [565..567]: 3 felts
 #! - output_p2id_serial_num     [568..571]: 4 felts
 #! - target_faucet_account_id   [572..573]: 2 felts
 #! - output_note_tag            [574]     : 1 felt
