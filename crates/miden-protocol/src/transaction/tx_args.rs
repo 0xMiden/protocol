@@ -9,7 +9,11 @@ use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
 use crate::note::{NoteId, NoteRecipient};
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::vm::{AdviceInputs, AdviceMap, Program};
 use crate::{EMPTY_WORD, MastForest, MastNodeId};

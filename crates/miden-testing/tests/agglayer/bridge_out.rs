@@ -2,12 +2,24 @@ extern crate alloc;
 
 use miden_agglayer::{EthAddressFormat, b2agg_script, bridge_out_component};
 use miden_protocol::account::{
-    Account, AccountId, AccountIdVersion, AccountStorageMode, AccountType, StorageSlot,
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};

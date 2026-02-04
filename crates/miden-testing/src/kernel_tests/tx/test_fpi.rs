@@ -5,23 +5,37 @@ use alloc::vec::Vec;
 use miden_processor::fast::ExecutionOutput;
 use miden_processor::{AdviceInputs, Felt};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountProcedureRoot, AccountStorage,
-    AccountStorageMode, StorageSlot,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountProcedureRoot,
+    AccountStorage,
+    AccountStorageMode,
+    StorageSlot,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::errors::tx_kernel::{
-    ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT, ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
+    ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
+    ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
     ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
 };
 use miden_protocol::testing::storage::STORAGE_LEAVES_2;
 use miden_protocol::transaction::memory::{
-    ACCOUNT_DATA_LENGTH, ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET, ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_ID_AND_NONCE_OFFSET, ACCT_NUM_PROCEDURES_OFFSET, ACCT_NUM_STORAGE_SLOTS_OFFSET,
-    ACCT_PROCEDURES_SECTION_OFFSET, ACCT_STORAGE_COMMITMENT_OFFSET, ACCT_VAULT_ROOT_OFFSET,
+    ACCOUNT_DATA_LENGTH,
+    ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET,
+    ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_AND_NONCE_OFFSET,
+    ACCT_NUM_PROCEDURES_OFFSET,
+    ACCT_NUM_STORAGE_SLOTS_OFFSET,
+    ACCT_PROCEDURES_SECTION_OFFSET,
+    ACCT_STORAGE_COMMITMENT_OFFSET,
+    ACCT_VAULT_ROOT_OFFSET,
     NATIVE_ACCOUNT_DATA_PTR,
 };
 use miden_protocol::{FieldElement, Word, ZERO};

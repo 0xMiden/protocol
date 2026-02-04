@@ -3,8 +3,13 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountStorageDelta, AccountStorageHeader, PartialAccount, StorageSlotDelta, StorageSlotHeader,
-    StorageSlotName, StorageSlotType,
+    AccountStorageDelta,
+    AccountStorageHeader,
+    PartialAccount,
+    StorageSlotDelta,
+    StorageSlotHeader,
+    StorageSlotName,
+    StorageSlotType,
 };
 
 /// Keeps track of the initial storage of an account during transaction execution.

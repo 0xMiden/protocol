@@ -6,11 +6,18 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -19,7 +26,11 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
-    Auth, MockChain, TransactionContextBuilder, TxContextInput, assert_transaction_executor_error,
+    Auth,
+    MockChain,
+    TransactionContextBuilder,
+    TxContextInput,
+    assert_transaction_executor_error,
 };
 
 #[tokio::test]

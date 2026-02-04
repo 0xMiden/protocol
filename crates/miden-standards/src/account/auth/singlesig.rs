@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
@@ -55,19 +54,16 @@ impl AuthSingleSig {
 
 impl From<AuthSingleSig> for AccountComponent {
     fn from(basic_signature: AuthSingleSig) -> Self {
-        let mut storage_slots = Vec::with_capacity(2);
-
-        // Public key slot
-        storage_slots.push(StorageSlot::with_value(
-            AuthSingleSig::public_key_slot().clone(),
-            basic_signature.pub_key.into(),
-        ));
-
-        // Scheme ID slot
-        storage_slots.push(StorageSlot::with_value(
-            AuthSingleSig::scheme_id_slot().clone(),
-            Word::from([basic_signature.scheme_id, 0, 0, 0]),
-        ));
+        let storage_slots = vec![
+            StorageSlot::with_value(
+                AuthSingleSig::public_key_slot().clone(),
+                basic_signature.pub_key.into(),
+            ),
+            StorageSlot::with_value(
+                AuthSingleSig::scheme_id_slot().clone(),
+                Word::from([basic_signature.scheme_id, 0, 0, 0]),
+            ),
+        ];
 
         AccountComponent::new(singlesig_library(), storage_slots)
         .expect("signature verifier component should satisfy the requirements of a valid account component")

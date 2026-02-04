@@ -8,7 +8,12 @@ extern crate std;
 
 mod mock_chain;
 pub use mock_chain::{
-    AccountState, Auth, MockChain, MockChainBuilder, MockChainNote, TxContextInput,
+    AccountState,
+    Auth,
+    MockChain,
+    MockChainBuilder,
+    MockChainNote,
+    TxContextInput,
 };
 
 mod tx_context;

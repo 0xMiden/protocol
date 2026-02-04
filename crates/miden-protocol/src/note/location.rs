@@ -1,7 +1,12 @@
 use miden_crypto::merkle::SparseMerklePath;
 
 use super::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, NoteError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    NoteError,
+    Serializable,
 };
 use crate::block::BlockNumber;
 use crate::crypto::merkle::InnerNodeInfo;

@@ -1,5 +1,10 @@
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountType,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountStorage,
+    AccountType,
 };
 use miden_protocol::asset::AssetVault;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;

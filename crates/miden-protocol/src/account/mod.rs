@@ -4,14 +4,23 @@ use alloc::vec::Vec;
 use crate::asset::{Asset, AssetVault};
 use crate::errors::AccountError;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::{Felt, Hasher, Word, ZERO};
 
 mod account_id;
 pub use account_id::{
-    AccountId, AccountIdPrefix, AccountIdPrefixV0, AccountIdV0, AccountIdVersion,
-    AccountStorageMode, AccountType,
+    AccountId,
+    AccountIdPrefix,
+    AccountIdPrefixV0,
+    AccountIdV0,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
 };
 
 pub mod auth;
@@ -28,15 +37,30 @@ pub use component::{AccountComponent, AccountComponentCode, AccountComponentMeta
 
 pub mod delta;
 pub use delta::{
-    AccountDelta, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
-    NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta, StorageSlotDelta,
+    AccountDelta,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    NonFungibleDeltaAction,
+    StorageMapDelta,
+    StorageSlotDelta,
 };
 
 pub mod storage;
 pub use storage::{
-    AccountStorage, AccountStorageHeader, PartialStorage, PartialStorageMap, StorageMap,
-    StorageMapWitness, StorageSlot, StorageSlotContent, StorageSlotHeader, StorageSlotId,
-    StorageSlotName, StorageSlotType,
+    AccountStorage,
+    AccountStorageHeader,
+    PartialStorage,
+    PartialStorageMap,
+    StorageMap,
+    StorageMapWitness,
+    StorageSlot,
+    StorageSlotContent,
+    StorageSlotHeader,
+    StorageSlotId,
+    StorageSlotName,
+    StorageSlotType,
 };
 
 mod header;
@@ -552,18 +576,32 @@ mod tests {
     use miden_crypto::{Felt, Word};
 
     use super::{
-        AccountCode, AccountDelta, AccountId, AccountStorage, AccountStorageDelta,
+        AccountCode,
+        AccountDelta,
+        AccountId,
+        AccountStorage,
+        AccountStorageDelta,
         AccountVaultDelta,
     };
     use crate::account::AccountStorageMode::Network;
     use crate::account::{
-        Account, AccountBuilder, AccountComponent, AccountIdVersion, AccountType, PartialAccount,
-        StorageMap, StorageMapDelta, StorageSlot, StorageSlotContent, StorageSlotName,
+        Account,
+        AccountBuilder,
+        AccountComponent,
+        AccountIdVersion,
+        AccountType,
+        PartialAccount,
+        StorageMap,
+        StorageMapDelta,
+        StorageSlot,
+        StorageSlotContent,
+        StorageSlotName,
     };
     use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;

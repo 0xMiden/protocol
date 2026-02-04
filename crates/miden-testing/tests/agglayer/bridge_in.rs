@@ -3,7 +3,10 @@ extern crate alloc;
 use core::slice;
 
 use miden_agglayer::{
-    ClaimNoteParams, claim_note_test_inputs, create_claim_note, create_existing_agglayer_faucet,
+    ClaimNoteParams,
+    claim_note_test_inputs,
+    create_claim_note,
+    create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
 use miden_protocol::Felt;
@@ -11,7 +14,13 @@ use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::wallets::BasicWallet;

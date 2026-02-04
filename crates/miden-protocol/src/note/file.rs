@@ -144,11 +144,20 @@ mod tests {
     use crate::asset::{Asset, FungibleAsset};
     use crate::block::BlockNumber;
     use crate::note::{
-        Note, NoteAssets, NoteFile, NoteInclusionProof, NoteMetadata, NoteRecipient, NoteScript,
-        NoteStorage, NoteTag, NoteType,
+        Note,
+        NoteAssets,
+        NoteFile,
+        NoteInclusionProof,
+        NoteMetadata,
+        NoteRecipient,
+        NoteScript,
+        NoteStorage,
+        NoteTag,
+        NoteType,
     };
     use crate::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     };
 
     fn create_example_note() -> Note {

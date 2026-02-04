@@ -1,15 +1,28 @@
 use alloc::vec::Vec;
 
 use super::{
-    AccountDelta, AccountHeader, AccountId, AdviceInputs, InputNote, InputNotes, NoteId,
-    OutputNotes, TransactionArgs, TransactionId, TransactionOutputs,
+    AccountDelta,
+    AccountHeader,
+    AccountId,
+    AdviceInputs,
+    InputNote,
+    InputNotes,
+    NoteId,
+    OutputNotes,
+    TransactionArgs,
+    TransactionId,
+    TransactionOutputs,
 };
 use crate::account::PartialAccount;
 use crate::asset::FungibleAsset;
 use crate::block::{BlockHeader, BlockNumber};
 use crate::transaction::TransactionInputs;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 // EXECUTED TRANSACTION

@@ -4,8 +4,17 @@ use miden_processor::{AdviceMutation, AdviceProvider, ProcessState, RowIndex};
 use miden_protocol::account::{AccountId, StorageMap, StorageSlotName, StorageSlotType};
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
-    NoteAttachment, NoteAttachmentArray, NoteAttachmentContent, NoteAttachmentKind,
-    NoteAttachmentScheme, NoteId, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag,
+    NoteAttachment,
+    NoteAttachmentArray,
+    NoteAttachmentContent,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
     NoteType,
 };
 use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};

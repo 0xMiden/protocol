@@ -4,11 +4,22 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
-    AdviceMutation, AsyncHost, BaseHost, EventError, FutureMaybeSend, MastForest, ProcessState,
+    AdviceMutation,
+    AsyncHost,
+    BaseHost,
+    EventError,
+    FutureMaybeSend,
+    MastForest,
+    ProcessState,
 };
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
-    AccountCode, AccountDelta, AccountId, PartialAccount, StorageSlotId, StorageSlotName,
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    PartialAccount,
+    StorageSlotId,
+    StorageSlotName,
 };
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
@@ -17,7 +28,11 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
 use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteStorage};
 use miden_protocol::transaction::{
-    InputNote, InputNotes, OutputNote, TransactionAdviceInputs, TransactionSummary,
+    InputNote,
+    InputNotes,
+    OutputNote,
+    TransactionAdviceInputs,
+    TransactionSummary,
 };
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
@@ -25,8 +40,12 @@ use miden_protocol::{Felt, Hasher, Word};
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
 use crate::host::{
-    RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent,
-    TransactionProgress, TransactionProgressEvent,
+    RecipientData,
+    ScriptMastForestStore,
+    TransactionBaseHost,
+    TransactionEvent,
+    TransactionProgress,
+    TransactionProgressEvent,
 };
 use crate::{AccountProcedureIndexMap, DataStore};
 

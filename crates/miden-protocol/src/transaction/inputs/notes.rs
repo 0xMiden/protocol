@@ -5,7 +5,11 @@ use super::TransactionInputError;
 use crate::note::{Note, NoteId, NoteInclusionProof, NoteLocation, Nullifier};
 use crate::transaction::InputNoteCommitment;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::{Felt, Hasher, MAX_INPUT_NOTES_PER_TX, Word};
 

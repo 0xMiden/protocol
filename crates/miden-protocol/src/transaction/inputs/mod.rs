@@ -8,8 +8,16 @@ use miden_crypto::merkle::{MerkleError, NodeIndex};
 
 use super::PartialBlockchain;
 use crate::account::{
-    AccountCode, AccountHeader, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
-    StorageMap, StorageMapWitness, StorageSlotId, StorageSlotName,
+    AccountCode,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    PartialAccount,
+    PartialStorage,
+    StorageMap,
+    StorageMapWitness,
+    StorageSlotId,
+    StorageSlotName,
 };
 use crate::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
 use crate::block::account_tree::{AccountWitness, account_id_to_smt_index};

@@ -7,10 +7,15 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
-    AuthMultisig, AuthMultisigConfig, AuthSingleSig, AuthSingleSigAcl, AuthSingleSigAclConfig,
+    AuthMultisig,
+    AuthMultisigConfig,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    AuthSingleSigAclConfig,
 };
 use miden_standards::testing::account_component::{
-    ConditionalAuthComponent, IncrNonceAuthComponent,
+    ConditionalAuthComponent,
+    IncrNonceAuthComponent,
 };
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;

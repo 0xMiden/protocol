@@ -1,7 +1,11 @@
 //! Tests for the Array utility `get` and `set` procedures.
 
 use miden_protocol::account::{
-    AccountBuilder, AccountComponent, StorageMap, StorageSlot, StorageSlotName,
+    AccountBuilder,
+    AccountComponent,
+    StorageMap,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::code_builder::CodeBuilder;

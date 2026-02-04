@@ -1,5 +1,9 @@
 use miden_protocol::account::{
-    AccountCode, AccountDelta, AccountId, AccountVaultDelta, PartialAccount,
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountVaultDelta,
+    PartialAccount,
 };
 use miden_protocol::{Felt, FieldElement, ZERO};
 

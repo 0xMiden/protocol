@@ -4,26 +4,51 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountCode, AccountComponent, AccountStorage, AccountStorageMode,
-    AccountType, StorageSlot, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountCode,
+    AccountComponent,
+    AccountStorage,
+    AccountStorageMode,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentContent, NoteAttachmentScheme, NoteHeader,
-    NoteId, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentContent,
+    NoteAttachmentScheme,
+    NoteHeader,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PRIVATE_SENDER,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
 use miden_protocol::transaction::{
-    InputNotes, OutputNote, OutputNotes, TransactionArgs, TransactionKernel, TransactionSummary,
+    InputNotes,
+    OutputNote,
+    OutputNotes,
+    TransactionArgs,
+    TransactionKernel,
+    TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::AuthScheme;
