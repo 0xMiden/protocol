@@ -3,12 +3,7 @@ use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use super::{
-    AccountDeltaError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    AccountDeltaError, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
     Word,
 };
 use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};

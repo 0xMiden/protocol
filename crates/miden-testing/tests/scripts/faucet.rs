@@ -5,23 +5,12 @@ use core::slice;
 
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
+    Account, AccountId, AccountIdVersion, AccountStorageMode, AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteId,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
+    Note, NoteAssets, NoteAttachment, NoteId, NoteMetadata, NoteRecipient, NoteStorage, NoteTag,
     NoteType,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
@@ -31,8 +20,7 @@ use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFauc
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
-    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
-    ERR_SENDER_NOT_OWNER,
+    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY, ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
@@ -127,7 +115,8 @@ pub fn verify_minted_output_note(
 #[tokio::test]
 async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
+    let faucet =
+        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 0 }, "TST", 200, None)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -150,7 +139,8 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     // CONSTRUCT AND EXECUTE TX (Failure)
     // --------------------------------------------------------------------------------------------
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
+    let faucet =
+        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 0 }, "TST", 200, None)?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -200,7 +190,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 #[tokio::test]
 async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.create_new_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200)?;
+    let faucet = builder.create_new_faucet(Auth::BasicAuth { scheme_id: 0 }, "TST", 200)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -228,7 +218,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth{scheme_id: 0},
+        Auth::BasicAuth { scheme_id: 0 },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -291,7 +281,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth{scheme_id: 0},
+        Auth::BasicAuth { scheme_id: 0 },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -341,7 +331,8 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth{scheme_id: 0}, "TST", 200, None)?;
+    let faucet =
+        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 0 }, "TST", 200, None)?;
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;

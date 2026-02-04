@@ -10,27 +10,14 @@ use miden_assembly::Library;
 use miden_assembly::utils::Deserializable;
 use miden_core::{Felt, FieldElement, Program, Word};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountStorageMode,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountStorageMode, AccountType,
+    StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;

@@ -8,19 +8,12 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, StarkField, Word};
@@ -29,10 +22,7 @@ use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    FailedNote,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    TransactionExecutor,
+    FailedNote, NoteConsumptionChecker, NoteConsumptionInfo, TransactionExecutor,
     TransactionExecutorError,
 };
 use rand::{Rng, SeedableRng};
@@ -102,7 +92,7 @@ async fn check_note_consumability_custom_notes_success(
     let tx_context = {
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let (_, authenticator) = Auth::BasicAuth{scheme_id: 0}.build_component();
+        let (_, authenticator) = Auth::BasicAuth { scheme_id: 0 }.build_component();
         TransactionContextBuilder::new(account)
             .extend_input_notes(notes.clone())
             .authenticator(authenticator)
@@ -253,7 +243,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -415,7 +405,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),

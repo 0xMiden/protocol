@@ -5,12 +5,7 @@ use assert_matches::assert_matches;
 use miden_protocol::Word;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountComponent, AccountId, StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProvenBatch;

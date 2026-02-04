@@ -27,10 +27,8 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 
 /// Initialize the ECDSA K256 Keccak library only once.
 static SINGLESIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/singlesig.masl"
-    ));
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/singlesig.masl"));
     Library::read_from_bytes(bytes).expect("Shipped Singlesig library is well-formed")
 });
 
@@ -45,12 +43,9 @@ static SINGLESIG_ACL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 
 /// Initialize the Multisig library only once.
 static MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/multisig.masl"
-    ));
-    Library::read_from_bytes(bytes)
-        .expect("Shipped Multisig library is well-formed")
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed")
 });
 
 // Initialize the NoAuth library only once.
@@ -207,8 +202,9 @@ impl StandardAccountComponent {
                 Self::AuthSingleSigAcl => {
                     component_interface_vec.push(AccountComponentInterface::AuthSingleSigAcl)
                 },
-                Self::AuthMultisig => component_interface_vec
-                    .push(AccountComponentInterface::AuthMultisig),
+                Self::AuthMultisig => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisig)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -227,8 +223,7 @@ impl StandardAccountComponent {
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
-        Self::AuthMultisig
-            .extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
     }
 }

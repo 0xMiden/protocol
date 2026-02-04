@@ -6,40 +6,23 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
 use miden_protocol::errors::tx_kernel::{
-    ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
-    ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
+    ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS, ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
+    NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::NON_FUNGIBLE_ASSET_DATA_2;
 use miden_protocol::transaction::memory::{
-    NOTE_MEM_SIZE,
-    NUM_OUTPUT_NOTES_PTR,
-    OUTPUT_NOTE_ASSETS_OFFSET,
-    OUTPUT_NOTE_ATTACHMENT_OFFSET,
-    OUTPUT_NOTE_METADATA_HEADER_OFFSET,
-    OUTPUT_NOTE_RECIPIENT_OFFSET,
-    OUTPUT_NOTE_SECTION_OFFSET,
+    NOTE_MEM_SIZE, NUM_OUTPUT_NOTES_PTR, OUTPUT_NOTE_ASSETS_OFFSET, OUTPUT_NOTE_ATTACHMENT_OFFSET,
+    OUTPUT_NOTE_METADATA_HEADER_OFFSET, OUTPUT_NOTE_RECIPIENT_OFFSET, OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
@@ -705,8 +688,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .expect("asset is invalid"),
     );
 
-    let account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth{scheme_id: 0}, [fungible_asset_0, fungible_asset_1])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { scheme_id: 0 },
+        [fungible_asset_0, fungible_asset_1],
+    )?;
 
     let mock_chain = builder.build()?;
 
@@ -827,8 +812,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth{scheme_id: 0}, [FungibleAsset::mock(2000)])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { scheme_id: 0 },
+        [FungibleAsset::mock(2000)],
+    )?;
 
     let mock_chain = builder.build()?;
 

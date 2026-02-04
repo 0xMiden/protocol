@@ -5,14 +5,7 @@ use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
@@ -21,15 +14,10 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::{Felt, Word};
 
 use crate::AuthScheme;
-use crate::account::auth::{
-    AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth
-};
+use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
 use crate::account::faucets::BasicFungibleFaucet;
 use crate::account::interface::{
-    AccountComponentInterface,
-    AccountInterface,
-    AccountInterfaceExt,
-    NoteAccountCompatibility,
+    AccountComponentInterface, AccountInterface, AccountInterfaceExt, NoteAccountCompatibility,
 };
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;

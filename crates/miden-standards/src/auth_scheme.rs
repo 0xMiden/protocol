@@ -11,7 +11,10 @@ pub enum AuthScheme {
     /// account state.
     NoAuth,
     /// A single-key authentication scheme which relies on either RpoFalcon512 or ECDSA signatures.
-    SingleSig { pub_key: PublicKeyCommitment, scheme_id: u8 },
+    SingleSig {
+        pub_key: PublicKeyCommitment,
+        scheme_id: u8,
+    },
     /// A multi-signature authentication scheme using either RpoFalcon512 or ECDSA signatures.
     ///
     /// Requires a threshold number of signatures from the provided public keys.

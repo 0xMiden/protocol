@@ -2,13 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
-    AdviceMutation,
-    BaseHost,
-    EventError,
-    MastForest,
-    MastForestStore,
-    ProcessState,
-    SyncHost,
+    AdviceMutation, BaseHost, EventError, MastForest, MastForestStore, ProcessState, SyncHost,
 };
 use miden_protocol::Word;
 use miden_protocol::account::{AccountDelta, PartialAccount};

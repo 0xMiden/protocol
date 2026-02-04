@@ -25,10 +25,8 @@ static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 });
 
 static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new(
-        "miden::standards::auth::multisig::executed_transactions",
-    )
-    .expect("storage slot name should be valid")
+    StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
+        .expect("storage slot name should be valid")
 });
 
 static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -73,9 +71,7 @@ impl AuthMultisigConfig {
 
         // Check for scheme_ids for each approver
         if scheme_ids.len() != approvers.len() {
-            return Err(AccountError::other(
-                "number of scheme IDs must match number of approvers",
-            ));
+            return Err(AccountError::other("number of scheme IDs must match number of approvers"));
         }
 
         Ok(Self {
@@ -200,16 +196,11 @@ impl From<AuthMultisig> for AccountComponent {
         ));
 
         // Approver scheme IDs slot (map)
-        let scheme_id_entries = multisig
-            .config
-            .approvers()
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
-                let pub_key = multisig.config.approvers()[i];
-                let scheme_id = multisig.config.scheme_ids()[i];
-                (Word::from(pub_key), Word::from([scheme_id as u32, 0, 0, 0]))
-            });
+        let scheme_id_entries = multisig.config.approvers().iter().enumerate().map(|(i, _)| {
+            let pub_key = multisig.config.approvers()[i];
+            let scheme_id = multisig.config.scheme_ids()[i];
+            (Word::from(pub_key), Word::from([scheme_id as u32, 0, 0, 0]))
+        });
 
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::approver_scheme_ids_slot().clone(),
@@ -274,7 +265,7 @@ mod tests {
 
         // Create multisig component
         let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(),scheme_ids.clone(), threshold)
+            AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), threshold)
                 .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
@@ -311,7 +302,7 @@ mod tests {
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let approvers = vec![pub_key];
-        let scheme_ids = vec![1u8]; 
+        let scheme_ids = vec![1u8];
         let threshold = 1u32;
 
         let multisig_component = AuthMultisig::new(
@@ -335,10 +326,7 @@ mod tests {
 
         let stored_pub_key = account
             .storage()
-            .get_map_item(
-                AuthMultisig::approver_public_keys_slot(),
-                Word::from([0u32, 0, 0, 0]),
-            )
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
             .expect("approver pub keys storage map access failed");
         assert_eq!(stored_pub_key, Word::from(pub_key));
     }

@@ -1,6 +1,5 @@
-
-use miden_protocol::Word;
 use alloc::vec::Vec;
+use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
@@ -67,14 +66,8 @@ impl From<AuthSingleSig> for AccountComponent {
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSig::scheme_id_slot().clone(),
-            Word::from([
-                basic_signature.scheme_id,
-                0,
-                0,
-                0,
-            ]),
+            Word::from([basic_signature.scheme_id, 0, 0, 0]),
         ));
-        
 
         AccountComponent::new(singlesig_library(), storage_slots)
         .expect("signature verifier component should satisfy the requirements of a valid account component")

@@ -6,8 +6,7 @@ use miden_protocol::LexicographicWord;
 use miden_protocol::account::{AccountId, AccountStorage, StorageSlotDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_NATIVE_ASSET_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_NATIVE_ASSET_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 use miden_protocol::testing::constants::FUNGIBLE_ASSET_AMOUNT;

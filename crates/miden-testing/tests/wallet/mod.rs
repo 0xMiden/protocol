@@ -9,8 +9,8 @@ use rand_chacha::rand_core::SeedableRng;
 #[test]
 fn wallet_creation() {
     use miden_protocol::account::{AccountCode, AccountStorageMode, AccountType};
-    use miden_standards::account::wallets::BasicWallet;
     use miden_standards::account::auth::AuthSingleSig;
+    use miden_standards::account::wallets::BasicWallet;
 
     // we need a Falcon Public Key to create the wallet account
     let seed = [0_u8; 32];
@@ -60,7 +60,7 @@ fn wallet_creation_2() {
     let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
     let scheme_id = 1u8;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id: scheme_id};
+    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id };
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [

@@ -29,35 +29,18 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
-    AdviceMutation,
-    EventError,
-    EventHandlerRegistry,
-    Felt,
-    MastForest,
-    MastForestStore,
+    AdviceMutation, EventError, EventHandlerRegistry, Felt, MastForest, MastForestStore,
     ProcessState,
 };
 use miden_protocol::Word;
 use miden_protocol::account::{
-    AccountCode,
-    AccountDelta,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    PartialAccount,
-    StorageSlotHeader,
-    StorageSlotId,
-    StorageSlotName,
+    AccountCode, AccountDelta, AccountHeader, AccountId, AccountStorageHeader, PartialAccount,
+    StorageSlotHeader, StorageSlotId, StorageSlotName,
 };
 use miden_protocol::asset::Asset;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    OutputNote,
-    OutputNotes,
-    TransactionMeasurements,
-    TransactionSummary,
+    InputNote, InputNotes, OutputNote, OutputNotes, TransactionMeasurements, TransactionSummary,
 };
 use miden_protocol::vm::RowIndex;
 pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};

@@ -1,14 +1,6 @@
 use super::{
-    AccountId,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    NoteTag,
-    NoteType,
-    Serializable,
-    Word,
+    AccountId, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, NoteTag,
+    NoteType, Serializable, Word,
 };
 use crate::Hasher;
 use crate::errors::NoteError;

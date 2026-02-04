@@ -5,9 +5,7 @@ use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::{self, MemoryOffset};
 use miden_protocol::vm::StackInputs;
@@ -147,7 +145,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth{scheme_id: 0},
+        crate::Auth::BasicAuth { scheme_id: 0 },
         [fungible_asset_0_double_amount, fungible_asset_1],
     )?;
 

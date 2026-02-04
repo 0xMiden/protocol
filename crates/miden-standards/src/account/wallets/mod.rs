@@ -2,19 +2,13 @@ use alloc::string::String;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountStorageMode,
-    AccountType,
+    Account, AccountBuilder, AccountComponent, AccountStorageMode, AccountType,
 };
 use miden_protocol::errors::AccountError;
 use thiserror::Error;
 
 use super::AuthScheme;
-use crate::account::auth::{
-    AuthMultisig, AuthMultisigConfig, AuthSingleSig
-};
+use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
 use crate::account::components::basic_wallet_library;
 use crate::procedure_digest;
 
@@ -116,16 +110,16 @@ pub fn create_basic_wallet(
     }
 
     let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::SingleSig { pub_key, scheme_id } => AuthSingleSig::new(pub_key, scheme_id).into(),
+        AuthScheme::SingleSig { pub_key, scheme_id } => {
+            AuthSingleSig::new(pub_key, scheme_id).into()
+        },
         AuthScheme::Multisig { threshold, pub_keys, scheme_ids } => {
             let config = AuthMultisigConfig::new(pub_keys, scheme_ids, threshold)
                 .and_then(|cfg| {
                     cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
                 })
                 .map_err(BasicWalletError::AccountError)?;
-            AuthMultisig::new(config)
-                .map_err(BasicWalletError::AccountError)?
-                .into()
+            AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
         },
         AuthScheme::NoAuth => {
             return Err(BasicWalletError::UnsupportedAuthScheme(

@@ -7,15 +7,10 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
-    AuthMultisig,
-    AuthMultisigConfig,
+    AuthMultisig, AuthMultisigConfig, AuthSingleSig, AuthSingleSigAcl, AuthSingleSigAclConfig,
 };
 use miden_standards::testing::account_component::{
-    ConditionalAuthComponent,
-    IncrNonceAuthComponent,
+    ConditionalAuthComponent, IncrNonceAuthComponent,
 };
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
@@ -26,9 +21,7 @@ use rand_chacha::ChaCha20Rng;
 pub enum Auth {
     /// Creates a secret key for the account and creates a [BasicAuthenticator] used to
     /// authenticate the account with [AuthFalcon512Rpo].
-    BasicAuth {
-        scheme_id: u8,
-    },
+    BasicAuth { scheme_id: u8 },
 
     /// Multisig
     Multisig {
@@ -79,16 +72,20 @@ impl Auth {
 
                 (component, Some(authenticator))
             },
-            Auth::Multisig { threshold, approvers, proc_threshold_map, scheme_ids } => {
+            Auth::Multisig {
+                threshold,
+                approvers,
+                proc_threshold_map,
+                scheme_ids,
+            } => {
                 let pub_keys: Vec<_> =
                     approvers.iter().map(|word| PublicKeyCommitment::from(*word)).collect();
 
                 let config = AuthMultisigConfig::new(pub_keys, scheme_ids.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
-                let component = AuthMultisig::new(config)
-                    .expect("multisig component creation failed")
-                    .into();
+                let component =
+                    AuthMultisig::new(config).expect("multisig component creation failed").into();
 
                 (component, None)
             },

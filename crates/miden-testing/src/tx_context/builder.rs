@@ -17,10 +17,7 @@ use miden_protocol::note::{Note, NoteId, NoteScript};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
-    OutputNote,
-    TransactionArgs,
-    TransactionInputs,
-    TransactionScript,
+    OutputNote, TransactionArgs, TransactionInputs, TransactionScript,
 };
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;

@@ -2,11 +2,7 @@ use crate::Word;
 use crate::account::delta::AccountUpdateDetails;
 use crate::block::account_tree::AccountWitness;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 /// This type encapsulates essentially three components:

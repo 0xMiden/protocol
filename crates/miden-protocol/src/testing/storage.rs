@@ -4,13 +4,8 @@ use alloc::vec::Vec;
 use miden_core::{Felt, Word};
 
 use crate::account::{
-    AccountStorage,
-    AccountStorageDelta,
-    StorageMap,
-    StorageMapDelta,
-    StorageSlot,
-    StorageSlotDelta,
-    StorageSlotName,
+    AccountStorage, AccountStorageDelta, StorageMap, StorageMapDelta, StorageSlot,
+    StorageSlotDelta, StorageSlotName,
 };
 use crate::note::NoteAssets;
 use crate::utils::sync::LazyLock;

@@ -11,9 +11,7 @@ pub use prefix::AccountIdPrefixV0;
 
 use crate::account::account_id::NetworkId;
 use crate::account::account_id::account_type::{
-    FUNGIBLE_FAUCET,
-    NON_FUNGIBLE_FAUCET,
-    REGULAR_ACCOUNT_IMMUTABLE_CODE,
+    FUNGIBLE_FAUCET, NON_FUNGIBLE_FAUCET, REGULAR_ACCOUNT_IMMUTABLE_CODE,
     REGULAR_ACCOUNT_UPDATABLE_CODE,
 };
 use crate::account::account_id::storage_mode::{NETWORK, PRIVATE, PUBLIC};
@@ -553,10 +551,8 @@ mod tests {
     use super::*;
     use crate::account::AccountIdPrefix;
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_SENDER,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     };
 

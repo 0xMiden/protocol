@@ -6,14 +6,8 @@ use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    OutputNote,
-    ProvenTransaction,
-    ProvenTransactionBuilder,
-    TransactionInputs,
-    TransactionKernel,
-    TransactionOutputs,
+    InputNote, InputNotes, OutputNote, ProvenTransaction, ProvenTransactionBuilder,
+    TransactionInputs, TransactionKernel, TransactionOutputs,
 };
 pub use miden_prover::ProvingOptions;
 use miden_prover::{ExecutionProof, Word, prove};

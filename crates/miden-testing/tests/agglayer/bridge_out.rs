@@ -2,24 +2,12 @@ extern crate alloc;
 
 use miden_agglayer::{EthAddressFormat, b2agg_script, bridge_out_component};
 use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-    StorageSlot,
+    Account, AccountId, AccountIdVersion, AccountStorageMode, AccountType, StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
@@ -220,7 +208,7 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a user account that will create and consume the B2AGG note
-    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 0})?;
+    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------

@@ -1,12 +1,6 @@
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    NoteId,
-    NoteMetadata,
-    Serializable,
-    Word,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, NoteId, NoteMetadata,
+    Serializable, Word,
 };
 use crate::Hasher;
 

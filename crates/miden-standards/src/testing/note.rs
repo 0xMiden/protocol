@@ -8,14 +8,7 @@ use miden_protocol::assembly::{DefaultSourceManager, Library};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
 use miden_protocol::{Felt, Word};

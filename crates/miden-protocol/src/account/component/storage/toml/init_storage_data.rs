@@ -4,11 +4,8 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use super::super::{
-    InitStorageData,
-    InitStorageDataError as CoreInitStorageDataError,
-    StorageValueName,
-    StorageValueNameError,
-    WordValue,
+    InitStorageData, InitStorageDataError as CoreInitStorageDataError, StorageValueName,
+    StorageValueNameError, WordValue,
 };
 use super::RawMapEntrySchema;
 

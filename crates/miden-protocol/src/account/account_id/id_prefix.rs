@@ -7,11 +7,7 @@ use crate::account::account_id::AccountIdPrefixV0;
 use crate::account::{AccountIdV0, AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT ID PREFIX

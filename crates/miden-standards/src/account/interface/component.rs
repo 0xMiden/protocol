@@ -7,9 +7,7 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::AuthScheme;
-use crate::account::auth::{
-    AuthMultisig, AuthSingleSig, AuthSingleSigAcl
-};
+use crate::account::auth::{AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -61,12 +59,8 @@ impl AccountComponentInterface {
                 "Network Fungible Faucet".to_string()
             },
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
-            AccountComponentInterface::AuthSingleSigAcl => {
-                "SingleSig ACL".to_string()
-            },
-            AccountComponentInterface::AuthMultisig => {
-                "Multisig".to_string()
-            },
+            AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
+            AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
@@ -325,7 +319,6 @@ fn extract_multisig_auth_scheme(
 
         let scheme_id = scheme_word[0].as_int() as u8;
         scheme_ids.push(scheme_id);
-
     }
 
     AuthScheme::Multisig { threshold, pub_keys, scheme_ids }

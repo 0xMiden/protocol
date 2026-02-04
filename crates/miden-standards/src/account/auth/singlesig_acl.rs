@@ -3,11 +3,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
-    AccountCode,
-    AccountComponent,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
+    AccountCode, AccountComponent, StorageMap, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -45,7 +41,6 @@ pub struct AuthSingleSigAclConfig {
     /// When `false`, consuming input notes (processing notes sent to this account) requires
     /// authentication. When `true`, input notes can be consumed without authentication.
     pub allow_unauthorized_input_notes: bool,
-
 }
 
 impl AuthSingleSigAclConfig {
@@ -199,12 +194,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::scheme_id_slot().clone(),
-            Word::from([
-                singlesig_acl.scheme_id,
-                0,
-                0,
-                0,
-            ]),
+            Word::from([singlesig_acl.scheme_id, 0, 0, 0]),
         ));
 
         // Config slot
@@ -293,8 +283,8 @@ mod tests {
         };
 
         // Create component and account
-        let component =
-            AuthSingleSigAcl::new(public_key, scheme_id, acl_config).expect("component creation failed");
+        let component = AuthSingleSigAcl::new(public_key, scheme_id, acl_config)
+            .expect("component creation failed");
 
         let account = AccountBuilder::new([0; 32])
             .with_auth_component(component)
