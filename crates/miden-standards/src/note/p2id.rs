@@ -115,9 +115,6 @@ impl P2idNote {
 /// P2ID note storage consists of exactly two elements:
 /// 1. Account ID suffix
 /// 2. Account ID prefix
-///
-/// The layout is defined **once** in the `From<P2idNoteStorage> for NoteStorage` implementation
-/// and reused everywhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteStorage {
     target: AccountId,
@@ -167,5 +164,67 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             .map_err(|_| NoteError::InvalidNoteStorage)?;
 
         Ok(Self { target })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use miden_protocol::account::{
+        AccountId,
+        AccountIdVersion,
+        AccountType,
+        AccountStorageMode,
+    };
+    use miden_protocol::errors::NoteError;
+    use miden_protocol::Felt;
+    use miden_protocol::FieldElement; 
+
+    #[test]
+    fn try_from_valid_storage_succeeds() {
+        let target = AccountId::dummy(
+            [1u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::FungibleFaucet,
+            AccountStorageMode::Private,
+        );
+
+        let storage = vec![
+            target.suffix(),
+            target.prefix().as_felt(),
+        ];
+
+        let parsed = P2idNoteStorage::try_from(storage.as_slice())
+            .expect("storage should be valid");
+
+        assert_eq!(parsed.target(), target);
+    }
+
+    #[test]
+    fn try_from_invalid_length_returns_error() {
+        let storage = vec![Felt::ZERO];
+
+        let err = P2idNoteStorage::try_from(storage.as_slice())
+            .expect_err("should fail due to invalid length");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: P2idNote::NUM_STORAGE_ITEMS,
+                actual: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_storage_contents_returns_error() {
+        let storage = vec![Felt::new(999u64), Felt::new(888u64)];
+
+        let err = P2idNoteStorage::try_from(storage.as_slice())
+            .expect_err("should fail due to invalid account id encoding");
+
+        assert!(matches!(err, NoteError::InvalidNoteStorage));
     }
 }

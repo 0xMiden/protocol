@@ -211,3 +211,134 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         Ok(Self { target, reclaim_height, timelock_height })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use miden_protocol::account::{
+        AccountId,
+        AccountIdVersion,
+        AccountType,
+        AccountStorageMode,
+    };
+    use miden_protocol::errors::NoteError;
+    use miden_protocol::{Felt, FieldElement};
+    use miden_protocol::block::BlockNumber;
+
+    fn dummy_account() -> AccountId {
+        AccountId::dummy(
+            [3u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::FungibleFaucet,
+            AccountStorageMode::Private,
+        )
+    }
+
+    #[test]
+    fn try_from_valid_storage_with_all_fields_succeeds() {
+        let target = dummy_account();
+
+        let storage = vec![
+            target.suffix(),
+            target.prefix().as_felt(),
+            Felt::from(42u32),
+            Felt::from(100u32),
+        ];
+
+        let decoded = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect("valid P2IDE storage should decode");
+
+        assert_eq!(decoded.target(), target);
+        assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
+        assert_eq!(decoded.timelock_height(), Some(BlockNumber::from(100u32)));
+    }
+
+    #[test]
+    fn try_from_zero_heights_map_to_none() {
+        let target = dummy_account();
+
+        let storage = vec![
+            target.suffix(),
+            target.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO,
+        ];
+
+        let decoded = P2ideNoteStorage::try_from(storage.as_slice()).unwrap();
+
+        assert_eq!(decoded.reclaim_height(), None);
+        assert_eq!(decoded.timelock_height(), None);
+    }
+
+    #[test]
+    fn try_from_invalid_length_fails() {
+        let storage = vec![Felt::ZERO; 3];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("wrong length must fail");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: P2ideNote::NUM_STORAGE_ITEMS,
+                actual: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_account_id_fails() {
+        let storage = vec![
+            Felt::new(999u64),
+            Felt::new(888u64),
+            Felt::ZERO,
+            Felt::ZERO,
+        ];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("invalid account id encoding must fail");
+
+        assert!(matches!(err, NoteError::InvalidNoteStorage));
+    }
+
+    #[test]
+    fn try_from_reclaim_height_overflow_fails() {
+        let target = dummy_account();
+
+        // > u32::MAX
+        let overflow = Felt::new(u64::from(u32::MAX) + 1);
+
+        let storage = vec![
+            target.suffix(),
+            target.prefix().as_felt(),
+            overflow,
+            Felt::ZERO,
+        ];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("overflow reclaim height must fail");
+
+        assert!(matches!(err, NoteError::InvalidNoteStorage));
+    }
+
+    #[test]
+    fn try_from_timelock_height_overflow_fails() {
+        let target = dummy_account();
+
+        let overflow = Felt::new(u64::from(u32::MAX) + 10);
+
+        let storage = vec![
+            target.suffix(),
+            target.prefix().as_felt(),
+            Felt::ZERO,
+            overflow,
+        ];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("overflow timelock height must fail");
+
+        assert!(matches!(err, NoteError::InvalidNoteStorage));
+    }
+}
