@@ -61,7 +61,7 @@ fn setup_keys_and_authenticators(
 
         secret_keys.push(sec_key);
         public_keys.push(pub_key);
-        
+
         // Alternate scheme IDs between Falcon (2) and ECDSA (1)
         if index % 2 == 0 {
             scheme_ids.push(2u8); // Falcon
@@ -417,10 +417,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         Felt::new(0),
     ]);
 
-    for (public_key, scheme_id_u8) in new_public_keys
-        .iter()
-        .rev()
-        .zip(new_signature_scheme_ids.iter().rev())
+    for (public_key, scheme_id_u8) in
+        new_public_keys.iter().rev().zip(new_signature_scheme_ids.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
@@ -432,7 +430,6 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
             Felt::new(0),
         ]);
     }
-
 
     // Hash the vector to create config hash
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
@@ -679,10 +676,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
 
     // Add each public key to the vector
-    for (public_key, scheme_id_u8) in new_public_keys
-        .iter()
-        .rev()
-        .zip(new_signature_scheme_ids.iter().rev())
+    for (public_key, scheme_id_u8) in
+        new_public_keys.iter().rev().zip(new_signature_scheme_ids.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
@@ -694,7 +689,6 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
             Felt::new(0),
         ]);
     }
-
 
     // Create config hash and advice map
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
@@ -891,14 +885,12 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     ]);
 
     // Add each public key to the vector
-    for (public_key, scheme_id_u8) in new_public_keys
-        .iter()
-        .rev()
-        .zip(new_signature_scheme_ids.iter().rev())
+    for (public_key, scheme_id_u8) in
+        new_public_keys.iter().rev().zip(new_signature_scheme_ids.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-    
+
         config_and_pubkeys_vector.extend_from_slice(&[
             Felt::new(*scheme_id_u8 as u64),
             Felt::new(0),
