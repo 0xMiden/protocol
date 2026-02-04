@@ -162,15 +162,22 @@ end
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
 #!   Advice map: {
-#!     MULTISIG_CONFIG_HASH => [CONFIG, PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0]
+#!     MULTISIG_CONFIG_HASH => 
+#!     [ 
+#!       CONFIG, 
+#!       PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0, 
+#!       SCHEME_ID_N, SCHEME_ID_N-1, ..., SHCEME_ID_0 
+#!     ]
 #!   }
 #! Outputs:
 #!   Operand stack: []
 #!
 #! Where:
-#! - MULTISIG_CONFIG_HASH is the hash of the threshold and new public key vector
+#! - MULTISIG_CONFIG_HASH is the hash of the threshold, 
+#!   new public key vector, and the corresponding scheme identifiers
 #! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
 #! - PUB_KEY_i is the public key of the i-th signer
+#! - SCHEME_ID_i is the signature scheme id of the i-th signer
 #!
 #! Locals:
 #! 0: new_num_of_approvers

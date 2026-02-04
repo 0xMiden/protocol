@@ -25,7 +25,7 @@ use rand_chacha::ChaCha20Rng;
 #[derive(Debug, Clone)]
 pub enum Auth {
     /// Creates a secret key for the account and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthFalcon512Rpo].
+    /// authenticate the account with [AuthSingleSig].
     BasicAuth { scheme_id: u8 },
 
     /// Multisig
@@ -37,7 +37,7 @@ pub enum Auth {
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthFalcon512RpoAcl]. Authentication will only be
+    /// authenticate the account with [AuthSingleSigAcl]. Authentication will only be
     /// triggered if any of the procedures specified in the list are called during execution.
     Acl {
         auth_trigger_procedures: Vec<Word>,
