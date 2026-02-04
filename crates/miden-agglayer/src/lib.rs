@@ -134,12 +134,12 @@ impl AggLayerFaucet {
 
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
-        // Create network faucet metadata slot: [max_supply, decimals, token_symbol, 0]
+        // Create network faucet metadata slot: [token_supply, max_supply, decimals, symbol]
         let metadata_word = Word::new([
+            FieldElement::ZERO, // token_supply starts at 0
             faucet.max_supply,
             Felt::from(faucet.decimals),
             faucet.token_symbol.into(),
-            FieldElement::ZERO,
         ]);
         let metadata_slot =
             StorageSlot::with_value(NetworkFungibleFaucet::metadata_slot().clone(), metadata_word);
@@ -206,7 +206,9 @@ impl From<AggLayerBridge> for AccountComponent {
         let bridge_storage_slots =
             vec![StorageSlot::with_empty_map(AggLayerBridge::bridge_slot().clone())];
 
-        bridge_out_component(bridge_storage_slots)
+        AccountComponent::new(bridge_out_library(), bridge_storage_slots)
+            .expect("bridge component should satisfy the requirements of a valid account component")
+            .with_supports_all_types()
     }
 }
 
@@ -372,32 +374,6 @@ pub fn create_bridge_account_component() -> AccountComponent {
     AggLayerBridge::new().into()
 }
 
-/// Creates an agglayer faucet account component with the specified configuration.
-///
-/// This is a convenience function that creates an [`AggLayerFaucet`] and converts it
-/// to an [`AccountComponent`].
-///
-/// # Parameters
-/// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
-/// - `decimals`: Number of decimal places for the token
-/// - `max_supply`: Maximum supply of the token
-/// - `bridge_account_id`: The account ID of the bridge account for validation
-///
-/// # Returns
-/// Returns an [`AccountComponent`] configured for agglayer faucet operations.
-///
-/// # Panics
-/// Panics if the token symbol is invalid.
-pub fn create_agglayer_faucet_component(
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    bridge_account_id: AccountId,
-) -> AccountComponent {
-    let token_symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
-    AggLayerFaucet::new(token_symbol, decimals, max_supply, bridge_account_id).into()
-}
-
 /// Creates a complete bridge account builder with the standard configuration.
 pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let bridge_component = create_bridge_account_component();
@@ -428,6 +404,9 @@ pub fn create_existing_bridge_account(seed: Word) -> Account {
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
+///
+/// # Panics
+/// Panics if the token symbol is invalid.
 pub fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
@@ -435,8 +414,9 @@ pub fn create_agglayer_faucet_builder(
     max_supply: Felt,
     bridge_account_id: AccountId,
 ) -> AccountBuilder {
-    let agglayer_component =
-        create_agglayer_faucet_component(token_symbol, decimals, max_supply, bridge_account_id);
+    let token_symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
+    let agglayer_component: AccountComponent =
+        AggLayerFaucet::new(token_symbol, decimals, max_supply, bridge_account_id).into();
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
