@@ -46,6 +46,9 @@ pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rol
 /// Error Message: "maximum scaling factor is 18"
 pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("maximum scaling factor is 18");
 
+/// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
+pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
+
 /// Error Message: "UPDATE_GER note attachment target account does not match consuming account"
 pub const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("UPDATE_GER note attachment target account does not match consuming account");
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"

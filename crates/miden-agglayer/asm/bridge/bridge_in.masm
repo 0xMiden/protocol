@@ -4,6 +4,13 @@ use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
 
+# ERRORS
+# =================================================================================================
+
+const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
+const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
+const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
+const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 
 # CONSTANTS
 # =================================================================================================
@@ -13,17 +20,10 @@ const PROOF_DATA_WORD_LEN = 134
 const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
 const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
 const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
-const MAINNET_EXIT_ROOT_PTR = GLOBAL_INDEX_PTR # it's the first exit root
+const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
 
 const GER_UPPER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_upper")
 const GER_LOWER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_lower")
-
-# ERRORS
-# =================================================================================================
-
-const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
-const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
-const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -188,15 +188,24 @@ proc verify_leaf
     # to see if we're dealing with a deposit from mainnet or from a rollup, process the global index
     # TODO currently only implemented for mainnet deposits (mainnet flag must be 1)
     exec.process_global_index_mainnet
-    # => [leaf_index]
+    # => [leaf_index, LEAF_VALUE[8]]
 
     # load the pointers to the merkle proof and root, to pass to `verify_merkle_proof`
+    push.MAINNET_EXIT_ROOT_PTR swap
     push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
-    push.MAINNET_EXIT_ROOT_PTR
+    # => [smt_proof_ptr, leaf_index, mainnet_exit_root_ptr, LEAF_VALUE[8]]
 
-    # => [mainnet_exit_root_ptr, smt_proof_local_exit_root_ptr, leaf_index, LEAF_VALUE[8]]
-    movdn.10
-    # => [smt_proof_local_exit_root_ptr, leaf_index, LEAF_VALUE[8], mainnet_exit_root_ptr]
-    # delegate verification to crypto_utils::verify_merkle_proof (stubbed for now)
+    # prepare the stack for the crypto_utils::verify_merkle_proof procedure: move the pointers deep
+    # in the stack
+    movdn.10 movdn.10 movdn.10
+    # => [LEAF_VALUE[8], smt_proof_ptr, leaf_index, mainnet_exit_root_ptr]
+
+    # delegate verification to crypto_utils::verify_merkle_proof
     exec.crypto_utils::verify_merkle_proof
+    # => [verification_flag]
+
+    # verify_merkle_proof procedure returns `true` if the verification was successful and `false` 
+    # otherwise. Assert that `true` was returned.
+    assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+    # => []
 end
