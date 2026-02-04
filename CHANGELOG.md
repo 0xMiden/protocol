@@ -7,6 +7,7 @@
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
+- Added B2AGG and UPDATE_GER note attachment target checks ([#2334](https://github.com/0xMiden/miden-base/pull/2334)).
 - Added double-word array data structure abstraction over storage maps ([#2299](https://github.com/0xMiden/miden-base/pull/2299)).
 - Implemented verification of AggLayer deposits (claims) against GER ([#2295](https://github.com/0xMiden/miden-base/pull/2295), [#2288](https://github.com/0xMiden/miden-base/pull/2288)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
