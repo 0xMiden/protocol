@@ -83,6 +83,7 @@
 - [BREAKING] Refactored `AccountStorageDelta` to use a new `StorageSlotDelta` type ([#2182](https://github.com/0xMiden/miden-base/pull/2182)).
 - [BREAKING] Removed OLD_MAP_ROOT from being returned when calling [`native_account::set_map_item`](crates/miden-lib/asm/miden/native_account.masm) ([#2194](https://github.com/0xMiden/miden-base/pull/2194)).
 - [BREAKING] Refactored account component templates into `StorageSchema` ([#2193](https://github.com/0xMiden/miden-base/pull/2193)).
+- Added `StorageSchema::commitment()` ([#2244](https://github.com/0xMiden/miden-base/pull/2244)).
 - [BREAKING] Refactored account component templates into `AccountStorageSchema` ([#2193](https://github.com/0xMiden/miden-base/pull/2193)).
 - [BREAKING] Refactor note tags to be arbitrary `u32` values and drop previous validation ([#2219](https://github.com/0xMiden/miden-base/pull/2219)).
 - [BREAKING] Refactored `InitStorageData` to support native types ([#2230](https://github.com/0xMiden/miden-base/pull/2230)).

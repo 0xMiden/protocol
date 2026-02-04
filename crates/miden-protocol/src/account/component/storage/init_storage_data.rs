@@ -5,7 +5,9 @@ use alloc::vec::Vec;
 use thiserror::Error;
 
 use super::StorageValueName;
+use super::value_name::StorageValueNameError;
 use crate::account::StorageSlotName;
+use crate::errors::StorageSlotNameError;
 use crate::{Felt, FieldElement, Word};
 
 /// A word value provided via [`InitStorageData`].
@@ -22,6 +24,9 @@ pub enum WordValue {
     /// Represents a word through four string-encoded field elements.
     Elements([String; 4]),
 }
+
+// CONVERSIONS
+// ====================================================================================================
 
 impl From<Word> for WordValue {
     fn from(value: Word) -> Self {
@@ -41,9 +46,6 @@ impl From<&str> for WordValue {
     }
 }
 
-// CONVERSIONS
-// ====================================================================================================
-
 impl From<Felt> for WordValue {
     /// Converts a [`Felt`] to a [`WordValue`] as a Word in the form `[0, 0, 0, felt]`.
     fn from(value: Felt) -> Self {
@@ -54,6 +56,46 @@ impl From<Felt> for WordValue {
 impl From<[Felt; 4]> for WordValue {
     fn from(value: [Felt; 4]) -> Self {
         WordValue::FullyTyped(Word::from(value))
+    }
+}
+
+impl From<u8> for WordValue {
+    /// Converts a [`u8`] to a [`WordValue::Atomic`] string representation.
+    fn from(value: u8) -> Self {
+        WordValue::Atomic(value.to_string())
+    }
+}
+
+impl From<u16> for WordValue {
+    /// Converts a [`u16`] to a [`WordValue::Atomic`] string representation.
+    fn from(value: u16) -> Self {
+        WordValue::Atomic(value.to_string())
+    }
+}
+
+impl From<u32> for WordValue {
+    /// Converts a [`u32`] to a [`WordValue::Atomic`] string representation.
+    fn from(value: u32) -> Self {
+        WordValue::Atomic(value.to_string())
+    }
+}
+
+impl From<u64> for WordValue {
+    /// Converts a [`u64`] to a [`WordValue::Atomic`] string representation.
+    fn from(value: u64) -> Self {
+        WordValue::Atomic(value.to_string())
+    }
+}
+
+impl From<[u32; 4]> for WordValue {
+    /// Converts a `[u32; 4]` to a [`WordValue`] by converting each element to a [`Felt`].
+    fn from(value: [u32; 4]) -> Self {
+        WordValue::FullyTyped(Word::from([
+            Felt::from(value[0]),
+            Felt::from(value[1]),
+            Felt::from(value[2]),
+            Felt::from(value[3]),
+        ]))
     }
 }
 
@@ -154,18 +196,29 @@ impl InitStorageData {
 
     /// Inserts a value entry, returning an error on duplicate or conflicting keys.
     ///
+    /// The name can be any type that implements `TryInto<StorageValueName>`, e.g.:
+    ///
+    /// - `StorageValueName`: used directly
+    /// - `&str` or `String`: parsed into a `StorageValueName`
+    ///
     /// The value can be any type that implements `Into<WordValue>`, e.g.:
     ///
     /// - `Word`: a fully-typed word value
     /// - `[Felt; 4]`: converted to a Word
     /// - `Felt`: converted to `[0, 0, 0, felt]`
+    /// - `u32`, `u64`, `u8`, `u16`: converted to a Felt, then to `[0, 0, 0, felt]`
     /// - `String` or `&str`: a parseable string value
     /// - `WordValue`: a word value (fully typed, atomic, or elements)
-    pub fn insert_value(
+    pub fn insert_value<N, E>(
         &mut self,
-        name: StorageValueName,
+        name: N,
         value: impl Into<WordValue>,
-    ) -> Result<(), InitStorageDataError> {
+    ) -> Result<(), InitStorageDataError>
+    where
+        N: TryInto<StorageValueName, Error = E>,
+        InitStorageDataError: From<E>,
+    {
+        let name = name.try_into().map_err(InitStorageDataError::from)?;
         if self.value_entries.contains_key(&name) {
             return Err(InitStorageDataError::DuplicateKey(name.to_string()));
         }
@@ -179,11 +232,18 @@ impl InitStorageData {
     /// Sets a value entry, overriding any existing entry for the name.
     ///
     /// Returns an error if the [`StorageValueName`] has been used for a map slot.
-    pub fn set_value(
+    ///
+    /// See [`Self::insert_value`] for accepted types for `name` and `value`.
+    pub fn set_value<N, E>(
         &mut self,
-        name: StorageValueName,
+        name: N,
         value: impl Into<WordValue>,
-    ) -> Result<(), InitStorageDataError> {
+    ) -> Result<(), InitStorageDataError>
+    where
+        N: TryInto<StorageValueName, Error = E>,
+        InitStorageDataError: From<E>,
+    {
+        let name = name.try_into().map_err(InitStorageDataError::from)?;
         if self.map_entries.contains_key(name.slot_name()) {
             return Err(InitStorageDataError::ConflictingEntries(name.slot_name().as_str().into()));
         }
@@ -193,13 +253,23 @@ impl InitStorageData {
 
     /// Inserts a single map entry, returning an error on duplicate or conflicting keys.
     ///
+    /// The slot_name can be any type that implements `TryInto<StorageSlotName>`, e.g.:
+    ///
+    /// - `StorageSlotName`: used directly
+    /// - `&str` or `String`: parsed into a `StorageSlotName`
+    ///
     /// See [`Self::insert_value`] for examples of supported types for `key` and `value`.
-    pub fn insert_map_entry(
+    pub fn insert_map_entry<S, E>(
         &mut self,
-        slot_name: StorageSlotName,
+        slot_name: S,
         key: impl Into<WordValue>,
         value: impl Into<WordValue>,
-    ) -> Result<(), InitStorageDataError> {
+    ) -> Result<(), InitStorageDataError>
+    where
+        S: TryInto<StorageSlotName, Error = E>,
+        InitStorageDataError: From<E>,
+    {
+        let slot_name = slot_name.try_into().map_err(InitStorageDataError::from)?;
         if self.has_value_entries_for_slot(&slot_name) {
             return Err(InitStorageDataError::ConflictingEntries(slot_name.as_str().into()));
         }
@@ -221,11 +291,18 @@ impl InitStorageData {
     /// Sets map entries for the slot, replacing any existing entries.
     ///
     /// Returns an error if there are conflicting value entries.
-    pub fn set_map_values(
+    ///
+    /// See [`Self::insert_map_entry`] for accepted types for `slot_name`.
+    pub fn set_map_values<S, E>(
         &mut self,
-        slot_name: StorageSlotName,
+        slot_name: S,
         entries: Vec<(WordValue, WordValue)>,
-    ) -> Result<(), InitStorageDataError> {
+    ) -> Result<(), InitStorageDataError>
+    where
+        S: TryInto<StorageSlotName, Error = E>,
+        InitStorageDataError: From<E>,
+    {
+        let slot_name = slot_name.try_into().map_err(InitStorageDataError::from)?;
         if self.has_value_entries_for_slot(&slot_name) {
             return Err(InitStorageDataError::ConflictingEntries(slot_name.as_str().into()));
         }
@@ -253,10 +330,20 @@ impl InitStorageData {
 // ====================================================================================================
 
 /// Error returned when creating [`InitStorageData`] with invalid entries.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum InitStorageDataError {
     #[error("duplicate init key `{0}`")]
     DuplicateKey(String),
     #[error("conflicting init entries for `{0}`")]
     ConflictingEntries(String),
+    #[error("invalid storage value name")]
+    InvalidValueName(#[from] StorageValueNameError),
+    #[error("invalid storage slot name")]
+    InvalidSlotName(#[from] StorageSlotNameError),
+}
+
+impl From<core::convert::Infallible> for InitStorageDataError {
+    fn from(err: core::convert::Infallible) -> Self {
+        match err {}
+    }
 }
