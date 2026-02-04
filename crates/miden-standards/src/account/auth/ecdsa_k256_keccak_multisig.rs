@@ -125,6 +125,9 @@ pub struct AuthEcdsaK256KeccakMultisig {
 }
 
 impl AuthEcdsaK256KeccakMultisig {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::ecdsa_k256_keccak_multisig";
+
     /// Creates a new [`AuthEcdsaK256KeccakMultisig`] component from the provided configuration.
     pub fn new(config: AuthEcdsaK256KeccakMultisigConfig) -> Result<Self, AccountError> {
         Ok(Self { config })
@@ -197,7 +200,7 @@ impl From<AuthEcdsaK256KeccakMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        let metadata = AccountComponentMetadata::new("miden::auth::ecdsa_k256_keccak_multisig")
+        let metadata = AccountComponentMetadata::new(AuthEcdsaK256KeccakMultisig::NAME)
             .with_description(
                 "Multisig authentication component using ECDSA K256 Keccak signature scheme",
             )

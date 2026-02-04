@@ -125,6 +125,9 @@ pub struct AuthFalcon512RpoMultisig {
 }
 
 impl AuthFalcon512RpoMultisig {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::falcon512_rpo_multisig";
+
     /// Creates a new [`AuthFalcon512RpoMultisig`] component from the provided configuration.
     pub fn new(config: AuthFalcon512RpoMultisigConfig) -> Result<Self, AccountError> {
         Ok(Self { config })
@@ -197,7 +200,7 @@ impl From<AuthFalcon512RpoMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo_multisig")
+        let metadata = AccountComponentMetadata::new(AuthFalcon512RpoMultisig::NAME)
             .with_description("Multisig authentication component using Falcon512 signature scheme")
             .with_supports_all_types();
 

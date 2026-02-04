@@ -140,6 +140,9 @@ pub struct AuthFalcon512RpoAcl {
 }
 
 impl AuthFalcon512RpoAcl {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::falcon512_rpo_acl";
+
     /// Creates a new [`AuthFalcon512RpoAcl`] component with the given `public_key` and
     /// configuration.
     ///
@@ -213,7 +216,7 @@ impl From<AuthFalcon512RpoAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo_acl")
+        let metadata = AccountComponentMetadata::new(AuthFalcon512RpoAcl::NAME)
             .with_description("ACL authentication component using Falcon512 signature scheme")
             .with_supports_all_types();
 

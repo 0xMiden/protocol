@@ -30,6 +30,9 @@ pub struct AuthEcdsaK256Keccak {
 }
 
 impl AuthEcdsaK256Keccak {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::ecdsa_k256_keccak";
+
     /// Creates a new [`AuthEcdsaK256Keccak`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment) -> Self {
         Self { pub_key }
@@ -43,7 +46,7 @@ impl AuthEcdsaK256Keccak {
 
 impl From<AuthEcdsaK256Keccak> for AccountComponent {
     fn from(ecdsa: AuthEcdsaK256Keccak) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::auth::ecdsa_k256_keccak")
+        let metadata = AccountComponentMetadata::new(AuthEcdsaK256Keccak::NAME)
             .with_description("Authentication component using ECDSA K256 Keccak signature scheme")
             .with_supports_all_types();
 

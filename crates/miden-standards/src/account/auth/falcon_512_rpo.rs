@@ -34,6 +34,9 @@ pub struct AuthFalcon512Rpo {
 }
 
 impl AuthFalcon512Rpo {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::falcon512_rpo";
+
     /// Creates a new [`AuthFalcon512Rpo`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment) -> Self {
         Self { pub_key }
@@ -47,7 +50,7 @@ impl AuthFalcon512Rpo {
 
 impl From<AuthFalcon512Rpo> for AccountComponent {
     fn from(falcon: AuthFalcon512Rpo) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::auth::falcon512_rpo")
+        let metadata = AccountComponentMetadata::new(AuthFalcon512Rpo::NAME)
             .with_description("Authentication component using Falcon512 signature scheme")
             .with_supports_all_types();
 

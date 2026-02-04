@@ -77,6 +77,9 @@ impl BasicFungibleFaucet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::basic_fungible_faucet";
+
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = 12;
 
@@ -267,7 +270,7 @@ impl From<BasicFungibleFaucet> for AccountComponent {
         let storage_slot =
             StorageSlot::with_value(BasicFungibleFaucet::metadata_slot().clone(), metadata_word);
 
-        let metadata = AccountComponentMetadata::new("miden::basic_fungible_faucet")
+        let metadata = AccountComponentMetadata::new(BasicFungibleFaucet::NAME)
             .with_description("Basic fungible faucet component for minting and burning tokens")
             .with_supported_type(AccountType::FungibleFaucet);
 

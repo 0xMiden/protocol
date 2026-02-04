@@ -70,6 +70,9 @@ impl NetworkFungibleFaucet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::network_fungible_faucet";
+
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = 12;
 
@@ -239,7 +242,7 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             owner_account_id_word,
         );
 
-        let metadata = AccountComponentMetadata::new("miden::network_fungible_faucet")
+        let metadata = AccountComponentMetadata::new(NetworkFungibleFaucet::NAME)
             .with_description("Network fungible faucet component for minting and burning tokens")
             .with_supported_type(AccountType::FungibleFaucet);
 

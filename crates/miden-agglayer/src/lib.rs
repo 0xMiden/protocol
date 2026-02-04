@@ -169,7 +169,7 @@ pub fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComp
     let library = agglayer_faucet_library();
     let metadata = AccountComponentMetadata::new("agglayer::faucet")
         .with_description("AggLayer faucet component with bridge validation")
-        .with_supports_all_types();
+        .with_supported_type(AccountType::FungibleFaucet);
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",

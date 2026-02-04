@@ -104,7 +104,7 @@ impl AccountComponentMetadata {
     ///
     /// Other fields are initialized to sensible defaults:
     /// - `description`: empty string
-    /// - `version`: 0.1.0
+    /// - `version`: 1.0.0
     /// - `supported_types`: empty set
     /// - `storage_schema`: default (empty)
     ///
@@ -113,7 +113,7 @@ impl AccountComponentMetadata {
         Self {
             name: name.into(),
             description: String::new(),
-            version: Version::new(0, 1, 0),
+            version: Version::new(1, 0, 0),
             supported_types: BTreeSet::new(),
             storage_schema: StorageSchema::default(),
         }

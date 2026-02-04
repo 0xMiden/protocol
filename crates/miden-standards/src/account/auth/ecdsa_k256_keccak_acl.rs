@@ -139,6 +139,9 @@ pub struct AuthEcdsaK256KeccakAcl {
 }
 
 impl AuthEcdsaK256KeccakAcl {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::ecdsa_k256_keccak_acl";
+
     /// Creates a new [`AuthEcdsaK256KeccakAcl`] component with the given `public_key` and
     /// configuration.
     ///
@@ -212,7 +215,7 @@ impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        let metadata = AccountComponentMetadata::new("miden::auth::ecdsa_k256_keccak_acl")
+        let metadata = AccountComponentMetadata::new(AuthEcdsaK256KeccakAcl::NAME)
             .with_description(
                 "ACL authentication component using ECDSA K256 Keccak signature scheme",
             )
