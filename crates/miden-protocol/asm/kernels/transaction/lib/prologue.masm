@@ -41,14 +41,6 @@ const ERR_PROLOGUE_VERIFICATION_BASE_FEE_MUST_BE_U32="verification base fee must
 
 const ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY="new account must have an empty vault"
 
-const ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_EMPTY="reserved slot for new fungible faucet is not empty"
-
-const ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE="reserved slot for new fungible faucet has an invalid type"
-
-const ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_VALID_EMPTY_SMT="reserved slot for non-fungible faucet is not a valid empty SMT"
-
-const ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE="reserved slot for new non-fungible faucet has an invalid type"
-
 const ERR_PROLOGUE_PROVIDED_ACCOUNT_DATA_DOES_NOT_MATCH_ON_CHAIN_COMMITMENT="account data provided does not match the commitment recorded on-chain"
 
 const ERR_PROLOGUE_EXISTING_ACCOUNT_MUST_HAVE_NON_ZERO_NONCE="existing accounts must have a non-zero nonce"
@@ -318,50 +310,6 @@ proc validate_new_account
 
     assert_eqw.err=ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY
     # => []
-
-    # Assert faucet reserved slot is correctly initialized
-    # ---------------------------------------------------------------------------------------------
-    # check if the account is a faucet
-    exec.account::get_id swap drop dup exec.account_id::is_faucet
-    # => [is_faucet, acct_id_prefix]
-
-    # process conditional logic depending on whether the account is a faucet
-    if.true
-        # get the faucet reserved slot
-        exec.account::get_faucet_sysdata_slot_id exec.account::get_typed_item
-        # => [FAUCET_RESERVED_SLOT, slot_type, acct_id_prefix]
-
-        # check if the account is a fungible faucet
-        movup.5 exec.account_id::is_fungible_faucet
-        # => [is_fungible_faucet, FAUCET_RESERVED_SLOT, slot_type]
-
-        if.true
-            # assert the fungible faucet reserved slot is initialized correctly (EMPTY_WORD)
-            exec.word::eqz not
-            assertz.err=ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_EMPTY
-            # => [slot_type]
-
-            # assert the fungible faucet reserved slot type == value
-            push.STORAGE_SLOT_TYPE_VALUE eq
-            assert.err=ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE
-            # => []
-        else
-            # assert the non-fungible faucet reserved slot is initialized correctly (root of
-            # empty SMT)
-            push.EMPTY_SMT_ROOT
-            assert_eqw.err=ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_VALID_EMPTY_SMT
-            # => [slot_type]
-
-            # assert the non-fungible faucet reserved slot type == map
-            push.STORAGE_SLOT_TYPE_MAP eq
-            assert.err=ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE
-            # => []
-        end
-    else
-        # drop the hi part of the ID
-        drop
-        # => []
-    end
 
     # Assert the provided account seed satisfies the seed requirements
     # ---------------------------------------------------------------------------------------------

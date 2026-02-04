@@ -132,8 +132,8 @@ impl TransactionContextBuilder {
     }
 
     /// Initializes a [TransactionContextBuilder] with a mocked fungible faucet.
-    pub fn with_fungible_faucet(acct_id: u128, initial_balance: Felt) -> Self {
-        let account = Account::mock_fungible_faucet(acct_id, initial_balance);
+    pub fn with_fungible_faucet(acct_id: u128) -> Self {
+        let account = Account::mock_fungible_faucet(acct_id);
         Self::new(account)
     }
 

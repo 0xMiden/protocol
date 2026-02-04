@@ -4,6 +4,7 @@ use $kernel::asset_vault
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::link_map
 use $kernel::memory
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::core::crypto::hashes::rpo256
 use miden::core::word
 
@@ -784,9 +785,9 @@ end
 #
 # Don't we have to check for overflows? No, because we're building on top of the guarantees of the
 # asset vault. It guarantees that the max value that can be added to the vault within a transaction
-# is asset::get_fungible_asset_max_amount and that the max value that can be removed is also that.
+# is asset::FUNGIBLE_ASSET_MAX_AMOUNT and that the max value that can be removed is also that.
 # Since the delta amount range can represent positive and negative
-# asset::get_fungible_asset_max_amount, this works out.
+# asset::FUNGIBLE_ASSET_MAX_AMOUNT, this works out.
 #
 # With these ranges every positive value has a negative counterpart and vice versa. This is
 # **unlike** two's complements because the goldilocks modulus is odd while the "modulus" in
@@ -835,6 +836,6 @@ end
 #! - is_delta_amount_negative indicates whether the delta amount represents a negative value.
 proc is_delta_amount_negative
     # delta_amount represents a negative number if it is greater than the max amount
-    exec.asset::get_fungible_asset_max_amount gt
+    gt.FUNGIBLE_ASSET_MAX_AMOUNT
     # => [is_delta_amount_negative]
 end

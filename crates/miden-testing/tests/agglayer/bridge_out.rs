@@ -23,7 +23,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::FungibleFaucetExt;
+use miden_standards::account::faucets::NetworkFungibleFaucet;
 use miden_standards::note::StandardNote;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
@@ -90,7 +90,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let inputs = NoteStorage::new(input_felts.clone())?;
 
     // Create the B2AGG note with assets from the faucet
-    let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type, tag);
+    let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
     let serial_num = Word::from([1, 2, 3, 4u32]);
     let b2agg_note_script = NoteScript::new(b2agg_script);
@@ -163,8 +163,8 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // CONSUME THE BURN NOTE WITH THE NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
     // Check the initial token issuance before burning
-    let initial_issuance = faucet.get_token_issuance().unwrap();
-    assert_eq!(initial_issuance, Felt::new(100), "Initial issuance should be 100");
+    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    assert_eq!(initial_token_supply, Felt::new(100), "Initial issuance should be 100");
 
     // Execute the BURN note against the network faucet
     let burn_tx_context =
@@ -181,10 +181,11 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Apply the delta to the faucet account and verify the token issuance decreased
     let mut faucet = faucet;
     faucet.apply_delta(burn_executed_transaction.account_delta())?;
-    let final_issuance = faucet.get_token_issuance().unwrap();
+
+    let final_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
     assert_eq!(
-        final_issuance,
-        Felt::new(initial_issuance.as_int() - amount.as_int()),
+        final_token_supply,
+        Felt::new(initial_token_supply.as_int() - amount.as_int()),
         "Token issuance should decrease by the burned amount"
     );
 
@@ -247,7 +248,7 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Create the B2AGG note with the USER ACCOUNT as the sender
     // This is the key difference - the note sender will be the same as the consuming account
-    let b2agg_note_metadata = NoteMetadata::new(user_account.id(), note_type, tag);
+    let b2agg_note_metadata = NoteMetadata::new(user_account.id(), note_type).with_tag(tag);
     let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
     let serial_num = Word::from([1, 2, 3, 4u32]);
     let b2agg_note_script = NoteScript::new(b2agg_script);

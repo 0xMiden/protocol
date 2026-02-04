@@ -25,7 +25,6 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
-    NoteExecutionHint,
     NoteMetadata,
     NoteRecipient,
     NoteScript,
@@ -35,7 +34,7 @@ use miden_protocol::note::{
 };
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
 pub mod errors;
@@ -625,7 +624,8 @@ pub fn create_claim_note<R: FeltRng>(params: ClaimNoteParams<'_, R>) -> Result<N
             .map_err(|e| NoteError::other(e.to_string()))?
             .into();
     // Use a default sender since we don't have sender anymore - create from destination address
-    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type, tag)
+    let metadata = NoteMetadata::new(params.claim_note_creator_account_id, note_type)
+        .with_tag(tag)
         .with_attachment(attachment);
     let assets = NoteAssets::new(vec![])?;
     let recipient = NoteRecipient::new(serial_num, claim_script, inputs);
