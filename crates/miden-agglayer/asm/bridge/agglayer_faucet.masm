@@ -33,14 +33,20 @@ const CLAIM_NOTE_DATA_MEM_ADDR = 712
 const OUTPUT_NOTE_INPUTS_MEM_ADDR = 0
 const OUTPUT_NOTE_TAG_MEM_ADDR = 574
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 552
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 556
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = 552
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
 
-const DESTINATION_ADDRESS_0 = 547
-const DESTINATION_ADDRESS_1 = 548
-const DESTINATION_ADDRESS_2 = 549
-const DESTINATION_ADDRESS_3 = 550
-const DESTINATION_ADDRESS_4 = 551
+const DESTINATION_ADDRESS_0 = 544
+const DESTINATION_ADDRESS_1 = 545
+const DESTINATION_ADDRESS_2 = 546
+const DESTINATION_ADDRESS_3 = 547
+const DESTINATION_ADDRESS_4 = 548
 
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
@@ -86,8 +92,14 @@ end
 # Inputs: []
 # Outputs: [U256[0], U256[1]]
 proc get_raw_claim_amount
-    padw mem_loadw_be.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-    padw mem_loadw_be.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
 end
 
 # Inputs: [U256[0], U256[1]]
@@ -220,6 +232,7 @@ end
 #!     rollupExitRoot[8],               // Rollup exit root hash (8 felts, bytes32 as 8 u32 felts)
 #!   ],
 #!   LEAF_DATA_KEY => [
+#!     leafType[1],                     // Leaf type (1 felt, uint8)
 #!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!     originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
 #!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)

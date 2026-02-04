@@ -81,7 +81,7 @@ end
 #!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!       EMPTY_WORD                       // padding
+#!       padding[3],                      // padding (3 felts) - not used in the hash
 #!     ],
 #!   }
 #!
