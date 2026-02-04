@@ -20,11 +20,13 @@ const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to re
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-existent non-fungible asset from the vault"
 
-# CONSTANTS
+# RE-EXPORTS
 # =================================================================================================
 
-# The bitmask that when applied will set the fungible bit to zero.
-const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
+# Re-export the shared utility procedures
+pub use $kernel::util::asset::build_non_fungible_asset_vault_key
+pub use $kernel::util::asset::build_fungible_asset_vault_key
+pub use $kernel::util::asset::build_asset_vault_key
 
 # ACCESSORS
 # =================================================================================================
@@ -429,77 +431,5 @@ pub proc remove_asset
     else
         exec.remove_non_fungible_asset
         # => [ASSET_VALUE]
-    end
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Builds the vault key of a non fungible asset. The asset is NOT validated and therefore must
-#! be a valid non-fungible asset.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY]
-#!
-#! Where:
-#! - ASSET_VALUE is the non-fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the non-fungible asset.
-pub proc build_non_fungible_asset_vault_key
-    # create the asset key from the non-fungible asset by swapping hash0 with the faucet id
-    # => [faucet_id_prefix, hash2, hash1, hash0]
-    swap.3
-    # => [hash0, hash2, hash1, faucet_id_prefix]
-
-    # disassemble hash0 into u32 limbs
-    u32split swap
-    # => [hash0_lo, hash0_hi, hash2, hash1, faucet_id_prefix]
-
-    # set the fungible bit to 0
-    u32and.INVERSE_FUNGIBLE_BITMASK_U32
-    # => [hash0_lo', hash0_hi, hash2, hash1, faucet_id_prefix]
-
-    # reassemble hash0 felt by multiplying the high part with 2^32 and adding the lo part
-    swap mul.0x0100000000 add
-    # => [ASSET_KEY]
-end
-
-#! TODO: Add Rust <-> MASM test.
-#!
-#! Builds the vault key of a fungible asset. The asset is NOT validated and therefore must
-#! be a valid fungible asset.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_VALUE is the fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the fungible asset.
-pub proc build_fungible_asset_vault_key
-  # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-  push.0.0
-  # => [0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-  dup.3 dup.3
-  # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-end
-
-#! TODO(expand_assets): Temporary procedure for building an asset vault key.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
-pub proc build_asset_vault_key
-    # check the first element, it will be:
-    # - zero for a fungible asset
-    # - non zero for a non-fungible asset
-    dup.2 eq.0
-    # => [is_fungible_asset, ASSET_VALUE]
-
-    if.true
-        exec.build_fungible_asset_vault_key
-        # => [ASSET_KEY, ASSET_VALUE]
-    else
-        dupw exec.build_non_fungible_asset_vault_key
-        # => [ASSET_KEY, ASSET_VALUE]
     end
 end
