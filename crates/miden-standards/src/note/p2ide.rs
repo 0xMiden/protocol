@@ -212,20 +212,14 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use miden_protocol::account::{
-        AccountId,
-        AccountIdVersion,
-        AccountType,
-        AccountStorageMode,
-    };
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
     use miden_protocol::{Felt, FieldElement};
-    use miden_protocol::block::BlockNumber;
+
+    use super::*;
 
     fn dummy_account() -> AccountId {
         AccountId::dummy(
@@ -259,12 +253,7 @@ mod tests {
     fn try_from_zero_heights_map_to_none() {
         let target = dummy_account();
 
-        let storage = vec![
-            target.suffix(),
-            target.prefix().as_felt(),
-            Felt::ZERO,
-            Felt::ZERO,
-        ];
+        let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, Felt::ZERO];
 
         let decoded = P2ideNoteStorage::try_from(storage.as_slice()).unwrap();
 
@@ -276,8 +265,8 @@ mod tests {
     fn try_from_invalid_length_fails() {
         let storage = vec![Felt::ZERO; 3];
 
-        let err = P2ideNoteStorage::try_from(storage.as_slice())
-            .expect_err("wrong length must fail");
+        let err =
+            P2ideNoteStorage::try_from(storage.as_slice()).expect_err("wrong length must fail");
 
         assert!(matches!(
             err,
@@ -290,12 +279,7 @@ mod tests {
 
     #[test]
     fn try_from_invalid_account_id_fails() {
-        let storage = vec![
-            Felt::new(999u64),
-            Felt::new(888u64),
-            Felt::ZERO,
-            Felt::ZERO,
-        ];
+        let storage = vec![Felt::new(999u64), Felt::new(888u64), Felt::ZERO, Felt::ZERO];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("invalid account id encoding must fail");
@@ -310,12 +294,7 @@ mod tests {
         // > u32::MAX
         let overflow = Felt::new(u64::from(u32::MAX) + 1);
 
-        let storage = vec![
-            target.suffix(),
-            target.prefix().as_felt(),
-            overflow,
-            Felt::ZERO,
-        ];
+        let storage = vec![target.suffix(), target.prefix().as_felt(), overflow, Felt::ZERO];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow reclaim height must fail");
@@ -329,12 +308,7 @@ mod tests {
 
         let overflow = Felt::new(u64::from(u32::MAX) + 10);
 
-        let storage = vec![
-            target.suffix(),
-            target.prefix().as_felt(),
-            Felt::ZERO,
-            overflow,
-        ];
+        let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, overflow];
 
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow timelock height must fail");

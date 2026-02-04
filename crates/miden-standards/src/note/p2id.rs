@@ -167,20 +167,13 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use miden_protocol::account::{
-        AccountId,
-        AccountIdVersion,
-        AccountType,
-        AccountStorageMode,
-    };
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::errors::NoteError;
-    use miden_protocol::Felt;
-    use miden_protocol::FieldElement; 
+    use miden_protocol::{Felt, FieldElement};
+
+    use super::*;
 
     #[test]
     fn try_from_valid_storage_succeeds() {
@@ -191,13 +184,10 @@ mod tests {
             AccountStorageMode::Private,
         );
 
-        let storage = vec![
-            target.suffix(),
-            target.prefix().as_felt(),
-        ];
+        let storage = vec![target.suffix(), target.prefix().as_felt()];
 
-        let parsed = P2idNoteStorage::try_from(storage.as_slice())
-            .expect("storage should be valid");
+        let parsed =
+            P2idNoteStorage::try_from(storage.as_slice()).expect("storage should be valid");
 
         assert_eq!(parsed.target(), target);
     }
