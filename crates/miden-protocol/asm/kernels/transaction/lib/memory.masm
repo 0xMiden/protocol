@@ -1148,12 +1148,12 @@ end
 #! Where:
 #! - account_initial_vault_root_ptr is the memory pointer to the initial vault root.
 pub proc get_account_initial_vault_root_ptr
-    # For foreign account, use the regular vault root pointer since foreign accounts are read-only
+    # for foreign account, use the regular vault root pointer since foreign accounts are read-only
     # and initial == current
     exec.get_account_vault_root_ptr
     # => [account_vault_root_ptr]
 
-    # For native account, use the initial vault root pointer
+    # for native account, use the initial vault root pointer
     exec.get_init_native_account_vault_root_ptr
     # => [native_account_initial_vault_root_ptr, account_vault_root_ptr]
 
@@ -1408,12 +1408,12 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_account_initial_storage_slots_ptr
-    # For foreign account, use the regular storage slots pointer since foreign accounts are
+    # for foreign account, use the regular storage slots pointer since foreign accounts are
     # read-only and initial == current
     exec.get_account_active_storage_slots_section_ptr
     # => [account_storage_slots_ptr]
 
-    # For native account, use the initial storage slots pointer
+    # for native account, use the initial storage slots pointer
     exec.get_native_account_initial_storage_slots_ptr
     # => [native_account_initial_storage_slots_ptr, account_storage_slots_ptr]
 
@@ -2123,9 +2123,9 @@ pub proc link_map_malloc
     add.LINK_MAP_REGION_START_PTR
     # => [entry_ptr]
 
-    # If entry_ptr is the end_ptr the entry would be allocated in the next memory region so
+    # if entry_ptr is the end_ptr the entry would be allocated in the next memory region so
     # we must abort.
-    # We can use neq because of how the end ptr is chosen. See its docs for details.
+    # we can use neq because of how the end ptr is chosen. See its docs for details.
     dup neq.LINK_MAP_REGION_END_PTR assert.err=ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED
     # => [entry_ptr]
 end

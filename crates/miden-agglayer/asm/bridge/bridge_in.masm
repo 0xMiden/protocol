@@ -3,7 +3,7 @@ use miden::agglayer::crypto_utils
 # Inputs: []
 # Output: [GER_ROOT[8]]
 pub proc get_rollup_exit_root
-    # Push dummy GER (8 elements)
+    # push dummy GER (8 elements)
     push.0.0.0.0.0.0.0.0  # dummy GER
 end
 
@@ -35,7 +35,7 @@ pub proc check_claim_proof
     exec.get_rollup_exit_root
     # => [GER_ROOT[8], CLAIM_NOTE_RPO_COMMITMENT]
 
-    # Check CLAIM note proof data against current GER 
+    # check CLAIM note proof data against current GER
     exec.crypto_utils::verify_claim_proof
     # => [is_valid_claim_proof]
 
