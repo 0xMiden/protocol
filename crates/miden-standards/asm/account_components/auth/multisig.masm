@@ -1,6 +1,6 @@
-# The MASM code of the Multi-Signature ECDSA K256 Keccak Authentication Component.
+# The MASM code of the Multi-Signature Authentication Component.
 #
-# See the `AuthEcdsaK256KeccakMultisig` Rust type's documentation for more details.
+# See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::native_account

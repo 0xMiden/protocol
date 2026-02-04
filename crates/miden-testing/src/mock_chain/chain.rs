@@ -76,8 +76,9 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// let mut builder = MockChain::builder();
 ///
-/// // Add a recipient wallet.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth)?;
+/// // Add a recipient wallet with basic authentication.
+/// // User either Falcon512Rpo (scheme_id: 0) or ECDSA K256 Keccak (scheme_id: 1) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {scheme_id: 0})?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -134,11 +135,11 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// # async fn main() -> Result<()> {
 /// let mut builder = MockChain::builder();
 ///
-/// let faucet = builder.create_new_faucet(Auth::BasicAuth, "USDT", 100_000)?;
+/// let faucet = builder.create_new_faucet(Auth::BasicAuth{scheme_id: 0}, "USDT", 100_000)?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth)?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth)?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///

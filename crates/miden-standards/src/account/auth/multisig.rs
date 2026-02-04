@@ -37,7 +37,7 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 // MULTISIG AUTHENTICATION COMPONENT
 // ================================================================================================
 
-/// Configuration for [`AuthEcdsaK256KeccakMultisig`] component.
+/// Configuration for [`AuthMultisig`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigConfig {
     approvers: Vec<PublicKeyCommitment>,

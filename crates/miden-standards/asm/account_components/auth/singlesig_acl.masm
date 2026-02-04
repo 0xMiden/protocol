@@ -1,6 +1,6 @@
 # The MASM code of the ECDSA K256 Keccak authentication Account Component with ACL.
 #
-# See the `AuthEcdsaK256KeccakAcl` Rust type's documentation for more details.
+# See the `AuthSingleSigAcl` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::native_account
