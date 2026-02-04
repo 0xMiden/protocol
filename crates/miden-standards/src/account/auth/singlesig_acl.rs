@@ -271,7 +271,7 @@ mod tests {
     /// Parametrized test helper for ACL component testing
     fn test_acl_component(config: AclTestConfig) {
         let public_key = PublicKeyCommitment::from(Word::empty());
-        let scheme_id = 0u8;
+        let scheme_id = 2u8;
 
         // Build the configuration
         let mut acl_config = AuthSingleSigAclConfig::new()

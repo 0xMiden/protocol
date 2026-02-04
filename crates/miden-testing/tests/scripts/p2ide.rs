@@ -371,9 +371,9 @@ fn setup_p2ide_test(
     let mut builder = MockChain::builder();
 
     // Create sender and target accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     let p2ide_note = builder.add_p2ide_note(
         sender_account.id(),

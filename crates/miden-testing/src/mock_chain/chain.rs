@@ -77,8 +77,8 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // User either Falcon512Rpo (scheme_id: 0) or ECDSA K256 Keccak (scheme_id: 1) auth scheme.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {scheme_id: 0})?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Rpo (scheme_id: 2) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {scheme_id: 2})?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -135,11 +135,11 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// # async fn main() -> Result<()> {
 /// let mut builder = MockChain::builder();
 ///
-/// let faucet = builder.create_new_faucet(Auth::BasicAuth{scheme_id: 0}, "USDT", 100_000)?;
+/// let faucet = builder.create_new_faucet(Auth::BasicAuth {scheme_id: 2}, "USDT", 100_000)?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth{scheme_id: 0})?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth {scheme_id: 2})?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth {scheme_id: 2})?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -1185,7 +1185,7 @@ mod tests {
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
-        let scheme_id = 0u8;
+        let scheme_id = 2u8;
         let account = builder.add_account_from_builder(
             Auth::BasicAuth { scheme_id },
             account_builder,
@@ -1231,7 +1231,7 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth { scheme_id: 0 },
+                    Auth::BasicAuth { scheme_id: 2 },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

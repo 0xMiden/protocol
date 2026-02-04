@@ -87,25 +87,25 @@ end
 # Inputs:  [SCHEME_ID, PUB_KEY, MSG]
 # Outputs: []
 proc verify_signature_by_scheme
-    dup eq.0
+    dup eq.1
     # => [IS_ZERO, PUB_KEY, MESSAGE]
 
     if.true
         drop
         # OS => [PUB_KEY, MESSAGE]
 
-        exec.falcon512rpo::verify
+        exec.ecdsa_k256_keccak::verify
         # OS => []
         # AS => []
     else
-        dup eq.1
+        dup eq.2
         # => [IS_ONE, PUB_KEY, MESSAGE]
 
         if.true
             drop
             # OS => [PUB_KEY, MESSAGE]
 
-            exec.ecdsa_k256_keccak::verify
+            exec.falcon512rpo::verify
             # OS => []
             # AS => []
         else

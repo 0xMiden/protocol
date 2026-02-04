@@ -862,6 +862,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
+    let scheme_id = 1u64;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -876,6 +877,13 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     for public_key in new_public_keys.iter().rev() {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(scheme_id),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
     }
 
     // Hash the vector to create config hash

@@ -706,7 +706,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { scheme_id: 0 },
+        Auth::BasicAuth { scheme_id: 2 },
         [fungible_asset_0, fungible_asset_1],
     )?;
 
@@ -830,7 +830,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { scheme_id: 0 },
+        Auth::BasicAuth { scheme_id: 2 },
         [FungibleAsset::mock(2000)],
     )?;
 

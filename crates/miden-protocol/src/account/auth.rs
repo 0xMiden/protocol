@@ -17,7 +17,7 @@ use crate::{Felt, Hasher, Word};
 // ================================================================================================
 
 /// Identifier of signature schemes use for transaction authentication
-const FALCON_512_RPO: u8 = 0;
+const FALCON_512_RPO: u8 = 2;
 const ECDSA_K256_KECCAK: u8 = 1;
 
 /// Defines standard authentication schemes (i.e., signature schemes) available in the Miden

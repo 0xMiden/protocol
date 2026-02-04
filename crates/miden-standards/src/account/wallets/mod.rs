@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn test_create_basic_wallet() {
         let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let scheme_id = 0u8;
+        let scheme_id = 2u8;
         let wallet = create_basic_wallet(
             [1; 32],
             AuthScheme::SingleSig { pub_key, scheme_id },

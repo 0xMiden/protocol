@@ -17,7 +17,7 @@ fn wallet_creation() {
     let mut rng = ChaCha20Rng::from_seed(seed);
 
     let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
-    let scheme_id = 0u8;
+    let scheme_id = 2u8;
     let pub_key = sec_key.public_key().to_commitment();
     let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id };
 

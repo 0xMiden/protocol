@@ -220,7 +220,7 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a user account that will create and consume the B2AGG note
-    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
+    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------

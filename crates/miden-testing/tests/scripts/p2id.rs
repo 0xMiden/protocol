@@ -30,9 +30,9 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth { scheme_id: 0 })?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
+    let sender_account = builder.create_new_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -92,8 +92,8 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
-    let target_account = builder.create_new_wallet(Auth::BasicAuth { scheme_id: 0 })?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -140,7 +140,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
     let mut builder = MockChain::builder();
-    let mut account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 0 })?;
+    let mut account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
     let note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),
@@ -179,7 +179,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let mut account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { scheme_id: 0 },
+        Auth::BasicAuth { scheme_id: 2 },
         [FungibleAsset::mock(20)],
     )?;
 

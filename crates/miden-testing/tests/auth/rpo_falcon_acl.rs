@@ -51,7 +51,7 @@ fn setup_rpo_falcon_acl_test(
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let scheme_id = 0u8;
+    let scheme_id = 2u8;
 
     let (auth_component, _authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
@@ -95,7 +95,7 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let scheme_id = 0u8;
+    let scheme_id = 2u8;
 
     let (_, authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
