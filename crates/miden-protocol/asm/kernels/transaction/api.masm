@@ -597,63 +597,39 @@ pub proc account_remove_asset
     # => [ASSET, pad(12)]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active
-#! account's vault.
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
-#! Outputs: [balance, pad(15)]
+#! Inputs:  [ASSET_KEY, pad(12)]
+#! Outputs: [ASSET, pad(12)]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
-pub proc account_get_balance
-    exec.account::get_balance
-    # => [balance, pad(15)]
+pub proc account_get_asset
+    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+
+    exec.account::get_asset
+    # => [ASSET, pad(12)]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active 
-#! account's vault at the beginning of the transaction.
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
-#! Outputs: [init_balance, pad(15)]
+#! Inputs:  [ASSET_KEY, pad(12)]
+#! Outputs: [ASSET, pad(12)]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_balance
-    exec.account::get_initial_balance
-    # => [init_balance, pad(15)]
-end
+pub proc account_get_initial_asset
+    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
 
-#! Returns a boolean indicating whether the non-fungible asset is present in the active account's
-#! vault.
-#!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [has_asset, pad(15)]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset of interest.
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-#!
-#! Invocation: dynexec
-pub proc account_has_non_fungible_asset
-    exec.account::has_non_fungible_asset
-    # => [has_asset, pad(15)]
+    exec.account::get_initial_asset
+    # => [ASSET, pad(12)]
 end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.

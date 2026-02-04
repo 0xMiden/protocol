@@ -34,14 +34,7 @@ use crate::address::AddressType;
 use crate::asset::AssetVaultKey;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
-use crate::note::{
-    NoteAssets,
-    NoteAttachmentArray,
-    NoteExecutionHint,
-    NoteTag,
-    NoteType,
-    Nullifier,
-};
+use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
 use crate::transaction::{TransactionEventId, TransactionId};
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
@@ -555,12 +548,6 @@ pub enum NoteError {
     AddFungibleAssetBalanceError(#[source] AssetError),
     #[error("note sender is not a valid account ID")]
     NoteSenderInvalidAccountId(#[source] AccountIdError),
-    #[error(
-        "note execution hint tag {0} must be in range {from}..={to}",
-        from = NoteExecutionHint::NONE_TAG,
-        to = NoteExecutionHint::ON_BLOCK_SLOT_TAG,
-    )]
-    NoteExecutionHintTagOutOfRange(u8),
     #[error("note execution hint after block variant cannot contain u32::MAX")]
     NoteExecutionHintAfterBlockCannotBeU32Max,
     #[error("invalid note execution hint payload {1} for tag {0}")]
