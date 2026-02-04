@@ -25,16 +25,16 @@ const ERR_NOT_NETWORK_ACCOUNT_TARGET = "attachment is not a valid network accoun
 #! Returns a boolean indicating whether the attachment scheme and kind match the expected
 #! values for a NetworkAccountTarget attachment.
 #!
-#! Inputs:  [attachment_kind, attachment_scheme]
+#! Inputs:  [attachment_scheme, attachment_kind]
 #! Outputs: [is_network_account_target]
 #!
 #! Invocation: exec
 pub proc is_network_account_target
-    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
-    # => [is_kind_valid, attachment_scheme]
+    eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [is_scheme_valid, attachment_kind]
 
-    swap eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
-    # => [is_scheme_valid, is_kind_valid]
+    swap eq.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
+    # => [is_kind_valid, is_scheme_valid]
 
     and
     # => [is_network_account_target]
@@ -69,7 +69,7 @@ end
 #! [0, exec_hint_tag, account_id_prefix, account_id_suffix]
 #!
 #! Inputs:  [account_id_prefix, account_id_suffix, exec_hint]
-#! Outputs: [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
+#! Outputs: [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
@@ -81,9 +81,9 @@ end
 pub proc new
     movup.2
     push.0
-    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
     push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_KIND
-    # => [attachment_kind, attachment_scheme, ATTACHMENT]
+    push.NETWORK_ACCOUNT_TARGET_ATTACHMENT_SCHEME
+    # => [attachment_scheme, attachment_kind, ATTACHMENT]
 end
 
 #! Returns a boolean indicating whether the active account matches the target account
@@ -109,6 +109,9 @@ pub proc active_account_matches_target_account
 
     exec.note::extract_attachment_info_from_metadata
     # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
+
+    swap
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
 
     # ensure the attachment is a network account target
     exec.is_network_account_target assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET

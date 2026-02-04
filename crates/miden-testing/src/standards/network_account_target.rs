@@ -33,6 +33,8 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
             push.{metadata_header}
             exec.note::extract_attachment_info_from_metadata
             # => [attachment_kind, attachment_scheme, NOTE_ATTACHMENT]
+            swap
+            # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
             exec.network_account_target::is_network_account_target
             # => [is_valid, NOTE_ATTACHMENT]
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
@@ -76,7 +78,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
             push.{target_id_prefix}
             # => [target_id_prefix, target_id_suffix, exec_hint]
             exec.network_account_target::new
-            # => [attachment_kind, attachment_scheme, ATTACHMENT, pad(16)]
+            # => [attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
 
             # cleanup stack
             swapdw dropw dropw
