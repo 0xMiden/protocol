@@ -12,6 +12,8 @@ use miden_protocol::errors::MasmError;
 /// Error Message: "most-significant 4 bytes (addr4) must be zero"
 pub const ERR_ADDR4_NONZERO: MasmError = MasmError::from_static_str("most-significant 4 bytes (addr4) must be zero");
 
+/// Error Message: "B2AGG note attachment target account does not match consuming account"
+pub const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("B2AGG note attachment target account does not match consuming account");
 /// Error Message: "B2AGG script expects exactly 6 note storage items"
 pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("B2AGG script expects exactly 6 note storage items");
 /// Error Message: "B2AGG script requires exactly 1 note asset"
@@ -44,5 +46,10 @@ pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rol
 /// Error Message: "maximum scaling factor is 18"
 pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("maximum scaling factor is 18");
 
+/// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
+pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
+
+/// Error Message: "UPDATE_GER note attachment target account does not match consuming account"
+pub const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("UPDATE_GER note attachment target account does not match consuming account");
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"
 pub const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("UPDATE_GER script expects exactly 8 note storage items");

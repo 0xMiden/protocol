@@ -5,9 +5,21 @@ use alloc::vec::Vec;
 
 use miden_agglayer::agglayer_library;
 use miden_core_lib::CoreLibrary;
+use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
+
+/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
+pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
+    let double_word = (*digest)
+        .chunks(4)
+        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
+        .rev()
+        .collect::<Vec<_>>();
+
+    (double_word[0..4].join(", "), double_word[4..8].join(", "))
+}
 
 /// Execute a program with default host and optional advice inputs
 pub async fn execute_program_with_default_host(
@@ -79,9 +91,9 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
     let global_index = [0u32, 0, 0, 0, 0, 1, 0, 2];
 
     let mainnet_exit_root: [u8; 32] = [
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-        0x77, 0x88,
+        0x7e, 0x3b, 0xd3, 0xe3, 0x04, 0xb4, 0x64, 0x1f, 0xd1, 0x53, 0x2f, 0x47, 0xfa, 0xc9, 0x56,
+        0xe4, 0x13, 0x03, 0x47, 0x02, 0x0f, 0x08, 0xa3, 0x72, 0xa2, 0x57, 0xf2, 0x82, 0x1f, 0x63,
+        0x8a, 0x60,
     ];
 
     let rollup_exit_root: [u8; 32] = [

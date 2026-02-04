@@ -5,22 +5,16 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::utils::felts_to_u256_bytes;
-use miden_agglayer::{
-    ExitRoot,
-    agglayer_library,
-    create_existing_bridge_account,
-    create_update_ger_note,
-};
+use miden_agglayer::{ExitRoot, UpdateGerNote, agglayer_library, create_existing_bridge_account};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::Felt;
-use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
-use miden_testing::MockChain;
+use miden_protocol::{Felt, Word};
+use miden_testing::{Auth, MockChain};
 
 use super::test_utils::execute_program_with_default_host;
 
@@ -34,7 +28,12 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
     let bridge_account = create_existing_bridge_account(bridge_seed);
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS
+    // CREATE USER ACCOUNT (NOTE SENDER)
+    // --------------------------------------------------------------------------------------------
+    let user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    builder.add_account(user_account.clone())?;
+
+    // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
     // --------------------------------------------------------------------------------------------
 
     let ger_bytes: [u8; 32] = [
@@ -43,7 +42,8 @@ async fn test_update_ger_note_updates_storage() -> anyhow::Result<()> {
         0x77, 0x88,
     ];
     let ger = ExitRoot::from(ger_bytes);
-    let update_ger_note = create_update_ger_note(ger, bridge_account.id(), builder.rng_mut())?;
+    let update_ger_note =
+        UpdateGerNote::create(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
