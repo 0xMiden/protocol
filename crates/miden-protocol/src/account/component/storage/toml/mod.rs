@@ -52,8 +52,8 @@ impl AccountComponentMetadata {
     /// - If the schema specifies storage slots with duplicates.
     /// - If the schema contains invalid slot definitions.
     pub fn from_toml(toml_string: &str) -> Result<Self, ComponentMetadataError> {
-        let raw: RawAccountComponentMetadata =
-            toml::from_str(toml_string).map_err(ComponentMetadataError::TomlDeserializationError)?;
+        let raw: RawAccountComponentMetadata = toml::from_str(toml_string)
+            .map_err(ComponentMetadataError::TomlDeserializationError)?;
 
         if !raw.description.is_ascii() {
             return Err(ComponentMetadataError::InvalidSchema(
@@ -400,7 +400,10 @@ impl RawStorageSlotSchema {
         }
     }
 
-    fn parse_word_schema(raw: RawWordType, label: &str) -> Result<WordSchema, ComponentMetadataError> {
+    fn parse_word_schema(
+        raw: RawWordType,
+        label: &str,
+    ) -> Result<WordSchema, ComponentMetadataError> {
         match raw {
             RawWordType::TypeIdentifier(r#type) => Ok(WordSchema::new_simple(r#type)),
             RawWordType::FeltSchemaArray(elements) => {
@@ -433,7 +436,9 @@ impl RawStorageSlotSchema {
 
         let parse = |schema: &WordSchema, raw: &WordValue, label: &str| {
             super::schema::parse_storage_value_with_schema(schema, raw, slot_prefix).map_err(
-                |err| ComponentMetadataError::InvalidSchema(format!("invalid map `{label}`: {err}")),
+                |err| {
+                    ComponentMetadataError::InvalidSchema(format!("invalid map `{label}`: {err}"))
+                },
             )
         };
 
