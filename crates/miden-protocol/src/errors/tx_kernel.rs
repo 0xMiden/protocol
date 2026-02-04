@@ -73,9 +73,6 @@ pub const ERR_EPILOGUE_NONCE_CANNOT_BE_0: MasmError = MasmError::from_static_str
 /// Error Message: "total number of assets in the account and all involved notes must stay the same"
 pub const ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME: MasmError = MasmError::from_static_str("total number of assets in the account and all involved notes must stay the same");
 
-/// Error Message: "the burn_non_fungible_asset procedure can only be called on a non-fungible faucet"
-pub const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET: MasmError = MasmError::from_static_str("the burn_non_fungible_asset procedure can only be called on a non-fungible faucet");
-
 /// Error Message: "creation of a foreign context against the native account is forbidden"
 pub const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT: MasmError = MasmError::from_static_str("creation of a foreign context against the native account is forbidden");
 /// Error Message: "ID of the provided foreign account equals zero"
@@ -93,6 +90,8 @@ pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ONE_MUST_BE_ZERO: MasmError = MasmEr
 pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_TWO_AND_THREE_MUST_BE_FUNGIBLE_FAUCET_ID: MasmError = MasmError::from_static_str("malformed fungible asset: `ASSET[2]` and `ASSET[3]` must be a valid fungible faucet id");
 /// Error Message: "malformed fungible asset: `ASSET[0]` exceeds the maximum allowed amount"
 pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS: MasmError = MasmError::from_static_str("malformed fungible asset: `ASSET[0]` exceeds the maximum allowed amount");
+/// Error Message: "fungible asset vault key's account ID must be of type fungible faucet"
+pub const ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE: MasmError = MasmError::from_static_str("fungible asset vault key's account ID must be of type fungible faucet");
 
 /// Error Message: "requested input note index should be less than the total number of input notes"
 pub const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS: MasmError = MasmError::from_static_str("requested input note index should be less than the total number of input notes");
@@ -123,8 +122,8 @@ pub const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS: MasmError = MasmError::from_sta
 pub const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the non-fungible asset is not this faucet");
 /// Error Message: "malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
 pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID: MasmError = MasmError::from_static_str("malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id");
-/// Error Message: "malformed non-fungible asset: the most significant bit must be 0"
-pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO: MasmError = MasmError::from_static_str("malformed non-fungible asset: the most significant bit must be 0");
+/// Error Message: "non-fungible asset vault key's account ID must be of type non-fungible faucet"
+pub const ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE: MasmError = MasmError::from_static_str("non-fungible asset vault key's account ID must be of type non-fungible faucet");
 
 /// Error Message: "failed to access note assets of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note assets of active note because no note is currently being processed");
@@ -204,10 +203,12 @@ pub const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING: MasmError = MasmError::from_stat
 
 /// Error Message: "failed to add fungible asset to the asset vault due to the initial value being invalid"
 pub const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID: MasmError = MasmError::from_static_str("failed to add fungible asset to the asset vault due to the initial value being invalid");
+/// Error Message: "account ID in asset vault key must be either of type fungible or non-fungible faucet"
+pub const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET: MasmError = MasmError::from_static_str("account ID in asset vault key must be either of type fungible or non-fungible faucet");
 /// Error Message: "failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
 pub const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW: MasmError = MasmError::from_static_str("failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove");
-/// Error Message: "adding the fungible asset to the vault would exceed the max amount of 9223372036854775807"
-pub const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding the fungible asset to the vault would exceed the max amount of 9223372036854775807");
+/// Error Message: "adding the fungible asset to the vault would exceed the max amount"
+pub const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding the fungible asset to the vault would exceed the max amount");
 /// Error Message: "the non-fungible asset already exists in the asset vault"
 pub const ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS: MasmError = MasmError::from_static_str("the non-fungible asset already exists in the asset vault");
 /// Error Message: "failed to remove non-existent non-fungible asset from the vault"
