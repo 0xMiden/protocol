@@ -27,6 +27,9 @@ pub const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT: MasmE
 /// Error Message: "token supply exceeds max supply"
 pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
 
+/// Error Message: "invalid signature scheme id: expected 0 for falcon512_rpo, 1 for ecdsa_k256_keccak"
+pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid signature scheme id: expected 0 for falcon512_rpo, 1 for ecdsa_k256_keccak");
+
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
 
