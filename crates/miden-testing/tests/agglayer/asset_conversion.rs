@@ -171,8 +171,8 @@ async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
     let cases = [
-        // With remainder: 1.234e18 scaled down by 18 = 1
-        (U256::from_dec_str("1234567890123456789").unwrap(), 18u32),
+        // With remainder: 1.234e18 scaled down by 1e8 = 1.234e10
+        (U256::from_dec_str("1234567890123456789").unwrap(), 8u32),
         // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
         (U256::from_dec_str("100000000000000000000").unwrap(), 10u32),
         // USDC (no scaling): 100 USDC
