@@ -51,9 +51,6 @@ use crate::{Felt, Word};
 /// that the auth procedure must be at procedure index 0 within an [`AccountCode`]. That also
 /// affects the storage slot order and means the auth component's storage comes first, if it has any
 /// storage.
-///
-/// Faucet accounts have a protocol-reserved storage slot which is at index 0. This means
-/// user-defined storage slots start at index 1.
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]

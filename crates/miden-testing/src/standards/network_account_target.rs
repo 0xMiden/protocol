@@ -2,9 +2,9 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
-use miden_protocol::note::{NoteAttachment, NoteExecutionHint, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{NoteAttachment, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_standards::note::NetworkAccountTarget;
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
 use crate::executor::CodeExecutor;
 
@@ -16,9 +16,9 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
     let exec_hint = NoteExecutionHint::Always;
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
-    let metadata =
-        NoteMetadata::new(target_id, NoteType::Public, NoteTag::with_account_target(target_id))
-            .with_attachment(attachment.clone());
+    let metadata = NoteMetadata::new(target_id, NoteType::Public)
+        .with_tag(NoteTag::with_account_target(target_id))
+        .with_attachment(attachment.clone());
     let metadata_header = metadata.to_header_word();
 
     let source = format!(

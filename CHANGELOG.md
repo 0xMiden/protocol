@@ -7,15 +7,29 @@
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
+- Added double-word array data structure abstraction over storage maps ([#2299](https://github.com/0xMiden/miden-base/pull/2299)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
+- Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
+- [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
 
 ### Changes
 
+- Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
+- Moved `NoteExecutionHint` to `miden-standards` ([#2378](https://github.com/0xMiden/miden-base/pull/2378)).
+- Added `miden::protocol::auth` module with public auth event constants ([#2377](https://github.com/0xMiden/miden-base/pull/2377)).
+- [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
+- [BREAKING] Simplified `NoteMetadata::new()` constructor to not require tag parameter; tag defaults to zero and can be set via `with_tag()` builder method ([#2384](https://github.com/0xMiden/miden-base/pull/2384)).
 - [BREAKING] Renamed `WellKnownComponent` to `StandardAccountComponent`, `WellKnownNote` to `StandardNote`, and `WellKnownNoteAttachment` to `StandardNoteAttachment` ([#2332](https://github.com/0xMiden/miden-base/pull/2332)).
 - Skip requests to the `DataStore` for asset vault witnesses which are already in transaction inputs ([#2298](https://github.com/0xMiden/miden-base/pull/2298)).
-- [BREAKING] refactored `TransactionAuthenticator::get_public_key()` method to return `Arc<PublicKey> `instead of `&PublicKey` ([#2304](https://github.com/0xMiden/miden-base/pull/2304)).
+- [BREAKING] Refactored `TransactionAuthenticator::get_public_key()` method to return `Arc<PublicKey> `instead of `&PublicKey` ([#2304](https://github.com/0xMiden/miden-base/pull/2304)).
 - [BREAKING] Renamed `NoteInputs` to `NoteStorage` to better reflect that values are stored data associated with a note rather than inputs ([#1662](https://github.com/0xMiden/miden-base/issues/1662), [#2316](https://github.com/0xMiden/miden-base/issues/2316)).
 - Removed `NoteType::Encrypted` ([#2315](https://github.com/0xMiden/miden-base/pull/2315)).
+- [BREAKING] Changed note scripts to be compiled as libraries with `@note_script` annotation for marking the entrypoint procedure ([#2339](https://github.com/0xMiden/miden-base/issues/2339), [#2374](https://github.com/0xMiden/miden-base/pull/2374)).
+- Remove protocol-reserved faucet sysdata storage slot ([#2335](https://github.com/0xMiden/miden-base/pull/2335)).
+- Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
+- [BREAKING] Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
+- [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
+- [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 
 ## 0.13.3 (2026-01-27)
 

@@ -171,7 +171,7 @@ mod tests {
         let recipient = NoteRecipient::new(serial_num, script, note_storage);
 
         let asset = Asset::Fungible(FungibleAsset::new(faucet, 100).unwrap());
-        let metadata = NoteMetadata::new(faucet, NoteType::Public, NoteTag::from(123));
+        let metadata = NoteMetadata::new(faucet, NoteType::Public).with_tag(NoteTag::from(123));
 
         Note::new(NoteAssets::new(vec![asset]).unwrap(), metadata, recipient)
     }

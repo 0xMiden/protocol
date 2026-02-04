@@ -13,7 +13,7 @@ use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::P2idNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction;
@@ -202,7 +202,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note_1 = create_p2id_note(
+    let output_note_1 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into()?,
         vec![FungibleAsset::mock(10)],
@@ -211,7 +211,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
-    let output_note_2 = create_p2id_note(
+    let output_note_2 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![FungibleAsset::mock(5)],

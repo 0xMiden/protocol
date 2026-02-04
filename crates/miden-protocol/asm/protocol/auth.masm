@@ -1,0 +1,8 @@
+# EVENTS
+# =================================================================================================
+
+#! The event to request an authentication signature.
+pub const AUTH_REQUEST_EVENT = event("miden::protocol::auth::request")
+
+#! The event emitted when authentication is unauthorized.
+pub const AUTH_UNAUTHORIZED_EVENT = event("miden::protocol::auth::unauthorized")

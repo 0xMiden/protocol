@@ -100,6 +100,7 @@ end
 #! - The same non-fungible asset already exists in the account.
 #! - Adding a fungible asset would result in an amount overflow, i.e., the total amount would be
 #!   greater than 2^63.
+@note_script
 pub proc main
     # store the note storage to memory starting at address 0
     push.0 exec.active_note::get_storage
