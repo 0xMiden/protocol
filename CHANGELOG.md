@@ -7,10 +7,13 @@
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
+- Added B2AGG and UPDATE_GER note attachment target checks ([#2334](https://github.com/0xMiden/miden-base/pull/2334)).
 - Added double-word array data structure abstraction over storage maps ([#2299](https://github.com/0xMiden/miden-base/pull/2299)).
+- Implemented verification of AggLayer deposits (claims) against GER ([#2295](https://github.com/0xMiden/miden-base/pull/2295), [#2288](https://github.com/0xMiden/miden-base/pull/2288)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
+- Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 
 ### Changes
 
@@ -53,12 +56,15 @@
 - [BREAKING] Refactored storage slots to be accessed by names instead of indices ([#1987](https://github.com/0xMiden/miden-base/pull/1987), [#2025](https://github.com/0xMiden/miden-base/pull/2025), [#2149](https://github.com/0xMiden/miden-base/pull/2149), [#2150](https://github.com/0xMiden/miden-base/pull/2150), [#2153](https://github.com/0xMiden/miden-base/pull/2153), [#2154](https://github.com/0xMiden/miden-base/pull/2154), [#2160](https://github.com/0xMiden/miden-base/pull/2160), [#2161](https://github.com/0xMiden/miden-base/pull/2161), [#2170](https://github.com/0xMiden/miden-base/pull/2170)).
 - [BREAKING] Allowed account components to share identical account code procedures ([#2164](https://github.com/0xMiden/miden-base/pull/2164)).
 - Add `AccountId::parse()` helper function to parse both hex and bech32 formats ([#2223](https://github.com/0xMiden/miden-base/pull/2223)).
+- Add Keccak-based MMR frontier structure to the Agglayer library ([#2245](https://github.com/0xMiden/miden-base/pull/2245)).
 - Add `read_foreign_account_inputs()`, `read_vault_asset_witnesses()`, and `read_storage_map_witness()` for `TransactionInputs` ([#2246](https://github.com/0xMiden/miden-base/pull/2246)).
-- [BREAKING] Introduced `NoteAttachment` as part of `NoteMetadata` and remove `aux` and `execution_hint` ([#2249](https://github.com/0xMiden/miden-base/pull/2249), [#2252](https://github.com/0xMiden/miden-base/pull/2252), [#2260](https://github.com/0xMiden/miden-base/pull/2260), [#2268](https://github.com/0xMiden/miden-base/pull/2268), [#2279](https://github.com/0xMiden/miden-base/pull/2279)).
+- [BREAKING] Introduce `NoteAttachment` as part of `NoteMetadata` and remove `aux` and `execution_hint` ([#2249](https://github.com/0xMiden/miden-base/pull/2249), [#2252](https://github.com/0xMiden/miden-base/pull/2252), [#2260](https://github.com/0xMiden/miden-base/pull/2260), [#2268](https://github.com/0xMiden/miden-base/pull/2268), [#2279](https://github.com/0xMiden/miden-base/pull/2279)).
+- Introduce standard `NetworkAccountTarget` attachment for use in network transactions which replaces `NoteTag::NetworkAccount` ([#2257](https://github.com/0xMiden/miden-base/pull/2257)).
+- Add a foundry test suite for verifying AggLayer contracts compatibility ([#2312](https://github.com/0xMiden/miden-base/pull/2312)).
 - Added `AccountSchemaCommitment` component to expose account storage schema commitments ([#2253](https://github.com/0xMiden/miden-base/pull/2253)).
-- Introduced standard `NetworkAccountTarget` attachment for use in network transactions which replaces `NoteTag::NetworkAccount` ([#2257](https://github.com/0xMiden/miden-base/pull/2257)).
 - Added an `AccountBuilder` extension trait to help build the schema commitment; added `AccountComponentMetadata` to `AccountComponent` ([#2269](https://github.com/0xMiden/miden-base/pull/2269)).
 - Added `miden::standards::access::ownable` standard module for component ownership management, and integrated it into the `network_fungible` faucet (including new tests). ([#2228](https://github.com/0xMiden/miden-base/pull/2228)).
+- [BREAKING] Add `leaf_value` to `CLAIM` note inputs ([#2290](https://github.com/0xMiden/miden-base/pull/2290)).
 
 ### Changes
 
