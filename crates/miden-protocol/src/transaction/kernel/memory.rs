@@ -14,7 +14,7 @@ pub type StorageSlot = u8;
 //
 // | Section            | Start address | Size in elements | Comment                                    |
 // | ------------------ | ------------- | ---------------- | ------------------------------------------ |
-// | Bookkeeping        | 0             | 89               |                                            |
+// | Bookkeeping        | 0             | 96               |                                            |
 // | Global inputs      | 400           | 40               |                                            |
 // | Block header       | 800           | 44               |                                            |
 // | Partial blockchain | 1_200         | 132              |                                            |
@@ -95,6 +95,14 @@ pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 20;
 ///        24               25                30                         88
 /// ```
 pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 24;
+
+// Pointer to the ID of the foreign account which will be loaded during the upcoming FPI call. This
+// ID is updated during the `prepare_fpi_call` kernel procedure.
+pub const UPCOMING_FOREIGN_ACCOUNT_PTR: MemoryAddress = 89;
+
+// Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+// This root is updated during the `prepare_fpi_call` kernel procedure.
+pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 92;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
