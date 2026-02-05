@@ -8,6 +8,7 @@ use miden_agglayer::{
     EthAddressFormat,
     EthAmount,
     LeafData,
+    MetadataHash,
     OutputNoteData,
     ProofData,
     create_claim_note,
@@ -88,7 +89,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         origin_network,
         origin_token_address,
         destination_network,
-        metadata,
+        metadata_hash,
     ) = claim_note_test_inputs();
 
     // Convert AccountId to destination address bytes in the test
@@ -129,7 +130,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         destination_network,
         destination_address: EthAddressFormat::new(destination_address),
         amount: amount_eth,
-        metadata,
+        metadata_hash: MetadataHash::new(metadata_hash),
     };
 
     let output_note_data = OutputNoteData {
