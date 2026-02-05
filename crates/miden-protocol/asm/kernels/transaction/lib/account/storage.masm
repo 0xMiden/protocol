@@ -20,6 +20,8 @@ const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME="storage slot with the provided name
 
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
 
+const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -821,6 +823,6 @@ pub proc insert_and_validate_storage_map
 
     # after inserting all entries, the storage map root must match the map root that was committed
     # to as part of account creation
-    assert_eqw.err="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
+    assert_eqw.err=ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT
     # => []
 end
