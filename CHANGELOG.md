@@ -14,6 +14,7 @@
 
 ### Changes
 
+- [BREAKING] Removed `ProvenTransactionBuilder` in favor of `ProvenTransaction::new()` constructor ([#2402](https://github.com/0xMiden/miden-base/pull/2402)).
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - Moved `NoteExecutionHint` to `miden-standards` ([#2378](https://github.com/0xMiden/miden-base/pull/2378)).
 - Added `miden::protocol::auth` module with public auth event constants ([#2377](https://github.com/0xMiden/miden-base/pull/2377)).
