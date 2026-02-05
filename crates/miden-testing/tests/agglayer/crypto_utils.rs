@@ -226,7 +226,6 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::core::sys
             use miden::agglayer::crypto_utils
 
             const LEAF_DATA_START_PTR = 0
@@ -240,14 +239,6 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
                 exec.mem::pipe_preimage_to_memory drop
 
                 exec.crypto_utils::pack_leaf_data
-
-                # Read first 8 packed elements (element 0 will be on top after all loads)
-                padw mem_loadw_le.12
-                padw mem_loadw_le.8
-                padw mem_loadw_le.4
-                padw mem_loadw_le.0
-
-                exec.sys::truncate_stack
             end
         "#
     );
@@ -262,12 +253,27 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
 
     let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await?;
 
-    let packed_elements: Vec<Felt> = exec_output.stack[0..8].iter().map(|f| f.clone()).collect();
+    // Read packed elements from memory at addresses 0..29
+    let ctx = miden_processor::ContextId::root();
+    let err_ctx = ();
+
+    let packed_elements: Vec<Felt> = (0..29u32)
+        .map(|addr| {
+            exec_output
+                .memory
+                .read_element(ctx, Felt::from(addr), &err_ctx)
+                .expect("address should be valid")
+        })
+        .collect();
+
     let packed_bytes: Vec<u8> = felts_to_le_bytes(&packed_elements);
 
+    // push 3 more zero bytes for packing, since `pack_leaf_data` should leave us with the last 3
+    // bytes set to 0 (prep for hashing, where padding bytes must be 0)
+    expected_packed_bytes.extend_from_slice(&[0u8; 3]);
+
     assert_eq!(
-        &packed_bytes[..32],
-        &expected_packed_bytes[..32],
+        &packed_bytes, &expected_packed_bytes,
         "Packed bytes don't match expected Solidity encoding"
     );
 
