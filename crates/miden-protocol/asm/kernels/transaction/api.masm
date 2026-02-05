@@ -766,10 +766,11 @@ end
 
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - ASSET_KEY is the vault key of the asset to burn.
 #! - ASSET_VALUE is the value of the asset that was burned.
 #!
 #! Panics if:
@@ -788,15 +789,13 @@ end
 pub proc faucet_burn_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # burn the asset
-    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
-    exec.asset_vault::build_asset_vault_key
     exec.faucet::burn
     # => [ASSET_VALUE, pad(12)]
 end

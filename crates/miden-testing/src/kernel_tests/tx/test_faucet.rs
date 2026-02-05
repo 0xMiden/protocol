@@ -324,19 +324,20 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # burn asset
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.mock_faucet::burn
 
             # assert the correct asset is returned
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
             assert_eqw.err="burnt asset does not match expected asset"
 
             # assert the input vault has been updated
             exec.memory::get_input_vault_root_ptr
 
-            push.{ASSET_KEY}
+            push.{FUNGIBLE_ASSET_KEY}
             exec.asset_vault::get_asset
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             # extract balance from asset
             drop drop drop
@@ -344,10 +345,12 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
 
             push.{final_input_vault_asset_amount}
             assert_eq.err="vault balance does not match expected balance"
+
+            exec.::miden::core::sys::truncate_stack
         end
         "#,
-        FUNGIBLE_ASSET = Word::from(asset),
-        ASSET_KEY = asset.vault_key(),
+        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = asset.to_key_word(),
         final_input_vault_asset_amount = CONSUMED_ASSET_1_AMOUNT - FUNGIBLE_ASSET_AMOUNT,
     );
 
@@ -360,17 +363,20 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
 #[tokio::test]
 async fn burn_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()> {
     let account = setup_non_faucet_account()?;
+    let asset = FungibleAsset::mock(50);
 
     let code = format!(
         "
       use mock::faucet
 
       begin
-          push.{asset}
+          push.{FUNGIBLE_ASSET_VALUE}
+          push.{FUNGIBLE_ASSET_KEY}
           call.faucet::burn
       end
       ",
-        asset = Word::from(FungibleAsset::mock(50))
+        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = asset.to_key_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -391,6 +397,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
             .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
@@ -399,12 +406,13 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.faucet::burn
         end
         ",
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -420,6 +428,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
             .build()?;
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1).unwrap();
+    let fungible_asset = FungibleAsset::new(faucet_id, CONSUMED_ASSET_1_AMOUNT + 1)?;
 
     let code = format!(
         "
@@ -428,13 +437,13 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
         begin
             exec.prologue::prepare_transaction
-            push.{saturating_amount} push.0 push.{suffix} push.{prefix}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.faucet::burn
         end
         ",
-        prefix = faucet_id.prefix().as_felt(),
-        suffix = faucet_id.suffix(),
-        saturating_amount = CONSUMED_ASSET_1_AMOUNT + 1
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -482,6 +491,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
             # burn the non-fungible asset
             push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             call.mock_faucet::burn
 
             # assert the correct asset is returned
@@ -522,11 +532,13 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
         begin
             # burn asset
             exec.prologue::prepare_transaction
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             call.faucet::burn
         end
         ",
-        non_fungible_asset = Word::from(non_fungible_asset_burnt)
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -539,17 +551,20 @@ async fn test_burn_non_fungible_asset_fails_does_not_exist() -> anyhow::Result<(
 #[tokio::test]
 async fn burn_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()> {
     let account = setup_non_faucet_account()?;
+    let asset = FungibleAsset::mock(50);
 
     let code = format!(
         "
       use mock::faucet
 
       begin
-          push.{asset}
+          push.{ASSET_VALUE}
+          push.{ASSET_KEY}
           call.faucet::burn
       end
       ",
-        asset = Word::from(FungibleAsset::mock(50))
+        ASSET_VALUE = asset.to_value_word(),
+        ASSET_KEY = asset.to_key_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -581,11 +596,13 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
         begin
             # burn asset
             exec.prologue::prepare_transaction
-            push.{non_fungible_asset}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             call.faucet::burn
         end
         ",
-        non_fungible_asset = Word::from(non_fungible_asset_burnt)
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset_burnt.to_value_word(),
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset_burnt.to_key_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;

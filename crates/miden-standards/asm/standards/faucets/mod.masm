@@ -184,16 +184,19 @@ pub proc burn
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    # load asset value from 0 + ASSET_VALUE_MEMORY_OFFSET
-    mem_loadw_be.ASSET_VALUE_MEMORY_OFFSET
-    # => [ASSET_VALUE, pad(16)]
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], pad(16)]
+    # load asset value from dest_ptr + ASSET_VALUE_MEMORY_OFFSET
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    # => [ASSET_VALUE, dest_ptr, pad(16)]
+
+    # load asset key from dest_ptr
+    padw movup.8 mem_loadw_be
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    dup.3 movdn.4
-    # => [ASSET_VALUE, amount, pad(16)]
+    dup.7 movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are
