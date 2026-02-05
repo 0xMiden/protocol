@@ -1,8 +1,9 @@
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
-use miden_core::FieldElement;
+use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
@@ -122,18 +123,8 @@ impl EthAddressFormat {
     /// - `address[4]` = bytes[16..20] (least-significant 4 bytes)
     ///
     /// Each limb is interpreted as a little-endian `u32` and stored in a [`Felt`].
-    pub fn to_elements(&self) -> [Felt; 5] {
-        let mut result = [Felt::ZERO; 5];
-
-        // i=0 -> bytes[0..4], i=4 -> bytes[16..20]
-        // Note: chunks(4) on 20 bytes gives exactly 5 chunks
-        for (felt, chunk) in result.iter_mut().zip(self.0.chunks(4)) {
-            let value = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            // u32 values always fit in Felt, so this conversion is safe
-            *felt = Felt::try_from(value as u64).expect("u32 value should always fit in Felt");
-        }
-
-        result
+    pub fn to_elements(&self) -> Vec<Felt> {
+        bytes_to_packed_u32_felts(&self.0)
     }
 
     /// Converts the Ethereum address format back to an [`AccountId`].
