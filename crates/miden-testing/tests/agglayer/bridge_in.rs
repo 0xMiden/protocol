@@ -7,6 +7,7 @@ use miden_agglayer::{
     ClaimNoteStorage,
     EthAddressFormat,
     EthAmount,
+    GlobalIndex,
     LeafData,
     MetadataHash,
     OutputNoteData,
@@ -121,7 +122,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let proof_data = ProofData {
         smt_proof_local_exit_root: local_proof_array,
         smt_proof_rollup_exit_root: rollup_proof_array,
-        global_index,
+        global_index: GlobalIndex::new(global_index),
         mainnet_exit_root: ExitRoot::from(mainnet_exit_root),
         rollup_exit_root: ExitRoot::from(rollup_exit_root),
     };

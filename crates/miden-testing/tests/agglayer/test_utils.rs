@@ -57,7 +57,7 @@ pub async fn execute_program_with_default_host(
 /// Contains native types for the new ClaimNoteParams structure:
 /// - smt_proof_local_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
 /// - smt_proof_rollup_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
-/// - global_index: [u32; 8]
+/// - global_index: [u8; 32]
 /// - mainnet_exit_root: [u8; 32]
 /// - rollup_exit_root: [u8; 32]
 /// - origin_network: u32
@@ -67,7 +67,7 @@ pub async fn execute_program_with_default_host(
 pub type ClaimNoteTestInputs = (
     Vec<[u8; 32]>,
     Vec<[u8; 32]>,
-    [u32; 8],
+    [u8; 32],
     [u8; 32],
     [u8; 32],
     u32,
@@ -87,8 +87,14 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
     // Create SMT proofs with 32 bytes32 values each (SMT path depth)
     let smt_proof_local_exit_root = vec![[0u8; 32]; 32];
     let smt_proof_rollup_exit_root = vec![[0u8; 32]; 32];
-    // Global index format: [top 5 limbs = 0, mainnet_flag = 1, rollup_index = 0, leaf_index = 2]
-    let global_index = [0u32, 0, 0, 0, 0, 1, 0, 2];
+    // Global index format (32 bytes, big-endian like Solidity uint256):
+    // - bytes[0..20]: leading zeros (5 limbs)
+    // - bytes[20..24]: mainnet_flag = 1 (BE u32)
+    // - bytes[24..28]: rollup_index = 0 (BE u32)
+    // - bytes[28..32]: leaf_index = 2 (BE u32)
+    let mut global_index = [0u8; 32];
+    global_index[23] = 1; // mainnet flag = 1 (BE: LSB at byte 23)
+    global_index[31] = 2; // leaf index = 2 (BE: LSB at byte 31)
 
     let mainnet_exit_root: [u8; 32] = [
         0x05, 0xc2, 0xbe, 0x9d, 0xd7, 0xf4, 0x7e, 0xc6, 0x29, 0xae, 0x6a, 0xc1, 0x1a, 0x24, 0xb5,
