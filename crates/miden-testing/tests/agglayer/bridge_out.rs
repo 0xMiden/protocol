@@ -1,32 +1,16 @@
 extern crate alloc;
 
-use miden_agglayer::{EthAddressFormat, b2agg_script, bridge_out_component};
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
-};
+use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
+use miden_agglayer::{B2AggNote, EthAddressFormat, create_existing_bridge_account};
+use miden_crypto::rand::FeltRng;
+use miden_protocol::Felt;
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::NetworkFungibleFaucet;
 use miden_standards::note::StandardNote;
-use miden_testing::{AccountState, Auth, MockChain};
-use rand::Rng;
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 /// Tests the B2AGG (Bridge to AggLayer) note script with bridge_out account component.
 ///
@@ -52,50 +36,33 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
-    // Create a bridge account with the bridge_out component using network (public) storage
-    // Add a storage map for the bridge component to store MMR frontier data
-    let storage_slot_name = StorageSlotName::new("miden::agglayer::let").unwrap();
-    let storage_slots = vec![StorageSlot::with_empty_map(storage_slot_name)];
-    let bridge_component = bridge_out_component(storage_slots);
-    let account_builder = Account::builder(builder.rng_mut().random())
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(bridge_component);
-    let mut bridge_account =
-        builder.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
+    // Create a bridge account (includes a `bridge_out` component tested here)
+    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
 
     // CREATE B2AGG NOTE WITH ASSETS
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new(100);
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
-    let tag = NoteTag::new(0);
-    let note_type = NoteType::Public; // Use Public note type for network transaction
-
-    // Get the B2AGG note script
-    let b2agg_script = b2agg_script();
 
     // Create note storage with destination network and address
-    // destination_network: u32 (AggLayer-assigned network ID)
-    // destination_address: 20 bytes (Ethereum address) split into 5 u32 values
-    let destination_network = Felt::new(1); // Example network ID
+    let destination_network = 1u32; // Example network ID
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
-    let address_felts = eth_address.to_elements().to_vec();
 
-    // Combine network ID and address felts into note storage (6 felts total)
-    let mut input_felts = vec![destination_network];
-    input_felts.extend(address_felts);
+    let assets = NoteAssets::new(vec![bridge_asset])?;
 
-    let inputs = NoteStorage::new(input_felts.clone())?;
-
-    // Create the B2AGG note with assets from the faucet
-    let b2agg_note_metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
-    let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
-    let serial_num = Word::from([1, 2, 3, 4u32]);
-    let b2agg_note_script = NoteScript::new(b2agg_script);
-    let b2agg_note_recipient = NoteRecipient::new(serial_num, b2agg_note_script, inputs);
-    let b2agg_note = Note::new(b2agg_note_assets, b2agg_note_metadata, b2agg_note_recipient);
+    // Create the B2AGG note using the helper
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
+        assets,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
 
     // Add the B2AGG note to the mock chain
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
@@ -219,6 +186,10 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge account (includes a `bridge_out` component tested here)
+    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
+
     // Create a user account that will create and consume the B2AGG note
     let mut user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
 
@@ -227,33 +198,25 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     let amount = Felt::new(50);
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
-    let tag = NoteTag::new(0);
-    let note_type = NoteType::Public;
-
-    // Get the B2AGG note script
-    let b2agg_script = b2agg_script();
 
     // Create note storage with destination network and address
-    let destination_network = Felt::new(1);
+    let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
-    let address_felts = eth_address.to_elements().to_vec();
 
-    // Combine network ID and address felts into note storage (6 felts total)
-    let mut input_felts = vec![destination_network];
-    input_felts.extend(address_felts);
-
-    let inputs = NoteStorage::new(input_felts.clone())?;
+    let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender
     // This is the key difference - the note sender will be the same as the consuming account
-    let b2agg_note_metadata = NoteMetadata::new(user_account.id(), note_type).with_tag(tag);
-    let b2agg_note_assets = NoteAssets::new(vec![bridge_asset])?;
-    let serial_num = Word::from([1, 2, 3, 4u32]);
-    let b2agg_note_script = NoteScript::new(b2agg_script);
-    let b2agg_note_recipient = NoteRecipient::new(serial_num, b2agg_note_script, inputs);
-    let b2agg_note = Note::new(b2agg_note_assets, b2agg_note_metadata, b2agg_note_recipient);
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
+        assets,
+        bridge_account.id(),
+        user_account.id(),
+        builder.rng_mut(),
+    )?;
 
     // Add the B2AGG note to the mock chain
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
@@ -294,6 +257,87 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     // Apply the transaction to the mock chain
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+/// Tests that a non-target account cannot consume a B2AGG note (non-reclaim branch).
+///
+/// This test covers the security check in the B2AGG note script that ensures only the
+/// designated target account (specified in the note attachment) can consume the note
+/// when not in reclaim mode.
+///
+/// Test flow:
+/// 1. Creates a network faucet to provide assets
+/// 2. Creates a bridge account as the designated target for the B2AGG note
+/// 3. Creates a user account as the sender (creator) of the B2AGG note
+/// 4. Creates a "malicious" account with a bridge interface
+/// 5. Attempts to consume the B2AGG note with the malicious account
+/// 6. Verifies that the transaction fails with ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
+#[tokio::test]
+async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // Create a network faucet owner account
+    let faucet_owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    // Create a network faucet to provide assets for the B2AGG note
+    let faucet =
+        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
+
+    // Create a bridge account as the designated TARGET for the B2AGG note
+    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
+
+    // Create a user account as the SENDER of the B2AGG note
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // Create a "malicious" account with a bridge interface
+    let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(malicious_account.clone())?;
+
+    // CREATE B2AGG NOTE
+    // --------------------------------------------------------------------------------------------
+
+    let amount = Felt::new(50);
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+
+    // Create note storage with destination network and address
+    let destination_network = 1u32;
+    let destination_address = "0x1234567890abcdef1122334455667788990011aa";
+    let eth_address =
+        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
+
+    let assets = NoteAssets::new(vec![bridge_asset])?;
+
+    // Create the B2AGG note
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        eth_address,
+        assets,
+        bridge_account.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
+
+    // Add the B2AGG note to the mock chain
+    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    let mock_chain = builder.build()?;
+
+    // ATTEMPT TO CONSUME B2AGG NOTE WITH MALICIOUS ACCOUNT (SHOULD FAIL)
+    // --------------------------------------------------------------------------------------------
+    let result = mock_chain
+        .build_tx_context(malicious_account.id(), &[], &[b2agg_note])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_B2AGG_TARGET_ACCOUNT_MISMATCH);
 
     Ok(())
 }

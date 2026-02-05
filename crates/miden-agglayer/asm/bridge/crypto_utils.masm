@@ -1,50 +1,38 @@
 use miden::core::crypto::hashes::keccak256
+use miden::core::word
+use miden::agglayer::utils
+use miden::core::mem
 
-#! Given the leaf data returns the leaf value.
-#!
-#! Inputs:  [leaf_type, origin_network, ORIGIN_ADDRESS, destination_network, DESTINATION_ADDRESS, amount, METADATA_HASH]
-#! Outputs: [LEAF_VALUE]
-#!
-#! Where:
-#! - leaf_type is the leaf type: [0] transfer Ether / ERC20 tokens, [1] message.
-#! - origin_network is the origin network identifier.
-#! - ORIGIN_ADDRESS is the origin token address (5 elements)
-#! - destination_network is the destination network identifier.
-#! - DESTINATION_ADDRESS is the destination address (5 elements).
-#! - amount is the amount: [0] Amount of tokens/ether, [1] Amount of ether.
-#! - METADATA_HASH is the hash of the metadata (8 elements).
-#! - LEAF_VALUE is the computed leaf value (8 elements).
-#!
-#! This function computes the keccak256 hash of the abi.encodePacked data.
-#!
-#! Invocation: exec
-pub proc get_leaf_value
-    # TODO: implement getLeafValue()
-    # https://github.com/agglayer/agglayer-contracts/blob/e468f9b0967334403069aa650d9f1164b1731ebb/contracts/v2/lib/DepositContractV2.sol#L22
+# TYPE ALIASES
+# =================================================================================================
 
-    # stubbed out:
-    push.1.1.1.1
-    push.1.1.1.1
-    
-    # exec.keccak256::hash_bytes
-    # => [LEAF_VALUE[8]]
-end
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
+type MemoryAddress = u32
 
-#! Verify leaf and checks that it has not been claimed.
-#!
-#! This procedure verifies that a claim proof is valid against the Global Exit Tree (GET)
-#! and that the leaf has not been previously claimed.
+# CONSTANTS
+# =================================================================================================
+
+const LEAF_DATA_BYTES = 113
+const LEAF_DATA_NUM_WORDS = 8
+const LEAF_DATA_START_PTR = 0
+
+# The offset of the first half of the current Keccak256 hash value in the local memory of the
+# `calculate_root` procedure.
+const CUR_HASH_LO_LOCAL = 0
+
+# The offset of the second half of the current Keccak256 hash value in the local memory of the
+# `calculate_root` procedure.
+const CUR_HASH_HI_LOCAL = 4
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Given the leaf data key returns the leaf value.
 #!
 #! Inputs:
-#!   Operand stack: [GER_ROOT[8], CLAIM_PROOF_RPO_COMMITMENT, pad(12)]
+#!   Operand stack: [LEAF_DATA_KEY]
 #!   Advice map: {
-#!     PROOF_DATA_KEY => [
-#!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!       smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!       globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
-#!       mainnetExitRoot[8],              // Mainnet exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!       rollupExitRoot[8],               // Rollup exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!     ],
 #!     LEAF_DATA_KEY => [
 #!       originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!       originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
@@ -52,31 +40,158 @@ end
 #!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!       EMPTY_WORD                       // padding
 #!     ],
 #!   }
-#! Outputs:
-#!   Operand stack: [is_valid]
-#!
-#! Where:
-#! - RPO_CLAIM_NOTE_STORAGE_COMMITMENT is the RPO hash commitment of all claim note storage
-#! - leafType is the leaf type: [0] transfer Ether / ERC20 tokens, [1] message
-#! - originNetwork is the origin network identifier (u32 as Felt)
-#! - originAddress is the origin address (5 felts representing address)
-#! - destinationNetwork is the destination network identifier (u32 as Felt)
-#! - destinationAddress is the destination address (5 felts representing address)
-#! - amount is the amount of tokens (u256 as Felt)
-#! - metadata is the metadata (4 felts representing 4 u32 0 values)
-#! - index is the index of the leaf (u32 as Felt)
-#! - claimRoot is the claim root (8 felts representing bytes32)
-#! - smtProof is the SMT proof data (570 felts)
-#! - is_valid is 1 if the leaf is valid and not claimed, 0 otherwise
+#! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
-pub proc verify_claim_proof
-    # TODO: Implement actual Global Exit Tree proof verification
-    
-    # For now, drop all inputs and return 1 (valid)
-    dropw dropw dropw dropw
-    push.1
+pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
+    adv.push_mapval
+    # => [LEAF_DATA_KEY]
+
+    push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+    exec.mem::pipe_preimage_to_memory drop
+    # => []
+
+    push.LEAF_DATA_BYTES push.LEAF_DATA_START_PTR
+    # => [start_ptr, byte_len]
+
+    exec.keccak256::hash_bytes
+    # => [LEAF_VALUE[8]]
+end
+
+#! Computes the Global Exit Tree (GET) root from the mainnet and rollup exit roots.
+#!
+#! The mainnet exit root is expected at `exit_roots_ptr` and
+#! the rollup exit root is expected at `exit_roots_ptr + 8`.
+#!
+#! Inputs: [exit_roots_ptr]
+#! Outputs: [GER_ROOT[8]]
+#!
+#! Invocation: exec
+pub proc compute_ger(exit_roots_ptr: MemoryAddress) -> DoubleWord
+    push.64 swap
+    # => [exit_roots_ptr, len_bytes]
+    exec.keccak256::hash_bytes
+    # => [GER_ROOT[8]]
+end
+
+#! Verifies a Merkle proof for a leaf value against a root.
+#!
+#! Verifies that the root, computed using the provided Merkle path and the leaf with its index,
+#! matches the provided root.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
+#! Outputs: [verification_flag]
+#!
+#! Where:
+#! - expected_root_ptr is the pointer to the memory where the expected SMT root is stored.
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+#! - verification_flag is the binary flag indicating whether the verification was successful.
+pub proc verify_merkle_proof(
+    leaf_value: DoubleWord,
+    merkle_path_ptr: MemoryAddress,
+    leaf_idx: u32,
+    expected_root_ptr: MemoryAddress
+) -> i1
+    # calculate the root of the SMT
+    exec.calculate_root
+    # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
+
+    # load the expected root onto the stack
+    movup.8 exec.utils::mem_load_double_word
+    # => [EXPECTED_ROOT_LO, EXPECTED_ROOT_HI, CALCULATED_ROOT_LO, CALCULATED_ROOT_HI]
+
+    # assert the roots are equal
+    swapw.3 exec.word::eq
+    # => [exp_hi_equal_calc_hi, CALCULATED_ROOT_LO, EXPECTED_ROOT_LO]
+
+    movdn.8 exec.word::eq and
+    # => [verification_flag]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Computes the root of the SMT based on the provided Merkle path, leaf value and leaf index.
+#!
+#! Inputs:  [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx]
+#! Outputs: [ROOT_LO, ROOT_HI]
+#!
+#! Where:
+#! - [LEAF_VALUE_LO, LEAF_VALUE_HI] is the leaf for the provided Merkle path.
+#! - merkle_path_ptr is the pointer to the memory where the merkle path is stored. This path is
+#!   represented as 32 Keccak256Digest values (64 words).
+#! - leaf_idx is the index of the provided leaf in the SMT.
+#! - [ROOT_LO, ROOT_HI] is the calculated root.
+@locals(9) # current hash + is_odd flag
+proc calculate_root(
+    leaf_value: DoubleWord,
+    merkle_path_ptr: MemoryAddress,
+    leaf_idx: u32
+) -> DoubleWord
+    # Local memory stores the current hash. It is initialized to the leaf value
+    loc_storew_be.CUR_HASH_LO_LOCAL dropw loc_storew_be.CUR_HASH_HI_LOCAL dropw
+    # => [merkle_path_ptr, leaf_idx]
+
+    # prepare the stack for the hash computation cycle
+    padw padw padw
+    # => [PAD, PAD, PAD, merkle_path_ptr, leaf_idx]
+
+    # Merkle path is guaranteed to contain 32 nodes
+    repeat.32
+        # load the Merkle path node onto the stack
+        mem_stream
+        # => [PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # determine whether the last `leaf_idx` bit is 1 (is `leaf_idx` odd)
+        dup.13 u32and.1
+        # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # store the is_odd flag to the local memory, so we could use it while all 16 top elements
+        # are occupied by the nodes
+        loc_store.8
+        # => [PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # load the hash respective to the current height from the local memory
+        padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
+        # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # load the is_odd flag back to the stack
+        loc_load.8
+        # => [is_odd, CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+
+        # if is_odd flag equals 1 (`leaf_idx` is odd), change the order of the nodes on the stack
+        if.true         
+            # rearrange the hashes: current position of the hash is odd, so it should be on the 
+            # right
+            swapdw
+            # => [PATH_NODE_LO, PATH_NODE_HI, CURR_HASH_LO, CURR_HASH_HI, PAD, merkle_path_ptr, leaf_idx]
+        end
+
+        # compute the next height hash
+        exec.keccak256::merge
+        # => [CURR_HASH_LO', CURR_HASH_HI', PAD, merkle_path_ptr, leaf_idx]
+
+        # store the resulting hash to the local memory 
+        loc_storew_be.CUR_HASH_LO_LOCAL swapw loc_storew_be.CUR_HASH_HI_LOCAL
+        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx]
+
+        # update the `leaf_idx` (shift it right by 1 bit)
+        movup.13 u32shr.1 movdn.13
+        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx>>1]
+    end
+
+    # after all 32 hashes have been computed, the current hash stored in local memory represents
+    # the root of the SMT, which should be returned
+    #
+    # remove 6 elements from the stack so that exactly 8 are remaining and rewrite them with the
+    # root value from the local memory
+    dropw drop drop
+    loc_loadw_be.CUR_HASH_HI_LOCAL swapw loc_loadw_be.CUR_HASH_LO_LOCAL
+    # => [ROOT_LO, ROOT_HI]
 end

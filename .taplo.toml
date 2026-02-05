@@ -1,3 +1,5 @@
+exclude = ["crates/miden-agglayer/solidity-compat/lib/*"]
+
 [formatting]
 align_entries         = true
 column_width          = 120

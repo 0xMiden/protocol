@@ -5,11 +5,11 @@ use alloc::sync::Arc;
 use miden_agglayer::{agglayer_library, utils};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::fast::ExecutionOutput;
 use miden_protocol::Felt;
-use miden_protocol::transaction::TransactionKernel;
 use primitive_types::U256;
+
+use super::test_utils::execute_program_with_default_host;
 
 /// Convert a Vec<Felt> to a U256
 fn felts_to_u256(felts: Vec<Felt>) -> U256 {
@@ -24,28 +24,6 @@ fn felts_to_u256(felts: Vec<Felt>) -> U256 {
 fn stack_to_u256(exec_output: &ExecutionOutput) -> U256 {
     let felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
     felts_to_u256(felts)
-}
-
-/// Execute a program with default host
-async fn execute_program_with_default_host(
-    program: Program,
-) -> Result<ExecutionOutput, ExecutionError> {
-    let mut host = DefaultHost::default();
-
-    let test_lib = TransactionKernel::library();
-    host.load_library(test_lib.mast_forest()).unwrap();
-
-    let std_lib = CoreLibrary::default();
-    host.load_library(std_lib.mast_forest()).unwrap();
-
-    let asset_conversion_lib = agglayer_library();
-    host.load_library(asset_conversion_lib.mast_forest()).unwrap();
-
-    let stack_inputs = StackInputs::new(vec![]).unwrap();
-    let advice_inputs = AdviceInputs::default();
-
-    let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
-    processor.execute(&program, &mut host).await
 }
 
 /// Helper function to test convert_felt_to_u256_scaled with given parameters
@@ -79,7 +57,7 @@ async fn test_convert_to_u256_helper(
         .assemble_program(&script_code)
         .unwrap();
 
-    let exec_output = execute_program_with_default_host(program).await?;
+    let exec_output = execute_program_with_default_host(program, None).await?;
 
     // Extract the first 8 u32 values from the stack (the U256 representation)
     let actual_result: [u32; 8] = [
@@ -156,7 +134,7 @@ async fn test_convert_to_u256_scaled_eth() -> anyhow::Result<()> {
         .assemble_program(&script_code)
         .unwrap();
 
-    let exec_output = execute_program_with_default_host(program).await?;
+    let exec_output = execute_program_with_default_host(program, None).await?;
 
     let expected_result = U256::from_dec_str("100000000000000000000").unwrap();
     let actual_result = stack_to_u256(&exec_output);
@@ -199,7 +177,7 @@ async fn test_convert_to_u256_scaled_large_amount() -> anyhow::Result<()> {
         .assemble_program(&script_code)
         .unwrap();
 
-    let exec_output = execute_program_with_default_host(program).await?;
+    let exec_output = execute_program_with_default_host(program, None).await?;
 
     let expected_result = U256::from_dec_str("100000000000000000000000000").unwrap();
     let actual_result = stack_to_u256(&exec_output);
