@@ -13,9 +13,17 @@ type MemoryAddress = u32
 # CONSTANTS
 # =================================================================================================
 
+# the number of bytes in the leaf data to hash (matches Solidity's abi.encodePacked output)
 const LEAF_DATA_BYTES = 113
+
+# the number of words (4 felts each) in the advice map data
 const LEAF_DATA_NUM_WORDS = 8
+
+# the memory address where leaf data is stored
 const LEAF_DATA_START_PTR = 0
+
+# the number of elements to pack (113 bytes = 29 elements, rounding up from 28.25)
+const PACKED_DATA_NUM_ELEMENTS = 29
 
 # The offset of the first half of the current Keccak256 hash value in the local memory of the
 # `calculate_root` procedure.
@@ -196,4 +204,96 @@ proc calculate_root(
     dropw drop drop
     loc_loadw_be.CUR_HASH_HI_LOCAL swapw loc_loadw_be.CUR_HASH_LO_LOCAL
     # => [ROOT_LO, ROOT_HI]
+end
+
+#! Packs the raw leaf data by shifting left 3 bytes to match Solidity's abi.encodePacked format.
+#!
+#! The raw data has leafType occupying 4 bytes (as a u32 felt) but Solidity's abi.encodePacked
+#! only uses 1 byte for uint8 leafType. This procedure shifts all data left by 3 bytes so that:
+#! - Byte 0: leafType (1 byte)
+#! - Bytes 1-4: originNetwork (4 bytes)
+#! - etc.
+#!
+#! The Keccak precompile expects u32 values packed in little-endian byte order.
+#! For each packed element, we drop the leading 3 bytes and rebuild the u32 so that
+#! bytes [b0, b1, b2, b3] map to u32::from_le_bytes([b0, b1, b2, b3]):
+#!   packed = (curr & 0xFF)
+#!          | ((next >> 24) & 0xFF) << 8
+#!          | ((next >> 16) & 0xFF) << 16
+#!          | ((next >> 8) & 0xFF) << 24
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc pack_leaf_data
+    # initialize loop counter to 0
+    push.0
+
+    # push initial condition (true) to enter the loop
+    push.1
+
+    # loop through elements from 0 to PACKED_DATA_NUM_ELEMENTS - 1 (28)
+    while.true
+        # => [counter]
+
+        # compute source address: LEAF_DATA_START_PTR + counter
+        dup push.LEAF_DATA_START_PTR add
+        # => [src_addr, counter]
+
+        # load current element
+        mem_load
+        # => [curr_elem, counter]
+
+        # extract LSB (lower 8 bits) which becomes the first little-endian byte
+        dup u32and.0xFF
+        # => [curr_lsb, curr_elem, counter]
+
+        # compute source address for next element (counter + 1)
+        dup.2 push.LEAF_DATA_START_PTR add add.1
+        # => [next_src_addr, curr_lsb, curr_elem, counter]
+
+        # load next element
+        mem_load
+        # => [next_elem, curr_lsb, curr_elem, counter]
+
+        # keep curr_lsb on top for combination
+        swap
+        # => [curr_lsb, next_elem, curr_elem, counter]
+
+        # add next byte0 (bits 24..31) into bits 8..15
+        dup.1 u32shr.24 u32shl.8 u32or
+        # => [partial, next_elem, curr_elem, counter]
+
+        # add next byte1 (bits 16..23) into bits 16..23
+        dup.1 u32shr.16 u32and.0xFF u32shl.16 u32or
+        # => [partial, next_elem, curr_elem, counter]
+
+        # add next byte2 (bits 8..15) into bits 24..31
+        dup.1 u32shr.8 u32and.0xFF u32shl.24 u32or
+        # => [packed_elem, next_elem, curr_elem, counter]
+
+        # drop the next and current elements (no longer needed)
+        movdn.2 drop drop
+        # => [packed_elem, counter]
+
+        # compute destination address: LEAF_DATA_START_PTR + counter (in-place)
+        dup.1 push.LEAF_DATA_START_PTR add
+        # => [dest_addr, packed_elem, counter]
+
+        # store packed element
+        mem_store
+        # => [counter]
+
+        # increment counter
+        add.1
+        # => [counter + 1]
+
+        # check if we should continue (counter < PACKED_DATA_NUM_ELEMENTS)
+        dup push.PACKED_DATA_NUM_ELEMENTS lt
+        # => [should_continue, counter]
+    end
+
+    # drop the counter
+    drop
 end

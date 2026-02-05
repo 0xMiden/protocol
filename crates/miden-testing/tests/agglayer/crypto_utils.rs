@@ -5,26 +5,21 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_agglayer::utils::felts_to_bytes;
 use miden_agglayer::{EthAddressFormat, EthAmount, LeafData, MetadataHash, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
-use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::FieldElement;
+use miden_crypto::SequentialCommit;
 use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::AdviceInputs;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Hasher, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
 use super::test_utils::{execute_program_with_default_host, keccak_digest_to_word_strings};
-
-// LEAF_DATA_NUM_WORDS is defined as 8 in crypto_utils.masm, representing 8 Miden words of 4 felts
-// each
-const LEAF_DATA_FELTS: usize = 32;
 
 /// Merkle proof verification vectors JSON embedded at compile time from the Foundry-generated file.
 const MERKLE_PROOF_VECTORS_JSON: &str =
@@ -84,77 +79,108 @@ impl LeafValueVector {
     }
 }
 
-fn u32_words_to_solidity_bytes32_hex(words: &[u64]) -> String {
-    assert_eq!(words.len(), 8, "expected 8 u32 words = 32 bytes");
-    let mut out = [0u8; 32];
-    for (i, &w) in words.iter().enumerate() {
-        let le = (w as u32).to_le_bytes();
-        out[i * 4..i * 4 + 4].copy_from_slice(&le);
+fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(limbs.len() * 4);
+    for limb in limbs.iter() {
+        let u32_value = limb.as_int() as u32;
+        bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
-    let mut s = String::from("0x");
-    for b in out {
-        s.push_str(&format!("{:02x}", b));
-    }
-    s
+    bytes
 }
 
+// TESTS
+// ================================================================================================
+
+/// Test that the `pack_leaf_data` procedure produces the correct byte layout.
 #[tokio::test]
-async fn test_keccak_hash_get_leaf_value() -> anyhow::Result<()> {
+async fn pack_leaf_data() -> anyhow::Result<()> {
+    let vector: LeafValueVector =
+        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("Failed to parse leaf value vector");
+
+    let leaf_data = vector.to_leaf_data();
+
+    // Build expected bytes
+    let mut expected_packed_bytes: Vec<u8> = Vec::new();
+    expected_packed_bytes.push(0u8);
+    expected_packed_bytes.extend_from_slice(&leaf_data.origin_network.to_be_bytes());
+    expected_packed_bytes.extend_from_slice(leaf_data.origin_token_address.as_bytes());
+    expected_packed_bytes.extend_from_slice(&leaf_data.destination_network.to_be_bytes());
+    expected_packed_bytes.extend_from_slice(leaf_data.destination_address.as_bytes());
+    expected_packed_bytes.extend_from_slice(&leaf_data.amount.to_bytes_be());
+    let metadata_hash_bytes: [u8; 32] = hex_to_bytes(&vector.metadata_hash).unwrap();
+    expected_packed_bytes.extend_from_slice(&metadata_hash_bytes);
+    assert_eq!(expected_packed_bytes.len(), 113);
+
     let agglayer_lib = agglayer_library();
+    let leaf_data_elements = leaf_data.to_elements();
+    let leaf_data_bytes: Vec<u8> = felts_to_bytes(&leaf_data_elements);
+    assert_eq!(
+        leaf_data_bytes.len(),
+        128,
+        "expected 8 words * 4 felts * 4 bytes per felt = 128 bytes"
+    );
+    assert_eq!(leaf_data_bytes[116..], vec![0; 12], "the last 3 felts are pure padding");
+    assert_eq!(leaf_data_bytes[3], expected_packed_bytes[0], "the first byte is the leaf type");
+    assert_eq!(
+        leaf_data_bytes[4..8],
+        expected_packed_bytes[1..5],
+        "the next 4 bytes are the origin network"
+    );
+    assert_eq!(
+        leaf_data_bytes[8..28],
+        expected_packed_bytes[5..25],
+        "the next 20 bytes are the origin token address"
+    );
+    assert_eq!(
+        leaf_data_bytes[28..32],
+        expected_packed_bytes[25..29],
+        "the next 4 bytes are the destination network"
+    );
+    assert_eq!(
+        leaf_data_bytes[32..52],
+        expected_packed_bytes[29..49],
+        "the next 20 bytes are the destination address"
+    );
+    assert_eq!(
+        leaf_data_bytes[52..84],
+        expected_packed_bytes[49..81],
+        "the next 32 bytes are the amount"
+    );
+    assert_eq!(
+        leaf_data_bytes[84..116],
+        expected_packed_bytes[81..113],
+        "the next 32 bytes are the metadata hash"
+    );
 
-    // === Values from hardhat test ===
-    let leaf_type: u8 = 0;
-    let origin_network: u32 = 0;
-    let token_address: [u8; 20] =
-        hex_to_bytes("0x1234567890123456789012345678901234567890").unwrap();
-    let destination_network: u32 = 1;
-    let destination_address: [u8; 20] =
-        hex_to_bytes("0x0987654321098765432109876543210987654321").unwrap();
-    let amount_u64: u64 = 1; // 1e19
-    let metadata_hash: [u8; 32] =
-        hex_to_bytes("0x2cdc14cacf6fec86a549f0e4d01e83027d3b10f29fa527c1535192c1ca1aac81").unwrap();
+    assert_eq!(leaf_data_bytes[3..116], expected_packed_bytes, "byte packing is as expected");
 
-    // Expected hash value from Solidity implementation
-    let expected_hash = "0xf6825f6c59be2edf318d7251f4b94c0e03eb631b76a0e7b977fd8ed3ff925a3f";
-
-    // abi.encodePacked(
-    //   uint8, uint32, address, uint32, address, uint256, bytes32
-    // )
-    let mut amount_u256_be = [0u8; 32];
-    amount_u256_be[24..32].copy_from_slice(&amount_u64.to_be_bytes());
-
-    let mut input_u8 = Vec::with_capacity(113);
-    input_u8.push(leaf_type);
-    input_u8.extend_from_slice(&origin_network.to_be_bytes());
-    input_u8.extend_from_slice(&token_address);
-    input_u8.extend_from_slice(&destination_network.to_be_bytes());
-    input_u8.extend_from_slice(&destination_address);
-    input_u8.extend_from_slice(&amount_u256_be);
-    input_u8.extend_from_slice(&metadata_hash);
-
-    let len_bytes = input_u8.len();
-    assert_eq!(len_bytes, 113);
-
-    let preimage = KeccakPreimage::new(input_u8.clone());
-    let mut input_felts = bytes_to_packed_u32_felts(&input_u8);
-    // Pad to LEAF_DATA_FELTS (128 bytes) as expected by the downstream code
-    input_felts.resize(LEAF_DATA_FELTS, Felt::ZERO);
-    assert_eq!(input_felts.len(), LEAF_DATA_FELTS);
-
-    // Arbitrary key to store input in advice map (in prod this is RPO(input_felts))
-    let key: Word = Hasher::hash_elements(&input_felts);
-    let advice_inputs = AdviceInputs::default().with_map(vec![(key, input_felts)]);
+    let key: Word = leaf_data.to_commitment();
+    let advice_inputs = AdviceInputs::default().with_map(vec![(key, leaf_data_elements.clone())]);
 
     let source = format!(
         r#"
+            use miden::core::mem
             use miden::core::sys
-            use miden::core::crypto::hashes::keccak256
             use miden::agglayer::crypto_utils
+
+            const LEAF_DATA_START_PTR = 0
+            const LEAF_DATA_NUM_WORDS = 8
 
             begin
                 push.{key}
 
-                exec.crypto_utils::get_leaf_value
+                adv.push_mapval
+                push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+                exec.mem::pipe_preimage_to_memory drop
+
+                exec.crypto_utils::pack_leaf_data
+
+                # Read first 8 packed elements (element 0 will be on top after all loads)
+                padw mem_loadw_le.12
+                padw mem_loadw_le.8
+                padw mem_loadw_le.4
+                padw mem_loadw_le.0
+
                 exec.sys::truncate_stack
             end
         "#
@@ -170,15 +196,15 @@ async fn test_keccak_hash_get_leaf_value() -> anyhow::Result<()> {
 
     let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await?;
 
-    let digest: Vec<u64> = exec_output.stack[0..8].iter().map(|f| f.as_int()).collect();
-    let hex_digest = u32_words_to_solidity_bytes32_hex(&digest);
+    let packed_elements: Vec<Felt> = exec_output.stack[0..8].iter().map(|f| f.clone()).collect();
+    let packed_bytes: Vec<u8> = felts_to_le_bytes(&packed_elements);
 
-    let keccak256_digest: Vec<u64> = preimage.digest().as_ref().iter().map(Felt::as_int).collect();
-    let keccak256_hex_digest = u32_words_to_solidity_bytes32_hex(&keccak256_digest);
+    assert_eq!(
+        &packed_bytes[..32],
+        &expected_packed_bytes[..32],
+        "Packed bytes don't match expected Solidity encoding"
+    );
 
-    assert_eq!(digest, keccak256_digest);
-    assert_eq!(hex_digest, keccak256_hex_digest);
-    assert_eq!(hex_digest, expected_hash);
     Ok(())
 }
 
