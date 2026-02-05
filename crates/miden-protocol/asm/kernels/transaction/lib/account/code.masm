@@ -1,0 +1,346 @@
+use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
+use $kernel::memory
+use miden::core::crypto::hashes::rpo256
+use miden::core::mem
+use miden::core::word
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ACCOUNT_CODE_IS_NOT_UPDATABLE="account code must be updatable for it to be possible to set new code"
+
+const ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE="procedure is not part of the account code"
+
+const ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS="provided procedure index is out of bounds"
+
+const ERR_ACCOUNT_PROC_NOT_AUTH_PROC="account procedure is not the authentication procedure; some procedures (e.g. `incr_nonce`) can be called only from the authentication procedure"
+
+const ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH="computed account code commitment does not match recorded account code commitment"
+
+const ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES="number of account procedures must be at least 2"
+
+const ERR_ACCOUNT_TOO_MANY_PROCEDURES="number of account procedures exceeds the maximum limit of 256"
+
+# CONSTANTS
+# =================================================================================================
+
+# The minimum number of account interface procedures.
+const MIN_NUM_PROCEDURES=2
+
+# The maximum number of account interface procedures.
+const MAX_NUM_PROCEDURES=256
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted to push the index of the account procedure at the top of the operand stack onto
+# the advice stack.
+const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT=event("miden::protocol::account::push_procedure_index")
+
+# CONSTANT ACCESSORS
+# =================================================================================================
+
+#! Returns the maximum number of account interface procedures.
+#!
+#! Inputs:  []
+#! Outputs: [max_num_procedures]
+#!
+#! Where:
+#! - max_num_procedures is the maximum number of account interface procedures.
+pub proc get_max_num_procedures
+    push.MAX_NUM_PROCEDURES
+end
+
+# PROCEDURES
+# =================================================================================================
+
+#! Gets the code commitment of the active account.
+#!
+#! Inputs:  []
+#! Outputs: [CODE_COMMITMENT]
+#!
+#! Where:
+#! - CODE_COMMITMENT is the commitment of the account code.
+pub use memory::get_account_code_commitment->get_code_commitment
+
+#! Verifies that the procedure root is part of the account code and tracks whether it has been
+#! called.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to authenticate.
+#!
+#! Panics if:
+#! - the procedure root is not part of the account code.
+pub proc authenticate_and_track_procedure
+    # load procedure index
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    # => [index, PROC_ROOT]
+
+    dup movdn.5 exec.get_procedure_root
+    # => [MEM_PROC_ROOT, PROC_ROOT, index]
+
+    # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
+    assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
+    # => [index]
+
+    # Set the was_called flag to 1 for this procedure
+    exec.set_was_procedure_called
+    # => []
+end
+
+#! Asserts that the specified procedure root is the root of the authentication procedure for an
+#! account. This procedure is assumed to be invoked after asserting the account is a native account.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to authenticate.
+#!
+#! Panics if:
+#! - the procedure root is not the authentication procedure.
+pub proc assert_auth_procedure
+    # authentication procedure is always at index 0
+    push.0
+    # => [index, PROC_ROOT]
+
+    # set was_called for the the auth procedure to true
+    dup exec.set_was_procedure_called
+    # => [index, PROC_ROOT]
+
+    # get procedure root from memory stored at index
+    exec.get_procedure_root
+    # => [MEM_PROC_ROOT, PROC_ROOT]
+
+    # verify that PROC_ROOT exists in memory at index
+    assert_eqw.err=ERR_ACCOUNT_PROC_NOT_AUTH_PROC
+    # => []
+end
+
+#! Checks if a native account procedure has been called during transaction execution.
+#!
+#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
+#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
+#! only local MASM instructions will return 0 even if they were executed.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [was_called]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to check.
+#! - was_called is 1 if the procedure was called, 0 otherwise.
+#!
+#! Panics if:
+#! - the procedure root is not part of the account code.
+pub proc was_procedure_called
+    # load procedure index
+    emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
+    # => [index, PROC_ROOT]
+
+    dup movdn.5
+    # => [index, PROC_ROOT, index]
+
+    # get procedure root from memory stored at index
+    exec.get_procedure_root
+    # => [MEM_PROC_ROOT, PROC_ROOT, index]
+
+    # verify that PROC_ROOT exists in memory at index
+    assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
+    # => [index]
+
+    exec.memory::get_account_procedures_call_tracking_ptr
+    # => [was_called_offset, index]
+
+    # load the value of was_called
+    add mem_load
+    # => [was_called]
+end
+
+#! Sets the was_called flag to 1 for the specified procedure.
+#!
+#! Note:
+#! - This is an internal procedure. Unlike `was_procedure_called`, it expects the stack to contain
+#!   the index, not the procedure root.
+#! - We assume the index has been validated and is within bounds.
+#!
+#! Inputs:  [proc_idx]
+#! Outputs: []
+pub proc set_was_procedure_called
+    exec.memory::get_account_procedures_call_tracking_ptr
+    # => [was_called_offset, proc_idx]
+
+    # save 1 to the was_called address
+    add push.1 swap mem_store
+end
+
+#! Returns the binary flag indicating whether the procedure with the provided root is available on
+#! the active account.
+#!
+#! Returns 1 if the procedure is available on the active account and 0 otherwise.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [is_procedure_available]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure of interest.
+#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
+#!   available on the active account.
+pub proc has_procedure
+    # get the end pointer of the procedure section (where we should stop iterating)
+    exec.memory::get_num_account_procedures
+    exec.memory::get_account_procedure_ptr
+    # => [end_ptr, PROC_ROOT]
+
+    # get the start pointer of the procedure section (where we will start iterating)
+    push.0 exec.memory::get_account_procedure_ptr
+    # => [start_ptr, end_ptr, PROC_ROOT]
+
+    # prepare the stack for the loop
+    movdn.5 movdn.5 push.0 movdn.6
+    # => [PROC_ROOT, start_ptr, end_ptr, is_procedure_available]
+
+    # push the flag to enter the loop: an account should have at least 2 procedures
+    push.1
+    # => [should_loop, PROC_ROOT, start_ptr, end_ptr, is_procedure_available]
+
+    while.true
+        # => [PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
+
+        # load the root of the current procedure
+        padw dup.8 mem_loadw_be
+        # => [CURR_PROC_ROOT, PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
+
+        # check whether the current root is equal to the provided root
+        dupw.1 exec.word::eq
+        # => [is_equal, PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available]
+
+        # update the is_procedure_available flag
+        movup.7 or movdn.6
+        # => [PROC_ROOT, curr_proc_ptr, end_ptr, is_procedure_available']
+
+        # move the current procedure pointer
+        movup.4 add.ACCOUNT_PROCEDURE_DATA_LENGTH
+        # => [curr_proc_ptr + 4, PROC_ROOT, end_ptr, is_procedure_available']
+
+        # compute should_loop flag: we should continue iterating if
+        # !(is_procedure_available' || curr_proc_ptr + 4 == end_ptr), i.e. we didn't find the
+        # procedure and we didn't reach the end of the procedures memory block
+        dup dup.6 eq dup.7 or eq.0
+        # => [should_loop, curr_proc_ptr + 4, PROC_ROOT, end_ptr, is_procedure_available']
+
+        # rearrange the stack
+        swap movdn.5
+        # => [should_loop, PROC_ROOT, curr_proc_ptr + 4, end_ptr, is_procedure_available']
+    end
+
+    # => [PROC_ROOT, curr_proc_ptr', end_ptr, is_procedure_available']
+
+    # clean the stack
+    dropw drop drop
+    # => [is_procedure_available']
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the procedure root.
+#!
+#! Inputs:  [index]
+#! Outputs: [PROC_ROOT]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure.
+#!
+#! Panics if:
+#! - the procedure index is out of bounds.
+pub proc get_procedure_root
+    dup exec.memory::get_num_account_procedures
+    u32assert2.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_ACCOUNT_PROC_INDEX_OUT_OF_BOUNDS
+    # => [index]
+
+    # get procedure pointer
+    exec.memory::get_account_procedure_ptr
+    # => [proc_ptr]
+
+    # load procedure root from memory
+    padw movup.4 mem_loadw_be
+    # => [PROC_ROOT]
+end
+
+#! Saves account procedure data into memory and validates that the code commitment matches the
+#! sequential procedure root.
+#!
+#! Inputs:
+#!   Operand stack: [CODE_COMMITMENT]
+#!   Advice map: {
+#!     CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - CODE_COMMITMENT is the commitment of the active account's code.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the account laid out as
+#!   [ACCOUNT_PROCEDURE_DATA].
+#!
+#! Panics if:
+#! - the number of account procedures exceeded the maximum limit of 256.
+#! - the computed account code commitment does not match the provided account code commitment.
+pub proc save_account_procedure_data
+    # move procedure data from the advice map to the advice stack
+    adv.push_mapvaln
+    # OS => [CODE_COMMITMENT]
+    # AS => [account_procedure_data_len, [ACCOUNT_PROCEDURE_DATA]]
+
+    # push the length of the account procedure data onto the operand stack and compute the number of
+    # procedures from it
+    adv_push.1 div.ACCOUNT_PROCEDURE_DATA_LENGTH
+    # OS => [num_procs, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # make sure number of procedures is a valid u32, so we can use u32 operations for validation
+    u32assert.err=ERR_ACCOUNT_TOO_MANY_PROCEDURES
+    # OS => [num_procs, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # assert the account has at least the minimum number of procedures
+    dup u32gte.MIN_NUM_PROCEDURES assert.err=ERR_ACCOUNT_NOT_ENOUGH_PROCEDURES
+    # OS => [num_procs, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # assert the account does not exceed the maximum number of procedures
+    dup u32lte.MAX_NUM_PROCEDURES assert.err=ERR_ACCOUNT_TOO_MANY_PROCEDURES
+    # OS => [num_procs, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # store number of procedures in memory
+    dup exec.memory::set_num_account_procedures
+    # OS => [num_procs, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # setup start ptr and num procedures for reading from advice stack
+    exec.memory::get_account_procedures_section_ptr swap
+    # OS => [num_procs, account_proc_ptr, CODE_COMMITMENT]
+    # AS => [[ACCOUNT_PROCEDURE_DATA]]
+
+    # read the data from advice stack to memory and hash
+    exec.mem::pipe_words_to_memory
+    # OS => [PERM, PERM, PERM, end_ptr', CODE_COMMITMENT]
+    # AS => []
+
+    # extract the digest
+    exec.rpo256::squeeze_digest
+    # OS => [DIGEST, end_ptr', CODE_COMMITMENT]
+
+    # drop end_ptr
+    movup.4 drop
+    # OS => [DIGEST, CODE_COMMITMENT]
+
+    # verify hashed account procedures match account code commitment
+    assert_eqw.err=ERR_ACCOUNT_CODE_COMMITMENT_MISMATCH
+    # OS => []
+end

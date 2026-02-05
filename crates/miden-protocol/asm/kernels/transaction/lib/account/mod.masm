@@ -1,0 +1,733 @@
+use $kernel::account::code
+use $kernel::account::storage
+use $kernel::account::vault
+use $kernel::account_delta
+use $kernel::account_id
+use $kernel::constants::STORAGE_SLOT_TYPE_MAP
+use $kernel::memory
+use miden::core::collections::smt
+use miden::core::crypto::hashes::rpo256
+use miden::core::mem
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE="account nonce can only be incremented once"
+
+const ERR_ACCOUNT_NONCE_AT_MAX="account nonce is already at its maximum possible value"
+
+const ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH="ID of the new account does not match the ID computed from the seed and commitments"
+
+const ERR_ACCOUNT_TOO_MANY_STORAGE_SLOTS="number of account storage slots exceeds the maximum limit of 255"
+
+const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitment does not match recorded account storage commitment"
+
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero"
+
+const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign account to be loaded (64) was exceeded"
+
+const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account in the advice provider does not match the commitment in the account tree"
+
+const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
+
+const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in account ID"
+
+# CONSTANTS
+# =================================================================================================
+
+# Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
+# to determine the account version.
+const ACCOUNT_VERSION_MASK_U32=0x0f # 0b1111
+
+# Given the least significant 32 bits of an account ID's prefix, this mask defines the bits used
+# to determine the account type.
+const ACCOUNT_ID_TYPE_MASK_U32=0x30 # 0b11_0000
+
+# Given the least significant 32 bits of an account ID's first felt, this mask defines the bits used
+# to determine the account storage mode.
+const ACCOUNT_ID_STORAGE_MODE_MASK_U32=0xC0 # 0b1100_0000
+
+# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
+# applied, this value defines the public storage mode.
+const ACCOUNT_ID_STORAGE_MODE_PUBLIC_U32=0 # 0b0000_0000
+
+# Given the least significant 32 bits of an account ID's first felt with the storage mode mask
+# applied, this value defines the private storage mode.
+const ACCOUNT_ID_STORAGE_MODE_PRIVATE_U32=0x80 # 0b1000_0000
+
+# Bit pattern for an account w/ immutable code, after the account type mask has been applied.
+const REGULAR_ACCOUNT_IMMUTABLE_CODE=0 # 0b00_0000
+
+# Bit pattern for an account w/ updatable code, after the account type mask has been applied.
+const REGULAR_ACCOUNT_UPDATABLE_CODE=0x10 # 0b01_0000
+
+# Bit pattern for a fungible faucet w/ immutable code, after the account type mask has been applied.
+const FUNGIBLE_FAUCET_ACCOUNT=0x20 # 0b10_0000
+
+# Bit pattern for a non-fungible faucet w/ immutable code, after the account type mask has been
+# applied.
+const NON_FUNGIBLE_FAUCET_ACCOUNT=0x30 # 0b11_0000
+
+# Bit pattern for a faucet account, after the account type mask has been applied.
+const FAUCET_ACCOUNT=0x20 # 0b10_0000
+
+# Depth of the account database tree.
+const ACCOUNT_TREE_DEPTH=64
+
+# The number of field elements it takes to store one account storage slot.
+const ACCOUNT_STORAGE_SLOT_DATA_LENGTH=8
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted before a foreign account is loaded from the advice inputs.
+const ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT=event("miden::protocol::account::before_foreign_load")
+
+# Event emitted before an account nonce is incremented.
+const ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT=event("miden::protocol::account::before_increment_nonce")
+# Event emitted after an account nonce is incremented.
+const ACCOUNT_AFTER_INCREMENT_NONCE_EVENT=event("miden::protocol::account::after_increment_nonce")
+
+# RE-EXPORTS FROM SUBMODULES
+# =================================================================================================
+
+# Storage procedures
+pub use storage::get_max_num_storage_slots
+pub use storage::get_item
+pub use storage::get_typed_item
+pub use storage::get_initial_item
+pub use storage::set_item
+pub use storage::get_map_item
+pub use storage::get_initial_map_item
+pub use storage::set_map_item
+pub use storage::get_storage_slot_type
+pub use storage::validate_storage
+pub use storage::is_slot_id_lt
+pub use storage::get_item_delta
+pub use storage::get_slot_id
+pub use storage::set_item_raw
+pub use storage::set_map_item_raw
+pub use storage::get_item_raw
+pub use storage::get_map_item_raw
+pub use storage::find_storage_slot
+pub use storage::slot_ptr_to_index
+pub use storage::hash_map_key
+pub use storage::insert_and_validate_storage_map
+
+# Vault procedures
+pub use vault::add_asset->add_asset_to_vault
+pub use vault::remove_asset->remove_asset_from_vault
+pub use vault::get_asset
+pub use vault::get_initial_asset
+pub use vault::get_initial_vault_root
+
+# Code procedures
+pub use code::get_max_num_procedures
+pub use code::get_code_commitment
+pub use code::authenticate_and_track_procedure
+pub use code::assert_auth_procedure
+pub use code::was_procedure_called
+pub use code::set_was_procedure_called
+pub use code::has_procedure
+pub use code::get_procedure_root
+pub use code::save_account_procedure_data
+
+# PROCEDURES
+# =================================================================================================
+
+# ID AND NONCE
+# -------------------------------------------------------------------------------------------------
+
+#! Returns the id of the active account.
+#!
+#! Inputs:  []
+#! Outputs: [act_acct_id_prefix, act_acct_id_suffix]
+#!
+#! Where:
+#! - act_acct_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+pub use memory::get_account_id->get_id
+
+#! Returns the nonce of the active account.
+#!
+#! Inputs:  []
+#! Outputs: [nonce]
+#!
+#! Where:
+#! - nonce is the account nonce.
+pub use memory::get_account_nonce->get_nonce
+
+#! Increments the account nonce by one and returns the new nonce.
+#!
+#! Assumes that it is executed only when the active account is the native account.
+#!
+#! Inputs:  []
+#! Outputs: [new_nonce]
+#!
+#! Panics if:
+#! - the nonce has already been incremented.
+pub proc incr_nonce
+    exec.account_delta::was_nonce_incremented
+    # => [was_nonce_incremented]
+
+    # assert the nonce has not already been incremented
+    assertz.err=ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE
+    # => []
+
+    # emit event to signal that account nonce is being incremented
+    emit.ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT
+
+    exec.memory::get_account_nonce
+    # => [current_nonce]
+
+    # if the current nonce is the maximum felt value, then incrementing the nonce would overflow
+    # the field
+    dup neq.0xffffffff00000000 assert.err=ERR_ACCOUNT_NONCE_AT_MAX
+    # => [current_nonce]
+
+    add.1
+    # => [new_nonce]
+
+    dup exec.memory::set_account_nonce
+    # => [new_nonce]
+
+    emit.ACCOUNT_AFTER_INCREMENT_NONCE_EVENT
+    # => [new_nonce]
+end
+
+# COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+### ACCOUNT COMMITMENT ###################################################
+
+#! Returns the commitment of the active account at the beginning of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_COMMITMENT]
+#!
+#! Where:
+#! - INIT_COMMITMENT is the initial account commitment.
+pub proc get_initial_commitment
+    # determine whether the active account is native
+    exec.memory::is_native_account
+    # => [is_native_account]
+
+    if.true
+        exec.memory::get_init_account_commitment
+    else
+        # for the foreign account current commitment equals to initial
+        exec.compute_commitment
+    end
+    # => [INIT_COMMITMENT]
+end
+
+#! Computes commitment to the state of the active account.
+#!
+#! Notice that there is no caching (and, hence, dirty flag) for the commitment of the entire
+#! account. If the storage commitment is up-to-date (which is ensured by this procedure), computing
+#! account commitment is relatively cheap — essentially is consists of just 2 permutations of the
+#! hash function and takes relatively small number of cycles, so it would not be worth adding a
+#! separate caching mechanism for this.
+#!
+#! Inputs:  []
+#! Outputs: [ACCOUNT_COMMITMENT]
+#!
+#! Where:
+#! - ACCOUNT_COMMITMENT is the commitment of the account data.
+pub proc compute_commitment
+    # if outdated, recompute the storage commitment and store it in the memory
+    exec.refresh_storage_commitment
+    # => []
+
+    # prepare the stack for computing the account commitment
+    exec.memory::get_active_account_data_ptr padw padw padw
+    # => [RATE, RATE, PERM, account_data_ptr]
+
+    # stream account data and compute sequential hash. We perform two `mem_stream` operations
+    # because the account data consists of exactly 4 words.
+    mem_stream exec.rpo256::permute
+    mem_stream exec.rpo256::permute
+    # => [RATE, RATE, PERM, account_data_ptr']
+
+    # extract account commitment
+    exec.rpo256::squeeze_digest
+    # => [ACCOUNT_COMMITMENT, account_data_ptr']
+
+    # drop account_data_ptr
+    movup.4 drop
+    # => [ACCOUNT_COMMITMENT]
+end
+
+### STORAGE COMMITMENT ###################################################
+
+#! Returns the storage commitment of the active account at the beginning of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_ACCOUNT_STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - INIT_ACCOUNT_STORAGE_COMMITMENT is the initial account storage commitment.
+pub proc get_initial_storage_commitment
+    # Get the storage commitment of the active account. For the foreign account this commitment will
+    # be initial.
+    exec.memory::get_account_storage_commitment
+    # => [ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
+
+    # get the initial storage commitment of the native account
+    exec.memory::get_init_account_storage_commitment
+    # => [INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
+
+    # check whether the active account is native
+    exec.memory::is_native_account
+    # => [is_native_account, INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, ACTIVE_ACCOUNT_STORAGE_COMMITMENT]
+
+    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT, or
+    # ACTIVE_ACCOUNT_STORAGE_COMMITMENT otherwise
+    cdropw
+    # => [INIT_ACCOUNT_STORAGE_COMMITMENT]
+end
+
+#! Computes the storage commitment of the active account.
+#!
+#! Inputs:  []
+#! Outputs: [STORAGE_COMMITMENT]
+#!
+#! Where:
+#! - STORAGE_COMMITMENT is the commitment of the active account storage.
+pub proc compute_storage_commitment
+    # if outdated, recompute the storage commitment and store it in the memory
+    exec.refresh_storage_commitment
+
+    # return the storage commitment
+    exec.memory::get_account_storage_commitment
+    # => [STORAGE_COMMITMENT]
+end
+
+# VALIDATION
+# -------------------------------------------------------------------------------------------------
+
+#! Validates that the account seed, provided via the advice map, satisfies the seed requirements.
+#!
+#! Validation is performed via the following steps:
+#! 1. Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
+#! 2. Assert the two least significant elements of the digest are equal to the account ID of the
+#!    account the transaction is being executed against.
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc validate_seed
+    # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
+    # ---------------------------------------------------------------------------------------------
+
+    # push an empty word as padding for account ID hashing
+    padw
+    # => [EMPTY_WORD]
+
+    # push the advice map key at which the seed is located
+    exec.memory::get_account_id push.0.0
+    # => [0, 0, account_id_prefix, account_id_suffix, EMPTY_WORD]
+
+    # populate first four elements of the rate with the account ID seed
+    adv.push_mapval adv_loadw
+    # => [SEED, EMPTY_WORD]
+
+    # pad capacity element of hasher
+    padw swapw
+    # => [SEED, 0, 0, 0, 0, EMPTY_WORD]
+
+    # populate last four elements of the hasher rate with the code commitment
+    exec.memory::get_account_code_commitment
+    # => [CODE_COMMITMENT, SEED, 0, 0, 0, 0, EMPTY_WORD]
+
+    # perform first permutation of seed and code_commitment (from advice stack)
+    # perm(seed, code_commitment)
+    exec.rpo256::permute
+    # => [RATE, RATE, PERM, EMPTY_WORD]
+
+    # clear rate elements
+    dropw dropw
+    # => [PERM, EMPTY_WORD]
+
+    # perform second permutation perm(storage_commitment, 0, 0, 0, 0)
+    swapw exec.memory::get_account_storage_commitment swapw
+    # => [EMPTY_WORD, STORAGE_COMMITMENT, PERM]
+
+    exec.rpo256::permute
+    # => [RATE, RATE, CAP]
+
+    # extract digest
+    exec.rpo256::squeeze_digest
+    # => [DIGEST]
+
+    # Shape suffix to set the lower 8 bits to zero and compare the computed and provided ID.
+    # ---------------------------------------------------------------------------------------------
+
+    # extract account ID from digest
+    drop drop swap
+    # => [hashed_account_id_prefix, hashed_account_id_suffix]
+
+    exec.memory::get_account_id movdn.3 movdn.3
+    # => [hashed_account_id_prefix, hashed_account_id_suffix, account_id_prefix, account_id_suffix]
+
+    # shape suffix of hashed id by setting the lower 8 bits to zero
+    swap exec.account_id::shape_suffix swap
+    # => [hashed_account_id_prefix, hashed_account_id_suffix, account_id_prefix, account_id_suffix]
+
+    # assert the account ID matches the account ID of the new account
+    exec.account_id::is_equal assert.err=ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH
+    # => []
+end
+
+# DATA LOADERS
+# -------------------------------------------------------------------------------------------------
+
+#! Loads account data from the advice inputs into the _active_ account's memory section.
+#!
+#! Inputs:
+#!   Operand stack: [account_id_prefix, account_id_suffix]
+#!   Advice map: {
+#!     ACCOUNT_ID: [[account_id_suffix, account_id_prefix, 0, account_nonce],
+#!                   VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT],
+#!     STORAGE_COMMITMENT: [[STORAGE_SLOT_DATA]],
+#!     CODE_COMMITMENT: [[ACCOUNT_PROCEDURE_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
+#! - ACCOUNT_ID is the word constructed from the account_id as follows:
+#!   [account_id_suffix, account_id_prefix, 0, 0].
+#! - account_nonce is the nonce of the account.
+#! - VAULT_ROOT is the commitment of the account's vault.
+#! - STORAGE_COMMITMENT is the commitment to the account's storage.
+#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
+#!   [SLOT_VALUE, slot_type, 0, 0, 0].
+#! - CODE_COMMITMENT is the commitment to the account's code.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
+#!
+#! Panics if:
+#! - the number of account procedures exceeded the maximum limit of 256.
+#! - the computed account code commitment does not match the provided account code commitment.
+#! - the number of account storage slots exceeded the maximum limit of 255.
+#! - the computed account storage commitment does not match the provided account storage commitment.
+pub proc load_foreign_account
+    emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
+    # => [account_id_prefix, account_id_suffix]
+
+    # construct the word with account ID to load the core account data from the advice map
+    push.0.0
+    # OS => [0, 0, account_id_prefix, account_id_suffix]
+
+    # move the core account data to the advice stack
+    adv.push_mapval
+    # OS => [0, 0, account_id_prefix, account_id_suffix]
+    # AS => [[account_id_prefix, account_id_suffix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    # store the id and nonce of the foreign account to the memory
+    adv_loadw
+    exec.memory::set_account_id_and_nonce
+    # OS => []
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    # store the vault root of the foreign account to the memory
+    adv_loadw exec.memory::set_account_vault_root
+    # OS => []
+    # AS => [STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    # move the storage root and the code root to the operand stack
+    adv_loadw padw adv_loadw
+    # OS => [CODE_COMMITMENT, STORAGE_COMMITMENT]
+    # AS => []
+
+    # store the code root into the memory
+    exec.memory::set_account_code_commitment
+    # OS => [CODE_COMMITMENT, STORAGE_COMMITMENT]
+    # AS => []
+
+    # save the account procedure data into the memory
+    exec.code::save_account_procedure_data
+    # OS => [STORAGE_COMMITMENT]
+    # AS => []
+
+    # store the storage root to the memory
+    exec.memory::set_account_storage_commitment
+    # OS => [STORAGE_COMMITMENT]
+    # AS => []
+
+    # save the storage slots data into the memory
+    exec.save_account_storage_data
+    # OS => []
+    # AS => []
+end
+
+#! Saves storage slots data into memory and validates that the storage commitment matches the
+#! sequential storage hash.
+#!
+#! Inputs:
+#!   Operand stack: [STORAGE_COMMITMENT]
+#!   Advice map: {
+#!     STORAGE_COMMITMENT: [[STORAGE_SLOT_DATA]],
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - STORAGE_COMMITMENT is the commitment of the active account's storage.
+#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
+#!   [SLOT_VALUE, slot_type, 0, 0, 0]
+#!
+#! Panics if:
+#! - the number of account storage slots exceeded the maximum limit of 255.
+#! - the computed account storage commitment does not match the provided account storage commitment.
+pub proc save_account_storage_data
+    # move storage slot data from the advice map to the advice stack
+    adv.push_mapvaln
+    # OS => [STORAGE_COMMITMENT]
+    # AS => [storage_slot_data_len, [STORAGE_SLOT_DATA]]
+
+    # push the length of the storage slot data onto the operand stack and compute the number of
+    # storage slots from it
+    adv_push.1 div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # OS => [num_storage_slots, STORAGE_COMMITMENT]
+    # AS => [[STORAGE_SLOT_DATA]]
+
+    # assert that account does not exceed allowed maximum number of storage slots
+    dup exec.storage::get_max_num_storage_slots lte assert.err=ERR_ACCOUNT_TOO_MANY_STORAGE_SLOTS
+    # OS => [num_storage_slots, STORAGE_COMMITMENT]
+    # AS => [[STORAGE_SLOT_DATA]]
+
+    # store number of storage slots in memory
+    dup exec.memory::set_num_storage_slots
+    # OS => [num_storage_slots, STORAGE_COMMITMENT]
+    # AS => [[STORAGE_SLOT_DATA]]
+
+    # setup acct_storage_slots_ptr and end_ptr for reading from advice stack
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
+    dup movdn.2 add swap
+    # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
+    # AS => [[STORAGE_SLOT_DATA]]
+
+    # pad stack before reading from advice stack
+    padw padw padw
+    # OS => [PAD, PAD, PAD, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
+    # AS => [[STORAGE_SLOT_DATA]]
+
+    # read the data from advice stack to memory and hash
+    exec.mem::pipe_double_words_to_memory
+    # OS => [PERM, PERM, PERM, end_ptr', STORAGE_COMMITMENT]
+    # AS => []
+
+    # extract the digest
+    exec.rpo256::squeeze_digest
+    # OS => [DIGEST, end_ptr', STORAGE_COMMITMENT]
+
+    # drop end_ptr
+    movup.4 drop
+    # OS => [DIGEST, STORAGE_COMMITMENT]
+
+    # verify hashed account storage slots match account storage commitment
+    assert_eqw.err=ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH
+    # OS => []
+end
+
+#! Writes the initial storage values from the advice inputs into the account delta and validates
+#! that they match what the account commits to.
+#!
+#! This is only relevant for new accounts and only does actual work for storage maps, since
+#! value slots aren't explicitly tracked by the delta.
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc insert_new_storage
+    exec.memory::get_num_storage_slots
+    # => [num_slots]
+
+    # loop if there are storage slots
+    dup neq.0
+    # => [should_loop, num_slots]
+
+    while.true
+        sub.1
+        # => [slot_idx]
+
+        dup exec.storage::get_storage_slot_type
+        # => [slot_type, slot_idx]
+
+        push.STORAGE_SLOT_TYPE_MAP eq
+        # => [is_map_slot_type, slot_idx]
+
+        if.true
+            # add map entries to account storage
+            dup exec.storage::insert_and_validate_storage_map
+            # => [slot_idx]
+        end
+        # => [slot_idx]
+
+        dup neq.0
+        # => [should_continue, slot_idx]
+    end
+    # => [slot_idx]
+
+    drop
+    # => []
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Returns the pointer to the next vacant memory slot if the account was not loaded before, and the
+#! pointer to the account data otherwise.
+#!
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix]
+#! Outputs: [was_loaded, ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+#! - was_loaded is the binary flag indicating whether the foreign account was already loaded to the
+#!   memory.
+#! - ptr is the memory pointer to the next empty memory slot or the memory pointer to the account
+#!   data, depending on the value of the was_loaded flag.
+#!
+#! Panics if:
+#! - the prefix or suffix of the provided foreign account ID equal zero.
+#! - the maximum allowed number of foreign account to be loaded (64) was exceeded.
+pub proc get_account_data_ptr
+    # check that foreign account ID is not equal zero
+    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
+    # => [foreign_account_id_prefix, foreign_account_id_suffix]
+
+    # move pointer one account block back so that the first account pointer in the cycle will point
+    # to the native account
+    exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
+    # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+
+    # push the flag to enter the loop
+    push.1
+
+    while.true
+        # drop the flag left from the previous loop
+        # in the first iteration this will be a pad element
+        movup.3 drop
+        # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # move the current account pointer to the next account data block
+        exec.memory::get_account_data_length add
+        # => [curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # load the first data word at the current account pointer
+        padw dup.4 mem_loadw_be
+        # => [FIRST_DATA_WORD, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # check whether the last value in the word equals zero
+        # if so it means this memory block was not yet initialized
+        drop drop dup.1 eq.0
+        # => [is_empty_block, maybe_account_id_prefix, maybe_account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # check whether the current id matches the foreign id
+        movdn.2 dup.5 dup.5 exec.account_id::is_equal
+        # => [is_equal_id, is_empty_word, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # get the loop flag
+        # it equals 1 if both `is_equal_id` and `is_empty_block` flags are equal to 0, so we should
+        # continue iterating
+        dup movdn.5 or not
+        # => [loop_flag, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix, is_equal_id]
+    end
+
+    # check that the loading of one more account won't exceed the maximum number of the foreign
+    # accounts which can be loaded.
+    dup exec.memory::get_max_foreign_account_ptr lte
+    assert.err=ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED
+    # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix, is_equal_id]
+
+    # the resulting `was_loaded` flag is essentially equal to the `is_equal_id` flag
+    movup.3
+    # => [was_loaded, curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+end
+
+#! Checks that the state of the active foreign account is valid.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the hash of the active account is not represented in the account database.
+pub proc validate_active_foreign_account
+    # get the account database root
+    exec.memory::get_account_db_root
+    # => [ACCOUNT_DB_ROOT]
+
+    # get the active account ID
+    push.0.0 exec.memory::get_account_id
+    # => [account_id_prefix, account_id_suffix, 0, 0, ACCOUNT_DB_ROOT]
+
+    # retrieve the commitment of the foreign account from the active account tree
+    # this would abort if the proof for the commitment was invalid for the account root,
+    # so this implicitly verifies its correctness
+    exec.smt::get
+    # => [FOREIGN_ACCOUNT_COMMITMENT, ACCOUNT_DB_ROOT]
+
+    # get the foreign account's commitment from memory and compare with the verified commitment
+    exec.compute_commitment assert_eqw.err=ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT
+    # => [ACCOUNT_DB_ROOT]
+
+    # clean the stack
+    dropw
+end
+
+#! Makes the account storage commitment up-to-date.
+#!
+#! Notice that the account storage commitment got updated only if it is outdated: if the account
+#! storage changes, its commitment will be recomputed by hashing the storage slots. Then this newly
+#! computed storage commitment updates the storage commitment in memory. If the storage commitment
+#! is up-to-date, this procedure does nothing.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc refresh_storage_commitment
+    # First we should determine whether the storage commitment should be recomputed. We should do so
+    # if the active account is native and the storage commitment is outdated (the dirty flag equals
+    # 1). Otherwise the commitment value is guaranteed to be up-to-date.
+    exec.memory::get_recompute_storage_commitment_flag
+    # => [should_recompute_storage_commitment]
+
+    if.true
+        # dirty flag being equal 1 ensures that we have at least one storage slot, so we have to
+        # hash the storage anyway
+
+        # get number of storage slots
+        exec.memory::get_num_storage_slots
+        # => [num_storage_slots]
+
+        # setup start and end ptr
+        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
+        dup movdn.2 add swap
+        # => [start_ptr, end_ptr]
+
+        # pad stack to read and hash from memory
+        padw padw padw
+        # => [PAD, PAD, PAD, start_ptr, end_ptr]
+
+        # hash elements from memory
+        exec.rpo256::absorb_double_words_from_memory
+        # => [PERM, PERM, PERM, start_ptr, end_ptr]
+
+        # extract the digest
+        exec.rpo256::squeeze_digest
+        # => [DIGEST, end_ptr, end_ptr]
+
+        # clean stack
+        movup.4 drop movup.4 drop
+        # => [DIGEST]
+
+        # set new account storage commitment
+        exec.memory::set_account_storage_commitment dropw
+        # => []
+
+        # update the storage commitment dirty flag, indicating that the commitment is up-to-date
+        push.0
+        exec.memory::set_native_account_storage_commitment_dirty_flag
+        # => []
+    end
+end

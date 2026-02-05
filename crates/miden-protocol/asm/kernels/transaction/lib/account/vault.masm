@@ -1,0 +1,171 @@
+use $kernel::account_delta
+use $kernel::asset_vault
+use $kernel::memory
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted before an asset is added to the account vault.
+const ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::account::vault_before_add_asset")
+# Event emitted after an asset is added to the account vault.
+const ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT=event("miden::protocol::account::vault_after_add_asset")
+
+# Event emitted before an asset is removed from the account vault.
+const ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT=event("miden::protocol::account::vault_before_remove_asset")
+# Event emitted after an asset is removed from the account vault.
+const ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT=event("miden::protocol::account::vault_after_remove_asset")
+
+# Event emitted before an asset is fetched from the account vault.
+const ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT=event("miden::protocol::account::vault_before_get_asset")
+
+# PROCEDURES
+# =================================================================================================
+
+#! Adds the specified asset to the account vault.
+#!
+#! Inputs:  [ASSET]
+#! Outputs: [ASSET']
+#!
+#! Where:
+#! - ASSET is the asset that is added to the vault.
+#! - ASSET' final asset in the account vault defined as follows:
+#!   - If ASSET is a non-fungible asset, then ASSET' is the same as ASSET.
+#!   - If ASSET is a fungible asset, then ASSET' is the total fungible asset in the account vault
+#!     after ASSET was added to it.
+#!
+#! Panics if:
+#! - the asset is not valid.
+#! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was
+#!   added.
+#! - the vault already contains the same non-fungible asset.
+pub proc add_asset
+    # duplicate the ASSET to be able to emit an event after an asset is being added
+    dupw
+    # => [ASSET, ASSET]
+
+    # fetch the account vault root
+    exec.memory::get_account_vault_root_ptr movdn.4
+    # => [ASSET, acct_vault_root_ptr, ASSET]
+
+    # emit event to signal that an asset is going to be added to the account vault
+    emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
+
+    # add the asset to the account vault
+    exec.asset_vault::add_asset
+    # => [ASSET', ASSET]
+
+    swapw
+    # => [ASSET, ASSET']
+
+    dupw exec.account_delta::add_asset
+    # => [ASSET, ASSET']
+
+    # emit event to signal that an asset is being added to the account vault
+    emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
+    dropw
+    # => [ASSET']
+end
+
+#! Removes the specified asset from the account vault.
+#!
+#! Inputs:  [ASSET]
+#! Outputs: [ASSET]
+#!
+#! Where:
+#! - ASSET is the asset to remove from the vault.
+#!
+#! Panics if:
+#! - the fungible asset is not found in the vault.
+#! - the amount of the fungible asset in the vault is less than the amount to be removed.
+#! - the non-fungible asset is not found in the vault.
+pub proc remove_asset
+    # fetch the vault root
+    exec.memory::get_account_vault_root_ptr movdn.4
+    # => [ASSET, acct_vault_root_ptr]
+
+    # emit event to signal that an asset is going to be removed from the account vault
+    emit.ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT
+
+    # remove the asset from the account vault
+    exec.asset_vault::remove_asset
+    # => [ASSET]
+
+    dupw exec.account_delta::remove_asset
+    # => [ASSET]
+
+    # emit event to signal that an asset is being removed from the account vault
+    emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
+    # => [ASSET]
+end
+
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET]
+#!
+#! Where:
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_asset
+    # get the vault root ptr
+    exec.memory::get_account_vault_root_ptr movdn.4
+    # => [ASSET_KEY, vault_root_ptr]
+
+    # emit event to signal that an asset is requested
+    emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
+    # => [ASSET_KEY, vault_root_ptr]
+
+    # get the asset
+    exec.asset_vault::get_asset
+    # => [ASSET]
+end
+
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET]
+#!
+#! Where:
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+pub proc get_initial_asset
+    # get the vault root associated with the initial vault root of the native account
+    exec.memory::get_account_initial_vault_root_ptr movdn.4
+    # => [ASSET_KEY, init_native_vault_root_ptr]
+
+    # emit event to signal that an asset is requested
+    emit.ACCOUNT_VAULT_BEFORE_GET_ASSET_EVENT
+    # => [ASSET_KEY, init_native_vault_root_ptr]
+
+    # get the asset
+    exec.asset_vault::get_asset
+    # => [ASSET]
+end
+
+#! Returns the vault root of the active account at the beginning of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [INIT_ACCOUNT_VAULT_ROOT]
+#!
+#! Where:
+#! - INIT_ACCOUNT_VAULT_ROOT is the initial account vault root.
+pub proc get_initial_vault_root
+    # Get the vault root of the active account. For the foreign account this root will be equal to
+    # the initial one.
+    exec.memory::get_account_vault_root
+    # => [ACTIVE_ACCOUNT_VAULT_ROOT]
+
+    # get the initial vault root of the native account
+    exec.memory::get_init_native_account_vault_root
+    # => [INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
+
+    # check whether the active account is native
+    exec.memory::is_native_account
+    # => [is_native_account, INIT_NATIVE_ACCOUNT_VAULT_ROOT, ACTIVE_ACCOUNT_VAULT_ROOT]
+
+    # if the active account is native, keep the INIT_NATIVE_ACCOUNT_VAULT_ROOT, or
+    # ACTIVE_ACCOUNT_VAULT_ROOT otherwise
+    cdropw
+    # => [INIT_ACCOUNT_VAULT_ROOT]
+end

@@ -1,0 +1,826 @@
+use $kernel::account_delta
+use $kernel::constants::EMPTY_SMT_ROOT
+use $kernel::constants::STORAGE_SLOT_TYPE_MAP
+use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
+use $kernel::memory
+use miden::core::collections::smt
+use miden::core::collections::sorted_array
+use miden::core::crypto::hashes::rpo256
+
+# ERRORS
+# =================================================================================================
+
+const ERR_ACCOUNT_SETTING_VALUE_ITEM_ON_NON_VALUE_SLOT="failed to write an account value item to a non-value storage slot"
+
+const ERR_ACCOUNT_SETTING_MAP_ITEM_ON_NON_MAP_SLOT="failed to write an account map item to a non-map storage slot"
+
+const ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE="slot IDs must be unique and sorted in ascending order"
+
+const ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME="storage slot with the provided name does not exist"
+
+const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
+
+# CONSTANTS
+# =================================================================================================
+
+# The maximum storage slot index
+const MAX_STORAGE_SLOT_INDEX=254
+
+# The maximum number of account storage slots.
+const MAX_NUM_STORAGE_SLOTS=MAX_STORAGE_SLOT_INDEX+1
+
+# The number of field elements it takes to store one account storage slot.
+const ACCOUNT_STORAGE_SLOT_DATA_LENGTH=8
+
+# The offset of the slot type in the storage slot.
+const ACCOUNT_SLOT_TYPE_OFFSET=1
+
+# The offset of the slot's ID suffix in the storage slot.
+const ACCOUNT_SLOT_ID_SUFFIX_OFFSET=2
+
+# The offset of the slot's ID prefix in the storage slot.
+const ACCOUNT_SLOT_ID_PREFIX_OFFSET=3
+
+# The offset of the slot value in the storage slot.
+const ACCOUNT_SLOT_VALUE_OFFSET=4
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted before an account storage item is updated.
+const ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT=event("miden::protocol::account::storage_before_set_item")
+# Event emitted after an account storage item is updated.
+const ACCOUNT_STORAGE_AFTER_SET_ITEM_EVENT=event("miden::protocol::account::storage_after_set_item")
+
+# Event emitted before an account storage map item is accessed.
+const ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_before_get_map_item")
+
+# Event emitted before an account storage map item is updated.
+const ACCOUNT_STORAGE_BEFORE_SET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_before_set_map_item")
+# Event emitted after an account storage map item is updated.
+const ACCOUNT_STORAGE_AFTER_SET_MAP_ITEM_EVENT=event("miden::protocol::account::storage_after_set_map_item")
+
+# CONSTANT ACCESSORS
+# =================================================================================================
+
+#! Returns the maximum number of account storage slots.
+#!
+#! Inputs:  []
+#! Outputs: [max_num_storage_slots]
+#!
+#! Where:
+#! - max_num_storage_slots is the maximum number of account storage slots.
+pub proc get_max_num_storage_slots
+    push.MAX_NUM_STORAGE_SLOTS
+end
+
+# PROCEDURES
+# =================================================================================================
+
+#! Gets an item from the account storage.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix]
+#! Outputs: [VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value of the item.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+pub proc get_item
+    # get account storage slots section offset
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [acct_storage_slots_section_offset, slot_id_prefix, slot_id_suffix]
+
+    exec.find_storage_slot
+    # => [slot_ptr]
+
+    # get the item from storage
+    exec.get_item_raw
+    # => [VALUE]
+end
+
+#! Gets an item and its slot type from the account storage.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix]
+#! Outputs: [VALUE, slot_type]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value of the item.
+#! - slot_type is the type of the slot.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+pub proc get_typed_item
+    # get account storage slots section offset
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [acct_storage_slots_section_offset, slot_id_prefix, slot_id_suffix]
+
+    exec.find_storage_slot
+    # => [slot_ptr]
+
+    dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
+    # => [slot_type, slot_ptr]
+
+    # load the value
+    swap exec.get_item_raw
+    # => [VALUE, slot_type]
+end
+
+#! Gets an item from the account storage at its initial state (beginning of transaction).
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix]
+#! Outputs: [INIT_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+pub proc get_initial_item
+    # get account initial storage slots section offset
+    exec.memory::get_account_initial_storage_slots_ptr
+    # => [account_initial_storage_slots_ptr, slot_id_prefix, slot_id_suffix]
+
+    exec.find_storage_slot
+    # => [slot_ptr]
+
+    # get the item from initial storage
+    exec.get_item_raw
+    # => [INIT_VALUE]
+end
+
+#! Sets an item in the account storage.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value to set.
+#! - OLD_VALUE is the previous value of the item.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the storage slot type is not value.
+pub proc set_item
+    emit.ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT
+    # => [slot_id_prefix, slot_id_suffix, VALUE]
+
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, VALUE]
+
+    exec.find_storage_slot
+    # => [slot_ptr, VALUE]
+
+    # load the slot type
+    dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
+    # => [slot_type, slot_ptr, VALUE]
+
+    # assert slot_type is value
+    push.STORAGE_SLOT_TYPE_VALUE eq
+    assert.err=ERR_ACCOUNT_SETTING_VALUE_ITEM_ON_NON_VALUE_SLOT
+    # => [slot_ptr, VALUE]
+
+    movdn.4
+    # => [VALUE, slot_ptr]
+
+    # load the old value of the slot
+    dup.4 exec.get_item_raw
+    # => [OLD_VALUE, VALUE, slot_ptr]
+
+    swapw movup.8
+    # => [slot_ptr, VALUE, OLD_VALUE]
+
+    emit.ACCOUNT_STORAGE_AFTER_SET_ITEM_EVENT
+    # => [slot_ptr, VALUE, OLD_VALUE]
+
+    # store the new value into the slot
+    exec.set_item_raw
+    # => [OLD_VALUE]
+end
+
+#! Returns the VALUE located under the specified KEY within the map contained in the account
+#! storage slot identified by the slot ID.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+#! Outputs: [VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value of the map item at KEY.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the requested storage slot type is not map.
+pub proc get_map_item
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY]
+
+    exec.get_map_item_raw
+end
+
+#! Returns the VALUE located under the specified KEY within the map contained in the given
+#! account storage slot at its initial state (beginning of transaction).
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+#! Outputs: [INIT_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - INIT_VALUE is the initial value of the map item at KEY at the beginning of the transaction.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the requested storage slot type is not map.
+pub proc get_initial_map_item
+    exec.memory::get_account_initial_storage_slots_ptr
+    # => [initial_storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY]
+
+    exec.get_map_item_raw
+end
+
+#! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage slot.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#!    - the slot must point to the root of the storage map.
+#! - NEW_VALUE is the value to set under KEY.
+#! - KEY is the key to set.
+#! - OLD_VALUE is the previous value of the item.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the storage slot type is not map.
+#! - no map with the root of the slot is found.
+pub proc set_map_item
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE]
+
+    # resolve the slot name to its pointer
+    exec.find_storage_slot
+    # => [slot_ptr, KEY, NEW_VALUE]
+
+    # load the slot type
+    dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
+    # => [slot_type, slot_ptr, KEY, NEW_VALUE]
+
+    # assert slot_type is map
+    push.STORAGE_SLOT_TYPE_MAP eq
+    assert.err=ERR_ACCOUNT_SETTING_MAP_ITEM_ON_NON_MAP_SLOT
+    # => [slot_ptr, KEY, NEW_VALUE]
+
+    exec.set_map_item_raw
+    # => [OLD_VALUE]
+end
+
+#! Returns the type of the storage slot at the provided index.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [slot_type]
+#!
+#! Where:
+#! - index is the location in memory of the storage slot.
+#! - slot_type is the type of the storage slot.
+pub proc get_storage_slot_type
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    # compute storage slot ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
+    add
+    # => [slot_ptr]
+
+    # load the slot type
+    add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
+    # => [slot_type]
+end
+
+# VALIDATION
+# -------------------------------------------------------------------------------------------------
+
+#! Validates that slot IDs are sorted in ascending order and that slot IDs are unique.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Pancis if:
+#! - each slot's ID is not strictly less than the next slot's ID.
+#!    - this ensures sorting and uniqueness among slot IDs.
+pub proc validate_storage
+    exec.memory::get_num_storage_slots
+    # => [num_slots]
+
+    # compute the number of slot ID comparisons we need to make
+    # generally, we need num_storage_slots - 1 comparisons, e.g., if we have 3 slots, we need 2
+    # comparisons: 2 with 1 and 1 with 0.
+    # we subtract 1 if any slots exist and 0 otherwise, notably:
+    # maps 1 storage slot -> 0 comparisons, since 1 slot is always sorted and unique
+    # maps 0 storage slots -> 0 comparisons
+    dup u32gt.0
+    # => [has_slots, num_slots]
+
+    sub
+    # => [num_comparisons]
+
+    # loop if we need to compare slots
+    dup neq.0
+    # => [should_loop, num_comparisons]
+
+    while.true
+        # first iteration: number of comparisons = current slot index
+        # => [curr_slot_idx]
+
+        dup exec.get_slot_id
+        # => [curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
+
+        # we are guaranteed to not underflow because curr_slot_idx is at least 1 at the
+        # beginning of the loop
+        dup.2 sub.1
+        # => [prev_slot_idx, curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
+
+        exec.get_slot_id
+        # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
+
+        # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs are
+        # not less than each other
+        exec.is_slot_id_lt
+        # => [is_prev_lt_curr, curr_slot_idx]
+
+        assert.err=ERR_ACCOUNT_STORAGE_SLOTS_MUST_BE_SORTED_AND_UNIQUE
+        # => [curr_slot_idx]
+
+        sub.1 dup neq.0
+        # => [should_continue, prev_slot_idx]
+    end
+    # => [prev_slot_idx]
+
+    drop
+    # => []
+end
+
+#! Returns 1 if the previous slot ID is smaller than the current slot ID, 0 otherwise.
+#!
+#! In the slot ID comparison, the prefix takes precedence over the suffix.
+#!
+#! This procedure is public so it can be tested.
+#!
+#! Inputs:  [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
+#! Outputs: [is_prev_lt_curr]
+pub proc is_slot_id_lt
+    movup.2
+    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
+
+    # compute prev == curr for prefix
+    dup dup.2 eq
+    # => [is_prefix_eq, curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
+
+    movdn.4
+    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
+
+    # compute prev < curr for prefix
+    lt
+    # => [is_prev_lt_curr_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
+
+    swap.2
+    # => [curr_slot_id_suffix, prev_slot_id_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+
+    # compute prev < curr for suffix
+    lt
+    # => [is_prev_lt_curr_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+
+    movup.2
+    # => [is_prefix_eq, is_prev_lt_curr_suffix, is_prev_lt_curr_prefix]
+
+    # compute result as is_prefix_lt || (is_suffix_lt && is_prefix_eq)
+    # is_suffix_lt only affects the result if the prefix was equal, otherwise the prefix
+    # determines the outcome
+    and or
+    # => [is_prev_lt_curr]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Gets the initial and current value of an item from the storage slot at the provided index for
+#! the native account.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [INITIAL_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
+#!
+#! Where:
+#! - index is the index of the slot.
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - INITIAL_VALUE is the initial value of the item at the beginning of the transaction.
+#! - CURRENT_VALUE is the current value of the item.
+pub proc get_item_delta
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    # get account storage slots section offset
+    exec.memory::get_native_account_active_storage_slots_ptr
+    # => [storage_slots_ptr, offset]
+
+    dup.1 add dup
+    # => [slot_ptr, slot_ptr, offset]
+
+    # load the slot ID
+    add.ACCOUNT_SLOT_ID_SUFFIX_OFFSET mem_load
+    # => [slot_id_suffix, slot_ptr, offset]
+
+    dup.1 add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
+    # => [slot_id_prefix, slot_id_suffix, slot_ptr, offset]
+
+    # load the current value
+    movup.2 exec.get_item_raw
+    # => [CURRENT_VALUE, slot_id_prefix, slot_id_suffix, offset]
+
+    # get account initial storage slots section offset
+    exec.memory::get_account_initial_storage_slots_ptr
+    # => [init_storage_slots_ptr, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, offset]
+
+    movup.7 add
+    # => [init_slot_ptr, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
+
+    exec.get_item_raw
+    # => [INITIAL_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
+end
+
+#! Gets the slot ID of the storage slot at the provided index.
+#!
+#! WARNING: The index must be in bounds.
+#!
+#! Inputs:  [index]
+#! Outputs: [slot_id_prefix, slot_id_suffix]
+#!
+#! Where:
+#! - index is the index of the slot.
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+pub proc get_slot_id
+    # convert the index into a memory offset
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [offset]
+
+    exec.memory::get_account_active_storage_slots_section_ptr
+    add
+    # => [slot_ptr]
+
+    dup add.ACCOUNT_SLOT_ID_SUFFIX_OFFSET mem_load
+    # => [slot_id_suffix, slot_ptr]
+
+    swap add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
+    # => [slot_id_prefix, slot_id_suffix]
+end
+
+#! Sets the value of the storage slot located at the memory address specified by the provided
+#! pointer.
+#!
+#! The provided pointer must be a valid pointer into the current storage slot section.
+#!
+#! WARNING: This must only be used on the native account.
+#!
+#! Inputs:  [slot_ptr, VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - slot_ptr is the pointer to a slot.
+#! - VALUE is the new value of the item.
+pub proc set_item_raw
+    add.ACCOUNT_SLOT_VALUE_OFFSET mem_storew_be dropw
+    # => []
+
+    # set the storage commitment dirty flag to indicate that the commitment is outdated
+    push.1
+    exec.memory::set_native_account_storage_commitment_dirty_flag
+    # => []
+end
+
+#! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage slot.
+#!
+#! WARNING: The slot ptr must point to a map slot.
+#! WARNING: This must only be used on the native account.
+#!
+#! Inputs:  [slot_ptr, KEY, NEW_VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_ptr is the pointer to a slot.
+#! - KEY is the key to set.
+#! - NEW_VALUE is the value to set under KEY.
+#! - OLD_VALUE is the previous value of the item.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - no map with the root of the slot is found.
+#!
+#! Locals:
+#! - 0: slot_ptr
+#! - 4..8: OLD_MAP_VALUE
+#! - 8..12: OLD_MAP_ROOT
+@locals(8)
+pub proc set_map_item_raw
+    # store slot_ptr until the end of the procedure
+    dup loc_store.0
+    # => [slot_ptr, KEY, NEW_VALUE]
+
+    emit.ACCOUNT_STORAGE_BEFORE_SET_MAP_ITEM_EVENT
+    # => [slot_ptr, KEY, NEW_VALUE]
+
+    # load the current map root from memory
+    exec.get_item_raw
+    # => [OLD_MAP_ROOT, KEY, NEW_VALUE]
+
+    # duplicate the KEY and the NEW_VALUE for account delta insertion and event emission
+    dupw.2 dupw.2
+    # => [KEY, NEW_VALUE, OLD_MAP_ROOT, KEY, NEW_VALUE]
+
+    # see hash_map_key's docs for why this is done
+    exec.hash_map_key swapw
+    # => [NEW_VALUE, HASHED_KEY, OLD_MAP_ROOT, KEY, NEW_VALUE]
+
+    # set the NEW_VALUE under HASHED_KEY in the tree
+    exec.smt::set
+    # => [OLD_VALUE, NEW_ROOT, KEY, NEW_VALUE]
+
+    # store OLD_VALUE until the end of the procedure
+    loc_storew_be.4 swapw
+    # => [NEW_ROOT, OLD_VALUE, KEY, NEW_VALUE]
+
+    # store NEW_ROOT into the map slot's VALUE
+    loc_load.0 exec.set_item_raw
+    # => [OLD_VALUE, KEY, NEW_VALUE]
+
+    swapw
+    # => [KEY, OLD_VALUE, NEW_VALUE]
+
+    loc_load.0
+    # => [slot_ptr, KEY, OLD_VALUE, NEW_VALUE]
+
+    # emit event to signal that an account storage map item is being updated
+    emit.ACCOUNT_STORAGE_AFTER_SET_MAP_ITEM_EVENT
+    # => [slot_ptr, KEY, OLD_VALUE, NEW_VALUE]
+
+    # convert the slot ptr to a slot index for the delta API
+    exec.slot_ptr_to_index
+    # => [slot_idx, KEY, OLD_VALUE, NEW_VALUE]
+
+    exec.account_delta::set_map_item
+    # => []
+
+    # load OLD_VALUE as return value on the stack
+    padw loc_loadw_be.4
+    # => [OLD_VALUE]
+end
+
+#! Gets the value of the storage slot located at the memory address specified by the provided
+#! pointer.
+#!
+#! The provided pointer must be a valid pointer into the initial or current storage slot section.
+#!
+#! Inputs:  [slot_ptr]
+#! Outputs: [VALUE]
+#!
+#! Where:
+#! - slot_ptr is the pointer to a slot.
+#! - VALUE is the value of the item.
+pub proc get_item_raw
+    # offset the pointer to point to the VALUE in the slot
+    add.ACCOUNT_SLOT_VALUE_OFFSET
+    # => [slot_value_ptr]
+
+    # load the item from memory
+    padw movup.4 mem_loadw_be
+    # => [VALUE]
+end
+
+#! Finds the storage map root in the storage slot with the provided name in the provided storage
+#! slots section and returns the VALUE associated with the KEY in the corresponding map.
+#!
+#! Inputs:  [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY]
+#! Outputs: [VALUE]
+#!
+#! Where:
+#! - KEY is the key to look up in the map.
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value of the map item at KEY.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the requested storage slot type is not map.
+pub proc get_map_item_raw
+    exec.find_storage_slot
+    # => [slot_ptr, KEY]
+
+    emit.ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT
+    # => [slot_ptr, KEY]
+
+    # load the slot type
+    dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
+    # => [slot_type, slot_ptr, KEY]
+
+    # assert slot_type is map
+    push.STORAGE_SLOT_TYPE_MAP eq
+    assert.err=ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT
+    # => [slot_ptr, KEY]
+
+    # load the storage map root from the slot
+    exec.get_item_raw
+    # => [ROOT, KEY]
+
+    # see hash_map_key's docs for why this is done
+    swapw exec.hash_map_key
+    # => [HASHED_KEY, ROOT]
+
+    # fetch the VALUE located under HASHED_KEY in the tree
+    exec.smt::get
+    # => [VALUE, ROOT]
+
+    # remove the ROOT from the stack
+    swapw dropw
+    # => [VALUE]
+end
+
+#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
+#! returns the pointer to that slot.
+#!
+#! Inputs:  [storage_slots_ptr, slot_id_prefix, slot_id_suffix]
+#! Outputs: [slot_ptr]
+#!
+#! Where:
+#! - storage_slots_ptr is the pointer to the storage slots section.
+#! - slot_ptr is the pointer to the resolved storage slot.
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+pub proc find_storage_slot
+    # construct the start and end pointers of the storage slot section in which we will search
+    dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
+    # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_prefix, slot_id_suffix]
+
+    movdn.3 movdn.2
+    # => [slot_id_prefix, slot_id_suffix, storage_slots_start_ptr, storage_slots_end_ptr]
+
+    # find the slot whose slot key matches [slot_id_prefix, slot_id_suffix, 0, 0]
+    # if the slot key does not exist, this procedure will validate its absence
+    exec.sorted_array::find_half_key_value
+    # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
+
+    assert.err=ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME
+    # => [slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
+
+    swap.2 drop drop
+    # => [slot_ptr]
+end
+
+#! Computes the slot index from a given slot ptr.
+#!
+#! WARNING: The slot ptr is assumed to be a valid pointer to a slot in an account's storage slots
+#! section (**not** the initial one). In particular, this means the slot_ptr must be a valid u32.
+#!
+#! Inputs:  [slot_ptr]
+#! Outputs: [slot_idx]
+#!
+#! Where:
+#! - slot_ptr is the pointer to a "current" storage slot in the native account's memory section.
+#! - slot_idx is the index of the storage slot.
+pub proc slot_ptr_to_index
+    exec.memory::get_account_active_storage_slots_section_ptr
+    sub
+    # => [slot_offset]
+
+    # compute slot_offset / ACCOUNT_STORAGE_SLOT_DATA_LENGTH to get the index
+    # we can assume the slot_ptr is a valid u32.
+    u32div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    # => [slot_idx]
+end
+
+#! Hashes the provided map key before using it as the key in an SMT.
+#!
+#! Because the keys of the map are user-chosen and thus not necessarily uniformly distributed, the
+#! tree could be imbalanced and made less efficient. To mitigate that, the keys used in the
+#! storage map are hashed before they are inserted into the SMT, which creates a uniform distribution.
+#!
+#! Inputs:  [KEY]
+#! Outputs: [HASHED_KEY]
+pub proc hash_map_key
+    exec.rpo256::hash
+    # => [HASHED_KEY]
+end
+
+#! Inserts the entries of the provided storage map root into the account.
+#!
+#! These entries must be present in the advice provider with the map root as the key. Each entry is
+#! is inserted using set_map_item on an initially empty SMT root. This does two important things:
+#! - It allows checking whether the root of the SMT with all entries inserted matches the root of
+#!   the map the account commits to.
+#! - It inserts all entries into the in-kernel delta, where the initial value of each entry will
+#!   be set to the empty word so the delta for this map is computed as if the map had initially
+#!   been empty.
+#!
+#! Inputs:
+#!   Operand stack: [slot_idx]
+#!   Advice map: { MAP_ROOT: [MAP_ENTRIES] }
+#! Outputs: []
+pub proc insert_and_validate_storage_map
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    exec.memory::get_account_active_storage_slots_section_ptr
+    add
+    # => [slot_ptr]
+
+    dup exec.get_item_raw
+    # => [MAP_ROOT, slot_ptr]
+
+    # overwrite the map root with the root of an empty SMT, so we can insert the entries of
+    # the map into an empty map and then check whether the resulting root matches MAP_ROOT.
+    push.EMPTY_SMT_ROOT
+    dup.8
+    # => [slot_ptr, EMPTY_SMT_ROOT, MAP_ROOT, slot_ptr]
+
+    exec.set_item_raw
+    # => [MAP_ROOT, slot_ptr]
+
+    adv.push_mapvaln
+    # OS => [MAP_ROOT, slot_ptr]
+    # AS => [num_elements, [MAP_ENTRIES]]
+
+    movup.4
+    # OS => [slot_ptr, MAP_ROOT]
+    # AS => [num_elements, [MAP_ENTRIES]]
+
+    adv_push.1
+    # OS => [num_elements, slot_ptr, MAP_ROOT]
+    # AS => [[MAP_ENTRIES]]
+
+    push.8 u32assert2.err="number of storage map elements should fit into a u32"
+    # OS => [8, num_elements, slot_ptr, MAP_ROOT]
+    # AS => [[MAP_ENTRIES]]
+
+    # check that num_elements % 8 = 0 so we can use an equality check for the loop condition
+    # this also computes number_entries which is num_elements / 8.
+    u32divmod eq.0 assert.err="number of storage map elements must be a multiple of 8"
+    # OS => [num_entries, slot_ptr, MAP_ROOT]
+    # AS => [[MAP_ENTRIES]]
+
+    # loop if there are more than 0 storage map elements
+    dup neq.0
+    # OS => [should_loop, num_entries, slot_ptr, MAP_ROOT]
+    # AS => [[MAP_ENTRIES]]
+
+    while.true
+        sub.1
+        # => [remaining_entries, slot_ptr, MAP_ROOT]
+
+        # push a key-value pair (8 felts) to the operand stack
+        adv_push.8
+        # => [KEY, VALUE, remaining_entries, slot_ptr, MAP_ROOT]
+
+        dup.9
+        # => [slot_ptr, KEY, VALUE, remaining_entries, slot_ptr, MAP_ROOT]
+
+        # insert the key-value pair into account storage
+        # this could be optimized to avoid reading and writing the root on every call
+        exec.set_map_item_raw dropw
+        # => [remaining_entries, slot_ptr, MAP_ROOT]
+
+        dup neq.0
+        # => [should_continue, remaining_entries, slot_ptr, MAP_ROOT]
+    end
+    # OS => [remaining_entries, slot_ptr, MAP_ROOT]
+    # AS => []
+
+    drop
+    # => [slot_ptr, MAP_ROOT]
+
+    # load the root after all entries have been inserted
+    exec.get_item_raw
+    # => [CURRENT_MAP_ROOT, MAP_ROOT]
+
+    # after inserting all entries, the storage map root must match the map root that was committed
+    # to as part of account creation
+    assert_eqw.err="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
+    # => []
+end
