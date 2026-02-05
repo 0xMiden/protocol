@@ -1,8 +1,15 @@
 extern crate alloc;
 
+use miden_agglayer::errors::{
+    ERR_REMAINDER_TOO_LARGE,
+    ERR_SCALE_AMOUNT_EXCEEDED_LIMIT,
+    ERR_UNDERFLOW,
+    ERR_X_TOO_LARGE,
+};
 use miden_agglayer::eth_types::amount::EthAmount;
 use miden_agglayer::utils;
 use miden_protocol::Felt;
+use miden_protocol::errors::MasmError;
 use primitive_types::U256;
 
 use super::test_utils::{assert_execution_fails_with, execute_masm_script, stack_to_u256};
@@ -138,19 +145,19 @@ async fn assert_scale_down_ok(x: U256, scale: u32) -> anyhow::Result<u64> {
     Ok(y)
 }
 
-/// Assert that scaling down fails with the given y and expected error message
-async fn assert_scale_down_fails(x: U256, scale: u32, y: u64, expected_msg: &str) {
+/// Assert that scaling down fails with the given y and expected error
+async fn assert_scale_down_fails(x: U256, scale: u32, y: u64, expected_error: MasmError) {
     let script = build_scale_down_script(x, scale, y);
-    assert_execution_fails_with(&script, expected_msg).await;
+    assert_execution_fails_with(&script, expected_error.message()).await;
 }
 
 /// Test that y-1 and y+1 both fail appropriately
 async fn assert_y_plus_minus_one_behavior(x: U256, scale: u32) -> anyhow::Result<()> {
     let y = assert_scale_down_ok(x, scale).await?;
     if y > 0 {
-        assert_scale_down_fails(x, scale, y - 1, "remainder z must be < 10^s").await;
+        assert_scale_down_fails(x, scale, y - 1, ERR_REMAINDER_TOO_LARGE).await;
     }
-    assert_scale_down_fails(x, scale, y + 1, "underflow detected").await;
+    assert_scale_down_fails(x, scale, y + 1, ERR_UNDERFLOW).await;
     Ok(())
 }
 
@@ -212,7 +219,7 @@ async fn test_scale_down_exceeds_max_scale() {
     let x = U256::from(1000u64);
     let s = 19u32;
     let y = 1u64;
-    assert_scale_down_fails(x, s, y, "maximum scaling factor is 18").await;
+    assert_scale_down_fails(x, s, y, ERR_SCALE_AMOUNT_EXCEEDED_LIMIT).await;
 }
 
 #[tokio::test]
@@ -221,7 +228,7 @@ async fn test_scale_down_x_too_large() {
     let x = U256::from(1u64) << 128;
     let s = 0u32;
     let y = 0u64;
-    assert_scale_down_fails(x, s, y, "x must fit into 128 bits").await;
+    assert_scale_down_fails(x, s, y, ERR_X_TOO_LARGE).await;
 }
 
 // ================================================================================================
@@ -252,7 +259,7 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let scale = 10u64.pow(scale_exp);
     let x = U256::from(wrong_y * scale + scale); // This is actually (wrong_y+1)*scale
 
-    assert_scale_down_fails(x, scale_exp, wrong_y, "remainder z must be < 10^s").await;
+    assert_scale_down_fails(x, scale_exp, wrong_y, ERR_REMAINDER_TOO_LARGE).await;
 }
 
 // ================================================================================================
