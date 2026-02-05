@@ -351,14 +351,16 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::remove_asset
 
             # truncate the stack
-            swapw dropw
+            exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET = Word::from(remove_fungible_asset)
+        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -396,11 +398,13 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::remove_asset
         end
         ",
-        FUNGIBLE_ASSET = Word::from(remove_fungible_asset)
+        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;
@@ -435,14 +439,16 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::remove_asset
 
             # truncate the stack
-            swapw dropw
+            exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET = Word::from(remove_fungible_asset)
+        FUNGIBLE_ASSET_KEY = remove_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = remove_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -484,11 +490,13 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::remove_asset
         end
         ",
-        FUNGIBLE_ASSET = Word::from(non_existent_non_fungible_asset)
+        FUNGIBLE_ASSET_KEY = non_existent_non_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = non_existent_non_fungible_asset.to_value_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;
@@ -520,14 +528,16 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::remove_asset
 
             # truncate the stack
-            swapw dropw
+            exec.::miden::core::sys::truncate_stack
         end
         ",
-        FUNGIBLE_ASSET = Word::from(non_fungible_asset)
+        FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;

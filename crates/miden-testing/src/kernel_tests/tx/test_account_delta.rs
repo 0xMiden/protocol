@@ -525,16 +525,18 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         # => []
 
         # remove and re-add asset 3
-        push.{asset3}
+        push.{ASSET3_VALUE}
+        push.{ASSET3_KEY}
         exec.remove_asset
-        # => [ASSET]
+        # => [ASSET_VALUE]
         exec.add_asset dropw
         # => []
     end
     ",
         asset1 = Word::from(asset1),
         asset2 = Word::from(asset2),
-        asset3 = Word::from(asset3),
+        ASSET3_KEY = asset3.to_key_word(),
+        ASSET3_VALUE = asset3.to_value_word(),
     ))?;
 
     let executed_tx = mock_chain
@@ -1153,16 +1155,16 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => [ASSET']
       end
 
-      #! Inputs:  [ASSET]
-      #! Outputs: [ASSET]
+      #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+      #! Outputs: [ASSET_VALUE]
       proc remove_asset
-          repeat.12 push.0 movdn.4 end
-          # => [ASSET, pad(12)]
+          padw padw swapdw
+          # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
           call.account::remove_asset
-          # => [ASSET, pad(12)]
+          # => [ASSET_VALUE, pad(12)]
 
           repeat.12 movup.4 drop end
-          # => [ASSET]
+          # => [ASSET_VALUE]
       end
 ";

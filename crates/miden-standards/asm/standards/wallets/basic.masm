@@ -38,12 +38,13 @@ end
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
 #! these elements do not contain any meaningful data.
 #!
-#! Inputs:  [ASSET, note_idx, pad(11)]
-#! Outputs: [ASSET, note_idx, pad(11)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 #!
 #! Where:
 #! - note_idx is the index of the output note.
-#! - ASSET is the fungible or non-fungible asset of interest.
+#! - ASSET_KEY is the vault key of the asset to move to the note.
+#! - ASSET_VALUE is the value of the asset to move to the note.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -54,13 +55,16 @@ end
 pub proc move_asset_to_note
     # remove the asset from the account
     exec.native_account::remove_asset
-    # => [ASSET, note_idx, pad(11)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
-    dupw dup.8 movdn.4
-    # => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+    # TODO(expand_assets): Pass key to add_asset eventually.
+    dropw dupw dup.8 movdn.4
+    # => [ASSET_VALUE, note_idx, pad(11)]
+    # => [ASSET_VALUE, note_idx, ASSET_VALUE, note_idx, pad(11)]
 
     exec.output_note::add_asset
-    # => [ASSET, note_idx, pad(11)]
+    # TODO(expand_assets): Consider not returning anything from this procedure.
+    # => [ASSET_VALUE, note_idx, pad(11)]
 end
 
 #! Adds all assets from the active note to the native account's vault.

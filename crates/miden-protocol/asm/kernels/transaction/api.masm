@@ -574,10 +574,11 @@ end
 
 #! Removes the specified asset from the vault.
 #!
-#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
 #!
 #! Panics if:
@@ -590,15 +591,13 @@ end
 pub proc account_remove_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
-    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
-    exec.asset_vault::build_asset_vault_key
     exec.account::remove_asset_from_vault
     # => [ASSET_VALUE, pad(12)]
 end

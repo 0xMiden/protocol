@@ -91,7 +91,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::util
 
       begin
-          push.{FUNGIBLE_ASSET1}
+          push.{FUNGIBLE_ASSET1_VALUE}
+          push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
           # => []
 
@@ -99,7 +100,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           exec.util::create_default_note_with_asset
           # => []
 
-          push.{FUNGIBLE_ASSET2}
+          push.{FUNGIBLE_ASSET2_VALUE}
+          push.{FUNGIBLE_ASSET2_KEY}
           call.account::remove_asset
           # => [ASSET]
 
@@ -108,8 +110,10 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => []
       end
       ",
-        FUNGIBLE_ASSET1 = Word::from(fungible_asset1),
-        FUNGIBLE_ASSET2 = Word::from(fungible_asset2)
+        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET1_VALUE = fungible_asset1.to_value_word(),
+        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();
