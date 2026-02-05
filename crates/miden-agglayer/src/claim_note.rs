@@ -20,7 +20,7 @@ use miden_protocol::note::{
 };
 use miden_standards::note::NetworkAccountTarget;
 
-use crate::{EthAddressFormat, EthAmount, claim_script};
+use crate::{EthAddressFormat, EthAmount, MetadataHash, claim_script};
 
 // CLAIM NOTE STRUCTURES
 // ================================================================================================
@@ -122,8 +122,8 @@ pub struct LeafData {
     pub destination_address: EthAddressFormat,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
-    /// ABI encoded metadata (fixed size of 8 u32 values)
-    pub metadata: [u32; 8],
+    /// Metadata hash (32 bytes)
+    pub metadata_hash: MetadataHash,
 }
 
 impl SequentialCommit for LeafData {
@@ -153,8 +153,8 @@ impl SequentialCommit for LeafData {
         // Amount (uint256 as 8 u32 felts)
         elements.extend(self.amount.to_elements());
 
-        // Metadata (8 u32 felts)
-        elements.extend(self.metadata.iter().map(|&v| Felt::new(v as u64)));
+        // Metadata hash (8 u32 felts)
+        elements.extend(self.metadata_hash.to_elements());
 
         // Padding
         elements.extend(vec![Felt::ZERO; 3]);

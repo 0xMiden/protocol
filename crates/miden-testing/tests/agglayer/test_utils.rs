@@ -63,7 +63,7 @@ pub async fn execute_program_with_default_host(
 /// - origin_network: u32
 /// - origin_token_address: [u8; 20]
 /// - destination_network: u32
-/// - metadata: [u32; 8]
+/// - metadata: [u8; 32]
 pub type ClaimNoteTestInputs = (
     Vec<[u8; 32]>,
     Vec<[u8; 32]>,
@@ -73,7 +73,7 @@ pub type ClaimNoteTestInputs = (
     u32,
     [u8; 20],
     u32,
-    [u32; 8],
+    [u8; 32],
 );
 
 /// Returns dummy test inputs for creating CLAIM notes with native types.
@@ -111,7 +111,7 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
 
     let destination_network = 2u32;
 
-    let metadata: [u32; 8] = [0; 8];
+    let metadata_hash: [u8; 32] = [0u8; 32];
 
     (
         smt_proof_local_exit_root,
@@ -122,6 +122,6 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
         origin_network,
         origin_token_address,
         destination_network,
-        metadata,
+        metadata_hash,
     )
 }

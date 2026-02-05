@@ -40,7 +40,7 @@ const CUR_HASH_HI_LOCAL = 4
 #!       destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
 #!       destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!       amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
-#!       metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!       metadata_hash[8],                // Metadata hash (8 felts, bytes32 as 8 u32 felts)
 #!       padding[3],                      // padding (3 felts) - not used in the hash
 #!     ],
 #!   }
