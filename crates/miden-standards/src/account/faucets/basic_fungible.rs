@@ -5,13 +5,12 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
-    StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{FungibleAsset, TokenSymbol};
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::asset::TokenSymbol;
+use miden_protocol::{Felt, Word};
 
-use super::FungibleFaucetError;
+use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthScheme;
 use crate::account::auth::{
     AuthEcdsaK256KeccakAcl,
@@ -58,18 +57,11 @@ procedure_digest!(
 ///
 /// ## Storage Layout
 ///
-/// - [`Self::metadata_slot`]: `[token_supply, max_supply, decimals, token_symbol]`, where:
-///   - `token_supply` is the current supply of the token.
-///   - `max_supply` is the maximum supply of the token.
-///   - `decimals` are the decimals of the token.
-///   - `token_symbol` is the [`TokenSymbol`] encoded to a [`Felt`].
+/// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct BasicFungibleFaucet {
-    token_supply: Felt,
-    max_supply: Felt,
-    decimals: u8,
-    symbol: TokenSymbol,
+    metadata: TokenMetadata,
 }
 
 impl BasicFungibleFaucet {
@@ -77,7 +69,7 @@ impl BasicFungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The maximum number of decimals supported by the component.
-    pub const MAX_DECIMALS: u8 = 12;
+    pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
     const DISTRIBUTE_PROC_NAME: &str = "basic_fungible_faucet::distribute";
     const BURN_PROC_NAME: &str = "basic_fungible_faucet::burn";
@@ -93,31 +85,22 @@ impl BasicFungibleFaucet {
     /// Returns an error if:
     /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
     /// - the max supply parameter exceeds maximum possible amount for a fungible asset
-    ///   ([`FungibleAsset::MAX_AMOUNT`])
+    ///   ([`miden_protocol::asset::FungibleAsset::MAX_AMOUNT`])
     pub fn new(
         symbol: TokenSymbol,
         decimals: u8,
         max_supply: Felt,
     ) -> Result<Self, FungibleFaucetError> {
-        // First check that the metadata is valid.
-        if decimals > Self::MAX_DECIMALS {
-            return Err(FungibleFaucetError::TooManyDecimals {
-                actual: decimals as u64,
-                max: Self::MAX_DECIMALS,
-            });
-        } else if max_supply.as_int() > FungibleAsset::MAX_AMOUNT {
-            return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_int(),
-                max: FungibleAsset::MAX_AMOUNT,
-            });
-        }
+        let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
+        Ok(Self { metadata })
+    }
 
-        Ok(Self {
-            token_supply: Felt::ZERO,
-            max_supply,
-            decimals,
-            symbol,
-        })
+    /// Creates a new [`BasicFungibleFaucet`] component from the given [`TokenMetadata`].
+    ///
+    /// This is a convenience constructor that allows creating a faucet from pre-validated
+    /// metadata.
+    pub fn from_metadata(metadata: TokenMetadata) -> Self {
+        Self { metadata }
     }
 
     /// Attempts to create a new [`BasicFungibleFaucet`] component from the associated account
@@ -130,7 +113,7 @@ impl BasicFungibleFaucet {
     ///   [`AccountComponentInterface::BasicFungibleFaucet`] component.
     /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
     /// - the max supply value exceeds maximum possible amount for a fungible asset of
-    ///   [`FungibleAsset::MAX_AMOUNT`].
+    ///   [`miden_protocol::asset::FungibleAsset::MAX_AMOUNT`].
     /// - the token supply exceeds the max supply.
     /// - the token symbol encoded value exceeds the maximum value of
     ///   [`TokenSymbol::MAX_ENCODED_VALUE`].
@@ -143,45 +126,8 @@ impl BasicFungibleFaucet {
             return Err(FungibleFaucetError::MissingBasicFungibleFaucetInterface);
         }
 
-        Self::try_from_storage(storage)
-    }
-
-    /// Attempts to create a new [`BasicFungibleFaucet`] from the provided account storage.
-    ///
-    /// # Warning
-    ///
-    /// This does not check for the presence of the faucet's procedures.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
-    /// - the max supply value exceeds maximum possible amount for a fungible asset of
-    ///   [`FungibleAsset::MAX_AMOUNT`].
-    /// - the token supply exceeds the max supply.
-    /// - the token symbol encoded value exceeds the maximum value of
-    ///   [`TokenSymbol::MAX_ENCODED_VALUE`].
-    pub(super) fn try_from_storage(storage: &AccountStorage) -> Result<Self, FungibleFaucetError> {
-        let faucet_metadata =
-            storage.get_item(BasicFungibleFaucet::metadata_slot()).map_err(|err| {
-                FungibleFaucetError::StorageLookupFailed {
-                    slot_name: BasicFungibleFaucet::metadata_slot().clone(),
-                    source: err,
-                }
-            })?;
-        let [token_supply, max_supply, decimals, token_symbol] = *faucet_metadata;
-
-        // Convert token symbol and decimals to expected types.
-        let token_symbol =
-            TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-        let decimals =
-            decimals.as_int().try_into().map_err(|_| FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_int(),
-                max: Self::MAX_DECIMALS,
-            })?;
-
-        BasicFungibleFaucet::new(token_symbol, decimals, max_supply)
-            .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+        let metadata = TokenMetadata::try_from(storage)?;
+        Ok(Self { metadata })
     }
 
     // PUBLIC ACCESSORS
@@ -189,24 +135,29 @@ impl BasicFungibleFaucet {
 
     /// Returns the [`StorageSlotName`] where the [`BasicFungibleFaucet`]'s metadata is stored.
     pub fn metadata_slot() -> &'static StorageSlotName {
-        &super::METADATA_SLOT_NAME
+        TokenMetadata::metadata_slot()
+    }
+
+    /// Returns the token metadata.
+    pub fn metadata(&self) -> &TokenMetadata {
+        &self.metadata
     }
 
     /// Returns the symbol of the faucet.
     pub fn symbol(&self) -> TokenSymbol {
-        self.symbol
+        self.metadata.symbol()
     }
 
     /// Returns the decimals of the faucet.
     pub fn decimals(&self) -> u8 {
-        self.decimals
+        self.metadata.decimals()
     }
 
     /// Returns the max supply (in base units) of the faucet.
     ///
     /// This is the highest amount of tokens that can be minted from this faucet.
     pub fn max_supply(&self) -> Felt {
-        self.max_supply
+        self.metadata.max_supply()
     }
 
     /// Returns the token supply (in base units) of the faucet.
@@ -214,7 +165,7 @@ impl BasicFungibleFaucet {
     /// This is the amount of tokens that were minted from the faucet so far. Its value can never
     /// exceed [`Self::max_supply`].
     pub fn token_supply(&self) -> Felt {
-        self.token_supply
+        self.metadata.token_supply()
     }
 
     /// Returns the digest of the `distribute` account procedure.
@@ -227,16 +178,6 @@ impl BasicFungibleFaucet {
         *BASIC_FUNGIBLE_FAUCET_BURN
     }
 
-    /// Returns the metadata slot [`Word`] of this faucet.
-    pub(super) fn to_metadata_word(&self) -> Word {
-        Word::new([
-            self.token_supply,
-            self.max_supply,
-            Felt::from(self.decimals),
-            Felt::from(self.symbol),
-        ])
-    }
-
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -247,24 +188,14 @@ impl BasicFungibleFaucet {
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_int() > self.max_supply.as_int() {
-            return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_int(),
-                max_supply: self.max_supply.as_int(),
-            });
-        }
-
-        self.token_supply = token_supply;
-
+        self.metadata = self.metadata.with_token_supply(token_supply)?;
         Ok(self)
     }
 }
 
 impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
-        let metadata_word = faucet.to_metadata_word();
-        let storage_slot =
-            StorageSlot::with_value(BasicFungibleFaucet::metadata_slot().clone(), metadata_word);
+        let storage_slot = faucet.metadata.into();
 
         AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot])
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
@@ -453,6 +384,7 @@ mod tests {
         );
 
         // Check that faucet metadata was initialized to the given values.
+        // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(
             faucet_account.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap(),
             [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
@@ -467,6 +399,7 @@ mod tests {
         assert_eq!(faucet_component.symbol(), token_symbol);
         assert_eq!(faucet_component.decimals(), decimals);
         assert_eq!(faucet_component.max_supply(), max_supply);
+        assert_eq!(faucet_component.token_supply(), Felt::ZERO);
     }
 
     #[test]
@@ -490,9 +423,10 @@ mod tests {
 
         let basic_ff = BasicFungibleFaucet::try_from(faucet_account)
             .expect("basic fungible faucet creation failed");
-        assert_eq!(basic_ff.symbol, token_symbol);
-        assert_eq!(basic_ff.decimals, 10);
-        assert_eq!(basic_ff.max_supply, Felt::new(100));
+        assert_eq!(basic_ff.symbol(), token_symbol);
+        assert_eq!(basic_ff.decimals(), 10);
+        assert_eq!(basic_ff.max_supply(), Felt::new(100));
+        assert_eq!(basic_ff.token_supply(), Felt::ZERO);
 
         // invalid account: basic fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)

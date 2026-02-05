@@ -1,11 +1,13 @@
 use miden::agglayer::bridge_in
 use miden::agglayer::asset_conversion
+use miden::agglayer::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
 use miden::protocol::note
 use miden::protocol::tx
 use miden::core::mem
+use miden::core::word
 
 
 # CONSTANTS
@@ -15,7 +17,7 @@ use miden::core::mem
 const BRIDGE_ID_SLOT = word("miden::agglayer::faucet")
 
 const PROOF_DATA_WORD_LEN = 134
-const LEAF_DATA_WORD_LEN = 6
+const LEAF_DATA_WORD_LEN = 8
 const OUTPUT_NOTE_DATA_WORD_LEN = 2
 
 const PROOF_DATA_START_PTR = 0
@@ -31,8 +33,14 @@ const CLAIM_NOTE_DATA_MEM_ADDR = 712
 const OUTPUT_NOTE_INPUTS_MEM_ADDR = 0
 const OUTPUT_NOTE_TAG_MEM_ADDR = 574
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 548
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 552
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 552
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 556
+
+const DESTINATION_ADDRESS_0 = 547
+const DESTINATION_ADDRESS_1 = 548
+const DESTINATION_ADDRESS_2 = 549
+const DESTINATION_ADDRESS_3 = 550
+const DESTINATION_ADDRESS_4 = 551
 
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
@@ -46,7 +54,7 @@ const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
 
 const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY]
+#! Inputs:  [LEAF_DATA_KEY, PROOF_DATA_KEY]
 #! Outputs: []
 #!
 #! Panics if:
@@ -56,28 +64,23 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 #!
 #! Invocation: exec
 proc validate_claim
-    # Get bridge_in::check_claim_proof procedure MAST root
-    procref.bridge_in::check_claim_proof
-    # => [BRIDGE_PROC_MAST_ROOT]
+    # get bridge_in::verify_leaf_bridge procedure MAST root
+    procref.bridge_in::verify_leaf_bridge
+    # => [BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
     push.BRIDGE_ID_SLOT[0..2]
-    # => [bridge_id_idx, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_id_idx, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
-    # Get Bridge AccountId
+    # get bridge account ID
     exec.active_account::get_item
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
     movup.2 drop movup.2 drop
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT]
+    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
-    # Call check_claim_proof procedure on Bridge
-    # Calling: bridge_in::check_claim_proof
+    # call bridge_in::verify_leaf_bridge
     exec.tx::execute_foreign_procedure
-    # => [validation_result]
-
-    # Assert valid proof data
-    assert.err=ERR_INVALID_CLAIM_PROOF drop
-    # => [] 
+    # => []
 end
 
 # Inputs: []
@@ -91,12 +94,6 @@ end
 # Outputs: [amount]
 proc scale_down_amount
     repeat.7 drop end
-end
-
-# Inputs: []
-# Outputs: [prefix, suffix]
-proc get_destination_account_id
-    mem_load.543 mem_load.544
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
@@ -127,6 +124,27 @@ proc batch_pipe_double_words
     exec.mem::pipe_double_words_preimage_to_memory drop
 end
 
+#! Extracts the destination account ID as address[5] from memory.
+#!
+#! This procedure reads the destination address from the leaf data and converts it from
+#! Ethereum address format to AccountId format (prefix, suffix).
+#!
+#! Inputs:  []
+#! Outputs: [prefix, suffix]
+#!
+#! Invocation: exec
+proc get_destination_account_id_data
+    mem_load.DESTINATION_ADDRESS_4
+    mem_load.DESTINATION_ADDRESS_3
+    mem_load.DESTINATION_ADDRESS_2
+    mem_load.DESTINATION_ADDRESS_1
+    mem_load.DESTINATION_ADDRESS_0
+    # => [address[5]]
+
+    exec.eth_address::to_account_id
+    # => [prefix, suffix]
+end
+
 #! Builds a P2ID output note for the claim recipient.
 #!
 #! This procedure expects the claim data to be already written to memory via batch_pipe_double_words.
@@ -148,14 +166,15 @@ proc build_p2id_output_note
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
     # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    exec.get_destination_account_id
-    # => [account_id_prefix, account_id_suffix, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    mem_store.0 mem_store.1
-    # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
     push.OUTPUT_NOTE_INPUTS_MEM_ADDR
     # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
+
+    exec.get_destination_account_id_data
+    # => [prefix, suffix]
+
+    # Write destination account id into memory
+    mem_store.1 mem_store.0
+    # => []
 
     exec.note::build_recipient
     # => [RECIPIENT]
@@ -207,7 +226,6 @@ end
 #!     destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!     EMPTY_WORD                       // padding
 #!   ],
 #!   OUTPUT_NOTE_DATA_KEY => [
 #!     output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
@@ -224,20 +242,22 @@ end
 pub proc claim
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
-    # => []
+    # => [pad(16)]
 
     # VALIDATE CLAIM 
-    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR padw
-    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
+    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
+    # => [PROOF_DATA_KEY, pad(12)]
+    swapw
+    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Errors on invalid proof
     exec.validate_claim
-    # => []
+    # => [pad(16)]
 
     # Create P2ID output note
     exec.build_p2id_output_note
-    # => [] 
+    # => [pad(16)] 
 end
 
 #! Burns the fungible asset from the active note.
