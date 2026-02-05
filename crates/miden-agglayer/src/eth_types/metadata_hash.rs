@@ -26,12 +26,12 @@ impl MetadataHash {
 
     /// Converts the metadata hash to 8 Felt elements for MASM processing.
     ///
-    /// Each 4-byte chunk is converted to a u32 using big-endian byte order.
+    /// Each 4-byte chunk is converted to a u32 using little-endian byte order.
     pub fn to_elements(&self) -> Vec<Felt> {
         self.0
             .chunks(4)
             .map(|chunk| {
-                let value = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let value = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                 Felt::from(value)
             })
             .collect()

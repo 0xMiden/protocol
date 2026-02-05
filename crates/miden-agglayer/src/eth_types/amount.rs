@@ -49,8 +49,9 @@ pub struct EthAmount([u32; 8]);
 impl EthAmount {
     /// Creates a new [`EthAmount`] from an array of 8 u32 values.
     ///
-    /// The values are stored in little-endian order where `values[0]` contains
-    /// the least significant 32 bits.
+    /// The values are stored in big-endian limb order where `values[0]` contains
+    /// the most significant 32 bits. Each limb encodes its 4 bytes in little-endian
+    /// order so felts map directly to keccak bytes.
     pub const fn new(values: [u32; 8]) -> Self {
         Self(values)
     }
@@ -58,31 +59,34 @@ impl EthAmount {
     /// Creates an [`EthAmount`] from a single u64 value.
     ///
     /// This is useful for smaller amounts that fit in a u64. The value is
-    /// stored in the first two u32 slots with the remaining slots set to zero.
+    /// stored in the last two u32 slots with the remaining slots set to zero.
     pub const fn from_u64(value: u64) -> Self {
-        let low = value as u32;
-        let high = (value >> 32) as u32;
-        Self([low, high, 0, 0, 0, 0, 0, 0])
+        let low = u32::from_le_bytes((value as u32).to_be_bytes());
+        let high = u32::from_le_bytes(((value >> 32) as u32).to_be_bytes());
+        let mut values = [0u32; 8];
+        values[6] = high;
+        values[7] = low;
+        Self(values)
     }
 
     /// Creates an [`EthAmount`] from a single u32 value.
     ///
     /// This is useful for smaller amounts that fit in a u32. The value is
-    /// stored in the first u32 slot with the remaining slots set to zero.
+    /// stored in the last u32 slot with the remaining slots set to zero.
     pub const fn from_u32(value: u32) -> Self {
-        Self([value, 0, 0, 0, 0, 0, 0, 0])
+        let mut values = [0u32; 8];
+        values[7] = u32::from_le_bytes(value.to_be_bytes());
+        Self(values)
     }
 
     /// Creates an [`EthAmount`] from a 32-byte array in big-endian order.
     ///
-    /// The bytes are interpreted as a 256-bit big-endian integer and converted
-    /// to the internal little-endian u32 representation.
+    /// The bytes are interpreted as a 256-bit big-endian integer. Each 4-byte
+    /// chunk is stored as a little-endian u32 so felts map directly to bytes.
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         let mut values = [0u32; 8];
-        // bytes[0..4] is most significant, bytes[28..32] is least significant
-        // We want values[0] = least significant, values[7] = most significant
         for (i, chunk) in bytes.chunks(4).enumerate() {
-            values[i] = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            values[i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
         }
         Self(values)
     }
@@ -119,12 +123,13 @@ impl EthAmount {
     ///
     /// # Errors
     /// Returns [`EthAmountError::Overflow`] if the amount doesn't fit in a u64
-    /// (i.e., if any of the upper 6 u32 values are non-zero).
+    /// (i.e., if any of the upper 24 bytes are non-zero).
     pub fn try_to_u64(&self) -> Result<u64, EthAmountError> {
-        if self.0[2..].iter().any(|&x| x != 0) {
+        let bytes = self.to_bytes_be();
+        if bytes[..24].iter().any(|&b| b != 0) {
             Err(EthAmountError::Overflow)
         } else {
-            Ok((self.0[1] as u64) << 32 | self.0[0] as u64)
+            Ok(u64::from_be_bytes(bytes[24..32].try_into().unwrap()))
         }
     }
 
@@ -132,12 +137,13 @@ impl EthAmount {
     ///
     /// # Errors
     /// Returns [`EthAmountError::Overflow`] if the amount doesn't fit in a u32
-    /// (i.e., if any of the upper 7 u32 values are non-zero).
+    /// (i.e., if any of the upper 28 bytes are non-zero).
     pub fn try_to_u32(&self) -> Result<u32, EthAmountError> {
-        if self.0[1..].iter().any(|&x| x != 0) {
+        let bytes = self.to_bytes_be();
+        if bytes[..28].iter().any(|&b| b != 0) {
             Err(EthAmountError::Overflow)
         } else {
-            Ok(self.0[0])
+            Ok(u32::from_be_bytes(bytes[28..32].try_into().unwrap()))
         }
     }
 
@@ -159,7 +165,7 @@ impl EthAmount {
     pub fn to_bytes_be(&self) -> [u8; 32] {
         let mut bytes = [0u8; 32];
         for (i, &value) in self.0.iter().enumerate() {
-            bytes[i * 4..(i + 1) * 4].copy_from_slice(&value.to_be_bytes());
+            bytes[i * 4..(i + 1) * 4].copy_from_slice(&value.to_le_bytes());
         }
         bytes
     }
@@ -193,8 +199,8 @@ impl fmt::Display for EthAmount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // For display purposes, show as a hex string of the full 256-bit value
         write!(f, "0x")?;
-        for &value in self.0.iter().rev() {
-            write!(f, "{:08x}", value)?;
+        for byte in self.to_bytes_be() {
+            write!(f, "{:02x}", byte)?;
         }
         Ok(())
     }
