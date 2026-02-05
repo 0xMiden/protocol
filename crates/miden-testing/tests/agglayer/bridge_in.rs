@@ -99,7 +99,9 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let serial_num = builder.rng_mut().draw_word();
 
     // Convert amount to EthAmount for the LeafData
-    let amount_eth = EthAmount::from_u32(claim_amount);
+    let mut claim_amount_bytes = [0u8; 32];
+    claim_amount_bytes[28..32].copy_from_slice(&claim_amount.to_be_bytes());
+    let amount_eth = EthAmount::new(claim_amount_bytes);
 
     // Convert Vec<[u8; 32]> to [SmtNode; 32] for SMT proofs
     let local_proof_array: [SmtNode; 32] = smt_proof_local_exit_root[0..32]

@@ -72,7 +72,7 @@ impl LeafValueVector {
             destination_network: self.destination_network,
             destination_address: EthAddressFormat::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
-            amount: EthAmount::from_hex(&self.amount).expect("valid amount hex"),
+            amount: EthAmount::new(hex_to_bytes(&self.amount).expect("valid amount hex")),
             metadata_hash: MetadataHash::new(
                 hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
             ),
@@ -172,7 +172,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     expected_packed_bytes.extend_from_slice(leaf_data.origin_token_address.as_bytes());
     expected_packed_bytes.extend_from_slice(&leaf_data.destination_network.to_be_bytes());
     expected_packed_bytes.extend_from_slice(leaf_data.destination_address.as_bytes());
-    expected_packed_bytes.extend_from_slice(&leaf_data.amount.to_bytes_be());
+    expected_packed_bytes.extend_from_slice(leaf_data.amount.as_bytes());
     let metadata_hash_bytes: [u8; 32] = hex_to_bytes(&vector.metadata_hash).unwrap();
     expected_packed_bytes.extend_from_slice(&metadata_hash_bytes);
     assert_eq!(expected_packed_bytes.len(), 113);
