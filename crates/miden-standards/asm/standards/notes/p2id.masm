@@ -58,7 +58,8 @@ end
 #! Creates a new P2ID output note from the given inputs.
 #!
 #! This procedure handles:
-#! - Writing note storage to memory in the expected layout
+#! - Writing note storage to memory in the expected layout ([suffix, prefix] to match
+#!   existing P2ID storage format)
 #! - Obtaining the note script root via procref
 #! - Building the recipient and creating the note
 #!
@@ -76,10 +77,6 @@ end
 #! Invocation: exec
 @locals(2)
 pub proc new
-    # Store note storage items in local memory
-    # Storage layout: [suffix, prefix] (to match existing P2ID storage format)
-    # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
-
     # Store target_id_suffix at local[0]
     dup.1 locaddr.0 mem_store
     # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
