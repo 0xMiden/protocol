@@ -6,7 +6,6 @@ use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{Note, NoteType};
-use miden_protocol::testing::storage::prepare_assets;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
@@ -252,11 +251,17 @@ fn note_script_that_creates_notes<'note>(
             attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
         ));
 
-        let assets_str = prepare_assets(note.assets());
-        for asset in assets_str {
+        for asset in note.assets().iter() {
             out.push_str(&format!(
-                " push.{asset}
-                  call.::miden::standards::wallets::basic::move_asset_to_note\n",
+                " dup
+                  push.{ASSET_VALUE}
+                  push.{ASSET_KEY}
+                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  call.::miden::standards::wallets::basic::move_asset_to_note
+                  # => [note_idx]
+                ",
+                  ASSET_KEY = asset.to_key_word(),
+                  ASSET_VALUE = asset.to_value_word(),
             ));
         }
     }

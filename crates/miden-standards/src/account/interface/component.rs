@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
 use miden_protocol::note::PartialNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, FieldElement};
 
 use crate::AuthScheme;
 use crate::account::auth::{
@@ -275,13 +275,20 @@ impl AccountComponentInterface {
                     for asset in partial_note.assets().iter() {
                         body.push_str(&format!(
                             "
-                            push.{asset}
-                            # => [ASSET, note_idx, pad(16)]
+                            # duplicate note index
+                            dup
+                            push.{ASSET_VALUE}
+                            push.{ASSET_KEY}
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(16)]
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            dropw
-                            # => [note_idx, pad(16)]\n
+                            # 9 parameter elements + 16 pad elements = 25 total pads after the call
+                            # => [note_idx, pad(25)]
+                            swapdw dropw dropw swap drop
+                            # => [note_idx, pad(16)]
+                            \n
                             ",
-                            asset = Word::from(*asset)
+                            ASSET_KEY = asset.to_key_word(),
+                            ASSET_VALUE = asset.to_value_word(),
                         ));
                     }
                 },

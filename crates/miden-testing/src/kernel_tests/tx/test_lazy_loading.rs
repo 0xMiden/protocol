@@ -94,7 +94,9 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           push.{FUNGIBLE_ASSET1_VALUE}
           push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
-          # => []
+          # drop the excess word from the call
+          swapw dropw
+          # => [ASSET_VALUE]
 
           # move asset to note to adhere to asset preservation rules
           exec.util::create_default_note_with_asset
@@ -103,7 +105,9 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           push.{FUNGIBLE_ASSET2_VALUE}
           push.{FUNGIBLE_ASSET2_KEY}
           call.account::remove_asset
-          # => [ASSET]
+          # drop the excess word from the call
+          swapw dropw
+          # => [ASSET_VALUE]
 
           # move asset to note to adhere to asset preservation rules
           exec.util::create_default_note_with_asset

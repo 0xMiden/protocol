@@ -187,14 +187,16 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
         exec.output_note::create
         # => [note_idx]
 
-        push.{asset}
+        push.{ASSET_VALUE}
+        push.{ASSET_KEY}
         call.::miden::standards::wallets::basic::move_asset_to_note
         # => []
         ",
             recipient = note.recipient().digest(),
             note_type = Felt::from(note.metadata().note_type()),
             tag = Felt::from(note.metadata().tag()),
-            asset = Word::from(asset)
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
         ));
     }
 

@@ -245,24 +245,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         "\
         use miden::standards::wallets::basic->wallet
         use miden::protocol::output_note
-
-        #! Wrapper around move_asset_to_note for use with exec.
-        #!
-        #! Inputs:  [ASSET, note_idx]
-        #! Outputs: [note_idx]
-        proc move_asset_to_note
-            # pad the stack before call
-            push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-            # => [ASSET, note_idx, pad(11)]
-
-            call.wallet::move_asset_to_note
-            dropw
-            # => [note_idx, pad(11)]
-
-            # remove excess PADs from the stack
-            repeat.11 swap drop end
-            # => [note_idx]
-        end
+        use mock::util
 
         ## TRANSACTION SCRIPT
         ## ========================================================================================
@@ -276,15 +259,17 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx = 0]
 
-            push.{REMOVED_ASSET_1}              # asset_1
-            # => [ASSET, note_idx]
+            dup
+            push.{REMOVED_ASSET_VALUE_1}
+            push.{REMOVED_ASSET_KEY_1}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-            exec.move_asset_to_note
+            exec.util::move_asset_to_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET_2}              # asset_2
-            exec.move_asset_to_note
-            drop
+            push.{REMOVED_ASSET_VALUE_2}
+            push.{REMOVED_ASSET_KEY_2}
+            exec.util::move_asset_to_note
             # => []
 
             # send non-fungible asset
@@ -294,12 +279,16 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx = 1]
 
-            push.{REMOVED_ASSET_3}              # asset_3
-            exec.move_asset_to_note
+            dup
+            push.{REMOVED_ASSET_VALUE_3}
+            push.{REMOVED_ASSET_KEY_3}
+            exec.util::move_asset_to_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET_4}              # asset_4
-            exec.move_asset_to_note
+            dup
+            push.{REMOVED_ASSET_VALUE_4}
+            push.{REMOVED_ASSET_KEY_4}
+            exec.util::move_asset_to_note
             # => [note_idx]
 
             push.{ATTACHMENT2}
@@ -322,10 +311,14 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             # => []
         end
     ",
-        REMOVED_ASSET_1 = Word::from(removed_asset_1),
-        REMOVED_ASSET_2 = Word::from(removed_asset_2),
-        REMOVED_ASSET_3 = Word::from(removed_asset_3),
-        REMOVED_ASSET_4 = Word::from(removed_asset_4),
+        REMOVED_ASSET_KEY_1 = removed_asset_1.to_key_word(),
+        REMOVED_ASSET_VALUE_1 = removed_asset_1.to_value_word(),
+        REMOVED_ASSET_KEY_2 = removed_asset_2.to_key_word(),
+        REMOVED_ASSET_VALUE_2 = removed_asset_2.to_value_word(),
+        REMOVED_ASSET_KEY_3 = removed_asset_3.to_key_word(),
+        REMOVED_ASSET_VALUE_3 = removed_asset_3.to_value_word(),
+        REMOVED_ASSET_KEY_4 = removed_asset_4.to_key_word(),
+        REMOVED_ASSET_VALUE_4 = removed_asset_4.to_value_word(),
         RECIPIENT2 = expected_output_note_2.recipient().digest(),
         RECIPIENT3 = expected_output_note_3.recipient().digest(),
         NOTETYPE1 = note_type1 as u8,
@@ -337,7 +330,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         ATTACHMENT3 = attachment3.content().to_word(),
     );
 
-    let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(tx_script_src)?;
 
     // expected delta
     // --------------------------------------------------------------------------------------------

@@ -39,7 +39,7 @@ end
 #! these elements do not contain any meaningful data.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-#! Outputs: [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the output note.
@@ -55,16 +55,12 @@ end
 pub proc move_asset_to_note
     # remove the asset from the account
     exec.native_account::remove_asset
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+    # => [ASSET_VALUE, note_idx, pad(7)]
 
     # TODO(expand_assets): Pass key to add_asset eventually.
-    dropw dupw dup.8 movdn.4
-    # => [ASSET_VALUE, note_idx, pad(11)]
-    # => [ASSET_VALUE, note_idx, ASSET_VALUE, note_idx, pad(11)]
 
     exec.output_note::add_asset
-    # TODO(expand_assets): Consider not returning anything from this procedure.
-    # => [ASSET_VALUE, note_idx, pad(11)]
+    # => [pad(16)]
 end
 
 #! Adds all assets from the active note to the native account's vault.

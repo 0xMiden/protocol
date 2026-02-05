@@ -788,9 +788,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             # => [note_idx]
 
             # move the asset 0 to the note
-            push.{asset_0}
+            dup
+            push.{ASSET_0_VALUE}
+            push.{ASSET_0_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having only asset_0
@@ -817,9 +818,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add asset_1 to the note
-            push.{asset_1}
+            dup
+            push.{ASSET_1_VALUE}
+            push.{ASSET_1_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having asset_0 and asset_1
@@ -844,12 +846,14 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         RECIPIENT = output_note_1.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note_1.metadata().tag(),
-        asset_0 = Word::from(fungible_asset_0),
+        ASSET_0_VALUE = fungible_asset_0.to_value_word(),
+        ASSET_0_KEY = fungible_asset_0.to_key_word(),
         // first data request
         COMPUTED_ASSETS_COMMITMENT_0 = output_note_0.assets().commitment(),
         assets_number_0 = output_note_0.assets().num_assets(),
         // second data request
-        asset_1 = Word::from(fungible_asset_1),
+        ASSET_1_VALUE = fungible_asset_1.to_value_word(),
+        ASSET_1_KEY = fungible_asset_1.to_key_word(),
         COMPUTED_ASSETS_COMMITMENT_1 = output_note_1.assets().commitment(),
         assets_number_1 = output_note_1.assets().num_assets(),
     );
@@ -1282,12 +1286,15 @@ fn create_output_note(note: &Note) -> String {
         create_note_code.push_str(&format!(
             "
             # move the asset to the note
-            push.{asset}
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
         ",
-            asset = Word::from(*asset)
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word()
         ));
     }
 

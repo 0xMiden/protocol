@@ -427,20 +427,31 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     let tx_script = parse_tx_script(format!(
         "
     begin
-        push.{asset0} exec.create_note_with_asset
+        push.{ASSET0_VALUE} push.{ASSET0_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset1} exec.create_note_with_asset
+
+        push.{ASSET1_VALUE} push.{ASSET1_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset2} exec.create_note_with_asset
+
+        push.{ASSET2_VALUE} push.{ASSET2_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset3} exec.create_note_with_asset
+
+        push.{ASSET3_VALUE} push.{ASSET3_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
     end
     ",
-        asset0 = Word::from(removed_asset0),
-        asset1 = Word::from(removed_asset1),
-        asset2 = Word::from(removed_asset2),
-        asset3 = Word::from(removed_asset3),
+        ASSET0_KEY = removed_asset0.to_key_word(),
+        ASSET0_VALUE = removed_asset0.to_value_word(),
+        ASSET1_KEY = removed_asset1.to_key_word(),
+        ASSET1_VALUE = removed_asset1.to_value_word(),
+        ASSET2_KEY = removed_asset2.to_key_word(),
+        ASSET2_VALUE = removed_asset2.to_value_word(),
+        ASSET3_KEY = removed_asset3.to_key_word(),
+        ASSET3_VALUE = removed_asset3.to_value_word(),
     ))?;
 
     let executed_tx = mock_chain
@@ -519,9 +530,12 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let tx_script = parse_tx_script(format!(
         "
     begin
-        push.{asset1} exec.create_note_with_asset
+        push.{ASSET1_VALUE} push.{ASSET1_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset2} exec.create_note_with_asset
+
+        push.{ASSET2_VALUE} push.{ASSET2_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
 
         # remove and re-add asset 3
@@ -533,8 +547,10 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         # => []
     end
     ",
-        asset1 = Word::from(asset1),
-        asset2 = Word::from(asset2),
+        ASSET1_KEY = asset1.to_key_word(),
+        ASSET1_VALUE = asset1.to_value_word(),
+        ASSET2_KEY = asset2.to_key_word(),
+        ASSET2_VALUE = asset2.to_value_word(),
         ASSET3_KEY = asset3.to_key_word(),
         ASSET3_VALUE = asset3.to_value_word(),
     ))?;
@@ -624,16 +640,19 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             # => [note_idx, pad(15)]
 
             # move an asset to the created note to partially deplete fungible asset balance
-            swapw dropw push.{REMOVED_ASSET}
+            swapw dropw
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
+            # => [pad(16)]
 
             # clear the stack
             dropw dropw dropw dropw
         ",
             NOTETYPE = note_types[i] as u8,
             tag = tags[i],
-            REMOVED_ASSET = Word::from(removed_assets[i])
+            REMOVED_ASSET_KEY = removed_assets[i].to_key_word(),
+            REMOVED_ASSET_VALUE = removed_assets[i].to_value_word(),
         ));
     }
 
@@ -1085,6 +1104,7 @@ fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
 
 const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
       use mock::account
+      use mock::util
       use miden::protocol::output_note
 
       #! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
@@ -1110,36 +1130,6 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
           dropw dropw dropw dropw
           # => []
-      end
-
-      #! Inputs:  [ASSET]
-      #! Outputs: []
-      proc create_note_with_asset
-          push.0.1.2.3           # recipient
-          push.2                 # note_type private
-          push.0xC0000000        # tag
-          # => [tag, note_type, RECIPIENT, ASSET]
-
-          exec.output_note::create
-          # => [note_idx, ASSET]
-
-          movdn.4
-          # => [ASSET, note_idx]
-
-          exec.move_asset_to_note
-          # => []
-      end
-
-      #! Inputs:  [ASSET, note_idx]
-      #! Outputs: []
-      proc move_asset_to_note
-          repeat.11 push.0 movdn.5 end
-          # => [ASSET, note_idx, pad(11)]
-
-          call.account::move_asset_to_note
-
-          # return values are unused
-          dropw dropw dropw dropw
       end
 
       #! Inputs:  [ASSET]

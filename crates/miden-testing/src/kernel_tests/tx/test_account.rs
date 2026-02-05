@@ -1214,28 +1214,14 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        # Inputs:  [ASSET, note_idx]
-        # Outputs: [ASSET, note_idx]
-        proc move_asset_to_note
-            # pad the stack before call
-            push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-            # => [ASSET, note_idx, pad(11)]
-
-            call.wallet::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
-
-            # remove excess PADs from the stack
-            swapdw dropw dropw swapw movdn.7 drop drop drop
-            # => [ASSET, note_idx]
-        end
-
         begin
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            exec.move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # push faucet ID prefix and suffix
@@ -1260,7 +1246,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
@@ -1323,8 +1310,9 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            call.wallet::move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # get the current asset
@@ -1344,7 +1332,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         end
     "#,
         ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
+        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
         INITIAL_ASSET = Word::from(fungible_asset_for_account),
         FINAL_ASSET = Word::from(final_asset),
     );
