@@ -1,0 +1,9 @@
+# Foundry artifacts
+/out/
+/cache/
+
+# Foundry broadcast files
+/broadcast/
+
+# Environment
+.env
