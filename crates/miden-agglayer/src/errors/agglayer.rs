@@ -9,9 +9,6 @@ use miden_protocol::errors::MasmError;
 // AGGLAYER ERRORS
 // ================================================================================================
 
-/// Error Message: "most-significant 4 bytes (addr4) must be zero"
-pub const ERR_ADDR4_NONZERO: MasmError = MasmError::from_static_str("most-significant 4 bytes (addr4) must be zero");
-
 /// Error Message: "B2AGG note attachment target account does not match consuming account"
 pub const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("B2AGG note attachment target account does not match consuming account");
 /// Error Message: "B2AGG script expects exactly 6 note storage items"
@@ -36,6 +33,9 @@ pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("lea
 
 /// Error Message: "number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)"
 pub const ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT: MasmError = MasmError::from_static_str("number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)");
+
+/// Error Message: "most-significant 4 bytes must be zero for AccountId"
+pub const ERR_MSB_NONZERO: MasmError = MasmError::from_static_str("most-significant 4 bytes must be zero for AccountId");
 
 /// Error Message: "address limb is not u32"
 pub const ERR_NOT_U32: MasmError = MasmError::from_static_str("address limb is not u32");
