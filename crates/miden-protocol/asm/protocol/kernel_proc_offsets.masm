@@ -82,12 +82,11 @@ const TX_GET_BLOCK_NUMBER_OFFSET=44
 const TX_GET_BLOCK_TIMESTAMP_OFFSET=45
 
 # foreign context
-const TX_START_FOREIGN_CONTEXT_OFFSET=46
-const TX_END_FOREIGN_CONTEXT_OFFSET=47
+const TX_PREPARE_FPI_CALL_OFFSET=46
 
 # expiration data
-const TX_GET_EXPIRATION_DELTA_OFFSET=48               # accessor
-const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=49      # mutator
+const TX_GET_EXPIRATION_DELTA_OFFSET=47               # accessor
+const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=48      # mutator
 
 # ACCESSORS
 # -------------------------------------------------------------------------------------------------
@@ -631,28 +630,16 @@ pub proc tx_get_block_timestamp_offset
     push.TX_GET_BLOCK_TIMESTAMP_OFFSET
 end
 
-#! Returns the offset of the `tx_start_foreign_context` kernel procedure.
+#! Returns the offset of the `tx_prepare_fpi_call` kernel procedure.
 #!
 #! Inputs:  []
 #! Outputs: [proc_offset]
 #!
 #! Where:
-#! - proc_offset is the offset of the `tx_start_foreign_context` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc tx_start_foreign_context_offset
-    push.TX_START_FOREIGN_CONTEXT_OFFSET
-end
-
-#! Returns the offset of the `tx_end_foreign_context` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_end_foreign_context` kernel procedure required to get the
+#! - proc_offset is the offset of the `tx_prepare_fpi_call` kernel procedure required to get the
 #!   address where this procedure is stored.
-pub proc tx_end_foreign_context_offset
-    push.TX_END_FOREIGN_CONTEXT_OFFSET
+pub proc tx_prepare_fpi_call_offset
+    push.TX_PREPARE_FPI_CALL_OFFSET
 end
 
 #! Returns the offset of the `tx_update_expiration_block_delta` kernel procedure.

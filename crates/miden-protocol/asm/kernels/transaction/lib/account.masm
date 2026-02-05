@@ -1722,6 +1722,10 @@ pub proc get_account_data_ptr
     exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
     # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
 
+    # push the pad element onto the stack: it will represent the `is_equal_id` flag during the cycle
+    push.0 movdn.3
+    # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix, is_equal_id=0]
+
     # push the flag to enter the loop
     push.1
 

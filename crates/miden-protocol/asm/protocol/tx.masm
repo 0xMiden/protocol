@@ -201,55 +201,41 @@ end
 
 #! Executes the provided procedure against the foreign account.
 #!
-#! WARNING: the procedure to be invoked can not have more than 15 inputs and it can not return more
-#! than 15 elements back. Otherwise exceeding elements will not be provided to the procedure and
-#! will not be returned from it.
-#!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
-#! Outputs: [<values returned from the foreign procedure>]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, <foreign procedure inputs>, pad(n)]
+#! Outputs: [<foreign procedure outputs>, pad(m)]
 #!
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the account ID of the
 #!   foreign account to execute the procedure on.
 #! - pad(n) is the exact number of pads needed to set the number of procedure inputs to 16 at the
-#!   moment of the foreign procedure execution (n = 16 - mem_addr_size - foreign_inputs_len).
+#!   moment of the foreign procedure execution (n = 16 - foreign_procedure_inputs_len).
+#! - pad(m) is the exact number of pads needed to set the number of procedure outputs to 16 at the
+#!   end of the foreign procedure execution (m = 16 - foreign_procedure_outputs_len).
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_foreign_procedure
-    # get the start_foreign_context procedure offset
-    push.0 movup.2 movup.2 exec.kernel_proc_offsets::tx_start_foreign_context_offset
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, 0, FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
-
+    # get the tx_prepare_fpi_call procedure offset
+    exec.kernel_proc_offsets::tx_prepare_fpi_call_offset
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, <foreign procedure inputs>, pad(n)]
+    
     # pad the stack before the syscall
-    padw swapw padw padw swapdw
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, pad(13), FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
+    push.0 movdn.7 padw padw swapdw
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(9), <foreign procedure inputs>, pad(n)]
 
-    # load the foreign account to the memory
+    # load the foreign account ID and the foreign procedure to the memory
     syscall.exec_kernel_proc
-    # => [pad(16), FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
-
-    # prepare the stack for the dyncall
+    # => [pad(16), <foreign procedure inputs>, pad(n)]
+    
+    # clean the stack
     dropw dropw dropw dropw
-    # => [FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
+    # => [<foreign procedure inputs>, pad(n)]
 
-    # store the foreign procedure root to the first local memory slot and get its absolute memory
-    # address
-    loc_storew_be.0 dropw locaddr.0
-    # => [foreign_proc_root_ptr, <foreign account inputs>, pad(n)]
-
-    # execute the foreign procedure
-    dyncall
-    # => [<values returned from the foreign procedure>]
-
-    # reset the active account data offset to the native offset (2048)
-    push.0.0.0 padw padw padw
-    exec.kernel_proc_offsets::tx_end_foreign_context_offset
-    # => [offset, pad(15), <values returned from the foreign procedure>]
-
-    syscall.exec_kernel_proc
-    dropw dropw dropw dropw
-    # => [<values returned from the foreign procedure>]
+    # perform the FPI call
+    # pad(m) here represents the `m` zeros, where `m` is the number of zeros required to have 16
+    # elements total on the stack
+    syscall.tx_perform_fpi_call
+    # => [<foreign procedure outputs>, pad(m)]
 end
 
 #! Updates the transaction expiration delta.

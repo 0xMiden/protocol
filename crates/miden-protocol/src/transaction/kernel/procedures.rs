@@ -6,7 +6,7 @@ use crate::{Word, word};
 // ================================================================================================
 
 /// Hashes of all dynamically executed kernel procedures.
-pub const KERNEL_PROCEDURES: [Word; 50] = [
+pub const KERNEL_PROCEDURES: [Word; 49] = [
     // account_get_initial_commitment
     word!("0x1de52b747e823a098f3e146cf2e2b7c3f585a4424ec54c9022414d9ca2574375"),
     // account_compute_commitment
@@ -99,10 +99,8 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     word!("0x297797dff54b8108dd2df254b95d43895d3f917ab10399efc62adaf861c905ae"),
     // tx_get_block_timestamp
     word!("0x7903185b847517debb6c2072364e3e757b99ee623e97c2bd0a4661316c5c5418"),
-    // tx_start_foreign_context
-    word!("0xc448ad98ffcc9ea9feb368bd29ab5cc57e74cc52ca1622c82e1d7874878191f9"),
-    // tx_end_foreign_context
-    word!("0xaa0018aa8da890b73511879487f65553753fb7df22de380dd84c11e6f77eec6f"),
+    // tx_prepare_fpi_call
+    word!("0xdab320c6a353b47368f86751f630be05b848a94974cf5164ef600283054601ed"),
     // tx_get_expiration_delta
     word!("0xa60286e820a755128b2269db5057b0e2d9b79fef6f813bf3fe3337553a8fbb53"),
     // tx_update_expiration_block_delta

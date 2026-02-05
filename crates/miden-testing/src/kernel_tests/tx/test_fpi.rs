@@ -581,42 +581,37 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use miden::core::sys
-
         use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
         begin
-            # get the storage item
-            # pad the stack for the `execute_foreign_procedure` execution
-            # pad the stack for the `execute_foreign_procedure` execution
-            padw padw
-            # => [pad(8)]
+            # => [pad(16)]
+
+            ### get the storage item ############
 
             # push the slot name of desired storage item
             push.MOCK_VALUE_SLOT0[0..2]
+            # => [slot_id_prefix, slot_id_suffix, pad(16)]
 
             # get the hash of the `get_item_foreign` account procedure
             procref.::foreign_account::get_item_foreign
+            # => [FOREIGN_PROC_ROOT, slot_id_prefix, slot_id_suffix, pad(16)]
 
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
             # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT
-            #     slot_id_prefix, slot_id_suffix, pad(8)]]
+            #     slot_id_prefix, slot_id_suffix, pad(16)]]
 
             exec.tx::execute_foreign_procedure
-            # => [STORAGE_VALUE]
+            # => [STORAGE_VALUE, pad(14)]
 
             # assert the correctness of the obtained value
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
-            # => []
+            # => [pad(16)]
 
-            # get an item from the storage map
-            # pad the stack for the `execute_foreign_procedure` execution
-            padw
-            # => [pad(4)]
+            ### get the storage map item ############
 
             # push the key of desired storage item
             push.{map_key}
@@ -630,17 +625,17 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
             # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT,
-            #     slot_id_prefix, slot_id_suffix, MAP_ITEM_KEY, pad(4)]
+            #     slot_id_prefix, slot_id_suffix, MAP_ITEM_KEY, pad(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [MAP_VALUE]
+            # => [MAP_VALUE, pad(18)]
 
             # assert the correctness of the obtained value
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
-            # => []
+            # => [pad(18)]
 
             # truncate the stack
-            exec.sys::truncate_stack
+            drop drop
         end
         "#,
         mock_value_slot0 = mock_value_slot0.name(),

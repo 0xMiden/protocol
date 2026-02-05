@@ -3,6 +3,13 @@ use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use miden::core::mem
 
+# TYPE ALIASES
+# =================================================================================================
+
+type AccountID = struct { prefix: felt, suffix: felt }
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type MemoryAddress = u32
+
 # ERRORS
 # =================================================================================================
 
@@ -55,6 +62,14 @@ const MIN_ACCOUNT_STACK_PTR=25
 
 # Pointer to the last element on the account stack.
 const MAX_ACCOUNT_STACK_PTR=88
+
+# Pointer to the ID of the foreign account which will be loaded during the upcoming FPI call. This
+# ID is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_ACCOUNT_PTR = 89
+
+# Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+# This root is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_PROCEDURE_PTR = 92
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -386,6 +401,66 @@ end
 #! - OUTPUT_VAULT_ROOT is the output vault root.
 pub proc set_output_vault_root
     mem_storew_be.OUTPUT_VAULT_ROOT_PTR
+end
+
+#! Sets the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc set_upcoming_account_id(foreign_account_id: AccountID)
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_PTR
+    # => [account_ptr, foreign_account_id_prefix]
+
+    push.UPCOMING_FOREIGN_ACCOUNT_PTR add.1
+    # => [account_ptr + 1, foreign_account_id_prefix]
+
+    mem_store
+    # => []
+end
+
+#! Returns the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  []
+#! Outputs: [foreign_account_id_suffix, foreign_account_id_prefix]
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc get_upcoming_account_id() -> (AccountID)
+    push.UPCOMING_FOREIGN_ACCOUNT_PTR add.1 mem_load
+    # => [foreign_account_id_prefix]
+
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_PTR
+    # => [foreign_account_id_suffix, foreign_account_id_prefix]
+end
+
+#! Sets the root of the foreign procedure which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [FOREIGN_PROC_ROOT]
+#! Outputs: [FOREIGN_PROC_ROOT]
+#!
+#! Where:
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+pub proc set_upcoming_procedure_root(foreign_proc_root: BeWord) -> BeWord
+    mem_storew_be.UPCOMING_FOREIGN_PROCEDURE_PTR
+end
+
+#! Returns the pointer to the root of the foreign procedure which is going to be loaded during the
+#! upcoming FPI call.
+#!
+#! Inputs:  []
+#! Outputs: [foreign_proc_root_ptr]
+#!
+#! Where:
+#! - foreign_proc_root_ptr is the pointer to the root of the foreign procedure which will be
+#!   executed during the FPI call.
+pub proc get_upcoming_procedure_root_ptr() -> MemoryAddress
+    push.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
 # GLOBAL INPUTS
