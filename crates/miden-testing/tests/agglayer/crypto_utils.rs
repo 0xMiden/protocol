@@ -79,6 +79,9 @@ impl LeafValueVector {
     }
 }
 
+// HELPER FUNCTIONS
+// ================================================================================================
+
 fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(limbs.len() * 4);
     for limb in limbs.iter() {
@@ -86,6 +89,68 @@ fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
         bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
     bytes
+}
+
+fn merkle_proof_verification_code(
+    index: usize,
+    merkle_paths: &MerkleProofVerificationFile,
+) -> String {
+    // generate the code which stores the merkle path to the memory
+    let mut store_path_source = String::new();
+    for height in 0..32 {
+        let path_node =
+            Keccak256Digest::try_from(merkle_paths.merkle_paths[index * 32 + height].as_str())
+                .unwrap();
+        let (node_hi, node_lo) = keccak_digest_to_word_strings(path_node);
+        // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
+        // memory pointers for the merkle path and the expected root never change
+        store_path_source.push_str(&format!(
+            "
+\tpush.[{node_hi}] mem_storew_be.{} dropw
+\tpush.[{node_lo}] mem_storew_be.{} dropw
+    ",
+            height * 8,
+            height * 8 + 4
+        ));
+    }
+
+    // prepare the root for the provided index
+    let root = Keccak256Digest::try_from(merkle_paths.roots[index].as_str()).unwrap();
+    let (root_hi, root_lo) = keccak_digest_to_word_strings(root);
+
+    // prepare the leaf for the provided index
+    let leaf = Keccak256Digest::try_from(merkle_paths.leaves[index].as_str()).unwrap();
+    let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
+
+    format!(
+        r#"
+        use miden::agglayer::crypto_utils
+
+        begin
+            # store the merkle path to the memory (double word slots from 0 to 248)
+            {store_path_source}
+            # => []
+
+            # store the root to the memory (double word slot 256)
+            push.[{root_lo}] mem_storew_be.256 dropw
+            push.[{root_hi}] mem_storew_be.260 dropw
+            # => []
+
+            # prepare the stack for the `verify_merkle_proof` procedure
+            push.256                          # expected root memory pointer
+            push.{index}                      # provided leaf index
+            push.0                            # Merkle path memory pointer
+            push.[{leaf_hi}] push.[{leaf_lo}] # provided leaf value
+            # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
+
+            exec.crypto_utils::verify_merkle_proof
+            # => [verification_flag]
+
+            assert.err="verification failed"
+            # => []
+        end
+    "#
+    )
 }
 
 // TESTS
@@ -234,69 +299,4 @@ async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()>
     }
 
     Ok(())
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-fn merkle_proof_verification_code(
-    index: usize,
-    merkle_paths: &MerkleProofVerificationFile,
-) -> String {
-    // generate the code which stores the merkle path to the memory
-    let mut store_path_source = String::new();
-    for height in 0..32 {
-        let path_node =
-            Keccak256Digest::try_from(merkle_paths.merkle_paths[index * 32 + height].as_str())
-                .unwrap();
-        let (node_hi, node_lo) = keccak_digest_to_word_strings(path_node);
-        // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
-        // memory pointers for the merkle path and the expected root never change
-        store_path_source.push_str(&format!(
-            "
-\tpush.[{node_hi}] mem_storew_be.{} dropw 
-\tpush.[{node_lo}] mem_storew_be.{} dropw
-    ",
-            height * 8,
-            height * 8 + 4
-        ));
-    }
-
-    // prepare the root for the provided index
-    let root = Keccak256Digest::try_from(merkle_paths.roots[index].as_str()).unwrap();
-    let (root_hi, root_lo) = keccak_digest_to_word_strings(root);
-
-    // prepare the leaf for the provided index
-    let leaf = Keccak256Digest::try_from(merkle_paths.leaves[index].as_str()).unwrap();
-    let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
-
-    format!(
-        r#"
-        use miden::agglayer::crypto_utils
-        
-        begin
-            # store the merkle path to the memory (double word slots from 0 to 248)
-            {store_path_source}
-            # => []
-
-            # store the root to the memory (double word slot 256)
-            push.[{root_lo}] mem_storew_be.256 dropw 
-            push.[{root_hi}] mem_storew_be.260 dropw
-            # => []
-
-            # prepare the stack for the `verify_merkle_proof` procedure
-            push.256                          # expected root memory pointer
-            push.{index}                      # provided leaf index
-            push.0                            # Merkle path memory pointer
-            push.[{leaf_hi}] push.[{leaf_lo}] # provided leaf value
-            # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
-
-            exec.crypto_utils::verify_merkle_proof
-            # => [verification_flag]
-
-            assert.err="verification failed"
-            # => []
-        end
-    "#
-    )
 }
