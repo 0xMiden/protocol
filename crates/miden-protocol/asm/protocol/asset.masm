@@ -16,22 +16,32 @@ const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT="fungible asset build
 
 const ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID="failed to build the non-fungible asset because the provided faucet id is not from a non-fungible faucet"
 
+# RE-EXPORTS
+# =================================================================================================
+
+# TODO(expand_assets): These shouldn't be needed long-term.
+# Re-export the shared utility procedures
+pub use ::miden::protocol::util::asset::build_non_fungible_asset_vault_key
+pub use ::miden::protocol::util::asset::build_fungible_asset_vault_key
+pub use ::miden::protocol::util::asset::build_asset_vault_key
+
 # PROCEDURES
 # =================================================================================================
 
 #! Builds a fungible asset for the specified fungible faucet and amount.
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
-#! - ASSET is the built fungible asset.
+#! - ASSET_KEY is the vault key of the created fungible asset.
+#! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Invocation: exec
-pub proc build_fungible_asset
+pub proc create_fungible_asset
     # assert the faucet is a fungible faucet
     dup exec.account_id::is_fungible_faucet assert.err=ERR_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
     # => [faucet_id_prefix, faucet_id_suffix, amount]
@@ -43,7 +53,10 @@ pub proc build_fungible_asset
 
     # create the asset
     push.0 movdn.2
-    # => [ASSET]
+    # => [ASSET_VALUE]
+
+    exec.build_fungible_asset_vault_key
+    # => [ASSET_KEY, ASSET_VALUE]
 end
 
 #! Builds a non fungible asset for the specified non-fungible faucet and amount.

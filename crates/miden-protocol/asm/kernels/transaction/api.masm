@@ -728,10 +728,11 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [NEW_ASSET_VALUE, pad(12)]
 #!
 #! Where:
+#! - ASSET_KEY is the vault key of the asset to mint.
 #! - ASSET_VALUE is the value of the asset that was minted.
 #! - NEW_ASSET_VALUE is:
 #!   - For fungible assets: the ASSET_VALUE merged with the existing vault asset value, if any.
@@ -752,15 +753,13 @@ end
 pub proc faucet_mint_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET_VALUE, pad(12)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # mint the asset
-    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
-    exec.asset_vault::build_asset_vault_key
     exec.faucet::mint
     # => [NEW_ASSET_VALUE, pad(12)]
 end

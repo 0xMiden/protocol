@@ -7,11 +7,11 @@ use crate::code_builder::CodeBuilder;
 const MOCK_FAUCET_CODE: &str = "
     use miden::protocol::faucet
 
-    #! Inputs:  [ASSET, pad(12)]
-    #! Outputs: [ASSET, pad(12)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [NEW_ASSET_VALUE, pad(12)]
     pub proc mint
         exec.faucet::mint
-        # => [ASSET, pad(12)]
+        # => [NEW_ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [ASSET, pad(12)]

@@ -3,6 +3,7 @@ use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
+use miden::protocol::asset
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
@@ -127,7 +128,7 @@ pub proc distribute
 
     # creating the asset
     exec.faucet::create_fungible_asset
-    # => [ASSET, tag, note_type, RECIPIENT]
+    # => [ASSET_KEY, ASSET_VALUE, tag, note_type, RECIPIENT]
 
     # mint the asset; this is needed to satisfy asset preservation logic.
     # this ensures that the asset's faucet ID matches the native account's ID.
