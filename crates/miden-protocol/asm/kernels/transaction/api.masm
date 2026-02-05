@@ -729,10 +729,13 @@ end
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
 #! Inputs:  [ASSET_VALUE, pad(12)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [NEW_ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_VALUE is the value of the asset that was minted.
+#! - NEW_ASSET_VALUE is:
+#!   - For fungible assets: the ASSET_VALUE merged with the existing vault asset value, if any.
+#!   - For non-fungible assets: identical to ASSET_VALUE.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -759,7 +762,7 @@ pub proc faucet_mint_asset
     # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
     exec.asset_vault::build_asset_vault_key
     exec.faucet::mint
-    # => [ASSET_VALUE, pad(12)]
+    # => [NEW_ASSET_VALUE, pad(12)]
 end
 
 #! Burn an asset from the faucet the transaction is being executed against.
