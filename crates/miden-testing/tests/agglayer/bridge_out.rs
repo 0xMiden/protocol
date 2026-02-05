@@ -23,7 +23,7 @@ use miden_protocol::note::{
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::NetworkFungibleFaucet;
+use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
@@ -163,7 +163,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // CONSUME THE BURN NOTE WITH THE NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
     // Check the initial token issuance before burning
-    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply, Felt::new(100), "Initial issuance should be 100");
 
     // Execute the BURN note against the network faucet
@@ -182,7 +182,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let mut faucet = faucet;
     faucet.apply_delta(burn_executed_transaction.account_delta())?;
 
-    let final_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_int() - amount.as_int()),

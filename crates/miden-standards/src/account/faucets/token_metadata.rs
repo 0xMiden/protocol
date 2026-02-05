@@ -1,8 +1,17 @@
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, FieldElement, Word};
 
 use super::FungibleFaucetError;
+
+// CONSTANTS
+// ================================================================================================
+
+static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::fungible_faucets::metadata")
+        .expect("storage slot name should be valid")
+});
 
 // TOKEN METADATA
 // ================================================================================================
@@ -96,7 +105,7 @@ impl TokenMetadata {
 
     /// Returns the [`StorageSlotName`] where the token metadata is stored.
     pub fn metadata_slot() -> &'static StorageSlotName {
-        &super::METADATA_SLOT_NAME
+        &METADATA_SLOT_NAME
     }
 
     /// Returns the current token supply (amount issued).
@@ -117,27 +126,6 @@ impl TokenMetadata {
     /// Returns the token symbol.
     pub fn symbol(&self) -> TokenSymbol {
         self.symbol
-    }
-
-    // HELPER METHODS
-    // --------------------------------------------------------------------------------------------
-
-    /// Parses token metadata from a Word.
-    ///
-    /// The Word is expected to be in the format: `[token_supply, max_supply, decimals, symbol]`
-    pub(super) fn try_from_word(word: Word) -> Result<Self, FungibleFaucetError> {
-        let [token_supply, max_supply, decimals, token_symbol] = *word;
-
-        let symbol =
-            TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-
-        let decimals =
-            decimals.as_int().try_into().map_err(|_| FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_int(),
-                max: Self::MAX_DECIMALS,
-            })?;
-
-        Self::with_supply(symbol, decimals, max_supply, token_supply)
     }
 
     // MUTATORS
@@ -166,6 +154,28 @@ impl TokenMetadata {
 // TRAIT IMPLEMENTATIONS
 // ================================================================================================
 
+impl TryFrom<Word> for TokenMetadata {
+    type Error = FungibleFaucetError;
+
+    /// Parses token metadata from a Word.
+    ///
+    /// The Word is expected to be in the format: `[token_supply, max_supply, decimals, symbol]`
+    fn try_from(word: Word) -> Result<Self, Self::Error> {
+        let [token_supply, max_supply, decimals, token_symbol] = *word;
+
+        let symbol =
+            TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
+
+        let decimals =
+            decimals.as_int().try_into().map_err(|_| FungibleFaucetError::TooManyDecimals {
+                actual: decimals.as_int(),
+                max: Self::MAX_DECIMALS,
+            })?;
+
+        Self::with_supply(symbol, decimals, max_supply, token_supply)
+    }
+}
+
 impl From<TokenMetadata> for Word {
     fn from(metadata: TokenMetadata) -> Self {
         // Storage layout: [token_supply, max_supply, decimals, symbol]
@@ -188,8 +198,19 @@ impl TryFrom<&StorageSlot> for TokenMetadata {
     type Error = FungibleFaucetError;
 
     /// Tries to create [`TokenMetadata`] from a storage slot.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The slot name does not match the expected metadata slot name.
+    /// - The slot value cannot be parsed as valid token metadata.
     fn try_from(slot: &StorageSlot) -> Result<Self, Self::Error> {
-        TokenMetadata::try_from_word(slot.value())
+        if slot.name() != Self::metadata_slot() {
+            return Err(FungibleFaucetError::SlotNameMismatch {
+                expected: Self::metadata_slot().clone(),
+                actual: slot.name().clone(),
+            });
+        }
+        TokenMetadata::try_from(slot.value())
     }
 }
 
@@ -205,7 +226,7 @@ impl TryFrom<&AccountStorage> for TokenMetadata {
             }
         })?;
 
-        TokenMetadata::try_from_word(metadata_word)
+        TokenMetadata::try_from(metadata_word)
     }
 }
 
@@ -315,7 +336,7 @@ mod tests {
         let original =
             TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply).unwrap();
         let word: Word = original.into();
-        let restored = TokenMetadata::try_from_word(word).unwrap();
+        let restored = TokenMetadata::try_from(word).unwrap();
 
         assert_eq!(restored.symbol(), symbol);
         assert_eq!(restored.decimals(), decimals);
