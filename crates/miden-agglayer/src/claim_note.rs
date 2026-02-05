@@ -137,14 +137,16 @@ impl SequentialCommit for LeafData {
         // for a `CLAIM` note, leafType is always 0 (transfer Ether / ERC20 tokens)
         elements.push(Felt::ZERO);
 
-        // Origin network
-        elements.push(Felt::new(self.origin_network as u64));
+        // Origin network (encode as little-endian bytes for keccak)
+        let origin_network = u32::from_le_bytes(self.origin_network.to_be_bytes());
+        elements.push(Felt::from(origin_network));
 
         // Origin token address (5 u32 felts)
         elements.extend(self.origin_token_address.to_elements());
 
-        // Destination network
-        elements.push(Felt::new(self.destination_network as u64));
+        // Destination network (encode as little-endian bytes for keccak)
+        let destination_network = u32::from_le_bytes(self.destination_network.to_be_bytes());
+        elements.push(Felt::from(destination_network));
 
         // Destination address (5 u32 felts)
         elements.extend(self.destination_address.to_elements());

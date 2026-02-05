@@ -220,11 +220,13 @@ end
 #!
 #! The Keccak precompile expects u32 values packed in little-endian byte order.
 #! For each packed element, we drop the leading 3 bytes and rebuild the u32 so that
-#! bytes [b0, b1, b2, b3] map to u32::from_le_bytes([b0, b1, b2, b3]):
-#!   packed = (curr & 0xFF)
-#!          | ((next >> 24) & 0xFF) << 8
-#!          | ((next >> 16) & 0xFF) << 16
-#!          | ((next >> 8) & 0xFF) << 24
+#! bytes [b0, b1, b2, b3] map to u32::from_le_bytes([b0, b1, b2, b3]).
+#! With little-endian input limbs, the first byte comes from the MSB of `curr` and
+#! the next three bytes come from the LSBs of `next`:
+#!   packed = ((curr >> 24) & 0xFF)
+#!          | (next & 0xFF) << 8
+#!          | ((next >> 8) & 0xFF) << 16
+#!          | ((next >> 16) & 0xFF) << 24
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -249,9 +251,9 @@ pub proc pack_leaf_data
         mem_load
         # => [curr_elem, counter]
 
-        # extract LSB (lower 8 bits) which becomes the first little-endian byte
-        dup u32and.0xFF
-        # => [curr_lsb, curr_elem, counter]
+        # extract MSB (upper 8 bits) which becomes the first little-endian byte
+        dup u32shr.24
+        # => [curr_msb, curr_elem, counter]
 
         # compute source address for next element (counter + 1)
         dup.2 push.LEAF_DATA_START_PTR add add.1
@@ -261,20 +263,20 @@ pub proc pack_leaf_data
         mem_load
         # => [next_elem, curr_lsb, curr_elem, counter]
 
-        # keep curr_lsb on top for combination
+        # keep curr_msb on top for combination
         swap
-        # => [curr_lsb, next_elem, curr_elem, counter]
+        # => [curr_msb, next_elem, curr_elem, counter]
 
-        # add next byte0 (bits 24..31) into bits 8..15
-        dup.1 u32shr.24 u32shl.8 u32or
+        # add next byte0 (bits 0..7) into bits 8..15
+        dup.1 u32and.0xFF u32shl.8 u32or
         # => [partial, next_elem, curr_elem, counter]
 
-        # add next byte1 (bits 16..23) into bits 16..23
-        dup.1 u32shr.16 u32and.0xFF u32shl.16 u32or
+        # add next byte1 (bits 8..15) into bits 16..23
+        dup.1 u32shr.8 u32and.0xFF u32shl.16 u32or
         # => [partial, next_elem, curr_elem, counter]
 
-        # add next byte2 (bits 8..15) into bits 24..31
-        dup.1 u32shr.8 u32and.0xFF u32shl.24 u32or
+        # add next byte2 (bits 16..23) into bits 24..31
+        dup.1 u32shr.16 u32and.0xFF u32shl.24 u32or
         # => [packed_elem, next_elem, curr_elem, counter]
 
         # drop the next and current elements (no longer needed)
