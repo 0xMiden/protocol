@@ -96,32 +96,31 @@ pub fn create_p2any_note(
     let serial_number = rng.draw_word();
     let assets: Vec<_> = assets.into_iter().collect();
     let mut code_body = String::new();
-    for i in 0..assets.len() {
-        if i == 0 {
-            // first asset (dest_ptr is already on stack)
-            code_body.push_str(
-                "
-                # add first asset
+    for asset_idx in 0..assets.len() {
+        code_body.push_str(&format!(
+            "
+                # => [dest_ptr]
+
+                # current_asset_ptr = dest_ptr + ASSET_SIZE * asset_idx
+                dup push.ASSET_SIZE mul.{asset_idx}
+                # => [current_asset_ptr, dest_ptr]
 
                 padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-                padw swapw padw padw swapdw
-                call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]
-                ",
-            );
-        } else {
-            code_body.push_str(
-                "
-                # add next asset
+                # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
-                add.ASSET_SIZE dup movdn.13
-                padw movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+                padw movup.8 mem_loadw_be
+                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+
+                padw padw swapdw
+                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+
                 call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]",
-            );
-        }
+                # => [pad(16), dest_ptr]
+
+                dropw dropw dropw dropw
+                # => [dest_ptr]
+                ",
+        ));
     }
     code_body.push_str("dropw dropw dropw dropw");
 
