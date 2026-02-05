@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_agglayer::agglayer_library;
+use miden_agglayer::{EthAddressFormat, EthAmount, LeafData, MetadataHash, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
@@ -17,6 +17,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
+use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
 use super::test_utils::{execute_program_with_default_host, keccak_digest_to_word_strings};
@@ -45,31 +46,56 @@ static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> = La
         .expect("failed to parse Merkle proof vectors JSON")
 });
 
+/// Leaf data test vectors JSON embedded at compile time from the Foundry-generated file.
+const LEAF_VALUE_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
+
+// TEST VECTOR STRUCTURES
+// ================================================================================================
+
+/// Deserialized leaf value test vector from Solidity-generated JSON.
+#[derive(Debug, Deserialize)]
+struct LeafValueVector {
+    origin_network: u32,
+    origin_token_address: String,
+    destination_network: u32,
+    destination_address: String,
+    amount: String,
+    metadata_hash: String,
+    #[allow(dead_code)]
+    leaf_value: String,
+}
+
+impl LeafValueVector {
+    /// Converts this test vector into a `LeafData` instance.
+    fn to_leaf_data(&self) -> LeafData {
+        LeafData {
+            origin_network: self.origin_network,
+            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
+                .expect("valid origin token address hex"),
+            destination_network: self.destination_network,
+            destination_address: EthAddressFormat::from_hex(&self.destination_address)
+                .expect("valid destination address hex"),
+            amount: EthAmount::from_hex(&self.amount).expect("valid amount hex"),
+            metadata_hash: MetadataHash::new(
+                hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
+            ),
+        }
+    }
+}
+
 fn u32_words_to_solidity_bytes32_hex(words: &[u64]) -> String {
     assert_eq!(words.len(), 8, "expected 8 u32 words = 32 bytes");
     let mut out = [0u8; 32];
-
     for (i, &w) in words.iter().enumerate() {
         let le = (w as u32).to_le_bytes();
         out[i * 4..i * 4 + 4].copy_from_slice(&le);
     }
-
     let mut s = String::from("0x");
     for b in out {
         s.push_str(&format!("{:02x}", b));
     }
     s
-}
-
-// Helper: parse 0x-prefixed hex into a fixed-size byte array
-fn hex_to_fixed<const N: usize>(s: &str) -> [u8; N] {
-    let s = s.strip_prefix("0x").unwrap_or(s);
-    assert_eq!(s.len(), N * 2, "expected {} hex chars", N * 2);
-    let mut out = [0u8; N];
-    for i in 0..N {
-        out[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap();
-    }
-    out
 }
 
 #[tokio::test]
@@ -79,12 +105,14 @@ async fn test_keccak_hash_get_leaf_value() -> anyhow::Result<()> {
     // === Values from hardhat test ===
     let leaf_type: u8 = 0;
     let origin_network: u32 = 0;
-    let token_address: [u8; 20] = hex_to_fixed("0x1234567890123456789012345678901234567890");
+    let token_address: [u8; 20] =
+        hex_to_bytes("0x1234567890123456789012345678901234567890").unwrap();
     let destination_network: u32 = 1;
-    let destination_address: [u8; 20] = hex_to_fixed("0x0987654321098765432109876543210987654321");
+    let destination_address: [u8; 20] =
+        hex_to_bytes("0x0987654321098765432109876543210987654321").unwrap();
     let amount_u64: u64 = 1; // 1e19
     let metadata_hash: [u8; 32] =
-        hex_to_fixed("0x2cdc14cacf6fec86a549f0e4d01e83027d3b10f29fa527c1535192c1ca1aac81");
+        hex_to_bytes("0x2cdc14cacf6fec86a549f0e4d01e83027d3b10f29fa527c1535192c1ca1aac81").unwrap();
 
     // Expected hash value from Solidity implementation
     let expected_hash = "0xf6825f6c59be2edf318d7251f4b94c0e03eb631b76a0e7b977fd8ed3ff925a3f";
