@@ -2,16 +2,21 @@ use core::fmt;
 
 use miden_core::FieldElement;
 use miden_protocol::Felt;
+use miden_protocol::utils::hex_to_bytes;
 
 // ================================================================================================
 // ETHEREUM AMOUNT ERROR
 // ================================================================================================
 
 /// Error type for Ethereum amount conversions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EthAmountError {
     /// The amount doesn't fit in the target type.
     Overflow,
+    /// Invalid hex string length (expected 64 hex characters, optionally with "0x" prefix).
+    InvalidHexLength,
+    /// Invalid hex character.
+    InvalidHexChar(char),
 }
 
 impl fmt::Display for EthAmountError {
@@ -19,6 +24,12 @@ impl fmt::Display for EthAmountError {
         match self {
             EthAmountError::Overflow => {
                 write!(f, "amount overflow: value doesn't fit in target type")
+            },
+            EthAmountError::InvalidHexLength => {
+                write!(f, "invalid hex length: expected 64 hex characters")
+            },
+            EthAmountError::InvalidHexChar(c) => {
+                write!(f, "invalid hex character: {}", c)
             },
         }
     }
@@ -60,6 +71,33 @@ impl EthAmount {
     /// stored in the first u32 slot with the remaining slots set to zero.
     pub const fn from_u32(value: u32) -> Self {
         Self([value, 0, 0, 0, 0, 0, 0, 0])
+    }
+
+    /// Creates an [`EthAmount`] from a 32-byte array in big-endian order.
+    ///
+    /// The bytes are interpreted as a 256-bit big-endian integer and converted
+    /// to the internal little-endian u32 representation.
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        let mut values = [0u32; 8];
+        // bytes[0..4] is most significant, bytes[28..32] is least significant
+        // We want values[0] = least significant, values[7] = most significant
+        for (i, chunk) in bytes.chunks(4).enumerate() {
+            values[i] = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        }
+        Self(values)
+    }
+
+    /// Creates an [`EthAmount`] from a hex string (with or without "0x" prefix).
+    ///
+    /// The hex string must represent exactly 32 bytes (64 hex characters).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the hex string length is invalid or contains non-hex characters.
+    pub fn from_hex(hex_str: &str) -> Result<Self, EthAmountError> {
+        let bytes: [u8; 32] =
+            hex_to_bytes(hex_str).map_err(|_| EthAmountError::InvalidHexLength)?;
+        Ok(Self::from_bytes(bytes))
     }
 
     /// Returns the raw array of 8 u32 values.
@@ -112,6 +150,18 @@ impl EthAmount {
             result[i] = Felt::from(value);
         }
         result
+    }
+
+    /// Converts the amount to a 32-byte array in big-endian order.
+    ///
+    /// This produces the Solidity `uint256` representation where `bytes[0..4]`
+    /// contains the most significant 32 bits.
+    pub fn to_bytes_be(&self) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        for (i, &value) in self.0.iter().enumerate() {
+            bytes[i * 4..(i + 1) * 4].copy_from_slice(&value.to_be_bytes());
+        }
+        bytes
     }
 }
 
