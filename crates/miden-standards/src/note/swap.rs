@@ -48,7 +48,7 @@ impl SwapNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the SWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 16;
+    pub const NUM_STORAGE_ITEMS: usize = 20;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -94,24 +94,24 @@ impl SwapNote {
         let payback_serial_num = rng.draw_word();
         let payback_recipient = P2idNote::build_recipient(sender, payback_serial_num)?;
 
-        let requested_asset_word: Word = requested_asset.into();
         let payback_tag = NoteTag::with_account_target(sender);
 
         let attachment_scheme = Felt::from(payback_note_attachment.attachment_scheme().as_u32());
         let attachment_kind = Felt::from(payback_note_attachment.attachment_kind().as_u8());
         let attachment = payback_note_attachment.content().to_word();
 
-        let mut inputs = Vec::with_capacity(16);
-        inputs.extend_from_slice(&[
+        let mut storage = Vec::with_capacity(SwapNote::NUM_STORAGE_ITEMS);
+        storage.extend_from_slice(&[
             payback_note_type.into(),
             payback_tag.into(),
             attachment_scheme,
             attachment_kind,
         ]);
-        inputs.extend_from_slice(attachment.as_elements());
-        inputs.extend_from_slice(requested_asset_word.as_elements());
-        inputs.extend_from_slice(payback_recipient.digest().as_elements());
-        let inputs = NoteStorage::new(inputs)?;
+        storage.extend_from_slice(attachment.as_elements());
+        storage.extend_from_slice(requested_asset.to_key_word().as_elements());
+        storage.extend_from_slice(requested_asset.to_value_word().as_elements());
+        storage.extend_from_slice(payback_recipient.digest().as_elements());
+        let inputs = NoteStorage::new(storage)?;
 
         // build the tag for the SWAP use case
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);

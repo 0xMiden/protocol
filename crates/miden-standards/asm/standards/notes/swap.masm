@@ -7,15 +7,16 @@ use miden::standards::wallets::basic->wallet
 # CONSTANTS
 # =================================================================================================
 
-const SWAP_NOTE_NUM_STORAGE_ITEMS=16
+const SWAP_NOTE_NUM_STORAGE_ITEMS=20
 
 const PAYBACK_NOTE_TYPE_ADDRESS=0
 const PAYBACK_NOTE_TAG_ADDRESS=1
 const ATTACHMENT_KIND_ADDRESS=2
 const ATTACHMENT_SCHEME_ADDRESS=3
 const ATTACHMENT_ADDRESS=4
-const REQUESTED_ASSET_VALUE_ADDRESS=8
-const PAYBACK_RECIPIENT_ADDRESS=12
+const REQUESTED_ASSET_KEY_ADDRESS=8
+const REQUESTED_ASSET_VALUE_ADDRESS=12
+const PAYBACK_RECIPIENT_ADDRESS=16
 
 # ERRORS
 # =================================================================================================
@@ -40,7 +41,8 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! - attachment_kind
 #! - attachment_scheme
 #! - ATTACHMENT
-#! - REQUESTED_ASSET
+#! - REQUESTED_ASSET_KEY
+#! - REQUESTED_ASSET_VALUE
 #! - PAYBACK_RECIPIENT
 #!
 #! Panics if:
@@ -86,7 +88,7 @@ pub proc main
     padw mem_loadw_be.REQUESTED_ASSET_VALUE_ADDRESS
     # => [REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
-    exec.asset::build_asset_vault_key
+    padw mem_loadw_be.REQUESTED_ASSET_KEY_ADDRESS
     # => [REQUESTED_ASSET_KEY, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
