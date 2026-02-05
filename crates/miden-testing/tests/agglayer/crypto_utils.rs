@@ -5,9 +5,16 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_agglayer::claim_note::Keccak256Output;
+use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
 use miden_agglayer::utils::felts_to_bytes;
-use miden_agglayer::{EthAddressFormat, EthAmount, LeafData, MetadataHash, agglayer_library};
+use miden_agglayer::{
+    EthAddressFormat,
+    EthAmount,
+    GlobalIndex,
+    LeafData,
+    MetadataHash,
+    agglayer_library,
+};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
@@ -46,6 +53,11 @@ static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> = La
 const LEAF_VALUE_VECTORS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
 
+/// Claim asset test vectors JSON embedded at compile time - contains both LeafData and ProofData
+/// from a real claimAsset transaction.
+const CLAIM_ASSET_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+
 // TEST VECTOR STRUCTURES
 // ================================================================================================
 
@@ -79,6 +91,80 @@ impl LeafValueVector {
         }
     }
 }
+
+/// Deserialized proof value test vector from Solidity-generated JSON.
+/// Contains SMT proofs, exit roots, global index, and expected global exit root.
+#[derive(Debug, Deserialize)]
+struct ProofValueVector {
+    smt_proof_local_exit_root: Vec<String>,
+    smt_proof_rollup_exit_root: Vec<String>,
+    global_index: String,
+    mainnet_exit_root: String,
+    rollup_exit_root: String,
+    /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
+    #[allow(dead_code)]
+    global_exit_root: String,
+}
+
+impl ProofValueVector {
+    /// Converts this test vector into a `ProofData` instance.
+    fn to_proof_data(&self) -> ProofData {
+        // Parse SMT proofs (32 nodes each)
+        let smt_proof_local: [SmtNode; 32] = self
+            .smt_proof_local_exit_root
+            .iter()
+            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected 32 SMT proof nodes for local exit root");
+
+        let smt_proof_rollup: [SmtNode; 32] = self
+            .smt_proof_rollup_exit_root
+            .iter()
+            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected 32 SMT proof nodes for rollup exit root");
+
+        ProofData {
+            smt_proof_local_exit_root: smt_proof_local,
+            smt_proof_rollup_exit_root: smt_proof_rollup,
+            global_index: GlobalIndex::from_hex(&self.global_index)
+                .expect("valid global index hex"),
+            mainnet_exit_root: Keccak256Output::new(
+                hex_to_bytes(&self.mainnet_exit_root).expect("valid mainnet exit root hex"),
+            ),
+            rollup_exit_root: Keccak256Output::new(
+                hex_to_bytes(&self.rollup_exit_root).expect("valid rollup exit root hex"),
+            ),
+        }
+    }
+
+    /// Returns the expected global exit root hash from the test vector.
+    #[allow(dead_code)]
+    fn expected_global_exit_root(&self) -> Keccak256Output {
+        Keccak256Output::new(
+            hex_to_bytes(&self.global_exit_root).expect("valid global exit root hex"),
+        )
+    }
+}
+
+/// Deserialized claim asset test vector from Solidity-generated JSON.
+/// Contains both LeafData and ProofData from a real claimAsset transaction.
+#[derive(Debug, Deserialize)]
+struct ClaimAssetVector {
+    #[serde(flatten)]
+    proof: ProofValueVector,
+
+    #[serde(flatten)]
+    leaf: LeafValueVector,
+}
+
+/// Lazily parsed claim asset test vector from the JSON file.
+static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
+        .expect("failed to parse claim asset vectors JSON")
+});
 
 // HELPER FUNCTIONS
 // ================================================================================================
