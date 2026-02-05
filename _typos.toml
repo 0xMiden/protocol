@@ -1,2 +1,5 @@
 [default]
 extend-ignore-identifiers-re = [".*1st.*", ".*2nd.*", ".*3rd.*"]
+
+[files]
+extend-exclude = ["crates/miden-agglayer/solidity-compat/lib"]

@@ -11,7 +11,7 @@ use miden::core::mem
 # =================================================================================================
 
 const PROOF_DATA_SIZE = 536
-const LEAF_DATA_SIZE = 24
+const LEAF_DATA_SIZE = 32
 const OUTPUT_NOTE_SIZE = 8
 
 const PROOF_DATA_START_PTR = 0
@@ -68,13 +68,14 @@ end
 #! ]
 #!
 #! LEAF_DATA_KEY => [
+#!   leafType[1],                     // Leaf type (1 felt, uint32)
+#!   padding[3],                      // padding (3 felts)
 #!   originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!   originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
 #!   destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
 #!   destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!   amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!   metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!   EMPTY_WORD                       // padding
 #! ]
 #!
 #! TODO: Will be removed in future PR
@@ -82,6 +83,7 @@ end
 #!   output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
 #!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
 #!   output_note_tag[1],              // P2ID output note tag
+#!   padding[1],                      // padding (1 felt)
 #! ]
 #!
 #! Invocation: exec
@@ -145,22 +147,24 @@ end
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (575 felts total):
+#! NoteStorage layout (576 felts total):
 #! - smtProofLocalExitRoot      [0..255]  : 256 felts
 #! - smtProofRollupExitRoot     [256..511]: 256 felts
 #! - globalIndex                [512..519]: 8 felts
 #! - mainnetExitRoot            [520..527]: 8 felts
 #! - rollupExitRoot             [528..535]: 8 felts
-#! - originNetwork              [536]     : 1 felt
-#! - originTokenAddress         [537..541]: 5 felts
-#! - destinationNetwork         [542]     : 1 felt
-#! - destinationAddress         [543..547]: 5 felts
-#! - amount                     [548..555]: 8 felts
-#! - metadata                   [556..563]: 8 felts
-#! - EMPTY_WORD                 [564..567]: 4 felts
+#! - leafType                   [536]     : 1 felt
+#! - padding                    [537..539]: 3 felts
+#! - originNetwork              [540]     : 1 felt
+#! - originTokenAddress         [541..545]: 5 felts
+#! - destinationNetwork         [546]     : 1 felt
+#! - destinationAddress         [547..551]: 5 felts
+#! - amount                     [552..559]: 8 felts
+#! - metadata                   [560..567]: 8 felts
 #! - output_p2id_serial_num     [568..571]: 4 felts
 #! - target_faucet_account_id   [572..573]: 2 felts
 #! - output_note_tag            [574]     : 1 felt
+#! - padding                    [575]     : 1 felt
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -172,17 +176,19 @@ end
 #!   - Top 191 bits are ignored (not required to be zero), so indexers must decode it exactly like the contract does
 #! - mainnetExitRoot: Mainnet exit root hash (bytes32 as 8 u32 felts)
 #! - rollupExitRoot: Rollup exit root hash (bytes32 as 8 u32 felts)
+#! - leafType: Leaf type (uint32): [0] transfer Ether / ERC20 tokens, [1] message
 #! - originNetwork: Origin network identifier (uint32)
 #! - originTokenAddress: Origin token address (address as 5 u32 felts)
 #! - destinationNetwork: Destination network identifier (uint32)
 #! - destinationAddress: Destination address (address as 5 u32 felts)
 #! - amount: Amount of tokens (uint256 as 8 u32 felts)
 #! - metadata: ABI encoded metadata (fixed size)
-#! - EMPTY_WORD: Padding word
+#! - padding (3 felts)
 #! - output_p2id_serial_num: P2ID note serial number (Word)
 #! - target_faucet_account_id: Target agglayer faucet account ID (prefix and suffix). Only this specific
 #!   account can consume the note - any other account will cause a panic.
 #! - output_note_tag: P2ID output note tag
+#! - padding (1 felt)
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
