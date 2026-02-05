@@ -63,6 +63,10 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     exec.mem::pipe_preimage_to_memory drop
     # => []
 
+    # before packing, we have non-zero bytes in [0..=115]
+    exec.pack_leaf_data
+    # => []
+
     push.LEAF_DATA_BYTES push.LEAF_DATA_START_PTR
     # => [start_ptr, byte_len]
 

@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::utils::felts_to_bytes;
 use miden_agglayer::{EthAddressFormat, EthAmount, LeafData, MetadataHash, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
@@ -270,6 +271,49 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
         "Packed bytes don't match expected Solidity encoding"
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn get_leaf_value() -> anyhow::Result<()> {
+    let vector: LeafValueVector =
+        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("Failed to parse leaf value vector");
+
+    let leaf_data = vector.to_leaf_data();
+    let key: Word = leaf_data.to_commitment();
+    let advice_inputs = AdviceInputs::default().with_map(vec![(key, leaf_data.to_elements())]);
+
+    let source = format!(
+        r#"
+            use miden::core::mem
+            use miden::core::sys
+            use miden::agglayer::crypto_utils
+
+            begin
+                push.{key}
+                exec.crypto_utils::get_leaf_value
+                exec.sys::truncate_stack
+            end
+        "#
+    );
+    let agglayer_lib = agglayer_library();
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib.clone())
+        .unwrap()
+        .assemble_program(&source)
+        .unwrap();
+
+    let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await?;
+    let computed_leaf_value: Vec<Felt> = exec_output.stack[0..8].to_vec();
+    let expected_leaf_value_bytes: [u8; 32] =
+        hex_to_bytes(&vector.leaf_value).expect("valid leaf value hex");
+    let expected_leaf_value: Vec<Felt> =
+        Keccak256Output::from(expected_leaf_value_bytes).to_elements();
+
+    assert_eq!(computed_leaf_value, expected_leaf_value);
     Ok(())
 }
 
