@@ -223,7 +223,7 @@ pub proc execute_foreign_procedure
     push.0 movdn.7 padw padw swapdw
     # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(9), <foreign procedure inputs>, pad(n)]
 
-    # load the foreign account ID and the foreign procedure to the memory
+    # load the foreign account ID and the foreign procedure root to the memory
     syscall.exec_kernel_proc
     # => [pad(16), <foreign procedure inputs>, pad(n)]
     
