@@ -444,7 +444,7 @@ impl CodeBuilder {
     pub fn with_mock_libraries_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        use miden_protocol::testing::mock_util_lib::mock_util_library;
+        use crate::testing::mock_util_lib::mock_util_library;
 
         // Start with the builder linking against the transaction kernel, protocol library and
         // standards library.
