@@ -1003,8 +1003,10 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add an asset to the account
-            push.{fungible_asset}
-            call.mock_account::add_asset dropw
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
+            call.mock_account::add_asset
+            dropw dropw
             # => []
 
             # get the current vault root
@@ -1013,7 +1015,8 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="vault root mismatch"
         end
         "#,
-        fungible_asset = Word::from(&fungible_asset),
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
         expected_vault_root = &account.vault().root(),
     );
     tx_context.execute_code(&code).await?;

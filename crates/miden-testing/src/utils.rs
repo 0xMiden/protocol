@@ -260,8 +260,8 @@ fn note_script_that_creates_notes<'note>(
                   call.::miden::standards::wallets::basic::move_asset_to_note
                   # => [note_idx]
                 ",
-                  ASSET_KEY = asset.to_key_word(),
-                  ASSET_VALUE = asset.to_value_word(),
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             ));
         }
     }

@@ -191,14 +191,16 @@ end
 
 #! Add the specified asset to the vault.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET']
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE']
 #!
 #! Where:
-#! - ASSET' is a final asset in the account vault defined as follows:
-#!   - If ASSET is a non-fungible asset, then ASSET' is the same as ASSET.
-#!   - If ASSET is a fungible asset, then ASSET' is the total fungible asset in the account vault
-#!     after ASSET was added to it.
+#! - ASSET_KEY is the vault key of the asset that is added to the vault.
+#! - ASSET_VALUE is the value of the asset to add to the vault.
+#! - ASSET_VALUE' final asset in the account vault defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
 #! - the asset is not valid.
@@ -207,19 +209,19 @@ end
 #!
 #! Invocation: exec
 pub proc add_asset
-    exec.kernel_proc_offsets::account_add_asset_offset
-    # => [offset, ASSET]
-
     # pad the stack
-    push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-    # => [offset, ASSET, pad(11)]
+    padw padw swapdw movup.8 drop
+    # => [ASSET_KEY, ASSET_VALUE, pad(7)]
+
+    exec.kernel_proc_offsets::account_add_asset_offset
+    # => [offset, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET']
+    # => [ASSET_VALUE']
 end
 
 #! Remove the specified asset from the vault.

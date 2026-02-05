@@ -43,15 +43,19 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
       use mock::account
 
       begin
-          push.{FUNGIBLE_ASSET1}
-          call.account::add_asset dropw
+          push.{FUNGIBLE_ASSET_VALUE1}
+          push.{FUNGIBLE_ASSET_KEY1}
+          call.account::add_asset dropw dropw
 
-          push.{FUNGIBLE_ASSET2}
-          call.account::add_asset dropw
+          push.{FUNGIBLE_ASSET_VALUE2}
+          push.{FUNGIBLE_ASSET_KEY2}
+          call.account::add_asset dropw dropw
       end
       ",
-        FUNGIBLE_ASSET1 = Word::from(fungible_asset1),
-        FUNGIBLE_ASSET2 = Word::from(fungible_asset2)
+        FUNGIBLE_ASSET_KEY1 = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET_VALUE1 = fungible_asset1.to_value_word(),
+        FUNGIBLE_ASSET_KEY2 = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
     let builder = CodeBuilder::with_mock_libraries();

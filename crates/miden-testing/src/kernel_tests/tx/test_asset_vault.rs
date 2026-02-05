@@ -194,14 +194,16 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::add_asset
 
             # truncate the stack
-            swapw dropw
+            swapdw dropw dropw
         end
         ",
-        FUNGIBLE_ASSET = Word::from(add_fungible_asset)
+        FUNGIBLE_ASSET_KEY = add_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -241,11 +243,14 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
             call.account::add_asset
+            dropw dropw
         end
         ",
-        FUNGIBLE_ASSET = Word::from(add_fungible_asset)
+        FUNGIBLE_ASSET_KEY = add_fungible_asset.to_key_word(),
+        FUNGIBLE_ASSET_VALUE = add_fungible_asset.to_value_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;
@@ -272,14 +277,16 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             call.account::add_asset
 
             # truncate the stack
-            swapw dropw
+            swapdw dropw dropw
         end
         ",
-        FUNGIBLE_ASSET = Word::from(add_non_fungible_asset)
+        NON_FUNGIBLE_ASSET_KEY = add_non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_VALUE = add_non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -314,11 +321,14 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{NON_FUNGIBLE_ASSET}
+            push.{NON_FUNGIBLE_ASSET_VALUE}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             call.account::add_asset
+            dropw dropw
         end
         ",
-        NON_FUNGIBLE_ASSET = Word::from(non_fungible_asset)
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
+        NON_FUNGIBLE_ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_result = tx_context.execute_code(&code).await;

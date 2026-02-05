@@ -23,8 +23,11 @@ const PUBLIC_NOTE=1
 #!
 #! Invocation: call
 pub proc receive_asset
+    # TODO(expand_assets): Remove temp code.
+    exec.::miden::protocol::asset::build_asset_vault_key
+
     exec.native_account::add_asset
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 
     # drop the final asset
     dropw
