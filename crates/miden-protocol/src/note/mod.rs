@@ -37,7 +37,7 @@ mod note_tag;
 pub use note_tag::NoteTag;
 
 mod note_type;
-pub use note_type::NoteType;
+pub use note_type::{NoteType, PRIVATE, PUBLIC};
 
 mod nullifier;
 pub use nullifier::Nullifier;

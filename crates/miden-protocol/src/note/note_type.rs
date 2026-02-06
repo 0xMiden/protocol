@@ -15,8 +15,8 @@ use crate::utils::serde::{
 // ================================================================================================
 
 // Keep these masks in sync with `miden-lib/asm/miden/kernels/tx/tx.masm`
-const PUBLIC: u8 = 0b01;
-const PRIVATE: u8 = 0b10;
+pub const PUBLIC: u8 = 0b01;
+pub const PRIVATE: u8 = 0b10;
 
 // NOTE TYPE
 // ================================================================================================
