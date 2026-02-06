@@ -9,9 +9,9 @@ use miden_agglayer::{
 };
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{NoteRecipient, NoteStorage, NoteTag, NoteType};
+use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::StandardNote;

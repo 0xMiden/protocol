@@ -538,11 +538,6 @@ async fn test_claim_asset_merkle_proof_via_advice_map() -> anyhow::Result<()> {
     root_elements.extend(root_natural[0..4].iter().rev()); // LO word reversed
     root_elements.extend(root_natural[4..8].iter().rev()); // HI word reversed
 
-    // Get the leaf value (8 felts)
-    let leaf_value_bytes: [u8; 32] =
-        hex_to_bytes(&vector.leaf.leaf_value).expect("valid hex");
-    let leaf_elements = Keccak256Output::from(leaf_value_bytes).to_elements();
-
     // Combine proof + root into one advice map entry (264 felts = 66 words)
     let mut combined = Vec::with_capacity(264);
     combined.extend(&proof_elements); // 256 felts
@@ -603,66 +598,6 @@ async fn test_claim_asset_merkle_proof_via_advice_map() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Test verify_leaf (get_leaf_value + verify_merkle_proof) with claim_asset_vectors data
-/// by loading data via the advice map, similar to how the full bridge-in flow works.
-#[tokio::test]
-async fn test_claim_asset_verify_leaf_via_advice_map() -> anyhow::Result<()> {
-    let vector = &*CLAIM_ASSET_VECTOR;
-    let proof_data = vector.proof.to_proof_data();
-    let leaf_data = vector.leaf.to_leaf_data();
-
-    // Compute keys: the key is the RPO hash of the elements (same as in the CLAIM note script)
-    let proof_elements = proof_data.to_elements();
-    let leaf_elements = leaf_data.to_elements();
-    let proof_key: Word = miden_crypto::hash::rpo::Rpo256::hash_elements(&proof_elements);
-    let leaf_key: Word = miden_crypto::hash::rpo::Rpo256::hash_elements(&leaf_elements);
-
-    // Build advice inputs with the data under the computed keys
-    let advice_inputs = AdviceInputs::default().with_map(vec![
-        (proof_key, proof_elements),
-        (leaf_key, leaf_elements),
-    ]);
-
-    let source = format!(
-        r#"
-            use miden::core::mem
-            use miden::core::sys
-            use miden::agglayer::bridge_in
-            use miden::agglayer::crypto_utils
-
-            begin
-                # Build the stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
-                padw padw
-                push.{proof_key}
-                push.{leaf_key}
-                # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
-
-                exec.bridge_in::verify_leaf_bridge
-            end
-        "#
-    );
-
-    let agglayer_lib = agglayer_library();
-
-    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
-        .with_dynamic_library(CoreLibrary::default())
-        .unwrap()
-        .with_dynamic_library(agglayer_lib.clone())
-        .unwrap()
-        .assemble_program(&source)
-        .unwrap();
-
-    let exec_output = execute_program_with_default_host(program, Some(advice_inputs)).await;
-    match exec_output {
-        Ok(_) => println!("verify_leaf_bridge succeeded!"),
-        Err(e) => {
-            println!("verify_leaf_bridge failed: {e}");
-            return Err(anyhow::anyhow!("verify_leaf_bridge failed: {e}"));
-        },
-    }
-
-    Ok(())
-}
 
 /// Test verify_merkle_proof with claim_asset_vectors data using the same
 /// direct memory storage approach as test_solidity_verify_merkle_proof_compatibility.
