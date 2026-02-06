@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -200,9 +206,48 @@ impl From<AuthFalcon512RpoMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
+        let pub_key_type =
+            SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").expect("valid");
+        let storage_schema = StorageSchema::new([
+            (
+                AuthFalcon512RpoMultisig::threshold_config_slot().clone(),
+                StorageSlotSchema::value(
+                    "Threshold configuration",
+                    [
+                        FeltSchema::new_typed(SchemaTypeId::u32(), "threshold"),
+                        FeltSchema::new_typed(SchemaTypeId::u32(), "num_approvers"),
+                        FeltSchema::new_void(),
+                        FeltSchema::new_void(),
+                    ],
+                ),
+            ),
+            (
+                AuthFalcon512RpoMultisig::approver_public_keys_slot().clone(),
+                StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+            ),
+            (
+                AuthFalcon512RpoMultisig::executed_transactions_slot().clone(),
+                StorageSlotSchema::map(
+                    "Executed transactions",
+                    SchemaTypeId::native_word(),
+                    SchemaTypeId::native_word(),
+                ),
+            ),
+            (
+                AuthFalcon512RpoMultisig::procedure_thresholds_slot().clone(),
+                StorageSlotSchema::map(
+                    "Procedure thresholds",
+                    SchemaTypeId::native_word(),
+                    SchemaTypeId::u32(),
+                ),
+            ),
+        ])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(AuthFalcon512RpoMultisig::NAME)
             .with_description("Multisig authentication component using Falcon512 signature scheme")
-            .with_supports_all_types();
+            .with_supports_all_types()
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(falcon_512_rpo_multisig_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",

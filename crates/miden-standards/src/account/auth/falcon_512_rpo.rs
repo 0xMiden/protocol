@@ -1,5 +1,10 @@
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -50,9 +55,18 @@ impl AuthFalcon512Rpo {
 
 impl From<AuthFalcon512Rpo> for AccountComponent {
     fn from(falcon: AuthFalcon512Rpo) -> Self {
+        let pub_key_type =
+            SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").expect("valid");
+        let storage_schema = StorageSchema::new([(
+            AuthFalcon512Rpo::public_key_slot().clone(),
+            StorageSlotSchema::value("Public key commitment", pub_key_type),
+        )])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(AuthFalcon512Rpo::NAME)
             .with_description("Authentication component using Falcon512 signature scheme")
-            .with_supports_all_types();
+            .with_supports_all_types()
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(
             falcon_512_rpo_library(),

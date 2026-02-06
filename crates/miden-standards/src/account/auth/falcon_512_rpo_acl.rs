@@ -1,8 +1,13 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
@@ -12,6 +17,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::components::falcon_512_rpo_acl_library;
 
@@ -216,9 +222,52 @@ impl From<AuthFalcon512RpoAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
+        let pub_key_type =
+            SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").expect("valid");
+        let storage_schema = StorageSchema::new([
+            (
+                AuthFalcon512RpoAcl::public_key_slot().clone(),
+                StorageSlotSchema::value("Public key commitment", pub_key_type),
+            ),
+            (
+                AuthFalcon512RpoAcl::config_slot().clone(),
+                StorageSlotSchema::value(
+                    "ACL configuration",
+                    [
+                        FeltSchema::new_typed_with_default(
+                            SchemaTypeId::u32(),
+                            "num_trigger_procs",
+                            Felt::new(0),
+                        ),
+                        FeltSchema::new_typed_with_default(
+                            SchemaTypeId::u32(),
+                            "allow_unauthorized_output_notes",
+                            Felt::new(0),
+                        ),
+                        FeltSchema::new_typed_with_default(
+                            SchemaTypeId::u32(),
+                            "allow_unauthorized_input_notes",
+                            Felt::new(0),
+                        ),
+                        FeltSchema::new_void(),
+                    ],
+                ),
+            ),
+            (
+                AuthFalcon512RpoAcl::trigger_procedure_roots_slot().clone(),
+                StorageSlotSchema::map(
+                    "Trigger procedure roots",
+                    SchemaTypeId::u32(),
+                    SchemaTypeId::native_word(),
+                ),
+            ),
+        ])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(AuthFalcon512RpoAcl::NAME)
             .with_description("ACL authentication component using Falcon512 signature scheme")
-            .with_supports_all_types();
+            .with_supports_all_types()
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(falcon_512_rpo_acl_library(), storage_slots, metadata).expect(
             "ACL auth component should satisfy the requirements of a valid account component",

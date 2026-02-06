@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -200,11 +206,50 @@ impl From<AuthEcdsaK256KeccakMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
+        let pub_key_type =
+            SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key").expect("valid");
+        let storage_schema = StorageSchema::new([
+            (
+                AuthEcdsaK256KeccakMultisig::threshold_config_slot().clone(),
+                StorageSlotSchema::value(
+                    "Threshold configuration",
+                    [
+                        FeltSchema::new_typed(SchemaTypeId::u32(), "threshold"),
+                        FeltSchema::new_typed(SchemaTypeId::u32(), "num_approvers"),
+                        FeltSchema::new_void(),
+                        FeltSchema::new_void(),
+                    ],
+                ),
+            ),
+            (
+                AuthEcdsaK256KeccakMultisig::approver_public_keys_slot().clone(),
+                StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+            ),
+            (
+                AuthEcdsaK256KeccakMultisig::executed_transactions_slot().clone(),
+                StorageSlotSchema::map(
+                    "Executed transactions",
+                    SchemaTypeId::native_word(),
+                    SchemaTypeId::native_word(),
+                ),
+            ),
+            (
+                AuthEcdsaK256KeccakMultisig::procedure_thresholds_slot().clone(),
+                StorageSlotSchema::map(
+                    "Procedure thresholds",
+                    SchemaTypeId::native_word(),
+                    SchemaTypeId::u32(),
+                ),
+            ),
+        ])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(AuthEcdsaK256KeccakMultisig::NAME)
             .with_description(
                 "Multisig authentication component using ECDSA K256 Keccak signature scheme",
             )
-            .with_supports_all_types();
+            .with_supports_all_types()
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(ecdsa_k256_keccak_multisig_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",

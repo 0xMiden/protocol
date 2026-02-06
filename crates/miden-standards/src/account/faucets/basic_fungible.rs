@@ -1,4 +1,10 @@
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -201,9 +207,31 @@ impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
         let storage_slot = faucet.metadata.into();
 
+        let token_symbol_type =
+            SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
+                .expect("valid");
+        let storage_schema = StorageSchema::new([(
+            BasicFungibleFaucet::metadata_slot().clone(),
+            StorageSlotSchema::value(
+                "Token metadata",
+                [
+                    FeltSchema::new_typed_with_default(
+                        SchemaTypeId::native_felt(),
+                        "token_supply",
+                        Felt::new(0),
+                    ),
+                    FeltSchema::new_typed(SchemaTypeId::native_felt(), "max_supply"),
+                    FeltSchema::new_typed(SchemaTypeId::u8(), "decimals"),
+                    FeltSchema::new_typed(token_symbol_type, "symbol"),
+                ],
+            ),
+        )])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(BasicFungibleFaucet::NAME)
             .with_description("Basic fungible faucet component for minting and burning tokens")
-            .with_supported_type(AccountType::FungibleFaucet);
+            .with_supported_type(AccountType::FungibleFaucet)
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")

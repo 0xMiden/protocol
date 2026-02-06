@@ -1,5 +1,10 @@
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
@@ -46,9 +51,18 @@ impl AuthEcdsaK256Keccak {
 
 impl From<AuthEcdsaK256Keccak> for AccountComponent {
     fn from(ecdsa: AuthEcdsaK256Keccak) -> Self {
+        let pub_key_type =
+            SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key").expect("valid");
+        let storage_schema = StorageSchema::new([(
+            AuthEcdsaK256Keccak::public_key_slot().clone(),
+            StorageSlotSchema::value("Public key commitment", pub_key_type),
+        )])
+        .expect("storage schema should be valid");
+
         let metadata = AccountComponentMetadata::new(AuthEcdsaK256Keccak::NAME)
             .with_description("Authentication component using ECDSA K256 Keccak signature scheme")
-            .with_supports_all_types();
+            .with_supports_all_types()
+            .with_storage_schema(storage_schema);
 
         AccountComponent::new(
             ecdsa_k256_keccak_library(),
