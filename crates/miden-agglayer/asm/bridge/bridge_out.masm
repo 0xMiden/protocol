@@ -14,17 +14,22 @@ const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
 
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
-const BURN_ASSET_MEM_PTR=24
+const BURN_ASSET_KEY_MEM_PTR=32
+const BURN_ASSET_VALUE_MEM_PTR=36
+
+const CREATE_BURN_NOTE_ASSET_KEY_LOC=0
+const CREATE_BURN_NOTE_ASSET_VALUE_LOC=4
+const CREATE_BURN_NOTE_TAG_LOC=8
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
 #! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET).
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
 #!
 #! Where:
-#! - ASSET is the asset for which to compute the burn note serial number.
+#! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
 #!
 #! Invocation: exec
@@ -41,26 +46,32 @@ end
 #! This procedure creates an output note that represents a burn operation for the given asset.
 #! The note is configured with the appropriate recipient, tag, and execution hint.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
-#! - ASSET is the asset to be burned.
+#! - ASSET_KEY is the vault key of the asset to be burnt.
+#! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
-@locals(8)
+@locals(9)
 proc create_burn_note
-    loc_storew_be.0 dupw
-    # => [ASSET, ASSET]
+    loc_storew_be.CREATE_BURN_NOTE_ASSET_KEY_LOC
+    swapw
+    # => [ASSET_VALUE, ASSET_KEY]
+
+    loc_storew_be.CREATE_BURN_NOTE_ASSET_VALUE_LOC
+    dropw dupw
+    # => [ASSET_KEY, ASSET_KEY]
 
     movup.2 drop movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix, ASSET]
+    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
 
     exec.note_tag::create_account_target
-    # => [network_faucet_tag, ASSET]
+    # => [network_faucet_tag, ASSET_KEY]
 
-    loc_store.5
-    # => [ASSET]
+    loc_store.CREATE_BURN_NOTE_TAG_LOC
+    # => [ASSET_KEY]
 
     exec.compute_burn_note_serial_num
     # => [SERIAL_NUM]
@@ -75,14 +86,17 @@ proc create_burn_note
     # => [RECIPIENT]
 
     push.PUBLIC_NOTE
-    loc_load.5
+    loc_load.CREATE_BURN_NOTE_TAG_LOC
     # => [tag, note_type, RECIPIENT]
 
     call.output_note::create
     # => [note_idx]
 
-    movdn.4 loc_loadw_be.0
-    # => [ASSET, note_idx]
+    movdn.8 loc_loadw_be.CREATE_BURN_NOTE_ASSET_VALUE_LOC
+    # => [ASSET_VALUE, pad(4), note_idx]
+
+    swapw loc_loadw_be.CREATE_BURN_NOTE_ASSET_KEY_LOC
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
     # => []
@@ -97,18 +111,22 @@ end
 #! - Storing the updated MMR root in account storage
 #! - Creating a BURN note with the bridged out asset
 #!
-#! Inputs:  [ASSET, dest_network, dest_address(5)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5)]
 #! Outputs: []
 #!
 #! Where:
-#! - ASSET is the asset to be bridged out.
+#! - ASSET_KEY is the vault key of the asset to be bridged out.
+#! - ASSET_VALUE is the value of the asset to be bridged out.
 #! - dest_network is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Invocation: call
 pub proc bridge_out
-    mem_storew_be.BURN_ASSET_MEM_PTR
-    # => [ASSET, dest_network, dest_address(5)]
+    mem_storew_be.BURN_ASSET_KEY_MEM_PTR
+    swapw
+    mem_storew_be.BURN_ASSET_VALUE_MEM_PTR
+    swapw
+    # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5)]
 
     # @dev TODO: Look up asset faucet id in asset registry
     # -> return scaling factor
@@ -120,27 +138,32 @@ pub proc bridge_out
     # in preparation for keccak256 hashing
 
     # keccak256 inputs:
-    # => [ASSET, dest_network, dest_address(5)]
+    # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5)]
     # TODO we should convert Miden->Ethereum asset values, incl. amount conversion etc.
 
     # TODO: make building bridge message a separate procedure
     # TODO: match Agglayer addLeafBridge logic
     # TODO: convert Miden asset amount to Ethereum amount
-    # Store ASSET as u32 limbs in memory starting at address 0
+
+    # Store ASSET_KEY as u32 limbs in memory starting at address 0
     push.0 movdn.4 exec.word::store_word_u32s_le
+    # => [ASSET_VALUE, dest_network, dest_address(5)]
+
+    # Store ASSET_VALUE as u32 limbs in memory starting at address 8
+    push.8 movdn.4 exec.word::store_word_u32s_le
     # => [dest_network, dest_address(5)]
 
-    # Store [dest_network, dest_address[0..3]] as u32 limbs in memory starting at address 8
-    push.8 movdn.4 exec.word::store_word_u32s_le
+    # Store [dest_network, dest_address[0..3]] as u32 limbs in memory starting at address 16
+    push.16 movdn.4 exec.word::store_word_u32s_le
     # => [dest_address(2), 0, 0]
 
-    # Store [dest_address[3..5], 0, 0] as u32 limbs in memory starting at address 16
-    push.16 movdn.4 exec.word::store_word_u32s_le
+    # Store [dest_address[3..5], 0, 0] as u32 limbs in memory starting at address 24
+    push.24 movdn.4 exec.word::store_word_u32s_le
     # => []
 
     # 1 u32 = 4 bytes
-    # 10 u32 values = 40 bytes
-    push.40 push.0
+    # 14 u32 values = 56 bytes
+    push.56 push.0
     # => [ptr, len_bytes]
 
     exec.keccak256::hash_bytes
@@ -151,8 +174,10 @@ pub proc bridge_out
     # => []
 
     # creating BURN output note for ASSET
-    mem_loadw_be.BURN_ASSET_MEM_PTR
-    # => [ASSET]
+    mem_loadw_be.BURN_ASSET_VALUE_MEM_PTR
+    swapw
+    mem_loadw_be.BURN_ASSET_KEY_MEM_PTR
+    # => [ASSET_KEY, ASSET_VALUE]
 
     exec.create_burn_note
     # => []

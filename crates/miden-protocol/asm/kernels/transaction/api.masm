@@ -1076,12 +1076,13 @@ end
 
 #! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [note_idx, ASSET_VALUE, pad(11)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
-#! - ASSET_VALUE can be a fungible or non-fungible asset.
+#! - ASSET_KEY is the vault key of the asset to add.
+#! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
@@ -1090,10 +1091,11 @@ end
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [note_idx, ASSET_VALUE, pad(11)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
-    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
-    movdn.4 exec.asset_vault::build_asset_vault_key movup.8
+    movup.8
+    # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+
     exec.output_note::add_asset
     # => [pad(16)]
 end

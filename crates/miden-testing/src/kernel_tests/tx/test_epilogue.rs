@@ -74,7 +74,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -87,7 +88,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),
-        asset = Word::from(asset)
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -259,12 +261,14 @@ async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyh
 
       begin
           # create a note with the output asset
-          push.{OUTPUT_ASSET}
+          push.{OUTPUT_ASSET_VALUE}
+          push.{OUTPUT_ASSET_KEY}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET = Word::from(output_asset),
+        OUTPUT_ASSET_KEY = output_asset.to_key_word(),
+        OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();
@@ -312,12 +316,15 @@ async fn epilogue_fails_when_num_input_assets_exceed_num_output_assets() -> anyh
 
       begin
           # create a note with the output asset
-          push.{OUTPUT_ASSET}
+          push.{OUTPUT_ASSET_VALUE}
+          push.{OUTPUT_ASSET_KEY}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET = Word::from(input_asset),
+        // TODO(expand_assets): This seems wrong.
+        OUTPUT_ASSET_KEY = input_asset.to_key_word(),
+        OUTPUT_ASSET_VALUE = input_asset.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();

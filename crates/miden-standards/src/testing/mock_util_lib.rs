@@ -21,14 +21,14 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
         # => [note_idx]
     end
 
-    #! Inputs:  [ASSET]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE]
     #! Outputs: []
     pub proc create_default_note_with_asset
         exec.create_default_note
-        # => [note_idx, ASSET]
+        # => [note_idx, ASSET_KEY, ASSET_VALUE]
 
-        movdn.4
-        # => [ASSET, note_idx]
+        movdn.8
+        # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
         # => []

@@ -1,7 +1,5 @@
 use alloc::string::String;
-use alloc::vec::Vec;
 
-use anyhow::Context;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
@@ -11,7 +9,6 @@ use miden_protocol::errors::tx_kernel::{
 };
 use miden_protocol::note::{
     Note,
-    NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
     NoteMetadata,
@@ -203,75 +200,40 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
-    let tx_context = {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mut rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
-        let output_note_1 =
-            create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
+    let asset_1 = FungibleAsset::mock(100);
+    let asset_2 = FungibleAsset::mock(200);
 
-        let input_note_1 = create_public_p2any_note(
-            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
-            [FungibleAsset::mock(100)],
-        );
-
-        let input_note_2 = create_public_p2any_note(
-            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
-            [FungibleAsset::mock(200)],
-        );
-
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2])
-            .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
-            .build()?
-    };
-
-    // extract input note data
-    let input_note_1 = tx_context.tx_inputs().input_notes().get_note(0).note();
-    let input_asset_1 = **input_note_1
-        .assets()
-        .iter()
-        .take(1)
-        .collect::<Vec<_>>()
-        .first()
-        .context("getting first expected input asset")?;
-    let input_note_2 = tx_context.tx_inputs().input_notes().get_note(1).note();
-    let input_asset_2 = **input_note_2
-        .assets()
-        .iter()
-        .take(1)
-        .collect::<Vec<_>>()
-        .first()
-        .context("getting second expected input asset")?;
-
-    // Choose random accounts as the target for the note tag.
-    let network_account = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
-    let local_account = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET)?;
+    let input_note_1 = create_public_p2any_note(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, [asset_1]);
+    let input_note_2 = create_public_p2any_note(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, [asset_2]);
 
     // create output note 1
-    let output_serial_no_1 = Word::from([8u32; 4]);
-    let output_tag_1 = NoteTag::with_account_target(network_account);
-    let assets = NoteAssets::new(vec![input_asset_1])?;
-    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
-        .with_tag(output_tag_1);
-    let inputs = NoteStorage::new(vec![])?;
-    let recipient = NoteRecipient::new(output_serial_no_1, input_note_1.script().clone(), inputs);
-    let output_note_1 = Note::new(assets, metadata, recipient);
+    let output_note_1 = NoteBuilder::new(account.id(), &mut rng)
+        .tag(NoteTag::with_account_target(account.id()).as_u32())
+        .note_type(NoteType::Public)
+        .add_assets([asset_1])
+        .build()?;
 
     // create output note 2
-    let output_serial_no_2 = Word::from([11u32; 4]);
-    let output_tag_2 = NoteTag::with_account_target(local_account);
-    let assets = NoteAssets::new(vec![input_asset_2])?;
-    let attachment = NoteAttachment::new_array(
-        NoteAttachmentScheme::new(5),
-        [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
-    )?;
-    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
-        .with_tag(output_tag_2)
-        .with_attachment(attachment);
-    let inputs = NoteStorage::new(vec![])?;
-    let recipient = NoteRecipient::new(output_serial_no_2, input_note_2.script().clone(), inputs);
-    let output_note_2 = Note::new(assets, metadata, recipient);
+    let output_note_2 = NoteBuilder::new(account.id(), &mut rng)
+        .tag(NoteTag::with_custom_account_target(account.id(), 2)?.as_u32())
+        .note_type(NoteType::Public)
+        .add_assets([asset_2])
+        .attachment(NoteAttachment::new_array(
+            NoteAttachmentScheme::new(5),
+            [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
+        )?)
+        .build()?;
+
+    let tx_context = TransactionContextBuilder::new(account)
+        .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
+        .extend_expected_output_notes(vec![
+            OutputNote::Full(output_note_1.clone()),
+            OutputNote::Full(output_note_2.clone()),
+        ])
+        .build()?;
 
     // compute expected output notes commitment
     let expected_output_notes_commitment = OutputNotes::new(vec![
@@ -300,7 +262,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{asset_1}
+            push.{ASSET_1_VALUE}
+            push.{ASSET_1_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -311,7 +274,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            dup push.{asset_2}
+            dup
+            push.{ASSET_2_VALUE}
+            push.{ASSET_2_KEY}
             exec.output_note::add_asset
             # => [note_idx]
 
@@ -334,14 +299,12 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         PUBLIC_NOTE = NoteType::Public as u8,
         recipient_1 = output_note_1.recipient().digest(),
         tag_1 = output_note_1.metadata().tag(),
-        asset_1 = Word::from(
-            **output_note_1.assets().iter().take(1).collect::<Vec<_>>().first().unwrap()
-        ),
+        ASSET_1_KEY = asset_1.to_key_word(),
+        ASSET_1_VALUE = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         tag_2 = output_note_2.metadata().tag(),
-        asset_2 = Word::from(
-            **output_note_2.assets().iter().take(1).collect::<Vec<_>>().first().unwrap()
-        ),
+        ASSET_2_KEY = asset_2.to_key_word(),
+        ASSET_2_VALUE = asset_2.to_value_word(),
         ATTACHMENT2 = output_note_2.metadata().to_attachment_word(),
         attachment_scheme2 = output_note_2.metadata().attachment().attachment_scheme().as_u32(),
     );
@@ -414,7 +377,8 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{ASSET_VALUE}
-            # => [ASSET_VALUE, note_idx]
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
             call.output_note::add_asset
             # => []
@@ -426,6 +390,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
+        ASSET_KEY = asset.to_key_word(),
         ASSET_VALUE = asset.to_value_word(),
     );
 
@@ -480,19 +445,26 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             dup assertz.err=\"index of the created note should be zero\"
             # => [note_idx]
 
-            dup push.{asset}
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => [note_idx]
 
-            dup push.{asset_2}
+            dup
+            push.{ASSET2_VALUE}
+            push.{ASSET2_KEY}
             exec.output_note::add_asset
             # => [note_idx]
 
-            dup push.{asset_3}
+            dup
+            push.{ASSET3_VALUE}
+            push.{ASSET3_KEY}
             exec.output_note::add_asset
             # => [note_idx]
 
-            push.{nft}
+            push.{ASSET4_VALUE}
+            push.{ASSET4_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -503,10 +475,14 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        asset = asset.to_value_word(),
-        asset_2 = asset_2.to_value_word(),
-        asset_3 = asset_3.to_value_word(),
-        nft = non_fungible_asset.to_value_word(),
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
+        ASSET2_KEY = asset_2.to_key_word(),
+        ASSET2_VALUE = asset_2.to_value_word(),
+        ASSET3_KEY = asset_3.to_key_word(),
+        ASSET3_VALUE = asset_3.to_value_word(),
+        ASSET4_KEY = non_fungible_asset.to_key_word(),
+        ASSET4_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -578,7 +554,6 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(999 << 16 | 777);
     let non_fungible_asset = NonFungibleAsset::mock(&[1, 2, 3]);
-    let encoded = Word::from(non_fungible_asset);
 
     let code = format!(
         "
@@ -595,13 +570,16 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            dup push.{nft}
-            # => [NFT, note_idx, note_idx]
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
             exec.output_note::add_asset
             # => [note_idx]
 
-            push.{nft}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => []
         end
@@ -609,7 +587,8 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        nft = encoded,
+        ASSET_KEY = non_fungible_asset.to_key_word(),
+        ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;

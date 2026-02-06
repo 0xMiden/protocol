@@ -94,7 +94,13 @@ begin
         mem_loadw_be.ASSET_VALUE_MEMORY_OFFSET
         # => [ASSET_VALUE, dest_network, dest_address(5), pad(6)]
 
+        padw mem_loadw_be.0
+        # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(6)]
+
         call.bridge_out::bridge_out
+        # => [pad(20)]
+
+        dropw
         # => [pad(16)]
     end
     # => [pad(16)]
