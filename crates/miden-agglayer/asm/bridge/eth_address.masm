@@ -1,3 +1,4 @@
+use miden::agglayer::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
 
@@ -15,31 +16,6 @@ const ERR_FELT_OUT_OF_FIELD="combined u64 doesn't fit in field"
 # ETHEREUM ADDRESS PROCEDURES
 # =================================================================================================
 
-#! Swaps byte order in a u32 limb (LE <-> BE).
-#!
-#! Inputs:  [value]
-#! Outputs: [swapped]
-proc swap_u32_bytes
-    # part0 = (value & 0xFF) << 24
-    dup u32and.0xFF u32shl.24
-    # => [value, part0]
-
-    # part1 = ((value >> 8) & 0xFF) << 16
-    dup.1 u32shr.8 u32and.0xFF u32shl.16 u32or
-    # => [value, part01]
-
-    # part2 = ((value >> 16) & 0xFF) << 8
-    dup.1 u32shr.16 u32and.0xFF u32shl.8 u32or
-    # => [value, part012]
-
-    # part3 = (value >> 24)
-    dup.1 u32shr.24 u32or
-    # => [value, swapped]
-
-    swap drop
-    # => [swapped]
-end
-
 #! Builds a single felt from two u32 limbs (little-endian limb order).
 #! Conceptually, this is packing a 64-bit word (lo + (hi << 32)) into a field element.
 #! This proc additionally verifies that the packed value did *not* reduce mod p by round-tripping
@@ -53,9 +29,9 @@ proc build_felt
     # => [lo_be, hi_be]
 
     # limbs are little-endian bytes; swap to big-endian numeric before packing
-    exec.swap_u32_bytes
+    exec.utils::swap_u32_bytes
     swap
-    exec.swap_u32_bytes
+    exec.utils::swap_u32_bytes
     swap
     # => [lo, hi]
 

@@ -124,18 +124,31 @@ mod tests {
             // Validate as mainnet
             assert!(gi.validate_mainnet().is_ok(), "should be valid mainnet global index");
 
-            // Check fields
+            // Construction sanity checks
             assert!(gi.is_mainnet());
             assert_eq!(gi.rollup_index(), 0);
             assert_eq!(gi.leaf_index(), expected_leaf_index);
 
-            // Verify to_elements produces correct felts for MASM
+            // Verify to_elements produces correct LE-packed u32 felts
+            // --------------------------------------------------------------------------------
+
             let elements = gi.to_elements();
             assert_eq!(elements.len(), 8);
-            assert_eq!(elements[0..5], [Felt::ZERO; 5]); // leading zeros
-            assert_eq!(elements[5], Felt::new(1)); // mainnet flag
-            assert_eq!(elements[6], Felt::ZERO); // rollup index
-            assert_eq!(elements[7], Felt::new(expected_leaf_index as u64)); // leaf index
+
+            // leading zeros
+            assert_eq!(elements[0..5], [Felt::ZERO; 5]);
+
+            // mainnet flag: BE value 1 → LE-packed as 0x01000000
+            assert_eq!(elements[5], Felt::new(u32::from_le_bytes(1u32.to_be_bytes()) as u64));
+
+            // rollup index
+            assert_eq!(elements[6], Felt::ZERO);
+
+            // leaf index: BE value → LE-packed
+            assert_eq!(
+                elements[7],
+                Felt::new(u32::from_le_bytes(expected_leaf_index.to_be_bytes()) as u64)
+            );
         }
     }
 }
