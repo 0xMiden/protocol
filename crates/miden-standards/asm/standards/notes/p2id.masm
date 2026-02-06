@@ -77,15 +77,9 @@ end
 #! Invocation: exec
 @locals(2)
 pub proc new
-    # Store target_id_suffix at local[0]
-    dup.1 locaddr.0 mem_store
     # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
 
-    # Store target_id_prefix at local[1]
-    dup locaddr.1 mem_store
-    # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
-
-    drop drop
+    loc_store.1 loc_store.0
     # => [tag, note_type, SERIAL_NUM]
 
     movdn.5 movdn.5
