@@ -3,6 +3,7 @@
 # See the `AuthFalcon512RpoMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
+use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
 
@@ -10,9 +11,6 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # =================================================================================================
-
-# Auth event constant (workaround for linker bug - see https://github.com/0xMiden/miden-base/pull/2377)
-const AUTH_UNAUTHORIZED_EVENT = ::miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 
 # Storage Layout Constants
 #

@@ -1,0 +1,38 @@
+# Utility module containing helper procedures for the double word handling.
+
+# TYPE ALIASES
+# =================================================================================================
+
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
+type MemoryAddress = u32
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Stores two words to the provided global memory address.
+#!
+#! Inputs:  [WORD_1, WORD_2, ptr]
+#! Outputs: [WORD_1, WORD_2, ptr]
+pub proc mem_store_double_word(
+    double_word_to_store: DoubleWord,
+    mem_ptr: MemoryAddress
+) -> (DoubleWord, MemoryAddress)
+    dup.8 mem_storew_be swapw
+    # => [WORD_2, WORD_1, ptr]
+
+    dup.8 add.4 mem_storew_be swapw
+    # => [WORD_1, WORD_2, ptr]
+end
+
+#! Loads two words from the provided global memory address.
+#!
+#! Inputs:  [ptr]
+#! Outputs: [WORD_1, WORD_2]
+pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
+    padw dup.4 add.4 mem_loadw_be
+    # => [WORD_2, ptr]
+
+    padw movup.8 mem_loadw_be
+    # => [WORD_1, WORD_2]
+end
