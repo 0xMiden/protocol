@@ -48,12 +48,10 @@ impl Keccak256Output {
 
     /// Converts to fully reversed elements for memory storage (used by SMT proof nodes).
     ///
-    /// Data loaded via `mem_stream` has the higher-address word placed on top of the stack
-    /// without per-word reversal. `calculate_root` stores/loads the current hash via
-    /// `loc_storew_be`/`loc_loadw_be` which applies per-word reversal. For both the current
-    /// hash and path nodes to enter `keccak256::merge` in the same per-word reversed format,
-    /// SMT proof nodes must be fully reversed in memory so that `mem_stream`'s half-swap
-    /// produces per-word reversed elements on the stack.
+    /// `mem_stream` preserves element order from memory, while `loc_loadw_be` (used in
+    /// `calculate_root`) per-word reverses. `keccak256::merge` expects per-word reversed
+    /// input. Fully reversed elements in memory produce per-word reversed format on the
+    /// stack after `mem_stream`'s half-swap, matching `loc_loadw_be`'s output.
     pub fn to_memory_elements(&self) -> Vec<Felt> {
         let mut elements = bytes_to_packed_u32_felts(&self.0);
         elements.reverse();
@@ -62,11 +60,9 @@ impl Keccak256Output {
 
     /// Converts to per-word reversed elements for memory storage (used by exit roots).
     ///
-    /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`.
-    /// `mem_loadw_be` applies per-word reversal (puts word\[3\] on top). When the root
-    /// is stored in per-word reversed format, `mem_loadw_be`'s reversal produces natural
-    /// order on the stack, matching how `keccak_digest_to_word_strings` stores roots
-    /// in the working standalone tests (root_lo at lower address, root_hi at higher).
+    /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`
+    /// (per-word reversal). Per-word reversed storage + `mem_loadw_be` reversal = natural
+    /// order on the stack, matching the calculated root format.
     pub fn to_word_reversed_elements(&self) -> Vec<Felt> {
         let elements = bytes_to_packed_u32_felts(&self.0);
         let mut result = Vec::with_capacity(8);
@@ -111,11 +107,8 @@ impl SequentialCommit for ProofData {
         const PROOF_DATA_ELEMENT_COUNT: usize = 536; // 32*8 + 32*8 + 8 + 8 + 8 (proofs + global_index + 2 exit roots)
         let mut elements = Vec::with_capacity(PROOF_DATA_ELEMENT_COUNT);
 
-        // Convert SMT proof elements to felts (each node is 8 felts).
-        // Fully reversed: mem_stream does NOT apply per-word reversal (unlike mem_loadw_be),
-        // but calculate_root expects per-word reversed format (since loc_loadw_be reverses
-        // each word when loading the current hash). Fully reversed elements in memory produce
-        // the correct per-word reversed format on the stack after mem_stream's half-swap.
+        // SMT proof nodes: fully reversed so that mem_stream's half-swap produces
+        // per-word reversed format matching loc_loadw_be's output for keccak256::merge.
         for node in self.smt_proof_local_exit_root.iter() {
             elements.extend(node.to_memory_elements());
         }
@@ -124,17 +117,12 @@ impl SequentialCommit for ProofData {
             elements.extend(node.to_memory_elements());
         }
 
-        // Global index (uint256 as 8 u32 felts from 32 bytes)
-        // NOT reversed - uses mem_loadw_le for reading
+        // Global index (uint256 as 8 u32 felts from 32 bytes) - natural order
         elements.extend(self.global_index.to_elements());
 
-        // Mainnet exit root (bytes32 as 8 u32 felts)
-        // Per-word reversed: mem_load_double_word uses mem_loadw_be which per-word reverses,
-        // so per-word reversed in memory produces natural order on the stack, matching the
-        // format used in standalone tests (root_lo at lower, root_hi at higher address).
+        // Exit roots: per-word reversed so that mem_load_double_word's mem_loadw_be
+        // reversal produces natural order matching the calculated root format.
         elements.extend(self.mainnet_exit_root.to_word_reversed_elements());
-
-        // Rollup exit root (bytes32 as 8 u32 felts)
         elements.extend(self.rollup_exit_root.to_word_reversed_elements());
 
         elements

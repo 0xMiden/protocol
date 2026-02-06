@@ -532,11 +532,8 @@ async fn test_claim_asset_merkle_proof_via_advice_map() -> anyhow::Result<()> {
     assert_eq!(proof_elements.len(), 256);
 
     // Get the mainnet exit root (8 felts) - per-word reversed to match
-    // the direct test format (root_lo at lower address, root_hi at higher)
-    let root_natural = proof_data.mainnet_exit_root.to_elements();
-    let mut root_elements = Vec::with_capacity(8);
-    root_elements.extend(root_natural[0..4].iter().rev()); // LO word reversed
-    root_elements.extend(root_natural[4..8].iter().rev()); // HI word reversed
+    // mem_load_double_word which uses mem_loadw_be (per-word reversal)
+    let root_elements = proof_data.mainnet_exit_root.to_word_reversed_elements();
 
     // Combine proof + root into one advice map entry (264 felts = 66 words)
     let mut combined = Vec::with_capacity(264);
