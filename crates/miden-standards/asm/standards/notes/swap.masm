@@ -28,7 +28,7 @@ const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="SWAP script expects exactly 1
 const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset"
 
 #! Swap script: adds an asset from the note into consumers account and
-#! creates a note consumable by note issuer containing requested ASSET.
+#! creates a note consumable by note issuer containing requested asset.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.

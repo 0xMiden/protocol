@@ -608,7 +608,8 @@ end
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: dynexec
 pub proc account_get_asset

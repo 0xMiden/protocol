@@ -53,7 +53,7 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the _peeked_ ASSET associated with the provided asset vault key.
+#! Returns the _peeked_ asset associated with the provided asset vault key.
 #!
 #! WARNING: Peeked means the asset is loaded from the advice provider, which is susceptible to
 #! manipulation from a malicious host. Therefore this should only be used when the inclusion of the

@@ -57,9 +57,9 @@ const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
 const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
 
-# Event emitted before an ASSET is added to a note
+# Event emitted before an asset is added to a note
 const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
-# Event emitted after an ASSET is added to a note
+# Event emitted after an asset is added to a note
 const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
 
 # Event emitted before an ATTACHMENT is added to a note
@@ -178,7 +178,7 @@ pub proc get_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 end
 
-#! Adds the ASSET to the note specified by the index.
+#! Adds the asset to the note specified by the index.
 #!
 #! Inputs:  [note_idx, ASSET_KEY, ASSET_VALUE]
 #! Outputs: []

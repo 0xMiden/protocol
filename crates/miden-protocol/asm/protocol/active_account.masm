@@ -419,14 +419,15 @@ end
 # VAULT
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the asset associated with the provided faucet_id in the active account's vault.
+#! Returns the asset associated with the provided asset vault key in the active account's vault.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_asset
@@ -439,22 +440,23 @@ pub proc get_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
-#! Returns the asset issued by the provided faucet_id in the active account's vault at the
-#! beginning of the transaction.
+#! Returns the asset associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset at the beginning of the transaction.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_initial_asset
@@ -467,11 +469,11 @@ pub proc get_initial_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
 #! Returns the balance of the fungible asset associated with the provided faucet_id in the active
@@ -499,7 +501,7 @@ pub proc get_balance
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
     exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
@@ -531,7 +533,7 @@ pub proc get_initial_balance
     # => [ASSET_KEY]
 
     exec.get_initial_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
     exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
@@ -541,15 +543,15 @@ end
 #! Returns a boolean indicating whether the non-fungible asset is present in the active account's
 #! vault.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_VALUE]
 #! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET is the non-fungible asset of interest
+#! - ASSET_VALUE is the non-fungible asset of interest
 #! - has_asset is a boolean indicating whether the account vault has the asset of interest
 #!
 #! Panics if:
-#! - the ASSET is a fungible asset.
+#! - the ASSET_VALUE is a fungible asset.
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
@@ -558,13 +560,13 @@ pub proc has_non_fungible_asset
     # TODO(expand_assets): This procedure may go away. If not, check more reliably.
     dup.2 neq.0
     assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     exec.asset::build_non_fungible_asset_vault_key
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # compare with EMPTY_WORD to assess if the asset exists in the vault
     exec.word::eqz not

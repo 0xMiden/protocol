@@ -23,7 +23,7 @@ const CREATE_BURN_NOTE_TAG_LOC=8
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET).
+#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET_KEY).
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
@@ -35,7 +35,7 @@ const CREATE_BURN_NOTE_TAG_LOC=8
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
-    # => [B2AGG_SERIAL_NUM, ASSET]
+    # => [B2AGG_SERIAL_NUM, ASSET_KEY]
 
     exec.rpo256::merge
     # => [SERIAL_NUM]
@@ -173,7 +173,7 @@ pub proc bridge_out
     exec.local_exit_tree::add_asset_message
     # => []
 
-    # creating BURN output note for ASSET
+    # creating BURN output note for the asset
     mem_loadw_be.BURN_ASSET_VALUE_MEM_PTR
     swapw
     mem_loadw_be.BURN_ASSET_KEY_MEM_PTR

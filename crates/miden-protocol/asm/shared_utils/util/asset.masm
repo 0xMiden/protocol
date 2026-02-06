@@ -22,11 +22,11 @@ const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
 #!
 #! Note: Assumes that the given asset is fungible and does NOT validate it.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_VALUE]
 #! Outputs: [balance]
 #!
 #! Where:
-#! - ASSET is the fungible asset from which to extract the balance.
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
 pub proc get_balance_from_fungible_asset
     drop drop drop
