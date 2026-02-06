@@ -276,16 +276,18 @@ impl AccountComponentInterface {
                         body.push_str(&format!(
                             "
                             # duplicate note index
-                            dup
+                            padw push.0 push.0 push.0 dup.7
+                            # => [note_idx, pad(7), note_idx, pad(16)]
+
                             push.{ASSET_VALUE}
                             push.{ASSET_KEY}
-                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(16)]
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            # 9 parameter elements + 16 pad elements = 25 total pads after the call
-                            # => [note_idx, pad(25)]
-                            swapdw dropw dropw swap drop
-                            # => [note_idx, pad(16)]
-                            \n
+                            # => [pad(16), note_idx, pad(16)]
+
+                            dropw dropw dropw dropw
+                            # => [note_idx, pad(16)]\n
                             ",
                             ASSET_KEY = asset.to_key_word(),
                             ASSET_VALUE = asset.to_value_word(),
