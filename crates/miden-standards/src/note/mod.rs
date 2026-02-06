@@ -33,6 +33,7 @@ mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
 mod standard_note_attachment;
+pub use p2ide::P2ideNoteStorage;
 pub use standard_note_attachment::StandardNoteAttachment;
 
 // STANDARD NOTE

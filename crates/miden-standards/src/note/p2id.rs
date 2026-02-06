@@ -112,9 +112,7 @@ impl P2idNote {
 
 /// Canonical storage representation for a P2ID note.
 ///
-/// P2ID note storage consists of exactly two elements:
-/// 1. Account ID suffix
-/// 2. Account ID prefix
+/// Stores the target account ID associated with the note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteStorage {
     target: AccountId,
@@ -166,6 +164,9 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
         Ok(Self { target })
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {

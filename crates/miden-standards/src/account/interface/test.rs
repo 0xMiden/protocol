@@ -1,6 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::{AccountBuilder, AccountComponent, AccountType};
+use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::NoteError;
@@ -37,7 +37,7 @@ use crate::account::interface::{
 };
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
-use crate::note::{P2idNote, P2ideNote, SwapNote};
+use crate::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use crate::testing::account_interface::get_public_keys_from_account;
 
 // DEFAULT NOTES
@@ -81,12 +81,14 @@ fn test_basic_wallet_default_notes() {
     )
     .unwrap();
 
+    let sender: AccountId = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
+
+    let target: AccountId = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
+
     let p2ide_note = P2ideNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
+        sender,
+        P2ideNoteStorage::new(target, None, None),
         vec![FungibleAsset::mock(10)],
-        None,
-        None,
         NoteType::Public,
         Default::default(),
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
@@ -174,12 +176,14 @@ fn test_custom_account_default_note() {
     )
     .unwrap();
 
+    let sender: AccountId = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap();
+
+    let target: AccountId = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
+
     let p2ide_note = P2ideNote::create(
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
+        sender,
+        P2ideNoteStorage::new(target, None, None),
         vec![FungibleAsset::mock(10)],
-        None,
-        None,
         NoteType::Public,
         Default::default(),
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),

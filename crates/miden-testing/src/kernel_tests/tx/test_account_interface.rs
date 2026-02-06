@@ -24,7 +24,13 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, StarkField, Word};
-use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
+use miden_standards::note::{
+    NoteConsumptionStatus,
+    P2idNote,
+    P2ideNote,
+    P2ideNoteStorage,
+    StandardNote,
+};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
@@ -54,10 +60,12 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 
     let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        P2ideNoteStorage::new(
+            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+            None,
+            None,
+        ),
         vec![FungibleAsset::mock(10)],
-        None,
-        None,
         NoteType::Public,
         Default::default(),
         &mut RpoRandomCoin::new(Word::from([2u32; 4])),

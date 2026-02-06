@@ -49,7 +49,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, Transac
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -557,12 +557,12 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
+        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
+
         let note = P2ideNote::create(
             sender_account_id,
-            target_account_id,
+            storage,
             asset.to_vec(),
-            reclaim_height,
-            timelock_height,
             note_type,
             Default::default(),
             &mut self.rng,

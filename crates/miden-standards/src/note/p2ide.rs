@@ -79,17 +79,15 @@ impl P2ideNote {
     /// Returns an error if deserialization or compilation of the `P2ID` script fails.
     pub fn create<R: FeltRng>(
         sender: AccountId,
-        target: AccountId,
+        storage: P2ideNoteStorage,
         assets: Vec<Asset>,
-        reclaim_height: Option<BlockNumber>,
-        timelock_height: Option<BlockNumber>,
         note_type: NoteType,
         attachment: NoteAttachment,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
-        let recipient = Self::build_recipient(target, reclaim_height, timelock_height, serial_num)?;
-        let tag = NoteTag::with_account_target(target);
+        let recipient = Self::build_recipient(storage, serial_num)?;
+        let tag = NoteTag::with_account_target(storage.target());
 
         let metadata =
             NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
@@ -103,15 +101,10 @@ impl P2ideNote {
     /// Notes created with this recipient will be P2IDE notes consumable by the specified target
     /// account.
     pub fn build_recipient(
-        target: AccountId,
-        reclaim_block_height: Option<BlockNumber>,
-        timelock_block_height: Option<BlockNumber>,
+        storage: P2ideNoteStorage,
         serial_num: Word,
     ) -> Result<NoteRecipient, NoteError> {
         let note_script = Self::script();
-
-        let storage = P2ideNoteStorage::new(target, reclaim_block_height, timelock_block_height);
-
         Ok(NoteRecipient::new(serial_num, note_script, storage.into()))
     }
 }
@@ -121,12 +114,8 @@ impl P2ideNote {
 
 /// Canonical storage representation for a P2IDE note.
 ///
-/// P2IDE note storage consists of exactly four elements:
-/// 1. Target account ID suffix
-/// 2. Target account ID prefix
-/// 3. Reclaim block height (0 = none)
-/// 4. Timelock block height (0 = none)
-
+/// Stores the target account ID together with optional reclaim and timelock
+/// constraints controlling when the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2ideNoteStorage {
     target: AccountId,
@@ -211,6 +200,9 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         Ok(Self { target, reclaim_height, timelock_height })
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {
