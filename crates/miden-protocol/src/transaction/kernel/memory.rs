@@ -345,22 +345,28 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 3072;
 // Each nullifier occupies a single word. A data section for each note consists of exactly 3072
 // elements and is laid out like so:
 //
-// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬─────────┬────────┬───────┬─────┬───────┬─────────┬
-// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   | RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │ STORAGE │  NUM   │ ASSET │ ... │ ASSET │ PADDING │
-// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT |           │  HEADER  │            │ ARGS  │ LENGTH  │ ASSETS │   0   │     │   n   │         │
-// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼─────────┼────────┼───────┼─────┼───────┼─────────┤
-// 0      4        8        12        16           20          24         28           32       36       40       44 + 4n
+// ┌──────┬────────┬────────┬─────────┬────────────┬───────────┬──────────┬────────────┬───────┬
+// │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   | RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │
+// │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT |           │  HEADER  │            │ ARGS  │
+// ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼
+// 0      4        8        12        16           20          24         28           32
+//
+// ┬─────────┬────────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │ STORAGE │  NUM   │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ LENGTH  │ ASSETS │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼─────────┼────────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 36        40       44      48              44 + 8n  48 + 8n
 //
 // - NUM_STORAGE_ITEMS is encoded as [num_storage_items, 0, 0, 0].
 // - NUM_ASSETS is encoded as [num_assets, 0, 0, 0].
 // - STORAGE_COMMITMENT is the key to look up note storage in the advice map.
 // - ASSETS_COMMITMENT is the key to look up note assets in the advice map.
 //
-// Notice that note storage values are not loaded to the memory, only their length. In order to obtain
+// Notice that note storage item are not loaded to the memory, only their length. In order to obtain
 // the storage values the advice map should be used: they are stored there as
 // `STORAGE_COMMITMENT -> STORAGE`.
 //
-// As opposed to the asset values, storage values are never used in kernel memory, so their presence
+// As opposed to the asset values, storage items are never used in kernel memory, so their presence
 // there is unnecessary.
 
 /// The memory address at which the input note section begins.
@@ -404,22 +410,24 @@ pub const INPUT_NOTE_ASSETS_OFFSET: MemoryOffset = 44;
 // The total number of output notes for a transaction is stored in the bookkeeping section of the
 // memory. Data section of each note is laid out like so:
 //
-// ┌──────┬──────────┬────────────┬───────────┬────────────┬────────────────┬─────────┬─────┬─────────┬─────────┐
-// │ NOTE │ METADATA │  METADATA  │ RECIPIENT │   ASSETS   │   NUM ASSETS   │ ASSET 0 │ ... │ ASSET n │ PADDING │
-// |  ID  |  HEADER  | ATTACHMENT |           | COMMITMENT | AND DIRTY FLAG |         |     |         |         |
-// ├──────┼──────────┼────────────┼───────────┼────────────┼────────────────┼─────────┼─────┼─────────┼─────────┤
-//    0        1           2           3           4              5             6             6 + n
+// ┌──────┬──────────┬────────────┬───────────┬────────────┬────────────────┬
+// │ NOTE │ METADATA │  METADATA  │ RECIPIENT │   ASSETS   │   NUM ASSETS   │
+// │  ID  │  HEADER  │ ATTACHMENT │           │ COMMITMENT │ AND DIRTY FLAG │
+// ├──────┼──────────┼────────────┼───────────┼────────────┼────────────────┼
+// 0      4          8            12          16           20
 //
-// The NUM_ASSETS_AND_DIRTY_FLAG word has the following layout:
-// `[num_assets, assets_commitment_dirty_flag, 0, 0]`, where:
-// - `num_assets` is the number of assets in this output note.
-// - `assets_commitment_dirty_flag` is the binary flag which specifies whether the assets commitment
-//   stored in this note is outdated. It holds 1 if some changes were made to the note assets since
-//   the last re-computation, and 0 otherwise.
+// ┬────────┬───────┬───────┬─────────┬─────┬────────┬─────────┬─────────┐
+// │  NUM   │ DIRTY │ ASSET │  ASSET  │ ... │ ASSET  │  ASSET  │ PADDING │
+// │ ASSETS │ FLAG  │ KEY 0 │ VALUE 0 │     │ KEY n  │ VALUE n │         │
+// ┼────────┼───────┼───────┼─────────┼─────┼────────┼─────────┼─────────┘
+// 20       21      24      28              24 + 8n  28 + 8n
 //
-// Dirty flag is set to 0 after every recomputation of the assets commitment in the
-// `kernel::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
-// `kernel::output_note::add_asset` procedure after any change was made to the assets data.
+// The DIRTY_FLAG is the binary flag which specifies whether the assets commitment stored in this
+// note is outdated. It holds 1 if some changes were made to the note assets since the last
+// re-computation, and 0 otherwise.
+// It is set to 0 after every recomputation of the assets commitment in the
+// `$kernel::note::compute_output_note_assets_commitment` procedure. It is set to 1 in the
+// `$kernel::output_note::add_asset` procedure after any change was made to the assets data.
 
 /// The memory address at which the output notes section begins.
 pub const OUTPUT_NOTE_SECTION_OFFSET: MemoryOffset = 16_777_216;
