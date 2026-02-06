@@ -1,9 +1,9 @@
 // NOTE EXECUTION HINT
 // ================================================================================================
 
-use crate::Felt;
-use crate::block::BlockNumber;
-use crate::errors::NoteError;
+use miden_protocol::Felt;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::errors::NoteError;
 
 /// Specifies the conditions under which a note is ready to be consumed.
 /// These conditions are meant to be encoded in the note script as well.
@@ -110,7 +110,10 @@ impl NoteExecutionHint {
 
                 Ok(hint)
             },
-            _ => Err(NoteError::NoteExecutionHintTagOutOfRange(tag)),
+            _ => Err(NoteError::other(format!(
+                "note execution hint tag {tag} must be in range 0..={}",
+                Self::ON_BLOCK_SLOT_TAG
+            ))),
         }
     }
 

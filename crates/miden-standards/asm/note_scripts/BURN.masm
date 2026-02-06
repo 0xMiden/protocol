@@ -1,5 +1,0 @@
-use miden::standards::notes::burn
-
-begin
-    exec.burn::main
-end
