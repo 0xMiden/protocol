@@ -70,6 +70,6 @@ static MOCK_UTIL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 /// Returns the mock test [`Library`] under the `mock::util` namespace.
 ///
 /// This provides convenient wrappers for testing purposes.
-pub(crate) fn mock_util_library() -> Library {
+pub fn mock_util_library() -> Library {
     MOCK_UTIL_LIBRARY.clone()
 }
