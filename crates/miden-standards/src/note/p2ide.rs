@@ -177,13 +177,15 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         }
 
         let target = crate::note::try_read_account_id_from_storage(note_storage)
-            .map_err(|_| NoteError::InvalidNoteStorage)?;
+            .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
 
         let reclaim_height = if note_storage[2] == Felt::ZERO {
             None
         } else {
-            let height: u32 =
-                note_storage[2].as_int().try_into().map_err(|_| NoteError::InvalidNoteStorage)?;
+            let height: u32 = note_storage[2]
+                .as_int()
+                .try_into()
+                .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
 
             Some(BlockNumber::from(height))
         };
@@ -191,8 +193,10 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         let timelock_height = if note_storage[3] == Felt::ZERO {
             None
         } else {
-            let height: u32 =
-                note_storage[3].as_int().try_into().map_err(|_| NoteError::InvalidNoteStorage)?;
+            let height: u32 = note_storage[3]
+                .as_int()
+                .try_into()
+                .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
 
             Some(BlockNumber::from(height))
         };
@@ -276,7 +280,7 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("invalid account id encoding must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage));
+        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
     }
 
     #[test]
@@ -291,7 +295,7 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow reclaim height must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage));
+        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
     }
 
     #[test]
@@ -305,6 +309,6 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow timelock height must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage));
+        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
     }
 }

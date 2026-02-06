@@ -575,9 +575,8 @@ pub enum NoteError {
     TooManyStorageItems(usize),
     #[error("invalid note storage length: expected {expected} items, got {actual}")]
     InvalidNoteStorageLength { expected: usize, actual: usize },
-
-    #[error("invalid note storage layout")]
-    InvalidNoteStorage,
+    #[error("invalid note storage layout: {0}")]
+    InvalidNoteStorage(Box<str>),
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(
@@ -615,6 +614,11 @@ impl NoteError {
             error_msg: message.into(),
             source: Some(Box::new(source)),
         }
+    }
+
+    /// Creates a [`NoteError::InvalidNoteStorage`] variant from an error message.
+    pub fn invalid_note_storage(msg: impl Into<String>) -> Self {
+        Self::InvalidNoteStorage(msg.into().into())
     }
 }
 

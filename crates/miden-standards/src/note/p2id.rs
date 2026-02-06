@@ -159,7 +159,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
         }
 
         let target = try_read_account_id_from_storage(note_storage)
-            .map_err(|_| NoteError::InvalidNoteStorage)?;
+            .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
 
         Ok(Self { target })
     }
@@ -216,6 +216,6 @@ mod tests {
         let err = P2idNoteStorage::try_from(storage.as_slice())
             .expect_err("should fail due to invalid account id encoding");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage));
+        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
     }
 }
