@@ -295,7 +295,7 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth{scheme_id: 2})?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());

@@ -71,6 +71,10 @@ pub proc authenticate_transaction
     # OS => [SCHEME_ID, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
+    dup.0 exec.validate_scheme_id
+    # OS => [SCHEME_ID, PUB_KEY, MESSAGE]
+    # AS => [SIGNATURE]
+
     # Verify the signature against the public key and the message. The procedure gets as inputs the
     # hash of the public key and the message via the operand stack. The signature is provided via
     # the advice stack. The signature is valid if and only if the procedure returns.
@@ -80,8 +84,8 @@ pub proc authenticate_transaction
 end
 
 # Verify signature using scheme_id:
-#   0 => Falcon (rpo_falcon512)
 #   1 => ECDSA (ecdsa_k256_keccak)
+#   2 => Falcon (rpo_falcon512)
 #
 # Inputs:  [SCHEME_ID, PUB_KEY, MSG]
 # Outputs: []
