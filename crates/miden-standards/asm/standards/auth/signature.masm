@@ -24,6 +24,7 @@ const SCHEME_ID_PREFIX_LOC=17
 # ERRORS
 # =================================================================================================
 const ERR_INVALID_SCHEME_ID = "invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak"
+const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three zero values followed by the scheme ID"
 
 #! Authenticate a transaction using ECDSA signature scheme.
 #!
@@ -88,7 +89,7 @@ end
 # Outputs: []
 proc verify_signature_by_scheme
     dup eq.1
-    # => [IS_ZERO, PUB_KEY, MESSAGE]
+    # => [is_one, PUB_KEY, MESSAGE]
 
     if.true
         drop
@@ -99,7 +100,7 @@ proc verify_signature_by_scheme
         # AS => []
     else
         dup eq.2
-        # => [IS_ONE, PUB_KEY, MESSAGE]
+        # => [is_2, PUB_KEY, MESSAGE]
 
         if.true
             drop
@@ -114,6 +115,48 @@ proc verify_signature_by_scheme
         end
     end
 end
+
+#! Returns 1 if scheme_id is supported, else 0.
+#! Inputs:  [scheme_id]
+#! Outputs: [is_supported]
+pub proc is_scheme_id
+    dup eq.1
+    # => [is_1, scheme_id]
+
+    swap eq.2
+    # => [is_2, is_1]
+
+    add neq.0
+    # => [is_supported]
+end
+
+#! Reverts if scheme_id is not supported.
+#! Inputs:  [scheme_id]
+#! Outputs: []
+pub proc validate_scheme_id
+    exec.is_scheme_id
+    # => [is_supported]
+
+    eq.0 assertz.err=ERR_INVALID_SCHEME_ID
+    # => []
+end
+
+
+#! Validates scheme id word shape: [0, 0, 0, scheme_id]
+#! Inputs:  [SCHEME_ID_WORD]
+#! Outputs: [SCHEME_ID_WORD]
+pub proc validate_scheme_id_word
+    dup.0 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    dup.1 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    dup.2 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+
+    dup.3
+    # => [scheme_id, SCHEME_ID_WORD]
+
+    exec.validate_scheme_id
+    # => [SCHEME_ID_WORD]
+end
+
 
 #! Verify signatures for all required signers in a loop.
 #!

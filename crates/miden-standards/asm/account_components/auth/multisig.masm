@@ -57,10 +57,6 @@ const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or g
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
-const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three zero values followed by the scheme ID"
-
-const ERR_INVALID_APPROVER_SCHEME_ID = "invalid scheme id for multisig signer"
-
 #! Check if transaction has already been executed and add it to executed transactions for replay protection.
 #!
 #! Inputs:  [MSG]
@@ -261,20 +257,8 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         padw adv_loadw
         # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
 
-        # validate the word shape
-        dup.0 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-        dup.1 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-        dup.2 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
-
-        # validate the scheme id is either 1 or 2
-        dup.3 dup.4 eq.1
-        # => [is_equal_to_1, scheme_id, SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
-
-        swap eq.2
-        # => [is_equal_to_2, is_equal_to_1, SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
-
-        add eq.0 assertz.err=ERR_INVALID_APPROVER_SCHEME_ID
-        # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+        # validate the scheme id word is in a correct form
+        exec.auth::signature::validate_scheme_id_word
 
         swapw
         # => [PUB_KEY, SCHEME_ID_WORD, i-1, pad(12)]
@@ -396,6 +380,95 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     cdrop
     # => [effective_transaction_threshold]
 end
+
+
+#! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
+#! Inputs: []
+#! Outputs: [threshold, num_approvers]
+pub proc get_threshold_and_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    # => [THRESHOLD_CONFIG_SLOT]
+
+    exec.active_account::get_initial_item
+    # => [0, 0, num_approvers, threshold]
+
+    drop drop
+    # => [num_approvers, threshold]
+
+    swap
+    # => [threshold, num_approvers]
+end
+
+#! Returns signer public key at index i
+#!
+#! Inputs: [index]
+#! Outputs: [PUB_KEY]
+pub proc get_signer_at
+    u32assert
+    # => [index]
+
+    push.0.0.0
+    # => [0, 0, 0, index]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [APPROVER_PUBLIC_KEYS_SLOT, 0, 0, 0, index]
+
+    exec.active_account::get_initial_map_item
+    # => [PUB_KEY]
+end
+
+
+#! Returns 1 if PUB_KEY is a current signer (scheme_id is supported), else 0.
+#! Inputs: [PUB_KEY]
+#! Outputs: [is_signer]
+pub proc is_signer(pub_key: BeWord) -> felt
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [APPROVER_SCHEME_ID_SLOT]
+
+    exec.active_account::get_initial_map_item
+    # => [0, 0, 0, scheme_id]
+
+    drop drop drop
+    # => [scheme_id]
+
+    exec.auth::signature::is_scheme_id
+    # => [is_signer]
+end
+
+
+#! Returns all signer public keys for indices [0..num_approvers]
+#! Inputs: []
+#! Outputs: [PUB_KEY_0, PUB_KEY_1, ..., PUBKEY_N-1]
+#!
+#! Notes
+#! - Signers needs to be properly added to the mapping starting from 0, ..., num_approvers
+#!
+pub proc get_signers
+    exec.get_threshold_and_num_approvers drop
+    # => [num_approvers]
+
+    dup neq.0
+    while.true
+        sub.1
+        # => [i-1, num_approvers]
+
+        dup
+        # => [i-1, i-1, num_approvers]
+
+        exec.get_signer_at
+        # => [PUB_KEY_WORD, i-1, num_approvers]
+
+        movup.4
+        # => [i-1, PUB_KEY, num_approvers]
+
+        dup neq.0
+        # => [should_continue, i-1, PUB_KEY_WORD, num_approvers]
+    end
+
+    drop
+    # => [PUB_KEY_0, ..., PUB_KEY_N-1]
+end
+
 
 #! Authenticate a transaction using the ECDSA signature scheme with multi-signature support.
 #!

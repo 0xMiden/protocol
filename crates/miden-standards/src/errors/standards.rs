@@ -30,6 +30,9 @@ pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmEr
 /// Error Message: "invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak"
 pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid signature scheme id: expected 0 for falcon512_rpo, 1 for ecdsa_k256_keccak");
 
+/// Error Message: "invalid scheme ID word format expected three zero values followed by the scheme ID"
+pub const ERR_INVALID_SCHEME_ID_WORD: MasmError = MasmError::from_static_str("invalid scheme ID word format expected three zero values followed by the scheme ID");
+
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
 
@@ -69,9 +72,3 @@ pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("faile
 
 /// Error Message: "number of approvers or threshold must not be zero"
 pub const ERR_ZERO_IN_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers or threshold must not be zero");
-
-/// Error Message: "invalid scheme ID word format expected three zero values followed by the scheme ID"
-pub const ERR_INVALID_SCHEME_ID_WORD: MasmError = MasmError::from_static_str("invalid scheme ID word format expected three zero values followed by the scheme ID");
-
-/// Error Message: "invalid scheme id for multisig signer"
-pub const ERR_INVALID_APPROVER_SCHEME_ID: MasmError = MasmError::from_static_str("invalid scheme id for multisig signer");
