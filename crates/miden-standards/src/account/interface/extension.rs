@@ -75,7 +75,7 @@ impl AccountInterfaceExt for AccountInterface {
     /// Returns [NoteAccountCompatibility::Maybe] if the provided note is compatible with the
     /// current [AccountInterface], and [NoteAccountCompatibility::No] otherwise.
     fn is_compatible_with(&self, note: &Note) -> NoteAccountCompatibility {
-        if let Some(standard_note) = StandardNote::from_note(note) {
+        if let Some(standard_note) = StandardNote::from_script_root(note.script().root()) {
             if standard_note.is_compatible_with(self) {
                 NoteAccountCompatibility::Maybe
             } else {

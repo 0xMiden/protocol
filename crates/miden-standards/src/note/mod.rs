@@ -51,10 +51,10 @@ impl StandardNote {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [`StandardNote`] instance based on the note script of the provided [`Note`].
-    /// Returns `None` if the provided note is not a standard note.
-    pub fn from_note(note: &Note) -> Option<Self> {
-        Self::from_script_root(note.script().root())
+    /// Returns a [`StandardNote`] instance based on the provided [`NoteScript`]. Returns `None`
+    /// if the provided script does not match any standard note script.
+    pub fn from_script(script: &NoteScript) -> Option<Self> {
+        Self::from_script_root(script.root())
     }
 
     /// Returns a [`StandardNote`] instance based on the provided script root. Returns `None` if
@@ -83,13 +83,13 @@ impl StandardNote {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the name of this [`StandardNote`] variant as a string.
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
-            Self::P2ID => "P2ID".to_string(),
-            Self::P2IDE => "P2IDE".to_string(),
-            Self::SWAP => "SWAP".to_string(),
-            Self::MINT => "MINT".to_string(),
-            Self::BURN => "BURN".to_string(),
+            Self::P2ID => "P2ID",
+            Self::P2IDE => "P2IDE",
+            Self::SWAP => "SWAP",
+            Self::MINT => "MINT",
+            Self::BURN => "BURN",
         }
     }
 
