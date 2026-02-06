@@ -12,7 +12,10 @@ use miden_protocol::{Felt, Word};
 
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthScheme;
-use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
+use crate::account::auth::{
+    AuthSingleSigAcl,
+    AuthSingleSigAclConfig,
+};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
@@ -309,10 +312,7 @@ mod tests {
     #[test]
     fn faucet_contract_creation() {
         let pub_key_word = Word::new([ONE; 4]);
-        let auth_scheme: AuthScheme = AuthScheme::SingleSig {
-            pub_key: pub_key_word.into(),
-            scheme_id: 0,
-        };
+        let auth_scheme: AuthScheme = AuthScheme::SingleSig{ pub_key: pub_key_word.into(), scheme_id: 2 };
 
         // we need to use an initial seed to create the wallet account
         let init_seed: [u8; 32] = [
@@ -338,7 +338,10 @@ mod tests {
 
         // The falcon auth component's public key should be present.
         assert_eq!(
-            faucet_account.storage().get_item(AuthSingleSigAcl::public_key_slot()).unwrap(),
+            faucet_account
+                .storage()
+                .get_item(AuthSingleSigAcl::public_key_slot())
+                .unwrap(),
             pub_key_word
         );
 
@@ -399,7 +402,7 @@ mod tests {
                 BasicFungibleFaucet::new(token_symbol, 10, Felt::new(100))
                     .expect("failed to create a fungible faucet component"),
             )
-            .with_auth_component(AuthSingleSig::new(mock_public_key, 0))
+            .with_auth_component(AuthSingleSig::new(mock_public_key, 2))
             .build_existing()
             .expect("failed to create wallet account");
 
@@ -413,7 +416,7 @@ mod tests {
         // invalid account: basic fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(AuthSingleSig::new(mock_public_key, 0))
+            .with_auth_component(AuthSingleSig::new(mock_public_key, 2))
             // we need to add some other component so the builder doesn't fail
             .with_component(BasicWallet)
             .build_existing()
