@@ -234,21 +234,11 @@ impl From<AuthFalcon512RpoAcl> for AccountComponent {
                 StorageSlotSchema::value(
                     "ACL configuration",
                     [
-                        FeltSchema::new_typed_with_default(
-                            SchemaTypeId::u32(),
-                            "num_trigger_procs",
-                            Felt::new(0),
-                        ),
-                        FeltSchema::new_typed_with_default(
-                            SchemaTypeId::u32(),
-                            "allow_unauthorized_output_notes",
-                            Felt::new(0),
-                        ),
-                        FeltSchema::new_typed_with_default(
-                            SchemaTypeId::u32(),
-                            "allow_unauthorized_input_notes",
-                            Felt::new(0),
-                        ),
+                        FeltSchema::u32("num_trigger_procs").with_default(Felt::new(0)),
+                        FeltSchema::u32("allow_unauthorized_output_notes")
+                            .with_default(Felt::new(0)),
+                        FeltSchema::u32("allow_unauthorized_input_notes")
+                            .with_default(Felt::new(0)),
                         FeltSchema::new_void(),
                     ],
                 ),

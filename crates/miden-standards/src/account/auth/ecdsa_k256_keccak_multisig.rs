@@ -214,8 +214,8 @@ impl From<AuthEcdsaK256KeccakMultisig> for AccountComponent {
                 StorageSlotSchema::value(
                     "Threshold configuration",
                     [
-                        FeltSchema::new_typed(SchemaTypeId::u32(), "threshold"),
-                        FeltSchema::new_typed(SchemaTypeId::u32(), "num_approvers"),
+                        FeltSchema::u32("threshold"),
+                        FeltSchema::u32("num_approvers"),
                         FeltSchema::new_void(),
                         FeltSchema::new_void(),
                     ],

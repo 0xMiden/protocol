@@ -56,7 +56,7 @@ use crate::errors::AccountError;
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
-///     FeltSchema::new_typed(SchemaTypeId::native_felt(), "foo"),
+///     FeltSchema::felt("foo"),
 /// ]);
 ///
 /// let storage_schema = StorageSchema::new([(

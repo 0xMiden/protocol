@@ -259,13 +259,9 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
                 StorageSlotSchema::value(
                     "Token metadata",
                     [
-                        FeltSchema::new_typed_with_default(
-                            SchemaTypeId::native_felt(),
-                            "token_supply",
-                            Felt::new(0),
-                        ),
-                        FeltSchema::new_typed(SchemaTypeId::native_felt(), "max_supply"),
-                        FeltSchema::new_typed(SchemaTypeId::u8(), "decimals"),
+                        FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                        FeltSchema::felt("max_supply"),
+                        FeltSchema::u8("decimals"),
                         FeltSchema::new_typed(token_symbol_type, "symbol"),
                     ],
                 ),
@@ -277,8 +273,8 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
                     [
                         FeltSchema::new_void(),
                         FeltSchema::new_void(),
-                        FeltSchema::new_typed(SchemaTypeId::native_felt(), "owner_suffix"),
-                        FeltSchema::new_typed(SchemaTypeId::native_felt(), "owner_prefix"),
+                        FeltSchema::felt("owner_suffix"),
+                        FeltSchema::felt("owner_prefix"),
                     ],
                 ),
             ),
