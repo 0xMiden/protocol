@@ -51,13 +51,13 @@ impl StandardNote {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [StandardNote] instance based on the note script of the provided [Note]. Returns
-    /// `None` if the provided note is not a standard note.
+    /// Returns a [`StandardNote`] instance based on the note script of the provided [`Note`].
+    /// Returns `None` if the provided note is not a standard note.
     pub fn from_note(note: &Note) -> Option<Self> {
         Self::from_script_root(note.script().root())
     }
 
-    /// Returns a [StandardNote] instance based on the provided script root. Returns `None` if
+    /// Returns a [`StandardNote`] instance based on the provided script root. Returns `None` if
     /// the provided root does not match any standard note script.
     pub fn from_script_root(root: Word) -> Option<Self> {
         if root == P2idNote::script_root() {
@@ -82,7 +82,7 @@ impl StandardNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the name of this [StandardNote] variant as a string.
+    /// Returns the name of this [`StandardNote`] variant as a string.
     pub fn name(&self) -> String {
         match self {
             Self::P2ID => "P2ID".to_string(),
