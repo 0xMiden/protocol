@@ -269,7 +269,6 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     assert_eq!(computed_leaf_value, expected_leaf_value);
     Ok(())
 }
-
 #[tokio::test]
 async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
     let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;

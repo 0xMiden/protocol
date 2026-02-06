@@ -44,6 +44,31 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
+
+    /// Converts to fully reversed elements for memory storage (used by SMT proof nodes).
+    ///
+    /// `mem_stream` preserves element order from memory, while `loc_loadw_be` (used in
+    /// `calculate_root`) per-word reverses. `keccak256::merge` expects per-word reversed
+    /// input. Fully reversed elements in memory produce per-word reversed format on the
+    /// stack after `mem_stream`'s half-swap, matching `loc_loadw_be`'s output.
+    pub fn to_memory_elements(&self) -> Vec<Felt> {
+        let mut elements = bytes_to_packed_u32_felts(&self.0);
+        elements.reverse();
+        elements
+    }
+
+    /// Converts to per-word reversed elements for memory storage (used by exit roots).
+    ///
+    /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`
+    /// (per-word reversal). Per-word reversed storage + `mem_loadw_be` reversal = natural
+    /// order on the stack, matching the calculated root format.
+    pub fn to_word_reversed_elements(&self) -> Vec<Felt> {
+        let elements = bytes_to_packed_u32_felts(&self.0);
+        let mut result = Vec::with_capacity(8);
+        result.extend(elements[0..4].iter().rev());
+        result.extend(elements[4..8].iter().rev());
+        result
+    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
@@ -81,27 +106,23 @@ impl SequentialCommit for ProofData {
         const PROOF_DATA_ELEMENT_COUNT: usize = 536; // 32*8 + 32*8 + 8 + 8 + 8 (proofs + global_index + 2 exit roots)
         let mut elements = Vec::with_capacity(PROOF_DATA_ELEMENT_COUNT);
 
-        // Convert SMT proof elements to felts (each node is 8 felts)
+        // SMT proof nodes: fully reversed so that mem_stream's half-swap produces
+        // per-word reversed format matching loc_loadw_be's output for keccak256::merge.
         for node in self.smt_proof_local_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_memory_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_memory_elements());
         }
 
         // Global index (uint256 as 32 bytes)
         elements.extend(self.global_index.to_elements());
 
-        // Mainnet exit root (bytes32 as 8 u32 felts)
-        let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
-        elements.extend(mainnet_exit_root_felts);
-
-        // Rollup exit root (bytes32 as 8 u32 felts)
-        let rollup_exit_root_felts = self.rollup_exit_root.to_elements();
-        elements.extend(rollup_exit_root_felts);
+        // Exit roots: per-word reversed so that mem_load_double_word's mem_loadw_be
+        // reversal produces natural order matching the calculated root format.
+        elements.extend(self.mainnet_exit_root.to_word_reversed_elements());
+        elements.extend(self.rollup_exit_root.to_word_reversed_elements());
 
         elements
     }
