@@ -1388,6 +1388,7 @@ dependencies = [
  "miden-assembly",
  "miden-core",
  "miden-core-lib",
+ "miden-crypto",
  "miden-protocol",
  "miden-standards",
  "miden-utils-sync",
@@ -1410,9 +1411,9 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly"
-version = "0.20.3"
+version = "0.20.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf4aba6bc5cfda2393ecc032b55caabde289fb980650560f8333803db4e48f09"
+checksum = "2395b2917aea613a285d3425d1ca07e6c45442e2b34febdea2081db555df62fc"
 dependencies = [
  "env_logger",
  "log",
@@ -1425,9 +1426,9 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly-syntax"
-version = "0.20.3"
+version = "0.20.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23eae66f2a55c2a0666f4ed896b61797845b528435ad2bae41fd9a221f94bad7"
+checksum = "1f9bed037d137f209b9e7b28811ec78c0536b3f9259d6f4ceb5823c87513b346"
 dependencies = [
  "aho-corasick",
  "env_logger",
@@ -1743,6 +1744,8 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rstest",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "winter-rand-utils",

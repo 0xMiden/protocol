@@ -27,7 +27,11 @@ use miden_protocol::note::{
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
+    NetworkFungibleFaucet,
+    TokenMetadata,
+};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
@@ -258,15 +262,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     builder.add_output_note(OutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
-    let basic_faucet = BasicFungibleFaucet::try_from(&faucet)?;
+    let token_metadata = TokenMetadata::try_from(faucet.storage())?;
 
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(basic_faucet.max_supply(), Felt::from(max_supply));
+    assert_eq!(token_metadata.max_supply(), Felt::from(max_supply));
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(basic_faucet.token_supply(), Felt::from(token_supply));
+    assert_eq!(token_metadata.token_supply(), Felt::from(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -531,7 +535,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mut target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // Check the Network Fungible Faucet's max supply.
-    let actual_max_supply = NetworkFungibleFaucet::try_from(&faucet)?.max_supply();
+    let actual_max_supply = TokenMetadata::try_from(faucet.storage())?.max_supply();
     assert_eq!(actual_max_supply.as_int(), max_supply);
 
     // Check that the creator account ID is stored in slot 2 (second storage slot of the component)
@@ -543,7 +547,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
-    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply.as_int(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
@@ -1150,7 +1154,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Check the initial token issuance before burning
-    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply, Felt::new(100));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
@@ -1167,7 +1171,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Apply the delta to the faucet account and verify the token issuance decreased
     faucet.apply_delta(executed_transaction.account_delta())?;
-    let final_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(final_token_supply, Felt::new(initial_token_supply.as_int() - burn_amount));
 
     Ok(())
