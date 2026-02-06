@@ -136,17 +136,17 @@ impl AccountComponent {
     /// - The component creation fails
     pub fn from_library(
         library: &AccountComponentCode,
-        account_component_metadata: &AccountComponentMetadata,
+        metadata: &AccountComponentMetadata,
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
-        let storage_slots = account_component_metadata
+        let storage_slots = metadata
             .storage_schema()
             .build_storage_slots(init_storage_data)
             .map_err(|err| {
                 AccountError::other_with_source("failed to instantiate account component", err)
             })?;
 
-        AccountComponent::new(library.clone(), storage_slots, account_component_metadata.clone())
+        AccountComponent::new(library.clone(), storage_slots, metadata.clone())
     }
 
     // ACCESSORS
