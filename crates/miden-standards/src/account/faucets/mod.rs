@@ -2,19 +2,15 @@ use alloc::string::String;
 
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::errors::{AccountError, TokenSymbolError};
-use miden_protocol::utils::sync::LazyLock;
 use thiserror::Error;
 
 mod basic_fungible;
 mod network_fungible;
+mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
-
-static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::fungible_faucets::metadata")
-        .expect("storage slot name should be valid")
-});
+pub use token_metadata::TokenMetadata;
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================
@@ -43,6 +39,11 @@ pub enum FungibleFaucetError {
     },
     #[error("invalid token symbol")]
     InvalidTokenSymbol(#[source] TokenSymbolError),
+    #[error("storage slot name mismatch: expected {expected}, got {actual}")]
+    SlotNameMismatch {
+        expected: StorageSlotName,
+        actual: StorageSlotName,
+    },
     #[error("unsupported authentication scheme: {0}")]
     UnsupportedAuthScheme(String),
     #[error("account creation failed")]

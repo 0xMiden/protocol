@@ -14,13 +14,16 @@
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - Added `P2idNoteStorage` and `P2ideNoteStorage` ([#2389](https://github.com/0xMiden/miden-base/pull/2389)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
+- Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 
 
 ### Changes
 
+- Fixed MASM inline comment casing to adhere to commenting conventions ([#2398](https://github.com/0xMiden/miden-base/pull/2398)).
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - Moved `NoteExecutionHint` to `miden-standards` ([#2378](https://github.com/0xMiden/miden-base/pull/2378)).
 - Added `miden::protocol::auth` module with public auth event constants ([#2377](https://github.com/0xMiden/miden-base/pull/2377)).
+- Replaced auth event constant workarounds with direct imports now that `miden-assembly` v0.20.6 supports it ([#2404](https://github.com/0xMiden/miden-base/pull/2404)).
 - [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
 - [BREAKING] Simplified `NoteMetadata::new()` constructor to not require tag parameter; tag defaults to zero and can be set via `with_tag()` builder method ([#2384](https://github.com/0xMiden/miden-base/pull/2384)).
 - [BREAKING] Renamed `WellKnownComponent` to `StandardAccountComponent`, `WellKnownNote` to `StandardNote`, and `WellKnownNoteAttachment` to `StandardNoteAttachment` ([#2332](https://github.com/0xMiden/miden-base/pull/2332)).
