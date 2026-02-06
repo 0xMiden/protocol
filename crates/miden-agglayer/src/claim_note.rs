@@ -45,6 +45,35 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
+
+    /// Converts to fully reversed elements for memory storage (used by SMT proof nodes).
+    ///
+    /// Data loaded via `mem_stream` has the higher-address word placed on top of the stack
+    /// without per-word reversal. `calculate_root` stores/loads the current hash via
+    /// `loc_storew_be`/`loc_loadw_be` which applies per-word reversal. For both the current
+    /// hash and path nodes to enter `keccak256::merge` in the same per-word reversed format,
+    /// SMT proof nodes must be fully reversed in memory so that `mem_stream`'s half-swap
+    /// produces per-word reversed elements on the stack.
+    pub fn to_memory_elements(&self) -> Vec<Felt> {
+        let mut elements = bytes_to_packed_u32_felts(&self.0);
+        elements.reverse();
+        elements
+    }
+
+    /// Converts to per-word reversed elements for memory storage (used by exit roots).
+    ///
+    /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`.
+    /// `mem_loadw_be` applies per-word reversal (puts word\[3\] on top). When the root
+    /// is stored in per-word reversed format, `mem_loadw_be`'s reversal produces natural
+    /// order on the stack, matching how `keccak_digest_to_word_strings` stores roots
+    /// in the working standalone tests (root_lo at lower address, root_hi at higher).
+    pub fn to_word_reversed_elements(&self) -> Vec<Felt> {
+        let elements = bytes_to_packed_u32_felts(&self.0);
+        let mut result = Vec::with_capacity(8);
+        result.extend(elements[0..4].iter().rev());
+        result.extend(elements[4..8].iter().rev());
+        result
+    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
@@ -82,27 +111,31 @@ impl SequentialCommit for ProofData {
         const PROOF_DATA_ELEMENT_COUNT: usize = 536; // 32*8 + 32*8 + 8 + 8 + 8 (proofs + global_index + 2 exit roots)
         let mut elements = Vec::with_capacity(PROOF_DATA_ELEMENT_COUNT);
 
-        // Convert SMT proof elements to felts (each node is 8 felts)
+        // Convert SMT proof elements to felts (each node is 8 felts).
+        // Fully reversed: mem_stream does NOT apply per-word reversal (unlike mem_loadw_be),
+        // but calculate_root expects per-word reversed format (since loc_loadw_be reverses
+        // each word when loading the current hash). Fully reversed elements in memory produce
+        // the correct per-word reversed format on the stack after mem_stream's half-swap.
         for node in self.smt_proof_local_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_memory_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_memory_elements());
         }
 
         // Global index (uint256 as 8 u32 felts from 32 bytes)
+        // NOT reversed - uses mem_loadw_le for reading
         elements.extend(self.global_index.to_elements());
 
         // Mainnet exit root (bytes32 as 8 u32 felts)
-        let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
-        elements.extend(mainnet_exit_root_felts);
+        // Per-word reversed: mem_load_double_word uses mem_loadw_be which per-word reverses,
+        // so per-word reversed in memory produces natural order on the stack, matching the
+        // format used in standalone tests (root_lo at lower, root_hi at higher address).
+        elements.extend(self.mainnet_exit_root.to_word_reversed_elements());
 
         // Rollup exit root (bytes32 as 8 u32 felts)
-        let rollup_exit_root_felts = self.rollup_exit_root.to_elements();
-        elements.extend(rollup_exit_root_felts);
+        elements.extend(self.rollup_exit_root.to_word_reversed_elements());
 
         elements
     }
