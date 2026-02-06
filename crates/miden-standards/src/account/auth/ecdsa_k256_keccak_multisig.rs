@@ -16,6 +16,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::ecdsa_k256_keccak_multisig_library;
 
+/// The schema type ID for ECDSA K256 Keccak public keys.
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::ecdsa_k256_keccak::pub_key";
+
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_multisig::threshold_config")
         .expect("storage slot name should be valid")
@@ -158,6 +161,55 @@ impl AuthEcdsaK256KeccakMultisig {
     pub fn procedure_thresholds_slot() -> &'static StorageSlotName {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
     }
+
+    /// Returns the storage slot schema for the threshold configuration slot.
+    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::threshold_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Threshold configuration",
+                [
+                    FeltSchema::u32("threshold"),
+                    FeltSchema::u32("num_approvers"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the approver public keys slot.
+    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::approver_public_keys_slot().clone(),
+            StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+        )
+    }
+
+    /// Returns the storage slot schema for the executed transactions slot.
+    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::executed_transactions_slot().clone(),
+            StorageSlotSchema::map(
+                "Executed transactions",
+                SchemaTypeId::native_word(),
+                SchemaTypeId::native_word(),
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the procedure thresholds slot.
+    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::procedure_thresholds_slot().clone(),
+            StorageSlotSchema::map(
+                "Procedure thresholds",
+                SchemaTypeId::native_word(),
+                SchemaTypeId::u32(),
+            ),
+        )
+    }
 }
 
 impl From<AuthEcdsaK256KeccakMultisig> for AccountComponent {
@@ -206,41 +258,11 @@ impl From<AuthEcdsaK256KeccakMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        let pub_key_type =
-            SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key").expect("valid");
         let storage_schema = StorageSchema::new([
-            (
-                AuthEcdsaK256KeccakMultisig::threshold_config_slot().clone(),
-                StorageSlotSchema::value(
-                    "Threshold configuration",
-                    [
-                        FeltSchema::u32("threshold"),
-                        FeltSchema::u32("num_approvers"),
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                    ],
-                ),
-            ),
-            (
-                AuthEcdsaK256KeccakMultisig::approver_public_keys_slot().clone(),
-                StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
-            ),
-            (
-                AuthEcdsaK256KeccakMultisig::executed_transactions_slot().clone(),
-                StorageSlotSchema::map(
-                    "Executed transactions",
-                    SchemaTypeId::native_word(),
-                    SchemaTypeId::native_word(),
-                ),
-            ),
-            (
-                AuthEcdsaK256KeccakMultisig::procedure_thresholds_slot().clone(),
-                StorageSlotSchema::map(
-                    "Procedure thresholds",
-                    SchemaTypeId::native_word(),
-                    SchemaTypeId::u32(),
-                ),
-            ),
+            AuthEcdsaK256KeccakMultisig::threshold_config_slot_schema(),
+            AuthEcdsaK256KeccakMultisig::approver_public_keys_slot_schema(),
+            AuthEcdsaK256KeccakMultisig::executed_transactions_slot_schema(),
+            AuthEcdsaK256KeccakMultisig::procedure_thresholds_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

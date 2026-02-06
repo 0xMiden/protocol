@@ -23,6 +23,9 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
+
+/// The schema type ID for token symbols.
+const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -172,6 +175,39 @@ impl NetworkFungibleFaucet {
         &OWNER_CONFIG_SLOT_NAME
     }
 
+    /// Returns the storage slot schema for the metadata slot.
+    pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let token_symbol_type = SchemaTypeId::new(TOKEN_SYMBOL_TYPE_ID).expect("valid type id");
+        (
+            Self::metadata_slot().clone(),
+            StorageSlotSchema::value(
+                "Token metadata",
+                [
+                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                    FeltSchema::felt("max_supply"),
+                    FeltSchema::u8("decimals"),
+                    FeltSchema::new_typed(token_symbol_type, "symbol"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the owner configuration slot.
+    pub fn owner_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::owner_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Owner account configuration",
+                [
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::felt("owner_suffix"),
+                    FeltSchema::felt("owner_prefix"),
+                ],
+            ),
+        )
+    }
+
     /// Returns the token metadata.
     pub fn metadata(&self) -> &TokenMetadata {
         &self.metadata
@@ -250,34 +286,9 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             owner_account_id_word,
         );
 
-        let token_symbol_type =
-            SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
-                .expect("valid");
         let storage_schema = StorageSchema::new([
-            (
-                NetworkFungibleFaucet::metadata_slot().clone(),
-                StorageSlotSchema::value(
-                    "Token metadata",
-                    [
-                        FeltSchema::felt("token_supply").with_default(Felt::new(0)),
-                        FeltSchema::felt("max_supply"),
-                        FeltSchema::u8("decimals"),
-                        FeltSchema::new_typed(token_symbol_type, "symbol"),
-                    ],
-                ),
-            ),
-            (
-                NetworkFungibleFaucet::owner_config_slot().clone(),
-                StorageSlotSchema::value(
-                    "Owner account configuration",
-                    [
-                        FeltSchema::new_void(),
-                        FeltSchema::new_void(),
-                        FeltSchema::felt("owner_suffix"),
-                        FeltSchema::felt("owner_prefix"),
-                    ],
-                ),
-            ),
+            NetworkFungibleFaucet::metadata_slot_schema(),
+            NetworkFungibleFaucet::owner_config_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

@@ -10,6 +10,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::falcon_512_rpo_library;
 
+/// The schema type ID for Falcon512Rpo public keys.
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::falcon512_rpo::pub_key";
+
 static FALCON_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::falcon512_rpo::public_key")
         .expect("storage slot name should be valid")
@@ -51,17 +54,21 @@ impl AuthFalcon512Rpo {
     pub fn public_key_slot() -> &'static StorageSlotName {
         &FALCON_PUBKEY_SLOT_NAME
     }
+
+    /// Returns the storage slot schema for the public key slot.
+    pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::public_key_slot().clone(),
+            StorageSlotSchema::value("Public key commitment", pub_key_type),
+        )
+    }
 }
 
 impl From<AuthFalcon512Rpo> for AccountComponent {
     fn from(falcon: AuthFalcon512Rpo) -> Self {
-        let pub_key_type =
-            SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").expect("valid");
-        let storage_schema = StorageSchema::new([(
-            AuthFalcon512Rpo::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", pub_key_type),
-        )])
-        .expect("storage schema should be valid");
+        let storage_schema = StorageSchema::new([AuthFalcon512Rpo::public_key_slot_schema()])
+            .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(AuthFalcon512Rpo::NAME)
             .with_description("Authentication component using Falcon512 signature scheme")

@@ -122,8 +122,7 @@ impl AccountComponent {
     /// # Arguments
     ///
     /// * `library` - The component's assembled code
-    /// * `account_component_metadata` - The component's metadata, which describes the storage
-    ///   layout
+    /// * `metadata` - The component's metadata, which describes the storage layout
     /// * `init_storage_data` - The initialization data for storage slots
     ///
     /// # Errors

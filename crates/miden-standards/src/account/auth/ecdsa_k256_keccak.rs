@@ -10,6 +10,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::ecdsa_k256_keccak_library;
 
+/// The schema type ID for ECDSA K256 Keccak public keys.
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::ecdsa_k256_keccak::pub_key";
+
 static ECDSA_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak::public_key")
         .expect("storage slot name should be valid")
@@ -47,17 +50,21 @@ impl AuthEcdsaK256Keccak {
     pub fn public_key_slot() -> &'static StorageSlotName {
         &ECDSA_PUBKEY_SLOT_NAME
     }
+
+    /// Returns the storage slot schema for the public key slot.
+    pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::public_key_slot().clone(),
+            StorageSlotSchema::value("Public key commitment", pub_key_type),
+        )
+    }
 }
 
 impl From<AuthEcdsaK256Keccak> for AccountComponent {
     fn from(ecdsa: AuthEcdsaK256Keccak) -> Self {
-        let pub_key_type =
-            SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key").expect("valid");
-        let storage_schema = StorageSchema::new([(
-            AuthEcdsaK256Keccak::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", pub_key_type),
-        )])
-        .expect("storage schema should be valid");
+        let storage_schema = StorageSchema::new([AuthEcdsaK256Keccak::public_key_slot_schema()])
+            .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(AuthEcdsaK256Keccak::NAME)
             .with_description("Authentication component using ECDSA K256 Keccak signature scheme")
