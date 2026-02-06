@@ -1145,7 +1145,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => [ASSET_VALUE', pad(12)]
 
           repeat.12 movup.4 drop end
-          # => [ASSET']
+          # => [ASSET_VALUE']
       end
 
       #! Inputs:  [ASSET_KEY, ASSET_VALUE]

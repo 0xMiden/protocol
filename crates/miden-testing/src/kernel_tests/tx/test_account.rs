@@ -1320,7 +1320,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
 
             # get the current asset
             push.{ASSET_KEY} exec.active_account::get_asset
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
