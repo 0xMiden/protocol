@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::PublicKeyCommitment;
-use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::NoteError;
