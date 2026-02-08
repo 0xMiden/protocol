@@ -29,11 +29,8 @@ use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 ///   - prefix = bytes[4..12] as a big-endian u64
 ///   - suffix = bytes[12..20] as a big-endian u64
 ///
-/// Note: The `to_elements()` method returns big-endian limb order matching Solidity ABI, but each
-/// limb is encoded as little-endian bytes for keccak compatibility. The MASM `to_account_id`
-/// procedure accepts this format directly. prefix/suffix are *conceptual* 64-bit words; when
-/// converting to [`Felt`], we must ensure `Felt::new(u64)` does not reduce mod p (checked
-/// explicitly in `to_account_id`).
+/// Note: prefix/suffix are *conceptual* 64-bit words; when converting to [`Felt`], we must ensure
+/// `Felt::new(u64)` does not reduce mod p (checked explicitly in `to_account_id`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EthAddressFormat([u8; 20]);
 

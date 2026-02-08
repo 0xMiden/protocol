@@ -52,7 +52,7 @@ proc build_felt
     u32assert2.err=ERR_NOT_U32
     # => [lo_be, hi_be]
 
-    # limbs are little-endian bytes; swap to big-endian numeric before packing
+    # limbs are little-endian bytes; swap to big-endian for building account ID
     exec.swap_u32_bytes
     swap
     exec.swap_u32_bytes
