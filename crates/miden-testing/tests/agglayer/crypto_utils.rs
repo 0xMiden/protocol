@@ -45,7 +45,7 @@ fn merkle_proof_verification_code(
     let mut store_path_source = String::new();
     for height in 0..32 {
         let path_node = merkle_paths.merkle_paths[index * 32 + height].as_str();
-        let smt_node = SmtNode::from(hex_to_bytes(&path_node).unwrap());
+        let smt_node = SmtNode::from(hex_to_bytes(path_node).unwrap());
         let smt_node_elements: [Word; 2] = smt_node
             .to_elements()
             .chunks(4)
