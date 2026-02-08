@@ -94,8 +94,7 @@ impl SequentialCommit for ProofData {
         // Global index (uint256 as 32 bytes)
         elements.extend(self.global_index.to_elements());
 
-        // Exit roots: per-word reversed so that mem_load_double_word's mem_loadw_be
-        // reversal produces natural order matching the calculated root format.
+        // Exit roots: natural LE order, loaded via mem_load_double_word (mem_loadw_le).
         elements.extend(self.mainnet_exit_root.to_elements());
         elements.extend(self.rollup_exit_root.to_elements());
 

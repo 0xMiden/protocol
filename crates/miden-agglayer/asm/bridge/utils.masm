@@ -46,10 +46,10 @@ pub proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 ) -> (DoubleWord, MemoryAddress)
-    dup.8 mem_storew_be swapw
+    dup.8 mem_storew_le swapw
     # => [WORD_2, WORD_1, ptr]
 
-    dup.8 add.4 mem_storew_be swapw
+    dup.8 add.4 mem_storew_le swapw
     # => [WORD_1, WORD_2, ptr]
 end
 
@@ -58,9 +58,9 @@ end
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
 pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
-    padw dup.4 add.4 mem_loadw_be
+    padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
 
-    padw movup.8 mem_loadw_be
+    padw movup.8 mem_loadw_le
     # => [WORD_1, WORD_2]
 end
