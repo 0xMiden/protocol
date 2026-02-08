@@ -11,7 +11,6 @@ use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
-use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
@@ -24,7 +23,6 @@ use super::test_utils::{
     MerkleProofVerificationFile,
     SOLIDITY_MERKLE_PROOF_VECTORS,
     execute_program_with_default_host,
-    keccak_digest_to_word_strings,
 };
 
 // HELPER FUNCTIONS
@@ -80,12 +78,20 @@ fn merkle_proof_verification_code(
     let (root_lo, root_hi) = (root_elements[0], root_elements[1]);
 
     // prepare the leaf for the provided index
-    let leaf = Keccak256Digest::try_from(merkle_paths.leaves[index].as_str()).unwrap();
-    let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
+    let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
+    let leaf_elements: [Word; 2] = leaf
+        .to_elements()
+        .chunks(4)
+        .map(|chunk| Word::new(chunk.try_into().unwrap()))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let (leaf_lo, leaf_hi) = (leaf_elements[0], leaf_elements[1]);
 
     format!(
         r#"
         use miden::agglayer::crypto_utils
+        use miden::core::word
 
         begin
             # store the merkle path to the memory (double word slots from 0 to 248)
@@ -101,7 +107,12 @@ fn merkle_proof_verification_code(
             push.256                          # expected root memory pointer
             push.{index}                      # provided leaf index
             push.0                            # Merkle path memory pointer
-            push.[{leaf_hi}] push.[{leaf_lo}] # provided leaf value
+            # in practice this is never "pushed" to the stack, but rather an output of `get_leaf_value`
+            # which returns the leaf value in LE-felt order
+            push.{leaf_hi}
+            exec.word::reverse
+            push.{leaf_lo}
+            exec.word::reverse
             # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
 
             exec.crypto_utils::verify_merkle_proof
