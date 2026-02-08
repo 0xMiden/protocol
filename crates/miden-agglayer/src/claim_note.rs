@@ -45,18 +45,6 @@ impl Keccak256Output {
         bytes_to_packed_u32_felts(&self.0)
     }
 
-    /// Converts to fully reversed elements for memory storage (used by SMT proof nodes).
-    ///
-    /// `mem_stream` preserves element order from memory, while `loc_loadw_be` (used in
-    /// `calculate_root`) per-word reverses. `keccak256::merge` expects per-word reversed
-    /// input. Fully reversed elements in memory produce per-word reversed format on the
-    /// stack after `mem_stream`'s half-swap, matching `loc_loadw_be`'s output.
-    pub fn to_memory_elements(&self) -> Vec<Felt> {
-        let mut elements = bytes_to_packed_u32_felts(&self.0);
-        elements.reverse();
-        elements
-    }
-
     /// Converts to per-word reversed elements for memory storage (used by exit roots).
     ///
     /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`
@@ -109,11 +97,11 @@ impl SequentialCommit for ProofData {
         // SMT proof nodes: fully reversed so that mem_stream's half-swap produces
         // per-word reversed format matching loc_loadw_be's output for keccak256::merge.
         for node in self.smt_proof_local_exit_root.iter() {
-            elements.extend(node.to_memory_elements());
+            elements.extend(node.to_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            elements.extend(node.to_memory_elements());
+            elements.extend(node.to_elements());
         }
 
         // Global index (uint256 as 32 bytes)

@@ -173,27 +173,25 @@ proc calculate_root(
 
     # Merkle path is guaranteed to contain 32 nodes
     repeat.32
-        # Load the Merkle path node word-by-word using mem_loadw_be (same instruction as
-        # loc_loadw_be for the current hash, ensuring identical element ordering).
-        # Load D from ptr (lower addr → ends up below), then E from ptr+4 (higher addr → on top)
-        # to match the [PATH_NODE_LO, PATH_NODE_HI] layout.
-        # Stack: [merkle_path_ptr, leaf_idx]
-        padw dup.4 mem_loadw_be
-        # => [D, merkle_path_ptr, leaf_idx]
-        dup.4 add.4 padw dup.4 mem_loadw_be movup.4 drop
-        # => [E, D, merkle_path_ptr, leaf_idx]
+        # load the Merkle path node word-by-word
+        # to match the [PATH_NODE_HI, PATH_NODE_LO] layout.
+        padw dup.4 mem_loadw_le
+        # => [PATH_NODE_LO, merkle_path_ptr, leaf_idx]
+        padw dup.8 add.4 mem_loadw_le
+        swapw
+        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
         # advance merkle_path_ptr by 8 (two words = 8 element addresses)
         movup.8 add.8 movdn.8
-        # => [E, D, merkle_path_ptr+8, leaf_idx]
+        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
         # determine whether the last `leaf_idx` bit is 1 (is `leaf_idx` odd)
         dup.9 u32and.1
-        # => [is_odd, E, D, merkle_path_ptr+8, leaf_idx]
+        # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
         # store the is_odd flag to the local memory
         loc_store.8
-        # => [E, D, merkle_path_ptr+8, leaf_idx]
+        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
         # load the hash respective to the current height from the local memory
         padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
