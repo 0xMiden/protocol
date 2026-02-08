@@ -14,7 +14,6 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteExecutionHint,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -45,7 +44,7 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{NetworkAccountTarget, P2idNote};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 

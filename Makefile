@@ -135,6 +135,7 @@ build-no-std-testing: ## Build without the standard library. Includes the `testi
 generate-solidity-test-vectors: ## Regenerate Solidity MMR test vectors using Foundry
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVectors
 	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateCanonicalZeros
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
 
 # --- benchmarking --------------------------------------------------------------------------------
 

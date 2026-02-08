@@ -2,6 +2,8 @@ use miden::agglayer::bridge_out
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::note
+use miden::standards::attachments::network_account_target
 use miden::standards::wallets::basic->basic_wallet
 
 # CONSTANTS
@@ -12,16 +14,18 @@ const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
 # ERRORS
 # =================================================================================================
 const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS="B2AGG script requires exactly 1 note asset"
-
 const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="B2AGG script expects exactly 6 note storage items"
+const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account does not match consuming account"
+
+# NOTE SCRIPT
+# =================================================================================================
 
 #! Bridge-to-AggLayer (B2AGG) note script: bridges assets from Miden to an AggLayer-connected chain.
 #!
 #! This note can be consumed in two ways:
 #! - If the consuming account is the sender (reclaim): the note's assets are added back to the consuming account.
-#! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note, 
+#! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note,
 #!   and the note details are hashed into a leaf and appended to the Local Exit Tree.
-#!   global exit root (GER) merkle tree structure.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -34,10 +38,13 @@ const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="B2AGG script expects exactly
 #!   - destination_address_2: bytes 8-11
 #!   - destination_address_3: bytes 12-15
 #!   - destination_address_4: bytes 16-19
+#! Note attachment is constructed from a NetworkAccountTarget standard:
+#! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
 #!
 #! Panics if:
 #! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
+#! - The note attachment does not target the consuming account.
 #!
 begin
     dropw
@@ -58,6 +65,11 @@ begin
         exec.basic_wallet::add_assets_to_account
         # => [pad(16)]
     else
+        # Ensure note attachment targets the consuming bridge account.
+        exec.network_account_target::active_account_matches_target_account
+        assert.err=ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
+        # => [pad(16)]
+
         # Store note storage -> mem[8..14]
         push.8 exec.active_note::get_storage
         # => [num_storage_items, dest_ptr, pad(16)]

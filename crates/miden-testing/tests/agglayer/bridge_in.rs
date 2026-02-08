@@ -10,10 +10,10 @@ use miden_agglayer::{
     LeafData,
     OutputNoteData,
     ProofData,
+    UpdateGerNote,
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
-    create_update_ger_note,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
@@ -157,7 +157,8 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let ger = ExitRoot::from(global_exit_root);
 
-    let update_ger_note = create_update_ger_note(ger, bridge_account.id(), builder.rng_mut())?;
+    let update_ger_note =
+        UpdateGerNote::create(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS

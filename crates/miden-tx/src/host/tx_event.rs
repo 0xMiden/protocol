@@ -234,42 +234,17 @@ impl TransactionEvent {
 
                 Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
             },
-            TransactionEventId::AccountVaultBeforeGetBalance => {
+            TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
-                // [event, faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-                let stack_top = process.get_stack_word_be(1);
-                let faucet_id =
-                    AccountId::try_from([stack_top[3], stack_top[2]]).map_err(|err| {
-                        TransactionKernelError::other_with_source(
-                            "failed to convert faucet ID word into faucet ID",
-                            err,
-                        )
-                    })?;
-                let vault_root_ptr = stack_top[1];
-                let vault_root = process.get_vault_root(vault_root_ptr)?;
-
-                let vault_key = AssetVaultKey::from_account_id(faucet_id).ok_or_else(|| {
-                    TransactionKernelError::other(format!(
-                        "provided faucet ID {faucet_id} is not valid for fungible assets"
-                    ))
-                })?;
-
-                on_account_vault_asset_accessed(base_host, process, vault_key, vault_root)?
-            },
-            TransactionEventId::AccountVaultBeforeHasNonFungibleAsset => {
-                // Expected stack state: [event, ASSET, vault_root_ptr]
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|err| {
-                    TransactionKernelError::other_with_source(
-                        "provided asset is not a valid asset",
-                        err,
-                    )
-                })?;
-
+                // [event, ASSET_KEY, vault_root_ptr]
+                let asset_key = process.get_stack_word_be(1);
                 let vault_root_ptr = process.get_stack_item(5);
+
+                // TODO(expand_assets): Consider whether validation is necessary.
+                let asset_key = AssetVaultKey::new_unchecked(asset_key);
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset.vault_key(), vault_root)?
+                on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,

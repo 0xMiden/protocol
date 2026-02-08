@@ -1,5 +1,9 @@
 use miden::agglayer::bridge_in
 use miden::protocol::active_note
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::protocol::note
+use miden::standards::attachments::network_account_target
 
 # CONSTANTS
 # =================================================================================================
@@ -10,6 +14,10 @@ const STORAGE_PTR_GER_UPPER = 4
 # ERRORS
 # =================================================================================================
 const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "UPDATE_GER script expects exactly 8 note storage items"
+const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment target account does not match consuming account"
+
+# NOTE SCRIPT
+# =================================================================================================
 
 #! Agglayer Bridge UPDATE_GER script: updates the GER by calling the bridge_in::update_ger function.
 #!
@@ -32,6 +40,13 @@ const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS = "UPDATE_GER script exp
 begin
     dropw
     # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # proceed with the GER update logic
 
     push.STORAGE_PTR_GER_LOWER exec.active_note::get_storage
     # => [num_storage_items, dest_ptr, pad(16)]

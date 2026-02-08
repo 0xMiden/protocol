@@ -3,11 +3,12 @@ use alloc::string::ToString;
 
 use miden_agglayer::agglayer_library;
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
-use miden_protocol::Felt;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
 use serde::Deserialize;
+
+use super::test_utils::keccak_digest_to_word_strings;
 
 // KECCAK MMR FRONTIER
 // ================================================================================================
@@ -220,17 +221,6 @@ fn test_solidity_mmr_frontier_compatibility() {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
-fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
-    let double_word = (*digest)
-        .chunks(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
-        .rev()
-        .collect::<Vec<_>>();
-
-    (double_word[0..4].join(", "), double_word[4..8].join(", "))
-}
 
 fn leaf_assertion_code(
     leaf: Keccak256Digest,

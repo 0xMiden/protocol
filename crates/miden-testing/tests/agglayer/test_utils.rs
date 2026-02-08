@@ -5,9 +5,21 @@ use alloc::vec::Vec;
 
 use miden_agglayer::agglayer_library;
 use miden_core_lib::CoreLibrary;
+use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
+
+/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
+pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
+    let double_word = (*digest)
+        .chunks(4)
+        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
+        .rev()
+        .collect::<Vec<_>>();
+
+    (double_word[0..4].join(", "), double_word[4..8].join(", "))
+}
 
 /// Execute a program with default host and optional advice inputs
 pub async fn execute_program_with_default_host(
@@ -80,9 +92,9 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
     let global_index = [0u32, 0, 0, 0, 0, 1, 0, 2];
 
     let mainnet_exit_root: [u8; 32] = [
-        0x98, 0xc9, 0x11, 0xb6, 0xdc, 0xfa, 0xce, 0x93, 0xfd, 0x0b, 0xb4, 0x90, 0xd0, 0x93, 0x90,
-        0xf2, 0xf7, 0xf9, 0xfc, 0xf3, 0x6f, 0xc2, 0x08, 0xcb, 0xb3, 0x65, 0x28, 0xa2, 0x29, 0x29,
-        0x83, 0x26,
+        0x7e, 0x3b, 0xd3, 0xe3, 0x04, 0xb4, 0x64, 0x1f, 0xd1, 0x53, 0x2f, 0x47, 0xfa, 0xc9, 0x56,
+        0xe4, 0x13, 0x03, 0x47, 0x02, 0x0f, 0x08, 0xa3, 0x72, 0xa2, 0x57, 0xf2, 0x82, 0x1f, 0x63,
+        0x8a, 0x60,
     ];
 
     let rollup_exit_root: [u8; 32] = [
@@ -91,11 +103,15 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
         0x2d, 0x70,
     ];
 
-    let global_exit_root: [u8; 32] = [
-        0x20, 0x7f, 0x0b, 0x7d, 0xb4, 0x88, 0xbb, 0xc4, 0x23, 0xfc, 0x3d, 0x12, 0xdb, 0x21, 0xb9,
-        0x7e, 0x57, 0x44, 0x53, 0xe1, 0x2b, 0x49, 0xca, 0x21, 0x20, 0x51, 0x81, 0xaf, 0x67, 0x7d,
-        0x7b, 0x04,
-    ];
+    // Global Exit Root (GER) is computed as keccak256(mainnet_exit_root || rollup_exit_root).
+    let global_exit_root: [u8; 32] = {
+        let mut exit_roots = [0u8; 64];
+        exit_roots[..32].copy_from_slice(&mainnet_exit_root);
+        exit_roots[32..].copy_from_slice(&rollup_exit_root);
+        (&*Keccak256::hash(&exit_roots))
+            .try_into()
+            .expect("keccak digest should be 32 bytes")
+    };
 
     let origin_network = 1u32;
 

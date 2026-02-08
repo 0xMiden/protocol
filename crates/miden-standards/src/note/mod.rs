@@ -14,6 +14,9 @@ use crate::account::wallets::BasicWallet;
 mod burn;
 pub use burn::BurnNote;
 
+mod execution_hint;
+pub use execution_hint::NoteExecutionHint;
+
 mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 

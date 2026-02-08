@@ -6,10 +6,9 @@ use miden_protocol::note::{
     NoteAttachmentContent,
     NoteAttachmentKind,
     NoteAttachmentScheme,
-    NoteExecutionHint,
 };
 
-use crate::note::StandardNoteAttachment;
+use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 
 // NETWORK ACCOUNT TARGET
 // ================================================================================================

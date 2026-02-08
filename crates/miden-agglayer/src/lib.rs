@@ -24,12 +24,14 @@ use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::NetworkFungibleFaucet;
 use miden_utils_sync::LazyLock;
 
+pub mod b2agg_note;
 pub mod claim_note;
 pub mod errors;
 pub mod eth_types;
 pub mod update_ger_note;
 pub mod utils;
 
+pub use b2agg_note::B2AggNote;
 pub use claim_note::{
     ClaimNoteStorage,
     ExitRoot,
@@ -40,21 +42,10 @@ pub use claim_note::{
     create_claim_note,
 };
 pub use eth_types::{EthAddressFormat, EthAmount, EthAmountError};
-pub use update_ger_note::create_update_ger_note;
+pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS
 // ================================================================================================
-
-// Initialize the B2AGG note script only once
-static B2AGG_SCRIPT: LazyLock<Program> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    Program::read_from_bytes(bytes).expect("Shipped B2AGG script is well-formed")
-});
-
-/// Returns the B2AGG (Bridge to AggLayer) note script.
-pub fn b2agg_script() -> Program {
-    B2AGG_SCRIPT.clone()
-}
 
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
@@ -66,19 +57,6 @@ static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 /// Returns the CLAIM (Bridge from AggLayer) note script.
 pub fn claim_script() -> NoteScript {
     CLAIM_SCRIPT.clone()
-}
-
-// Initialize the UPDATE_GER note script only once
-static UPDATE_GER_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/UPDATE_GER.masb"));
-    let program =
-        Program::read_from_bytes(bytes).expect("Shipped UPDATE_GER script is well-formed");
-    NoteScript::new(program)
-});
-
-/// Returns the UPDATE_GER note script.
-pub fn update_ger_script() -> NoteScript {
-    UPDATE_GER_SCRIPT.clone()
 }
 
 // AGGLAYER ACCOUNT COMPONENTS
@@ -270,15 +248,20 @@ pub fn create_agglayer_faucet_component(
 pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let ger_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger")
         .expect("Bridge storage slot name should be valid");
-    let bridge_storage_slots = vec![StorageSlot::with_empty_map(ger_storage_slot_name)];
+    let bridge_in_storage_slots = vec![StorageSlot::with_empty_map(ger_storage_slot_name)];
 
-    let bridge_in_comp = bridge_in_component(bridge_storage_slots);
-    let bridge_out_comp = bridge_out_component(vec![]);
+    let bridge_in_component = bridge_in_component(bridge_in_storage_slots);
 
+    // Create the "bridge_out" component
+    let let_storage_slot_name = StorageSlotName::new("miden::agglayer::let").unwrap();
+    let bridge_out_storage_slots = vec![StorageSlot::with_empty_map(let_storage_slot_name)];
+    let bridge_out_component = bridge_out_component(bridge_out_storage_slots);
+
+    // Combine the components into a single account(builder)
     Account::builder(seed.into())
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(bridge_in_comp)
-        .with_component(bridge_out_comp)
+        .storage_mode(AccountStorageMode::Network)
+        .with_component(bridge_out_component)
+        .with_component(bridge_in_component)
 }
 
 /// Creates a new bridge account with the standard configuration.
