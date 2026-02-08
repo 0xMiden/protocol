@@ -117,16 +117,7 @@ pub proc verify_merkle_proof(
     # => [CALCULATED_ROOT_LO, CALCULATED_ROOT_HI, expected_root_ptr]
 
     # load the expected root onto the stack
-    movup.8
-
-    # TODO replace with mem_load_double_word once everything moves to LE
-    padw dup.4 add.4 mem_loadw_le
-    # => [WORD_2, ptr]
-
-    padw movup.8 mem_loadw_le
-    # => [WORD_1, WORD_2]
-    # END TODO
-
+    movup.8 exec.utils::mem_load_double_word
     # => [EXPECTED_ROOT_LO, EXPECTED_ROOT_HI, CALCULATED_ROOT_LO, CALCULATED_ROOT_HI]
 
     # assert the roots are equal

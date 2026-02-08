@@ -101,41 +101,42 @@ const ZERO_30_R = [1078065138, 2904706143, 1223587258, 1350312851]
 const ZERO_31_L = [2840985724, 1653344606, 4049365781, 2389186238]
 const ZERO_31_R = [3759582231, 2660540036, 1648733876, 2340505732]
 
+use ::miden::agglayer::mmr_frontier32_keccak::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
 pub proc load_zeros_to_memory
-	push.ZERO_0_L.ZERO_0_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_1_L.ZERO_1_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_2_L.ZERO_2_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_3_L.ZERO_3_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_4_L.ZERO_4_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_5_L.ZERO_5_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_6_L.ZERO_6_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_7_L.ZERO_7_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_8_L.ZERO_8_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_9_L.ZERO_9_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_10_L.ZERO_10_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_11_L.ZERO_11_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_12_L.ZERO_12_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_13_L.ZERO_13_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_14_L.ZERO_14_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_15_L.ZERO_15_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_16_L.ZERO_16_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_17_L.ZERO_17_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_18_L.ZERO_18_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_19_L.ZERO_19_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_20_L.ZERO_20_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_21_L.ZERO_21_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_22_L.ZERO_22_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_23_L.ZERO_23_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_24_L.ZERO_24_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_25_L.ZERO_25_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_26_L.ZERO_26_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_27_L.ZERO_27_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_28_L.ZERO_28_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_29_L.ZERO_29_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_30_L.ZERO_30_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
-	push.ZERO_31_L.ZERO_31_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8
+	push.ZERO_0_L.ZERO_0_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_1_L.ZERO_1_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_2_L.ZERO_2_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_3_L.ZERO_3_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_4_L.ZERO_4_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_5_L.ZERO_5_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_6_L.ZERO_6_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_7_L.ZERO_7_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_8_L.ZERO_8_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_9_L.ZERO_9_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_10_L.ZERO_10_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_11_L.ZERO_11_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_12_L.ZERO_12_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_13_L.ZERO_13_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_14_L.ZERO_14_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_15_L.ZERO_15_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_16_L.ZERO_16_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_17_L.ZERO_17_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_18_L.ZERO_18_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_19_L.ZERO_19_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_20_L.ZERO_20_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_21_L.ZERO_21_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_22_L.ZERO_22_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_23_L.ZERO_23_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_24_L.ZERO_24_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_25_L.ZERO_25_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_26_L.ZERO_26_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_27_L.ZERO_27_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_28_L.ZERO_28_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_29_L.ZERO_29_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_30_L.ZERO_30_R exec.mem_store_double_word dropw dropw add.8
+	push.ZERO_31_L.ZERO_31_R exec.mem_store_double_word dropw dropw add.8
 	drop
 end

@@ -1,5 +1,7 @@
 use miden::core::crypto::hashes::keccak256
 use ::miden::agglayer::canonical_zeros::load_zeros_to_memory
+use ::miden::agglayer::utils::mem_store_double_word
+use ::miden::agglayer::utils::mem_load_double_word
 
 # An MMR Frontier is a data structure based on an MMR, which combines some features of an MMR and an
 # SMT.
@@ -192,16 +194,11 @@ pub proc append_and_update_frontier
             #
             # this height already had a subtree root stored in frontier[curr_tree_height], merge
             # into parent.
-
-            # TODO replace with mem_load_double_word once everything moves to LE
-            padw dup.4 mem_loadw_le
-            # => [FRONTIER[curr_tree_height]_LO, frontier_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr]
-
-            padw movup.8 add.4 mem_loadw_le
-            swapw
-            # => [FRONTIER[curr_tree_height]_LO, FRONTIER[curr_tree_height]_HI, curr_tree_height, 
-            #     num_leaves, mmr_frontier_ptr]
-            # END TODO
+            exec.mem_load_double_word
+            # => [
+            #     FRONTIER[curr_tree_height]_LO, FRONTIER[curr_tree_height]_HI, curr_tree_height, 
+            #     num_leaves, mmr_frontier_ptr
+            #    ]
 
             # load the current hash from the local memory back to the stack
             #
@@ -236,11 +233,7 @@ pub proc append_and_update_frontier
             #    ]
 
             # store the CUR_HASH to the frontier[curr_tree_height]_ptr
-            # TODO replace with mem_store_double_word once everything moves to LE
-            dup.8 mem_storew_le swapw
-            dup.8 add.4 mem_storew_le swapw
-            movup.8 drop
-            # END TODO
+            exec.mem_store_double_word movup.8 drop
             # => [CUR_HASH_LO, CUR_HASH_HI, curr_tree_height, num_leaves, mmr_frontier_ptr]
 
             # get the pointer to the canonical zero node of the current height
@@ -251,12 +244,7 @@ pub proc append_and_update_frontier
             #    ]
 
             # load the zero node to the stack
-            # TODO replace with mem_load_double_word once everything moves to LE
-            padw dup.4 mem_loadw_le
-            padw movup.8 add.4 mem_loadw_le
-            swapw
-            # END TODO
-            swapdw
+            exec.mem_load_double_word swapdw
             # => [
             #     CUR_HASH_LO, CUR_HASH_HI, ZERO_H_LO, ZERO_H_HI, curr_tree_height, num_leaves, 
             #     mmr_frontier_ptr

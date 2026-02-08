@@ -287,6 +287,7 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
+use ::miden::agglayer::mmr_frontier32_keccak::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []
@@ -294,7 +295,7 @@ pub proc load_zeros_to_memory\n",
     );
 
     for zero_index in 0..32 {
-        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_L.ZERO_{zero_index}_R dup.8 mem_storew_le swapw dup.8 add.4 mem_storew_le swapw dropw dropw add.8\n"));
+        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_L.ZERO_{zero_index}_R exec.mem_store_double_word dropw dropw add.8\n"));
     }
 
     zero_constants.push_str("\tdrop\nend\n");
