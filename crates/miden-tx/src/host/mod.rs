@@ -9,7 +9,10 @@ pub use link_map::{LinkMap, MemoryViewer};
 mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
+mod core_lib_overrides;
+
 pub(crate) mod note_builder;
+use core_lib_overrides::override_core_lib_handlers;
 use miden_protocol::CoreLibrary;
 use miden_protocol::vm::EventId;
 use note_builder::OutputNoteBuilder;
@@ -28,15 +31,10 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    EventError,
-    EventHandlerRegistry,
-    Felt,
-    MastForest,
-    MastForestStore,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::mast::MastForest;
+use miden_processor::{Felt, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -125,6 +123,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
                     .register(event_id, handler)
                     .expect("There are no duplicates in the core library handlers");
             }
+            override_core_lib_handlers(&mut registry);
             registry
         };
         Self {
@@ -269,7 +268,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns `Some` if the event was handled, `None` otherwise.
     pub fn handle_core_lib_events(
         &self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
         if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
@@ -309,7 +308,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_stack([Felt::new(u64::from(proc_idx))])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.

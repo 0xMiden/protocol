@@ -41,7 +41,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from([
             Felt::new(FUNGIBLE_ASSET_AMOUNT),
             Felt::new(0),
@@ -80,7 +80,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
-    assert_eq!(exec_output.get_stack_word_be(0), Word::from(non_fungible_asset));
+    assert_eq!(exec_output.get_stack_word_le(0), Word::from(non_fungible_asset));
 
     Ok(())
 }
@@ -109,6 +109,6 @@ async fn test_validate_non_fungible_asset() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset);
+    assert_eq!(exec_output.get_stack_word_le(0), non_fungible_asset);
     Ok(())
 }

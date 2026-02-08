@@ -204,7 +204,7 @@ impl<T: Serializable> Serializable for InputNotes<T> {
 impl<T: Deserializable + ToInputNoteCommitments> Deserializable for InputNotes<T> {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_notes = source.read_u16()?;
-        let notes = source.read_many::<T>(num_notes.into())?;
+        let notes = source.read_many_iter::<T>(num_notes.into())?.collect::<Result<Vec<_>, _>>()?;
         Self::new(notes).map_err(|err| DeserializationError::InvalidValue(format!("{err}")))
     }
 }

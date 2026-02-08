@@ -13,7 +13,7 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_core::crypto::random::RpoRandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -308,7 +308,7 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let max_supply_felt: Felt = max_supply.into();
+        let max_supply_felt = Felt::new(max_supply);
         let basic_faucet =
             BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply_felt)
                 .context("failed to create BasicFungibleFaucet")?;

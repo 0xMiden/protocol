@@ -335,8 +335,9 @@ where
                 .await
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
-        let processor =
-            FastProcessor::new_with_advice_inputs(stack_inputs.as_slice(), advice_inputs);
+        let processor = FastProcessor::new(stack_inputs)
+            .with_advice(advice_inputs)
+            .with_options(self.0.exec_options);
         let result = processor
             .execute(&TransactionKernel::main(), &mut host)
             .await

@@ -295,7 +295,8 @@ impl Deserializable for AccountStorageDelta {
         let num_maps = source.read_u8()? as usize;
         deltas.extend(
             source
-                .read_many::<(StorageSlotName, StorageMapDelta)>(num_maps)?
+                .read_many_iter::<(StorageSlotName, StorageMapDelta)>(num_maps)?
+                .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .map(|(slot_name, map_delta)| (slot_name, StorageSlotDelta::Map(map_delta))),
         );

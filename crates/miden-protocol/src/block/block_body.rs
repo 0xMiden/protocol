@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_core::Word;
-use miden_core::utils::{
+use miden_crypto::utils::{
     ByteReader,
     ByteWriter,
     Deserializable,

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_processor::AdviceMutation;
+use miden_processor::advice::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
 use crate::asset::AssetWitness;
@@ -150,7 +150,7 @@ impl TransactionAdviceInputs {
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
     ///     kernel_version
-    ///     [account_id, 0, 0, account_nonce],
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
     ///     ACCOUNT_VAULT_ROOT,
     ///     ACCOUNT_STORAGE_COMMITMENT,
     ///     ACCOUNT_CODE_COMMITMENT,
@@ -172,14 +172,14 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.validator_key().to_commitment());
         self.extend_stack([
             header.block_num().into(),
-            header.version().into(),
-            header.timestamp().into(),
+            Felt::new(u64::from(header.version())),
+            Felt::new(u64::from(header.timestamp())),
             ZERO,
         ]);
         self.extend_stack([
             header.fee_parameters().native_asset_id().suffix(),
             header.fee_parameters().native_asset_id().prefix().as_felt(),
-            header.fee_parameters().verification_base_fee().into(),
+            Felt::new(u64::from(header.fee_parameters().verification_base_fee())),
             ZERO,
         ]);
         self.extend_stack([ZERO, ZERO, ZERO, ZERO]);
@@ -187,18 +187,19 @@ impl TransactionAdviceInputs {
 
         // --- core account items (keep in sync with process_account_data) ----
         let account = tx_inputs.account();
+        // [account_nonce, 0, account_id_suffix, account_id_prefix]
         self.extend_stack([
+            account.nonce(),
+            ZERO,
             account.id().suffix(),
             account.id().prefix().as_felt(),
-            ZERO,
-            account.nonce(),
         ]);
         self.extend_stack(account.vault().root());
         self.extend_stack(account.storage().commitment());
         self.extend_stack(account.code().commitment());
 
         // --- number of notes, script root and args --------------------------
-        self.extend_stack([Felt::from(tx_inputs.input_notes().num_notes())]);
+        self.extend_stack([Felt::new(u64::from(tx_inputs.input_notes().num_notes()))]);
         let tx_args = tx_inputs.tx_args();
         self.extend_stack(tx_args.tx_script().map_or(Word::empty(), |script| script.root()));
         self.extend_stack(tx_args.tx_script_args());
@@ -276,13 +277,20 @@ impl TransactionAdviceInputs {
 
         // populate Merkle store and advice map with nodes info needed to access storage map entries
         self.extend_merkle_store(account.storage().inner_nodes());
-        self.extend_map(account.storage().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account
+                .storage()
+                .leaves()
+                .map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
 
         // --- account vault ------------------------------------------------------
 
         // populate Merkle store and advice map with nodes info needed to access vault assets
         self.extend_merkle_store(account.vault().inner_nodes());
-        self.extend_map(account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
     }
 
     /// Adds an account witness to the advice inputs.
@@ -292,7 +300,7 @@ impl TransactionAdviceInputs {
     fn add_account_witness(&mut self, witness: &AccountWitness) {
         // populate advice map with the account's leaf
         let leaf = witness.leaf();
-        self.add_map_entry(leaf.hash(), leaf.to_elements());
+        self.add_map_entry(leaf.hash(), leaf.to_elements().collect());
 
         // extend the merkle store and map with account witnesses merkle path
         self.extend_merkle_store(witness.authenticated_nodes());
@@ -303,7 +311,7 @@ impl TransactionAdviceInputs {
         self.extend_merkle_store(witness.authenticated_nodes());
 
         let smt_proof = SmtProof::from(witness);
-        self.extend_map([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements())]);
+        self.extend_map([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements().collect())]);
     }
 
     // NOTE INJECTION
@@ -350,8 +358,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
             note_data.extend(Word::from(note.metadata()));
-            note_data.push(recipient.inputs().num_values().into());
-            note_data.push((assets.num_assets() as u32).into());
+            note_data.push(Felt::new(u64::from(recipient.inputs().num_values())));
+            note_data.push(Felt::new(assets.num_assets() as u64));
             note_data.extend(assets.to_padded_assets());
 
             // authentication vs unauthenticated
@@ -373,10 +381,10 @@ impl TransactionAdviceInputs {
                             .expect("block not found in partial blockchain")
                     };
 
-                    note_data.push(block_num.into());
+                    note_data.push(Felt::from(block_num));
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
-                    note_data.push(proof.location().node_index_in_block().into());
+                    note_data.push(Felt::new(u64::from(proof.location().node_index_in_block())));
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag
@@ -415,7 +423,7 @@ impl TransactionAdviceInputs {
     /// - the seed for native accounts is stored.
     /// - the account header for foreign accounts is stored.
     fn account_id_map_key(id: AccountId) -> Word {
-        Word::from([id.suffix(), id.prefix().as_felt(), ZERO, ZERO])
+        Word::from([ZERO, ZERO, id.suffix(), id.prefix().as_felt()])
     }
 }
 

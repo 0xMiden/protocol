@@ -180,7 +180,7 @@ Example:
 #!   Operand stack: []
 #!   Advice stack: [VALUE_A, [VALUE_B]]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id, 0, 0, account_nonce], VAULT_ROOT, STORAGE_ROOT, 
+#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce], VAULT_ROOT, STORAGE_ROOT, 
 #!                          CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]

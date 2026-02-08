@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
+
 use crate::account::account_id::AccountIdVersion;
 use crate::account::account_id::v0::{compute_digest, validate_prefix};
 use crate::account::{AccountStorageMode, AccountType};
@@ -53,7 +55,7 @@ fn compute_account_seed_single(
         // the most significant bit of the suffix must be zero to ensure felt validity.
         let prefix = current_digest.as_elements()[0];
         let suffix = current_digest.as_elements()[1];
-        let is_suffix_msb_zero = suffix.as_int() >> 63 == 0;
+        let is_suffix_msb_zero = suffix.as_canonical_u64() >> 63 == 0;
 
         if let Ok((computed_account_type, computed_storage_mode, computed_version)) =
             validate_prefix(prefix)

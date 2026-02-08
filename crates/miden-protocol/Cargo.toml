@@ -24,6 +24,7 @@ default = ["std"]
 std = [
   "dep:serde",
   "dep:toml",
+  "miden-air/std",
   "miden-assembly/std",
   "miden-core/std",
   "miden-crypto/concurrent",
@@ -35,6 +36,7 @@ testing = ["dep:miden-test-utils", "dep:rand_chacha", "dep:rand_xoshiro", "miden
 
 [dependencies]
 # Miden dependencies
+miden-air             = { default-features = false, workspace = true }
 miden-assembly        = { workspace = true }
 miden-assembly-syntax = { workspace = true }
 miden-core            = { workspace = true }
@@ -43,7 +45,7 @@ miden-crypto          = { workspace = true }
 miden-mast-package    = { workspace = true }
 miden-processor       = { workspace = true }
 miden-protocol-macros = { workspace = true }
-miden-test-utils      = { branch = "next", git = "https://github.com/0xPolygonMiden/miden-vm", optional = true }
+miden-test-utils      = { branch = "next", git = "https://github.com/0xMiden/miden-vm", optional = true }
 miden-utils-sync      = { workspace = true }
 miden-verifier        = { workspace = true }
 
@@ -72,7 +74,6 @@ tempfile       = { version = "3.19" }
 winter-air     = { version = "0.13" }
 # for HashFunction/ExecutionProof::new_dummy
 color-eyre = { version = "0.5" }
-miden-air  = { default-features = false, features = ["std", "testing"], workspace = true }
 
 [build-dependencies]
 fs-err         = { version = "3" }

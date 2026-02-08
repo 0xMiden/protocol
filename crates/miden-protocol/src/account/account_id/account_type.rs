@@ -62,7 +62,7 @@ impl rand::distr::Distribution<AccountType> for rand::distr::StandardUniform {
 // ================================================================================================
 
 impl Serializable for AccountType {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         target.write_u8(*self as u8);
     }
 }

@@ -1,6 +1,6 @@
-use miden_processor::DeserializationError;
 use miden_protocol::note::{Note, NoteId, NoteInclusionProof, NoteMetadata};
 use miden_protocol::transaction::InputNote;
+use miden_protocol::utils::DeserializationError;
 use miden_tx::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 
 // MOCK CHAIN NOTE

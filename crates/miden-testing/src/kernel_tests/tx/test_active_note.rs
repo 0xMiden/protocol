@@ -200,7 +200,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
             code += &format!(
                 "
                 # assert the asset is correct
-                dup padw movup.4 mem_loadw_be push.{asset} assert_eqw push.4 add
+                dup padw movup.4 mem_loadw_le push.{asset} assert_eqw push.4 add
                 ",
                 asset = Word::from(asset)
             );
@@ -326,7 +326,7 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
                 r#"
                 # assert the inputs are correct
                 # => [dest_ptr]
-                dup padw movup.4 mem_loadw_be push.{inputs_word} assert_eqw.err="inputs are incorrect"
+                dup padw movup.4 mem_loadw_le push.{inputs_word} assert_eqw.err="inputs are incorrect"
                 # => [dest_ptr]
 
                 push.4 add
@@ -499,7 +499,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let serial_number = tx_context.input_notes().get_note(0).note().serial_num();
-    assert_eq!(exec_output.get_stack_word_be(0), serial_number);
+    assert_eq!(exec_output.get_stack_word_le(0), serial_number);
     Ok(())
 }
 
@@ -538,6 +538,6 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
-    assert_eq!(exec_output.get_stack_word_be(0), script_root);
+    assert_eq!(exec_output.get_stack_word_le(0), script_root);
     Ok(())
 }

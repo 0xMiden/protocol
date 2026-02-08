@@ -358,7 +358,8 @@ impl Deserializable for FungibleAssetDelta {
         //   We should update this code (and serialization as well) once it support signeds
         // integers.
         let map = source
-            .read_many::<(AccountId, u64)>(num_fungible_assets)?
+            .read_many_iter::<(AccountId, u64)>(num_fungible_assets)?
+            .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
             .collect();

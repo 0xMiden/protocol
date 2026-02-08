@@ -110,7 +110,7 @@ begin
     # => [inputs_ptr]
 
     # read the reclaim block height, timelock_block_height, and target account ID from the note inputs
-    mem_loadw_be
+    mem_loadw_le
     # => [timelock_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
 
     # read the current block number

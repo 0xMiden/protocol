@@ -1,6 +1,8 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
+
 use crate::block::BlockNumber;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
@@ -273,7 +275,7 @@ impl NullifierBlock {
     /// - The 0th element in the word is not a valid [BlockNumber].
     /// - Any of the remaining elements is non-zero.
     pub fn new(word: Word) -> Result<Self, NullifierTreeError> {
-        let block_num = u32::try_from(word[0].as_int())
+        let block_num = u32::try_from(word[0].as_canonical_u64())
             .map(BlockNumber::from)
             .map_err(|_| NullifierTreeError::InvalidNullifierBlockNumber(word))?;
 

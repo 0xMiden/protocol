@@ -1,3 +1,4 @@
+use miden_core::field::PrimeField64;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -98,9 +99,9 @@ impl BasicFungibleFaucet {
                 actual: decimals as u64,
                 max: Self::MAX_DECIMALS,
             });
-        } else if max_supply.as_int() > FungibleAsset::MAX_AMOUNT {
+        } else if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
             return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_int(),
+                actual: max_supply.as_canonical_u64(),
                 max: FungibleAsset::MAX_AMOUNT,
             });
         }
@@ -137,9 +138,9 @@ impl BasicFungibleFaucet {
                 // verify metadata values
                 let token_symbol = TokenSymbol::try_from(token_symbol)
                     .map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-                let decimals = decimals.as_int().try_into().map_err(|_| {
+                let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
                     FungibleFaucetError::TooManyDecimals {
-                        actual: decimals.as_int(),
+                        actual: decimals.as_canonical_u64(),
                         max: Self::MAX_DECIMALS,
                     }
                 })?;
@@ -189,8 +190,12 @@ impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
         // Note: data is stored as [a0, a1, a2, a3] but loaded onto the stack as
         // [a3, a2, a1, a0, ...]
-        let metadata =
-            Word::new([faucet.max_supply, Felt::from(faucet.decimals), faucet.symbol.into(), ZERO]);
+        let metadata = Word::new([
+            faucet.max_supply,
+            Felt::new(u64::from(faucet.decimals)),
+            faucet.symbol.into(),
+            ZERO,
+        ]);
         let storage_slot =
             StorageSlot::with_value(BasicFungibleFaucet::metadata_slot().clone(), metadata);
 

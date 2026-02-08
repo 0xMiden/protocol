@@ -65,15 +65,15 @@ impl From<AccountCode> for AccountCodeHeader {
 }
 
 impl Serializable for AccountCodeHeader {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         target.write(&self.procedures);
     }
 }
 
 impl Deserializable for AccountCodeHeader {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let procedures: Vec<AccountProcedureInfo> = source.read()?;
         let commitment = build_procedure_commitment(&procedures);
 

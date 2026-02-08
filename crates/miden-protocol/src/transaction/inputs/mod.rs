@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_core::utils::{Deserializable, Serializable};
+use miden_crypto::utils::{Deserializable, Serializable};
 
 use super::PartialBlockchain;
 use crate::TransactionInputError;
@@ -15,7 +15,7 @@ mod account;
 pub use account::AccountInputs;
 
 mod notes;
-use miden_processor::AdviceInputs;
+use miden_core::advice::AdviceInputs;
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
 
 // TRANSACTION INPUTS
@@ -223,7 +223,7 @@ impl TransactionInputs {
 }
 
 impl Serializable for TransactionInputs {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
         self.blockchain.write_into(target);
@@ -236,9 +236,9 @@ impl Serializable for TransactionInputs {
 }
 
 impl Deserializable for TransactionInputs {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_core::utils::DeserializationError> {
+    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;

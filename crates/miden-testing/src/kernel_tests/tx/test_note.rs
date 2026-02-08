@@ -2,13 +2,14 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use anyhow::Context;
+use miden_core::field::PrimeField64;
 use miden_processor::fast::ExecutionOutput;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::miette::{self, miette};
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
@@ -73,7 +74,7 @@ async fn test_note_setup() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
             exec.note::prepare_note
             # => [note_script_root_ptr, NOTE_ARGS, pad(11), pad(16)]
-            padw movup.4 mem_loadw_be
+            padw movup.4 mem_loadw_le
             # => [SCRIPT_ROOT, NOTE_ARGS, pad(11), pad(16)]
 
             # truncate the stack
@@ -161,8 +162,8 @@ async fn test_note_script_and_note_args() -> miette::Result<()> {
     tx_context.set_tx_args(tx_args);
     let exec_output = tx_context.execute_code(code).await.unwrap();
 
-    assert_eq!(exec_output.get_stack_word_be(0), note_args[0]);
-    assert_eq!(exec_output.get_stack_word_be(4), note_args[1]);
+    assert_eq!(exec_output.get_stack_word_le(0), note_args[0]);
+    assert_eq!(exec_output.get_stack_word_le(4), note_args[1]);
 
     Ok(())
 }
@@ -183,7 +184,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
     // assert that the correct pointer is stored in bookkeeping memory
     assert_eq!(
         exec_output.get_kernel_mem_word(ACTIVE_INPUT_NOTE_PTR)[0],
-        Felt::from(input_note_data_ptr(0))
+        Felt::new(u64::from(input_note_data_ptr(0)))
     );
 }
 
@@ -210,10 +211,10 @@ async fn test_build_recipient() -> anyhow::Result<()> {
 
         begin
             # put the values that will be hashed into the memory
-            push.{word_1} push.{base_addr} mem_storew_be dropw
-            push.{word_2} push.{addr_1} mem_storew_be dropw
-            push.{word_3} push.{addr_2} mem_storew_be dropw
-            push.{word_4} push.{addr_3} mem_storew_be dropw
+            push.{word_1} push.{base_addr} mem_storew_le dropw
+            push.{word_2} push.{addr_1} mem_storew_le dropw
+            push.{word_3} push.{addr_2} mem_storew_le dropw
+            push.{word_4} push.{addr_3} mem_storew_le dropw
 
             # Test with 4 values
             push.{script_root}  # SCRIPT_ROOT
@@ -299,10 +300,10 @@ async fn test_compute_inputs_commitment() -> anyhow::Result<()> {
 
         begin
             # put the values that will be hashed into the memory
-            push.{word_1} push.{base_addr} mem_storew_be dropw
-            push.{word_2} push.{addr_1} mem_storew_be dropw
-            push.{word_3} push.{addr_2} mem_storew_be dropw
-            push.{word_4} push.{addr_3} mem_storew_be dropw
+            push.{word_1} push.{base_addr} mem_storew_le dropw
+            push.{word_2} push.{addr_1} mem_storew_le dropw
+            push.{word_3} push.{addr_2} mem_storew_le dropw
+            push.{word_4} push.{addr_3} mem_storew_le dropw
 
             # push the number of values and pointer to the inputs on the stack
             push.5.4000
@@ -382,7 +383,7 @@ async fn test_build_metadata() -> miette::Result<()> {
         NoteTag::from_account_id(receiver),
         NoteExecutionHint::after_block(500.into())
             .map_err(|e| miette::miette!("Failed to create execution hint: {}", e))?,
-        Felt::from(1u64 << 63),
+        Felt::new(1u64 << 63),
     )
     .map_err(|e| miette::miette!("Failed to create metadata: {}", e))?;
     let test_metadata2 = NoteMetadata::new(
@@ -392,7 +393,7 @@ async fn test_build_metadata() -> miette::Result<()> {
         NoteTag::for_public_use_case((1 << 14) - 1, u16::MAX, NoteExecutionMode::Local)
             .map_err(|e| miette::miette!("Failed to create note tag: {}", e))?,
         NoteExecutionHint::on_block_slot(u8::MAX, u8::MAX, u8::MAX),
-        Felt::from(0u64),
+        Felt::new(0),
     )
     .map_err(|e| miette::miette!("Failed to create metadata: {}", e))?;
 
@@ -419,7 +420,7 @@ async fn test_build_metadata() -> miette::Result<()> {
 
         let exec_output = tx_context.execute_code(&code).await.unwrap();
 
-        let metadata_word = exec_output.get_stack_word_be(0);
+        let metadata_word = exec_output.get_stack_word_le(0);
 
         assert_eq!(Word::from(test_metadata), metadata_word, "failed in iteration {iteration}");
     }
@@ -463,10 +464,10 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let lock_timestamp = 2_000_000_000;
+    let lock_timestamp: u32 = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
     let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
-        .note_inputs([Felt::from(lock_timestamp)])?
+        .note_inputs([Felt::new(u64::from(lock_timestamp))])?
         .source_manager(source_manager.clone())
         .code(code.clone())
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
@@ -562,8 +563,8 @@ async fn test_build_note_tag_for_network_account() -> anyhow::Result<()> {
     let account_id = AccountId::try_from(ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET)?;
     let expected_tag = NoteTag::from_account_id(account_id).as_u32();
 
-    let prefix: u64 = account_id.prefix().into();
-    let suffix: u64 = account_id.suffix().into();
+    let prefix = account_id.prefix().as_u64();
+    let suffix = account_id.suffix().as_canonical_u64();
 
     let code = format!(
         "
@@ -584,7 +585,7 @@ async fn test_build_note_tag_for_network_account() -> anyhow::Result<()> {
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
-    let actual_tag = exec_output.stack[0].as_int();
+    let actual_tag = exec_output.stack[0].as_canonical_u64();
 
     assert_eq!(
         actual_tag, expected_tag as u64,

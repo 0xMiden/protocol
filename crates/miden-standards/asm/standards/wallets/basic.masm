@@ -1,3 +1,4 @@
+use miden::core::word
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
@@ -73,7 +74,10 @@ pub proc add_assets_to_account
     locaddr.0 exec.active_note::get_assets
     # => [num_of_assets, ptr = 0]
 
-    # compute the pointer at which we should stop iterating
+    # compute even_num_assets for padded iteration and the end pointer
+    dup is_odd add
+    # => [even_num_assets, ptr]
+
     mul.4 dup.1 add
     # => [end_ptr, ptr]
 
@@ -93,20 +97,29 @@ pub proc add_assets_to_account
         # => [ptr, EMPTY_WORD, ptr, end_ptr]
 
         # load the asset
-        mem_loadw_be
+        mem_loadw_le
         # => [ASSET, ptr, end_ptr]
 
-        # pad the stack before call
-        padw swapw padw padw swapdw
-        # => [ASSET, pad(12), ptr, end_ptr]
+        dupw exec.word::eqz
+        if.true
+            # skip padding word and restore stack shape
+            dropw
+            padw movup.5
+            # => [EMPTY_WORD, ptr, end_ptr]
+        else
+            # pad the stack before call
+            padw padw padw
+            movupw.3
+            # => [ASSET, pad(12), ptr, end_ptr]
 
-        # add asset to the account
-        call.receive_asset
-        # => [pad(16), ptr, end_ptr]
+            # add asset to the account
+            call.receive_asset
+            # => [pad(16), ptr, end_ptr]
 
-        # clean the stack after call
-        dropw dropw dropw
-        # => [EMPTY_WORD, ptr, end_ptr]
+            # clean the stack after call
+            dropw dropw dropw
+            # => [EMPTY_WORD, ptr, end_ptr]
+        end
 
         # increment the pointer and continue looping if ptr != end_ptr
         movup.4 add.4 dup dup.6 neq

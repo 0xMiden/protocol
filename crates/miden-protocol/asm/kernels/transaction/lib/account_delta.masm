@@ -4,7 +4,7 @@ use $kernel::asset_vault
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::link_map
 use $kernel::memory
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
 # ERRORS
@@ -55,6 +55,11 @@ pub proc compute_commitment
 
     exec.memory::get_native_account_id
     # => [native_acct_id_prefix, native_acct_id_suffix, 0, nonce_delta, CAPACITY]
+    swap
+    movup.3
+    movup.3
+    swap
+    # => [nonce_delta, 0, native_acct_id_suffix, native_acct_id_prefix, CAPACITY]
     # => [ID_AND_NONCE, CAPACITY]
 
     padw
@@ -76,7 +81,7 @@ pub proc compute_commitment
     exec.update_storage_delta
     # => [RATE, RATE, PERM, ID_AND_NONCE_DIGEST]
 
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [DELTA_COMMITMENT, ID_AND_NONCE_DIGEST]
 
     exec.was_nonce_incremented not
@@ -729,7 +734,7 @@ pub proc set_map_item
     # => [KEY, PREV_VALUE, NEW_VALUE]
 
     # store KEY in local
-    loc_storew_be.4
+    loc_storew_le.4
     # => [KEY, PREV_VALUE, NEW_VALUE]
 
     loc_load.0
@@ -760,7 +765,7 @@ pub proc set_map_item
     # => [INITIAL_VALUE, NEW_VALUE]
 
     # load key and index from locals
-    padw loc_loadw_be.4 loc_load.0
+    padw loc_loadw_le.4 loc_load.0
     # => [account_delta_storage_map_ptr, KEY, INITIAL_VALUE, NEW_VALUE]
 
     exec.link_map::set drop

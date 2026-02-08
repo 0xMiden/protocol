@@ -131,7 +131,7 @@ impl AccountHeader {
     /// This is done by first converting the account header data into an array of Words as follows:
     /// ```text
     /// [
-    ///     [account_id_suffix, account_id_prefix, 0, account_nonce]
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix]
     ///     [VAULT_ROOT]
     ///     [STORAGE_COMMITMENT]
     ///     [CODE_COMMITMENT]
@@ -140,7 +140,7 @@ impl AccountHeader {
     /// And then concatenating the resulting elements into a single vector.
     pub fn as_elements(&self) -> Vec<Felt> {
         [
-            &[self.id.suffix(), self.id.prefix().as_felt(), ZERO, self.nonce],
+            &[self.nonce, ZERO, self.id.suffix(), self.id.prefix().as_felt()],
             self.vault_root.as_elements(),
             self.storage_commitment.as_elements(),
             self.code_commitment.as_elements(),
@@ -186,7 +186,7 @@ impl From<&Account> for AccountHeader {
 }
 
 impl Serializable for AccountHeader {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -196,9 +196,9 @@ impl Serializable for AccountHeader {
 }
 
 impl Deserializable for AccountHeader {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -229,7 +229,7 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use super::AccountHeader;
     use crate::Word;

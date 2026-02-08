@@ -34,8 +34,8 @@ pub proc build_fungible_asset
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
     # => [faucet_id_prefix, faucet_id_suffix, amount]
 
-    # create the asset
-    push.0 movdn.2
+    # create the asset (LE word layout)
+    swap movup.2 push.0 swap
     # => [ASSET]
 end
 

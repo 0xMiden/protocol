@@ -7,9 +7,14 @@ use std::{
 };
 
 #[cfg(feature = "std")]
-use miden_core::utils::SliceReader;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
+use miden_crypto::utils::SliceReader;
+use miden_crypto::utils::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 use super::{Note, NoteDetails, NoteId, NoteInclusionProof, NoteTag};
 use crate::block::BlockNumber;
@@ -138,7 +143,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use crate::Word;
     use crate::account::AccountId;

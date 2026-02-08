@@ -25,6 +25,7 @@ miden-tx-batch-prover = { features = ["testing"], workspace = true }
 
 # Miden dependencies
 miden-air       = { workspace = true }
+miden-core      = { workspace = true }
 miden-processor = { workspace = true }
 
 # External dependencies

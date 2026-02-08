@@ -1,6 +1,6 @@
 use miden::core::mem
 use miden::core::collections::mmr
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
 use $kernel::account
@@ -153,7 +153,7 @@ proc process_kernel_data
     # AS => []
 
     # extract the resulting hash
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [SEQ_KERNEL_PROC_HASH, kernel_procs_ptr', TX_KERNEL_COMMITMENT]
     # AS => []
 
@@ -215,7 +215,7 @@ proc process_block_data
     adv_pipe hperm
     adv_pipe hperm
     adv_pipe hperm
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [SUB_COMMITMENT, block_data_ptr', block_num]
 
     # store the note root in memory
@@ -223,8 +223,8 @@ proc process_block_data
     dupw exec.memory::set_note_root dropw
     # => [NOTE_ROOT, SUB_COMMITMENT, block_data_ptr', block_num]
 
-    # merge the note root with the sub commitment to get the block commitment
-    hmerge
+    # merge the sub commitment with the note root to get the block commitment
+    swapw hmerge
     # => [BLOCK_COMMITMENT, block_data_ptr', block_num]
 
     # assert that the block commitment matches the commitment in global inputs
@@ -387,7 +387,7 @@ end
 #! Inputs:
 #!   Operand stack: []
 #!   Advice stack: [
-#!     account_id_suffix, account_id_prefix, 0, account_nonce,
+#!     account_nonce, 0, account_id_suffix, account_id_prefix,
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
 #!     ACCOUNT_CODE_COMMITMENT
@@ -418,7 +418,7 @@ proc process_account_data
     padw padw padw
     adv_pipe hperm
     adv_pipe hperm
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [ACCOUNT_COMMITMENT, acct_data_ptr']
 
     movup.4 drop
@@ -535,30 +535,30 @@ proc authenticate_note
     exec.mmr::get
     # => [BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
-    locaddr.0
-    # => [mem_ptr, BLOCK_COMMITMENT, NOTE_COMMITMENT]
-
     # Load and authenticate the NOTE_ROOT
     # ---------------------------------------------------------------------------------------------
 
     # read data from advice and compute hash(BLOCK_SUB_COMMITMENT || NOTE_ROOT)
-    padw padw padw
-    adv_pipe hperm
-    # => [PERM, COMPUTED_BLOCK_COMMITMENT, PERM, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    padw adv_loadw
+    # => [BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    padw adv_loadw
+    # => [NOTE_ROOT, BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
-    dropw
-    # => [COMPUTED_BLOCK_COMMITMENT, PERM, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    loc_storew_le.4
+    # => [NOTE_ROOT, BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
+
+    swapw hmerge
+    # => [COMPUTED_BLOCK_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
     # assert the computed block commitment matches
-    movup.8 drop movupw.2
     assert_eqw.err=ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR
-    # => [PERM, NOTE_COMMITMENT]
+    # => [NOTE_COMMITMENT]
 
     # Authenticate the NOTE_COMMITMENT
     # ---------------------------------------------------------------------------------------------
 
     # load the note root from memory
-    loc_loadw_be.4 swapw
+    padw loc_loadw_le.4 swapw
     # => [NOTE_COMMITMENT, NOTE_ROOT]
 
     # load the index of the note
@@ -607,7 +607,7 @@ proc process_input_note_details
     padw padw padw
     adv_pipe hperm
     adv_pipe hperm
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [NULLIFIER, note_data_ptr + 16]
 
     movup.4 drop
@@ -742,7 +742,7 @@ proc process_note_assets
     end
     # => [PERM, PERM, PERM, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
 
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [ASSET_COMMITMENT_COMPUTED, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
 
     swapw drop movdn.2 drop drop
@@ -761,6 +761,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
+@locals(8)
 proc add_input_note_assets_to_vault
     # prepare the stack
     # ---------------------------------------------------------------------------------------------
@@ -785,12 +786,35 @@ proc add_input_note_assets_to_vault
         dup.2
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        padw dup.5 mem_loadw_be
+        padw dup.5 mem_loadw_le
         # => [ASSET, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
+        emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
+
+        # stash asset + loop vars so add_asset sees a clean stack
+        loc_storew_le.0 dropw
+        # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        loc_store.6
+        # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        loc_store.4
+        # => [assets_end_ptr, input_vault_root_ptr]
+        loc_store.5
+        # => [input_vault_root_ptr]
+        drop
+
+        # stack is now empty; restore inputs for add_asset
+        padw loc_loadw_le.0
+        loc_load.6
+        movdn.4
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
         exec.asset_vault::add_asset dropw
+        # => []
+
+        # restore loop vars
+        loc_load.6
+        loc_load.5
+        loc_load.4
         # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         add.4
@@ -815,15 +839,15 @@ end
 #! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSET_COMMITMENT)`.
 proc compute_input_note_id
     # compute SERIAL_COMMITMENT: hash(SERIAL_NUMBER || EMPTY_WORD)
-    dup exec.memory::get_input_note_serial_num padw hmerge
+    dup exec.memory::get_input_note_serial_num padw swapw hmerge
     # => [SERIAL_COMMITMENT, note_ptr]
 
     # compute MERGE_SCRIPT: hash(SERIAL_COMMITMENT || SCRIPT_ROOT)
-    dup.4 exec.memory::get_input_note_script_root hmerge
+    dup.4 exec.memory::get_input_note_script_root swapw hmerge
     # => [MERGE_SCRIPT, note_ptr]
 
     # compute RECIPIENT: hash(MERGE_SCRIPT || INPUT_COMMITMENT)
-    dup.4 exec.memory::get_input_note_inputs_commitment hmerge
+    dup.4 exec.memory::get_input_note_inputs_commitment swapw hmerge
     # => [RECIPIENT, note_ptr]
 
     # store the recipient in memory
@@ -831,7 +855,7 @@ proc compute_input_note_id
     # => [RECIPIENT, note_ptr]
 
     # compute NOTE_ID: hash(RECIPIENT || ASSET_COMMITMENT)
-    movup.4 exec.memory::get_input_note_assets_commitment hmerge
+    movup.4 exec.memory::get_input_note_assets_commitment swapw hmerge
     # => [NOTE_ID]
 end
 
@@ -881,6 +905,7 @@ end
 #!   - block_num is the note's creation block number.
 #!   - BLOCK_SUB_COMMITMENT is the block's sub_commitment for which the note was created.
 #!   - NOTE_ROOT is the merkle root of the note's tree.
+@locals(16)
 proc process_input_note
     # note details
     # ---------------------------------------------------------------------------------------------
@@ -892,7 +917,7 @@ proc process_input_note
     # => [NULLIFIER, note_ptr, idx, HASHER_CAPACITY]
 
     # save NULLIFIER to memory
-    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_be
+    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_le
     # => [NULLIFIER, note_ptr, HASHER_CAPACITY]
 
     # note metadata & args
@@ -915,9 +940,31 @@ proc process_input_note
 
     # note assets
     # ---------------------------------------------------------------------------------------------
+    # Stash note_ptr + words to avoid deep-stack interactions in asset_vault::add_asset.
+    loc_store.0 drop
+    # => [NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
 
+    dropw
+    # => [NULLIFIER, HASHER_CAPACITY]
+
+    loc_storew_le.4 dropw
+    # => [HASHER_CAPACITY]
+
+    loc_storew_le.8 dropw
+    # => []
+
+    # Process assets with a clean stack.
+    loc_load.0
     dup exec.process_note_assets
     dup exec.add_input_note_assets_to_vault
+    # => [note_ptr]
+
+    drop
+    loc_loadw_le.8
+    loc_loadw_le.4
+    loc_load.0
+    dup exec.memory::get_input_note_metadata
+    movup.4
     # => [note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
 
     # note id
@@ -934,7 +981,7 @@ proc process_input_note
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_COMMITMENT: `hash(NOTE_ID || NOTE_METADATA)`
-    swapw hmerge
+    hmerge
     # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
     adv_push.1
@@ -1043,7 +1090,7 @@ proc process_input_notes_data
         # => [has_more_notes, PERM, PERM, PERM, idx+1, num_notes]
     end
 
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [INPUT_NOTES_COMMITMENT, idx+1, num_notes]
 
     # assert the input notes and the commitment matches
@@ -1145,7 +1192,7 @@ end
 #!     [block_num, version, timestamp, 0],
 #!     NOTE_ROOT,
 #!     kernel_version
-#!     [account_id_suffix, account_id_prefix, 0, account_nonce],
+#!     [account_nonce, 0, account_id_suffix, account_id_prefix],
 #!     ACCOUNT_VAULT_ROOT,
 #!     ACCOUNT_STORAGE_COMMITMENT,
 #!     ACCOUNT_CODE_COMMITMENT,

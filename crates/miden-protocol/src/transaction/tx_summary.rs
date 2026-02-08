@@ -82,7 +82,7 @@ impl SequentialCommit for TransactionSummary {
 }
 
 impl Serializable for TransactionSummary {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         self.account_delta.write_into(target);
         self.input_notes.write_into(target);
         self.output_notes.write_into(target);
@@ -91,9 +91,9 @@ impl Serializable for TransactionSummary {
 }
 
 impl Deserializable for TransactionSummary {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let account_delta = source.read()?;
         let input_notes = source.read()?;
         let output_notes = source.read()?;

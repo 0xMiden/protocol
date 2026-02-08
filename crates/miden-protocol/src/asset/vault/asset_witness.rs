@@ -93,13 +93,13 @@ impl From<AssetWitness> for SmtProof {
 }
 
 impl Serializable for AssetWitness {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         self.0.write_into(target);
     }
 }
 
 impl Deserializable for AssetWitness {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let proof = SmtProof::read_from(source)?;

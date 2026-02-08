@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_core::field::PrimeField64;
 use miden_processor::{ExecutionError, Word};
 use miden_protocol::LexicographicWord;
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -209,9 +210,7 @@ async fn test_account_type() -> miette::Result<()> {
             );
 
             let exec_output = CodeExecutor::with_default_host()
-                .stack_inputs(
-                    StackInputs::new(vec![account_id.prefix().as_felt()]).into_diagnostic()?,
-                )
+                .stack_inputs(StackInputs::new(&[account_id.prefix().as_felt()]).into_diagnostic()?)
                 .run(&code)
                 .await?;
 
@@ -268,8 +267,8 @@ async fn test_account_validate_id() -> miette::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::from((account_id / (1u128 << 64)) as u64);
-        let suffix = Felt::from((account_id % (1u128 << 64)) as u64);
+        let prefix = Felt::new((account_id / (1u128 << 64)) as u64);
+        let suffix = Felt::new((account_id % (1u128 << 64)) as u64);
 
         let code = "
             use $kernel::account_id
@@ -280,7 +279,7 @@ async fn test_account_validate_id() -> miette::Result<()> {
             ";
 
         let result = CodeExecutor::with_default_host()
-            .stack_inputs(StackInputs::new(vec![suffix, prefix]).unwrap())
+            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
             .run(code)
             .await;
 
@@ -289,7 +288,17 @@ async fn test_account_validate_id() -> miette::Result<()> {
             (Ok(_), Some(err)) => {
                 miette::bail!("expected error {err} but validation was successful")
             },
-            (Err(ExecutionError::FailedAssertion { err_code, err_msg, .. }), Some(err)) => {
+            (
+                Err(ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion {
+                            err_code,
+                            err_msg,
+                        },
+                    ..
+                }),
+                Some(err),
+            ) => {
                 if err_code != err.code() {
                     miette::bail!(
                         "actual error \"{}\" (code: {err_code}) did not match expected error {err}",
@@ -512,7 +521,7 @@ async fn test_get_storage_slot_type() -> miette::Result<()> {
         assert_eq!(
             slot.slot_type(),
             StorageSlotType::try_from(
-                u8::try_from(exec_output.get_stack_element(0).as_int()).unwrap()
+                u8::try_from(exec_output.get_stack_element(0).as_canonical_u64()).unwrap()
             )
             .unwrap()
         );
@@ -520,17 +529,17 @@ async fn test_get_storage_slot_type() -> miette::Result<()> {
         assert_eq!(exec_output.get_stack_element(2), ZERO, "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_element(3), ZERO, "the rest of the stack is empty");
         assert_eq!(
-            exec_output.get_stack_word_be(4),
+            exec_output.get_stack_word_le(4),
             Word::empty(),
             "the rest of the stack is empty"
         );
         assert_eq!(
-            exec_output.get_stack_word_be(8),
+            exec_output.get_stack_word_le(8),
             Word::empty(),
             "the rest of the stack is empty"
         );
         assert_eq!(
-            exec_output.get_stack_word_be(12),
+            exec_output.get_stack_word_le(12),
             Word::empty(),
             "the rest of the stack is empty"
         );
@@ -603,7 +612,7 @@ async fn test_account_set_item_fails_on_reserved_faucet_metadata_slot() -> anyho
 
     let tx_context = TransactionContextBuilder::with_fungible_faucet(
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        Felt::from(0u32),
+        Felt::new(0),
     )
     .tx_script(tx_script)
     .build()
@@ -628,22 +637,22 @@ async fn test_is_slot_id_lt() -> miette::Result<()> {
         .collect::<Vec<_>>();
 
     // Extend with special case where prefix matches and suffix determines the outcome.
-    let prefix = Felt::from(100u32);
+    let prefix = Felt::new(100);
     test_cases.extend([
         // prev_slot == curr_slot
         (
-            StorageSlotId::new(Felt::from(50u32), prefix),
-            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::new(50), prefix),
+            StorageSlotId::new(Felt::new(50), prefix),
         ),
         // prev_slot < curr_slot
         (
-            StorageSlotId::new(Felt::from(50u32), prefix),
-            StorageSlotId::new(Felt::from(51u32), prefix),
+            StorageSlotId::new(Felt::new(50), prefix),
+            StorageSlotId::new(Felt::new(51), prefix),
         ),
         // prev_slot > curr_slot
         (
-            StorageSlotId::new(Felt::from(51u32), prefix),
-            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::new(51), prefix),
+            StorageSlotId::new(Felt::new(50), prefix),
         ),
     ]);
 
@@ -784,7 +793,7 @@ async fn test_set_map_item() -> miette::Result<()> {
 
     assert_eq!(
         new_storage_map.root(),
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         "get_item should return the updated root",
     );
 
@@ -794,7 +803,7 @@ async fn test_set_map_item() -> miette::Result<()> {
     };
     assert_eq!(
         old_value_for_key,
-        exec_output.get_stack_word_be(4),
+        exec_output.get_stack_word_le(4),
         "set_map_item must return the old value for the key (empty word for new key)",
     );
 

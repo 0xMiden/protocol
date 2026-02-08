@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
 use miden_processor::fast::FastProcessor;
-use miden_processor::{AdviceInputs, ExecutionError, StackInputs};
+use miden_processor::{ExecutionError, StackInputs};
 pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
@@ -18,7 +18,7 @@ use miden_protocol::transaction::{
     TransactionKernel,
     TransactionScript,
 };
-use miden_protocol::vm::StackOutputs;
+use miden_protocol::vm::{AdviceInputs, StackOutputs};
 use miden_protocol::{Felt, MAX_TX_EXECUTION_CYCLES, MIN_TX_EXECUTION_CYCLES};
 
 use super::TransactionExecutorError;
@@ -149,7 +149,7 @@ where
     /// stages of transaction execution take.
     #[must_use]
     pub fn with_tracing(mut self) -> Self {
-        self.exec_options = self.exec_options.with_tracing();
+        self.exec_options = self.exec_options.with_tracing(true);
         self
     }
 
@@ -184,7 +184,9 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+        let processor = FastProcessor::new(stack_inputs)
+            .with_advice(advice_inputs)
+            .with_options(self.exec_options);
         let output = processor
             .execute(&TransactionKernel::main(), &mut host)
             .await
@@ -229,8 +231,9 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor =
-            FastProcessor::new_with_advice_inputs(stack_inputs.as_slice(), advice_inputs);
+        let processor = FastProcessor::new(stack_inputs)
+            .with_advice(advice_inputs)
+            .with_options(self.exec_options);
         let output = processor
             .execute(&TransactionKernel::tx_script_main(), &mut host)
             .await
@@ -298,13 +301,6 @@ where
         TransactionExecutorError,
     > {
         let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(tx_inputs);
-
-        // This reverses the stack inputs (even though it doesn't look like it does) because the
-        // fast processor expects the reverse order.
-        //
-        // Once we use the FastProcessor for execution and proving, we can change the way these
-        // inputs are constructed in TransactionKernel::prepare_inputs.
-        let stack_inputs = StackInputs::new(stack_inputs.iter().copied().collect()).unwrap();
 
         let input_notes = tx_inputs.input_notes();
 

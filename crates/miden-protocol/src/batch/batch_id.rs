@@ -14,9 +14,8 @@ use crate::{Felt, Hasher, Word, ZERO};
 /// Uniquely identifies a batch of transactions, i.e. both
 /// [`ProposedBatch`](crate::batch::ProposedBatch) and [`ProvenBatch`](crate::batch::ProvenBatch).
 ///
-/// This is a sequential hash of the tuple `(TRANSACTION_ID || [account_id_prefix,
-/// account_id_suffix, 0, 0])` of all transactions and the accounts their executed against in the
-/// batch.
+/// This is a sequential hash of the tuple `(TRANSACTION_ID || [0, 0, account_id_suffix,
+/// account_id_prefix])` of all transactions and the accounts their executed against in the batch.
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Hash, WordWrapper)]
 pub struct BatchId(Word);
 
@@ -35,7 +34,7 @@ impl BatchId {
         for (tx_id, account_id) in iter {
             elements.extend_from_slice(tx_id.as_elements());
             let [account_id_prefix, account_id_suffix] = <[Felt; 2]>::from(account_id);
-            elements.extend_from_slice(&[account_id_prefix, account_id_suffix, ZERO, ZERO]);
+            elements.extend_from_slice(&[ZERO, ZERO, account_id_suffix, account_id_prefix]);
         }
 
         Self(Hasher::hash_elements(&elements))

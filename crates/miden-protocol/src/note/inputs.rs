@@ -150,7 +150,7 @@ impl Serializable for NoteInputs {
 impl Deserializable for NoteInputs {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_values = source.read_u16()? as usize;
-        let values = source.read_many::<Felt>(num_values)?;
+        let values = source.read_many_iter::<Felt>(num_values)?.collect::<Result<Vec<_>, _>>()?;
         Self::new(values).map_err(|v| DeserializationError::InvalidValue(format!("{v}")))
     }
 }

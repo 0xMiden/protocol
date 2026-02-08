@@ -65,7 +65,7 @@ impl OrderedTransactionHeaders {
         for (transaction_id, account_id) in transactions {
             let [account_id_prefix, account_id_suffix] = <[Felt; 2]>::from(account_id);
             elements.extend_from_slice(transaction_id.as_elements());
-            elements.extend_from_slice(&[account_id_prefix, account_id_suffix, ZERO, ZERO]);
+            elements.extend_from_slice(&[ZERO, ZERO, account_id_suffix, account_id_prefix]);
         }
 
         Hasher::hash_elements(&elements)

@@ -2,6 +2,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::debuginfo::{SourceLanguage, SourceManagerSync, Uri};
 use miden_protocol::assembly::{DefaultSourceManager, Library};
@@ -137,8 +138,8 @@ impl NoteBuilder {
             SourceLanguage::Masm,
             Uri::new(format!(
                 "note_{:x}{:x}",
-                self.serial_num[0].as_int(),
-                self.serial_num[1].as_int()
+                self.serial_num[0].as_canonical_u64(),
+                self.serial_num[1].as_canonical_u64()
             )),
             self.code,
         );

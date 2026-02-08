@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_processor::AdviceInputs;
+use miden_core::advice::AdviceInputs;
 use miden_processor::fast::ExecutionOutput;
 use miden_protocol::account::{
     Account,
@@ -163,7 +163,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         mock_value_slot0.content().value(),
         "Value at the top of the stack should be equal to [1, 2, 3, 4]",
     );
@@ -221,7 +221,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         STORAGE_LEAVES_2[0].1,
         "Value at the top of the stack should be equal [1, 2, 3, 4]",
     );

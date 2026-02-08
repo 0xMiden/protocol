@@ -1,5 +1,5 @@
-use miden_processor::AdviceInputs;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_core::advice::AdviceInputs;
+use miden_core::crypto::random::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -51,7 +51,7 @@ fn setup_keys_and_authenticators(
     let mut authenticators = Vec::new();
 
     for _ in 0..num_approvers {
-        let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
+        let sec_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
         let pub_key = sec_key.public_key();
 
         secret_keys.push(sec_key);

@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use core::error::Error;
 
+use miden_core::field::PrimeField64;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript};
@@ -378,12 +379,12 @@ fn parse_p2ide_inputs(note_inputs: &[Felt]) -> Result<(AccountId, u32, u32), Sta
 
     let receiver_account_id = try_read_account_id_from_inputs(note_inputs)?;
 
-    let reclaim_height_u64 = note_inputs[2].as_int();
+    let reclaim_height_u64 = note_inputs[2].as_canonical_u64();
     let reclaim_height: u32 = reclaim_height_u64
         .try_into()
         .map_err(|_err| StaticAnalysisError::new("reclaim block height should be a u32"))?;
 
-    let timelock_height_u64 = note_inputs[3].as_int();
+    let timelock_height_u64 = note_inputs[3].as_canonical_u64();
     let timelock_height: u32 = timelock_height_u64
         .try_into()
         .map_err(|_err| StaticAnalysisError::new("timelock block height should be a u32"))?;

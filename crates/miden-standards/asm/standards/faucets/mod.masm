@@ -105,7 +105,7 @@ pub proc burn
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    mem_loadw_be
+    mem_loadw_le
     # => [ASSET, pad(16)]
 
     # burning the asset

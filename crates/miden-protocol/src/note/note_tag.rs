@@ -361,7 +361,7 @@ impl From<NoteTag> for u32 {
 
 impl From<NoteTag> for Felt {
     fn from(value: NoteTag) -> Self {
-        Felt::from(value.as_u32())
+        Felt::new(u64::from(value.as_u32()))
     }
 }
 

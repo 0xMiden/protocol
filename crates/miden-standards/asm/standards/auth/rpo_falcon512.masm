@@ -1,4 +1,4 @@
-use miden::core::crypto::dsa::falcon512rpo
+use miden::core::crypto::dsa::falcon512poseidon2
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
@@ -63,7 +63,7 @@ pub proc authenticate_transaction
     # Verify the signature against the public key and the message. The procedure gets as inputs the
     # hash of the public key and the message via the operand stack. The signature is provided via
     # the advice stack. The signature is valid if and only if the procedure returns.
-    exec.falcon512rpo::verify
+    exec.falcon512poseidon2::verify
     # OS => []
     # AS => []
 end
@@ -112,7 +112,7 @@ pub proc verify_signatures
         exec.active_account::get_initial_map_item
         # => [OWNER_PUB_KEY, i-1, MSG]
 
-        loc_storew_be.CURRENT_PK_LOC
+        loc_storew_le.CURRENT_PK_LOC
         # => [OWNER_PUB_KEY, i-1, MSG]
 
         # Check if signature exists for this signer.
@@ -143,7 +143,7 @@ pub proc verify_signatures
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
-            loc_loadw_be.CURRENT_PK_LOC
+            loc_loadw_le.CURRENT_PK_LOC
             # => [PK, MSG, MSG, i-1]
 
             swapw
@@ -156,7 +156,7 @@ pub proc verify_signatures
             # OS => [PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 
-            exec.falcon512rpo::verify
+            exec.falcon512poseidon2::verify
             # => [MSG, i-1]
 
             loc_load.SUCCESSFUL_VERIFICATIONS_LOC

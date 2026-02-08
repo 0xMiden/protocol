@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_air::HashFunction;
+use miden_core::proof::HashFunction;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -50,7 +50,6 @@ async fn witness_test_setup() -> anyhow::Result<WitnessTestSetup> {
         builder.add_p2any_note(account0.id(), NoteType::Public, [FungibleAsset::mock(100)])?;
 
     let mut chain = builder.build()?;
-
     let tx0 = chain.create_authenticated_notes_proven_tx(account0.id(), [note0.id()]).await?;
     let tx1 = chain.create_authenticated_notes_proven_tx(account1.id(), [note1.id()]).await?;
     let tx2 = chain.create_authenticated_notes_proven_tx(account2.id(), [note2.id()]).await?;

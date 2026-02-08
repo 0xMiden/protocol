@@ -3,7 +3,7 @@ use std::path::Path;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::utils::Serializable;
+use miden_assembly::serde::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_protocol::transaction::TransactionKernel;
 

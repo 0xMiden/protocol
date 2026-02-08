@@ -2,7 +2,8 @@ use alloc::sync::Arc;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_core::crypto::random::RpoRandomCoin;
+use miden_core::field::PrimeField64;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -153,19 +154,19 @@ async fn test_block_procedures() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         tx_context.tx_inputs().block_header().commitment(),
         "top word on the stack should be equal to the block header commitment"
     );
 
     assert_eq!(
-        exec_output.get_stack_element(4).as_int(),
+        exec_output.get_stack_element(4).as_canonical_u64(),
         tx_context.tx_inputs().block_header().timestamp() as u64,
         "fifth element on the stack should be equal to the timestamp of the last block creation"
     );
 
     assert_eq!(
-        exec_output.get_stack_element(5).as_int(),
+        exec_output.get_stack_element(5).as_canonical_u64(),
         tx_context.tx_inputs().block_header().block_num().as_u64(),
         "sixth element on the stack should be equal to the block number"
     );
@@ -466,7 +467,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     let tx_context = mock_chain.build_tx_context(account, &[input_note.id()], &[])?.build()?;
     let ref_block_num = tx_context.tx_inputs().block_header().block_num().as_u32();
-    let final_nonce = tx_context.account().nonce().as_int() as u32 + 1;
+    let final_nonce = tx_context.account().nonce().as_canonical_u64() as u32 + 1;
     let input_notes = tx_context.input_notes().clone();
     let output_notes = OutputNotes::new(vec![OutputNote::Partial(output_note.into())])?;
 
@@ -475,7 +476,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     assert_matches!(error, TransactionExecutorError::Unauthorized(tx_summary) => {
         assert!(tx_summary.account_delta().vault().is_empty());
         assert!(tx_summary.account_delta().storage().is_empty());
-        assert_eq!(tx_summary.account_delta().nonce_delta().as_int(), 1);
+        assert_eq!(tx_summary.account_delta().nonce_delta().as_canonical_u64(), 1);
         assert_eq!(tx_summary.input_notes(), &input_notes);
         assert_eq!(tx_summary.output_notes(), &output_notes);
         assert_eq!(tx_summary.salt(), Word::from(
@@ -512,7 +513,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
             0,
             0,
             tx.block_header().block_num().as_u32(),
-            tx.final_account().nonce().as_int() as u32,
+            tx.final_account().nonce().as_canonical_u64() as u32,
         ]),
     );
     let summary_commitment = summary.to_commitment();
@@ -570,7 +571,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
             0,
             0,
             tx.block_header().block_num().as_u32(),
-            tx.final_account().nonce().as_int() as u32,
+            tx.final_account().nonce().as_canonical_u64() as u32,
         ]),
     );
     let summary_commitment = summary.to_commitment();

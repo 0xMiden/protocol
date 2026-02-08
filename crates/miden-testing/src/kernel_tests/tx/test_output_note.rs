@@ -381,7 +381,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         "Validate the output note 1 metadata",
     );
 
-    assert_eq!(exec_output.get_stack_word_be(0), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word_le(0), expected_output_notes_commitment);
     Ok(())
 }
 
@@ -958,7 +958,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
             check_assets_code.push_str(&format!(
                 r#"
                     # load the asset stored in memory
-                    padw dup.4 mem_loadw_be
+                    padw dup.4 mem_loadw_le
                     # => [STORED_ASSET, dest_ptr, note_index]
 
                     # assert the asset

@@ -73,7 +73,7 @@ wildcards = "allow"
 
 # Sources configuration
 [sources]
-allow-git        = ["https://github.com/0xPolygonMiden/miden-vm"]
+allow-git        = ["https://github.com/0xMiden/miden-vm"]
 allow-registry   = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git      = "deny"
 unknown-registry = "deny"

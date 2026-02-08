@@ -1,5 +1,7 @@
 use alloc::string::ToString;
 
+use miden_core::field::PrimeField64;
+
 use super::execution_hint::NoteExecutionHint;
 use super::{
     AccountId,
@@ -203,7 +205,7 @@ fn merge_id_type_and_hint_tag(
     note_type: NoteType,
     note_execution_hint: NoteExecutionHint,
 ) -> Felt {
-    let mut merged = sender_id_suffix.as_int();
+    let mut merged = sender_id_suffix.as_canonical_u64();
 
     let type_bits = note_type as u8;
     let (tag_bits, _) = note_execution_hint.into_parts();
@@ -221,13 +223,13 @@ fn merge_id_type_and_hint_tag(
 
     // SAFETY: The most significant bit of the suffix is zero by construction so the bytes will be a
     // valid felt.
-    Felt::from(merged)
+    Felt::new(merged)
 }
 
 /// Unmerges the given felt into the suffix of an [`AccountId`], a [`NoteType`] and the tag of
 /// a [`NoteExecutionHint`].
 fn unmerge_id_type_and_hint_tag(element: Felt) -> Result<(Felt, NoteType, u8), NoteError> {
-    let element = element.as_int();
+    let element = element.as_canonical_u64();
 
     // Cut off the least significant byte.
     let least_significant_byte = element as u8;
@@ -241,7 +243,7 @@ fn unmerge_id_type_and_hint_tag(element: Felt) -> Result<(Felt, NoteType, u8), N
 
     // SAFETY: The input was a valid felt and we cleared additional bits and did not set any
     // bits, so it must still be a valid felt.
-    let sender_id_suffix = Felt::from(element);
+    let sender_id_suffix = Felt::new(element);
 
     Ok((sender_id_suffix, note_type, tag_bits))
 }
@@ -272,7 +274,7 @@ fn merge_note_tag_and_hint_payload(
 
     // SAFETY: The payload is guaranteed to never be u32::MAX so at least one of the upper 32 bits
     // is zero, hence the felt is valid even if note_tag is u32::MAX.
-    Felt::from(felt_int)
+    Felt::new(felt_int)
 }
 
 /// Unmerges the given felt into a [`NoteExecutionHint`] payload and a [`NoteTag`] and constructs a
@@ -281,7 +283,7 @@ fn unmerge_note_tag_and_hint_payload(
     element: Felt,
     note_execution_hint_tag: u8,
 ) -> Result<(NoteExecutionHint, NoteTag), NoteError> {
-    let element = element.as_int();
+    let element = element.as_canonical_u64();
 
     let payload = (element >> 32) as u32;
     let note_tag = (element & 0xffff_ffff) as u32;
@@ -310,7 +312,7 @@ mod tests {
         let sender = AccountId::try_from(ACCOUNT_ID_MAX_ONES).unwrap();
         let note_type = NoteType::Public;
         let tag = NoteTag::from_account_id(sender);
-        let aux = Felt::from(0xffff_ffff_0000_0000u64);
+        let aux = Felt::new(0xffff_ffff_0000_0000u64);
 
         for execution_hint in [
             NoteExecutionHint::always(),

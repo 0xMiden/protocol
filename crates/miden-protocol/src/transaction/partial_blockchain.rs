@@ -279,7 +279,7 @@ impl Default for PartialBlockchain {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 

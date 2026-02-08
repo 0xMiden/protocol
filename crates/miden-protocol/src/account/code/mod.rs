@@ -283,7 +283,9 @@ impl Deserializable for AccountCode {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let module = Arc::new(MastForest::read_from(source)?);
         let num_procedures = (source.read_u8()? as usize) + 1;
-        let procedures = source.read_many::<AccountProcedureRoot>(num_procedures)?;
+        let procedures = source
+            .read_many_iter::<AccountProcedureRoot>(num_procedures)?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self::from_parts(module, procedures))
     }

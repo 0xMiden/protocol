@@ -235,7 +235,7 @@ pub proc execute_foreign_procedure
 
     # store the foreign procedure root to the first local memory slot and get its absolute memory
     # address
-    loc_storew_be.0 dropw locaddr.0
+    loc_storew_le.0 dropw locaddr.0
     # => [foreign_proc_root_ptr, <foreign account inputs>, pad(n)]
 
     # execute the foreign procedure

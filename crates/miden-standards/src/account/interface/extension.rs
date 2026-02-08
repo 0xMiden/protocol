@@ -2,10 +2,9 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureRoot};
-use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
+use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeExt, MastNodeId};
 use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthScheme;

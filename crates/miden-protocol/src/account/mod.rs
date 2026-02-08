@@ -1,6 +1,8 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
+
 use crate::asset::{Asset, AssetVault};
 use crate::utils::serde::{
     ByteReader,
@@ -360,7 +362,7 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
-        if new_nonce.as_int() < self.nonce.as_int() {
+        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
             return Err(AccountError::NonceOverflow {
                 current: self.nonce,
                 increment: nonce_delta,
@@ -511,9 +513,10 @@ pub fn hash_account(
     code_commitment: Word,
 ) -> Word {
     let mut elements = [ZERO; 16];
-    elements[0] = id.suffix();
-    elements[1] = id.prefix().as_felt();
-    elements[3] = nonce;
+    elements[0] = nonce;
+    elements[1] = ZERO;
+    elements[2] = id.suffix();
+    elements[3] = id.prefix().as_felt();
     elements[4..8].copy_from_slice(&*vault_root);
     elements[8..12].copy_from_slice(&*storage_commitment);
     elements[12..].copy_from_slice(&*code_commitment);

@@ -54,15 +54,15 @@ begin
     # => [inputs_ptr]
 
     # load REQUESTED_ASSET
-    mem_loadw_be
+    mem_loadw_le
     # => [REQUESTED_ASSET]
 
     # load PAYBACK_NOTE_RECIPIENT
-    padw mem_loadw_be.4
+    padw mem_loadw_le.4
     # => [PAYBACK_NOTE_RECIPIENT, REQUESTED_ASSET]
 
     # load payback P2ID details
-    padw mem_loadw_be.8
+    padw mem_loadw_le.8
     # => [tag, aux, note_type, execution_hint, PAYBACK_NOTE_RECIPIENT, REQUESTED_ASSET]
 
     # create payback P2ID note
@@ -97,7 +97,7 @@ begin
     # => [ptr, pad(12)]
 
     # load the ASSET
-    mem_loadw_be
+    mem_loadw_le
     # => [ASSET, pad(12)]
 
     # add the ASSET to the account

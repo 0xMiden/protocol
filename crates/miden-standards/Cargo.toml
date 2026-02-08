@@ -21,6 +21,7 @@ testing = ["dep:rand", "miden-assembly/testing", "miden-protocol/testing"]
 
 [dependencies]
 # Miden dependencies
+miden-core      = { default-features = false, workspace = true }
 miden-processor = { workspace = true }
 miden-protocol  = { workspace = true }
 

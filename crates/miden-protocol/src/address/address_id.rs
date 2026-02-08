@@ -2,7 +2,7 @@ use alloc::string::ToString;
 
 use bech32::Bech32m;
 use bech32::primitives::decode::CheckedHrpstring;
-use miden_processor::DeserializationError;
+use miden_crypto::utils::DeserializationError;
 
 use crate::AddressError;
 use crate::account::{AccountId, AccountStorageMode};
@@ -100,7 +100,7 @@ impl Serializable for AddressId {
 }
 
 impl Deserializable for AddressId {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let address_type: u8 = source.read_u8()?;

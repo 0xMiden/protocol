@@ -2,16 +2,13 @@ use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::eprintln;
 
-use miden_processor::{
-    AdviceMutation,
-    AsyncHost,
-    BaseHost,
-    EventError,
-    FutureMaybeSend,
-    MastForest,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::EventError;
+use miden_processor::mast::MastForest;
+use miden_processor::{FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountCode, AccountDelta, AccountId, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
@@ -281,7 +278,7 @@ where
         let smt_proof = SmtProof::from(storage_map_witness);
         let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
             smt_proof.leaf().hash(),
-            smt_proof.leaf().to_elements(),
+            smt_proof.leaf().to_elements().collect::<Vec<_>>(),
         )]));
 
         Ok(vec![merkle_store_ext, map_ext])
@@ -325,6 +322,14 @@ where
         vault_root: Word,
         asset_key: AssetVaultKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        #[cfg(all(debug_assertions, feature = "std"))]
+        {
+            eprintln!(
+                "debug(AccountVaultWitnessRequest) account={active_account_id} key {:?} root {:?}",
+                Word::from(asset_key),
+                vault_root
+            );
+        }
         let asset_witnesses = self
             .base_host
             .store()
@@ -426,10 +431,10 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE, AUTH> BaseHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
+impl<STORE, AUTH> Host for TransactionExecutorHost<'_, '_, STORE, AUTH>
 where
-    STORE: DataStore,
-    AUTH: TransactionAuthenticator,
+    STORE: DataStore + Sync,
+    AUTH: TransactionAuthenticator + Sync,
 {
     fn get_label_and_source_file(
         &self,
@@ -440,13 +445,6 @@ where
         let span = source_manager.location_to_span(location.clone()).unwrap_or_default();
         (span, maybe_file)
     }
-}
-
-impl<STORE, AUTH> AsyncHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
-where
-    STORE: DataStore + Sync,
-    AUTH: TransactionAuthenticator + Sync,
-{
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
@@ -454,7 +452,7 @@ where
 
     fn on_event(
         &mut self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let core_lib_event_result = self.base_host.handle_core_lib_events(process);
 
@@ -669,7 +667,7 @@ fn asset_witness_to_advice_mutation(asset_witness: AssetWitness) -> [AdviceMutat
     let smt_proof = SmtProof::from(asset_witness);
     let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
         smt_proof.leaf().hash(),
-        smt_proof.leaf().to_elements(),
+        smt_proof.leaf().to_elements().collect::<Vec<_>>(),
     )]));
 
     [merkle_store_ext, map_ext]

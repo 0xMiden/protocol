@@ -229,11 +229,11 @@ impl Serializable for StorageSlotName {
 }
 
 impl Deserializable for StorageSlotName {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let len = source.read_u8()?;
-        let name = source.read_many(len as usize)?;
+        let name = source.read_slice(len as usize)?.to_vec();
         String::from_utf8(name)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             .and_then(|name| {

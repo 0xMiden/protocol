@@ -214,7 +214,7 @@ impl AccountTree<Smt> {
             // SAFETY: Since we only inserted account IDs into the SMT, it is guaranteed that
             // the leaf_idx is a valid Felt as well as a valid account ID prefix.
             AccountTreeError::DuplicateStateCommitments {
-                prefix: AccountIdPrefix::new_unchecked(crate::Felt::from(leaf_idx)),
+                prefix: AccountIdPrefix::new_unchecked(crate::Felt::new(leaf_idx)),
             }
         })?;
 

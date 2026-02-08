@@ -2,6 +2,8 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::fmt;
 
+use miden_core::field::PrimeField64;
+
 use super::vault::AssetVaultKey;
 use super::{AccountType, Asset, AssetError, Felt, Word, ZERO, is_not_a_non_fungible_asset};
 use crate::account::{AccountId, AccountIdPrefix};
@@ -47,7 +49,7 @@ impl FungibleAsset {
     /// Returns an error if:
     /// - The faucet_id is not a valid fungible faucet ID.
     /// - The provided amount is greater than 2^63 - 1.
-    pub const fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
+    pub fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
         let asset = Self { faucet_id, amount };
         asset.validate()
     }
@@ -56,7 +58,7 @@ impl FungibleAsset {
     pub(crate) fn new_unchecked(value: Word) -> FungibleAsset {
         FungibleAsset {
             faucet_id: AccountId::new_unchecked([value[3], value[2]]),
-            amount: value[0].as_int(),
+            amount: value[0].as_canonical_u64(),
         }
     }
 
@@ -151,7 +153,7 @@ impl FungibleAsset {
     /// Returns an error if:
     /// - The faucet_id is not a valid fungible faucet ID.
     /// - The provided amount is greater than 2^63 - 1.
-    const fn validate(self) -> Result<Self, AssetError> {
+    fn validate(self) -> Result<Self, AssetError> {
         let account_type = self.faucet_id.account_type();
         if !matches!(account_type, AccountType::FungibleFaucet) {
             return Err(AssetError::FungibleFaucetIdTypeMismatch(self.faucet_id));
@@ -191,7 +193,7 @@ impl TryFrom<Word> for FungibleAsset {
         }
         let faucet_id = AccountId::try_from([value[3], value[2]])
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
-        let amount = value[0].as_int();
+        let amount = value[0].as_canonical_u64();
         Self::new(faucet_id, amount)
     }
 }

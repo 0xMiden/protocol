@@ -38,7 +38,7 @@ begin
     # => [inputs_ptr, EMPTY_WORD]
 
     # read the target account ID from the note inputs
-    mem_loadw_be drop drop
+    mem_loadw_le drop drop
     # => [target_account_id_prefix, target_account_id_suffix]
 
     exec.active_account::get_id

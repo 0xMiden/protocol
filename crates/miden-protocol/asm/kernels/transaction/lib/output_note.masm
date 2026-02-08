@@ -415,7 +415,7 @@ proc add_fungible_asset
     #     note_idx]
 
     while.true
-        mem_loadw_be
+        mem_loadw_le
         # => [STORED_ASSET, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
         dup.4 eq
@@ -465,7 +465,7 @@ proc add_fungible_asset
     # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
     # Store the fungible asset, either the combined ASSET or the new ASSET
-    mem_storew_be dropw drop drop
+    mem_storew_le dropw drop drop
     # => [note_ptr, num_of_assets, note_idx]
 
     # increase the number of assets in the note
@@ -506,7 +506,7 @@ proc add_non_fungible_asset
 
     while.true
         # load the asset and compare
-        mem_loadw_be exec.word::test_eq
+        mem_loadw_le exec.word::test_eq
         assertz.err=ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS
         # => [ASSET', ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
@@ -525,7 +525,7 @@ proc add_non_fungible_asset
     # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
     # end of the loop reached, no error so we can store the non-fungible asset
-    mem_storew_be dropw drop drop
+    mem_storew_le dropw drop drop
     # => [note_ptr, num_of_assets, note_idx]
 
     # increase the number of assets in the note

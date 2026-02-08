@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_air::HashFunction;
+use miden_core::proof::HashFunction;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;

@@ -1,18 +1,18 @@
 use miden::protocol::native_account
 use miden::protocol::tx
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 
 #! Inputs:  [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 #! Outputs: [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 @locals(16)
 pub proc adv_insert_hqword
-    loc_storew_be.0
+    loc_storew_le.0
     movdnw.3
-    loc_storew_be.4
+    loc_storew_le.4
     movdnw.3
-    loc_storew_be.8
+    loc_storew_le.8
     movdnw.3
-    loc_storew_be.12
+    loc_storew_le.12
     movdnw.3
     # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 
@@ -30,10 +30,10 @@ pub proc adv_insert_hqword
     drop drop
     # => [<4 stack elements>]
 
-    loc_loadw_be.12
-    padw loc_loadw_be.8
-    padw loc_loadw_be.4
-    padw loc_loadw_be.0
+    loc_loadw_le.12
+    padw loc_loadw_le.8
+    padw loc_loadw_le.4
+    padw loc_loadw_le.0
     # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 end
 
@@ -92,6 +92,6 @@ pub proc hash_tx_summary
     hperm
     # => [RATE, RATE, PERM]
 
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [TX_SUMMARY_COMMITMENT]
 end

@@ -237,11 +237,11 @@ pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
     NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_AND_NONCE_OFFSET;
 
 /// The index of the account ID within the account ID and nonce data.
-pub const ACCT_ID_SUFFIX_IDX: DataIndex = 0;
-pub const ACCT_ID_PREFIX_IDX: DataIndex = 1;
+pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
+pub const ACCT_ID_PREFIX_IDX: DataIndex = 3;
 
 /// The index of the account nonce within the account ID and nonce data.
-pub const ACCT_NONCE_IDX: DataIndex = 3;
+pub const ACCT_NONCE_IDX: DataIndex = 0;
 
 /// The offset at which the account vault root is stored relative to the start of the account
 /// data segment.

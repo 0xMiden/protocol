@@ -13,7 +13,7 @@ mod network_id;
 use alloc::string::String;
 
 pub use interface::AddressInterface;
-use miden_processor::DeserializationError;
+use miden_crypto::utils::DeserializationError;
 pub use network_id::{CustomNetworkId, NetworkId};
 
 use crate::AddressError;
@@ -215,7 +215,7 @@ impl Serializable for Address {
 }
 
 impl Deserializable for Address {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let identifier: AddressId = source.read()?;

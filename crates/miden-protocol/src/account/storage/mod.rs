@@ -388,7 +388,9 @@ impl Serializable for AccountStorage {
 impl Deserializable for AccountStorage {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_slots = source.read_u8()? as usize;
-        let slots = source.read_many::<StorageSlot>(num_slots)?;
+        let slots = source
+            .read_many_iter::<StorageSlot>(num_slots)?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }

@@ -1,9 +1,9 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_crypto::Word;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtLeaf;
+use miden_crypto::utils::{Deserializable, Serializable};
 
 use super::{AccountStorage, AccountStorageHeader, StorageSlotContent};
 use crate::AccountError;
@@ -133,16 +133,16 @@ impl PartialStorage {
 }
 
 impl Serializable for PartialStorage {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: miden_crypto::utils::ByteWriter>(&self, target: &mut W) {
         target.write(&self.header);
         target.write(&self.maps);
     }
 }
 
 impl Deserializable for PartialStorage {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, miden_crypto::utils::DeserializationError> {
         let header: AccountStorageHeader = source.read()?;
         let map_smts: BTreeMap<Word, PartialStorageMap> = source.read()?;
 

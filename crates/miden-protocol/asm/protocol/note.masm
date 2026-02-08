@@ -1,5 +1,5 @@
 use miden::protocol::account_id
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::mem
 
@@ -43,7 +43,7 @@ pub proc compute_inputs_commitment
     # TODO: refactor the hash computation process as part of the
     # https://github.com/0xMiden/miden-base/issues/2036 and
     # https://github.com/0xMiden/miden-base/issues/2129
-    exec.rpo256::pad_and_hash_elements
+    exec.poseidon2::pad_and_hash_elements
     # => [INPUTS_COMMITMENT]
 end
 
@@ -240,7 +240,7 @@ pub proc build_note_tag_for_network_account
     swap drop
     # => [account_id_prefix]
 
-    u32split
+    u32split swap
     # => [a_hi, a_lo]
 
     push.34

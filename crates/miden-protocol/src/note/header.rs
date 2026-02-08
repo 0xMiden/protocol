@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
+
 use super::{
     ByteReader,
     ByteWriter,
@@ -111,7 +113,7 @@ impl From<&NoteHeader> for [u8; 64] {
         let mut elements: [u8; 64] = [0; 64];
         let note_metadata_bytes = Word::from(note_header.metadata())
             .iter()
-            .flat_map(|x| x.as_int().to_le_bytes())
+            .flat_map(|x| x.as_canonical_u64().to_le_bytes())
             .collect::<Vec<u8>>();
         elements[..32].copy_from_slice(&note_header.note_id.as_bytes());
         elements[32..].copy_from_slice(&note_metadata_bytes);

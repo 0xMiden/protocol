@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::fast::ExecutionOutput;
-use miden_processor::{ExecutionError, FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_processor::mast::MastForest;
+use miden_processor::{ExecutionError, FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,

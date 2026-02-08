@@ -187,7 +187,9 @@ impl Serializable for AccountStorageHeader {
 impl Deserializable for AccountStorageHeader {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let len = source.read_u8()?;
-        let slots: Vec<StorageSlotHeader> = source.read_many(len as usize)?;
+        let slots: Vec<StorageSlotHeader> = source
+            .read_many_iter::<StorageSlotHeader>(len as usize)?
+            .collect::<Result<_, _>>()?;
         Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
@@ -297,7 +299,7 @@ impl Deserializable for StorageSlotHeader {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use super::AccountStorageHeader;
     use crate::Word;

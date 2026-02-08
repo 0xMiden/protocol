@@ -240,11 +240,16 @@ impl BlockHeader {
         elements.extend_from_slice(tx_commitment.as_elements());
         elements.extend_from_slice(tx_kernel_commitment.as_elements());
         elements.extend(validator_key.to_commitment());
-        elements.extend([block_num.into(), version.into(), timestamp.into(), ZERO]);
+        elements.extend([
+            block_num.into(),
+            Felt::new(u64::from(version)),
+            Felt::new(u64::from(timestamp)),
+            ZERO,
+        ]);
         elements.extend([
             fee_parameters.native_asset_id().suffix(),
             fee_parameters.native_asset_id().prefix().as_felt(),
-            fee_parameters.verification_base_fee().into(),
+            Felt::new(u64::from(fee_parameters.verification_base_fee())),
             ZERO,
         ]);
         elements.extend([ZERO, ZERO, ZERO, ZERO]);

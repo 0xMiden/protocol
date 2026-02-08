@@ -128,7 +128,7 @@ impl crate::utils::serde::Serializable for StorageSlot {
 }
 
 impl crate::utils::serde::Deserializable for StorageSlot {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: miden_crypto::utils::ByteReader>(
         source: &mut R,
     ) -> Result<Self, crate::utils::serde::DeserializationError> {
         let name: StorageSlotName = source.read()?;

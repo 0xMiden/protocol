@@ -1,6 +1,11 @@
 use miden_crypto::Word;
-use miden_crypto::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
+use miden_crypto::utils::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 use crate::account::AccountId;
 use crate::{Felt, Hasher, NoteError, WORD_SIZE, ZERO};

@@ -1,4 +1,4 @@
-use miden_processor::DeserializationError;
+use miden_crypto::utils::DeserializationError;
 
 use super::{NoteAssets, NoteId, NoteInputs, NoteRecipient, NoteScript, Nullifier};
 use crate::Word;

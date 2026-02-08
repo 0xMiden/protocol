@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use miden_core::field::PrimeField64;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::errors::tx_kernel::{
@@ -49,7 +50,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_element(0).as_int(),
+        exec_output.get_stack_element(0).as_canonical_u64(),
         tx_context.account().vault().get_balance(faucet_id).unwrap()
     );
 
@@ -94,7 +95,7 @@ async fn peek_balance_returns_correct_amount() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_element(0).as_int(),
+        exec_output.get_stack_element(0).as_canonical_u64(),
         tx_context.account().vault().get_balance(faucet_id).unwrap()
     );
 
@@ -199,7 +200,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from(account_vault.add_asset(add_fungible_asset).unwrap())
     );
 
@@ -277,7 +278,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from(account_vault.add_asset(add_non_fungible_asset)?)
     );
 
@@ -356,7 +357,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from(account_vault.remove_asset(remove_fungible_asset).unwrap())
     );
 
@@ -440,7 +441,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from(account_vault.remove_asset(remove_fungible_asset).unwrap())
     );
 
@@ -525,7 +526,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word_le(0),
         Word::from(account_vault.remove_asset(non_fungible_asset).unwrap())
     );
 

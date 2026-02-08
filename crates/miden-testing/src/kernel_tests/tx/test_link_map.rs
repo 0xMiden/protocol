@@ -191,7 +191,7 @@ async fn insertion() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
-    let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+    let map = LinkMap::new(Felt::new(u64::from(map_ptr)), &mem_viewer);
     let mut map_iter = map.iter();
 
     let entry0 = map_iter.next().expect("map should have four entries");
@@ -561,7 +561,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
     for (map_ptr, control_map) in control_maps {
-        let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+        let map = LinkMap::new(Felt::new(u64::from(map_ptr)), &mem_viewer);
         let actual_map_len = map.iter().count();
         assert_eq!(
             actual_map_len,

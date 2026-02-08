@@ -230,7 +230,8 @@ impl Serializable for NoteAssets {
 impl Deserializable for NoteAssets {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let count = source.read_u8()?;
-        let assets = source.read_many::<Asset>(count.into())?;
+        let assets =
+            source.read_many_iter::<Asset>(count.into())?.collect::<Result<Vec<_>, _>>()?;
         Self::new(assets).map_err(|e| DeserializationError::InvalidValue(format!("{e:?}")))
     }
 }

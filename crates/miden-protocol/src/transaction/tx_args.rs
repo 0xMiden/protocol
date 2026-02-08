@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::MastNodeExt;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
@@ -177,7 +177,7 @@ impl TransactionArgs {
             (inputs.commitment(), inputs.to_elements()),
             (
                 Hasher::hash_elements(inputs.commitment().as_elements()),
-                vec![Felt::from(inputs.num_values())],
+                vec![Felt::new(u64::from(inputs.num_values()))],
             ),
             (script.root(), script_encoded),
         ];
@@ -349,10 +349,10 @@ impl Deserializable for TransactionScript {
 mod tests {
     use alloc::vec::Vec;
 
-    use miden_core::AdviceMap;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use crate::transaction::TransactionArgs;
+    use crate::vm::AdviceMap;
 
     #[test]
     fn test_tx_args_serialization() {

@@ -130,7 +130,7 @@ proc main
 
     # get the memory address of the transaction script root and load it to the stack
     exec.memory::get_tx_script_root_ptr
-    padw dup.4 mem_loadw_be
+    padw dup.4 mem_loadw_le
     # => [TX_SCRIPT_ROOT, tx_script_root_ptr, pad(16)]
 
     exec.word::eqz not

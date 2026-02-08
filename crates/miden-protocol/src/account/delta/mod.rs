@@ -1,6 +1,8 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use miden_core::field::PrimeField64;
+
 use crate::account::{
     Account,
     AccountCode,
@@ -95,7 +97,7 @@ impl AccountDelta {
     pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
         let new_nonce_delta = self.nonce_delta + other.nonce_delta;
 
-        if new_nonce_delta.as_int() < self.nonce_delta.as_int() {
+        if new_nonce_delta.as_canonical_u64() < self.nonce_delta.as_canonical_u64() {
             return Err(AccountDeltaError::NonceIncrementOverflow {
                 current: self.nonce_delta,
                 increment: other.nonce_delta,
@@ -587,7 +589,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_core::Felt;
-    use miden_core::utils::Serializable;
+    use miden_crypto::utils::Serializable;
 
     use super::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
     use crate::account::delta::AccountUpdateDetails;
@@ -643,7 +645,7 @@ mod tests {
         let vault_delta = AccountVaultDelta::default();
 
         let nonce_delta0 = ONE;
-        let nonce_delta1 = Felt::from(0xffff_ffff_0000_0000u64);
+        let nonce_delta1 = Felt::new(0xffff_ffff_0000_0000u64);
 
         let mut delta0 =
             AccountDelta::new(account_id, storage_delta.clone(), vault_delta.clone(), nonce_delta0)

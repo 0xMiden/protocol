@@ -1,6 +1,7 @@
 use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
+use miden_core::field::PrimeField64;
 use miden_crypto::WordError;
 use miden_protocol_macros::WordWrapper;
 
@@ -65,7 +66,7 @@ impl Nullifier {
     ///
     /// Nullifier prefix is defined as the 16 most significant bits of the nullifier value.
     pub fn prefix(&self) -> u16 {
-        (self.as_word()[3].as_int() >> NULLIFIER_PREFIX_SHIFT) as u16
+        (self.as_word()[3].as_canonical_u64() >> NULLIFIER_PREFIX_SHIFT) as u16
     }
 
     /// Creates a Nullifier from a hex string. Assumes that the string starts with "0x" and

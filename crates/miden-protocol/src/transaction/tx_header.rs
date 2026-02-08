@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_processor::DeserializationError;
+use miden_crypto::utils::DeserializationError;
 
 use crate::Word;
 use crate::asset::FungibleAsset;

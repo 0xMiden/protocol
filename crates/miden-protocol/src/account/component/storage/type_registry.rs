@@ -4,10 +4,16 @@ use alloc::string::{String, ToString};
 use core::error::Error;
 use core::fmt::{self, Display};
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
+use miden_core::field::PrimeField64;
 use miden_core::{Felt, Word, ZERO};
-use miden_crypto::dsa::{ecdsa_k256_keccak, falcon512_rpo};
-use miden_processor::DeserializationError;
+use miden_crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
+use miden_crypto::utils::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use thiserror::Error;
 
 use crate::asset::TokenSymbol;
@@ -26,7 +32,7 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
     registry.register_word_type::<Word>();
-    registry.register_word_type::<falcon512_rpo::PublicKey>();
+    registry.register_word_type::<falcon512_poseidon2::PublicKey>();
     registry.register_word_type::<ecdsa_k256_keccak::PublicKey>();
     registry
 });
@@ -82,7 +88,7 @@ impl SchemaTypeError {
 /// Some examples:
 /// - `u32`
 /// - `felt`
-/// - `miden::standards::auth::falcon512_rpo::pub_key`
+/// - `miden::standards::auth::falcon512_poseidon2::pub_key`
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "std", derive(::serde::Deserialize, ::serde::Serialize))]
 #[cfg_attr(feature = "std", serde(transparent))]
@@ -301,11 +307,11 @@ impl FeltType for u8 {
         let native: u8 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from(native))
+        Ok(Felt::new(u64::from(native)))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u8::try_from(value.as_int()).map_err(|_| {
+        let native = u8::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u8", value))
         })?;
         Ok(native.to_string())
@@ -321,11 +327,11 @@ impl FeltType for u16 {
         let native: u16 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from(native))
+        Ok(Felt::new(u64::from(native)))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u16::try_from(value.as_int()).map_err(|_| {
+        let native = u16::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u16", value))
         })?;
         Ok(native.to_string())
@@ -341,11 +347,11 @@ impl FeltType for u32 {
         let native: u32 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from(native))
+        Ok(Felt::new(u64::from(native)))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u32::try_from(value.as_int()).map_err(|_| {
+        let native = u32::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u32", value))
         })?;
         Ok(native.to_string())
@@ -366,11 +372,11 @@ impl FeltType for Felt {
         .map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from(n))
+        Ok(Felt::new(n))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        Ok(format!("0x{:x}", value.as_int()))
+        Ok(format!("0x{:x}", value.as_canonical_u64()))
     }
 }
 
@@ -390,13 +396,13 @@ impl FeltType for TokenSymbol {
         let token = TokenSymbol::try_from(value).map_err(|err| {
             SchemaTypeError::ConversionError(format!(
                 "invalid token_symbol value `{}`: {err}",
-                value.as_int()
+                value.as_canonical_u64()
             ))
         })?;
         token.to_string().map_err(|err| {
             SchemaTypeError::ConversionError(format!(
                 "failed to display token_symbol value `{}`: {err}",
-                value.as_int()
+                value.as_canonical_u64()
             ))
         })
     }
@@ -443,9 +449,9 @@ impl WordType for Word {
     }
 }
 
-impl WordType for falcon512_rpo::PublicKey {
+impl WordType for falcon512_poseidon2::PublicKey {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key")
+        SchemaTypeId::new("miden::standards::auth::falcon512_poseidon2::pub_key")
             .expect("type is well formed")
     }
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
@@ -632,7 +638,7 @@ impl SchemaTypeRegistry {
         self.felt_display
             .get(type_name)
             .and_then(|display| display(felt).ok())
-            .unwrap_or_else(|| format!("0x{:x}", felt.as_int()))
+            .unwrap_or_else(|| format!("0x{:x}", felt.as_canonical_u64()))
     }
 
     /// Converts a [`Word`] into a canonical string representation and reports how it was produced.

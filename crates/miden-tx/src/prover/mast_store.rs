@@ -40,6 +40,13 @@ impl TransactionMastStore {
         let kernels_forest = TransactionKernel::kernel().mast_forest().clone();
         store.insert(kernels_forest);
 
+        // load transaction kernel library MAST forest (exposes $kernel::* procedures)
+        #[cfg(any(feature = "testing", test))]
+        {
+            let kernel_lib_forest = TransactionKernel::library().mast_forest().clone();
+            store.insert(kernel_lib_forest);
+        }
+
         // load miden-core-lib MAST forest
         let miden_core_lib_forest = CoreLibrary::default().mast_forest().clone();
         store.insert(miden_core_lib_forest);
@@ -59,7 +66,7 @@ impl TransactionMastStore {
     pub fn insert(&self, mast_forest: Arc<MastForest>) {
         let mut mast_forests = self.mast_forests.write();
 
-        // only register procedures that are local to this forest
+        // register only procedures local to this forest
         for proc_digest in mast_forest.local_procedure_digests() {
             mast_forests.insert(proc_digest, mast_forest.clone());
         }

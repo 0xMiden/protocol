@@ -3,7 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::error::Error;
 
-use miden_processor::{DeserializationError, ExecutionError};
+use miden_processor::ExecutionError;
 use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
@@ -12,6 +12,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProofError;
 use miden_protocol::note::{NoteId, NoteMetadata};
 use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::utils::DeserializationError;
 use miden_protocol::{
     AccountDeltaError,
     AccountError,

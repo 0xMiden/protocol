@@ -97,9 +97,9 @@ mod tests {
     use alloc::vec::Vec;
 
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_core::crypto::merkle::SMT_DEPTH;
     use miden_crypto::merkle::SparseMerklePath;
-    use miden_processor::SMT_DEPTH;
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use crate::account::{Account, AccountCode, AccountId, AccountStorage, PartialAccount};
     use crate::asset::AssetVault;

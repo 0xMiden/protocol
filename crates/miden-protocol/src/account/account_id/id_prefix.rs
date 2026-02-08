@@ -59,7 +59,7 @@ impl AccountIdPrefix {
     pub fn new_unchecked(prefix: Felt) -> Self {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_int())
+        match v0::extract_version(prefix.as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
             AccountIdVersion::Version0 => Self::V0(AccountIdPrefixV0::new_unchecked(prefix)),
@@ -75,7 +75,7 @@ impl AccountIdPrefix {
     pub fn new(prefix: Felt) -> Result<Self, AccountIdError> {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_int())? {
+        match v0::extract_version(prefix.as_canonical_u64())? {
             AccountIdVersion::Version0 => AccountIdPrefixV0::new(prefix).map(Self::V0),
         }
     }
@@ -91,14 +91,14 @@ impl AccountIdPrefix {
     }
 
     /// Returns the prefix as a [`u64`].
-    pub const fn as_u64(&self) -> u64 {
+    pub fn as_u64(&self) -> u64 {
         match self {
             AccountIdPrefix::V0(id_prefix) => id_prefix.as_u64(),
         }
     }
 
     /// Returns the type of this account ID.
-    pub const fn account_type(&self) -> AccountType {
+    pub fn account_type(&self) -> AccountType {
         match self {
             AccountIdPrefix::V0(id_prefix) => id_prefix.account_type(),
         }
@@ -164,7 +164,7 @@ impl AccountIdPrefix {
                 // Set the fungible bit to zero by taking the bitwise `and` of the felt with the
                 // inverted is_faucet mask.
                 let clear_fungible_bit_mask = !AccountIdV0::IS_FAUCET_MASK;
-                Felt::from(felt.as_int() & clear_fungible_bit_mask)
+                Felt::new(felt.as_canonical_u64() & clear_fungible_bit_mask)
             },
         }
     }

@@ -1,7 +1,8 @@
 use core::fmt;
 
+use miden_core::crypto::merkle::SMT_DEPTH;
+use miden_core::field::PrimeField64;
 use miden_crypto::merkle::smt::LeafIndex;
-use miden_processor::SMT_DEPTH;
 
 use crate::Word;
 use crate::account::AccountType::FungibleFaucet;
@@ -62,8 +63,8 @@ impl AssetVaultKey {
     }
 
     /// Returns the leaf index of a vault key.
-    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.0)
+    pub fn to_leaf_index(&self) -> LeafIndex<{ SMT_DEPTH }> {
+        LeafIndex::<{ SMT_DEPTH }>::from(self.0)
     }
 
     /// Constructs a fungible asset's key from a faucet ID.
@@ -84,7 +85,7 @@ impl AssetVaultKey {
 
     /// Returns `true` if the asset key is for a fungible asset, `false` otherwise.
     fn is_fungible(&self) -> bool {
-        self.0[0].as_int() == 0 && self.0[1].as_int() == 0
+        self.0[0].as_canonical_u64() == 0 && self.0[1].as_canonical_u64() == 0
     }
 }
 

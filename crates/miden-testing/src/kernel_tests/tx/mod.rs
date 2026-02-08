@@ -66,11 +66,7 @@ pub trait ExecutionOutputExt {
     /// Reads an element from the stack.
     fn get_stack_element(&self, idx: usize) -> Felt;
 
-    /// Reads a [`Word`] from the stack in big-endian (reversed) order.
-    fn get_stack_word_be(&self, index: usize) -> Word;
-
     /// Reads a [`Word`] from the stack in little-endian (memory) order.
-    #[allow(dead_code)]
     fn get_stack_word_le(&self, index: usize) -> Word;
 
     /// Reads the [`Word`] of the input note's memory identified by the index at the provided
@@ -84,10 +80,9 @@ impl ExecutionOutputExt for ExecutionOutput {
     fn get_kernel_mem_word(&self, addr: u32) -> Word {
         let tx_kernel_context = ContextId::root();
         let clk = 0u32;
-        let err_ctx = ();
 
         self.memory
-            .read_word(tx_kernel_context, Felt::from(addr), clk.into(), &err_ctx)
+            .read_word(tx_kernel_context, Felt::new(u64::from(addr)), clk.into())
             .expect("expected address to be word-aligned")
     }
 
@@ -95,20 +90,15 @@ impl ExecutionOutputExt for ExecutionOutput {
         *self.stack.get(index).expect("index must be in bounds")
     }
 
-    fn get_stack_word_be(&self, index: usize) -> Word {
-        self.stack.get_stack_word_be(index).expect("index must be in bounds")
-    }
-
     fn get_stack_word_le(&self, index: usize) -> Word {
-        self.stack.get_stack_word_le(index).expect("index must be in bounds")
+        self.stack.get_word(index).expect("index must be in bounds")
     }
 
     fn get_kernel_mem_element(&self, addr: u32) -> Felt {
         let tx_kernel_context = ContextId::root();
-        let err_ctx = ();
 
         self.memory
-            .read_element(tx_kernel_context, Felt::from(addr), &err_ctx)
+            .read_element(tx_kernel_context, Felt::new(u64::from(addr)))
             .expect("address converted from u32 should be in bounds")
     }
 }
@@ -144,10 +134,10 @@ pub fn create_mock_notes_procedure(notes: &[Note]) -> String {
             "
                 # populate note {idx}
                 push.{metadata}
-                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_METADATA_OFFSET} add add mem_storew_be dropw
+                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_METADATA_OFFSET} add add mem_storew_le dropw
 
                 push.{recipient}
-                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_RECIPIENT_OFFSET} add add mem_storew_be dropw
+                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_RECIPIENT_OFFSET} add add mem_storew_le dropw
 
                 push.{num_assets}
                 push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_NUM_ASSETS_OFFSET} add add mem_store
@@ -156,7 +146,7 @@ pub fn create_mock_notes_procedure(notes: &[Note]) -> String {
                 push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_DIRTY_FLAG_OFFSET} add add mem_store
 
                 push.{first_asset}
-                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_ASSETS_OFFSET} add add mem_storew_be dropw
+                push.{OUTPUT_NOTE_SECTION_OFFSET} push.{note_offset} push.{OUTPUT_NOTE_ASSETS_OFFSET} add add mem_storew_le dropw
                 ",
             idx = idx,
             metadata = metadata,

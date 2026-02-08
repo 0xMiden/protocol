@@ -18,7 +18,9 @@ use miden_protocol::transaction::{
 pub use miden_prover::ProvingOptions;
 #[cfg(not(target_arch = "wasm32"))]
 use miden_prover::prove_sync;
-use miden_prover::{ExecutionProof, HashFunction, Word};
+#[cfg(any(feature = "testing", test))]
+use miden_prover::HashFunction;
+use miden_prover::{ExecutionProof, Word};
 
 use super::TransactionProverError;
 use crate::host::{AccountProcedureIndexMap, ScriptMastForestStore};
@@ -109,86 +111,16 @@ impl LocalTransactionProver {
         &self,
         stack_inputs: miden_prover::StackInputs,
         advice_inputs: miden_prover::AdviceInputs,
-        host: &mut impl miden_prover::AsyncHost,
+        host: &mut impl miden_prover::Host,
     ) -> Result<(miden_prover::StackOutputs, ExecutionProof), miden_prover::ExecutionError> {
-        use miden_air::ProcessorAir;
-        use miden_processor::fast::FastProcessor;
-        use miden_processor::parallel::build_trace;
-        use miden_prover::math::Felt;
-
-        const DEFAULT_FRAGMENT_SIZE: usize = 1 << 16;
-
-        let program = &TransactionKernel::main();
-
-        // Reverse stack inputs
-        let stack_inputs_reversed: Vec<Felt> = stack_inputs.iter().copied().rev().collect();
-
-        let processor = if self.proof_options.execution_options().enable_debugging() {
-            FastProcessor::new_debug(&stack_inputs_reversed, advice_inputs.clone())
-        } else {
-            FastProcessor::new_with_advice_inputs(&stack_inputs_reversed, advice_inputs.clone())
-        };
-
-        // Use async execute_for_trace instead of sync version
-        let (execution_output, trace_generation_context) =
-            processor.execute_for_trace(program, host, DEFAULT_FRAGMENT_SIZE).await?;
-
-        let trace = build_trace(
-            execution_output,
-            trace_generation_context,
-            program.hash(),
-            program.kernel().clone(),
-        );
-
-        let stack_outputs = trace.stack_outputs().clone();
-        let precompile_requests = trace.precompile_requests().to_vec();
-        let hash_fn = self.proof_options.hash_fn();
-
-        // Convert trace to row-major format
-        let trace_matrix = miden_prover::execution_trace_to_row_major(&trace);
-
-        // Build public values
-        let public_values = trace.to_public_values();
-
-        // Create AIR with aux trace builders
-        let air = ProcessorAir::with_aux_builder(trace.aux_trace_builders().clone());
-
-        // Generate STARK proof using unified miden-prover
-        let proof_bytes = match hash_fn {
-            HashFunction::Blake3_256 => {
-                let config = miden_air::config::create_blake3_256_config();
-                let proof =
-                    miden_crypto::stark::prove(&config, &air, &trace_matrix, &public_values);
-                bincode::serialize(&proof).expect("Failed to serialize proof")
-            },
-            HashFunction::Keccak => {
-                let config = miden_air::config::create_keccak_config();
-                let proof =
-                    miden_crypto::stark::prove(&config, &air, &trace_matrix, &public_values);
-                bincode::serialize(&proof).expect("Failed to serialize proof")
-            },
-            HashFunction::Rpo256 => {
-                let config = miden_air::config::create_rpo_config();
-                let proof =
-                    miden_crypto::stark::prove(&config, &air, &trace_matrix, &public_values);
-                bincode::serialize(&proof).expect("Failed to serialize proof")
-            },
-            HashFunction::Poseidon2 => {
-                let config = miden_air::config::create_poseidon2_config();
-                let proof =
-                    miden_crypto::stark::prove(&config, &air, &trace_matrix, &public_values);
-                bincode::serialize(&proof).expect("Failed to serialize proof")
-            },
-            HashFunction::Rpx256 => {
-                let config = miden_air::config::create_rpx_config();
-                let proof =
-                    miden_crypto::stark::prove(&config, &air, &trace_matrix, &public_values);
-                bincode::serialize(&proof).expect("Failed to serialize proof")
-            },
-        };
-
-        let proof = ExecutionProof::new(proof_bytes, hash_fn, precompile_requests);
-        Ok((stack_outputs, proof))
+        miden_prover::prove(
+            &TransactionKernel::main(),
+            stack_inputs,
+            advice_inputs,
+            host,
+            self.proof_options.clone(),
+        )
+        .await
     }
 
     fn build_proven_transaction(

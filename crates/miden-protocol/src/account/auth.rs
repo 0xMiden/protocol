@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use rand::{CryptoRng, Rng};
 
-use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_rpo};
+use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -95,20 +95,20 @@ impl Deserializable for AuthScheme {
 #[non_exhaustive]
 #[repr(u8)]
 pub enum AuthSecretKey {
-    RpoFalcon512(falcon512_rpo::SecretKey) = RPO_FALCON_512,
+    RpoFalcon512(falcon512_poseidon2::SecretKey) = RPO_FALCON_512,
     EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey) = ECDSA_K256_KECCAK,
 }
 
 impl AuthSecretKey {
     /// Generates an RpoFalcon512 secret key from the OS-provided randomness.
     #[cfg(feature = "std")]
-    pub fn new_falcon512_rpo() -> Self {
-        Self::RpoFalcon512(falcon512_rpo::SecretKey::new())
+    pub fn new_falcon512_poseidon2() -> Self {
+        Self::RpoFalcon512(falcon512_poseidon2::SecretKey::new())
     }
 
     /// Generates an RpoFalcon512 secrete key using the provided random number generator.
-    pub fn new_falcon512_rpo_with_rng<R: Rng>(rng: &mut R) -> Self {
-        Self::RpoFalcon512(falcon512_rpo::SecretKey::with_rng(rng))
+    pub fn new_falcon512_poseidon2_with_rng<R: Rng>(rng: &mut R) -> Self {
+        Self::RpoFalcon512(falcon512_poseidon2::SecretKey::with_rng(rng))
     }
 
     /// Generates an EcdsaK256Keccak secret key from the OS-provided randomness.
@@ -161,7 +161,7 @@ impl Deserializable for AuthSecretKey {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
             AuthScheme::RpoFalcon512 => {
-                let secret_key = falcon512_rpo::SecretKey::read_from(source)?;
+                let secret_key = falcon512_poseidon2::SecretKey::read_from(source)?;
                 Ok(AuthSecretKey::RpoFalcon512(secret_key))
             },
             AuthScheme::EcdsaK256Keccak => {
@@ -185,8 +185,8 @@ impl core::fmt::Display for PublicKeyCommitment {
     }
 }
 
-impl From<falcon512_rpo::PublicKey> for PublicKeyCommitment {
-    fn from(value: falcon512_rpo::PublicKey) -> Self {
+impl From<falcon512_poseidon2::PublicKey> for PublicKeyCommitment {
+    fn from(value: falcon512_poseidon2::PublicKey) -> Self {
         Self(value.to_commitment())
     }
 }
@@ -207,7 +207,7 @@ impl From<Word> for PublicKeyCommitment {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum PublicKey {
-    RpoFalcon512(falcon512_rpo::PublicKey),
+    RpoFalcon512(falcon512_poseidon2::PublicKey),
     EcdsaK256Keccak(ecdsa_k256_keccak::PublicKey),
 }
 
@@ -256,7 +256,7 @@ impl Deserializable for PublicKey {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
             AuthScheme::RpoFalcon512 => {
-                let pub_key = falcon512_rpo::PublicKey::read_from(source)?;
+                let pub_key = falcon512_poseidon2::PublicKey::read_from(source)?;
                 Ok(PublicKey::RpoFalcon512(pub_key))
             },
             AuthScheme::EcdsaK256Keccak => {
@@ -277,7 +277,7 @@ impl Deserializable for PublicKey {
 /// provider. To prepare the signature, use the provided `to_prepared_signature` method:
 /// ```rust,no_run
 /// use miden_protocol::account::auth::Signature;
-/// use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+/// use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 /// use miden_protocol::{Felt, Word};
 ///
 /// let secret_key = SecretKey::new();
@@ -288,7 +288,7 @@ impl Deserializable for PublicKey {
 #[derive(Clone, Debug)]
 #[repr(u8)]
 pub enum Signature {
-    RpoFalcon512(falcon512_rpo::Signature) = RPO_FALCON_512,
+    RpoFalcon512(falcon512_poseidon2::Signature) = RPO_FALCON_512,
     EcdsaK256Keccak(ecdsa_k256_keccak::Signature) = ECDSA_K256_KECCAK,
 }
 
@@ -310,7 +310,7 @@ impl Signature {
         // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
         // refactoring
         let mut result = match self {
-            Signature::RpoFalcon512(sig) => prepare_falcon512_rpo_signature(sig),
+            Signature::RpoFalcon512(sig) => prepare_falcon512_poseidon2_signature(sig),
             Signature::EcdsaK256Keccak(sig) => {
                 let pk = ecdsa_k256_keccak::PublicKey::recover_from(msg, sig)
                     .expect("inferring public key from signature and message should succeed");
@@ -325,8 +325,8 @@ impl Signature {
     }
 }
 
-impl From<falcon512_rpo::Signature> for Signature {
-    fn from(signature: falcon512_rpo::Signature) -> Self {
+impl From<falcon512_poseidon2::Signature> for Signature {
+    fn from(signature: falcon512_poseidon2::Signature) -> Self {
         Signature::RpoFalcon512(signature)
     }
 }
@@ -345,7 +345,7 @@ impl Deserializable for Signature {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         match source.read::<AuthScheme>()? {
             AuthScheme::RpoFalcon512 => {
-                let signature = falcon512_rpo::Signature::read_from(source)?;
+                let signature = falcon512_poseidon2::Signature::read_from(source)?;
                 Ok(Signature::RpoFalcon512(signature))
             },
             AuthScheme::EcdsaK256Keccak => {
@@ -359,7 +359,7 @@ impl Deserializable for Signature {
 // SIGNATURE PREPARATION
 // ================================================================================================
 
-/// Converts a Falcon [falcon512_rpo::Signature] to a vector of values to be pushed onto the
+/// Converts a Falcon [falcon512_poseidon2::Signature] to a vector of values to be pushed onto the
 /// advice stack. The values are the ones required for a Falcon signature verification inside the VM
 /// and they are:
 ///
@@ -370,8 +370,8 @@ impl Deserializable for Signature {
 /// 4. The product of the above two polynomials `pi` in the ring of polynomials with coefficients in
 ///    the Miden field.
 /// 5. The nonce represented as 8 field elements.
-fn prepare_falcon512_rpo_signature(sig: &falcon512_rpo::Signature) -> Vec<Felt> {
-    use falcon512_rpo::Polynomial;
+fn prepare_falcon512_poseidon2_signature(sig: &falcon512_poseidon2::Signature) -> Vec<Felt> {
+    use falcon512_poseidon2::Polynomial;
 
     // The signature is composed of a nonce and a polynomial s2
     // The nonce is represented as 8 field elements.
@@ -392,8 +392,8 @@ fn prepare_falcon512_rpo_signature(sig: &falcon512_rpo::Signature) -> Vec<Felt> 
     // Finally, we push the nonce needed for the hash-to-point algorithm.
 
     let mut polynomials: Vec<Felt> =
-        h.coefficients.iter().map(|a| Felt::from(a.value() as u32)).collect();
-    polynomials.extend(s2.coefficients.iter().map(|a| Felt::from(a.value() as u32)));
+        h.coefficients.iter().map(|a| Felt::new(a.value() as u64)).collect();
+    polynomials.extend(s2.coefficients.iter().map(|a| Felt::new(a.value() as u64)));
     polynomials.extend(pi.iter().map(|a| Felt::new(*a)));
 
     let digest_polynomials = Hasher::hash_elements(&polynomials);

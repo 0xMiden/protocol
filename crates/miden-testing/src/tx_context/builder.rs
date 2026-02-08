@@ -6,7 +6,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::{AdviceInputs, Felt, Word};
+use miden_core::advice::AdviceInputs;
+use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{Account, AccountHeader, AccountId};
@@ -313,6 +314,15 @@ impl TransactionContextBuilder {
 
             for (account, _) in self.foreign_account_inputs.values() {
                 mast_forest_store.insert(account.code().mast());
+            }
+
+            #[cfg(feature = "std")]
+            {
+                use miden_standards::code_builder::CodeBuilder;
+
+                for library in CodeBuilder::mock_libraries() {
+                    mast_forest_store.insert(library.mast_forest().clone());
+                }
             }
 
             mast_forest_store

@@ -686,8 +686,8 @@ mod tests {
     use alloc::vec::Vec;
 
     use anyhow::Context;
-    use miden_air::HashFunction;
-    use miden_core::utils::Deserializable;
+    use miden_core::proof::HashFunction;
+    use miden_crypto::utils::Deserializable;
     use miden_test_utils::rand::rand_value;
     use miden_verifier::ExecutionProof;
 

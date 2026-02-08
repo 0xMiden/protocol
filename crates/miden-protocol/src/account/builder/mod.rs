@@ -285,7 +285,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
-    use miden_processor::MastNodeExt;
+    use miden_core::mast::MastNodeExt;
 
     use super::*;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};

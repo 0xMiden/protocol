@@ -1,4 +1,5 @@
-use miden_processor::{ExecutionError, Felt, ProcessState};
+use miden_core::field::PrimeField64;
+use miden_processor::{ExecutionError, Felt, ProcessorState};
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
 use miden_protocol::note::{NoteId, NoteInputs};
 use miden_protocol::transaction::memory::{
@@ -61,14 +62,14 @@ pub(super) trait TransactionKernelProcess {
     ) -> Result<bool, TransactionKernelError>;
 }
 
-impl<'a> TransactionKernelProcess for ProcessState<'a> {
+impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     fn get_active_account_ptr(&self) -> Result<u32, TransactionKernelError> {
         let account_stack_top_ptr =
             self.get_mem_value(self.ctx(), ACCOUNT_STACK_TOP_PTR).ok_or_else(|| {
                 TransactionKernelError::other("account stack top ptr should be initialized")
             })?;
         let account_stack_top_ptr: u32 =
-            account_stack_top_ptr.as_int().try_into().map_err(|_| {
+            account_stack_top_ptr.as_canonical_u64().try_into().map_err(|_| {
                 TransactionKernelError::other("account stack top ptr should fit into a u32")
             })?;
 
@@ -76,7 +77,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
             .get_mem_value(self.ctx(), account_stack_top_ptr)
             .ok_or_else(|| TransactionKernelError::other("account id should be initialized"))?;
         active_account_ptr
-            .as_int()
+            .as_canonical_u64()
             .try_into()
             .map_err(|_| TransactionKernelError::other("active account ptr should fit into a u32"))
     }
@@ -92,7 +93,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 TransactionKernelError::other("active account id should be initialized")
             })?;
 
-        AccountId::try_from([active_account_id_and_nonce[1], active_account_id_and_nonce[0]])
+        AccountId::try_from([active_account_id_and_nonce[3], active_account_id_and_nonce[2]])
             .map_err(|_| {
                 TransactionKernelError::other(
                     "active account id ptr should point to a valid account ID",
@@ -129,7 +130,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
             ))?;
 
-        Ok(num_storage_slots_felt.as_int())
+        Ok(num_storage_slots_felt.as_canonical_u64())
     }
 
     /// Returns the ID of the active note, or None if the note execution hasn't started yet or has
@@ -146,7 +147,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
             None => return Ok(None),
         };
         // convert note address into u32
-        let note_address: u32 = note_address_felt.as_int().try_into().map_err(|_| {
+        let note_address: u32 = note_address_felt.as_canonical_u64().try_into().map_err(|_| {
             TransactionKernelError::other(format!(
                 "failed to convert {note_address_felt} into a memory address (u32)"
             ))
@@ -160,7 +161,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 .map_err(|err| {
                     TransactionKernelError::other_with_source(
                         "failed to read note address",
-                        ExecutionError::MemoryError(err),
+                        ExecutionError::MemoryErrorNoCtx(err),
                     )
                 })?
                 .map(NoteId::from_raw))
@@ -169,7 +170,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
 
     /// Returns the vault root at the provided pointer.
     fn get_vault_root(&self, vault_root_ptr: Felt) -> Result<Word, TransactionKernelError> {
-        let vault_root_ptr: u32 = vault_root_ptr.as_int().try_into().map_err(|_err| {
+        let vault_root_ptr: u32 = vault_root_ptr.as_canonical_u64().try_into().map_err(|_err| {
             TransactionKernelError::other(format!(
                 "vault root ptr should fit into a u32, but was {vault_root_ptr}"
             ))
@@ -191,7 +192,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         &self,
         slot_ptr: Felt,
     ) -> Result<(StorageSlotId, StorageSlotType, Word), TransactionKernelError> {
-        let slot_ptr: u32 = slot_ptr.as_int().try_into().map_err(|_err| {
+        let slot_ptr: u32 = slot_ptr.as_canonical_u64().try_into().map_err(|_err| {
             TransactionKernelError::other(format!(
                 "slot ptr should fit into a u32, but was {slot_ptr}"
             ))
@@ -225,7 +226,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
             })?;
 
         let slot_type = slot_metadata[ACCT_STORAGE_SLOT_TYPE_OFFSET as usize];
-        let slot_type: u8 = slot_type.as_int().try_into().map_err(|err| {
+        let slot_type: u8 = slot_type.as_canonical_u64().try_into().map_err(|err| {
             TransactionKernelError::other(format!("failed to convert {slot_type} into u8: {err}"))
         })?;
         let slot_type = StorageSlotType::try_from(slot_type).map_err(|err| {
@@ -280,7 +281,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                         "expected num_inputs advice entry to contain exactly one element",
                     ));
                 }
-                let num_inputs = num_inputs[0].as_int() as usize;
+                let num_inputs = num_inputs[0].as_canonical_u64() as usize;
 
                 let note_inputs = NoteInputs::new(inputs[0..num_inputs].to_vec())
                     .map_err(TransactionKernelError::MalformedNoteInputs)?;
@@ -307,7 +308,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         leaf_index: Felt,
     ) -> Result<bool, TransactionKernelError> {
         self.advice_provider()
-            .has_merkle_path(root, Felt::from(TREE_DEPTH), leaf_index)
+            .has_merkle_path(root, Felt::new(u64::from(TREE_DEPTH)), leaf_index)
             .map_err(|err| {
                 TransactionKernelError::other_with_source(
                     "failed to check for merkle path presence in advice provider",
@@ -326,7 +327,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
 /// Returns an error if the key is not present in the advice map or if the data is malformed
 /// (not exactly 8 elements).
 fn read_double_word_from_adv_map(
-    process: &ProcessState,
+    process: &ProcessorState,
     key: Word,
 ) -> Result<(Word, Word), TransactionKernelError> {
     let data = process

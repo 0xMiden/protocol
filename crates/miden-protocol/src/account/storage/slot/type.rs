@@ -28,7 +28,7 @@ impl StorageSlotType {
     const MAP_TYPE: u8 = 1;
 
     pub fn as_felt(&self) -> Felt {
-        Felt::from(*self as u8)
+        Felt::new(u64::from(*self as u8))
     }
 
     /// Returns `true` if the slot is a value slot, `false` otherwise.
@@ -97,7 +97,7 @@ impl Deserializable for StorageSlotType {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_crypto::utils::{Deserializable, Serializable};
 
     use crate::account::StorageSlotType;
 

@@ -1,7 +1,8 @@
+use miden_core::advice::AdviceInputs;
 #[cfg(test)]
 use miden_processor::DefaultHost;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, AsyncHost, ExecutionError, Program, StackInputs};
+use miden_processor::{ExecutionError, Host, Program, StackInputs};
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;
 
@@ -15,7 +16,7 @@ pub(crate) struct CodeExecutor<H> {
     advice_inputs: AdviceInputs,
 }
 
-impl<H: AsyncHost> CodeExecutor<H> {
+impl<H: Host> CodeExecutor<H> {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
     pub(crate) fn new(host: H) -> Self {
@@ -68,16 +69,10 @@ impl<H: AsyncHost> CodeExecutor<H> {
         mut self,
         program: Program,
     ) -> Result<ExecutionOutput, ExecutionError> {
-        // This reverses the stack inputs (even though it doesn't look like it does) because the
-        // fast processor expects the reverse order.
-        //
-        // Once we use the FastProcessor for execution and proving, we can change the way these
-        // inputs are constructed in TransactionKernel::prepare_inputs.
-        let stack_inputs =
-            StackInputs::new(self.stack_inputs.unwrap_or_default().iter().copied().collect())
-                .unwrap();
-
-        let processor = FastProcessor::new_debug(stack_inputs.as_slice(), self.advice_inputs);
+        let stack_inputs = self.stack_inputs.unwrap_or_default();
+        let processor = FastProcessor::new(stack_inputs)
+            .with_advice(self.advice_inputs)
+            .with_debugging(true);
 
         let execution_output = processor.execute(&program, &mut self.host).await?;
 

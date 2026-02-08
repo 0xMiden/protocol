@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use core::fmt::Display;
 
 use miden_core::field::PrimeField64;
-use miden_processor::MastNodeExt;
+use miden_core::mast::MastNodeExt;
 
 use super::Felt;
 use crate::assembly::mast::{MastForest, MastNodeId};
@@ -94,7 +94,7 @@ impl From<&NoteScript> for Vec<Felt> {
         let mut result = Vec::with_capacity(final_size);
 
         // Push the length, this is used to remove the padding later
-        result.push(Felt::from(u32::from(script.entrypoint)));
+        result.push(Felt::new(u64::from(u32::from(script.entrypoint))));
         result.push(Felt::new(len as u64));
 
         // A Felt can not represent all u64 values, so the data is encoded using u32.

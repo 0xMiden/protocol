@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::memory
@@ -138,7 +138,7 @@ pub proc compute_output_note_assets_commitment
         end
 
         # extract digest
-        exec.rpo256::squeeze_digest
+        exec.poseidon2::squeeze_digest
         # => [ASSETS_COMMITMENT, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
 
         # drop accessory variables from stack
@@ -190,11 +190,11 @@ proc compute_output_note_id
     # => [ASSETS_COMMITMENT, RECIPIENT, EMPTY_WORD, note_data_ptr]
 
     # compute output note commitment (which is also note ID) and extract digest
-    hperm exec.rpo256::squeeze_digest
+    hperm exec.poseidon2::squeeze_digest
     # => [NOTE_ID, note_data_ptr]
 
     # save the output note commitment (note ID) to memory
-    movup.4 mem_storew_be
+    movup.4 mem_storew_le
     # => [NOTE_ID]
 end
 
@@ -251,7 +251,7 @@ pub proc compute_output_notes_commitment
     end
 
     # extract digest
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [OUTPUT_NOTES_COMMITMENT, end_ptr, end_ptr, ...]
 
     # drop accessory variables from stack

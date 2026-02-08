@@ -4,8 +4,13 @@ use core::hash::Hash;
 
 use miden_core::Felt;
 use miden_core::field::PrimeField64;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
+use miden_crypto::utils::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 use crate::account::account_id::v0::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
@@ -24,7 +29,7 @@ pub struct AccountIdPrefixV0 {
 
 impl Hash for AccountIdPrefixV0 {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.prefix.inner().hash(state);
+        self.prefix.as_canonical_u64().hash(state);
     }
 }
 
@@ -66,14 +71,14 @@ impl AccountIdPrefixV0 {
     }
 
     /// See [`AccountIdPrefix::as_u64`](crate::account::AccountIdPrefix::as_u64) for details.
-    pub const fn as_u64(&self) -> u64 {
-        self.prefix.as_int()
+    pub fn as_u64(&self) -> u64 {
+        self.prefix.as_canonical_u64()
     }
 
     /// See [`AccountIdPrefix::account_type`](crate::account::AccountIdPrefix::account_type) for
     /// details.
-    pub const fn account_type(&self) -> AccountType {
-        v0::extract_type(self.prefix.as_int())
+    pub fn account_type(&self) -> AccountType {
+        v0::extract_type(self.prefix.as_canonical_u64())
     }
 
     /// See [`AccountIdPrefix::is_faucet`](crate::account::AccountIdPrefix::is_faucet) for details.
@@ -90,7 +95,7 @@ impl AccountIdPrefixV0 {
     /// See [`AccountIdPrefix::storage_mode`](crate::account::AccountIdPrefix::storage_mode) for
     /// details.
     pub fn storage_mode(&self) -> AccountStorageMode {
-        v0::extract_storage_mode(self.prefix.as_int())
+        v0::extract_storage_mode(self.prefix.as_canonical_u64())
             .expect("account ID prefix should have been constructed with a valid storage mode")
     }
 
@@ -101,13 +106,13 @@ impl AccountIdPrefixV0 {
 
     /// See [`AccountIdPrefix::version`](crate::account::AccountIdPrefix::version) for details.
     pub fn version(&self) -> AccountIdVersion {
-        v0::extract_version(self.prefix.as_int())
+        v0::extract_version(self.prefix.as_canonical_u64())
             .expect("account ID prefix should have been constructed with a valid version")
     }
 
     /// See [`AccountIdPrefix::to_hex`](crate::account::AccountIdPrefix::to_hex) for details.
     pub fn to_hex(self) -> String {
-        format!("0x{:016x}", self.prefix.as_int())
+        format!("0x{:016x}", self.prefix.as_canonical_u64())
     }
 }
 
@@ -123,14 +128,14 @@ impl From<AccountIdPrefixV0> for Felt {
 impl From<AccountIdPrefixV0> for [u8; 8] {
     fn from(id: AccountIdPrefixV0) -> Self {
         let mut result = [0_u8; 8];
-        result[..8].copy_from_slice(&id.prefix.as_int().to_be_bytes());
+        result[..8].copy_from_slice(&id.prefix.as_canonical_u64().to_be_bytes());
         result
     }
 }
 
 impl From<AccountIdPrefixV0> for u64 {
     fn from(id: AccountIdPrefixV0) -> Self {
-        id.prefix.as_int()
+        id.prefix.as_canonical_u64()
     }
 }
 
@@ -204,7 +209,7 @@ impl PartialOrd for AccountIdPrefixV0 {
 
 impl Ord for AccountIdPrefixV0 {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.prefix.as_int().cmp(&other.prefix.as_int())
+        self.prefix.as_canonical_u64().cmp(&other.prefix.as_canonical_u64())
     }
 }
 
