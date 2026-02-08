@@ -171,61 +171,64 @@ proc calculate_root(
     loc_storew_be.CUR_HASH_LO_LOCAL dropw loc_storew_be.CUR_HASH_HI_LOCAL dropw
     # => [merkle_path_ptr, leaf_idx]
 
-    # prepare the stack for the hash computation cycle
-    padw padw padw
-    # => [PAD, PAD, PAD, merkle_path_ptr, leaf_idx]
-
     # Merkle path is guaranteed to contain 32 nodes
     repeat.32
-        # load the Merkle path node onto the stack
-        mem_stream
-        # => [PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        # Load the Merkle path node word-by-word using mem_loadw_be (same instruction as
+        # loc_loadw_be for the current hash, ensuring identical element ordering).
+        # Load D from ptr (lower addr → ends up below), then E from ptr+4 (higher addr → on top)
+        # to match the [PATH_NODE_LO, PATH_NODE_HI] layout.
+        # Stack: [merkle_path_ptr, leaf_idx]
+        padw dup.4 mem_loadw_be
+        # => [D, merkle_path_ptr, leaf_idx]
+        dup.4 add.4 padw dup.4 mem_loadw_be movup.4 drop
+        # => [E, D, merkle_path_ptr, leaf_idx]
+
+        # advance merkle_path_ptr by 8 (two words = 8 element addresses)
+        movup.8 add.8 movdn.8
+        # => [E, D, merkle_path_ptr+8, leaf_idx]
 
         # determine whether the last `leaf_idx` bit is 1 (is `leaf_idx` odd)
-        dup.13 u32and.1
-        # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        dup.9 u32and.1
+        # => [is_odd, E, D, merkle_path_ptr+8, leaf_idx]
 
-        # store the is_odd flag to the local memory, so we could use it while all 16 top elements
-        # are occupied by the nodes
+        # store the is_odd flag to the local memory
         loc_store.8
-        # => [PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        # => [E, D, merkle_path_ptr+8, leaf_idx]
 
         # load the hash respective to the current height from the local memory
         padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
-        # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
         # load the is_odd flag back to the stack
         loc_load.8
-        # => [is_odd, CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, PAD, merkle_path_ptr, leaf_idx]
+        # => [is_odd, CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
         # if is_odd flag equals 1 (`leaf_idx` is odd), change the order of the nodes on the stack
-        if.true         
-            # rearrange the hashes: current position of the hash is odd, so it should be on the 
+        if.true
+            # rearrange the hashes: current position of the hash is odd, so it should be on the
             # right
             swapdw
-            # => [PATH_NODE_LO, PATH_NODE_HI, CURR_HASH_LO, CURR_HASH_HI, PAD, merkle_path_ptr, leaf_idx]
+            # => [PATH_NODE_LO, PATH_NODE_HI, CURR_HASH_LO, CURR_HASH_HI, merkle_path_ptr, leaf_idx]
         end
 
         # compute the next height hash
         exec.keccak256::merge
-        # => [CURR_HASH_LO', CURR_HASH_HI', PAD, merkle_path_ptr, leaf_idx]
+        # => [CURR_HASH_LO', CURR_HASH_HI', merkle_path_ptr, leaf_idx]
 
-        # store the resulting hash to the local memory 
-        loc_storew_be.CUR_HASH_LO_LOCAL swapw loc_storew_be.CUR_HASH_HI_LOCAL
-        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx]
+        # store the resulting hash to the local memory and drop the hash words
+        loc_storew_be.CUR_HASH_LO_LOCAL dropw
+        loc_storew_be.CUR_HASH_HI_LOCAL dropw
+        # => [merkle_path_ptr, leaf_idx]
 
         # update the `leaf_idx` (shift it right by 1 bit)
-        movup.13 u32shr.1 movdn.13
-        # => [CURR_HASH_HI', CURR_HASH_LO', PAD, merkle_path_ptr, leaf_idx>>1]
+        swap u32shr.1 swap
+        # => [merkle_path_ptr, leaf_idx>>1]
     end
 
     # after all 32 hashes have been computed, the current hash stored in local memory represents
     # the root of the SMT, which should be returned
-    #
-    # remove 6 elements from the stack so that exactly 8 are remaining and rewrite them with the
-    # root value from the local memory
-    dropw drop drop
-    loc_loadw_be.CUR_HASH_HI_LOCAL swapw loc_loadw_be.CUR_HASH_LO_LOCAL
+    drop drop
+    padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
     # => [ROOT_LO, ROOT_HI]
 end
 
