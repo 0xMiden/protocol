@@ -149,7 +149,7 @@ proc calculate_root(
     leaf_idx: u32
 ) -> DoubleWord
     # Local memory stores the current hash. It is initialized to the leaf value
-    loc_storew_be.CUR_HASH_LO_LOCAL dropw loc_storew_be.CUR_HASH_HI_LOCAL dropw
+    loc_storew_le.CUR_HASH_LO_LOCAL dropw loc_storew_le.CUR_HASH_HI_LOCAL dropw
     # => [merkle_path_ptr, leaf_idx]
 
     # Merkle path is guaranteed to contain 32 nodes
@@ -175,7 +175,7 @@ proc calculate_root(
         # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
         # load the hash respective to the current height from the local memory
-        padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
+        padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
         # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
         # load the is_odd flag back to the stack
@@ -195,8 +195,8 @@ proc calculate_root(
         # => [CURR_HASH_LO', CURR_HASH_HI', merkle_path_ptr, leaf_idx]
 
         # store the resulting hash to the local memory and drop the hash words
-        loc_storew_be.CUR_HASH_LO_LOCAL dropw
-        loc_storew_be.CUR_HASH_HI_LOCAL dropw
+        loc_storew_le.CUR_HASH_LO_LOCAL dropw
+        loc_storew_le.CUR_HASH_HI_LOCAL dropw
         # => [merkle_path_ptr, leaf_idx]
 
         # update the `leaf_idx` (shift it right by 1 bit)
@@ -207,7 +207,7 @@ proc calculate_root(
     # after all 32 hashes have been computed, the current hash stored in local memory represents
     # the root of the SMT, which should be returned
     drop drop
-    padw loc_loadw_be.CUR_HASH_HI_LOCAL padw loc_loadw_be.CUR_HASH_LO_LOCAL
+    padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
     # => [ROOT_LO, ROOT_HI]
 end
 
