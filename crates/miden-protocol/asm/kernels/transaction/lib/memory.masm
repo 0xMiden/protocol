@@ -32,44 +32,44 @@ const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maxi
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which a pointer to the currently active input note is stored.
-const ACTIVE_INPUT_NOTE_PTR=0
+const ACTIVE_INPUT_NOTE_PTR = 0
 
 # The memory address at which the number of output notes is stored.
-const NUM_OUTPUT_NOTES_PTR=4
+const NUM_OUTPUT_NOTES_PTR = 1
 
-# The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR=8
-
-# The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR=12
+# The memory address at which the absolute expiration block number is stored.
+const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 
 # The memory address at which the dirty flag of the storage commitment of the native account is
 # stored.
 #
 # This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 # made to the account storage since the last re-computation, and 0 otherwise.
-const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR=16
+const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
-# The memory address at which the absolute expiration block number is stored.
-const TX_EXPIRATION_BLOCK_NUM_PTR=20
+# The memory address at which the input vault root is stored.
+const INPUT_VAULT_ROOT_PTR = 4
 
-# The memory address at which the pointer to the account stack element containing the pointer to the
-# currently accessing account (active account) data is stored.
-const ACCOUNT_STACK_TOP_PTR=24
-
-# Pointer to the first element on the account stack.
-const MIN_ACCOUNT_STACK_PTR=25
-
-# Pointer to the last element on the account stack.
-const MAX_ACCOUNT_STACK_PTR=88
+# The memory address at which the output vault root is stored.
+const OUTPUT_VAULT_ROOT_PTR = 8
 
 # Pointer to the ID of the foreign account which will be loaded during the upcoming FPI call. This
 # ID is updated during the `prepare_fpi_call` kernel procedure.
-const UPCOMING_FOREIGN_ACCOUNT_PTR = 89
+const UPCOMING_FOREIGN_ACCOUNT_PTR = 12
 
 # Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 # This root is updated during the `prepare_fpi_call` kernel procedure.
-const UPCOMING_FOREIGN_PROCEDURE_PTR = 92
+const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
+
+# The memory address at which the pointer to the account stack element containing the pointer to the
+# currently accessing account (active account) data is stored.
+const ACCOUNT_STACK_TOP_PTR=20
+
+# Pointer to the first element on the account stack.
+const MIN_ACCOUNT_STACK_PTR=21
+
+# Pointer to the last element on the account stack.
+const MAX_ACCOUNT_STACK_PTR=84
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
