@@ -1,3 +1,10 @@
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -19,6 +26,9 @@ use crate::account::auth::{
     AuthFalcon512RpoAclConfig,
 };
 use crate::account::components::basic_fungible_faucet_library;
+
+/// The schema type ID for token symbols.
+const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -67,6 +77,9 @@ pub struct BasicFungibleFaucet {
 impl BasicFungibleFaucet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
+
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::basic_fungible_faucet";
 
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
@@ -138,6 +151,23 @@ impl BasicFungibleFaucet {
         TokenMetadata::metadata_slot()
     }
 
+    /// Returns the storage slot schema for the metadata slot.
+    pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let token_symbol_type = SchemaTypeId::new(TOKEN_SYMBOL_TYPE_ID).expect("valid type id");
+        (
+            Self::metadata_slot().clone(),
+            StorageSlotSchema::value(
+                "Token metadata",
+                [
+                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                    FeltSchema::felt("max_supply"),
+                    FeltSchema::u8("decimals"),
+                    FeltSchema::new_typed(token_symbol_type, "symbol"),
+                ],
+            ),
+        )
+    }
+
     /// Returns the token metadata.
     pub fn metadata(&self) -> &TokenMetadata {
         &self.metadata
@@ -197,9 +227,16 @@ impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
         let storage_slot = faucet.metadata.into();
 
-        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot])
-            .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
+        let storage_schema = StorageSchema::new([BasicFungibleFaucet::metadata_slot_schema()])
+            .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(BasicFungibleFaucet::NAME)
+            .with_description("Basic fungible faucet component for minting and burning tokens")
             .with_supported_type(AccountType::FungibleFaucet)
+            .with_storage_schema(storage_schema);
+
+        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
+            .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 

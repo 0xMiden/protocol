@@ -1,6 +1,7 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountId, AccountType};
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::NoteError;
@@ -155,8 +156,8 @@ fn test_custom_account_default_note() {
     let account_code = CodeBuilder::default()
         .compile_component_code("test::account_custom", account_custom_code_source)
         .unwrap();
-    let account_component =
-        AccountComponent::new(account_code, vec![]).unwrap().with_supports_all_types();
+    let metadata = AccountComponentMetadata::new("test::account_custom").with_supports_all_types();
+    let account_component = AccountComponent::new(account_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
@@ -422,8 +423,9 @@ fn test_custom_account_custom_notes() {
     let account_code = CodeBuilder::default()
         .compile_component_code("test::account::component_1", account_custom_code_source)
         .unwrap();
-    let account_component =
-        AccountComponent::new(account_code, vec![]).unwrap().with_supports_all_types();
+    let metadata =
+        AccountComponentMetadata::new("test::account::component_1").with_supports_all_types();
+    let account_component = AccountComponent::new(account_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
@@ -525,8 +527,9 @@ fn test_custom_account_multiple_components_custom_notes() {
     let custom_code = CodeBuilder::default()
         .compile_component_code("test::account::component_1", account_custom_code_source)
         .unwrap();
-    let custom_component =
-        AccountComponent::new(custom_code, vec![]).unwrap().with_supports_all_types();
+    let metadata =
+        AccountComponentMetadata::new("test::account::component_1").with_supports_all_types();
+    let custom_component = AccountComponent::new(custom_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
