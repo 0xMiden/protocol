@@ -21,6 +21,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::StandardsLib;
+use crate::alloc::string::ToString;
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -177,7 +178,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
         }
 
         let target = crate::note::try_read_account_id_from_storage(note_storage)
-            .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
+            .map_err(|e| NoteError::invalid_note_storage(e.to_string()))?;
 
         let reclaim_height = if note_storage[2] == Felt::ZERO {
             None
@@ -185,7 +186,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             let height: u32 = note_storage[2]
                 .as_int()
                 .try_into()
-                .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
+                .map_err(|e| NoteError::invalid_note_storage(format!("{e:?}")))?;
 
             Some(BlockNumber::from(height))
         };
@@ -196,7 +197,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             let height: u32 = note_storage[3]
                 .as_int()
                 .try_into()
-                .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
+                .map_err(|e| NoteError::invalid_note_storage(format!("{e:?}")))?;
 
             Some(BlockNumber::from(height))
         };

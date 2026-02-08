@@ -21,7 +21,7 @@ use miden_protocol::{Felt, Word};
 
 use super::try_read_account_id_from_storage;
 use crate::StandardsLib;
-
+use crate::alloc::string::ToString;
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -158,7 +158,7 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
         }
 
         let target = try_read_account_id_from_storage(note_storage)
-            .map_err(|_| NoteError::invalid_note_storage("invalid note storage layout"))?;
+            .map_err(|e| NoteError::invalid_note_storage(e.to_string()))?;
 
         Ok(Self { target })
     }
