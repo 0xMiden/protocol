@@ -5,9 +5,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_agglayer::agglayer_library;
 use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::utils::felts_to_bytes;
+use miden_agglayer::{SmtNode, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
@@ -46,16 +46,22 @@ fn merkle_proof_verification_code(
     // generate the code which stores the merkle path to the memory
     let mut store_path_source = String::new();
     for height in 0..32 {
-        let path_node =
-            Keccak256Digest::try_from(merkle_paths.merkle_paths[index * 32 + height].as_str())
-                .unwrap();
-        let (node_hi, node_lo) = keccak_digest_to_word_strings(path_node);
+        let path_node = merkle_paths.merkle_paths[index * 32 + height].as_str();
+        let smt_node = SmtNode::from(hex_to_bytes(&path_node).unwrap());
+        let smt_node_elements: [Word; 2] = smt_node
+            .to_elements()
+            .chunks(4)
+            .map(|chunk| Word::new(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let (node_lo, node_hi) = (smt_node_elements[0], smt_node_elements[1]);
         // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
         // memory pointers for the merkle path and the expected root never change
         store_path_source.push_str(&format!(
             "
-\tpush.[{node_hi}] mem_storew_be.{} dropw
-\tpush.[{node_lo}] mem_storew_be.{} dropw
+            \tpush.{node_lo} mem_storew_be.{} dropw
+            \tpush.{node_hi} mem_storew_be.{} dropw
     ",
             height * 8,
             height * 8 + 4
