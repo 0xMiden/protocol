@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::utils::felts_to_bytes;
-use miden_agglayer::{SmtNode, agglayer_library};
+use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
@@ -69,8 +69,15 @@ fn merkle_proof_verification_code(
     }
 
     // prepare the root for the provided index
-    let root = Keccak256Digest::try_from(merkle_paths.roots[index].as_str()).unwrap();
-    let (root_hi, root_lo) = keccak_digest_to_word_strings(root);
+    let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
+    let root_elements: [Word; 2] = root
+        .to_elements()
+        .chunks(4)
+        .map(|chunk| Word::new(chunk.try_into().unwrap()))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let (root_lo, root_hi) = (root_elements[0], root_elements[1]);
 
     // prepare the leaf for the provided index
     let leaf = Keccak256Digest::try_from(merkle_paths.leaves[index].as_str()).unwrap();
@@ -86,8 +93,8 @@ fn merkle_proof_verification_code(
             # => []
 
             # store the root to the memory (double word slot 256)
-            push.[{root_lo}] mem_storew_be.256 dropw
-            push.[{root_hi}] mem_storew_be.260 dropw
+            push.{root_lo} mem_storew_be.256 dropw
+            push.{root_hi} mem_storew_be.260 dropw
             # => []
 
             # prepare the stack for the `verify_merkle_proof` procedure

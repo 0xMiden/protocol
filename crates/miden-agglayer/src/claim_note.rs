@@ -44,19 +44,6 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
-
-    /// Converts to per-word reversed elements for memory storage (used by exit roots).
-    ///
-    /// Exit roots are loaded via `mem_load_double_word` which uses `mem_loadw_be`
-    /// (per-word reversal). Per-word reversed storage + `mem_loadw_be` reversal = natural
-    /// order on the stack, matching the calculated root format.
-    pub fn to_word_reversed_elements(&self) -> Vec<Felt> {
-        let elements = bytes_to_packed_u32_felts(&self.0);
-        let mut result = Vec::with_capacity(8);
-        result.extend(elements[0..4].iter().rev());
-        result.extend(elements[4..8].iter().rev());
-        result
-    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
@@ -109,8 +96,8 @@ impl SequentialCommit for ProofData {
 
         // Exit roots: per-word reversed so that mem_load_double_word's mem_loadw_be
         // reversal produces natural order matching the calculated root format.
-        elements.extend(self.mainnet_exit_root.to_word_reversed_elements());
-        elements.extend(self.rollup_exit_root.to_word_reversed_elements());
+        elements.extend(self.mainnet_exit_root.to_elements());
+        elements.extend(self.rollup_exit_root.to_elements());
 
         elements
     }
