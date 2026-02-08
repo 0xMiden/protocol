@@ -92,7 +92,7 @@ impl SequentialCommit for ProofData {
             elements.extend(node_felts);
         }
 
-        // Global index (uint256 as 8 u32 felts from 32 bytes)
+        // Global index (uint256 as 32 bytes)
         elements.extend(self.global_index.to_elements());
 
         // Mainnet exit root (bytes32 as 8 u32 felts)
