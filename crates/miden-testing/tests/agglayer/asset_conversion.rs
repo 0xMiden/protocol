@@ -16,7 +16,7 @@ fn felts_to_u256(felts: Vec<Felt>) -> U256 {
     assert_eq!(felts.len(), 8, "expected exactly 8 felts");
     let array: [Felt; 8] =
         [felts[0], felts[1], felts[2], felts[3], felts[4], felts[5], felts[6], felts[7]];
-    let bytes = utils::felts_to_u256_bytes(array);
+    let bytes = utils::felts_to_bytes(&array);
     U256::from_little_endian(&bytes)
 }
 
@@ -199,7 +199,7 @@ fn test_felts_to_u256_bytes_sequential_values() {
         Felt::new(7),
         Felt::new(8),
     ];
-    let result = utils::felts_to_u256_bytes(limbs);
+    let result = utils::felts_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
 
     // Verify the byte layout: limbs are processed in little-endian order, each as little-endian u32
@@ -214,13 +214,13 @@ fn test_felts_to_u256_bytes_sequential_values() {
 fn test_felts_to_u256_bytes_edge_cases() {
     // Test case 1: All zeros (minimum)
     let limbs = [Felt::new(0); 8];
-    let result = utils::felts_to_u256_bytes(limbs);
+    let result = utils::felts_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 0));
 
     // Test case 2: All max u32 values (maximum)
     let limbs = [Felt::new(u32::MAX as u64); 8];
-    let result = utils::felts_to_u256_bytes(limbs);
+    let result = utils::felts_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 255));
 }
