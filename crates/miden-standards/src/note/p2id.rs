@@ -107,12 +107,11 @@ impl P2idNote {
     }
 }
 
-// P2ID NOTE STORAGE
-// ================================================================================================
-
 /// Canonical storage representation for a P2ID note.
 ///
-/// Stores the target account ID associated with the note.
+/// Contains the identifier of the target account that is authorized
+/// to consume the note. Only the account matching this ID can execute
+/// the note and claim its assets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2idNoteStorage {
     target: AccountId,
