@@ -173,8 +173,7 @@ proc calculate_root(
 
     # Merkle path is guaranteed to contain 32 nodes
     repeat.32
-        # load the Merkle path node word-by-word
-        # to match the [PATH_NODE_HI, PATH_NODE_LO] layout.
+        # load the Merkle path node word-by-word in LE-felt order
         padw dup.4 mem_loadw_le
         # => [PATH_NODE_LO, merkle_path_ptr, leaf_idx]
         padw dup.8 add.4 mem_loadw_le
@@ -189,7 +188,8 @@ proc calculate_root(
         dup.9 u32and.1
         # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
-        # store the is_odd flag to the local memory
+        # store the is_odd flag to the local memory, so we could use it while all 16 top elements
+        # are occupied by the nodes
         loc_store.8
         # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 

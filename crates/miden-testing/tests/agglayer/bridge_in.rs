@@ -89,7 +89,6 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         output_note_tag: NoteTag::with_account_target(destination_account_id),
     };
 
-    // Use the original leaf_data without modification to preserve Merkle proof validity
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
 
     let claim_note = create_claim_note(claim_inputs, sender_account.id(), builder.rng_mut())?;

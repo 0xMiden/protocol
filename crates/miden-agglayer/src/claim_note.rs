@@ -81,8 +81,7 @@ impl SequentialCommit for ProofData {
         const PROOF_DATA_ELEMENT_COUNT: usize = 536; // 32*8 + 32*8 + 8 + 8 + 8 (proofs + global_index + 2 exit roots)
         let mut elements = Vec::with_capacity(PROOF_DATA_ELEMENT_COUNT);
 
-        // SMT proof nodes: fully reversed so that mem_stream's half-swap produces
-        // per-word reversed format matching loc_loadw_be's output for keccak256::merge.
+        // Convert SMT proof elements to felts (each node is 8 felts)
         for node in self.smt_proof_local_exit_root.iter() {
             elements.extend(node.to_elements());
         }
@@ -94,7 +93,7 @@ impl SequentialCommit for ProofData {
         // Global index (uint256 as 32 bytes)
         elements.extend(self.global_index.to_elements());
 
-        // Exit roots: natural LE order, loaded via mem_load_double_word (mem_loadw_le).
+        // Mainnet and rollup exit roots
         elements.extend(self.mainnet_exit_root.to_elements());
         elements.extend(self.rollup_exit_root.to_elements());
 
