@@ -39,7 +39,16 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2IDE NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Pay-to-ID Extended (P2IDE) note abstraction.
+///
+/// A P2IDE note enables transferring assets to a target account specified
+/// in the note storage. The note may optionally include:
+///
+/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
+/// - A timelock height preventing consumption before a given block
+///
+/// These constraints are encoded in `P2ideNoteStorage` and enforced by
+/// the associated note script.
 pub struct P2ideNote;
 
 impl P2ideNote {
@@ -65,19 +74,14 @@ impl P2ideNote {
     // BUILDERS
     // --------------------------------------------------------------------------------------------
 
-    /// Generates a P2IDE note - Pay-to-ID note with optional reclaim after a certain block height
-    /// and optional timelock.
+    /// Generates a P2IDE note using the provided storage configuration.
     ///
-    /// This script enables the transfer of assets from the `sender` account to the `target`
-    /// account by specifying the target's account ID. It adds the optional possibility for the
-    /// sender to reclaiming the assets if the note has not been consumed by the target within the
-    /// specified timeframe and the optional possibility to add a timelock to the asset transfer.
-    ///
-    /// The passed-in `rng` is used to generate a serial number for the note. The returned note's
-    /// tag is set to the target's account ID.
+    /// The note recipient and execution constraints are derived from
+    /// `P2ideNoteStorage`. A random serial number is generated using `rng`,
+    /// and the note tag is set to the storage target account.
     ///
     /// # Errors
-    /// Returns an error if deserialization or compilation of the `P2ID` script fails.
+    /// Returns an error if construction of the note recipient or asset vault fails.
     pub fn create<R: FeltRng>(
         sender: AccountId,
         storage: P2ideNoteStorage,
@@ -115,8 +119,9 @@ impl P2ideNote {
 
 /// Canonical storage representation for a P2IDE note.
 ///
-/// Stores the target account ID together with optional reclaim and timelock
-/// constraints controlling when the note can be spent or reclaimed.
+/// Stores the target account ID together with optional
+/// reclaim and timelock constraints controlling when
+/// the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2ideNoteStorage {
     target: AccountId,
