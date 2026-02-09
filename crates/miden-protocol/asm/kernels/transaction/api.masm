@@ -4,10 +4,13 @@ use $kernel::account_id
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
-use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::note
 use $kernel::output_note
 use $kernel::tx
+
+use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROC_BUFFER_VALUE_PTR
+
 use miden::core::word
 
 # NOTE
@@ -1366,9 +1369,14 @@ pub proc tx_get_block_timestamp
     # => [timestamp, pad(15)]
 end
 
-#! Saves the foreign account ID and the foreign procedure root to the memory.
+#! Saves the foreign account ID, foreign procedure root, and the 0th element of the foreign
+#! procedure inputs to the memory.
 #!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(10)]
+#! To work around the 15 value limitation of the `exec_kernel_proc` kernel procedure we store the 
+#! 0th value of the foreign procedure inputs to the kernel memory: this allows to FPI any account 
+#! procedure, even if it has 16 input values.
+#!
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_input[0], pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
@@ -1376,13 +1384,20 @@ end
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
 #!   call.
+#! - foreign_procedure_input[0] is the 0th value of the foreign procedure inputs.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi_call(foreign_account_id: AccountID, foreign_proc_root: BeWord)
+pub proc tx_prepare_fpi_call(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_0: felt)
+    # store the foreign account ID
     exec.memory::set_fpi_account_id
-    # => [FOREIGN_PROC_ROOT, pad(12)]
+    # => [FOREIGN_PROC_ROOT, foreign_procedure_input[0], pad(11)]
 
+    # store the foreign procedure root
     exec.memory::set_fpi_procedure_root dropw
+    # => [foreign_procedure_input[0], pad(15)]
+
+    # store the 0th value of the foreign procedure inputs
+    mem_store.UPCOMING_FOREIGN_PROC_BUFFER_VALUE_PTR
     # => [pad(16)]
 end
 
@@ -1391,11 +1406,13 @@ end
 #! This procedure should be executed after the `tx_prepare_fpi_call`, so it is expected for the 
 #! foreign account ID and foreign procedure root to be already loaded to the kernel memory.
 #!
-#! Inputs:  [foreign_procedure_inputs(16)]
+#! Inputs:  [foreign_procedure_inputs(15), pad]
 #! Outputs: [foreign_procedure_outputs(16)]
 #!
 #! Where:
-#! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 16 felts.
+#! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 15 felts. Notice 
+#!   that the 0th element of the inputs is not here and stored in the memory: it will be loaded 
+#!   during the setup.
 #! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
 #! Panics if:
@@ -1403,9 +1420,21 @@ end
 #! - the ID of the foreign account loaded from the kernel memory is zero (ID was not set).
 #! - the root of the foreign procedure loaded from the kernel memory is zero (root was not set).
 #!
-#! Invocation: syscall
-pub proc exec_foreign_proc
-    # load the ID of the foreign account onto the stack
+#! Invocation: dynexec
+pub proc tx_exec_foreign_proc
+    # move up the pad value to the top of the stack so we could drop it later
+    movup.15
+    # => [pad, foreign_procedure_inputs(15)]
+
+    # load the 0th foreign procedure input value onto the stack
+    mem_load.UPCOMING_FOREIGN_PROC_BUFFER_VALUE_PTR swap
+    # => [pad, foreign_procedure_inputs(16)]
+
+    # drop the excess pad
+    drop
+    # => [foreign_procedure_inputs(16)]
+
+    # load the ID of the foreign account onto the stacks
     exec.memory::get_fpi_account_id
     # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
 
