@@ -412,7 +412,7 @@ end
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-pub proc set_upcoming_account_id(foreign_account_id: AccountID)
+pub proc set_fpi_account_id(foreign_account_id: AccountID)
     mem_store.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
     # => [foreign_account_id_suffix]
 
@@ -428,7 +428,7 @@ end
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-pub proc get_upcoming_account_id() -> (AccountID)
+pub proc get_fpi_account_id() -> (AccountID)
     mem_load.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
     # => [foreign_account_id_suffix]
 
@@ -444,21 +444,8 @@ end
 #! Where:
 #! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
 #!   call.
-pub proc set_upcoming_procedure_root(foreign_proc_root: BeWord) -> BeWord
+pub proc set_fpi_procedure_root(foreign_proc_root: BeWord) -> BeWord
     mem_storew_be.UPCOMING_FOREIGN_PROCEDURE_PTR
-end
-
-#! Returns the pointer to the root of the foreign procedure which is going to be loaded during the
-#! upcoming FPI call.
-#!
-#! Inputs:  []
-#! Outputs: [foreign_proc_root_ptr]
-#!
-#! Where:
-#! - foreign_proc_root_ptr is the pointer to the root of the foreign procedure which will be
-#!   executed during the FPI call.
-pub proc get_upcoming_procedure_root_ptr() -> MemoryAddress
-    push.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
 # GLOBAL INPUTS

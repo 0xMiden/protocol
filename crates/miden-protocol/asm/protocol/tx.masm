@@ -201,41 +201,37 @@ end
 
 #! Executes the provided procedure against the foreign account.
 #!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, <foreign procedure inputs>, pad(n)]
-#! Outputs: [<foreign procedure outputs>, pad(m)]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
+#! Outputs: [foreign_procedure_outputs(16)]
 #!
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the account ID of the
 #!   foreign account to execute the procedure on.
-#! - pad(n) is the exact number of pads needed to set the number of procedure inputs to 16 at the
-#!   moment of the foreign procedure execution (n = 16 - foreign_procedure_inputs_len).
-#! - pad(m) is the exact number of pads needed to set the number of procedure outputs to 16 at the
-#!   end of the foreign procedure execution (m = 16 - foreign_procedure_outputs_len).
+#! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 16 felts.
+#! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
 #! Invocation: exec
 @locals(4)
 pub proc execute_foreign_procedure
     # get the tx_prepare_fpi_call procedure offset
     exec.kernel_proc_offsets::tx_prepare_fpi_call_offset
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, <foreign procedure inputs>, pad(n)]
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
     
     # pad the stack before the syscall
     push.0 movdn.7 padw padw swapdw
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(9), <foreign procedure inputs>, pad(n)]
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(9), foreign_procedure_inputs(16)]
 
     # load the foreign account ID and the foreign procedure root to the memory
     syscall.exec_kernel_proc
-    # => [pad(16), <foreign procedure inputs>, pad(n)]
+    # => [pad(16), foreign_procedure_inputs(16)]
     
     # clean the stack
     dropw dropw dropw dropw
-    # => [<foreign procedure inputs>, pad(n)]
+    # => [foreign_procedure_inputs(16)]
 
     # perform the FPI call
-    # pad(m) here represents the `m` zeros, where `m` is the number of zeros required to have 16
-    # elements total on the stack
-    syscall.tx_perform_fpi_call
-    # => [<foreign procedure outputs>, pad(m)]
+    syscall.exec_foreign_proc
+    # => [foreign_procedure_outputs(16)]
 end
 
 #! Updates the transaction expiration delta.

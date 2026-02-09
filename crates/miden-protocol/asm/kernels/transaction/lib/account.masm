@@ -49,8 +49,6 @@ const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitme
 
 const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
 
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero"
-
 const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign account to be loaded (64) was exceeded"
 
 const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account in the advice provider does not match the commitment in the account tree"
@@ -1716,13 +1714,8 @@ end
 #!   data, depending on the value of the was_loaded flag.
 #!
 #! Panics if:
-#! - the prefix or suffix of the provided foreign account ID equal zero.
 #! - the maximum allowed number of foreign account to be loaded (64) was exceeded.
 pub proc get_account_data_ptr
-    # check that foreign account ID is not equal zero
-    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
-    # => [foreign_account_id_prefix, foreign_account_id_suffix]
-
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
     exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
