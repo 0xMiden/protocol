@@ -210,6 +210,22 @@ impl FromStr for StorageSlotName {
     }
 }
 
+impl TryFrom<&str> for StorageSlotName {
+    type Error = StorageSlotNameError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<String> for StorageSlotName {
+    type Error = StorageSlotNameError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 impl From<StorageSlotName> for String {
     fn from(slot_name: StorageSlotName) -> Self {
         slot_name.name.to_string()

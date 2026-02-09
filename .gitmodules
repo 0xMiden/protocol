@@ -1,0 +1,6 @@
+[submodule "crates/miden-agglayer/solidity-compat/lib/forge-std"]
+	path = crates/miden-agglayer/solidity-compat/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "crates/miden-agglayer/solidity-compat/lib/agglayer-contracts"]
+	path = crates/miden-agglayer/solidity-compat/lib/agglayer-contracts
+	url = https://github.com/agglayer/agglayer-contracts

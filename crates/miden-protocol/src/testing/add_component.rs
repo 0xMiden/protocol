@@ -1,4 +1,5 @@
 use crate::account::AccountComponent;
+use crate::account::component::AccountComponentMetadata;
 use crate::assembly::{Assembler, Library};
 use crate::utils::sync::LazyLock;
 
@@ -24,8 +25,11 @@ pub struct AddComponent;
 
 impl From<AddComponent> for AccountComponent {
     fn from(_: AddComponent) -> Self {
-        AccountComponent::new(ADD_LIBRARY.clone(), vec![])
+        let metadata = AccountComponentMetadata::new("miden::testing::add")
+            .with_description("Add component for testing")
+            .with_supports_all_types();
+
+        AccountComponent::new(ADD_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")
-            .with_supports_all_types()
     }
 }
