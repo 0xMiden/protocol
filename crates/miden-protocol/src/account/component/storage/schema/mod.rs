@@ -164,7 +164,9 @@ impl Deserializable for StorageSchema {
     }
 }
 
-pub(super) fn validate_description_ascii(description: &str) -> Result<(), ComponentMetadataError> {
+pub(super) fn validate_description_ascii(
+    description: &str,
+) -> Result<(), ComponentMetadataError> {
     if description.is_ascii() {
         Ok(())
     } else {

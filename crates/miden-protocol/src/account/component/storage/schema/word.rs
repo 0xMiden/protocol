@@ -276,6 +276,12 @@ impl Deserializable for WordSchema {
     }
 }
 
+impl From<SchemaTypeId> for WordSchema {
+    fn from(r#type: SchemaTypeId) -> Self {
+        WordSchema::new_simple(r#type)
+    }
+}
+
 impl From<[FeltSchema; 4]> for WordSchema {
     fn from(value: [FeltSchema; 4]) -> Self {
         WordSchema::new_value(value)

@@ -1,0 +1,14 @@
+[profile.default]
+libs = ["lib"]
+out  = "out"
+solc = "0.8.20"
+src  = "src"
+
+remappings = ["@agglayer/=lib/agglayer-contracts/contracts/"]
+
+# Emit extra output for test vector generation
+ffi       = false
+verbosity = 2
+
+# Allow writing test vectors to file
+fs_permissions = [{ access = "read-write", path = "test-vectors" }]

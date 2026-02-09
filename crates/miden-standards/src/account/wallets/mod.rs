@@ -62,6 +62,10 @@ pub struct BasicWallet;
 impl BasicWallet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
+
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::basic_wallet";
+
     const RECEIVE_ASSET_PROC_NAME: &str = "basic_wallet::receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "basic_wallet::move_asset_to_note";
 
@@ -81,7 +85,7 @@ impl BasicWallet {
 
 impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::basic_wallet")
+        let metadata = AccountComponentMetadata::new(BasicWallet::NAME)
             .with_description("Basic wallet component for receiving and sending assets")
             .with_supports_all_types();
 

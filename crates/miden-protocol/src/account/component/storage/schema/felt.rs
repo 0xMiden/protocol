@@ -64,6 +64,39 @@ impl FeltSchema {
         }
     }
 
+    /// Creates a new required felt field typed as [`SchemaTypeId::native_felt()`].
+    pub fn felt(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::native_felt(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::native_word()`].
+    pub fn word(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::native_word(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u8()`].
+    pub fn u8(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u8(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u16()`].
+    pub fn u16(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u16(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u32()`].
+    pub fn u32(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u32(), name)
+    }
+
+    /// Sets the default value of the [`FeltSchema`] and returns `self`.
+    pub fn with_default(self, default_value: Felt) -> Self {
+        FeltSchema {
+            default_value: Some(default_value),
+            ..self
+        }
+    }
+
     /// Sets the description of the [`FeltSchema`] and returns `self`.
     pub fn with_description(self, description: impl Into<String>) -> Self {
         FeltSchema {
