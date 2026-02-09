@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use miden_processor::fast::ExecutionOutput;
 use miden_processor::{AdviceInputs, Felt};
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -88,8 +89,8 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("test::foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -355,15 +356,15 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         CodeBuilder::default()
             .compile_component_code("test::foreign_account_1", foreign_account_code_source_1)?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account_1"),
+    )?;
 
     let foreign_account_component_2 = AccountComponent::new(
         CodeBuilder::default()
             .compile_component_code("test::foreign_account_2", foreign_account_code_source_2)?,
         vec![mock_value_slot1.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account_2"),
+    )?;
 
     let foreign_account_1 = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -569,8 +570,8 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -722,8 +723,8 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("foreign_account_code", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_code"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -827,8 +828,8 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
         CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("foreign_account_code", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_code"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -972,8 +973,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             second_foreign_account_code_source,
         )?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::second_foreign_account"),
+    )?;
 
     let second_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1034,8 +1035,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("first_foreign_account", first_foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_value_slot1.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("first_foreign_account"),
+    )?;
 
     let first_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1165,8 +1166,8 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("foreign_account", second_foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let second_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1208,8 +1209,11 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
         .with_dynamically_linked_library(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
-    let first_foreign_account_component =
-        AccountComponent::new(first_foreign_account_code, vec![])?.with_supports_all_types();
+    let first_foreign_account_component = AccountComponent::new(
+        first_foreign_account_code,
+        vec![],
+        AccountComponentMetadata::mock("first_foreign_account"),
+    )?;
 
     let first_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1331,10 +1335,12 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
     let last_foreign_account_code = CodeBuilder::default()
         .compile_component_code("test::last_foreign_account", last_foreign_account_code_source)
         .unwrap();
-    let last_foreign_account_component =
-        AccountComponent::new(last_foreign_account_code, vec![mock_value_slot0.clone()])
-            .unwrap()
-            .with_supports_all_types();
+    let last_foreign_account_component = AccountComponent::new(
+        last_foreign_account_code,
+        vec![mock_value_slot0.clone()],
+        AccountComponentMetadata::mock("test::last_foreign_account"),
+    )
+    .unwrap();
 
     let last_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1381,9 +1387,12 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                 foreign_account_code_source,
             )
             .unwrap();
-        let foreign_account_component = AccountComponent::new(foreign_account_code, vec![])
-            .unwrap()
-            .with_supports_all_types();
+        let foreign_account_component = AccountComponent::new(
+            foreign_account_code,
+            vec![],
+            AccountComponentMetadata::mock("test::foreign_account_chain"),
+        )
+        .unwrap();
 
         let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
             .with_auth_component(Auth::IncrNonce)
@@ -1496,8 +1505,8 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
         CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1595,8 +1604,8 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
         CodeBuilder::default()
             .compile_component_code("foreign_account_invalid", foreign_account_code_source)?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_invalid"),
+    )?;
 
     let mut foreign_account = AccountBuilder::new([5; 32])
         .with_auth_component(Auth::IncrNonce)
@@ -1703,8 +1712,8 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
         CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         Vec::new(),
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1830,8 +1839,8 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)

@@ -121,7 +121,9 @@ where
             return Err(NoteCheckerError::InputNoteCountOutOfRange(num_notes));
         }
         // Ensure standard notes are ordered first.
-        notes.sort_unstable_by_key(|note| StandardNote::from_note(note).is_none());
+        notes.sort_unstable_by_key(|note| {
+            StandardNote::from_script_root(note.script().root()).is_none()
+        });
 
         let notes = InputNotes::from(notes);
         let tx_inputs = self
@@ -153,7 +155,7 @@ where
         tx_args: TransactionArgs,
     ) -> Result<NoteConsumptionStatus, NoteCheckerError> {
         // Return the consumption status if we manage to determine it from the standard note
-        if let Some(standard_note) = StandardNote::from_note(note.note())
+        if let Some(standard_note) = StandardNote::from_script_root(note.note().script().root())
             && let Some(consumption_status) =
                 standard_note.is_consumable(note.note(), target_account_id, block_ref)
         {

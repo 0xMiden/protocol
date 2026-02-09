@@ -158,6 +158,14 @@ impl TryFrom<String> for StorageValueName {
     }
 }
 
+impl TryFrom<&str> for StorageValueName {
+    type Error = StorageValueNameError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 impl From<StorageValueName> for String {
     fn from(value: StorageValueName) -> Self {
         value.to_string()
