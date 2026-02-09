@@ -20,7 +20,7 @@ use super::super::{
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
 use crate::account::component::{AccountComponentMetadata, SchemaTypeId};
 use crate::account::{AccountType, StorageSlotName};
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 mod init_storage_data;
 mod serde_impls;
@@ -51,12 +51,12 @@ impl AccountComponentMetadata {
     /// - If deserialization fails
     /// - If the schema specifies storage slots with duplicates.
     /// - If the schema contains invalid slot definitions.
-    pub fn from_toml(toml_string: &str) -> Result<Self, AccountComponentTemplateError> {
+    pub fn from_toml(toml_string: &str) -> Result<Self, ComponentMetadataError> {
         let raw: RawAccountComponentMetadata = toml::from_str(toml_string)
-            .map_err(AccountComponentTemplateError::TomlDeserializationError)?;
+            .map_err(ComponentMetadataError::TomlDeserializationError)?;
 
         if !raw.description.is_ascii() {
-            return Err(AccountComponentTemplateError::InvalidSchema(
+            return Err(ComponentMetadataError::InvalidSchema(
                 "description must contain only ASCII characters".to_string(),
             ));
         }
@@ -77,9 +77,8 @@ impl AccountComponentMetadata {
     }
 
     /// Serializes the account component metadata into a TOML string.
-    pub fn to_toml(&self) -> Result<String, AccountComponentTemplateError> {
-        let toml =
-            toml::to_string(self).map_err(AccountComponentTemplateError::TomlSerializationError)?;
+    pub fn to_toml(&self) -> Result<String, ComponentMetadataError> {
+        let toml = toml::to_string(self).map_err(ComponentMetadataError::TomlSerializationError)?;
         Ok(toml)
     }
 }
@@ -276,7 +275,7 @@ impl RawStorageSlotSchema {
     /// Converts the raw representation into a tuple of the storage slot name and its schema.
     fn try_into_slot_schema(
         self,
-    ) -> Result<(StorageSlotName, StorageSlotSchema), AccountComponentTemplateError> {
+    ) -> Result<(StorageSlotName, StorageSlotSchema), ComponentMetadataError> {
         let RawStorageSlotSchema {
             name,
             description,
@@ -287,7 +286,7 @@ impl RawStorageSlotSchema {
 
         let slot_name_raw = name;
         let slot_name = StorageSlotName::new(slot_name_raw.clone()).map_err(|err| {
-            AccountComponentTemplateError::InvalidSchema(format!(
+            ComponentMetadataError::InvalidSchema(format!(
                 "invalid storage slot name `{slot_name_raw}`: {err}"
             ))
         })?;
@@ -298,7 +297,7 @@ impl RawStorageSlotSchema {
         let slot_prefix = StorageValueName::from_slot_name(&slot_name);
 
         if default_value.is_some() && default_values.is_some() {
-            return Err(AccountComponentTemplateError::InvalidSchema(
+            return Err(ComponentMetadataError::InvalidSchema(
                 "storage slot schema cannot define both `default-value` and `default-values`"
                     .into(),
             ));
@@ -307,7 +306,7 @@ impl RawStorageSlotSchema {
         match r#type {
             RawSlotType::Map(map_type) => {
                 if default_value.is_some() {
-                    return Err(AccountComponentTemplateError::InvalidSchema(
+                    return Err(ComponentMetadataError::InvalidSchema(
                         "map slots cannot define `default-value`".into(),
                     ));
                 }
@@ -340,7 +339,7 @@ impl RawStorageSlotSchema {
 
             RawSlotType::Word(word_type) => {
                 if default_values.is_some() {
-                    return Err(AccountComponentTemplateError::InvalidSchema(
+                    return Err(ComponentMetadataError::InvalidSchema(
                         "`default-values` can be specified only for map slots (use `type = { ... }`)"
                             .into(),
                     ));
@@ -349,7 +348,7 @@ impl RawStorageSlotSchema {
                 match word_type {
                     RawWordType::TypeIdentifier(r#type) => {
                         if r#type.as_str() == "map" {
-                            return Err(AccountComponentTemplateError::InvalidSchema(
+                            return Err(ComponentMetadataError::InvalidSchema(
                                 "value slots cannot use `type = \"map\"`; use `type = { key = <key-type>, value = <value-type>}` instead"
                                     .into(),
                             ));
@@ -382,7 +381,7 @@ impl RawStorageSlotSchema {
 
                     RawWordType::FeltSchemaArray(elements) => {
                         if default_value.is_some() {
-                            return Err(AccountComponentTemplateError::InvalidSchema(
+                            return Err(ComponentMetadataError::InvalidSchema(
                                 "composite word slots cannot define `default-value`".into(),
                             ));
                         }
@@ -404,7 +403,7 @@ impl RawStorageSlotSchema {
     fn parse_word_schema(
         raw: RawWordType,
         label: &str,
-    ) -> Result<WordSchema, AccountComponentTemplateError> {
+    ) -> Result<WordSchema, ComponentMetadataError> {
         match raw {
             RawWordType::TypeIdentifier(r#type) => Ok(WordSchema::new_simple(r#type)),
             RawWordType::FeltSchemaArray(elements) => {
@@ -417,9 +416,9 @@ impl RawStorageSlotSchema {
     fn parse_felt_schema_array(
         elements: Vec<FeltSchema>,
         label: &str,
-    ) -> Result<[FeltSchema; 4], AccountComponentTemplateError> {
+    ) -> Result<[FeltSchema; 4], ComponentMetadataError> {
         if elements.len() != 4 {
-            return Err(AccountComponentTemplateError::InvalidSchema(format!(
+            return Err(ComponentMetadataError::InvalidSchema(format!(
                 "{label} must be an array of 4 elements, got {}",
                 elements.len()
             )));
@@ -432,15 +431,13 @@ impl RawStorageSlotSchema {
         key_schema: &WordSchema,
         value_schema: &WordSchema,
         slot_prefix: &StorageValueName,
-    ) -> Result<BTreeMap<Word, Word>, AccountComponentTemplateError> {
+    ) -> Result<BTreeMap<Word, Word>, ComponentMetadataError> {
         let mut map = BTreeMap::new();
 
         let parse = |schema: &WordSchema, raw: &WordValue, label: &str| {
             super::schema::parse_storage_value_with_schema(schema, raw, slot_prefix).map_err(
                 |err| {
-                    AccountComponentTemplateError::InvalidSchema(format!(
-                        "invalid map `{label}`: {err}"
-                    ))
+                    ComponentMetadataError::InvalidSchema(format!("invalid map `{label}`: {err}"))
                 },
             )
         };
@@ -453,7 +450,7 @@ impl RawStorageSlotSchema {
             let value = parse(value_schema, &entry.value, &value_label)?;
 
             if map.insert(key, value).is_some() {
-                return Err(AccountComponentTemplateError::InvalidSchema(format!(
+                return Err(ComponentMetadataError::InvalidSchema(format!(
                     "map storage slot `default-values[{index}]` contains a duplicate key"
                 )));
             }
@@ -469,12 +466,12 @@ impl WordValue {
         schema_type: &SchemaTypeId,
         slot_prefix: &StorageValueName,
         label: &str,
-    ) -> Result<Word, AccountComponentTemplateError> {
+    ) -> Result<Word, ComponentMetadataError> {
         let word = match self {
             WordValue::FullyTyped(word) => *word,
             WordValue::Atomic(value) => SCHEMA_TYPE_REGISTRY
                 .try_parse_word(schema_type, value)
-                .map_err(AccountComponentTemplateError::StorageValueParsingError)?,
+                .map_err(ComponentMetadataError::StorageValueParsingError)?,
             WordValue::Elements(elements) => {
                 let felts = elements
                     .iter()
@@ -482,7 +479,7 @@ impl WordValue {
                         SCHEMA_TYPE_REGISTRY.try_parse_felt(&SchemaTypeId::native_felt(), element)
                     })
                     .collect::<Result<Vec<Felt>, _>>()
-                    .map_err(AccountComponentTemplateError::StorageValueParsingError)?;
+                    .map_err(ComponentMetadataError::StorageValueParsingError)?;
                 let felts: [Felt; 4] = felts.try_into().expect("length is 4");
                 Word::from(felts)
             },
