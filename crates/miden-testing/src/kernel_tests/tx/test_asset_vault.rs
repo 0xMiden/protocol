@@ -156,14 +156,14 @@ async fn test_has_non_fungible_asset() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{non_fungible_asset_key}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.active_account::has_non_fungible_asset
 
             # truncate the stack
             swap drop
         end
         ",
-        non_fungible_asset_key = Word::from(non_fungible_asset)
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
