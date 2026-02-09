@@ -37,6 +37,7 @@
 - [BREAKING] Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
+- [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents ([#2348](https://github.com/0xMiden/miden-base/issues/2348)).
 
 ## 0.13.3 (2026-01-27)
 
