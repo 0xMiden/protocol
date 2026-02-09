@@ -2,8 +2,14 @@ use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
-use miden_protocol::account::{AccountBuilder, AccountComponent, StorageSlot, StorageSlotName};
-use miden_protocol::errors::ComponentMetadataError;
+use miden_protocol::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::storage_schema_library;
@@ -79,27 +85,29 @@ impl From<AccountSchemaCommitment> for AccountComponent {
 // ACCOUNT BUILDER EXTENSION
 // ================================================================================================
 
-/// An extension trait for [`AccountBuilder`] that provides a convenience method for adding an
-/// [`AccountSchemaCommitment`] component.
+/// An extension trait for [`AccountBuilder`] that provides a convenience method for building an
+/// account with an [`AccountSchemaCommitment`] component.
 pub trait AccountBuilderSchemaCommitmentExt {
-    /// Computes the storage schema commitment from all components currently in the builder and
-    /// adds an [`AccountSchemaCommitment`] component.
+    /// Computes the storage schema commitment from all components currently in the builder, adds
+    /// an [`AccountSchemaCommitment`] component and builds the account.
     ///
-    /// This method should be called after all other components have been added to the builder.
+    /// This method cannot be followed by more `with_component` calls, ensuring the computed
+    /// commitment always matches the final account.
     ///
     /// # Errors
     ///
-    /// Returns an error if the components' storage schemas contain conflicting definitions for
-    /// the same slot name.
-    fn with_schema_commitment(self) -> Result<Self, ComponentMetadataError>
-    where
-        Self: Sized;
+    /// Returns an error if schema commitment computation or account building fails.
+    fn build_with_schema_commitment(self) -> Result<Account, AccountError>;
 }
 
 impl AccountBuilderSchemaCommitmentExt for AccountBuilder {
-    fn with_schema_commitment(self) -> Result<Self, ComponentMetadataError> {
-        let schema_commitment = AccountSchemaCommitment::new(self.storage_schemas())?;
-        Ok(self.with_component(schema_commitment))
+    fn build_with_schema_commitment(self) -> Result<Account, AccountError> {
+        let schema_commitment =
+            AccountSchemaCommitment::new(self.storage_schemas()).map_err(|err| {
+                AccountError::other_with_source("failed to compute account schema commitment", err)
+            })?;
+
+        self.with_component(schema_commitment).build()
     }
 }
 
@@ -151,10 +159,12 @@ mod tests {
     use miden_protocol::Word;
     use miden_protocol::account::auth::PublicKeyCommitment;
     use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::account::{AccountBuilder, AccountComponent};
+    use miden_protocol::account::{AccountBuilder, AccountComponent, StorageSlot, StorageSlotName};
+    use miden_protocol::errors::AccountError;
 
     use super::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
     use crate::account::auth::{AuthEcdsaK256Keccak, NoAuth};
+    use crate::account::components::storage_schema_library;
 
     #[test]
     fn storage_schema_commitment_is_order_independent() {
@@ -219,22 +229,17 @@ mod tests {
     }
 
     #[test]
-    fn with_schema_commitment_adds_schema_commitment_component() {
-        // Use an auth component with a non-empty storage schema.
+    fn build_with_schema_commitment_adds_schema_commitment_component() {
         let auth_component: AccountComponent =
             AuthEcdsaK256Keccak::new(PublicKeyCommitment::from(Word::empty())).into();
         assert!(auth_component.storage_schema().iter().next().is_some());
 
-        // Manually compute the expected commitment from the same schema.
         let expected_commitment =
             AccountSchemaCommitment::new([auth_component.storage_schema()]).unwrap();
 
-        // Build using with_metadata() convenience method.
         let account = AccountBuilder::new([1u8; 32])
             .with_auth_component(auth_component.clone())
-            .with_schema_commitment()
-            .unwrap()
-            .build()
+            .build_with_schema_commitment()
             .unwrap();
 
         assert!(account.storage().get_item(AuthEcdsaK256Keccak::public_key_slot()).is_ok());
@@ -242,7 +247,6 @@ mod tests {
         let slot_name = AccountSchemaCommitment::schema_commitment_slot();
         let commitment = account.storage().get_item(slot_name).unwrap();
 
-        // Build the expected account manually with the same commitment to compare.
         let expected_account = AccountBuilder::new([1u8; 32])
             .with_auth_component(auth_component)
             .with_component(expected_commitment)
@@ -251,5 +255,64 @@ mod tests {
 
         let expected = expected_account.storage().get_item(slot_name).unwrap();
         assert_eq!(commitment, expected);
+    }
+
+    #[test]
+    fn build_with_schema_commitment_fails_for_conflicting_schemas() {
+        let slot_name = StorageSlotName::new("test::shared_slot").unwrap();
+
+        let word_metadata = AccountComponentMetadata::from_toml(
+            r#"
+                name = "Component Word"
+                description = "Word slot schema"
+                version = "0.1.0"
+                supported-types = []
+
+                [[storage.slots]]
+                name = "test::shared_slot"
+                type = "word"
+            "#,
+        )
+        .unwrap();
+
+        let map_metadata = AccountComponentMetadata::from_toml(
+            r#"
+                name = "Component Map"
+                description = "Map slot schema"
+                version = "0.1.0"
+                supported-types = []
+
+                [[storage.slots]]
+                name = "test::shared_slot"
+                type = { key = "word", value = "word" }
+            "#,
+        )
+        .unwrap();
+
+        let word_component = AccountComponent::new(
+            storage_schema_library(),
+            vec![StorageSlot::with_value(slot_name.clone(), Word::empty())],
+            word_metadata,
+        )
+        .unwrap();
+
+        let map_component = AccountComponent::new(
+            storage_schema_library(),
+            vec![StorageSlot::with_empty_map(slot_name)],
+            map_metadata,
+        )
+        .unwrap();
+
+        let result = AccountBuilder::new([1u8; 32])
+            .with_auth_component(NoAuth)
+            .with_component(word_component)
+            .with_component(map_component)
+            .build_with_schema_commitment();
+
+        assert!(matches!(
+            result,
+            Err(AccountError::Other { error_msg, .. })
+                if error_msg.as_ref() == "failed to compute account schema commitment"
+        ));
     }
 }
