@@ -137,8 +137,6 @@ pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCES
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note serial number of active note because no note is currently being processed");
 /// Error Message: "failed to access note storage of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note storage of active note because no note is currently being processed");
-/// Error Message: "adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
-pub const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807");
 /// Error Message: "failed to find note at the given index; index must be within [0, num_of_notes]"
 pub const ERR_NOTE_INVALID_INDEX: MasmError = MasmError::from_static_str("failed to find note at the given index; index must be within [0, num_of_notes]");
 /// Error Message: "invalid note type"
