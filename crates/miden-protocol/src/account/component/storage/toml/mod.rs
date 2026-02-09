@@ -69,13 +69,11 @@ impl AccountComponentMetadata {
         }
 
         let storage_schema = StorageSchema::new(fields)?;
-        Ok(Self::new(
-            raw.name,
-            raw.description,
-            raw.version,
-            raw.supported_types,
-            storage_schema,
-        ))
+        Ok(Self::new(raw.name)
+            .with_description(raw.description)
+            .with_version(raw.version)
+            .with_supported_types(raw.supported_types)
+            .with_storage_schema(storage_schema))
     }
 
     /// Serializes the account component metadata into a TOML string.
@@ -106,7 +104,7 @@ struct RawStorageSchema {
 /// Storage slot type descriptor.
 ///
 /// This field accepts either:
-/// - a type identifier (e.g. `"word"`, `"u16"`, `"miden::standards::auth::falcon512_rpo::pub_key"`)
+/// - a type identifier (e.g. `"word"`, `"u16"`, `"miden::standards::auth::signature::pub_key"`)
 ///   for simple word slots,
 /// - an array of 4 [`FeltSchema`] descriptors for composite word slots, or
 /// - a table `{ key = ..., value = ... }` for map slots.

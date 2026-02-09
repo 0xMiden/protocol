@@ -6,10 +6,10 @@ use core::fmt::{self, Display};
 
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_core::{Felt, FieldElement, Word};
-use miden_crypto::dsa::{ecdsa_k256_keccak, falcon512_rpo};
 use miden_processor::DeserializationError;
 use thiserror::Error;
 
+use crate::account::auth::PublicKey;
 use crate::asset::TokenSymbol;
 use crate::utils::sync::LazyLock;
 
@@ -26,8 +26,7 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
     registry.register_word_type::<Word>();
-    registry.register_word_type::<falcon512_rpo::PublicKey>();
-    registry.register_word_type::<ecdsa_k256_keccak::PublicKey>();
+    registry.register_word_type::<PublicKey>();
     registry
 });
 
@@ -82,7 +81,7 @@ impl SchemaTypeError {
 /// Some examples:
 /// - `u32`
 /// - `felt`
-/// - `miden::standards::auth::falcon512_rpo::pub_key`
+/// - `miden::standards::auth::signature::pub_key`
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "std", derive(::serde::Deserialize, ::serde::Serialize))]
 #[cfg_attr(feature = "std", serde(transparent))]
@@ -443,31 +442,9 @@ impl WordType for Word {
     }
 }
 
-impl WordType for falcon512_rpo::PublicKey {
+impl WordType for PublicKey {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key")
-            .expect("type is well formed")
-    }
-    fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
-        let padded_input = pad_hex_string(input);
-
-        Word::try_from(padded_input.as_str()).map_err(|err| {
-            SchemaTypeError::parse(
-                input.to_string(), // Use original input in error
-                Self::type_name(),
-                WordParseError(err.to_string()),
-            )
-        })
-    }
-
-    fn display_word(value: Word) -> Result<String, SchemaTypeError> {
-        Ok(value.to_string())
-    }
-}
-
-impl WordType for ecdsa_k256_keccak::PublicKey {
-    fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key")
+        SchemaTypeId::new("miden::standards::auth::signature::pub_key")
             .expect("type is well formed")
     }
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {

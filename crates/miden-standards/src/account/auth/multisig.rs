@@ -3,11 +3,21 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::multisig_library;
+
+/// The schema type ID for Public Key Commitments used in the multisig component.
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
@@ -139,6 +149,9 @@ pub struct AuthMultisig {
 }
 
 impl AuthMultisig {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::multisig";
+
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
         Ok(Self { config })
@@ -167,6 +180,68 @@ impl AuthMultisig {
     /// Returns the [`StorageSlotName`] where the procedure thresholds are stored.
     pub fn procedure_thresholds_slot() -> &'static StorageSlotName {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for the threshold configuration slot.
+    pub fn threshold_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::threshold_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Threshold configuration",
+                [
+                    FeltSchema::u32("threshold"),
+                    FeltSchema::u32("num_approvers"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the approver public keys slot.
+    pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::approver_public_keys_slot().clone(),
+            StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+        )
+    }
+
+    // Returns the storage slot schema for the approver scheme IDs slot.
+    pub fn approver_scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::approver_scheme_ids_slot().clone(),
+            StorageSlotSchema::map(
+                "Approver scheme IDs",
+                pub_key_type,
+                SchemaTypeId::u8(),
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the executed transactions slot.
+    pub fn executed_transactions_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::executed_transactions_slot().clone(),
+            StorageSlotSchema::map(
+                "Executed transactions",
+                SchemaTypeId::native_word(),
+                SchemaTypeId::native_word(),
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the procedure thresholds slot.
+    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::procedure_thresholds_slot().clone(),
+            StorageSlotSchema::map(
+                "Procedure thresholds",
+                SchemaTypeId::native_word(),
+                SchemaTypeId::u32(),
+            ),
+        )
     }
 }
 
@@ -228,9 +303,25 @@ impl From<AuthMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        AccountComponent::new(multisig_library(), storage_slots)
-            .expect("Multisig auth component should satisfy the requirements of a valid account component")
+        let storage_schema = StorageSchema::new([
+            AuthMultisig::threshold_config_slot_schema(),
+            AuthMultisig::approver_public_keys_slot_schema(),
+            AuthMultisig::approver_scheme_id_slot_schema(),
+            AuthMultisig::executed_transactions_slot_schema(),
+            AuthMultisig::procedure_thresholds_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
+            .with_description(
+                "Multisig authentication component using ECDSA K256 Keccak signature scheme",
+            )
             .with_supports_all_types()
+            .with_storage_schema(storage_schema);
+
+        AccountComponent::new(multisig_library(), storage_slots, metadata).expect(
+            "Multisig auth component should satisfy the requirements of a valid account component",
+        )
     }
 }
 
