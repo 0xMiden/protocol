@@ -5,6 +5,7 @@ pub mod add_component;
 pub mod asset;
 pub mod block;
 pub mod block_note_tree;
+pub mod component_metadata;
 pub mod constants;
 pub mod noop_auth_component;
 pub mod note;

@@ -1,6 +1,7 @@
 use alloc::string::String;
 
 use miden_protocol::Word;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -61,6 +62,10 @@ pub struct BasicWallet;
 impl BasicWallet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
+
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::basic_wallet";
+
     const RECEIVE_ASSET_PROC_NAME: &str = "basic_wallet::receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "basic_wallet::move_asset_to_note";
 
@@ -80,9 +85,13 @@ impl BasicWallet {
 
 impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
-        AccountComponent::new(basic_wallet_library(), vec![])
-          .expect("basic wallet component should satisfy the requirements of a valid account component")
-          .with_supports_all_types()
+        let metadata = AccountComponentMetadata::new(BasicWallet::NAME)
+            .with_description("Basic wallet component for receiving and sending assets")
+            .with_supports_all_types();
+
+        AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
+            "basic wallet component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

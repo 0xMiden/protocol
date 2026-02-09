@@ -69,13 +69,11 @@ impl AccountComponentMetadata {
         }
 
         let storage_schema = StorageSchema::new(fields)?;
-        Ok(Self::new(
-            raw.name,
-            raw.description,
-            raw.version,
-            raw.supported_types,
-            storage_schema,
-        ))
+        Ok(Self::new(raw.name)
+            .with_description(raw.description)
+            .with_version(raw.version)
+            .with_supported_types(raw.supported_types)
+            .with_storage_schema(storage_schema))
     }
 
     /// Serializes the account component metadata into a TOML string.

@@ -51,24 +51,28 @@ impl StandardNote {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a [StandardNote] instance based on the note script of the provided [Note]. Returns
-    /// `None` if the provided note is not a standard note.
-    pub fn from_note(note: &Note) -> Option<Self> {
-        let note_script_root = note.script().root();
+    /// Returns a [`StandardNote`] instance based on the provided [`NoteScript`]. Returns `None`
+    /// if the provided script does not match any standard note script.
+    pub fn from_script(script: &NoteScript) -> Option<Self> {
+        Self::from_script_root(script.root())
+    }
 
-        if note_script_root == P2idNote::script_root() {
+    /// Returns a [`StandardNote`] instance based on the provided script root. Returns `None` if
+    /// the provided root does not match any standard note script.
+    pub fn from_script_root(root: Word) -> Option<Self> {
+        if root == P2idNote::script_root() {
             return Some(Self::P2ID);
         }
-        if note_script_root == P2ideNote::script_root() {
+        if root == P2ideNote::script_root() {
             return Some(Self::P2IDE);
         }
-        if note_script_root == SwapNote::script_root() {
+        if root == SwapNote::script_root() {
             return Some(Self::SWAP);
         }
-        if note_script_root == MintNote::script_root() {
+        if root == MintNote::script_root() {
             return Some(Self::MINT);
         }
-        if note_script_root == BurnNote::script_root() {
+        if root == BurnNote::script_root() {
             return Some(Self::BURN);
         }
 
@@ -77,6 +81,17 @@ impl StandardNote {
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
+
+    /// Returns the name of this [`StandardNote`] variant as a string.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::P2ID => "P2ID",
+            Self::P2IDE => "P2IDE",
+            Self::SWAP => "SWAP",
+            Self::MINT => "MINT",
+            Self::BURN => "BURN",
+        }
+    }
 
     /// Returns the expected number of storage items of the active note.
     pub fn expected_num_storage_items(&self) -> usize {

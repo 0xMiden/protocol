@@ -1,5 +1,6 @@
 //! Tests for the Array utility `get` and `set` procedures.
 
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
@@ -70,8 +71,8 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
                 initial_value,
             )])?,
         )],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("wrapper::component"),
+    )?;
 
     // Build an account with the wrapper component that uses the array utility
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -188,8 +189,8 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
                 (Word::from([Felt::ZERO, Felt::ZERO, Felt::ONE, index]), initial_value_1),
             ])?,
         )],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("wrapper::component"),
+    )?;
 
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)

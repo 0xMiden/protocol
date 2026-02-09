@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::StorageSchema;
+use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountComponentTemplateError;
 use miden_protocol::utils::sync::LazyLock;
@@ -58,17 +58,21 @@ impl AccountSchemaCommitment {
 
 impl From<AccountSchemaCommitment> for AccountComponent {
     fn from(schema_commitment: AccountSchemaCommitment) -> Self {
+        let metadata = AccountComponentMetadata::new("miden::metadata::schema_commitment")
+            .with_description("Component exposing the account storage schema commitment")
+            .with_supports_all_types();
+
         AccountComponent::new(
             storage_schema_library(),
             vec![StorageSlot::with_value(
                 AccountSchemaCommitment::schema_commitment_slot().clone(),
                 schema_commitment.schema_commitment,
             )],
+            metadata,
         )
         .expect(
             "AccountSchemaCommitment component should satisfy the requirements of a valid account component",
         )
-        .with_supports_all_types()
     }
 }
 
