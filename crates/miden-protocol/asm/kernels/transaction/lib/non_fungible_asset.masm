@@ -1,0 +1,65 @@
+use $kernel::account_id
+use $kernel::asset
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE = "non-fungible asset vault key's account ID must be of type non-fungible faucet"
+
+const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID="malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
+
+const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungible asset is not this faucet"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Validates that a non fungible asset is well formed.
+#!
+#! The value is not validated since any value is valid.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's faucet ID is not a non-fungible one.
+pub proc validate
+    exec.asset::validate_asset_key
+    # => [ASSET_KEY]
+
+    exec.asset::is_non_fungible_asset
+    assert.err=ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE
+    # => [ASSET_KEY]
+end
+
+#! Validates that a non-fungible asset is associated with the provided faucet_id.
+#!
+#! The value is not validated since any value is valid.
+#!
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - faucet_id_prefix is the prefix of the faucet's account ID.
+#! - ASSET_KEY is the vault key of the asset to validate.
+pub proc validate_origin
+    movdn.5 movdn.5
+    # => [ASSET_KEY, faucet_id_prefix, faucet_id_suffix]
+
+    # assert the non-fungible asset key is valid
+    exec.validate
+    # => [ASSET_KEY, faucet_id_prefix, faucet_id_suffix]
+
+    # assert the origin of the asset is the faucet_id provided via the stack
+    exec.asset::get_vault_key_faucet_id
+    # => [key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, faucet_id_prefix, faucet_id_suffix]
+
+    movup.7 movup.7
+    # => [faucet_id_prefix, faucet_id_suffix, key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY]
+
+    exec.account_id::is_equal assert.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
+    # => [ASSET_KEY]
+end
