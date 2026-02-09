@@ -88,15 +88,15 @@ impl From<AccountSchemaCommitment> for AccountComponent {
 /// An extension trait for [`AccountBuilder`] that provides a convenience method for building an
 /// account with an [`AccountSchemaCommitment`] component.
 pub trait AccountBuilderSchemaCommitmentExt {
-    /// Computes the storage schema commitment from all components currently in the builder, adds
-    /// an [`AccountSchemaCommitment`] component and builds the account.
-    ///
-    /// This method cannot be followed by more `with_component` calls, ensuring the computed
-    /// commitment always matches the final account.
+    /// Builds an [`Account`] out of the configured builder after computing the storage schema
+    /// commitment from all components currently in the builder and adding an
+    /// [`AccountSchemaCommitment`] component.
     ///
     /// # Errors
     ///
-    /// Returns an error if schema commitment computation or account building fails.
+    /// Returns an error if:
+    /// - The components' storage schemas contain conflicting definitions for the same slot name.
+    /// - [`AccountBuilder::build`] fails.
     fn build_with_schema_commitment(self) -> Result<Account, AccountError>;
 }
 
