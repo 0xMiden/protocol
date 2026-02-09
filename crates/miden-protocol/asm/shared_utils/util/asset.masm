@@ -33,6 +33,28 @@ pub proc get_balance_from_fungible_asset
     # => [balance]
 end
 
+#! Creates a fungible asset for the specified fungible faucet and amount.
+#!
+#! WARNING: Does not validate its inputs.
+#!
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
+#!   for.
+#! - amount is the amount of the asset to create.
+#! - ASSET_KEY is the vault key of the created fungible asset.
+#! - ASSET_VALUE is the value of the created fungible asset.
+#!
+#! Invocation: exec
+pub proc create_fungible_asset_unchecked
+    # create the key and value
+    repeat.5 push.0 movdn.2 end
+    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, amount]]
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
 #! Builds the vault key of a fungible asset. The asset is NOT validated and therefore must
 #! be a valid fungible asset.
 #!

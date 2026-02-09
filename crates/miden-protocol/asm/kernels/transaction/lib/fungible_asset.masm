@@ -4,6 +4,11 @@ use $kernel::account_id
 use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use $kernel::asset
 
+# RE-EXPORTS
+# =================================================================================================
+
+pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
+
 # ERRORS
 # =================================================================================================
 
