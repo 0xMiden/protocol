@@ -8,7 +8,7 @@ use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, Schem
 use super::super::{InitStorageData, StorageValueName, WordValue};
 use super::validate_description_ascii;
 use crate::account::StorageSlotName;
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 use crate::{Felt, FieldElement};
 
 // FELT SCHEMA
@@ -37,6 +37,20 @@ impl FeltSchema {
             description: None,
             r#type,
             default_value: None,
+        }
+    }
+
+    /// Creates a new typed felt field with a default value.
+    pub fn new_typed_with_default(
+        r#type: SchemaTypeId,
+        name: impl Into<String>,
+        default_value: Felt,
+    ) -> Self {
+        FeltSchema {
+            name: Some(name.into()),
+            description: None,
+            r#type,
+            default_value: Some(default_value),
         }
     }
 
@@ -112,19 +126,19 @@ impl FeltSchema {
         &self,
         slot_prefix: StorageValueName,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         if self.r#type == SchemaTypeId::void() {
             return Ok(());
         }
 
         let Some(name) = self.name.as_deref() else {
-            return Err(AccountComponentTemplateError::InvalidSchema(
+            return Err(ComponentMetadataError::InvalidSchema(
                 "non-void felt elements must be named".into(),
             ));
         };
         let value_name =
             StorageValueName::from_slot_name_with_suffix(slot_prefix.slot_name(), name)
-                .map_err(|err| AccountComponentTemplateError::InvalidSchema(err.to_string()))?;
+                .map_err(|err| ComponentMetadataError::InvalidSchema(err.to_string()))?;
 
         let default_value = self
             .default_value
@@ -141,7 +155,7 @@ impl FeltSchema {
             )
             .is_some()
         {
-            return Err(AccountComponentTemplateError::DuplicateInitValueName(value_name));
+            return Err(ComponentMetadataError::DuplicateInitValueName(value_name));
         }
 
         Ok(())
@@ -155,11 +169,11 @@ impl FeltSchema {
         &self,
         init_storage_data: &InitStorageData,
         slot_name: &StorageSlotName,
-    ) -> Result<Felt, AccountComponentTemplateError> {
+    ) -> Result<Felt, ComponentMetadataError> {
         let value_name = match self.name.as_deref() {
             Some(name) => Some(
                 StorageValueName::from_slot_name_with_suffix(slot_name, name)
-                    .map_err(|err| AccountComponentTemplateError::InvalidSchema(err.to_string()))?,
+                    .map_err(|err| ComponentMetadataError::InvalidSchema(err.to_string()))?,
             ),
             None => None,
         };
@@ -171,17 +185,17 @@ impl FeltSchema {
                 WordValue::Atomic(raw) => {
                     let felt = SCHEMA_TYPE_REGISTRY
                         .try_parse_felt(&self.r#type, raw)
-                        .map_err(AccountComponentTemplateError::StorageValueParsingError)?;
+                        .map_err(ComponentMetadataError::StorageValueParsingError)?;
                     return Ok(felt);
                 },
                 WordValue::Elements(_) => {
-                    return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+                    return Err(ComponentMetadataError::InvalidInitStorageValue(
                         value_name,
                         "expected an atomic value, got a 4-element array".into(),
                     ));
                 },
                 WordValue::FullyTyped(_) => {
-                    return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+                    return Err(ComponentMetadataError::InvalidInitStorageValue(
                         value_name,
                         "expected an atomic value, got a word".into(),
                     ));
@@ -198,23 +212,23 @@ impl FeltSchema {
         }
 
         let Some(value_name) = value_name else {
-            return Err(AccountComponentTemplateError::InvalidSchema(
+            return Err(ComponentMetadataError::InvalidSchema(
                 "non-void felt elements must be named".into(),
             ));
         };
 
-        Err(AccountComponentTemplateError::InitValueNotProvided(value_name))
+        Err(ComponentMetadataError::InitValueNotProvided(value_name))
     }
 
     /// Validates that the defined felt type exists.
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         if let Some(description) = self.description.as_deref() {
             validate_description_ascii(description)?;
         }
 
         let type_exists = SCHEMA_TYPE_REGISTRY.contains_felt_type(&self.felt_type());
         if !type_exists {
-            return Err(AccountComponentTemplateError::InvalidType(
+            return Err(ComponentMetadataError::InvalidType(
                 self.felt_type().to_string(),
                 "Felt".into(),
             ));
@@ -222,12 +236,12 @@ impl FeltSchema {
 
         if self.r#type == SchemaTypeId::void() {
             if self.name.is_some() {
-                return Err(AccountComponentTemplateError::InvalidSchema(
+                return Err(ComponentMetadataError::InvalidSchema(
                     "void felt elements must be unnamed".into(),
                 ));
             }
             if self.default_value.is_some() {
-                return Err(AccountComponentTemplateError::InvalidSchema(
+                return Err(ComponentMetadataError::InvalidSchema(
                     "void felt elements cannot define `default-value`".into(),
                 ));
             }
@@ -235,7 +249,7 @@ impl FeltSchema {
         }
 
         if self.name.is_none() {
-            return Err(AccountComponentTemplateError::InvalidSchema(
+            return Err(ComponentMetadataError::InvalidSchema(
                 "non-void felt elements must be named".into(),
             ));
         }
@@ -243,7 +257,7 @@ impl FeltSchema {
         if let Some(value) = self.default_value {
             SCHEMA_TYPE_REGISTRY
                 .validate_felt_value(&self.felt_type(), value)
-                .map_err(AccountComponentTemplateError::StorageValueParsingError)?;
+                .map_err(ComponentMetadataError::StorageValueParsingError)?;
         }
         Ok(())
     }
