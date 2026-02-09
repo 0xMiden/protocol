@@ -94,9 +94,6 @@ proc mint_non_fungible_asset
     # assert that the asset is associated with the faucet the transaction is being executed against
     # and that the asset is valid
     exec.account::get_id
-    swap drop
-    # => [faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
-
     exec.non_fungible_asset::validate_origin
     # => [ASSET_KEY, ASSET_VALUE]
 
@@ -127,9 +124,6 @@ proc burn_non_fungible_asset
     # assert that the asset was issued by the faucet the transaction is being executed against and
     # that the asset is valid
     exec.account::get_id
-    swap drop
-    # => [faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
-
     exec.non_fungible_asset::validate_origin
     # => [ASSET_KEY, ASSET_VALUE]
 
