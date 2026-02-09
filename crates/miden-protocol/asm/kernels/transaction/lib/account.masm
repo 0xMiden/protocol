@@ -1023,7 +1023,10 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
 #! - ACCOUNT_ID is the word constructed from the account_id as follows:
-#!   [account_id_suffix, account_id_prefix, 0, 0].
+#!   [0, 0, account_id_prefix, account_id_suffix]. Notice that the actual advice map
+#!   key is reversed: [account_id_suffix, account_id_prefix, 0, 0]. That is the  specificity of the
+#!   `adv.push_mapval` instruction which takes the top stack word in the big-endian (reversed)
+#!   order.
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
@@ -1048,17 +1051,20 @@ pub proc load_foreign_account
     # move the core account data to the advice stack
     adv.push_mapval
     # OS => [0, 0, account_id_prefix, account_id_suffix]
-    # AS => [[account_id_prefix, account_id_suffix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+    # AS => [[account_id_suffix, account_id_prefix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the id and nonce of the foreign account to the memory
     adv_loadw
+    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
     exec.memory::set_account_id_and_nonce
-    # OS => []
+    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the vault root of the foreign account to the memory
     adv_loadw exec.memory::set_account_vault_root
-    # OS => []
+    # OS => [VAULT_ROOT]
     # AS => [STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # move the storage root and the code root to the operand stack

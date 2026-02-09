@@ -37,7 +37,8 @@ use miden_protocol::transaction::memory::{
     ACCT_STORAGE_COMMITMENT_OFFSET,
     ACCT_VAULT_ROOT_OFFSET,
     NATIVE_ACCOUNT_DATA_PTR,
-    UPCOMING_FOREIGN_ACCOUNT_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 };
 use miden_protocol::{FieldElement, Word, ZERO};
@@ -1908,19 +1909,20 @@ fn foreign_account_data_memory_assertions(
 ) {
     let foreign_account_data_ptr = NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32;
 
-    // assert that the account ID and procedure root stored in the UPCOMING_FOREIGN_ACCOUNT_PTR and
-    // UPCOMING_FOREIGN_PROCEDURE_PTR memory pointers respectively hold the ID and root of the
-    // account and procedure which were used during the FPI
+    // assert that the account ID and procedure root stored in the
+    // UPCOMING_FOREIGN_ACCOUNT_{SUFFIX, PREFIX}_PTR and UPCOMING_FOREIGN_PROCEDURE_PTR memory
+    // pointers respectively hold the ID and root of the account and procedure which were used
+    // during the FPI
 
     // check the foreign account ID prefix
     assert_eq!(
-        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PTR),
+        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR),
         foreign_account.id().prefix().as_felt()
     );
 
     // check the foreign account ID suffix
     assert_eq!(
-        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PTR + 1),
+        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR),
         foreign_account.id().suffix()
     );
 

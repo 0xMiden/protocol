@@ -81,9 +81,11 @@ pub const INPUT_VAULT_ROOT_PTR: MemoryAddress = 4;
 /// The memory address at which the output vault root is stored.
 pub const OUTPUT_VAULT_ROOT_PTR: MemoryAddress = 8;
 
-// Pointer to the ID of the foreign account which will be loaded during the upcoming FPI call. This
-// ID is updated during the `prepare_fpi_call` kernel procedure.
-pub const UPCOMING_FOREIGN_ACCOUNT_PTR: MemoryAddress = 12;
+// Pointer to the suffix and prefix of the ID of the foreign account which will be loaded during the
+// upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
+pub const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR: MemoryAddress = 12;
+pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
+    UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1;
 
 // Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 // This root is updated during the `prepare_fpi_call` kernel procedure.

@@ -1365,7 +1365,7 @@ end
 
 #! Saves the foreign account ID and the foreign procedure root to the memory.
 #!
-#! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, pad(10)]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, pad(10)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
@@ -1405,7 +1405,7 @@ end
 pub proc tx_perform_fpi_call
     # load the ID of the foreign account onto the stack
     exec.memory::get_upcoming_account_id
-    # => [foreign_account_id_suffix, foreign_account_id_prefix, <foreign procedure inputs>, pad(n)]
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, <foreign procedure inputs>, pad(n)]
 
     # load the foreign account to the memory
     exec.tx_start_foreign_context
@@ -1543,7 +1543,7 @@ end
 #! account stack, which makes the foreign account the active account.
 #!
 #! Inputs:
-#!   Operand stack: [foreign_account_id_suffix, foreign_account_id_prefix]
+#!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix]
 #!   Advice map: {
 #!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
@@ -1557,7 +1557,10 @@ end
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0].
+#!   [0, 0, foreign_account_id_prefix, foreign_account_id_suffix]. Notice that the actual advice map
+#!   key is reversed: [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0]. That is the 
+#!   specificity of the `adv.push_mapval` instruction which takes the top stack word in the 
+#!   big-endian (reversed) order.
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
@@ -1584,7 +1587,9 @@ proc tx_start_foreign_context
 
         # load the advice data into the active account memory section
         exec.account::load_foreign_account
+        # => []
     end
+    # => []
 
     # make sure that the state of the loaded foreign account corresponds to this commitment in the
     # account database
