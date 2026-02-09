@@ -7,6 +7,8 @@ pub mod interface;
 pub mod metadata;
 pub mod wallets;
 
+pub use metadata::AccountBuilderSchemaCommitmentExt;
+
 /// Macro to simplify the creation of static procedure digest constants.
 ///
 /// This macro generates a `LazyLock<Word>` static variable that lazily initializes
