@@ -3,6 +3,9 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::math::u64
 use miden::core::mem
 
+# Re-export the max inputs per note constant.
+pub use ::miden::protocol::util::note::MAX_INPUTS_PER_NOTE
+
 # ERRORS
 # =================================================================================================
 
@@ -39,16 +42,9 @@ pub proc compute_inputs_commitment
     # => [inputs_ptr, num_inputs]
 
     # compute the inputs commitment
-    #
-    # TODO: refactor the hash computation process as part of the
-    # https://github.com/0xMiden/miden-base/issues/2036 and
-    # https://github.com/0xMiden/miden-base/issues/2129
     exec.poseidon2::pad_and_hash_elements
     # => [INPUTS_COMMITMENT]
 end
-
-# Re-export the max inputs per note constant.
-pub use ::miden::protocol::util::note::MAX_INPUTS_PER_NOTE
 
 #! Writes the assets data stored in the advice map to the memory specified by the provided
 #! destination pointer.
@@ -75,22 +71,67 @@ pub proc write_assets_to_memory
     dup.6 swap
     # OS => [even_num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
+    debug.stack.6
+    debug.adv_stack.8
 
     # write the data from the advice stack into memory
     exec.mem::pipe_preimage_to_memory drop
     # OS => [num_assets, dest_ptr]
     # AS => []
+
+    # debug: read back the first asset word
+    dup.1
+    padw movup.4 mem_loadw_le
+    debug.stack.4
+    dropw
 end
 
-#! Builds the recipient hash from note inputs, script root, and serial number.
+#! Writes the inputs data stored in the advice map to the memory specified by the provided
+#! destination pointer.
 #!
-#! This procedure computes the commitment of the note inputs and then uses it to calculate the note
+#! Inputs:
+#!   Operand stack: [INPUTS_COMMITMENT, num_inputs, dest_ptr]
+#!   Advice map: {
+#!     INPUTS_COMMITMENT: [[INPUTS_DATA]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_inputs, dest_ptr]
+pub proc write_inputs_to_memory
+    # load the inputs data from the advice map to the advice stack
+    adv.push_mapval
+    # OS => [INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
+
+    # calculate padded number of inputs to the next multiple of 8
+    dup.4 push.7 add push.0xFFFFFFF8 and
+    # OS => [padded_num_inputs, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
+
+    # convert padded_num_inputs to word count (divide by 4)
+    push.0 swap
+    # OS => [padded_num_inputs, 0, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    push.2 exec.u64::shr drop
+    # OS => [num_words, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+
+    # prepare the stack for the `pipe_preimage_to_memory` procedure
+    dup.4 swap
+    # OS => [num_words, dest_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+
+    # write the data from the advice stack into memory
+    exec.mem::pipe_preimage_to_memory drop
+    # OS => [num_inputs, dest_ptr]
+    # AS => []
+end
+
+#! Builds the recipient hash from note storage, script root, and serial number.
+#!
+#! This procedure computes the commitment of the note storage and then uses it to calculate the note
 #! recipient by hashing this commitment, the provided script root, and the serial number.
 #!
 #! Inputs:
-#!   Operand stack: [inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
+#!   Operand stack: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 #!   Advice map: {
-#!      INPUTS_COMMITMENT: [INPUTS],
+#!      STORAGE_COMMITMENT: [INPUTS],
 #!   }
 #! Outputs:
 #!   Operand stack: [RECIPIENT]
@@ -138,7 +179,7 @@ pub proc build_recipient
     #     INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
 
     # compute the advice map key for num_inputs by hashing the inputs commitment
-    hash
+    exec.poseidon2::hash
     # => [hash(INPUTS_COMMITMENT), num_inputs_start_ptr, num_inputs_end_ptr,
     #     INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
 
@@ -164,36 +205,36 @@ pub proc build_recipient
     movdnw.2
     # => [SERIAL_NUM, SCRIPT_ROOT, INPUTS_COMMITMENT]
 
-    padw adv.insert_hdword hmerge
+    padw adv.insert_hdword exec.poseidon2::merge
     # => [SERIAL_HASH, SCRIPT_ROOT, INPUTS_COMMITMENT]
 
-    swapw adv.insert_hdword hmerge
+    swapw adv.insert_hdword exec.poseidon2::merge
     # => [SERIAL_SCRIPT_HASH, INPUTS_COMMITMENT]
 
-    swapw adv.insert_hdword hmerge
+    swapw adv.insert_hdword exec.poseidon2::merge
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and inputs commitment.
+#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and storage commitment.
 #!
-#! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, INPUT_COMMITMENT]
+#! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
 #!
 #! Where:
 #! - SERIAL_NUM is the serial number of the recipient.
 #! - SCRIPT_ROOT is the commitment of the note script.
-#! - INPUT_COMMITMENT is the commitment of the note inputs.
+#! - STORAGE_COMMITMENT is the commitment of the note storage.
 #! - RECIPIENT is the recipient of the note.
 #!
 #! Invocation: exec
 pub proc build_recipient_hash
-    padw hmerge
-    # => [SERIAL_NUM_HASH, SCRIPT_ROOT, INPUT_COMMITMENT]
+    padw exec.poseidon2::merge
+    # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw hmerge
-    # => [MERGE_SCRIPT, INPUT_COMMITMENT]
+    swapw exec.poseidon2::merge
+    # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
-    swapw hmerge
+    swapw exec.poseidon2::merge
     # [RECIPIENT]
 end
 
@@ -203,15 +244,15 @@ end
 #! Outputs: [sender_id_prefix, sender_id_suffix]
 #!
 #! Where:
-#! - METADATA is the metadata of some note.
+#! - METADATA is the metadata of a note.
 #! - sender_{prefix,suffix} are the prefix and suffix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc extract_sender_from_metadata
-    # => [aux, merged_tag_hint_payload, merged_sender_id_type_hint_tag, sender_id_prefix]
+    # => [aux, tag_payload, sender_id_prefix, sender_id_suffix_and_note_type_hint]
 
-    # drop aux felt and the felt containing tag, execution hint and payload
-    drop drop
-    # => [merged_sender_id_type_hint_tag, sender_id_prefix]
+    # drop aux and tag payload
+    drop drop swap
+    # => [sender_id_suffix_and_note_type, sender_id_prefix]
 
     # extract suffix of sender from merged layout, which means clearing the least significant byte
     exec.account_id::shape_suffix
@@ -240,7 +281,7 @@ pub proc build_note_tag_for_network_account
     swap drop
     # => [account_id_prefix]
 
-    u32split swap
+    u32split
     # => [a_hi, a_lo]
 
     push.34

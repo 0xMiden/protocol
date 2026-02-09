@@ -63,6 +63,15 @@ pub use tx_progress::TransactionProgress;
 
 use crate::errors::TransactionKernelError;
 
+pub(crate) fn get_stack_word_le(process: &ProcessorState, start_idx: usize) -> Word {
+    Word::new([
+        process.get_stack_item(start_idx),
+        process.get_stack_item(start_idx + 1),
+        process.get_stack_item(start_idx + 2),
+        process.get_stack_item(start_idx + 3),
+    ])
+}
+
 // TRANSACTION BASE HOST
 // ================================================================================================
 

@@ -142,8 +142,6 @@ pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO: MasmE
 
 /// Error Message: "failed to access note assets of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note assets of active note because no note is currently being processed");
-/// Error Message: "failed to access note inputs of active note because no note is currently being processed"
-pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note inputs of active note because no note is currently being processed");
 /// Error Message: "failed to access note metadata of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note metadata of active note because no note is currently being processed");
 /// Error Message: "failed to access note recipient of active note because no note is currently being processed"
@@ -152,6 +150,8 @@ pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSE
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note script root of active note because no note is currently being processed");
 /// Error Message: "failed to access note serial number of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note serial number of active note because no note is currently being processed");
+/// Error Message: "failed to access note storage of active note because no note is currently being processed"
+pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note storage of active note because no note is currently being processed");
 /// Error Message: "adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
 pub const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807");
 /// Error Message: "failed to find note at the given index; index must be within [0, num_of_notes]"
@@ -162,8 +162,8 @@ pub const ERR_NOTE_INVALID_NOTE_TYPE_FOR_NOTE_TAG_PREFIX: MasmError = MasmError:
 pub const ERR_NOTE_INVALID_TYPE: MasmError = MasmError::from_static_str("invalid note type");
 /// Error Message: "number of assets in a note exceed 255"
 pub const ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT: MasmError = MasmError::from_static_str("number of assets in a note exceed 255");
-/// Error Message: "the note's tag must fit into a u32 so the 32 most significant bits must be zero"
-pub const ERR_NOTE_TAG_MUST_BE_U32: MasmError = MasmError::from_static_str("the note's tag must fit into a u32 so the 32 most significant bits must be zero");
+/// Error Message: "the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
+pub const ERR_NOTE_TAG_MUST_BE_U32: MasmError = MasmError::from_static_str("the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero");
 
 /// Error Message: "requested output note index should be less than the total number of created output notes"
 pub const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS: MasmError = MasmError::from_static_str("requested output note index should be less than the total number of created output notes");

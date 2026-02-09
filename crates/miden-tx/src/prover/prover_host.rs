@@ -181,7 +181,13 @@ where
                 TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),
 
                 // We do not track tx progress during proving.
-                TransactionEvent::Progress(_) => Ok(Vec::new()),
+                TransactionEvent::Progress(progress) => {
+                    #[cfg(feature = "std")]
+                    if std::env::var("TX_PROGRESS_DEBUG").is_ok() {
+                        std::eprintln!("tx_progress: {progress:?}");
+                    }
+                    Ok(Vec::new())
+                },
             };
 
             result.map_err(EventError::from)

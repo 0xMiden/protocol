@@ -18,6 +18,11 @@ use crate::transaction::{
 use crate::vm::AdviceInputs;
 use crate::{EMPTY_WORD, Felt, ONE, Word, ZERO};
 
+#[cfg(feature = "std")]
+use std::eprintln;
+#[cfg(feature = "std")]
+use miden_core::field::PrimeField64;
+
 // TRANSACTION ADVICE INPUTS
 // ================================================================================================
 
@@ -67,7 +72,7 @@ impl TransactionAdviceInputs {
                 let map_entries = storage_map
                     .entries()
                     .flat_map(|(key, value)| {
-                        value.as_elements().iter().chain(key.as_elements().iter()).copied()
+                        key.as_elements().iter().chain(value.as_elements().iter()).copied()
                     })
                     .collect();
                 inputs.add_map_entry(storage_map.root(), map_entries);
@@ -347,6 +352,9 @@ impl TransactionAdviceInputs {
             let recipient = note.recipient();
             let note_arg = tx_inputs.tx_args().get_note_args(note.id()).unwrap_or(&EMPTY_WORD);
 
+            let note_data_len_before = note_data.len();
+            let assets_data_len = assets.to_padded_assets().len();
+
             // recipient inputs / assets commitments
             self.add_map_entry(recipient.inputs().commitment(), recipient.inputs().to_elements());
             self.add_map_entry(assets.commitment(), assets.to_padded_assets());
@@ -391,6 +399,34 @@ impl TransactionAdviceInputs {
                     note_data.push(ZERO)
                 },
             }
+
+            let expected_len = match input_note {
+                InputNote::Authenticated { .. } => 37 + assets_data_len,
+                InputNote::Unauthenticated { .. } => 27 + assets_data_len,
+            };
+            let note_data_added = note_data.len() - note_data_len_before;
+            debug_assert_eq!(
+                note_data_added,
+                expected_len,
+                "input note data length mismatch (added {note_data_added}, expected {expected_len}, assets_len {assets_data_len})"
+            );
+        }
+
+        #[cfg(feature = "std")]
+        {
+            let preview_len = note_data.len().min(24);
+            eprintln!(
+                "advice_inputs input_notes_commitment={:?}",
+                tx_inputs.input_notes().commitment().map(|v| v.as_canonical_u64())
+            );
+            eprintln!(
+                "advice_inputs note_data[0..{preview_len}]={:?}",
+                note_data
+                    .iter()
+                    .take(preview_len)
+                    .map(|v| v.as_canonical_u64())
+                    .collect::<Vec<_>>()
+            );
         }
 
         self.add_map_entry(tx_inputs.input_notes().commitment(), note_data);

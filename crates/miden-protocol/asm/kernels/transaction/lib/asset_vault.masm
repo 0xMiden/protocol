@@ -214,11 +214,11 @@ pub proc add_fungible_asset
     end
 
     # peek current vault value
-    padw loc_loadw_le.0
+    loc_loadw_le.0
     exec.build_fungible_asset_vault_key
     swapw dropw
     loc_load.8
-    movdn.5
+    movdn.4
     exec.peek_asset
 
     loc_storew_le.4
@@ -527,7 +527,7 @@ end
 #! - asset is the peeked asset from the vault.
 proc peek_asset
     # load the asset vault root from memory
-    padw movup.9 mem_loadw_le
+    padw movup.8 mem_loadw_le
     # => [ASSET_VAULT_ROOT, ASSET_KEY]
 
     swapw

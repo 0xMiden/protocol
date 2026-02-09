@@ -3,6 +3,8 @@ use $kernel::memory
 use $kernel::note
 use $kernel::asset
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use miden::core::mem
+use miden::core::math::u64
 use miden::core::word
 
 # CONSTANTS
@@ -13,8 +15,8 @@ const PUBLIC_NOTE=1     # 0b01
 const PRIVATE_NOTE=2    # 0b10
 const ENCRYPTED_NOTE=3  # 0b11
 
-# The note type must be PUBLIC, unless the high bits are `0b11`. (See the table below.)
-const LOCAL_ANY_PREFIX=3 # 0b11
+# Note tag prefix mask (top 2 bits of a u32 tag).
+const NOTE_TAG_PREFIX_MASK=0xC0000000
 
 # ERRORS
 # =================================================================================================
@@ -31,29 +33,9 @@ const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note c
 
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
 
-# The 2 highest bits in the u32 tag have the following meaning:
-#
-# | Prefix | Name                   | [`NoteExecutionMode`] | Target                   | Allowed [`NoteType`] |
-# | :----: | :--------------------: | :-------------------: | :----------------------: | :------------------: |
-# | `0b00` | `NetworkAccount`       | Network               | Network Account          | [`NoteType::Public`] |
-# | `0b01` | `NetworkUseCase`       | Network               | Use case                 | [`NoteType::Public`] |
-# | `0b10` | `LocalPublicAny`       | Local                 | Any                      | [`NoteType::Public`] |
-# | `0b11` | `LocalAny`             | Local                 | Any                      | Any                  |
-#
-# Execution: Is a hint for the network, to check if the note can be consumed by a network controlled
-#   account
-# Target: Is a hint for the type of target. Use case means the note may be consumed by anyone,
-#   specific means there is a specific target for the note (the target may be a public key, a user
-#   that knows some secret, or a specific account ID)
-#
-# Only the note type from the above list is enforced. The other values are only hints intended as a
-# best effort optimization strategy. A badly formatted note may 1. not be consumed because honest
-# users won't see the note 2. generate slightly more load as extra validation is performed for the
-# invalid tags. None of these scenarios have any significant impact.
+const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
 
 const ERR_NOTE_INVALID_NOTE_TYPE_FOR_NOTE_TAG_PREFIX="invalid note type for the given note tag prefix"
-
-const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits must be zero"
 
 # EVENTS
 # =================================================================================================
@@ -78,20 +60,20 @@ const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::note::after_add_asset")
 #!
 #! Where:
 #! - tag is the note tag which can be used by the recipient(s) to identify notes intended for them.
-#! - aux is the arbitrary user-defined value.
+#! - aux is the auxiliary data to be included in the note.
 #! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
 #!   or off-chain).
-#! - execution_hint is the hint which specifies when a note is ready to be consumed.
+#! - execution_hint is the note execution hint.
 #! - RECIPIENT defines spend conditions for the note.
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
-#! - the note_type is not valid.
-#! - the note_tag is not an u32.
-#! - the note_tag starts with anything but 0b11 and note_type is not public.
+#! - the note_type is unknown.
+#! - the note tag is not a u32.
 #! - the number of output notes exceeds the maximum limit of 1024.
 pub proc create
     emit.NOTE_BEFORE_CREATED_EVENT
+    # => [tag, aux, note_type, execution_hint, RECIPIENT]
 
     exec.build_metadata
     # => [NOTE_METADATA, RECIPIENT]
@@ -113,6 +95,7 @@ pub proc create
     # set the metadata for the output note
     dup.4
     # => [note_ptr, NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
+
     exec.memory::set_output_note_metadata dropw
     # => [note_ptr, RECIPIENT, note_idx]
 
@@ -184,6 +167,7 @@ end
 #! - ASSET can be a fungible or non-fungible asset.
 #!
 #! Panics if:
+#! - the note index points to a non-existent output note.
 #! - the ASSET is malformed (e.g., invalid faucet ID).
 #! - the max amount of fungible assets is exceeded.
 #! - the non-fungible asset already exists in the note.
@@ -255,8 +239,10 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Builds the stack into the NOTE_METADATA word, encoding the note type and execution hint into a
-#! single element.
+#! Builds the provided inputs into the NOTE_METADATA word.
+#!
+#! - The sender ID is set to the native account's ID.
+#!
 #! Note that this procedure is only exported so it can be tested. It should not be called from
 #! non-test code.
 #!
@@ -265,98 +251,72 @@ end
 #!
 #! Where:
 #! - tag is the note tag which can be used by the recipient(s) to identify notes intended for them.
-#! - aux is the arbitrary user-defined value.
+#! - aux is the auxiliary data to be included in the note.
 #! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
 #!   or off-chain).
-#! - execution_hint is the hint which specifies when a note is ready to be consumed.
+#! - execution_hint is the note execution hint encoded as a felt.
 #! - NOTE_METADATA is the metadata associated with a note.
 pub proc build_metadata
-    # Validate the note type.
+    # Validate note type.
     # --------------------------------------------------------------------------------------------
 
-    # NOTE: encrypted notes are currently unsupported
-    dup.2 eq.PRIVATE_NOTE dup.3 eq.PUBLIC_NOTE or assert.err=ERR_NOTE_INVALID_TYPE
+    dup.2 eq.PUBLIC_NOTE
+    dup.3 eq.PRIVATE_NOTE or
+    dup.3 eq.ENCRYPTED_NOTE or
+    assert.err=ERR_NOTE_INVALID_TYPE
     # => [tag, aux, note_type, execution_hint]
 
-    # copy data to validate the tag
-    dup.2 push.PUBLIC_NOTE dup.1 dup.3
-    # => [tag, note_type, public_note, note_type, tag, aux, note_type, execution_hint]
+    # Validate the note tag fits into a u32.
+    # --------------------------------------------------------------------------------------------
 
     u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
-    # => [tag, note_type, public_note, note_type, tag, aux, note_type, execution_hint]
-
-    # enforce the note type depending on the tag' bits
-    u32shr.30 eq.LOCAL_ANY_PREFIX cdrop
-    assert_eq.err=ERR_NOTE_INVALID_NOTE_TYPE_FOR_NOTE_TAG_PREFIX
     # => [tag, aux, note_type, execution_hint]
 
-    # Split execution hint into its tag and payload parts as they are encoded in separate elements
-    # of the metadata.
+    # For private/encrypted notes, the tag prefix must be 0b11.
     # --------------------------------------------------------------------------------------------
 
-    # the execution_hint is laid out like this: [26 zero bits | payload (32 bits) | tag (6 bits)]
-    movup.3
-    # => [execution_hint, tag, aux, note_type]
-    dup u32split drop
-    # => [execution_hint_lo, execution_hint, tag, aux, note_type]
+    dup.2 eq.PUBLIC_NOTE not
+    if.true
+        dup push.NOTE_TAG_PREFIX_MASK and push.NOTE_TAG_PREFIX_MASK eq
+        assert.err=ERR_NOTE_INVALID_NOTE_TYPE_FOR_NOTE_TAG_PREFIX
+    end
+    # => [tag, aux, note_type, execution_hint]
 
-    # mask out the lower 6 execution hint tag bits.
-    u32and.0x3f
-    # => [execution_hint_tag, execution_hint, tag, aux, note_type]
+    # Extract execution hint tag (lower 6 bits).
+    dup.3
+    push.0x3f and
+    # => [hint_tag, tag, aux, note_type, execution_hint]
 
-    # compute the payload by subtracting the tag value so the lower 6 bits are zero
-    # note that this results in the following layout: [26 zero bits | payload (32 bits) | 6 zero bits]
-    swap
-    # => [execution_hint, execution_hint_tag, tag, aux, note_type]
-    dup.1
-    # => [execution_hint_tag, execution_hint, execution_hint_tag, tag, aux, note_type]
-    sub
-    # => [execution_hint_payload, execution_hint_tag, tag, aux, note_type]
+    # Extract execution hint payload (execution_hint >> 6).
+    dup.4
+    u32split swap
+    push.6 exec.u64::shr
+    drop
+    # => [hint_payload, hint_tag, tag, aux, note_type, execution_hint]
 
-    # Merge execution hint payload and note tag.
-    # --------------------------------------------------------------------------------------------
-
-    # we need to move the payload to the upper 32 bits of the felt
-    # we only need to shift by 26 bits because the payload is already shifted left by 6 bits
-    # we shift the payload by multiplying with 2^26
-    # this results in the lower 32 bits being zero which is where the note tag will be added
-    mul.0x04000000
-    # => [execution_hint_payload, execution_hint_tag, tag, aux, note_type]
-
-    # add the tag to the payload to produce the merged value
-    movup.2 add
-    # => [note_tag_hint_payload, execution_hint_tag, aux, note_type]
-
-    # Merge sender_id_suffix, note_type and execution_hint_tag.
-    # --------------------------------------------------------------------------------------------
-
-    exec.account::get_id
-    # => [sender_id_prefix, sender_id_suffix, note_tag_hint_payload, execution_hint_tag, aux, note_type]
-
-    movup.5
-    # => [note_type, sender_id_prefix, sender_id_suffix, note_tag_hint_payload, execution_hint_tag, aux]
-    # multiply by 2^6 to shift the two note_type bits left by 6 bits.
-    mul.0x40
-    # => [shifted_note_type, sender_id_prefix, sender_id_suffix, note_tag_hint_payload, execution_hint_tag, aux]
-
-    # merge execution_hint_tag into the note_type
-    # this produces an 8-bit value with the layout: [note_type (2 bits) | execution_hint_tag (6 bits)]
-    movup.4 add
-    # => [merged_note_type_execution_hint_tag, sender_id_prefix, sender_id_suffix, note_tag_hint_payload, aux]
-
-    # merge sender_id_suffix into this value
-    movup.2 add
-    # => [sender_id_suffix_type_and_hint_tag, sender_id_prefix, note_tag_hint_payload, aux]
-
-    # Rearrange elements to produce the final note metadata layout.
-    # --------------------------------------------------------------------------------------------
-
-    swap movdn.3
-    # => [sender_id_suffix_type_and_hint_tag, note_tag_hint_payload, aux, sender_id_prefix]
-    swap
-    # => [note_tag_hint_payload, sender_id_suffix_type_and_hint_tag, aux, sender_id_prefix]
+    # Build [note_execution_hint_payload | note_tag].
     movup.2
-    # => [NOTE_METADATA = [aux, note_tag_hint_payload, sender_id_suffix_type_and_hint_tag, sender_id_prefix]]
+    push.32 pow2
+    movup.2
+    mul
+    add
+    # => [tag_payload, hint_tag, aux, note_type, execution_hint]
+
+    # Build suffix low byte = (note_type << 6) | hint_tag.
+    movup.3
+    push.64 mul
+    movup.2 add
+    # => [suffix_low_byte, tag_payload, aux, execution_hint]
+
+    # Merge suffix low byte with sender ID suffix.
+    exec.account::get_id
+    # => [sender_id_prefix, sender_id_suffix, suffix_low_byte, tag_payload, aux, execution_hint]
+
+    movup.2 movup.2 add
+    # => [sender_id_suffix', sender_id_prefix, tag_payload, aux, execution_hint]
+
+    swap drop
+    # => [sender_id_prefix, sender_id_suffix', tag_payload, aux]
 end
 
 #! Increments the number of output notes by one. Returns the index of the next note to be created.

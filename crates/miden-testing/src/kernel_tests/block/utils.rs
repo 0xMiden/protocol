@@ -1,7 +1,5 @@
-use std::eprintln;
 use std::vec::Vec;
 
-use miden_protocol::ZERO;
 use miden_protocol::account::AccountId;
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::BlockNumber;
@@ -52,30 +50,10 @@ impl MockChainBlockExt for MockChain {
     ) -> anyhow::Result<ExecutedTransaction> {
         let notes = notes.into_iter().collect::<Vec<_>>();
         let tx_context = self.build_tx_context(input, &notes, &[])?.build()?;
-        let account = tx_context.account();
-        let account_id = account.id();
-        let account_id_prefix = account_id.prefix().as_felt();
-        let account_id_suffix = account_id.suffix();
-        let account_nonce = account.nonce();
+
         match tx_context.execute().await {
             Ok(executed_tx) => Ok(executed_tx),
-            Err(err) => {
-                eprintln!(
-                    "debug account_id prefix/suffix/nonce: {}/{}/{}",
-                    account_id_prefix, account_id_suffix, account_nonce,
-                );
-                eprintln!(
-                    "debug account_id word: {:?}",
-                    miden_protocol::Word::new([
-                        account_nonce,
-                        ZERO,
-                        account_id_suffix,
-                        account_id_prefix,
-                    ])
-                );
-                eprintln!("debug tx_context.execute error: {err:?}");
-                Err(err.into())
-            },
+            Err(err) => Err(err.into()),
         }
     }
 

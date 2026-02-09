@@ -217,6 +217,7 @@ proc execute_auth_procedure
 
     padw dup.4 mem_loadw_le
     # => [AUTH_PROC_ROOT, auth_procedure_ptr, AUTH_ARGS, pad(12)]
+    debug.stack.4
 
     # if auth procedure was called already, it must have been called by a user, which is disallowed
     exec.account::was_procedure_called
@@ -390,6 +391,11 @@ pub proc finalize_transaction
 
     exec.execute_auth_procedure
     # => []
+
+    exec.memory::get_init_nonce
+    exec.memory::get_account_nonce
+    debug.stack.2
+    drop drop
 
     # nonce cannot be 0 after the first transaction
     exec.memory::get_native_account_nonce

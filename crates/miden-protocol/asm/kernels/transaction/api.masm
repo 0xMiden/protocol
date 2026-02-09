@@ -1,12 +1,14 @@
 use $kernel::account
 use $kernel::account_delta
 use $kernel::account_id
+use $kernel::constants::ACCOUNT_SEED_HASH_SCRATCH_PTR
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
 use $kernel::note
 use $kernel::output_note
 use $kernel::tx
+use miden::core::sys
 
 # NOTE
 # =================================================================================================
@@ -34,58 +36,107 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED="f
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note metadata of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note inputs of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note storage of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
-
-# DEBUG EVENTS
-# =================================================================================================
-
-const KERNEL_PROC_PRE_DYNEXEC_EVENT=event("miden::tx::kernel_proc_pre_dynexec")
 
 # AUTHENTICATION
 # =================================================================================================
 
 #! Authenticates that the invocation of a kernel procedure originates from the account context.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the invocation of the kernel procedure does not originate from the account context.
 #!
 #! Invocation: exec
+@locals(16)
 proc authenticate_account_origin
+    # normalize stack depth to 16 before preserving
+    exec.sys::truncate_stack
+
+    # preserve the input stack to keep procedure inputs intact
+    loc_storew_le.0 dropw
+    loc_storew_le.4 dropw
+    loc_storew_le.8 dropw
+    loc_storew_le.12 dropw
+    # => []
+
     # get the hash of the caller
-    padw caller
+    caller
     # => [CALLER]
+
+    # stash caller root so the auth check runs with a clean stack
+    mem_storew_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
+    dropw
+    # => []
 
     # assert that the caller is from the user context
     exec.account::authenticate_and_track_procedure
     # => []
+
+    # restore the input stack
+    loc_loadw_le.12
+    loc_loadw_le.8
+    loc_loadw_le.4
+    loc_loadw_le.0
+    # => [pad(16)]
+
+    # ensure we return with the required stack depth
+    exec.sys::truncate_stack
+    # => [pad(16)]
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
 #! the account.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the invocation of the kernel procedure does not originate from the authentication procedure
 #!   of the account.
 #!
 #! Invocation: exec
+@locals(16)
 proc assert_auth_procedure_origin
+    # normalize stack depth to 16 before preserving
+    exec.sys::truncate_stack
+
+    # preserve the input stack to keep procedure inputs intact
+    loc_storew_le.0 dropw
+    loc_storew_le.4 dropw
+    loc_storew_le.8 dropw
+    loc_storew_le.12 dropw
+    # => []
+
     # get the hash of the caller
-    padw caller
+    caller
     # => [CALLER]
+
+    # stash caller root so the auth check runs with a clean stack
+    mem_storew_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
+    dropw
+    # => []
 
     # assert that the caller is from the user context
     exec.account::assert_auth_procedure
     # => []
+
+    # restore the input stack
+    loc_loadw_le.12
+    loc_loadw_le.8
+    loc_loadw_le.4
+    loc_loadw_le.0
+    # => [pad(16)]
+
+    # ensure we return with the required stack depth
+    exec.sys::truncate_stack
+    # => [pad(16)]
 end
 
 # KERNEL PROCEDURES
@@ -254,6 +305,7 @@ pub proc account_incr_nonce
     # assert that nonce increment originates from the authentication procedure of the account
     exec.assert_auth_procedure_origin
     # => [pad(16)]
+    debug.stack.1
 
     # increment the account nonce
     exec.account::incr_nonce
@@ -586,19 +638,11 @@ pub proc account_add_asset
     exec.authenticate_account_origin
     # => [ASSET, pad(12)]
 
-    # drop padding to avoid deep-stack interference in add_asset_to_vault
-    movdnw.3
-    dropw dropw dropw
-    # => [ASSET]
-
     # add the specified asset to the account vault, emitting the corresponding events
     exec.account::add_asset_to_vault
-    # => [ASSET']
-
-    # re-pad the stack to match the API output shape
-    padw padw padw
-    movupw.3
     # => [ASSET', pad(12)]
+
+    exec.sys::truncate_stack
 end
 
 #! Removes the specified asset from the vault.
@@ -628,6 +672,8 @@ pub proc account_remove_asset
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
     # => [ASSET, pad(12)]
+
+    exec.sys::truncate_stack
 end
 
 #! Returns the balance of the fungible asset associated with the provided faucet_id in the active
@@ -922,7 +968,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -956,11 +1002,11 @@ end
 #!   the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose assets info should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - RECIPIENT is the commitment to the input note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -998,7 +1044,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1036,7 +1082,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1062,22 +1108,22 @@ pub proc input_note_get_serial_number
     # => [SERIAL_NUMBER, pad(12)]
 end
 
-#! Returns the inputs commitment and length of the specified input note.
+#! Returns the storage commitment and length of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11)]
+#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 #!
 #! Where:
-#! - is_active_note is the boolean flag indicating whether we should return the inputs commitment 
+#! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose data should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - NOTE_INPUTS_COMMITMENT is the inputs commitment of the specified input note.
-#! - num_inputs is the number of inputs of the specified input note.
+#! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
+#! - num_storage_items is the number of storage items of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1089,22 +1135,22 @@ pub proc input_note_get_inputs_info
 
     # assert the pointer is not zero - this would suggest the procedure has been called from an
     # incorrect context
-    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED
     # => [input_note_ptr, pad(15)]
 
-    # get the note inputs length
+    # get the note's number of storage items
     dup exec.memory::get_input_note_num_inputs swap
-    # => [input_note_ptr, num_inputs, pad(16)]
+    # => [input_note_ptr, num_storage_items, pad(16)]
 
-    # get the inputs commitment
+    # get the storage commitment
     exec.memory::get_input_note_inputs_commitment
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(16)]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(16)]
 
     # truncate the stack
     repeat.5
         movup.5 drop
     end
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11)]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 end
 
 #! Returns the script root of the specified input note.
@@ -1113,7 +1159,7 @@ end
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
-#! - is_active_note is the boolean flag indicating whether we should return the inputs commitment 
+#! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose data should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
@@ -1121,7 +1167,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1152,14 +1198,12 @@ end
 
 #! Creates a new note and returns its index.
 #!
-#! Inputs:  [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
+#! Inputs:  [tag, note_type, RECIPIENT, pad(10)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
 #! - tag is the tag to be included in the note.
-#! - aux is the auxiliary metadata to be included in the note.
 #! - note_type is the note storage type.
-#! - execution_hint is the note execution hint tag and payload.
 #! - RECIPIENT is the recipient of the note.
 #! - note_idx is the index of the created note.
 #!
@@ -1167,7 +1211,7 @@ end
 pub proc output_note_create
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
+    # => [tag, note_type, RECIPIENT, pad(10)]
 
     exec.output_note::create
     # => [note_idx, pad(15)]
@@ -1232,7 +1276,7 @@ end
 #!
 #! Where:
 #! - note_index is the index of the output note whose recipient should be returned.
-#! - RECIPIENT is the commitment to the output note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the output note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1259,11 +1303,11 @@ end
 #! Returns the metadata of the output note with the specified index.
 #!
 #! Inputs:  [note_index, pad(15)]
-#! Outputs: [METADATA, pad(12)]
+#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
 #!
 #! Where:
 #! - note_index is the index of the output note whose metadata should be returned.
-#! - METADATA is the metadata of the output note.
+#! - METADATA is the metadata of the specified output note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1273,7 +1317,7 @@ pub proc output_note_get_metadata
     # assert that the provided note index is less than the total number of output notes
     exec.output_note::assert_note_index_in_bounds
     # => [note_index, pad(15)]
-    
+
     # get the note data pointer by the provided index
     exec.memory::get_output_note_ptr
     # => [note_ptr, pad(15)]
@@ -1435,7 +1479,7 @@ end
 #! Inputs:
 #!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[account_nonce, 0, foreign_account_id_suffix, foreign_account_id_prefix],
+#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
@@ -1447,7 +1491,7 @@ end
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [0, 0, foreign_account_id_suffix, foreign_account_id_prefix].
+#!   [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0].
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
@@ -1553,6 +1597,7 @@ end
 #!
 #! Invocation: syscall
 pub proc exec_kernel_proc
+    debug.stack.1
     # check that the provided procedure offset is within expected bounds
     dup exec.memory::get_num_kernel_procedures
     lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
@@ -1562,10 +1607,8 @@ pub proc exec_kernel_proc
     mul.4 exec.memory::get_kernel_procedures_ptr add
     # => [procedure_pointer, <procedure_inputs>, <pad>]
 
-    # debug: emit stack layout right before kernel dynexec
-    emit.KERNEL_PROC_PRE_DYNEXEC_EVENT
-
     # execute loaded procedure
+    debug.stack.1
     dynexec
     # => [<procedure_outputs>, <pad>]
 end

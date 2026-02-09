@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use miden_processor::MastForestStore;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::note::NoteScript;
@@ -39,11 +40,13 @@ impl ScriptMastForestStore {
         mast_store
     }
 
-    /// Registers all procedures of the provided [MastForest] with this store.
+    /// Registers all local nodes of the provided [MastForest] with this store.
     fn insert(&mut self, mast_forest: Arc<MastForest>) {
-        // only register procedures that are local to this forest
-        for proc_digest in mast_forest.local_procedure_digests() {
-            self.mast_forests.insert(proc_digest, mast_forest.clone());
+        // register all non-external nodes so dynamic exec can resolve any local digest
+        for node in mast_forest.nodes() {
+            if !node.is_external() {
+                self.mast_forests.insert(node.digest(), mast_forest.clone());
+            }
         }
 
         // collect advice data from the forest

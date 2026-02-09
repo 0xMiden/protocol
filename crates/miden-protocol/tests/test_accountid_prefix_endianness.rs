@@ -1,6 +1,6 @@
 //! Test to verify AccountIdPrefix serialization endianness consistency
 
-use miden_protocol::account::AccountIdPrefix;
+use miden_protocol::account::{AccountIdPrefix, AccountIdVersion};
 use miden_protocol::utils::serde::{Deserializable, Serializable};
 
 #[test]
@@ -8,23 +8,11 @@ fn test_accountid_prefix_endianness_roundtrip() {
     // Create a test AccountIdPrefix from known bytes
     let bytes: [u8; 8] = [170, 0, 0, 0, 0, 0, 188, 32];
 
-    println!("Original bytes: {:?}", bytes);
-
-    // Deserialize
-    let prefix = match AccountIdPrefix::read_from_bytes(&bytes) {
-        Ok(p) => {
-            println!("✓ Deserialization succeeded: {:?}", p);
-            p
-        },
-        Err(e) => {
-            println!("✗ Deserialization failed: {:?}", e);
-            panic!("Failed to deserialize AccountIdPrefix");
-        },
-    };
+    let prefix =
+        AccountIdPrefix::read_from_bytes(&bytes).expect("failed to deserialize AccountIdPrefix");
 
     // Serialize back
     let serialized = prefix.to_bytes();
-    println!("Serialized bytes: {:?}", serialized);
 
     // Verify roundtrip
     assert_eq!(
@@ -43,25 +31,14 @@ fn test_accountid_prefix_version_extraction() {
     ];
 
     for (bytes, description) in test_cases {
-        println!("\nTesting {}: {:?}", description, bytes);
+        let prefix = AccountIdPrefix::read_from_bytes(&bytes)
+            .unwrap_or_else(|err| panic!("Version extraction failed for {description}: {err}"));
 
-        match AccountIdPrefix::read_from_bytes(&bytes) {
-            Ok(prefix) => {
-                let version = prefix.version();
-                println!("✓ Version extracted: {:?}", version);
-
-                // Version should always be 0 for V0
-                assert_eq!(
-                    format!("{:?}", version),
-                    "Version0",
-                    "Expected Version0 for {}",
-                    description
-                );
-            },
-            Err(e) => {
-                println!("✗ Failed to deserialize {}: {:?}", description, e);
-                panic!("Version extraction failed for {}", description);
-            },
-        }
+        // Version should always be 0 for V0
+        assert_eq!(
+            prefix.version(),
+            AccountIdVersion::Version0,
+            "Expected Version0 for {description}"
+        );
     }
 }

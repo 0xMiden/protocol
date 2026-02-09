@@ -16,6 +16,10 @@ pub const MAX_INPUT_NOTES_PER_TX = 1024
 # The size of the memory segment allocated to each note.
 pub const NOTE_MEM_SIZE = 2048
 
+# Scratch memory pointer used for hashing the account seed during validation.
+# Use the gap between output notes and link map memory to avoid overlapping input note data.
+pub const ACCOUNT_SEED_HASH_SCRATCH_PTR = 18874368
+
 # The depth of the Merkle tree used to commit to notes produced in a block.
 pub const NOTE_TREE_DEPTH = 16
 

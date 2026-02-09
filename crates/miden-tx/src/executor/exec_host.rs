@@ -2,8 +2,6 @@ use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-#[cfg(feature = "std")]
-use std::eprintln;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::EventError;
@@ -322,14 +320,6 @@ where
         vault_root: Word,
         asset_key: AssetVaultKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        #[cfg(all(debug_assertions, feature = "std"))]
-        {
-            eprintln!(
-                "debug(AccountVaultWitnessRequest) account={active_account_id} key {:?} root {:?}",
-                Word::from(asset_key),
-                vault_root
-            );
-        }
         let asset_witnesses = self
             .base_host
             .store()
@@ -594,7 +584,12 @@ where
 
                 TransactionEvent::LinkMapSet { advice_mutation } => Ok(advice_mutation),
                 TransactionEvent::LinkMapGet { advice_mutation } => Ok(advice_mutation),
-                TransactionEvent::Progress(tx_progress) => match tx_progress {
+                TransactionEvent::Progress(tx_progress) => {
+                    #[cfg(feature = "std")]
+                    if std::env::var("TX_PROGRESS_DEBUG").is_ok() {
+                        std::eprintln!("tx_progress: {tx_progress:?}");
+                    }
+                    match tx_progress {
                     TransactionProgressEvent::PrologueStart(clk) => {
                         self.tx_progress.start_prologue(clk);
                         Ok(Vec::new())
@@ -647,6 +642,7 @@ where
                         self.tx_progress.epilogue_after_tx_cycles_obtained(clk);
                         Ok(Vec::new())
                     },
+                }
                 },
             };
 

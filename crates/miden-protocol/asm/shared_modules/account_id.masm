@@ -58,7 +58,8 @@ const ACCOUNT_ID_STORAGE_MODE_INVALID_U32=0xc0 # 0b1100_0000
 #! - acct_id_prefix is the prefix of the account ID.
 #! - is_fungible_faucet is a boolean indicating whether the account is a fungible faucet.
 pub proc is_fungible_faucet
-    exec.id_type eq.FUNGIBLE_FAUCET_ACCOUNT
+    exec.id_type
+    eq.FUNGIBLE_FAUCET_ACCOUNT
     # => [is_fungible_faucet]
 end
 

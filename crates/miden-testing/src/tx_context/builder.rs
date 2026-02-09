@@ -22,9 +22,11 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionInputs,
     TransactionScript,
+    TransactionKernel,
 };
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::StandardsLib;
 use miden_tx::TransactionMastStore;
 use miden_tx::auth::BasicAuthenticator;
 
@@ -310,6 +312,9 @@ impl TransactionContextBuilder {
 
         let mast_store = {
             let mast_forest_store = TransactionMastStore::new();
+            // Include protocol + standards libraries for note scripts.
+            mast_forest_store.insert(TransactionKernel::library().mast_forest().clone());
+            mast_forest_store.insert(StandardsLib::default().as_ref().mast_forest().clone());
             mast_forest_store.load_account_code(tx_inputs.account().code());
 
             for (account, _) in self.foreign_account_inputs.values() {

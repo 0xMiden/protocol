@@ -210,11 +210,13 @@ proc process_block_data
     # read block data and compute its sub commitment
     # see `Advice stack` above for details.
     padw padw padw
-    adv_pipe hperm
-    adv_pipe hperm
-    adv_pipe hperm
-    adv_pipe hperm
-    adv_pipe hperm
+    adv_pipe
+    exec.poseidon2::permute
+    adv_pipe
+    exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
     # => [SUB_COMMITMENT, block_data_ptr', block_num]
 
@@ -224,7 +226,8 @@ proc process_block_data
     # => [NOTE_ROOT, SUB_COMMITMENT, block_data_ptr', block_num]
 
     # merge the sub commitment with the note root to get the block commitment
-    swapw hmerge
+    swapw
+    exec.poseidon2::merge
     # => [BLOCK_COMMITMENT, block_data_ptr', block_num]
 
     # assert that the block commitment matches the commitment in global inputs
@@ -416,8 +419,8 @@ proc process_account_data
 
     # read account details and compute its digest. See `Advice stack` above for details.
     padw padw padw
-    adv_pipe hperm
-    adv_pipe hperm
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
     # => [ACCOUNT_COMMITMENT, acct_data_ptr']
 
@@ -519,7 +522,7 @@ end
 #!   Advice stack: []
 #!
 #! Where:
-#! - NOTE_COMMITMENT is the input note's commitment computed as `hash(NOTE_ID || NOTE_METADATA)`.
+#! - NOTE_COMMITMENT is the input note's commitment computed as `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`.
 #! - block_num is the leaf position in the MMR chain of the block which created the input note.
 #! - BLOCK_SUB_COMMITMENT is the sub_commitment of the block which created the input note.
 #! - NOTE_ROOT is the merkle root of the notes tree containing the input note.
@@ -529,37 +532,44 @@ proc authenticate_note
     # Load the BLOCK_COMMITMENT from the PARTIAL_BLOCKCHAIN
     # ---------------------------------------------------------------------------------------------
 
+    debug.stack.20
     exec.memory::get_partial_blockchain_ptr adv_push.1
     # => [block_num, partial_blockchain_ptr, NOTE_COMMITMENT]
 
     exec.mmr::get
     # => [BLOCK_COMMITMENT, NOTE_COMMITMENT]
-
     # Load and authenticate the NOTE_ROOT
     # ---------------------------------------------------------------------------------------------
 
-    # read data from advice and compute hash(BLOCK_SUB_COMMITMENT || NOTE_ROOT)
+    # read BLOCK_SUB_COMMITMENT and NOTE_ROOT from advice stack
     padw adv_loadw
-    # => [BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    loc_storew_le.0
+    dropw
     padw adv_loadw
-    # => [NOTE_ROOT, BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
-
     loc_storew_le.4
-    # => [NOTE_ROOT, BLOCK_SUB_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    dropw
+    # => [BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
-    swapw hmerge
+    # compute hash(BLOCK_SUB_COMMITMENT || NOTE_ROOT)
+    padw loc_loadw_le.0
+    padw loc_loadw_le.4
+    swapw
+    exec.poseidon2::merge
     # => [COMPUTED_BLOCK_COMMITMENT, BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
     # assert the computed block commitment matches
+    swapw
     assert_eqw.err=ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR
     # => [NOTE_COMMITMENT]
+    debug.stack.20
 
     # Authenticate the NOTE_COMMITMENT
     # ---------------------------------------------------------------------------------------------
 
-    # load the note root from memory
+    # load the note root from locals
     padw loc_loadw_le.4 swapw
     # => [NOTE_COMMITMENT, NOTE_ROOT]
+    debug.stack.20
 
     # load the index of the note
     adv_push.1 movdn.4
@@ -569,6 +579,7 @@ proc authenticate_note
     push.NOTE_TREE_DEPTH movdn.4
     # => [NOTE_COMMITMENT, depth, note_index, NOTE_ROOT]
 
+    debug.stack.20
     # verify the note commitment
     mtree_verify.err=ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED
     # => [NOTE_COMMITMENT, depth, note_index, NOTE_ROOT]
@@ -584,7 +595,7 @@ end
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
-#!      INPUTS_COMMITMENT,
+#!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
 #!   ]
 #! Outputs:
@@ -595,22 +606,54 @@ end
 #! - note_ptr is the memory location for the input note.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
-#! - INPUTS_COMMITMENT is the sequential hash of the padded note's inputs.
+#! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
 #! - NULLIFIER is the result of
-#!   `hash(SERIAL_NUMBER || SCRIPT_ROOT || INPUTS_COMMITMENT || ASSETS_COMMITMENT)`.
+#!   `hash(SERIAL_NUMBER || SCRIPT_ROOT || STORAGE_COMMITMENT || ASSETS_COMMITMENT)`.
+@locals(2)
 proc process_input_note_details
+    debug.stack.1
     exec.memory::get_input_note_core_ptr
     # => [note_data_ptr]
 
-    # read input note's data and compute its digest. See `Advice stack` above for details.
-    padw padw padw
-    adv_pipe hperm
-    adv_pipe hperm
-    exec.poseidon2::squeeze_digest
-    # => [NULLIFIER, note_data_ptr + 16]
+    # keep start/end pointers for hashing
+    dup loc_store.0
+    dup push.16 add loc_store.1
+    drop
+    # => []
 
-    movup.4 drop
+    # store SERIAL_NUMBER
+    loc_load.0
+    padw adv_loadw
+    movup.4 mem_storew_le
+    dropw
+    # => []
+
+    # store SCRIPT_ROOT
+    loc_load.0 add.4
+    padw adv_loadw
+    movup.4 mem_storew_le
+    dropw
+    # => []
+
+    # store INPUTS_COMMITMENT
+    loc_load.0 add.8
+    padw adv_loadw
+    movup.4 mem_storew_le
+    dropw
+    # => []
+
+    # store ASSETS_COMMITMENT
+    loc_load.0 add.12
+    padw adv_loadw
+    movup.4 mem_storew_le
+    dropw
+    # => []
+
+    # compute NULLIFIER: hash(SERIAL_NUMBER || SCRIPT_ROOT || INPUTS_COMMITMENT || ASSETS_COMMITMENT)
+    loc_load.1
+    loc_load.0
+    exec.poseidon2::hash_words
     # => [NULLIFIER]
 end
 
@@ -620,9 +663,9 @@ end
 #! - The note's ARGS are not authenticated, these are optional arguments the user can provide when
 #!   consuming the note.
 #! - The note's metadata is authenticated, so the data is returned in the stack. The value is used
-#!   to compute the NOTE_COMMITMENT as `hash(NOTE_ID || NOTE_METADATA)`, which is the leaf value of the
-#!   note's tree in the contained in the block header. The NOTE_COMMITMENT is either verified by this
-#!   kernel, or delayed to be verified by another kernel (e.g. block or batch kernels).
+#!   to compute the NOTE_COMMITMENT as `hash(NOTE_ID || NOTE_METADATA)`. The NOTE_COMMITMENT is the
+#!   leaf value of the block note tree contained in the block header and is either verified by this
+#!   kernel, or delayed to be verified by another kernel (e.g. batch or block kernels).
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
@@ -636,10 +679,15 @@ end
 #! - NOTE_ARGS are the user arguments passed to the note.
 #! - NOTE_METADATA is the note's metadata.
 proc process_note_args_and_metadata
-    padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
+    padw adv_loadw
+    dup.4 exec.memory::set_input_note_args dropw
     # => [note_ptr]
 
-    padw adv_loadw movup.4 exec.memory::set_input_note_metadata
+    padw adv_loadw
+    dup.4 exec.memory::set_input_note_metadata
+    # => [NOTE_METADATA, note_ptr]
+
+    movup.4 drop
     # => [NOTE_METADATA]
 end
 
@@ -647,25 +695,25 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [inputs_len]
+#!   Advice stack: [num_inputs]
 #! Outputs:
 #!   Operand stack: [note_ptr]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - inputs_len is the note's input count.
-proc process_note_inputs_length
-    # move the inputs length from the advice stack to the operand stack
+#! - num_inputs is the note's number of inputs.
+proc process_note_num_inputs
+    # move the number of inputs from the advice stack to the operand stack
     adv_push.1
-    # => [inputs_len, note_ptr]
+    # => [num_inputs, note_ptr]
 
-    # validate the input length
+    # validate the number of inputs
     dup push.MAX_INPUTS_PER_NOTE lte
     assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_INPUTS_EXCEEDED_LIMIT
-    # => [inputs_len, note_ptr]
+    # => [num_inputs, note_ptr]
 
-    # store the inputs length into the memory
+    # store the number of inputs into the memory
     dup.1 exec.memory::set_input_note_num_inputs
     # => [note_ptr]
 end
@@ -704,48 +752,16 @@ proc process_note_assets
     # read the note's assets
     # ---------------------------------------------------------------------------------------------
 
-    # Stack organization:
-    # - Top of the stack contains the hash state. The complete state is needed to extract the final
-    #   hash.
-    # - Followed by the assets_ptr, with the target address used to pipe data from the advice
-    #   provider.
-    # - Followed by a copy of the note_ptr for later use.
-    # - Followed by the loop variables, the current counter and rounded_num_assets, laid at this
-    #   depth because dup.15 is an efficient operation.
+    dup.1 exec.memory::get_input_note_assets_ptr
+    # => [assets_ptr, rounded_num_assets, note_ptr]
 
-    push.0 movup.2
-    # => [note_ptr, counter, rounded_num_assets]
-
-    dup exec.memory::get_input_note_assets_ptr
-    # => [assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    padw padw padw
-    # => [PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop condition: counter != rounded_num_assets
-    dup.15 dup.15 neq
-    # => [should_loop, PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop and read assets from the advice provider
-    while.true
-        # read data and compute its digest. See `Advice stack` above for details.
-        adv_pipe hperm
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter, rounded_num_assets]
-
-        # update counter
-        swapw.3 movup.2 add.2 movdn.2 swapw.3
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-
-        # loop condition: counter != rounded_num_assets
-        dup.15 dup.15 neq
-        # => [should_loop, PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-    end
-    # => [PERM, PERM, PERM, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
-
+    swap
+    exec.mem::pipe_words_to_memory
     exec.poseidon2::squeeze_digest
-    # => [ASSET_COMMITMENT_COMPUTED, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
+    # => [ASSET_COMMITMENT_COMPUTED, assets_ptr+4n, note_ptr]
 
-    swapw drop movdn.2 drop drop
+    movup.5
+    movup.5 drop
     # => [note_ptr, ASSET_COMMITMENT_COMPUTED]
 
     # VERIFY: computed ASSET_COMMITMENT matches the provided hash
@@ -761,19 +777,27 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-@locals(8)
+@locals(2)
 proc add_input_note_assets_to_vault
     # prepare the stack
     # ---------------------------------------------------------------------------------------------
 
-    exec.memory::get_input_vault_root_ptr
-    # => [input_vault_root_ptr, note_ptr]
+    dup exec.memory::get_input_note_assets_ptr
+    loc_store.0
+    # => [note_ptr]
 
-    dup.1 exec.memory::get_input_note_assets_ptr
-    # => [assets_start_ptr, input_vault_root_ptr, note_ptr]
+    dup exec.memory::get_input_note_num_assets
+    mul.4
+    loc_load.0 add
+    loc_store.1
+    # => [note_ptr]
 
-    dup movup.3 exec.memory::get_input_note_num_assets mul.4 add swap
-    # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+    drop
+    # => []
+
+    loc_load.1
+    loc_load.0
+    # => [assets_start_ptr, assets_end_ptr]
 
     # add input note's assets to input vault
     # ---------------------------------------------------------------------------------------------
@@ -783,49 +807,36 @@ proc add_input_note_assets_to_vault
     # => [should_loop, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
     while.true
-        dup.2
-        # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
-
-        padw dup.5 mem_loadw_le
-        # => [ASSET, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
-
-        emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
-
-        # stash asset + loop vars so add_asset sees a clean stack
-        loc_storew_le.0 dropw
-        # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
-        loc_store.6
-        # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
-        loc_store.4
-        # => [assets_end_ptr, input_vault_root_ptr]
-        loc_store.5
-        # => [input_vault_root_ptr]
-        drop
-
-        # stack is now empty; restore inputs for add_asset
-        padw loc_loadw_le.0
-        loc_load.6
-        movdn.4
-        # the witnesses for the note assets should be added prior to transaction execution and so
-        # there should be no need to fetch them lazily via an event.
-        exec.asset_vault::add_asset dropw
+        # store pointers so the stack below ASSET stays word-aligned for add_asset
+        loc_store.0
+        loc_store.1
         # => []
 
-        # restore loop vars
-        loc_load.6
-        loc_load.5
-        loc_load.4
-        # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        exec.memory::get_input_vault_root_ptr
+        # => [input_vault_root_ptr]
+
+        loc_load.0 padw movup.4 mem_loadw_le
+        # => [ASSET, input_vault_root_ptr]
+
+        # the witnesses for the note assets should be added prior to transaction execution and so
+        # there should be no need to fetch them lazily via an event.
+        exec.asset_vault::add_asset
+        dropw dropw
+        # => []
+
+        loc_load.1
+        loc_load.0
+        # => [assets_start_ptr, assets_end_ptr]
 
         add.4
-        # => [assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        # => [assets_start_ptr+4, assets_end_ptr]
 
         # loop condition: assets_start_ptr != assets_end_ptr
         dup.1 dup.1 neq
-        # => [should_loop, assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        # => [should_loop, assets_start_ptr+4, assets_end_ptr]
     end
 
-    drop drop drop
+    drop drop
     # => []
 end
 
@@ -838,16 +849,21 @@ end
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSET_COMMITMENT)`.
 proc compute_input_note_id
+    debug.stack.1
     # compute SERIAL_COMMITMENT: hash(SERIAL_NUMBER || EMPTY_WORD)
-    dup exec.memory::get_input_note_serial_num padw swapw hmerge
+    dup exec.memory::get_input_note_serial_num
+    debug.stack.4
+    padw swapw exec.poseidon2::merge
     # => [SERIAL_COMMITMENT, note_ptr]
 
     # compute MERGE_SCRIPT: hash(SERIAL_COMMITMENT || SCRIPT_ROOT)
-    dup.4 exec.memory::get_input_note_script_root swapw hmerge
+    dup.4 exec.memory::get_input_note_script_root
+    swapw exec.poseidon2::merge
     # => [MERGE_SCRIPT, note_ptr]
 
-    # compute RECIPIENT: hash(MERGE_SCRIPT || INPUT_COMMITMENT)
-    dup.4 exec.memory::get_input_note_inputs_commitment swapw hmerge
+    # compute RECIPIENT: hash(MERGE_SCRIPT || STORAGE_COMMITMENT)
+    dup.4 exec.memory::get_input_note_inputs_commitment
+    swapw exec.poseidon2::merge
     # => [RECIPIENT, note_ptr]
 
     # store the recipient in memory
@@ -855,7 +871,8 @@ proc compute_input_note_id
     # => [RECIPIENT, note_ptr]
 
     # compute NOTE_ID: hash(RECIPIENT || ASSET_COMMITMENT)
-    movup.4 exec.memory::get_input_note_assets_commitment swapw hmerge
+    movup.4 exec.memory::get_input_note_assets_commitment
+    swapw exec.poseidon2::merge
     # => [NOTE_ID]
 end
 
@@ -871,10 +888,11 @@ end
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
-#!      INPUTS_COMMITMENT,
+#!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
-#!      ARGS,
-#!      NOTE_METADATA,
+#!      NOTE_ARGS,
+#!      NOTE_METADATA_HEADER,
+#!      NOTE_ATTACHMENT,
 #!      assets_count,
 #!      ASSET_0, ..., ASSET_N,
 #!      is_authenticated,
@@ -894,10 +912,11 @@ end
 #!   notes.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
-#! - INPUTS_COMMITMENT is the sequential hash of the padded note's inputs.
+#! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
 #! - ASSETS_COMMITMENT is the sequential hash of the padded note's assets.
-#! - NOTE_METADATA is the note's metadata.
-#! - ARGS is the user arguments passed to the note.
+#! - NOTE_METADATA_HEADER is the note's metadata header.
+#! - NOTE_ATTACHMENT is the note's attachment.
+#! - NOTE_ARGS are the user arguments passed to the note.
 #! - assets_count is the note's assets count.
 #! - ASSET_0, ..., ASSET_N are the padded note's assets.
 #! - is_authenticated is the boolean indicating if the note contains an authentication proof.
@@ -905,7 +924,6 @@ end
 #!   - block_num is the note's creation block number.
 #!   - BLOCK_SUB_COMMITMENT is the block's sub_commitment for which the note was created.
 #!   - NOTE_ROOT is the merkle root of the note's tree.
-@locals(16)
 proc process_input_note
     # note details
     # ---------------------------------------------------------------------------------------------
@@ -932,46 +950,31 @@ proc process_input_note
     movup.4
     # => [note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
 
-    # note inputs len
+    # note number of storage items
     # ---------------------------------------------------------------------------------------------
 
-    exec.process_note_inputs_length
+    exec.process_note_num_inputs
     # => [note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
+    debug.stack.1
 
     # note assets
     # ---------------------------------------------------------------------------------------------
-    # Stash note_ptr + words to avoid deep-stack interactions in asset_vault::add_asset.
-    loc_store.0 drop
-    # => [NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
 
-    dropw
-    # => [NULLIFIER, HASHER_CAPACITY]
-
-    loc_storew_le.4 dropw
-    # => [HASHER_CAPACITY]
-
-    loc_storew_le.8 dropw
-    # => []
-
-    # Process assets with a clean stack.
-    loc_load.0
     dup exec.process_note_assets
+    debug.stack.1
     dup exec.add_input_note_assets_to_vault
-    # => [note_ptr]
-
-    drop
-    loc_loadw_le.8
-    loc_loadw_le.4
-    loc_load.0
-    dup exec.memory::get_input_note_metadata
-    movup.4
+    debug.stack.12
     # => [note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
 
     # note id
     # ---------------------------------------------------------------------------------------------
 
+    debug.stack.8
+    dropw
+    # => [note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
     dup exec.compute_input_note_id
     # => [NOTE_ID, note_ptr, NOTE_METADATA, NULLIFIER, HASHER_CAPACITY]
+    debug.stack.4
 
     # save note id to memory
     movup.4 exec.memory::set_input_note_id
@@ -981,15 +984,18 @@ proc process_input_note
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_COMMITMENT: `hash(NOTE_ID || NOTE_METADATA)`
-    hmerge
+    exec.poseidon2::merge
+    debug.stack.4
     # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
+    debug.stack.12
     adv_push.1
     # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
     if.true
         # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
+        debug.stack.12
         exec.authenticate_note
         # => [NULLIFIER, HASHER_CAPACITY]
 
@@ -998,8 +1004,9 @@ proc process_input_note
     end
     # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
-    # update the input note commitment
-    hperm
+    # update the input note commitment (rate order: NULLIFIER, NOTE_COMMITMENT_OR_EMPTY)
+    swapw
+    exec.poseidon2::permute
     # => [PERM, PERM, PERM]
 end
 

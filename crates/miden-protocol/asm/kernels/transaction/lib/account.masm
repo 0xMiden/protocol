@@ -2,6 +2,7 @@ use $kernel::account_delta
 use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
+use $kernel::constants::ACCOUNT_SEED_HASH_SCRATCH_PTR
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
@@ -330,7 +331,8 @@ pub proc compute_commitment
 
     # stream account data and compute sequential hash. We perform two `mem_stream` operations
     # because the account data consists of exactly 4 words.
-    mem_stream hperm mem_stream hperm
+    mem_stream exec.poseidon2::permute
+    mem_stream exec.poseidon2::permute
     # => [RATE, RATE, PERM, account_data_ptr']
 
     # extract account commitment
@@ -444,7 +446,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_item
     # get account storage slots section offset
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_prefix, slot_id_suffix]
 
     exec.find_storage_slot
@@ -470,7 +472,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 pub proc get_typed_item
     # get account storage slots section offset
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_prefix, slot_id_suffix]
 
     exec.find_storage_slot
@@ -527,7 +529,7 @@ pub proc set_item
     emit.ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT
     # => [slot_id_prefix, slot_id_suffix, VALUE]
 
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, VALUE]
 
     exec.find_storage_slot
@@ -575,7 +577,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_map_item
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY]
 
     exec.get_map_item_raw
@@ -620,7 +622,7 @@ end
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
 pub proc set_map_item
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
@@ -656,7 +658,7 @@ pub proc get_storage_slot_type
     # => [offset]
 
     # compute storage slot ptr
-    exec.memory::get_native_account_storage_slots_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     add
     # => [slot_ptr]
 
@@ -694,13 +696,8 @@ pub proc add_asset_to_vault
     exec.memory::get_account_vault_root_ptr movdn.4
     # => [ASSET, acct_vault_root_ptr, ASSET]
 
-    # If a padding word ended up on top, drop it to realign the ASSET word.
-    dupw exec.word::eqz
-    if.true
-        dropw
-    end
-
     # emit event to signal that an asset is going to be added to the account vault
+    debug.stack.9
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
 
     # add the asset to the account vault
@@ -737,6 +734,7 @@ pub proc remove_asset_from_vault
     # => [ASSET, acct_vault_root_ptr]
 
     # emit event to signal that an asset is going to be removed from the account vault
+    debug.stack.9
     emit.ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT
 
     # remove the asset from the account vault
@@ -846,15 +844,30 @@ end
 #! Panics if:
 #! - the procedure root is not part of the account code.
 pub proc authenticate_and_track_procedure
+    # load caller root from scratch memory
+    padw mem_loadw_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
+    # => [PROC_ROOT]
+
     # load procedure index
     emit.ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT adv_push.1
     # => [index, PROC_ROOT]
 
-    dup movdn.5 exec.get_procedure_root
+    movdn.4
+    dup.4 exec.memory::get_account_procedure_ptr
+    padw movup.4 mem_loadw_le
     # => [MEM_PROC_ROOT, PROC_ROOT, index]
 
     # verify that PROC_ROOT and MEM_PROC_ROOT fetched from memory match
-    assert_eqw.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
+    dupw.1 exec.word::eq
+    if.false
+        # Some callers provide PROC_ROOT in the opposite word order; try reversing before failing.
+        swapw reversew swapw
+        dupw.1 exec.word::eq
+        assert.err=ERR_ACCOUNT_PROC_NOT_PART_OF_ACCOUNT_CODE
+    end
+    # => [MEM_PROC_ROOT, PROC_ROOT, index]
+
+    dropw
     # => [index]
 
     # Set the was_called flag to 1 for this procedure
@@ -865,30 +878,37 @@ end
 #! Asserts that the specified procedure root is the root of the authentication procedure for an
 #! account. This procedure is assumed to be invoked after asserting the account is a native account.
 #!
-#! Inputs:  [PROC_ROOT]
-#! Outputs: []
-#!
-#! Where:
-#! - PROC_ROOT is the hash of the procedure to authenticate.
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the procedure root is not the authentication procedure.
 pub proc assert_auth_procedure
-    # authentication procedure is always at index 0
-    push.0
-    # => [index, PROC_ROOT]
-
-    # set was_called for the the auth procedure to true
-    dup exec.set_was_procedure_called
-    # => [index, PROC_ROOT]
-
-    # get procedure root from memory stored at index
-    exec.get_procedure_root
-    # => [MEM_PROC_ROOT, PROC_ROOT]
-
-    # verify that PROC_ROOT exists in memory at index
-    assert_eqw.err=ERR_ACCOUNT_PROC_NOT_AUTH_PROC
+    # clear the incoming pad(16) stack from the caller
+    dropw dropw dropw dropw
     # => []
+
+    # authentication procedure is always at index 0
+    push.0 exec.set_was_procedure_called
+    # => []
+
+    # load procedure root from memory stored at index 0
+    padw
+    push.0 exec.memory::get_account_procedure_ptr
+    mem_loadw_le
+    # => [MEM_PROC_ROOT]
+
+    # load caller root
+    padw mem_loadw_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
+    # => [PROC_ROOT, MEM_PROC_ROOT]
+    # verify that PROC_ROOT exists in memory at index
+    eqw assert.err=ERR_ACCOUNT_PROC_NOT_AUTH_PROC
+    dropw dropw
+    # => []
+
+    # restore pad(16) so the caller returns with the required stack depth
+    padw padw padw padw
+    # => [pad(16)]
 end
 
 # VALIDATION
@@ -912,10 +932,7 @@ pub proc validate_seed
     # => [EMPTY_WORD]
 
     # push the advice map key at which the seed is located
-    exec.memory::get_account_id
-    swap
-    push.0
-    push.0
+    exec.memory::get_account_id swap push.0.0
     # => [0, 0, account_id_suffix, account_id_prefix, EMPTY_WORD]
 
     # populate first four elements of the rate with the account ID seed
@@ -932,7 +949,7 @@ pub proc validate_seed
 
     # perform first permutation of seed and code_commitment (from advice stack)
     # perm(seed, code_commitment)
-    hperm
+    exec.poseidon2::permute
     # => [RATE, RATE, PERM, EMPTY_WORD]
 
     # clear rate elements
@@ -943,7 +960,7 @@ pub proc validate_seed
     swapw exec.memory::get_account_storage_commitment swapw
     # => [EMPTY_WORD, STORAGE_COMMITMENT, PERM]
 
-    hperm
+    exec.poseidon2::permute
     # => [RATE, RATE, CAP]
 
     # extract digest
@@ -1088,7 +1105,7 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
 #! - ACCOUNT_ID is the word constructed from the account_id as follows:
-#!   [0, 0, account_id_suffix, account_id_prefix].
+#!   [account_id_suffix, account_id_prefix, 0, 0].
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
@@ -1107,16 +1124,12 @@ pub proc load_foreign_account
     # => [account_id_prefix, account_id_suffix]
 
     # construct the word with account ID to load the core account data from the advice map
-    # OS => [account_id_prefix, account_id_suffix]
-    swap
-    # => [account_id_suffix, account_id_prefix]
-    push.0
-    push.0
+    swap push.0.0
     # OS => [0, 0, account_id_suffix, account_id_prefix]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [account_id_suffix, account_id_prefix]
+    # OS => [0, 0, account_id_suffix, account_id_prefix]
     # AS => [[account_nonce, 0, account_id_suffix, account_id_prefix], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the id and nonce of the foreign account to the memory
@@ -1198,7 +1211,7 @@ pub proc save_account_storage_data
     # AS => [[STORAGE_SLOT_DATA]]
 
     # setup acct_storage_slots_ptr and end_ptr for reading from advice stack
-    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_storage_slots_section_ptr
+    mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
     dup movdn.2 add swap
     # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
@@ -1358,7 +1371,7 @@ end
 #! Outputs: []
 proc insert_and_validate_storage_map
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     add
     # => [slot_ptr]
 
@@ -1484,7 +1497,7 @@ pub proc get_item_delta
     # => [offset]
 
     # get account storage slots section offset
-    exec.memory::get_native_account_storage_slots_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, offset]
 
     dup.1 add dup
@@ -1528,7 +1541,7 @@ pub proc get_slot_id
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
 
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     add
     # => [slot_ptr]
 
@@ -1610,7 +1623,7 @@ proc set_map_item_raw
     # => [OLD_VALUE, NEW_ROOT, KEY, NEW_VALUE]
 
     # store OLD_VALUE until the end of the procedure
-    loc_storew_le.4 swapw
+    loc_storew_be.4 swapw
     # => [NEW_ROOT, OLD_VALUE, KEY, NEW_VALUE]
 
     # store NEW_ROOT into the map slot's VALUE
@@ -1635,7 +1648,7 @@ proc set_map_item_raw
     # => []
 
     # load OLD_VALUE as return value on the stack
-    padw loc_loadw_le.4
+    padw loc_loadw_be.4
     # => [OLD_VALUE]
 end
 
@@ -1754,7 +1767,7 @@ end
 #! - slot_ptr is the pointer to a "current" storage slot in the native account's memory section.
 #! - slot_idx is the index of the storage slot.
 proc slot_ptr_to_index
-    exec.memory::get_account_storage_slots_section_ptr
+    exec.memory::get_account_active_storage_slots_section_ptr
     sub
     # => [slot_offset]
 
@@ -1873,11 +1886,8 @@ pub proc validate_active_foreign_account
     # => [ACCOUNT_DB_ROOT]
 
     # get the active account ID
-    exec.memory::get_account_id
-    swap
-    push.0
-    push.0
-    # => [0, 0, account_id_suffix, account_id_prefix, ACCOUNT_DB_ROOT]
+    push.0.0 exec.memory::get_account_id
+    # => [account_id_prefix, account_id_suffix, 0, 0, ACCOUNT_DB_ROOT]
 
     # retrieve the commitment of the foreign account from the active account tree
     # this would abort if the proof for the commitment was invalid for the account root,
@@ -1902,7 +1912,7 @@ end
 #! Inputs:  [KEY]
 #! Outputs: [HASHED_KEY]
 proc hash_map_key
-    hash
+    exec.poseidon2::hash
     # => [HASHED_KEY]
 end
 
@@ -1931,7 +1941,7 @@ proc refresh_storage_commitment
         # => [num_storage_slots]
 
         # setup start and end ptr
-        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_storage_slots_section_ptr
+        mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH exec.memory::get_account_active_storage_slots_section_ptr
         dup movdn.2 add swap
         # => [start_ptr, end_ptr]
 

@@ -1,8 +1,12 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_core::proof::HashFunction;
+use miden_core::field::PrimeField64;
+use miden_core::mast::MastNodeExt;
+use miden_protocol::{Hasher, Word};
+use std::eprintln;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -15,12 +19,16 @@ use miden_protocol::account::{
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
+use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
-use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::transaction::{ProvenTransactionBuilder, TransactionKernel};
+use miden_protocol::{CoreLibrary, ProtocolLib};
 use miden_protocol::vm::ExecutionProof;
-use miden_protocol::{AccountTreeError, NullifierTreeError, ProposedBlockError, Word};
+use miden_protocol::testing::mock_util_lib::mock_util_library;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::StandardsLib;
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
@@ -30,6 +38,27 @@ struct WitnessTestSetup {
     stale_block_inputs: BlockInputs,
     valid_block_inputs: BlockInputs,
     batches: Vec<ProvenBatch>,
+}
+
+fn word_hex_reversed(word: Word) -> String {
+    let elems = word.as_elements();
+    Word::from([elems[3], elems[2], elems[1], elems[0]]).to_hex()
+}
+
+fn word_reversed(word: Word) -> Word {
+    let elems = word.as_elements();
+    Word::from([elems[3], elems[2], elems[1], elems[0]])
+}
+
+fn word_hex_be(word: Word) -> String {
+    let elems = word.as_elements();
+    format!(
+        "0x{:016x}{:016x}{:016x}{:016x}",
+        elems[0].as_canonical_u64(),
+        elems[1].as_canonical_u64(),
+        elems[2].as_canonical_u64(),
+        elems[3].as_canonical_u64()
+    )
 }
 
 /// Setup for a test which returns two inputs for the same block. The valid inputs match the
@@ -49,10 +78,377 @@ async fn witness_test_setup() -> anyhow::Result<WitnessTestSetup> {
     let note2 =
         builder.add_p2any_note(account0.id(), NoteType::Public, [FungibleAsset::mock(100)])?;
 
+    eprintln!(
+        "note1 id={:?} metadata={:?} commitment={:?}",
+        note1.id().as_word().map(|v| v.as_canonical_u64()),
+        Word::from(note1.metadata()).map(|v| v.as_canonical_u64()),
+        note1.commitment().map(|v| v.as_canonical_u64()),
+    );
+    eprintln!(
+        "note0 serial={:?} script_root={:?} inputs_comm={:?} assets_comm={:?}",
+        note0.serial_num().map(|v| v.as_canonical_u64()),
+        note0.script().root().map(|v| v.as_canonical_u64()),
+        note0.recipient().inputs().commitment().map(|v| v.as_canonical_u64()),
+        note0.assets().commitment().map(|v| v.as_canonical_u64()),
+    );
+    eprintln!("note0 script_root_hex={}", note0.script().root().to_hex());
+    eprintln!(
+        "note0 script_root_hex_reversed={}",
+        word_hex_reversed(note0.script().root())
+    );
+    eprintln!(
+        "note0 script_root_hex_be={}",
+        word_hex_be(note0.script().root())
+    );
+    eprintln!(
+        "note0 id={:?} metadata={:?}",
+        note0.id().as_word().map(|v| v.as_canonical_u64()),
+        Word::from(note0.metadata()).map(|v| v.as_canonical_u64()),
+    );
+    eprintln!(
+        "note0 nullifier={:?}",
+        note0.nullifier().as_word().map(|v| v.as_canonical_u64())
+    );
+    let note0_serial_commitment = Hasher::merge(&[note0.serial_num(), Word::empty()]);
+    let note0_merge_script = Hasher::merge(&[note0_serial_commitment, note0.script().root()]);
+    let note0_recipient_digest = Hasher::merge(&[
+        note0_merge_script,
+        note0.recipient().inputs().commitment(),
+    ]);
+    let note0_serial_commitment_swapped = Hasher::merge(&[Word::empty(), note0.serial_num()]);
+    let note0_merge_script_swapped =
+        Hasher::merge(&[note0.script().root(), note0_serial_commitment_swapped]);
+    let note0_recipient_digest_swapped = Hasher::merge(&[
+        note0.recipient().inputs().commitment(),
+        note0_merge_script_swapped,
+    ]);
+    let note0_id_swapped =
+        Hasher::merge(&[note0.assets().commitment(), note0_recipient_digest_swapped]);
+    let note0_commitment_swapped =
+        Hasher::merge(&[Word::from(note0.metadata()), note0_id_swapped]);
+    let note0_commitment_meta_first =
+        Hasher::merge(&[Word::from(note0.metadata()), note0.id().as_word()]);
+    let note0_commitment_id_first =
+        Hasher::merge(&[note0.id().as_word(), Word::from(note0.metadata())]);
+    let note0_id_reversed = word_reversed(note0.id().as_word());
+    let note0_meta_reversed = word_reversed(Word::from(note0.metadata()));
+    let note0_commitment_id_reversed =
+        Hasher::merge(&[note0_id_reversed, Word::from(note0.metadata())]);
+    let note0_commitment_meta_reversed =
+        Hasher::merge(&[note0.id().as_word(), note0_meta_reversed]);
+    let note0_commitment_both_reversed =
+        Hasher::merge(&[note0_id_reversed, note0_meta_reversed]);
+    eprintln!(
+        "note0 serial_commitment={:?}",
+        note0_serial_commitment.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 merge_script={:?}",
+        note0_merge_script.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 recipient_digest={:?}",
+        note0_recipient_digest.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 serial_commitment_swapped={:?}",
+        note0_serial_commitment_swapped.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 merge_script_swapped={:?}",
+        note0_merge_script_swapped.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 recipient_digest_swapped={:?}",
+        note0_recipient_digest_swapped.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 id_swapped={:?}",
+        note0_id_swapped.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_swapped={:?}",
+        note0_commitment_swapped.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_meta_first={:?}",
+        note0_commitment_meta_first.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_id_first={:?}",
+        note0_commitment_id_first.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_id_reversed={:?}",
+        note0_commitment_id_reversed.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_meta_reversed={:?}",
+        note0_commitment_meta_reversed.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment_both_reversed={:?}",
+        note0_commitment_both_reversed.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note0 commitment={:?}",
+        note0.commitment().map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "note1 inputs_count={} assets_count={}",
+        note1.recipient().inputs().num_values(),
+        note1.assets().num_assets()
+    );
+    eprintln!(
+        "note1 serial={:?} script_root={:?} inputs_comm={:?} assets_comm={:?}",
+        note1.serial_num().map(|v| v.as_canonical_u64()),
+        note1.script().root().map(|v| v.as_canonical_u64()),
+        note1.recipient().inputs().commitment().map(|v| v.as_canonical_u64()),
+        note1.assets().commitment().map(|v| v.as_canonical_u64()),
+    );
+    eprintln!("note1 script_root_hex={}", note1.script().root().to_hex());
+    let missing_root_hex = "0x7b53a8c35c90f446deb5a046e0e52e5179cfe30a626657333923d1d754f35e25";
+    let note0_script_has_missing = note0
+        .script()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    let note0_script_has_missing_rev = note0
+        .script()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_reversed(node.digest()) == missing_root_hex);
+    let note0_script_has_missing_be = note0
+        .script()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_be(node.digest()) == missing_root_hex);
+    eprintln!(
+        "note0 script contains missing root? {note0_script_has_missing}"
+    );
+    eprintln!(
+        "note0 script contains missing root (reversed)? {note0_script_has_missing_rev}"
+    );
+    eprintln!(
+        "note0 script contains missing root (be)? {note0_script_has_missing_be}"
+    );
+    let account0_code_has_missing = account0
+        .code()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    let account0_code_has_missing_rev = account0
+        .code()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_reversed(node.digest()) == missing_root_hex);
+    let account0_code_has_missing_be = account0
+        .code()
+        .mast()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_be(node.digest()) == missing_root_hex);
+    eprintln!(
+        "account0 code contains missing root? {account0_code_has_missing}"
+    );
+    eprintln!(
+        "account0 code contains missing root (reversed)? {account0_code_has_missing_rev}"
+    );
+    eprintln!(
+        "account0 code contains missing root (be)? {account0_code_has_missing_be}"
+    );
+    let kernel_has_missing = TransactionKernel::kernel()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!("tx kernel contains missing root? {kernel_has_missing}");
+    let kernel_lib_has_missing = TransactionKernel::library()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!(
+        "tx kernel lib contains missing root? {kernel_lib_has_missing}"
+    );
+    let core_lib_has_missing = CoreLibrary::default()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!("core lib contains missing root? {core_lib_has_missing}");
+    let protocol_lib_has_missing = ProtocolLib::default()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!(
+        "protocol lib contains missing root? {protocol_lib_has_missing}"
+    );
+    let standards_lib_has_missing = StandardsLib::default()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!(
+        "standards lib contains missing root? {standards_lib_has_missing}"
+    );
+    let standards_lib_has_missing_rev = StandardsLib::default()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_reversed(node.digest()) == missing_root_hex);
+    eprintln!(
+        "standards lib contains missing root (reversed)? {standards_lib_has_missing_rev}"
+    );
+    let standards_lib_has_missing_be = StandardsLib::default()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_be(node.digest()) == missing_root_hex);
+    eprintln!(
+        "standards lib contains missing root (be)? {standards_lib_has_missing_be}"
+    );
+    let mock_lib_has_missing = CodeBuilder::mock_libraries().any(|lib| {
+        lib.mast_forest()
+            .nodes()
+            .iter()
+            .any(|node| node.digest().to_hex() == missing_root_hex)
+    });
+    eprintln!("mock libs contain missing root? {mock_lib_has_missing}");
+    let mock_lib_has_missing_rev = CodeBuilder::mock_libraries().any(|lib| {
+        lib.mast_forest()
+            .nodes()
+            .iter()
+            .any(|node| word_hex_reversed(node.digest()) == missing_root_hex)
+    });
+    eprintln!(
+        "mock libs contain missing root (reversed)? {mock_lib_has_missing_rev}"
+    );
+    let mock_lib_has_missing_be = CodeBuilder::mock_libraries().any(|lib| {
+        lib.mast_forest()
+            .nodes()
+            .iter()
+            .any(|node| word_hex_be(node.digest()) == missing_root_hex)
+    });
+    eprintln!("mock libs contain missing root (be)? {mock_lib_has_missing_be}");
+    let mock_util_has_missing = mock_util_library()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| node.digest().to_hex() == missing_root_hex);
+    eprintln!("mock util lib contains missing root? {mock_util_has_missing}");
+    let mock_util_has_missing_rev = mock_util_library()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_reversed(node.digest()) == missing_root_hex);
+    eprintln!(
+        "mock util lib contains missing root (reversed)? {mock_util_has_missing_rev}"
+    );
+    let mock_util_has_missing_be = mock_util_library()
+        .mast_forest()
+        .nodes()
+        .iter()
+        .any(|node| word_hex_be(node.digest()) == missing_root_hex);
+    eprintln!(
+        "mock util lib contains missing root (be)? {mock_util_has_missing_be}"
+    );
+    eprintln!(
+        "account0 code commitment hex={}",
+        account0.code().commitment().to_hex()
+    );
+    for (idx, root) in account0.code().procedure_roots().enumerate() {
+        eprintln!("account0 proc[{idx}] root hex={}", root.to_hex());
+    }
+    eprintln!(
+        "note1 assets_padded={:?}",
+        note1
+            .assets()
+            .to_padded_assets()
+            .iter()
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "note2 id={:?} metadata={:?} commitment={:?}",
+        note2.id().as_word().map(|v| v.as_canonical_u64()),
+        Word::from(note2.metadata()).map(|v| v.as_canonical_u64()),
+        note2.commitment().map(|v| v.as_canonical_u64()),
+    );
+    eprintln!(
+        "note2 inputs_count={} assets_count={}",
+        note2.recipient().inputs().num_values(),
+        note2.assets().num_assets()
+    );
+    eprintln!(
+        "note2 serial={:?} script_root={:?} inputs_comm={:?} assets_comm={:?}",
+        note2.serial_num().map(|v| v.as_canonical_u64()),
+        note2.script().root().map(|v| v.as_canonical_u64()),
+        note2.recipient().inputs().commitment().map(|v| v.as_canonical_u64()),
+        note2.assets().commitment().map(|v| v.as_canonical_u64()),
+    );
+    eprintln!(
+        "note2 assets_padded={:?}",
+        note2
+            .assets()
+            .to_padded_assets()
+            .iter()
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>()
+    );
+
+
     let mut chain = builder.build()?;
+
     let tx0 = chain.create_authenticated_notes_proven_tx(account0.id(), [note0.id()]).await?;
     let tx1 = chain.create_authenticated_notes_proven_tx(account1.id(), [note1.id()]).await?;
     let tx2 = chain.create_authenticated_notes_proven_tx(account2.id(), [note2.id()]).await?;
+
+    eprintln!(
+        "tx1 input_notes_commitment={:?}",
+        tx1.input_notes().commitment().map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "tx2 input_notes_commitment={:?}",
+        tx2.input_notes().commitment().map(|v| v.as_canonical_u64())
+    );
+
+    let exec_tx1 = chain
+        .create_authenticated_notes_tx(account1.id(), [note1.id()])
+        .await?;
+    let (stack_inputs, tx_adv_inputs) = TransactionKernel::prepare_inputs(exec_tx1.tx_inputs());
+    let exec_input_notes_commitment = exec_tx1.tx_inputs().input_notes().commitment();
+    eprintln!(
+        "exec tx1 input_notes_commitment={:?}",
+        exec_input_notes_commitment.map(|v| v.as_canonical_u64())
+    );
+    eprintln!(
+        "exec tx1 stack_inputs={:?}",
+        stack_inputs.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>()
+    );
+    let adv_map = &tx_adv_inputs.as_advice_inputs().map;
+    let note_data = adv_map.get(&exec_input_notes_commitment);
+    eprintln!(
+        "exec tx1 advice_map has key? {}",
+        note_data.is_some()
+    );
+    if let Some(note_data) = note_data {
+        let preview_len = note_data.len().min(16);
+        eprintln!(
+            "exec tx1 note_data[0..{preview_len}]={:?}",
+            note_data
+                .iter()
+                .take(preview_len)
+                .map(|v| v.as_canonical_u64())
+                .collect::<Vec<_>>()
+        );
+    }
 
     let batch1 = chain.create_batch(vec![tx1, tx2])?;
     let batches = vec![batch1];
@@ -391,7 +787,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 genesis_block.commitment(),
                 FungibleAsset::mock(500).unwrap_fungible(),
                 BlockNumber::from(u32::MAX),
-                ExecutionProof::new(Vec::new(), HashFunction::Blake3_256, Vec::new()),
+                ExecutionProof::new_dummy(),
             )
             .account_update_details(AccountUpdateDetails::Private)
             .build()

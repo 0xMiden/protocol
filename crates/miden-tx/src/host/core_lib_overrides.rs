@@ -10,6 +10,8 @@ use miden_processor::ProcessorState;
 use miden_processor::advice::AdviceMutation;
 use miden_processor::event::{EventError, EventHandlerRegistry};
 
+use crate::host::get_stack_word_le;
+
 /// Overrides core library handlers that still assume BE stack word order.
 pub(crate) fn override_core_lib_handlers(registry: &mut EventHandlerRegistry) {
     let smt_peek_name = EventName::new("miden::core::collections::smt::smt_peek");
@@ -26,14 +28,14 @@ pub(crate) fn override_core_lib_handlers(registry: &mut EventHandlerRegistry) {
 fn handle_smt_peek_le(process: &ProcessorState) -> Result<Vec<AdviceMutation>, EventError> {
     let empty_leaf = EmptySubtreeRoots::entry(SMT_DEPTH, SMT_DEPTH);
     // Stack at emit: [event_id, KEY, ROOT, ...] where KEY and ROOT are structural words.
-    let key = process.get_stack_word(1);
-    let root = process.get_stack_word(5);
+    let key = get_stack_word_le(process, 1);
+    let root = get_stack_word_le(process, 5);
     // K[3] is used as the leaf index (most significant in BE ordering).
     let node = process
         .advice_provider()
         .get_tree_node(root, Felt::new(SMT_DEPTH as u64), key[3])
         .map_err(|err| SmtPeekError::AdviceProviderError {
-            message: format!("Failed to get tree node: {}", err),
+            message: format!("Failed to get tree node: {} (root={:?}, key={:?})", err, root, key),
         })?;
 
     if node == *empty_leaf {

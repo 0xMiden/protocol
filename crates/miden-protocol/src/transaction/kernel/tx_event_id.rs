@@ -66,8 +66,6 @@ pub enum TransactionEventId {
     TxScriptProcessingStart = TX_SCRIPT_PROCESSING_START,
     TxScriptProcessingEnd = TX_SCRIPT_PROCESSING_END,
 
-    KernelProcPreDynexec = KERNEL_PROC_PRE_DYNEXEC,
-
     EpilogueStart = EPILOGUE_START,
     EpilogueEnd = EPILOGUE_END,
 
@@ -170,8 +168,6 @@ impl TryFrom<EventId> for TransactionEventId {
 
             TX_SCRIPT_PROCESSING_START => Ok(TransactionEventId::TxScriptProcessingStart),
             TX_SCRIPT_PROCESSING_END => Ok(TransactionEventId::TxScriptProcessingEnd),
-
-            KERNEL_PROC_PRE_DYNEXEC => Ok(TransactionEventId::KernelProcPreDynexec),
 
             EPILOGUE_START => Ok(TransactionEventId::EpilogueStart),
             EPILOGUE_AUTH_PROC_START => Ok(TransactionEventId::EpilogueAuthProcStart),

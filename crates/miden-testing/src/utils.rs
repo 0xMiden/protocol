@@ -98,40 +98,8 @@ pub fn create_p2any_note(
 ) -> Note {
     let serial_number = rng.draw_word();
     let assets: Vec<_> = assets.into_iter().collect();
-    let mut code_body = String::new();
-    for i in 0..assets.len() {
-        if i == 0 {
-            // first asset (dest_ptr is already on stack)
-            code_body.push_str(
-                "
-                # add first asset
-
-                dup mem_loadw_le
-                debug.stack.16
-                padw padw padw movupw.3
-                call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]
-                ",
-            );
-        } else {
-            code_body.push_str(
-                "
-                # add next asset
-
-                add.4 dup mem_loadw_le
-                debug.stack.16
-                padw padw padw movupw.3
-                call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]",
-            );
-        }
-    }
-    code_body.push_str("dropw dropw dropw dropw");
-
     let code = format!(
-        "
+        r#"
         use mock::account
         use miden::protocol::active_note
         use miden::standards::wallets::basic->wallet
@@ -141,12 +109,12 @@ pub fn create_p2any_note(
             push.0 exec.active_note::get_assets     # [num_assets, dest_ptr]
 
             # runtime-check we got the expected count
-            push.{num_assets} assert_eq             # [dest_ptr]
+            push.{num_assets} assert_eq.err="unexpected number of assets"             # [dest_ptr]
 
-            {code_body}
-            dropw dropw dropw dropw
+            drop
+            exec.wallet::add_assets_to_account
         end
-        ",
+        "#,
         num_assets = assets.len(),
     );
 

@@ -126,8 +126,6 @@ const BLOCK_METADATA_PTR=828
 # [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
-const NATIVE_ASSET_ID_SUFFIX_PTR=FEE_PARAMETERS_PTR
-const NATIVE_ASSET_ID_PREFIX_PTR=FEE_PARAMETERS_PTR+1
 
 # The memory address at which the verification base fee is stored.
 const VERIFICATION_BASE_FEE_PTR=FEE_PARAMETERS_PTR+2
@@ -172,22 +170,22 @@ const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
 const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_NONCE_OFFSET=3
+const ACCT_NONCE_OFFSET=0
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
 const ACCT_CORE_DATA_SECTION_END_OFFSET=16
-const NUM_ACCT_PROCEDURES_OFFSET=28
+const ACCT_NUM_PROCEDURES_OFFSET=28
 const ACCT_PROCEDURES_SECTION_OFFSET=32
-const ACCT_PROCEDURES_CALL_TRACKING_OFFSET=2084
-const NUM_ACCT_STORAGE_SLOTS_OFFSET=2340
-const ACCT_STORAGE_SLOTS_SECTION_OFFSET=2344
+const ACCT_PROCEDURES_CALL_TRACKING_OFFSET=1060
+const ACCT_NUM_STORAGE_SLOTS_OFFSET=1316
+# Offset at which a copy of the initial account's storage slot section is kept. This section is
+# only present for the native account.
+const ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET=1320
 
-# Offset at which an exact copy of the account's storage slot section starting at
-# ACCT_STORAGE_SLOTS_SECTION_OFFSET is kept. This keeps the initial values of the account storage
-# slots accessible to enable computing a diff between the initial and current account storage slots
-# for use in the account delta. This section is only present for the native account.
-const ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET=4384
+# Offset at which the account's active storage slot section is kept. This section contains the
+# current values of the account storage slots.
+const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=2340
 
 # NATIVE ACCOUNT DELTA
 # -------------------------------------------------------------------------------------------------
@@ -420,10 +418,8 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    swap
-    push.0
-    push.0
-    # => [0, 0, account_id_suffix, account_id_prefix]
+    push.0.0
+    # => [0, 0, account_id_prefix, account_id_suffix]
     mem_storew_le.NATIVE_ACCT_ID_PTR
     dropw
     # => []
@@ -438,8 +434,8 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
     padw mem_loadw_le.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_suffix, account_id_prefix]
-    drop drop swap
+    # => [0, 0, account_id_prefix, account_id_suffix]
+    drop drop
 end
 
 #! Sets the native account commitment at the beginning of the transaction.
@@ -704,8 +700,14 @@ end
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 pub proc get_native_asset_id
-    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
-    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
+    padw mem_loadw_le.FEE_PARAMETERS_PTR
+    # => [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+
+    movup.3 drop
+    # => [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee]
+    movup.2 drop
+    # => [native_asset_id_suffix, native_asset_id_prefix]
+    swap
     # => [native_asset_id_prefix, native_asset_id_suffix]
 end
 
@@ -1028,7 +1030,9 @@ end
 pub proc get_account_id
     padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_le
     # => [nonce, 0, account_id_suffix, account_id_prefix]
-    drop drop swap
+    drop drop
+    swap
+    # => [account_id_prefix, account_id_suffix]
 end
 
 #! Returns the ID of the native account of the transaction.
@@ -1042,7 +1046,9 @@ end
 pub proc get_native_account_id
     padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_le
     # => [nonce, 0, account_id_suffix, account_id_prefix]
-    drop drop swap
+    drop drop
+    swap
+    # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the account ID and nonce.
@@ -1093,14 +1099,8 @@ pub proc set_account_nonce
     exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET padw
     # => [0, 0, 0, 0, account_id_and_nonce_ptr, new_nonce]
     dup.4 mem_loadw_le
-    # => [old_nonce, 0, account_id_suffix, account_id_prefix, account_id_and_nonce_ptr, new_nonce]
-    drop
-    # => [0, account_id_suffix, account_id_prefix, account_id_and_nonce_ptr, new_nonce]
-    movup.4
-    # => [new_nonce, 0, account_id_suffix, account_id_prefix, account_id_and_nonce_ptr]
-    movup.4
-    # => [account_id_and_nonce_ptr, new_nonce, 0, account_id_suffix, account_id_prefix]
-    mem_storew_le dropw
+    # => [old_nonce, 0, old_id_suffix, old_id_prefix, account_id_and_nonce_ptr, new_nonce]
+    drop movup.4 movup.4 mem_storew_le dropw
     # => []
 end
 
@@ -1229,7 +1229,7 @@ end
 #! Where:
 #! - num_procedures is the number of procedures contained in the account code.
 pub proc get_num_account_procedures
-    exec.get_active_account_data_ptr add.NUM_ACCT_PROCEDURES_OFFSET
+    exec.get_active_account_data_ptr add.ACCT_NUM_PROCEDURES_OFFSET
     mem_load
 end
 
@@ -1241,7 +1241,7 @@ end
 #! Where:
 #! - num_procedures is the number of procedures contained in the account code.
 pub proc set_num_account_procedures
-    exec.get_active_account_data_ptr add.NUM_ACCT_PROCEDURES_OFFSET
+    exec.get_active_account_data_ptr add.ACCT_NUM_PROCEDURES_OFFSET
     mem_store
 end
 
@@ -1284,7 +1284,7 @@ end
 #! Returns the account storage commitment.
 #!
 #! Inputs:  []
-#! Outputs: [STORAGE_COMMITMENT]
+#! Outputs: [INPUTS_COMMITMENT]
 #!
 #! Where:
 #! - STORAGE_COMMITMENT is the account storage commitment.
@@ -1353,7 +1353,7 @@ end
 #! Where:
 #! - num_storage_slots is the number of storage slots contained in the account storage.
 pub proc get_num_storage_slots
-    exec.get_active_account_data_ptr add.NUM_ACCT_STORAGE_SLOTS_OFFSET
+    exec.get_active_account_data_ptr add.ACCT_NUM_STORAGE_SLOTS_OFFSET
     mem_load
 end
 
@@ -1365,7 +1365,7 @@ end
 #! Where:
 #! - num_storage_slots is the number of storage slots contained in the account storage.
 pub proc set_num_storage_slots
-    exec.get_active_account_data_ptr add.NUM_ACCT_STORAGE_SLOTS_OFFSET
+    exec.get_active_account_data_ptr add.ACCT_NUM_STORAGE_SLOTS_OFFSET
     mem_store
 end
 
@@ -1376,8 +1376,8 @@ end
 #!
 #! Where:
 #! - storage_slots_section_ptr is the memory pointer to the account storage slots section.
-pub proc get_account_storage_slots_section_ptr
-    exec.get_active_account_data_ptr add.ACCT_STORAGE_SLOTS_SECTION_OFFSET
+pub proc get_account_active_storage_slots_section_ptr
+    exec.get_active_account_data_ptr add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the native account's storage slots section.
@@ -1387,8 +1387,8 @@ end
 #!
 #! Where:
 #! - storage_slots_section_ptr is the memory pointer to the native account's storage slots section.
-pub proc get_native_account_storage_slots_ptr
-    exec.get_native_account_data_ptr add.ACCT_STORAGE_SLOTS_SECTION_OFFSET
+pub proc get_native_account_active_storage_slots_ptr
+    exec.get_native_account_data_ptr add.ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
 end
 
 #! Returns the memory pointer to the initial storage slots of the native account.
@@ -1416,7 +1416,7 @@ end
 pub proc get_account_initial_storage_slots_ptr
     # For foreign account, use the regular storage slots pointer since foreign accounts are
     # read-only and initial == current
-    exec.get_account_storage_slots_section_ptr
+    exec.get_account_active_storage_slots_section_ptr
     # => [account_storage_slots_ptr]
 
     # For native account, use the initial storage slots pointer
@@ -1474,12 +1474,12 @@ end
 #! Outputs: []
 pub proc mem_copy_native_account_initial_storage_slots
   exec.get_native_account_initial_storage_slots_ptr
-  exec.get_native_account_storage_slots_ptr
-  # => [storage_slots_section_ptr, initial_storage_slots_ptr]
+  exec.get_native_account_active_storage_slots_ptr
+  # => [active_storage_slots_ptr, initial_storage_slots_ptr]
 
   # each slot takes up two words
   exec.get_num_storage_slots mul.2
-  # => [num_storage_slot_words, storage_slots_section_ptr, initial_storage_slots_ptr]
+  # => [num_storage_slot_words, active_storage_slots_ptr, initial_storage_slots_ptr]
 
   exec.mem::memcopy_words
   # => []
@@ -1602,7 +1602,7 @@ end
 #! Returns the inputs commitment of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [INPUTS_COMMITMENT]
+#! Outputs: [STORAGE_COMMITMENT]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
@@ -1616,11 +1616,11 @@ end
 #! Returns the metadata of an input note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [METADATA]
+#! Outputs: [NOTE_METADATA]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - METADATA is the metadata of the input note.
+#! - NOTE_METADATA is the metadata of the input note.
 pub proc get_input_note_metadata
     padw
     movup.4 add.INPUT_NOTE_METADATA_OFFSET
@@ -1670,11 +1670,11 @@ end
 #! Returns the number of inputs of the note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [num_inputs]
+#! Outputs: [num_storage_items]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - num_inputs is the number of inputs in in the input note.
+#! - num_storage_items is the number of storage items of the input note.
 pub proc get_input_note_num_inputs
     add.INPUT_NOTE_NUM_INPUTS_OFFSET
     mem_load
@@ -1682,12 +1682,12 @@ end
 
 #! Sets the number of inputs for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, num_inputs]
+#! Inputs:  [note_ptr, num_storage_items]
 #! Outputs: []
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - num_inputs is the number of inputs in the input note.
+#! - num_storage_items is the number of storage items of the input note.
 pub proc set_input_note_num_inputs
     add.INPUT_NOTE_NUM_INPUTS_OFFSET
     mem_store
@@ -1787,40 +1787,6 @@ pub proc get_input_note_serial_num
     mem_loadw_le
 end
 
-#! Returns the sender for the input note located at the specified memory address.
-#!
-#! Inputs:  [note_ptr]
-#! Outputs: [sender_id_prefix, sender_id_suffix]
-#!
-#! Where:
-#! - note_ptr is the memory address at which the input note data begins.
-#! - sender is the sender for the input note.
-pub proc get_input_note_sender
-    padw
-    movup.4 add.INPUT_NOTE_METADATA_OFFSET
-    mem_loadw_le
-    # => [sender_id_prefix, merged_sender_id_type_hint_tag, merged_tag_hint_payload, aux]
-
-    movup.3 drop
-    # => [sender_id_prefix, merged_sender_id_type_hint_tag, merged_tag_hint_payload]
-    movup.2 drop
-    # => [sender_id_prefix, merged_sender_id_type_hint_tag]
-    swap
-    # => [merged_sender_id_type_hint_tag, sender_id_prefix]
-
-    # extract suffix of sender from merged layout, which means clearing the least significant byte
-    u32split
-    # => [merged_lo, merged_hi, sender_id_prefix]
-
-    # clear least significant byte
-    u32and.0xffffff00 swap
-    # => [sender_id_suffix_hi, sender_id_suffix_lo, sender_id_prefix]
-
-    # reassemble the suffix by multiplying the high part with 2^32 and adding the lo part
-    mul.0x0100000000 add swap
-    # => [sender_id_prefix, sender_id_suffix]
-end
-
 # OUTPUT NOTES
 # -------------------------------------------------------------------------------------------------
 
@@ -1855,7 +1821,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc get_output_note_recipient
     padw
     movup.4 add.OUTPUT_NOTE_RECIPIENT_OFFSET
@@ -1869,7 +1835,7 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc set_output_note_recipient
     add.OUTPUT_NOTE_RECIPIENT_OFFSET
     mem_storew_le

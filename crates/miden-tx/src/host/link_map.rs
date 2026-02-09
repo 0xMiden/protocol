@@ -7,6 +7,8 @@ use miden_processor::fast::ExecutionOutput;
 use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
 
+use crate::host::get_stack_word_le;
+
 // LINK MAP
 // ================================================================================================
 
@@ -47,7 +49,7 @@ impl<'process> LinkMap<'process> {
     /// Advice stack state after: [set_operation, entry_ptr]
     pub fn handle_set_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
-        let map_key = process.get_stack_word(2);
+        let map_key = get_stack_word_le(process, 2);
 
         let mem_viewer = MemoryViewer::ProcessorState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
@@ -55,8 +57,8 @@ impl<'process> LinkMap<'process> {
         let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(set_op as u8)),
             Felt::new(u64::from(entry_ptr)),
+            Felt::new(u64::from(set_op as u8)),
         ])]
     }
 
@@ -66,15 +68,15 @@ impl<'process> LinkMap<'process> {
     /// Advice stack state after: [get_operation, entry_ptr]
     pub fn handle_get_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
-        let map_key = process.get_stack_word(2);
+        let map_key = get_stack_word_le(process, 2);
 
         let mem_viewer = MemoryViewer::ProcessorState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
         let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(get_op as u8)),
             Felt::new(u64::from(entry_ptr)),
+            Felt::new(u64::from(get_op as u8)),
         ])]
     }
 

@@ -64,6 +64,6 @@ impl AccountProcedureIndexMap {
             .ok_or(TransactionKernelError::UnknownCodeCommitment(code_commitment))?
             .get(&procedure_root)
             .cloned()
-            .ok_or(TransactionKernelError::UnknownAccountProcedure(procedure_root))
+            .ok_or_else(|| TransactionKernelError::UnknownAccountProcedure(procedure_root))
     }
 }

@@ -2,6 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use miden_processor::MastForestStore;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::account::AccountCode;
 use miden_protocol::assembly::mast::MastForest;
 use miden_protocol::transaction::TransactionKernel;
@@ -41,11 +42,8 @@ impl TransactionMastStore {
         store.insert(kernels_forest);
 
         // load transaction kernel library MAST forest (exposes $kernel::* procedures)
-        #[cfg(any(feature = "testing", test))]
-        {
-            let kernel_lib_forest = TransactionKernel::library().mast_forest().clone();
-            store.insert(kernel_lib_forest);
-        }
+        let kernel_lib_forest = TransactionKernel::library().mast_forest().clone();
+        store.insert(kernel_lib_forest);
 
         // load miden-core-lib MAST forest
         let miden_core_lib_forest = CoreLibrary::default().mast_forest().clone();
@@ -62,13 +60,15 @@ impl TransactionMastStore {
         store
     }
 
-    /// Registers all procedures of the provided [MastForest] with this store.
+    /// Registers all local nodes of the provided [MastForest] with this store.
     pub fn insert(&self, mast_forest: Arc<MastForest>) {
         let mut mast_forests = self.mast_forests.write();
 
-        // register only procedures local to this forest
-        for proc_digest in mast_forest.local_procedure_digests() {
-            mast_forests.insert(proc_digest, mast_forest.clone());
+        // register all non-external nodes so dynamic exec can resolve any local digest
+        for node in mast_forest.nodes() {
+            if !node.is_external() {
+                mast_forests.insert(node.digest(), mast_forest.clone());
+            }
         }
     }
 
