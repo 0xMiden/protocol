@@ -1,4 +1,9 @@
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_RECIPIENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
 use miden::protocol::note
 
 # PROCEDURES
@@ -30,7 +35,7 @@ pub proc get_assets_info
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_assets_info_offset
+    push.INPUT_NOTE_GET_ASSETS_INFO_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -41,14 +46,14 @@ pub proc get_assets_info
     # => [ASSETS_COMMITMENT, num_assets, pad(11)]
 
     # clean the stack
-    swapdw dropw dropw 
+    swapdw dropw dropw
     repeat.3
         movup.5 drop
     end
     # => [ASSETS_COMMITMENT, num_assets]
 end
 
-#! Writes the assets of the input note with the specified index into memory starting at the 
+#! Writes the assets of the input note with the specified index into memory starting at the
 #! specified address.
 #!
 #! Attention: memory starting from the `dest_ptr` should have enough space to store all the assets
@@ -104,7 +109,7 @@ pub proc get_recipient
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_recipient_offset
+    push.INPUT_NOTE_GET_RECIPIENT_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -143,7 +148,7 @@ pub proc get_metadata
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_metadata_offset
+    push.INPUT_NOTE_GET_METADATA_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -205,7 +210,7 @@ pub proc get_storage_info
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_storage_info_offset
+    push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -216,7 +221,7 @@ pub proc get_storage_info
     # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 
     # clean the stack
-    swapdw dropw dropw 
+    swapdw dropw dropw
     repeat.3
         movup.5 drop
     end
@@ -246,7 +251,7 @@ pub proc get_script_root
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_script_root_offset
+    push.INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
@@ -279,12 +284,12 @@ pub proc get_serial_number
     push.0 swap
     # => [note_index, 0]
 
-    # push the flag indicating that we want to request serial number from the note with the 
+    # push the flag indicating that we want to request serial number from the note with the
     # specified index
     push.0
     # => [is_active_note = 0, note_index, 0]
 
-    exec.kernel_proc_offsets::input_note_get_serial_number_offset
+    push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
     # => [offset, is_active_note = 0, note_index, 0]
 
     # pad the stack
