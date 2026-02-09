@@ -584,6 +584,7 @@ mod tests {
         AccountVaultDelta,
     };
     use crate::account::AccountStorageMode::Network;
+    use crate::account::component::AccountComponentMetadata;
     use crate::account::{
         Account,
         AccountBuilder,
@@ -823,11 +824,11 @@ mod tests {
         let library1 = Assembler::default().assemble_library([code1]).unwrap();
 
         // This component support all account types except the regular account with updatable code.
-        let component1 = AccountComponent::new(library1, vec![])
-            .unwrap()
+        let metadata = AccountComponentMetadata::new("test::component1")
             .with_supported_type(AccountType::FungibleFaucet)
             .with_supported_type(AccountType::NonFungibleFaucet)
             .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
 
         let err = Account::initialize_from_components(
             AccountType::RegularAccountUpdatableCode,

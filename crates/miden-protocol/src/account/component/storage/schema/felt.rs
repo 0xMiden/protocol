@@ -40,20 +40,6 @@ impl FeltSchema {
         }
     }
 
-    /// Creates a new typed felt field with a default value.
-    pub fn new_typed_with_default(
-        r#type: SchemaTypeId,
-        name: impl Into<String>,
-        default_value: Felt,
-    ) -> Self {
-        FeltSchema {
-            name: Some(name.into()),
-            description: None,
-            r#type,
-            default_value: Some(default_value),
-        }
-    }
-
     /// Creates an unnamed `void` felt element.
     pub fn new_void() -> Self {
         FeltSchema {
@@ -61,6 +47,39 @@ impl FeltSchema {
             description: None,
             r#type: SchemaTypeId::void(),
             default_value: None,
+        }
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::native_felt()`].
+    pub fn felt(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::native_felt(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::native_word()`].
+    pub fn word(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::native_word(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u8()`].
+    pub fn u8(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u8(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u16()`].
+    pub fn u16(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u16(), name)
+    }
+
+    /// Creates a new required felt field typed as [`SchemaTypeId::u32()`].
+    pub fn u32(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaTypeId::u32(), name)
+    }
+
+    /// Sets the default value of the [`FeltSchema`] and returns `self`.
+    pub fn with_default(self, default_value: Felt) -> Self {
+        FeltSchema {
+            default_value: Some(default_value),
+            ..self
         }
     }
 

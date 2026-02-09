@@ -580,6 +580,8 @@ async fn test_burn_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
 ///
 /// This is used to test that calling these procedures fails as expected.
 fn setup_non_faucet_account() -> anyhow::Result<Account> {
+    use miden_protocol::account::component::AccountComponentMetadata;
+
     // Build a custom non-faucet account that (invalidly) exposes faucet procedures.
     let faucet_code = CodeBuilder::with_mock_libraries_with_source_manager(Arc::new(
         DefaultSourceManager::default(),
@@ -589,8 +591,9 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
         "pub use ::miden::protocol::faucet::mint
          pub use ::miden::protocol::faucet::burn",
     )?;
-    let faucet_component = AccountComponent::new(faucet_code, vec![])?
+    let metadata = AccountComponentMetadata::new("test::non_faucet_component")
         .with_supported_type(AccountType::RegularAccountUpdatableCode);
+    let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
     Ok(AccountBuilder::new([4; 32])
         .account_type(AccountType::RegularAccountUpdatableCode)
         .with_auth_component(NoopAuthComponent)
