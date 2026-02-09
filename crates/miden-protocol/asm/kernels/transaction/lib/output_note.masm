@@ -43,8 +43,6 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD="attachment kind N
 
 const ERR_NOTE_INVALID_INDEX="failed to find note at the given index; index must be within [0, num_of_notes]"
 
-const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
-
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
 
 const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
@@ -477,7 +475,6 @@ proc add_asset_raw
     # compute the pointer at which we should stop iterating
     mul.ASSET_SIZE dup.9 add movdn.9
     # => [ASSET_KEY, ASSET_VALUE, asset_ptr, asset_end_ptr, note_ptr]
-
 
     # initialize loop variable is_existing_asset to false
     push.0 movdn.8

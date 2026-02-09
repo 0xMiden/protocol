@@ -3,7 +3,6 @@ use $kernel::account_id
 use $kernel::asset
 use $kernel::asset_vault
 use $kernel::memory
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # FUNGIBLE ASSETS
 # ==================================================================================================
