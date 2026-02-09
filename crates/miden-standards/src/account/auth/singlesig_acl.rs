@@ -1,11 +1,12 @@
 use alloc::vec::Vec;
+
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
     SchemaTypeId,
     StorageSchema,
-    StorageSlotSchema
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
     AccountCode,
@@ -290,18 +291,17 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             AuthSingleSigAcl::scheme_id_slot_schema(),
             AuthSingleSigAcl::config_slot_schema(),
             AuthSingleSigAcl::trigger_procedure_roots_slot_schema(),
-        ]).expect("storage schema should be valid");
+        ])
+        .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(AuthSingleSigAcl::NAME)
             .with_description("Authentication component with procedure-based ACL using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
             .with_supports_all_types()
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(
-            singlesig_acl_library(),
-            storage_slots,
-            metadata,
-        ).expect("singlesig ACL component should satisfy the requirements of a valid account component")
+        AccountComponent::new(singlesig_acl_library(), storage_slots, metadata).expect(
+            "singlesig ACL component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

@@ -212,11 +212,7 @@ impl AuthMultisig {
         let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
             Self::approver_scheme_ids_slot().clone(),
-            StorageSlotSchema::map(
-                "Approver scheme IDs",
-                pub_key_type,
-                SchemaTypeId::u8(),
-            ),
+            StorageSlotSchema::map("Approver scheme IDs", pub_key_type, SchemaTypeId::u8()),
         )
     }
 

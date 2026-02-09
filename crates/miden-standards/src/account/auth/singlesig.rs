@@ -63,7 +63,7 @@ impl AuthSingleSig {
         &SCHEME_ID_SLOT_NAME
     }
 
-     /// Returns the storage slot schema for the public key slot.
+    /// Returns the storage slot schema for the public key slot.
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
@@ -85,13 +85,13 @@ impl From<AuthSingleSig> for AccountComponent {
         let storage_schema = StorageSchema::new(vec![
             AuthSingleSig::public_key_slot_schema(),
             AuthSingleSig::scheme_id_slot_schema(),
-        ]).expect("storage schema should be valid");
+        ])
+        .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(AuthSingleSig::NAME)
             .with_description("Authentication component using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
             .with_supports_all_types()
             .with_storage_schema(storage_schema);
-
 
         let storage_slots = vec![
             StorageSlot::with_value(
@@ -104,11 +104,8 @@ impl From<AuthSingleSig> for AccountComponent {
             ),
         ];
 
-        AccountComponent::new(
-            singlesig_library(),
-            storage_slots,
-            metadata,
+        AccountComponent::new(singlesig_library(), storage_slots, metadata).expect(
+            "singlesig component should satisfy the requirements of a valid account component",
         )
-        .expect("singlesig component should satisfy the requirements of a valid account component")
     }
 }
