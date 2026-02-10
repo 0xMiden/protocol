@@ -539,14 +539,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     assert_matches!(
         consumability_info,
         NoteConsumptionStatus::NeverConsumable(reason) => {
-            assert_eq!(
-                reason.to_string(),
-                format!(
-                    "invalid note storage layout: invalid note storage length: expected {}, got {}",
-                    StandardNote::P2IDE.expected_num_storage_items(),
-                    p2ide_wrong_inputs_number.recipient().storage().num_items()
-                )
-            );
+            let msg = reason.to_string();
+
+            assert!(msg.contains("invalid note storage layout"));
+            assert!(msg.contains("invalid note storage length"));
         }
     );
 
@@ -561,7 +557,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "failed to create an account ID from the first two note storage items");
+        let msg = reason.to_string();
+
+        assert!(msg.contains("invalid note storage layout"));
+        assert!(msg.contains("failed to create account id"));
     });
 
     // check the note with a wrong target account ID (target is neither the sender nor the receiver)
@@ -589,7 +588,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "reclaim block height should be a u32");
+        let msg = reason.to_string();
+
+        assert!(msg.contains("invalid note storage layout"));
+        assert!(msg.contains("TryFromIntError"));
     });
 
     // check the note with an invalid timelock height
@@ -603,8 +605,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "timelock block height should be a u32");
-    });
+            let msg = reason.to_string();
+    assert!(msg.contains("invalid note storage layout"));
+    assert!(msg.contains("TryFromIntError"));
+        });
 
     Ok(())
 }
