@@ -1,3 +1,4 @@
+use alloc::string::ToString;
 use alloc::sync::Arc;
 
 use miden_protocol::account::AccountComponentCode;
@@ -327,9 +328,12 @@ impl CodeBuilder {
     #[cfg(any(feature = "testing", test))]
     pub fn with_kernel_library(source_manager: Arc<dyn SourceManagerSync>) -> Self {
         let mut builder = Self::with_source_manager(source_manager);
-        builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
+        if let Err(err) = builder.link_dynamic_library(&TransactionKernel::library()) {
+            let err_msg = err.to_string();
+            if !err_msg.contains("duplicate definition found for module '::$kernel'") {
+                panic!("failed to link kernel library: {err}");
+            }
+        }
         builder
     }
 
@@ -365,13 +369,8 @@ impl CodeBuilder {
         use miden_protocol::testing::mock_util_lib::mock_util_library;
 
         // Start with the builder linking against the transaction kernel, protocol library and
-        // standards library.
-        let mut builder = Self::with_source_manager(source_manager);
-
-        // Expose kernel procedures under `$kernel` for testing.
-        builder
-            .link_dynamic_library(&TransactionKernel::library())
-            .expect("failed to link kernel library");
+        // standards library, and ensure the kernel library is available under `$kernel`.
+        let mut builder = Self::with_kernel_library(source_manager);
 
         // Add mock account/faucet libs (built in debug mode) and mock util.
         for library in Self::mock_libraries() {

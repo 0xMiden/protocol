@@ -338,7 +338,7 @@ end
 #!
 #! Inputs:  [RATE, RATE, PERM]
 #! Outputs: [RATE, RATE, PERM]
-@locals(2)
+@locals(6)
 proc update_fungible_asset_delta
     exec.memory::get_account_delta_fungible_asset_ptr
     # => [account_delta_fungible_asset_ptr, RATE, RATE, PERM]
@@ -377,33 +377,35 @@ proc update_fungible_asset_delta
 
         # if delta amount is non-zero, update the hasher
         if.true
-            swap.7
-            # => [[0, 0, was_added, 0], [faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], ...]
+            # stash was_added and delta_amount_abs
+            movup.2 loc_store.2
+            # => [delta_amount_abs, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, 0, RATE, RATE, PERM]
 
-            drop push.DOMAIN_ASSET
-            # => [[domain, 0, was_added, 0], [faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], ...]
+            loc_store.3
+            # => [0, 0, faucet_id_prefix, faucet_id_suffix, 0, 0, RATE, RATE, PERM]
 
-            swap.3
-            # => [[0, 0, was_added, domain], [faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], ...]
+            # stash faucet_id_suffix and faucet_id_prefix
+            movup.3 loc_store.4
+            # => [0, 0, faucet_id_prefix, 0, 0, RATE, RATE, PERM]
 
-            swapw
-            # => [[faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], [0, 0, was_added, domain], RATE, RATE, PERM]
+            movup.2 loc_store.5
+            # => [0, 0, 0, 0, RATE, RATE, PERM]
 
-            reversew
-            # => [[delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], [0, 0, was_added, domain], RATE, RATE, PERM]
+            # drop the padding word
+            dropw
+            # => [RATE, RATE, PERM]
 
-            swapw
-            # => [[0, 0, was_added, domain], [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], RATE, RATE, PERM]
+            # build metadata word: [DOMAIN_ASSET, was_added, 0, 0]
+            push.0 push.0 loc_load.2 push.DOMAIN_ASSET
+            # => [DOMAIN_ASSET, was_added, 0, 0, RATE, RATE, PERM]
 
-            reversew
-            # => [[domain, was_added, 0, 0], [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], RATE, RATE, PERM]
-
-            swapw
-            # => [[delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], [domain, was_added, 0, 0], RATE, RATE, PERM]
+            # build asset word: [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix]
+            loc_load.5 loc_load.4 push.0 loc_load.3
+            # => [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix, DOMAIN_ASSET, was_added, 0, 0, RATE, RATE, PERM]
 
             # drop previous RATE elements
             swapdw dropw dropw
-            # => [[faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], [0, 0, was_added, domain], PERM]
+            # => [ASSET, META, PERM]
 
             hperm
             # => [RATE, RATE, PERM]

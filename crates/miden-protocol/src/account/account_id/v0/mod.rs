@@ -1,4 +1,4 @@
-use miden_core::field::PrimeField64;
+use miden_core::field::{PrimeCharacteristicRing, PrimeField64};
 mod prefix;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -119,15 +119,15 @@ impl AccountIdV0 {
 
         let prefix_bytes =
             bytes[0..8].try_into().expect("we should have sliced off exactly 8 bytes");
-        let prefix = Felt::new(u64::from_be_bytes(prefix_bytes));
+        let prefix = Felt::from_u64(u64::from_be_bytes(prefix_bytes));
 
         let mut suffix_bytes = [0; 8];
         // Overwrite first 7 bytes, leaving the 8th byte 0 (which will be cleared by
         // shape_suffix anyway).
         suffix_bytes[..7].copy_from_slice(&bytes[8..]);
 
-        // If the value is too large modular reduction is performed, which is fine here.
-        let mut suffix = Felt::new(u64::from_be_bytes(suffix_bytes));
+        // If the value is too large, modular reduction is performed, which is fine here.
+        let mut suffix = Felt::from_u64(u64::from_be_bytes(suffix_bytes));
 
         // Clear the most significant bit of the suffix.
         suffix = Felt::new(suffix.as_canonical_u64() & 0x7fff_ffff_ffff_ffff);

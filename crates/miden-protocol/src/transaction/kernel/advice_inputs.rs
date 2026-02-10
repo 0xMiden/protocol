@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-
 use miden_processor::advice::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
@@ -354,8 +353,11 @@ impl TransactionAdviceInputs {
             let assets_data_len = assets.to_padded_assets().len();
 
             // recipient inputs / assets commitments
-            self.add_map_entry(recipient.inputs().commitment(), recipient.inputs().to_elements());
-            self.add_map_entry(assets.commitment(), assets.to_padded_assets());
+            let recipient_inputs = recipient.inputs().values().to_vec();
+            self.add_map_entry(recipient.inputs().commitment(), recipient_inputs);
+
+            let assets_data = assets.to_padded_assets();
+            self.add_map_entry(assets.commitment(), assets_data);
 
             // note details / metadata
             note_data.extend(recipient.serial_num());
@@ -408,6 +410,7 @@ impl TransactionAdviceInputs {
                 expected_len,
                 "input note data length mismatch (added {note_data_added}, expected {expected_len}, assets_len {assets_data_len})"
             );
+
         }
 
         self.add_map_entry(tx_inputs.input_notes().commitment(), note_data);
@@ -424,6 +427,7 @@ impl TransactionAdviceInputs {
     fn add_map_entry(&mut self, key: Word, values: Vec<Felt>) {
         self.0.map.extend([(key, values)]);
     }
+
 
     /// Extends the stack with the given elements.
     fn extend_stack(&mut self, iter: impl IntoIterator<Item = Felt>) {

@@ -236,6 +236,15 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
+    if std::env::var("DEBUG_NOTE_INPUTS").is_ok() {
+        std::eprintln!(
+            "p2id_note_1_asset inputs len={}, values={:?}, commitment={:?}",
+            p2id_note_1_asset.inputs().num_values(),
+            p2id_note_1_asset.inputs().values(),
+            p2id_note_1_asset.inputs().commitment()
+        );
+    }
+
     anyhow::Ok(TestSetup {
         mock_chain,
         account,

@@ -10,6 +10,7 @@ pub use ::miden::protocol::util::note::MAX_INPUTS_PER_NOTE
 # =================================================================================================
 
 const ERR_PROLOGUE_NOTE_INPUTS_LEN_EXCEEDED_LIMIT="number of note inputs exceeded the maximum limit of 1024"
+const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the commitment"
 
 # NOTE UTILITY PROCEDURES
 # =================================================================================================
@@ -42,7 +43,7 @@ pub proc compute_inputs_commitment
     # => [inputs_ptr, num_inputs]
 
     # compute the inputs commitment
-    exec.poseidon2::pad_and_hash_elements
+    exec.poseidon2::hash_elements
     # => [INPUTS_COMMITMENT]
 end
 
@@ -90,30 +91,61 @@ end
 #! Outputs:
 #!   Operand stack: [num_inputs, dest_ptr]
 pub proc write_inputs_to_memory
-    # load the inputs data from the advice map to the advice stack
-    adv.push_mapval
+    # load the inputs from the advice map to the advice stack, padding to a multiple of 8
+    adv.push_mapvaln.8
+    # OS => [INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [advice_num_inputs, [INPUTS_DATA]]
+
+    # drop the number of inputs returned by adv.push_mapvaln.8 (original, unpadded length)
+    adv_push.1 drop
     # OS => [INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 
-    # calculate padded number of inputs to the next multiple of 8
-    dup.4 push.7 add push.0xFFFFFFF8 and
-    # OS => [padded_num_inputs, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # calculate the number of words required to store the inputs
+    dup.4 u32divmod.4 neq.0 add
+    # OS => [num_words, INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 
-    # convert padded_num_inputs to word count (divide by 4)
-    push.0 swap
-    # OS => [padded_num_inputs, 0, INPUTS_COMMITMENT, num_inputs, dest_ptr]
-    push.2 exec.u64::shr drop
-    # OS => [num_words, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # round up the number of words to the next multiple of 2
+    dup is_odd add
+    # OS => [even_num_words, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
 
-    # prepare the stack for the `pipe_preimage_to_memory` procedure
-    dup.4 swap
-    # OS => [num_words, dest_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # compute the end pointer for writing the padded inputs (even_num_words * 4 elements)
+    dup.6 swap mul.4 add
+    # OS => [end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
 
-    # write the data from the advice stack into memory
-    exec.mem::pipe_preimage_to_memory drop
-    # OS => [num_inputs, dest_ptr]
+    # duplicate write_ptr so we can later hash from memory
+    dup.6
+    # OS => [write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
+
+    # set initial hasher state (all zeroes) for piping data into memory
+    exec.poseidon2::init_no_padding
+    # OS => [R0, R1, C, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
+
+    # write the inputs from the advice stack into memory
+    exec.mem::pipe_double_words_to_memory
+    # OS => [R0, R1, C, write_ptr', INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => []
+
+    # drop the hasher state and write_ptr'
+    dropw dropw dropw drop
+    # OS => [INPUTS_COMMITMENT, num_inputs, dest_ptr]
+
+    # compute the inputs commitment from memory
+    movup.5
+    movup.5
+    swap
+    # OS => [dest_ptr, num_inputs, INPUTS_COMMITMENT]
+    exec.poseidon2::hash_elements
+    # OS => [COMPUTED_COMMITMENT, INPUTS_COMMITMENT]
+
+    # validate that the inputs written to memory match the inputs commitment
+    assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
+    # => []
 end
 
 #! Builds the recipient hash from note storage, script root, and serial number.

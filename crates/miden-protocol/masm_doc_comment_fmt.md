@@ -112,9 +112,9 @@ Example:
 #! Inputs:
 #!   Operand stack: []
 #!   Advice stack: [
-#!     account_id, 0, 0, account_nonce, 
-#!     ACCOUNT_VAULT_ROOT, 
-#!     ACCOUNT_STORAGE_COMMITMENT, 
+#!     account_nonce, 0, account_id_suffix, account_id_prefix,
+#!     ACCOUNT_VAULT_ROOT,
+#!     ACCOUNT_STORAGE_COMMITMENT,
 #!     ACCOUNT_CODE_COMMITMENT
 #!   ]
 ```

@@ -288,7 +288,8 @@ proc write_storage_to_memory
     # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [advice_num_storage_items, [INPUT_VALUES]]
 
-    # move the number of inputs obtained from advice map to the operand stack
+    # move the number of inputs obtained from advice map to the operand stack.
+    # adv.push_mapvaln.8 reports the original element count (not the padded length).
     adv_push.1 dup.5
     # OS => [num_storage_items, advice_num_storage_items, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
@@ -325,7 +326,8 @@ proc write_storage_to_memory
     # AS => [[INPUT_VALUES]]
 
     push.0.0.0
-    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [0, 0, 0, num_storage_items_mod_8]
+    movup.3
+    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [num_storage_items_mod_8, 0, 0, 0]
     # AS => [[INPUT_VALUES]]
 
     padw padw

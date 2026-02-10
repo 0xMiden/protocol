@@ -57,8 +57,8 @@ impl<'process> LinkMap<'process> {
         let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(entry_ptr)),
             Felt::new(u64::from(set_op as u8)),
+            Felt::new(u64::from(entry_ptr)),
         ])]
     }
 
@@ -75,8 +75,8 @@ impl<'process> LinkMap<'process> {
         let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(entry_ptr)),
             Felt::new(u64::from(get_op as u8)),
+            Felt::new(u64::from(entry_ptr)),
         ])]
     }
 

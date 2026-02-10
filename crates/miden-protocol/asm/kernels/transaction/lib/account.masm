@@ -1105,7 +1105,7 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
 #! - ACCOUNT_ID is the word constructed from the account_id as follows:
-#!   [account_id_suffix, account_id_prefix, 0, 0].
+#!   [0, 0, account_id_suffix, account_id_prefix].
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.

@@ -421,7 +421,7 @@ impl TransactionKernel {
 #[cfg(any(feature = "testing", test))]
 impl TransactionKernel {
     const KERNEL_TESTING_LIB_BYTES: &'static [u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/tx_kernel.masl"));
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/kernels/kernel_library.masl"));
 
     /// Returns the kernel library.
     pub fn library() -> Library {

@@ -38,7 +38,12 @@ begin
     # => [inputs_ptr, EMPTY_WORD]
 
     # read the target account ID from the note inputs
-    mem_loadw_le drop drop
+    mem_loadw_le
+    # drop the trailing padding elements
+    movup.2 drop
+    movup.2 drop
+    # => [target_account_id_suffix, target_account_id_prefix]
+    swap
     # => [target_account_id_prefix, target_account_id_suffix]
 
     exec.active_account::get_id

@@ -8,7 +8,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, MAX_INPUTS_PER_NOTE, WORD_SIZE, Word, ZERO};
+use crate::{Felt, Hasher, MAX_INPUTS_PER_NOTE, Word};
 
 // NOTE INPUTS
 // ================================================================================================
@@ -19,8 +19,8 @@ use crate::{Felt, Hasher, MAX_INPUTS_PER_NOTE, WORD_SIZE, Word, ZERO};
 /// field element. Thus, note input values can contain up to ~8 KB of data.
 ///
 /// All inputs associated with a note can be reduced to a single commitment which is computed by
-/// first padding the inputs with ZEROs to the next multiple of 8, and then by computing a
-/// sequential hash of the resulting elements.
+/// hashing the elements directly via the sequential hash (the Poseidon2 hasher tracks the input
+/// length via its capacity element).
 #[derive(Clone, Debug)]
 pub struct NoteInputs {
     values: Vec<Felt>,
@@ -70,12 +70,8 @@ impl NoteInputs {
 
     /// Returns the note's input as a vector of field elements.
     ///
-    /// The format is `INPUTS || PADDING`, where:
-    ///
-    /// - INPUTS is the variable inputs for the note
-    /// - PADDING is the optional padding to align the data with a 2WORD boundary
     pub fn to_elements(&self) -> Vec<Felt> {
-        pad_inputs(&self.values)
+        self.values.clone()
     }
 }
 
@@ -114,23 +110,12 @@ impl TryFrom<Vec<Felt>> for NoteInputs {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns a vector with built from the provided inputs and padded to the next multiple of 8.
-fn pad_inputs(inputs: &[Felt]) -> Vec<Felt> {
-    const BLOCK_SIZE: usize = WORD_SIZE * 2;
-
-    let padded_len = inputs.len().next_multiple_of(BLOCK_SIZE);
-    let mut padded_inputs = Vec::with_capacity(padded_len);
-    padded_inputs.extend(inputs.iter());
-    padded_inputs.resize(padded_len, ZERO);
-
-    padded_inputs
-}
-
+/// Returns a vector built from the provided inputs (in stack order) and padded to the next
+/// multiple of 8.
 /// Pad `values` and returns a new `NoteInputs`.
 fn pad_and_build(values: Vec<Felt>) -> NoteInputs {
     let commitment = {
-        let padded_values = pad_inputs(&values);
-        Hasher::hash_elements(&padded_values)
+        Hasher::hash_elements(&values)
     };
 
     NoteInputs { values, commitment }

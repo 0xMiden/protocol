@@ -1480,7 +1480,7 @@ end
 #! Inputs:
 #!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!     FOREIGN_ACCOUNT_ID: [[account_nonce, 0, foreign_account_id_suffix, foreign_account_id_prefix],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
@@ -1492,7 +1492,7 @@ end
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0].
+#!   [0, 0, foreign_account_id_suffix, foreign_account_id_prefix].
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
