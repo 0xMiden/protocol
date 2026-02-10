@@ -53,6 +53,34 @@ pub proc mem_store_double_word(
     # => [WORD_1, WORD_2, ptr]
 end
 
+#! Stores two words to the provided unaligned (not a multiple of 4) memory address.
+#!
+#! Inputs:  [WORD_1, WORD_2, ptr]
+#! Outputs: []
+pub proc mem_store_double_word_unaligned(
+    double_word_to_store: DoubleWord,
+    mem_ptr: MemoryAddress
+)
+    # bring ptr to the top of the stack
+    dup.8
+    # => [ptr, WORD_1, WORD_2, ptr]
+
+    # store each element individually at consecutive addresses
+    mem_store dup.7 add.1
+    mem_store dup.6 add.2
+    mem_store dup.5 add.3
+    mem_store
+    # => [WORD_2, ptr]
+
+    dup.4 add.4
+    mem_store dup.3 add.5
+    mem_store dup.2 add.6
+    mem_store dup.1 add.7
+    mem_store
+    drop
+    # => []
+end
+
 #! Loads two words from the provided global memory address.
 #!
 #! Inputs:  [ptr]
