@@ -12,9 +12,11 @@ use context_setups::{
     tx_create_single_p2id_note,
 };
 
+mod vm_profile;
+
 mod cycle_counting_benchmarks;
 use cycle_counting_benchmarks::ExecutionBenchmark;
-use cycle_counting_benchmarks::utils::write_bench_results_to_json;
+use cycle_counting_benchmarks::utils::{write_bench_results_to_json, write_vm_profile};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -50,6 +52,11 @@ async fn main() -> Result<()> {
                 .into(),
         ),
     ];
+
+    // Export VM profile for synthetic benchmark generation (before write_bench_results_to_json
+    // consumes the data)
+    let profile_path = Path::new("bin/bench-transaction/bench-tx-vm-profile.json");
+    write_vm_profile(profile_path, &benchmark_results)?;
 
     // store benchmark results in the JSON file
     write_bench_results_to_json(path, benchmark_results)?;

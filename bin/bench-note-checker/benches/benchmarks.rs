@@ -22,8 +22,13 @@ fn note_checker_benchmarks(c: &mut Criterion) {
                 setup_mixed_notes_benchmark(MixedNotesConfig { failing_note_count: failing_count })
                     .expect("failed to set up mixed notes benchmark");
 
-            b.to_async(tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap())
-                .iter(|| async { black_box(run_mixed_notes_check(&setup).await) });
+            b.to_async(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to build tokio runtime"),
+            )
+            .iter(|| async { black_box(run_mixed_notes_check(&setup).await) });
         });
     }
 
