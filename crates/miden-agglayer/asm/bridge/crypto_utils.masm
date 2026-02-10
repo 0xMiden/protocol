@@ -22,6 +22,9 @@ const LEAF_DATA_NUM_WORDS = 8
 # the memory address where leaf data is stored
 const LEAF_DATA_START_PTR = 0
 
+# the local memory offset where we store the leaf data start pointer
+const PACKING_START_PTR_LOCAL= 0
+
 # the number of elements to pack (113 bytes = 29 elements, rounding up from 28.25)
 const PACKED_DATA_NUM_ELEMENTS = 29
 
@@ -36,7 +39,8 @@ const CUR_HASH_HI_LOCAL = 4
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Given the leaf data key returns the leaf value.
+#! Given the leaf data key, loads the leaf data from advice map to memory, packs the data in-place,
+#! and computes the leaf value by hashing the packed bytes.
 #!
 #! Inputs:
 #!   Operand stack: [LEAF_DATA_KEY]
@@ -63,11 +67,26 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     exec.mem::pipe_preimage_to_memory drop
     # => []
 
-    # before packing, we have non-zero bytes in [0..=115]
-    exec.pack_leaf_data
-    # => []
+    # compute the leaf value for elements in memory starting at LEAF_DATA_START_PTR
+    push.LEAF_DATA_START_PTR
+    exec.compute_leaf_value
+    # => [LEAF_VALUE[8]]
+end
 
-    push.LEAF_DATA_BYTES push.LEAF_DATA_START_PTR
+#! Given a memory address where the unpacked leaf data starts, packs the leaf data in-place, and
+#! computes the leaf value by hashing the packed bytes.
+#!
+#! Inputs:  [LEAF_DATA_START_PTR]
+#! Outputs: [LEAF_VALUE[8]]
+#!
+#! Invocation: exec
+pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
+    dup
+    # => [leaf_data_start_ptr, leaf_data_start_ptr]
+    exec.pack_leaf_data
+    # => [leaf_data_start_ptr]
+
+    push.LEAF_DATA_BYTES swap
     # => [start_ptr, byte_len]
 
     exec.keccak256::hash_bytes
@@ -228,11 +247,15 @@ end
 #!          | ((next >> 8) & 0xFF) << 16
 #!          | ((next >> 16) & 0xFF) << 24
 #!
-#! Inputs:  []
+#! Inputs:  [leaf_data_start_ptr]
 #! Outputs: []
 #!
 #! Invocation: exec
-pub proc pack_leaf_data
+@locals(1) # start_ptr
+pub proc pack_leaf_data(leaf_data_start_ptr: MemoryAddress)
+    loc_store.PACKING_START_PTR_LOCAL
+    # => []
+
     # initialize loop counter to 0
     push.0
 
@@ -243,8 +266,8 @@ pub proc pack_leaf_data
     while.true
         # => [counter]
 
-        # compute source address: LEAF_DATA_START_PTR + counter
-        dup push.LEAF_DATA_START_PTR add
+        # compute source address: packing_start_ptr + counter
+        dup loc_load.PACKING_START_PTR_LOCAL add
         # => [src_addr, counter]
 
         # load current element
@@ -256,7 +279,7 @@ pub proc pack_leaf_data
         # => [curr_msb, curr_elem, counter]
 
         # compute source address for next element (counter + 1)
-        dup.2 push.LEAF_DATA_START_PTR add add.1
+        dup.2 loc_load.PACKING_START_PTR_LOCAL add add.1
         # => [next_src_addr, curr_lsb, curr_elem, counter]
 
         # load next element
@@ -283,8 +306,8 @@ pub proc pack_leaf_data
         movdn.2 drop drop
         # => [packed_elem, counter]
 
-        # compute destination address: LEAF_DATA_START_PTR + counter (in-place)
-        dup.1 push.LEAF_DATA_START_PTR add
+        # compute destination address: packing_start_ptr + counter (in-place)
+        dup.1 loc_load.PACKING_START_PTR_LOCAL add
         # => [dest_addr, packed_elem, counter]
 
         # store packed element
