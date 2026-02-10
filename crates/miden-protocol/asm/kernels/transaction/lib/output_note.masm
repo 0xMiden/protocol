@@ -214,7 +214,7 @@ pub proc add_asset
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET, note_ptr, num_of_assets, note_idx]
 
-    # Check if ASSET to add is fungible
+    # check if ASSET to add is fungible
     exec.asset::is_fungible_asset
     # => [is_fungible_asset?, ASSET, note_ptr, num_of_assets, note_idx]
 
@@ -543,7 +543,7 @@ proc add_fungible_asset
     movdn.4 dropw
     # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
-    # Store the fungible asset, either the combined ASSET or the new ASSET
+    # store the fungible asset, either the combined ASSET or the new ASSET
     mem_storew_be dropw drop drop
     # => [note_ptr, num_of_assets, note_idx]
 

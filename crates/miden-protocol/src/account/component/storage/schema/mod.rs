@@ -9,7 +9,7 @@ use super::type_registry::SchemaRequirement;
 use super::{InitStorageData, StorageValueName};
 use crate::account::{StorageSlot, StorageSlotName};
 use crate::crypto::utils::bytes_to_elements_with_padding;
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 use crate::{Hasher, Word};
 
 mod felt;
@@ -51,11 +51,11 @@ impl StorageSchema {
     /// - If multiple schema fields map to the same init value name.
     pub fn new(
         slots: impl IntoIterator<Item = (StorageSlotName, StorageSlotSchema)>,
-    ) -> Result<Self, AccountComponentTemplateError> {
+    ) -> Result<Self, ComponentMetadataError> {
         let mut map = BTreeMap::new();
         for (slot_name, schema) in slots {
             if map.insert(slot_name.clone(), schema).is_some() {
-                return Err(AccountComponentTemplateError::DuplicateSlotName(slot_name));
+                return Err(ComponentMetadataError::DuplicateSlotName(slot_name));
             }
         }
 
@@ -78,7 +78,7 @@ impl StorageSchema {
     pub fn build_storage_slots(
         &self,
         init_storage_data: &InitStorageData,
-    ) -> Result<Vec<StorageSlot>, AccountComponentTemplateError> {
+    ) -> Result<Vec<StorageSlot>, ComponentMetadataError> {
         self.slots
             .iter()
             .map(|(slot_name, schema)| schema.try_build_storage_slot(slot_name, init_storage_data))
@@ -101,7 +101,7 @@ impl StorageSchema {
     /// (with `default_value`), and excludes map entries.
     pub fn schema_requirements(
         &self,
-    ) -> Result<BTreeMap<StorageValueName, SchemaRequirement>, AccountComponentTemplateError> {
+    ) -> Result<BTreeMap<StorageValueName, SchemaRequirement>, ComponentMetadataError> {
         let mut requirements = BTreeMap::new();
         for (slot_name, schema) in self.slots.iter() {
             schema.collect_init_value_requirements(slot_name, &mut requirements)?;
@@ -124,7 +124,7 @@ impl StorageSchema {
     }
 
     /// Validates schema-level invariants across all slots.
-    fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    fn validate(&self) -> Result<(), ComponentMetadataError> {
         let mut init_values = BTreeMap::new();
 
         for (slot_name, schema) in self.slots.iter() {
@@ -164,13 +164,11 @@ impl Deserializable for StorageSchema {
     }
 }
 
-pub(super) fn validate_description_ascii(
-    description: &str,
-) -> Result<(), AccountComponentTemplateError> {
+pub(super) fn validate_description_ascii(description: &str) -> Result<(), ComponentMetadataError> {
     if description.is_ascii() {
         Ok(())
     } else {
-        Err(AccountComponentTemplateError::InvalidSchema(
+        Err(ComponentMetadataError::InvalidSchema(
             "description must contain only ASCII characters".to_string(),
         ))
     }

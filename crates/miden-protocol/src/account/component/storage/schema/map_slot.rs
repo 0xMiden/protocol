@@ -10,7 +10,7 @@ use super::super::{InitStorageData, StorageValueName};
 use super::{WordSchema, parse_storage_value_with_schema, validate_description_ascii};
 use crate::Word;
 use crate::account::{StorageMap, StorageSlotName};
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 // MAP SLOT SCHEMA
 // ================================================================================================
@@ -51,18 +51,18 @@ impl MapSlotSchema {
         &self,
         init_storage_data: &InitStorageData,
         slot_name: &StorageSlotName,
-    ) -> Result<StorageMap, AccountComponentTemplateError> {
+    ) -> Result<StorageMap, ComponentMetadataError> {
         let mut entries = self.default_values.clone().unwrap_or_default();
         let slot_prefix = StorageValueName::from_slot_name(slot_name);
 
         if init_storage_data.slot_value_entry(slot_name).is_some() {
-            return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+            return Err(ComponentMetadataError::InvalidInitStorageValue(
                 slot_prefix,
                 "expected a map, got a value".into(),
             ));
         }
         if init_storage_data.has_field_entries_for_slot(slot_name) {
-            return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+            return Err(ComponentMetadataError::InvalidInitStorageValue(
                 slot_prefix,
                 "expected a map, got field entries".into(),
             ));
@@ -87,7 +87,7 @@ impl MapSlotSchema {
         }
 
         StorageMap::with_entries(entries)
-            .map_err(|err| AccountComponentTemplateError::StorageMapHasDuplicateKeys(Box::new(err)))
+            .map_err(|err| ComponentMetadataError::StorageMapHasDuplicateKeys(Box::new(err)))
     }
 
     pub fn key_schema(&self) -> &WordSchema {
@@ -118,7 +118,7 @@ impl MapSlotSchema {
         self.value_schema.write_into_with_optional_defaults(target, include_defaults);
     }
 
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         if let Some(description) = self.description.as_deref() {
             validate_description_ascii(description)?;
         }
