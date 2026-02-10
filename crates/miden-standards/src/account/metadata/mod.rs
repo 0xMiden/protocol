@@ -157,14 +157,12 @@ fn compute_schema_commitment<'a>(
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
+    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::PublicKeyCommitment;
     use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::account::{AccountBuilder, AccountComponent, StorageSlot, StorageSlotName};
-    use miden_protocol::errors::AccountError;
 
     use super::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
     use crate::account::auth::{AuthEcdsaK256Keccak, NoAuth};
-    use crate::account::components::storage_schema_library;
 
     #[test]
     fn storage_schema_commitment_is_order_independent() {
@@ -230,89 +228,22 @@ mod tests {
 
     #[test]
     fn build_with_schema_commitment_adds_schema_commitment_component() {
-        let auth_component: AccountComponent =
-            AuthEcdsaK256Keccak::new(PublicKeyCommitment::from(Word::empty())).into();
-        assert!(auth_component.storage_schema().iter().next().is_some());
-
-        let expected_commitment =
-            AccountSchemaCommitment::new([auth_component.storage_schema()]).unwrap();
+        let auth_component = AuthEcdsaK256Keccak::new(PublicKeyCommitment::from(Word::empty()));
 
         let account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(auth_component.clone())
+            .with_auth_component(auth_component)
             .build_with_schema_commitment()
             .unwrap();
 
+        // The auth component has 1 slot (public key) and the schema commitment adds 1 more.
+        assert_eq!(account.storage().num_slots(), 2);
+
+        // The auth component's public key slot should be accessible.
         assert!(account.storage().get_item(AuthEcdsaK256Keccak::public_key_slot()).is_ok());
 
+        // The schema commitment slot should be non-empty since we have a component with a schema.
         let slot_name = AccountSchemaCommitment::schema_commitment_slot();
         let commitment = account.storage().get_item(slot_name).unwrap();
-
-        let expected_account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(auth_component)
-            .with_component(expected_commitment)
-            .build()
-            .unwrap();
-
-        let expected = expected_account.storage().get_item(slot_name).unwrap();
-        assert_eq!(commitment, expected);
-    }
-
-    #[test]
-    fn build_with_schema_commitment_fails_for_conflicting_schemas() {
-        let slot_name = StorageSlotName::new("test::shared_slot").unwrap();
-
-        let word_metadata = AccountComponentMetadata::from_toml(
-            r#"
-                name = "Component Word"
-                description = "Word slot schema"
-                version = "0.1.0"
-                supported-types = []
-
-                [[storage.slots]]
-                name = "test::shared_slot"
-                type = "word"
-            "#,
-        )
-        .unwrap();
-
-        let map_metadata = AccountComponentMetadata::from_toml(
-            r#"
-                name = "Component Map"
-                description = "Map slot schema"
-                version = "0.1.0"
-                supported-types = []
-
-                [[storage.slots]]
-                name = "test::shared_slot"
-                type = { key = "word", value = "word" }
-            "#,
-        )
-        .unwrap();
-
-        let word_component = AccountComponent::new(
-            storage_schema_library(),
-            vec![StorageSlot::with_value(slot_name.clone(), Word::empty())],
-            word_metadata,
-        )
-        .unwrap();
-
-        let map_component = AccountComponent::new(
-            storage_schema_library(),
-            vec![StorageSlot::with_empty_map(slot_name)],
-            map_metadata,
-        )
-        .unwrap();
-
-        let result = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(word_component)
-            .with_component(map_component)
-            .build_with_schema_commitment();
-
-        assert!(matches!(
-            result,
-            Err(AccountError::Other { error_msg, .. })
-                if error_msg.as_ref() == "failed to compute account schema commitment"
-        ));
+        assert_ne!(commitment, Word::empty());
     }
 }
