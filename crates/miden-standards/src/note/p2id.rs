@@ -19,9 +19,7 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::try_read_account_id_from_storage;
 use crate::StandardsLib;
-use crate::alloc::string::ToString;
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -157,8 +155,9 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             });
         }
 
-        let target = try_read_account_id_from_storage(note_storage)
-            .map_err(|e| NoteError::invalid_note_storage(e.to_string()))?;
+        let target = AccountId::try_from([note_storage[1], note_storage[0]]).map_err(|e| {
+            NoteError::invalid_note_storage(format!("failed to create account id: {}", e))
+        })?;
 
         Ok(Self { target })
     }

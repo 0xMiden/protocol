@@ -21,7 +21,6 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::StandardsLib;
-use crate::alloc::string::ToString;
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -124,9 +123,9 @@ impl P2ideNote {
 /// the note can be spent or reclaimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct P2ideNoteStorage {
-    target: AccountId,
-    reclaim_height: Option<BlockNumber>,
-    timelock_height: Option<BlockNumber>,
+    pub target: AccountId,
+    pub reclaim_height: Option<BlockNumber>,
+    pub timelock_height: Option<BlockNumber>,
 }
 
 impl P2ideNoteStorage {
@@ -182,8 +181,9 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             });
         }
 
-        let target = crate::note::try_read_account_id_from_storage(note_storage)
-            .map_err(|e| NoteError::invalid_note_storage(e.to_string()))?;
+        let target = AccountId::try_from([note_storage[1], note_storage[0]]).map_err(|e| {
+            NoteError::invalid_note_storage(format!("failed to create account id: {}", e))
+        })?;
 
         let reclaim_height = if note_storage[2] == Felt::ZERO {
             None
