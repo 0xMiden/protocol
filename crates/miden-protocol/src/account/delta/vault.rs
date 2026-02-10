@@ -141,7 +141,7 @@ impl AccountVaultDelta {
                 Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
             })
             .chain(self.non_fungible.filter_by_action(NonFungibleDeltaAction::Add).map(|key| {
-                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.into()) })
+                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.to_value_word()) })
             }))
     }
 
@@ -156,7 +156,7 @@ impl AccountVaultDelta {
                 Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
             })
             .chain(self.non_fungible.filter_by_action(NonFungibleDeltaAction::Remove).map(|key| {
-                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.into()) })
+                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.to_value_word()) })
             }))
     }
 }

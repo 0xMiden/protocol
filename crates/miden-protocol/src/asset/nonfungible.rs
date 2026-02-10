@@ -138,7 +138,7 @@ impl NonFungibleAsset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        Word::from(*self)
+        todo!()
     }
 
     // HELPER FUNCTIONS
@@ -159,12 +159,6 @@ impl NonFungibleAsset {
         }
 
         Ok(())
-    }
-}
-
-impl From<NonFungibleAsset> for Word {
-    fn from(asset: NonFungibleAsset) -> Self {
-        asset.0
     }
 }
 

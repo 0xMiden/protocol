@@ -152,7 +152,10 @@ impl Asset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        Word::from(*self)
+        match self {
+            Asset::Fungible(fungible_asset) => fungible_asset.to_value_word(),
+            Asset::NonFungible(non_fungible_asset) => non_fungible_asset.to_value_word(),
+        }
     }
 
     /// Returns the inner [`FungibleAsset`].
@@ -177,21 +180,6 @@ impl Asset {
             Asset::Fungible(_) => panic!("the asset is fungible"),
             Asset::NonFungible(asset) => *asset,
         }
-    }
-}
-
-impl From<Asset> for Word {
-    fn from(asset: Asset) -> Self {
-        match asset {
-            Asset::Fungible(asset) => asset.into(),
-            Asset::NonFungible(asset) => asset.into(),
-        }
-    }
-}
-
-impl From<&Asset> for Word {
-    fn from(value: &Asset) -> Self {
-        (*value).into()
     }
 }
 
@@ -289,7 +277,6 @@ fn is_not_a_non_fungible_asset(asset: Word) -> bool {
 #[cfg(test)]
 mod tests {
 
-    use miden_crypto::Word;
     use miden_crypto::utils::{Deserializable, Serializable};
 
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
@@ -334,31 +321,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_new_unchecked() {
-        for fungible_account_id in [
-            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-            ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-        ] {
-            let account_id = AccountId::try_from(fungible_account_id).unwrap();
-            let fungible_asset: Asset = FungibleAsset::new(account_id, 10).unwrap().into();
-            assert_eq!(fungible_asset, Asset::new_unchecked(Word::from(&fungible_asset)));
-        }
+    // TODO(expand_assets): Replace with from_key_value test.
+    // #[test]
+    // fn test_new_unchecked() {
+    //     for fungible_account_id in [
+    //         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
+    //     ] {
+    //         let account_id = AccountId::try_from(fungible_account_id).unwrap();
+    //         let fungible_asset: Asset = FungibleAsset::new(account_id, 10).unwrap().into();
+    //         assert_eq!(fungible_asset, Asset::new_unchecked(Word::from(&fungible_asset)));
+    //     }
 
-        for non_fungible_account_id in [
-            ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-            ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-        ] {
-            let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id.prefix(), vec![1, 2, 3]).unwrap();
-            let non_fungible_asset: Asset = NonFungibleAsset::new(&details).unwrap().into();
-            assert_eq!(non_fungible_asset, Asset::new_unchecked(Word::from(non_fungible_asset)));
-        }
-    }
+    //     for non_fungible_account_id in [
+    //         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
+    //         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    //         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
+    //     ] {
+    //         let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
+    //         let details = NonFungibleAssetDetails::new(account_id.prefix(), vec![1, 2,
+    // 3]).unwrap();         let non_fungible_asset: Asset =
+    // NonFungibleAsset::new(&details).unwrap().into();         assert_eq!(non_fungible_asset,
+    // Asset::new_unchecked(Word::from(non_fungible_asset)));     }
+    // }
 
     /// This test asserts that account ID's prefix is serialized in the first felt of assets.
     /// Asset deserialization relies on that fact and if this changes the serialization must

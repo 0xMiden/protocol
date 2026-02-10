@@ -3,7 +3,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetError, Felt, Word, ZERO, is_not_a_non_fungible_asset};
+use super::{AccountType, Asset, AssetError, Word, ZERO};
 use crate::account::{AccountId, AccountIdPrefix};
 use crate::utils::serde::{
     ByteReader,
@@ -96,7 +96,7 @@ impl FungibleAsset {
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
-        Word::from(*self)
+        todo!()
     }
 
     // OPERATIONS
@@ -172,17 +172,6 @@ impl FungibleAsset {
         }
 
         Ok(self)
-    }
-}
-
-impl From<FungibleAsset> for Word {
-    fn from(asset: FungibleAsset) -> Self {
-        let mut result = Word::empty();
-        result[0] = Felt::new(asset.amount);
-        result[2] = asset.faucet_id.suffix();
-        result[3] = asset.faucet_id.prefix().as_felt();
-        debug_assert!(is_not_a_non_fungible_asset(result));
-        result
     }
 }
 

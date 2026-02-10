@@ -90,7 +90,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             # => [ASSET_KEY, account_vault_root_ptr]
 
             exec.asset_vault::peek_asset
-            # => [PEEKED_ASSET]
+            # => [PEEKED_ASSET_VALUE]
 
             # truncate the stack
             swapw dropw
@@ -103,7 +103,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(tx_context.account().vault().get(asset_key).unwrap())
+        tx_context.account().vault().get(asset_key).unwrap().to_value_word()
     );
 
     Ok(())
@@ -210,7 +210,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(account_vault.add_asset(add_fungible_asset).unwrap())
+        account_vault.add_asset(add_fungible_asset).unwrap().to_value_word()
     );
 
     assert_eq!(
@@ -293,7 +293,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(account_vault.add_asset(add_non_fungible_asset)?)
+        account_vault.add_asset(add_non_fungible_asset)?.to_value_word()
     );
 
     assert_eq!(
@@ -377,7 +377,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(account_vault.remove_asset(remove_fungible_asset).unwrap())
+        account_vault.remove_asset(remove_fungible_asset).unwrap().to_value_word()
     );
 
     assert_eq!(
@@ -465,7 +465,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(account_vault.remove_asset(remove_fungible_asset).unwrap())
+        account_vault.remove_asset(remove_fungible_asset).unwrap().to_value_word()
     );
 
     assert_eq!(
@@ -554,7 +554,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        Word::from(account_vault.remove_asset(non_fungible_asset).unwrap())
+        account_vault.remove_asset(non_fungible_asset).unwrap().to_value_word()
     );
 
     assert_eq!(

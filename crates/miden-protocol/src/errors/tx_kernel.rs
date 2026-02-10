@@ -82,16 +82,16 @@ pub const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT: MasmError = MasmError::from_st
 /// Error Message: "maximum allowed number of foreign account to be loaded (64) was exceeded"
 pub const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED: MasmError = MasmError::from_static_str("maximum allowed number of foreign account to be loaded (64) was exceeded");
 
+/// Error Message: "fungible asset amount exceeds the maximum allowed amount"
+pub const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT: MasmError = MasmError::from_static_str("fungible asset amount exceeds the maximum allowed amount");
 /// Error Message: "the origin of the fungible asset is not this faucet"
 pub const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the fungible asset is not this faucet");
-/// Error Message: "malformed fungible asset: `ASSET[1]` must be 0"
-pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ONE_MUST_BE_ZERO: MasmError = MasmError::from_static_str("malformed fungible asset: `ASSET[1]` must be 0");
-/// Error Message: "malformed fungible asset: `ASSET[2]` and `ASSET[3]` must be a valid fungible faucet id"
-pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_TWO_AND_THREE_MUST_BE_FUNGIBLE_FAUCET_ID: MasmError = MasmError::from_static_str("malformed fungible asset: `ASSET[2]` and `ASSET[3]` must be a valid fungible faucet id");
-/// Error Message: "malformed fungible asset: `ASSET[0]` exceeds the maximum allowed amount"
-pub const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS: MasmError = MasmError::from_static_str("malformed fungible asset: `ASSET[0]` exceeds the maximum allowed amount");
 /// Error Message: "fungible asset vault key's account ID must be of type fungible faucet"
 pub const ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE: MasmError = MasmError::from_static_str("fungible asset vault key's account ID must be of type fungible faucet");
+/// Error Message: "fungible asset key asset ID prefix and suffix must be zero"
+pub const ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO: MasmError = MasmError::from_static_str("fungible asset key asset ID prefix and suffix must be zero");
+/// Error Message: "fungible asset value elements 1, 2 and 3 must be zeros"
+pub const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO: MasmError = MasmError::from_static_str("fungible asset value elements 1, 2 and 3 must be zeros");
 
 /// Error Message: "requested input note index should be less than the total number of input notes"
 pub const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS: MasmError = MasmError::from_static_str("requested input note index should be less than the total number of input notes");

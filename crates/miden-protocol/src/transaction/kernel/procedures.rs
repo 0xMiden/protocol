@@ -40,15 +40,15 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_get_vault_root
     word!("0x42a2bfb8eac4fce9bbf75ea15215b00729faeeaf7fff784692948d3f618a9bb7"),
     // account_add_asset
-    word!("0x50985ece56c97b478f5f6da3c82f4ff4e0e972f37aab7670b040182993b78535"),
+    word!("0xc52f196ec16ad73718286dd7cef276371c7cca1dcbeef8de40c2292ad2b4ca69"),
     // account_remove_asset
-    word!("0x069672b069a35b40e36911e0e029aef59a42a10209b6a70892badb3e828ca8a9"),
+    word!("0x48e72eb921fdc829be72b0cff2849e1ae2671d59b1c86bf6e389c43472ebc7bc"),
     // account_get_asset
     word!("0x21dc0ef7e3475f28fbcf26636d9b58c3f7e349da7c7a36e85c1b49e50437fa65"),
     // account_get_initial_asset
     word!("0x8e1fabe016fa23523489a8aec0a0cc3804610b75c8b4a1774e46eb6a9d205cb5"),
     // account_compute_delta_commitment
-    word!("0x09767ee5e29aeca91a57f3af3871bbfb3037681e193444b3f7af878894c1aaa3"),
+    word!("0x8ea3f06c69939fa791c60e2fa06f19fd070aa20e20e65ba4c8f7931dcad6c86a"),
     // account_get_num_procedures
     word!("0x53b5ec38b7841948762c258010e6e07ad93963bcaac2d83813f8edb6710dc720"),
     // account_get_procedure_root
@@ -58,9 +58,9 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_has_procedure
     word!("0xb0b63fdd01af0bcb4aacb2412e934cdc7691308647152d416c7ae4fc909da076"),
     // faucet_mint_asset
-    word!("0x5015be55c6d4b7c23627bc5c07e3dd113bbf2839077eb1e2afbeaf56c090e05d"),
+    word!("0xcb1e09ed949517f3d4fa78f294c9132cdba6a835a9095de4fd4ac092592fdac6"),
     // faucet_burn_asset
-    word!("0xcce90fd532495cd3205cb1657d20ef6b1857265ad11cd4641f33c44b887ac690"),
+    word!("0x8a07632e2cabc04096efcd2c60a91d6a75c03e302f14f907b7a511dc78fd1060"),
     // input_note_get_metadata
     word!("0x996bd68ca078fc1d25f354630f9881a65f7de2331cf87ba4729d5bb8934522ce"),
     // input_note_get_assets_info
@@ -82,7 +82,7 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // output_note_get_recipient
     word!("0x6aeec5901ae0afd538bdbb6f7c5a05da66e75fb9e2100c1ffe2a3fa5d9910b64"),
     // output_note_add_asset
-    word!("0x6e1a699df870c682549c840bf030111000f495d3babb2b3a6f8cace062d90995"),
+    word!("0x69696c78741f0827b20620c242db91436b03ef55bd9b7cc44c506791098bfc45"),
     // output_note_set_attachment
     word!("0xc33e8568f74b1accf0ee7f5de52fea30fe524b9e0dad7958d7e506e9ba3e3bbe"),
     // tx_get_num_input_notes

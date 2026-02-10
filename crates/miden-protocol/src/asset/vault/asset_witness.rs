@@ -144,8 +144,10 @@ mod tests {
         let fungible_asset = FungibleAsset::mock(500);
         let non_fungible_asset = NonFungibleAsset::mock(&[1]);
 
-        let smt =
-            Smt::with_entries([(fungible_asset.vault_key().into(), non_fungible_asset.into())])?;
+        let smt = Smt::with_entries([(
+            fungible_asset.vault_key().into(),
+            non_fungible_asset.to_value_word(),
+        )])?;
         let proof = smt.open(&fungible_asset.vault_key().into());
 
         let err = AssetWitness::new(proof).unwrap_err();

@@ -221,7 +221,7 @@ impl TransactionKernel {
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
         let mut outputs: Vec<Felt> = Vec::with_capacity(9);
         outputs.push(Felt::from(expiration_block_num));
-        outputs.extend(Word::from(fee));
+        outputs.extend(fee.to_value_word());
         outputs.extend(account_update_commitment);
         outputs.extend(output_notes_commitment);
         outputs.reverse();

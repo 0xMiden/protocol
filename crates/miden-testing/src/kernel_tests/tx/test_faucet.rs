@@ -1,12 +1,11 @@
 use alloc::sync::Arc;
 
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::tx_kernel::{
+    ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
-    ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS,
     ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
@@ -103,7 +102,7 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
       end
       ",
         asset_key = asset.vault_key(),
-        asset_value = Word::from(asset),
+        asset_value = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -137,7 +136,7 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
         end
         ",
         asset_key = asset.vault_key(),
-        asset_value = Word::from(asset),
+        asset_value = asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -183,10 +182,7 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
             .execute()
             .await;
 
-    assert_transaction_executor_error!(
-        result,
-        ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS
-    );
+    assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT);
     Ok(())
 }
 
@@ -261,7 +257,7 @@ async fn test_mint_non_fungible_asset_fails_inconsistent_faucet_id() -> anyhow::
         end
         ",
         asset_key = non_fungible_asset.to_key_word(),
-        asset_value = Word::from(non_fungible_asset),
+        asset_value = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -287,7 +283,7 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
       end
       ",
         asset_key = asset.vault_key(),
-        asset_value = Word::from(asset),
+        asset_value = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 

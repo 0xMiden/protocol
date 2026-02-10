@@ -122,13 +122,12 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     expected_stack.extend(output_notes.commitment().as_elements().iter().rev());
     expected_stack.extend(account_update_commitment.as_elements().iter().rev());
     expected_stack.extend(
-        Word::from(
-            FungibleAsset::new(
-                tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
-                0,
-            )
-            .unwrap(),
+        FungibleAsset::new(
+            tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
+            0,
         )
+        .unwrap()
+        .to_value_word()
         .iter()
         .rev(),
     );

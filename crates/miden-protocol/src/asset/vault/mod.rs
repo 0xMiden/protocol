@@ -60,8 +60,9 @@ impl AssetVault {
     /// Returns a new [AssetVault] initialized with the provided assets.
     pub fn new(assets: &[Asset]) -> Result<Self, AssetVaultError> {
         Ok(Self {
+            // TODO(expand_assets): Replace with hashed key.
             asset_tree: Smt::with_entries(
-                assets.iter().map(|asset| (asset.vault_key().into(), (*asset).into())),
+                assets.iter().map(|asset| (*asset.vault_key().as_word(), asset.to_value_word())),
             )
             .map_err(AssetVaultError::DuplicateAsset)?,
         })
@@ -225,7 +226,7 @@ impl AssetVault {
             },
         };
         self.asset_tree
-            .insert(new.vault_key().into(), new.into())
+            .insert(new.vault_key().into(), new.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // return the new asset
@@ -242,9 +243,10 @@ impl AssetVault {
         asset: NonFungibleAsset,
     ) -> Result<NonFungibleAsset, AssetVaultError> {
         // add non-fungible asset to the vault
+        // TODO(expand_assets): Replace with hashed key.
         let old = self
             .asset_tree
-            .insert(asset.vault_key().into(), asset.into())
+            .insert(asset.vault_key().into(), asset.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // if the asset already exists, return an error
@@ -301,7 +303,7 @@ impl AssetVault {
         // if the amount of the asset is zero, remove the asset from the vault.
         let value = match new.amount() {
             0 => Smt::EMPTY_VALUE,
-            _ => new.into(),
+            _ => new.to_value_word(),
         };
         self.asset_tree
             .insert(new.vault_key().into(), value)

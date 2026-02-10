@@ -216,7 +216,7 @@ mod tests {
     fn partial_vault_ensures_asset_vault_key_matches() -> anyhow::Result<()> {
         let asset = FungibleAsset::mock(500);
         let invalid_vault_key = Word::from([0, 1, 2, 3u32]);
-        let smt = Smt::with_entries([(invalid_vault_key, asset.into())])?;
+        let smt = Smt::with_entries([(invalid_vault_key, asset.to_value_word())])?;
         let proof = smt.open(&invalid_vault_key);
         let partial_smt = PartialSmt::from_proofs([proof.clone()])?;
 
