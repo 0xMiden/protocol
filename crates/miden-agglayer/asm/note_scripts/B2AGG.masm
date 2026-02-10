@@ -30,14 +30,14 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Note storage is assumed to be as follows:
-#! - destination_network: u32 value representing the target chain ID
-#! - destination_address: split into 5 u32 values representing a 20-byte Ethereum address:
-#!   - destination_address_0: bytes 0-3
-#!   - destination_address_1: bytes 4-7
-#!   - destination_address_2: bytes 8-11
-#!   - destination_address_3: bytes 12-15
-#!   - destination_address_4: bytes 16-19
+#! Note storage layout (6 felts total):
+#! - destination_network [0]     : 1 felt
+#! - destination_address [1..5]  : 5 felts
+#!
+#! Where:
+#! - destination_network: Destination network identifier (uint32)
+#! - destination_address: 20-byte Ethereum address as 5 u32 felts
+#!
 #! Note attachment is constructed from a NetworkAccountTarget standard:
 #! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
 #!
