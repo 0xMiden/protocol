@@ -29,6 +29,9 @@ pub use p2ide::P2ideNote;
 mod swap;
 pub use swap::SwapNote;
 
+mod swape;
+pub use swape::SwapeNote;
+
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
@@ -43,6 +46,7 @@ pub enum StandardNote {
     P2ID,
     P2IDE,
     SWAP,
+    SWAPE,
     MINT,
     BURN,
 }
@@ -69,6 +73,9 @@ impl StandardNote {
         if root == SwapNote::script_root() {
             return Some(Self::SWAP);
         }
+        if root == SwapeNote::script_root() {
+            return Some(Self::SWAPE);
+        }
         if root == MintNote::script_root() {
             return Some(Self::MINT);
         }
@@ -88,6 +95,7 @@ impl StandardNote {
             Self::P2ID => "P2ID",
             Self::P2IDE => "P2IDE",
             Self::SWAP => "SWAP",
+            Self::SWAPE => "SWAPE",
             Self::MINT => "MINT",
             Self::BURN => "BURN",
         }
@@ -99,6 +107,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::NUM_STORAGE_ITEMS,
             Self::P2IDE => P2ideNote::NUM_STORAGE_ITEMS,
             Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
+            Self::SWAPE => SwapeNote::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
         }
@@ -110,6 +119,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::script(),
             Self::P2IDE => P2ideNote::script(),
             Self::SWAP => SwapNote::script(),
+            Self::SWAPE => SwapeNote::script(),
             Self::MINT => MintNote::script(),
             Self::BURN => BurnNote::script(),
         }
@@ -121,6 +131,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::script_root(),
             Self::P2IDE => P2ideNote::script_root(),
             Self::SWAP => SwapNote::script_root(),
+            Self::SWAPE => SwapeNote::script_root(),
             Self::MINT => MintNote::script_root(),
             Self::BURN => BurnNote::script_root(),
         }
@@ -140,9 +151,9 @@ impl StandardNote {
                 // the provided account interface.
                 interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
             },
-            Self::SWAP => {
-                // To consume SWAP note, the `receive_asset` and `move_asset_to_note` procedures
-                // must be present in the provided account interface.
+            Self::SWAP | Self::SWAPE => {
+                // To consume SWAP/SWAPE notes, the `receive_asset` and `move_asset_to_note`
+                // procedures must be present in the provided account interface.
                 interface_proc_digests.contains(&BasicWallet::receive_asset_digest())
                     && interface_proc_digests.contains(&BasicWallet::move_asset_to_note_digest())
             },
@@ -253,6 +264,38 @@ impl StandardNote {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
                         "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
                     )))
+                }
+            },
+
+            StandardNote::SWAPE => {
+                // For SWAPE notes, we can determine consumability for the sender (reclaim path).
+                // The swap path cannot be statically determined (any account with sufficient
+                // assets can consume it), so we return None for non-sender accounts.
+                if note.storage().items().len() != SwapeNote::NUM_STORAGE_ITEMS {
+                    return Err(StaticAnalysisError::new(format!(
+                        "SWAPE note should have {} storage items, but {} was provided",
+                        SwapeNote::NUM_STORAGE_ITEMS,
+                        note.storage().items().len()
+                    )));
+                }
+
+                let reclaim_height = u32::try_from(note.storage().items()[16])
+                    .map_err(|_| StaticAnalysisError::new("reclaim block height should be a u32"))?;
+
+                if target_account_id == note.metadata().sender() {
+                    // Sender can reclaim after reclaim_height
+                    let current_block_height = block_ref.as_u32();
+                    if current_block_height >= reclaim_height {
+                        Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
+                    } else {
+                        Ok(Some(NoteConsumptionStatus::ConsumableAfter(
+                            BlockNumber::from(reclaim_height),
+                        )))
+                    }
+                } else {
+                    // Non-sender: can potentially consume via swap path, but we can't
+                    // statically determine this (depends on account vault contents).
+                    Ok(None)
                 }
             },
 
