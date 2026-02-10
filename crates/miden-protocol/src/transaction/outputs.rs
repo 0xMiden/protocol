@@ -714,11 +714,8 @@ mod output_notes_tests {
         let assets = NoteAssets::new(vec![asset_1, asset_2])?;
 
         // Build metadata similarly to how mock notes are constructed.
-        let metadata = NoteMetadata::new(
-            sender_id,
-            NoteType::Private,
-            NoteTag::with_account_target(sender_id),
-        );
+        let metadata = NoteMetadata::new(sender_id, NoteType::Private)
+            .with_tag(NoteTag::with_account_target(sender_id));
 
         // Build storage with at least two values.
         let storage = NoteStorage::new(vec![Felt::new(1), Felt::new(2)])?;
@@ -766,8 +763,8 @@ mod output_notes_tests {
         let asset = FungibleAsset::new(faucet_id, 100)?.into();
         let assets = NoteAssets::new(vec![asset])?;
 
-        let metadata =
-            NoteMetadata::new(sender_id, NoteType::Public, NoteTag::with_account_target(sender_id));
+        let metadata = NoteMetadata::new(sender_id, NoteType::Public)
+            .with_tag(NoteTag::with_account_target(sender_id));
 
         let recipient = NoteRecipient::new(serial_num, script, storage);
         let oversized_note = Note::new(assets, metadata, recipient);
