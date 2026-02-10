@@ -9,7 +9,7 @@ use super::super::{InitStorageData, StorageValueName};
 use super::{WordSchema, validate_description_ascii};
 use crate::Word;
 use crate::account::StorageSlotName;
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 // VALUE SLOT SCHEMA
 // ================================================================================================
@@ -38,7 +38,7 @@ impl ValueSlotSchema {
         &self,
         value_name: StorageValueName,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         self.word.collect_init_value_requirements(
             value_name,
             self.description.clone(),
@@ -51,7 +51,7 @@ impl ValueSlotSchema {
         &self,
         init_storage_data: &InitStorageData,
         slot_name: &StorageSlotName,
-    ) -> Result<Word, AccountComponentTemplateError> {
+    ) -> Result<Word, ComponentMetadataError> {
         self.word.try_build_word(init_storage_data, slot_name)
     }
 
@@ -64,7 +64,7 @@ impl ValueSlotSchema {
         self.word.write_into_with_optional_defaults(target, include_defaults);
     }
 
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         if let Some(description) = self.description.as_deref() {
             validate_description_ascii(description)?;
         }
