@@ -176,35 +176,40 @@ proc update_value_slot_delta
     # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
     exec.word::test_eq not
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
     # set was_changed to true if the account is new
     # generally, the delta for a new account must include all its storage slots, regardless of the
     # initial value and even if it is an empty word, because the initial delta for an account must
     # represent its full state
     exec.memory::is_new_account or
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
     # only include in delta if the slot's value has changed or the account is new
     if.true
         # drop init value
         dropw
-        # => [CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
+        # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
         # build value slot metadata
         push.DOMAIN_VALUE push.0
-        # => [0, domain, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
+        # => [0, domain, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
         movup.7 movup.7
-        # => [slot_id_prefix, slot_id_suffix, 0, domain, CURRENT_VALUE, RATE, RATE, PERM]
+        # => [slot_id_suffix, slot_id_prefix, 0, domain, CURRENT_VALUE, RATE, RATE, PERM]
 
         # clear rate elements
         swapdw dropw dropw
-        # => [slot_id_prefix, slot_id_suffix, 0, domain, CURRENT_VALUE, PERM]
+        # => [slot_id_suffix, slot_id_prefix, 0, domain, CURRENT_VALUE, PERM]
 
-        # arrange rate words in correct order
+        # order metadata as [DOMAIN_VALUE, 0, slot_id_suffix, slot_id_prefix]
+        swap
+        reversew
+        # => [domain, 0, slot_id_suffix, slot_id_prefix, CURRENT_VALUE, PERM]
+
+        # place CURRENT_VALUE on top so hperm absorbs metadata first
         swapw
-        # => [CURRENT_VALUE, slot_id_prefix, slot_id_suffix, 0, domain, PERM]
+        # => [CURRENT_VALUE, domain, 0, slot_id_suffix, slot_id_prefix, PERM]
 
         hperm
         # => [RATE, RATE, PERM]
@@ -316,8 +321,12 @@ proc update_map_slot_delta
         dropw dropw
         # => [PERM]
 
-        push.DOMAIN_MAP loc_load.4 loc_load.0 loc_load.1 padw
-        # => [EMPTY_WORD, [slot_id_prefix, slot_id_suffix, num_changed_entries, domain], PERM]
+        push.DOMAIN_MAP loc_load.4 loc_load.0 loc_load.1
+        reversew
+        # => [[domain, num_changed_entries, slot_id_suffix, slot_id_prefix], PERM]
+
+        padw
+        # => [EMPTY_WORD, [domain, num_changed_entries, slot_id_suffix, slot_id_prefix], PERM]
 
         hperm
         # => [RATE, RATE, PERM]
@@ -379,6 +388,18 @@ proc update_fungible_asset_delta
 
             swapw
             # => [[faucet_id_prefix, faucet_id_suffix, 0, delta_amount_abs], [0, 0, was_added, domain], RATE, RATE, PERM]
+
+            reversew
+            # => [[delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], [0, 0, was_added, domain], RATE, RATE, PERM]
+
+            swapw
+            # => [[0, 0, was_added, domain], [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], RATE, RATE, PERM]
+
+            reversew
+            # => [[domain, was_added, 0, 0], [delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], RATE, RATE, PERM]
+
+            swapw
+            # => [[delta_amount_abs, 0, faucet_id_suffix, faucet_id_prefix], [domain, was_added, 0, 0], RATE, RATE, PERM]
 
             # drop previous RATE elements
             swapdw dropw dropw
@@ -451,6 +472,11 @@ proc update_non_fungible_asset_delta
 
             push.DOMAIN_ASSET swap.8 drop
             # => [ASSET, [0, 0, was_added, domain], RATE, RATE, PERM]
+
+            swapw
+            reversew
+            swapw
+            # => [ASSET, [domain, was_added, 0, 0], RATE, RATE, PERM]
 
             # drop previous RATE elements
             swapdw dropw dropw

@@ -1017,6 +1017,7 @@ pub proc validate_storage
         # => [curr_slot_idx]
 
         dup exec.get_slot_id
+        swap
         # => [curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
 
         # we are guaranteed to not underflow because curr_slot_idx is at least 1 at the
@@ -1025,6 +1026,7 @@ pub proc validate_storage
         # => [prev_slot_idx, curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
 
         exec.get_slot_id
+        swap
         # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix, curr_slot_idx]
 
         # this effectively checks that slots are sorted _and_ unique, since duplicate slot IDs are

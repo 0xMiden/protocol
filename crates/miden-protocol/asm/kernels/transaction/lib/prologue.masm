@@ -843,7 +843,7 @@ proc compute_input_note_id
     # => [RECIPIENT]
 
     # store the recipient in memory
-    dup loc_load.0 exec.memory::set_input_note_recipient drop
+    dupw loc_load.0 exec.memory::set_input_note_recipient dropw
     # => [RECIPIENT]
 
     # compute NOTE_ID: hash(RECIPIENT || ASSET_COMMITMENT)
