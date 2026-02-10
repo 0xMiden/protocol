@@ -90,7 +90,7 @@ impl P2ideNote {
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
-        let recipient = Self::build_recipient(storage, serial_num)?;
+        let recipient = storage.into_recipient(serial_num)?;
         let tag = NoteTag::with_account_target(storage.target());
 
         let metadata =
@@ -98,18 +98,6 @@ impl P2ideNote {
         let vault = NoteAssets::new(assets)?;
 
         Ok(Note::new(vault, metadata, recipient))
-    }
-
-    /// Creates a [NoteRecipient] for the P2IDE note.
-    ///
-    /// Notes created with this recipient will be P2IDE notes consumable by the specified target
-    /// account.
-    pub fn build_recipient(
-        storage: P2ideNoteStorage,
-        serial_num: Word,
-    ) -> Result<NoteRecipient, NoteError> {
-        let note_script = Self::script();
-        Ok(NoteRecipient::new(serial_num, note_script, storage.into()))
     }
 }
 
@@ -136,6 +124,12 @@ impl P2ideNoteStorage {
         timelock_height: Option<BlockNumber>,
     ) -> Self {
         Self { target, reclaim_height, timelock_height }
+    }
+
+    /// Consumes the storage and returns a P2IDE [`NoteRecipient`] with the provided serial number.
+    pub fn into_recipient(self, serial_num: Word) -> Result<NoteRecipient, NoteError> {
+        let note_script = P2ideNote::script();
+        Ok(NoteRecipient::new(serial_num, note_script, self.into()))
     }
 
     /// Returns the target account ID.

@@ -82,7 +82,7 @@ impl P2idNote {
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
-        let recipient = Self::build_recipient(target, serial_num)?;
+        let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
 
         let tag = NoteTag::with_account_target(target);
 
@@ -91,17 +91,6 @@ impl P2idNote {
         let vault = NoteAssets::new(assets)?;
 
         Ok(Note::new(vault, metadata, recipient))
-    }
-
-    /// Creates a [NoteRecipient] for the P2ID note.
-    ///
-    /// Notes created with this recipient will be P2ID notes consumable by the specified target
-    /// account.
-    pub fn build_recipient(
-        target: AccountId,
-        serial_num: Word,
-    ) -> Result<NoteRecipient, NoteError> {
-        Ok(P2idNoteStorage::new(target).into_recipient(serial_num))
     }
 }
 
