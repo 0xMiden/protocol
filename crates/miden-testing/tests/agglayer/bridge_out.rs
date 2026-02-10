@@ -6,9 +6,9 @@ use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
-use miden_standards::account::faucets::NetworkFungibleFaucet;
+use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -68,14 +68,10 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    // Get BURN note script to add to the transaction context
-    let burn_note_script: NoteScript = StandardNote::BURN.script();
-
     // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
     // --------------------------------------------------------------------------------------------
     let tx_context = mock_chain
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
-        .add_note_script(burn_note_script.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
@@ -116,7 +112,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Verify the BURN note uses the correct script
     assert_eq!(
         burn_note.recipient().script().root(),
-        burn_note_script.root(),
+        StandardNote::BURN.script_root(),
         "BURN note should use the BURN script"
     );
 
@@ -130,7 +126,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // CONSUME THE BURN NOTE WITH THE NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
     // Check the initial token issuance before burning
-    let initial_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(initial_token_supply, Felt::new(100), "Initial issuance should be 100");
 
     // Execute the BURN note against the network faucet
@@ -149,7 +145,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let mut faucet = faucet;
     faucet.apply_delta(burn_executed_transaction.account_delta())?;
 
-    let final_token_supply = NetworkFungibleFaucet::try_from(&faucet)?.token_supply();
+    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_int() - amount.as_int()),

@@ -1,3 +1,10 @@
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -13,9 +20,12 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::{BasicFungibleFaucet, FungibleFaucetError};
+use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
+
+/// The schema type ID for token symbols.
+const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -61,7 +71,7 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct NetworkFungibleFaucet {
-    faucet: BasicFungibleFaucet,
+    metadata: TokenMetadata,
     owner_account_id: AccountId,
 }
 
@@ -69,8 +79,11 @@ impl NetworkFungibleFaucet {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::network_fungible_faucet";
+
     /// The maximum number of decimals supported by the component.
-    pub const MAX_DECIMALS: u8 = 12;
+    pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
     const DISTRIBUTE_PROC_NAME: &str = "network_fungible_faucet::distribute";
     const BURN_PROC_NAME: &str = "network_fungible_faucet::burn";
@@ -91,10 +104,16 @@ impl NetworkFungibleFaucet {
         max_supply: Felt,
         owner_account_id: AccountId,
     ) -> Result<Self, FungibleFaucetError> {
-        // Create the basic fungible faucet (this validates the metadata)
-        let faucet = BasicFungibleFaucet::new(symbol, decimals, max_supply)?;
+        let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
+        Ok(Self { metadata, owner_account_id })
+    }
 
-        Ok(Self { faucet, owner_account_id })
+    /// Creates a new [`NetworkFungibleFaucet`] component from the given [`TokenMetadata`].
+    ///
+    /// This is a convenience constructor that allows creating a faucet from pre-validated
+    /// metadata.
+    pub fn from_metadata(metadata: TokenMetadata, owner_account_id: AccountId) -> Self {
+        Self { metadata, owner_account_id }
     }
 
     /// Attempts to create a new [`NetworkFungibleFaucet`] component from the associated account
@@ -107,6 +126,7 @@ impl NetworkFungibleFaucet {
     /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
     /// - the max supply value exceeds maximum possible amount for a fungible asset of
     ///   [`miden_protocol::asset::FungibleAsset::MAX_AMOUNT`].
+    /// - the token supply exceeds the max supply.
     /// - the token symbol encoded value exceeds the maximum value of
     ///   [`TokenSymbol::MAX_ENCODED_VALUE`].
     fn try_from_interface(
@@ -121,15 +141,8 @@ impl NetworkFungibleFaucet {
             return Err(FungibleFaucetError::MissingNetworkFungibleFaucetInterface);
         }
 
-        debug_assert_eq!(
-            NetworkFungibleFaucet::metadata_slot(),
-            BasicFungibleFaucet::metadata_slot(),
-            "the code below assumes the slots of both components are identical"
-        );
-
-        // This is safe because the NetworkFungibleFaucet's metadata slot is identical to the one in
-        // the basic fungible faucet.
-        let faucet = BasicFungibleFaucet::try_from_storage(storage)?;
+        // Read token metadata from storage
+        let metadata = TokenMetadata::try_from(storage)?;
 
         // obtain owner account ID from the next storage slot
         let owner_account_id_word: Word = storage
@@ -145,7 +158,7 @@ impl NetworkFungibleFaucet {
         let suffix = owner_account_id_word[2];
         let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
 
-        Ok(Self { faucet, owner_account_id })
+        Ok(Self { metadata, owner_account_id })
     }
 
     // PUBLIC ACCESSORS
@@ -153,7 +166,7 @@ impl NetworkFungibleFaucet {
 
     /// Returns the [`StorageSlotName`] where the [`NetworkFungibleFaucet`]'s metadata is stored.
     pub fn metadata_slot() -> &'static StorageSlotName {
-        &super::METADATA_SLOT_NAME
+        TokenMetadata::metadata_slot()
     }
 
     /// Returns the [`StorageSlotName`] where the [`NetworkFungibleFaucet`]'s owner configuration is
@@ -162,21 +175,59 @@ impl NetworkFungibleFaucet {
         &OWNER_CONFIG_SLOT_NAME
     }
 
+    /// Returns the storage slot schema for the metadata slot.
+    pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let token_symbol_type = SchemaTypeId::new(TOKEN_SYMBOL_TYPE_ID).expect("valid type id");
+        (
+            Self::metadata_slot().clone(),
+            StorageSlotSchema::value(
+                "Token metadata",
+                [
+                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                    FeltSchema::felt("max_supply"),
+                    FeltSchema::u8("decimals"),
+                    FeltSchema::new_typed(token_symbol_type, "symbol"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the owner configuration slot.
+    pub fn owner_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::owner_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Owner account configuration",
+                [
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::felt("owner_suffix"),
+                    FeltSchema::felt("owner_prefix"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the token metadata.
+    pub fn metadata(&self) -> &TokenMetadata {
+        &self.metadata
+    }
+
     /// Returns the symbol of the faucet.
     pub fn symbol(&self) -> TokenSymbol {
-        self.faucet.symbol()
+        self.metadata.symbol()
     }
 
     /// Returns the decimals of the faucet.
     pub fn decimals(&self) -> u8 {
-        self.faucet.decimals()
+        self.metadata.decimals()
     }
 
     /// Returns the max supply (in base units) of the faucet.
     ///
     /// This is the highest amount of tokens that can be minted from this faucet.
     pub fn max_supply(&self) -> Felt {
-        self.faucet.max_supply()
+        self.metadata.max_supply()
     }
 
     /// Returns the token supply (in base units) of the faucet.
@@ -184,7 +235,7 @@ impl NetworkFungibleFaucet {
     /// This is the amount of tokens that were minted from the faucet so far. Its value can never
     /// exceed [`Self::max_supply`].
     pub fn token_supply(&self) -> Felt {
-        self.faucet.token_supply()
+        self.metadata.token_supply()
     }
 
     /// Returns the owner account ID of the faucet.
@@ -205,22 +256,21 @@ impl NetworkFungibleFaucet {
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Sets the token_supply (in base units) of the basic fungible faucet.
+    /// Sets the token_supply (in base units) of the network fungible faucet.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        self.faucet = self.faucet.with_token_supply(token_supply)?;
-
+        self.metadata = self.metadata.with_token_supply(token_supply)?;
         Ok(self)
     }
 }
 
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
-        let metadata_word = network_faucet.faucet.to_metadata_word();
+        let metadata_slot = network_faucet.metadata.into();
 
         // Convert AccountId into its Word encoding for storage.
         let owner_account_id_word: Word = [
@@ -231,19 +281,28 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
         ]
         .into();
 
-        let metadata_slot =
-            StorageSlot::with_value(NetworkFungibleFaucet::metadata_slot().clone(), metadata_word);
         let owner_slot = StorageSlot::with_value(
             NetworkFungibleFaucet::owner_config_slot().clone(),
             owner_account_id_word,
         );
 
+        let storage_schema = StorageSchema::new([
+            NetworkFungibleFaucet::metadata_slot_schema(),
+            NetworkFungibleFaucet::owner_config_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(NetworkFungibleFaucet::NAME)
+            .with_description("Network fungible faucet component for minting and burning tokens")
+            .with_supported_type(AccountType::FungibleFaucet)
+            .with_storage_schema(storage_schema);
+
         AccountComponent::new(
             network_fungible_faucet_library(),
-            vec![metadata_slot, owner_slot]
+            vec![metadata_slot, owner_slot],
+            metadata,
         )
-            .expect("network fungible faucet component should satisfy the requirements of a valid account component")
-            .with_supported_type(AccountType::FungibleFaucet)
+        .expect("network fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 

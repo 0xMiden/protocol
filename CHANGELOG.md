@@ -13,12 +13,19 @@
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
+- Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
+- Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
+- Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
 
 ### Changes
 
+- Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
+- [BREAKING] Made `AccountComponentMetadata` a required parameter of `AccountComponent::new()`; removed `with_supported_type`, `with_supports_all_types`, and `with_metadata` methods from `AccountComponent`; simplified `AccountComponentMetadata::new()` to take just `name`; renamed `AccountComponentTemplateError` to `ComponentMetadataError` ([#2373](https://github.com/0xMiden/miden-base/pull/2373), [#2395](https://github.com/0xMiden/miden-base/pull/2395)).
+- Fixed MASM inline comment casing to adhere to commenting conventions ([#2398](https://github.com/0xMiden/miden-base/pull/2398)).
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - Moved `NoteExecutionHint` to `miden-standards` ([#2378](https://github.com/0xMiden/miden-base/pull/2378)).
 - Added `miden::protocol::auth` module with public auth event constants ([#2377](https://github.com/0xMiden/miden-base/pull/2377)).
+- Replaced auth event constant workarounds with direct imports now that `miden-assembly` v0.20.6 supports it ([#2404](https://github.com/0xMiden/miden-base/pull/2404)).
 - [BREAKING] Prefixed transaction kernel events with `miden::protocol` ([#2364](https://github.com/0xMiden/miden-base/pull/2364)).
 - [BREAKING] Simplified `NoteMetadata::new()` constructor to not require tag parameter; tag defaults to zero and can be set via `with_tag()` builder method ([#2384](https://github.com/0xMiden/miden-base/pull/2384)).
 - [BREAKING] Renamed `WellKnownComponent` to `StandardAccountComponent`, `WellKnownNote` to `StandardNote`, and `WellKnownNoteAttachment` to `StandardNoteAttachment` ([#2332](https://github.com/0xMiden/miden-base/pull/2332)).

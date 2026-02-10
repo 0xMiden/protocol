@@ -1,6 +1,7 @@
 use miden::protocol::asset
 use miden::protocol::active_account
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::FAUCET_MINT_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::FAUCET_BURN_ASSET_OFFSET
 
 #! Creates a fungible asset for the faucet the transaction is being executed against.
 #!
@@ -67,7 +68,7 @@ end
 #!
 #! Invocation: exec
 pub proc mint
-    exec.kernel_proc_offsets::faucet_mint_asset_offset
+    push.FAUCET_MINT_ASSET_OFFSET
     # => [offset, ASSET]
 
     # pad the stack
@@ -102,7 +103,7 @@ end
 #!
 #! Invocation: exec
 pub proc burn
-    exec.kernel_proc_offsets::faucet_burn_asset_offset
+    push.FAUCET_BURN_ASSET_OFFSET
     # => [offset, ASSET]
 
     # pad the stack
