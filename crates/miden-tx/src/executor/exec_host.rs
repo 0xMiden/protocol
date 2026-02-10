@@ -365,14 +365,22 @@ where
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
 
-    /// Handles a request for a [`NoteScript`] during transaction execution.
+    /// Handles a request for a [`NoteScript`] during transaction execution when the script is not
+    /// already in the advice provider.
     ///
     /// Standard note scripts (P2ID, etc.) are resolved directly from [`StandardNote`], avoiding a
     /// data store round-trip. Non-standard scripts are fetched from the [`DataStore`].
     ///
     /// The resolved script is used to build a [`NoteRecipient`], which is then used to create
     /// an [`OutputNoteBuilder`]. This function is only called for notes where the script is not
-    /// already available in the advice provider.
+    /// already in the advice provider.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The note is public and the script is not found in the data store.
+    /// - Constructing the recipient with the fetched script does not match the expected recipient
+    ///   digest.
+    /// - The data store returns an error when fetching the script.
     async fn on_note_script_requested(
         &mut self,
         note_idx: usize,
