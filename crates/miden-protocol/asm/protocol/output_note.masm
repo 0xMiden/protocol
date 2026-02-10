@@ -1,7 +1,12 @@
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_CREATE_OFFSET
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::note
 
-# CONSTANTS
+# CONSTANTS
 # =================================================================================================
 
 # Re-export constants for note attachment kinds
@@ -38,7 +43,7 @@ pub proc create
     padw padw swapdw drop
     # => [tag, note_type, RECIPIENT, pad(9)]
 
-    exec.kernel_proc_offsets::output_note_create_offset
+    push.OUTPUT_NOTE_CREATE_OFFSET
     # => [offset, tag, note_type, RECIPIENT, pad(9)]
 
     syscall.exec_kernel_proc
@@ -70,7 +75,7 @@ pub proc get_assets_info
     push.0.0 movup.2
     # => [note_index, 0, 0]
 
-    exec.kernel_proc_offsets::output_note_get_assets_info_offset
+    push.OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
     # => [offset, note_index, 0, 0]
 
     # pad the stack
@@ -132,7 +137,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_asset
-    movup.4 exec.kernel_proc_offsets::output_note_add_asset_offset
+    movup.4 push.OUTPUT_NOTE_ADD_ASSET_OFFSET
     # => [offset, note_idx, ASSET]
 
     # pad the stack before the syscall to prevent accidental modification of the deeper stack
@@ -175,7 +180,7 @@ end
 #!
 #! Invocation: exec
 pub proc set_attachment
-    exec.kernel_proc_offsets::output_note_set_attachment_offset
+    push.OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
     # => [offset, note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
 
     # pad the stack before the syscall
@@ -266,7 +271,7 @@ pub proc get_recipient
     push.0.0 movup.2
     # => [note_index, 0, 0]
 
-    exec.kernel_proc_offsets::output_note_get_recipient_offset
+    push.OUTPUT_NOTE_GET_RECIPIENT_OFFSET
     # => [offset, note_index, 0, 0]
 
     # pad the stack
@@ -300,7 +305,7 @@ pub proc get_metadata
     push.0.0 movup.2
     # => [note_index, 0, 0]
 
-    exec.kernel_proc_offsets::output_note_get_metadata_offset
+    push.OUTPUT_NOTE_GET_METADATA_OFFSET
     # => [offset, note_index, 0, 0]
 
     # pad the stack
