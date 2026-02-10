@@ -28,6 +28,9 @@ pub use asset_witness::AssetWitness;
 mod vault_key;
 pub use vault_key::AssetVaultKey;
 
+mod asset_id;
+pub use asset_id::AssetId;
+
 // ASSET VAULT
 // ================================================================================================
 
@@ -60,9 +63,10 @@ impl AssetVault {
     /// Returns a new [AssetVault] initialized with the provided assets.
     pub fn new(assets: &[Asset]) -> Result<Self, AssetVaultError> {
         Ok(Self {
-            // TODO(expand_assets): Replace with hashed key.
             asset_tree: Smt::with_entries(
-                assets.iter().map(|asset| (*asset.vault_key().as_word(), asset.to_value_word())),
+                assets.iter().map(|asset| {
+                    (asset.vault_key().as_hashed_key().as_word(), asset.to_value_word())
+                }),
             )
             .map_err(AssetVaultError::DuplicateAsset)?,
         })
@@ -79,7 +83,7 @@ impl AssetVault {
     /// Returns the asset corresponding to the provided asset vault key, or `None` if the asset
     /// doesn't exist.
     pub fn get(&self, asset_vault_key: AssetVaultKey) -> Option<Asset> {
-        let word = self.asset_tree.get_value(asset_vault_key.as_word());
+        let word = self.asset_tree.get_value(&asset_vault_key.as_hashed_key().as_word());
 
         if word.is_empty() {
             None
@@ -91,7 +95,7 @@ impl AssetVault {
     /// Returns true if the specified non-fungible asset is stored in this vault.
     pub fn has_non_fungible_asset(&self, asset: NonFungibleAsset) -> Result<bool, AssetVaultError> {
         // check if the asset is stored in the vault
-        match self.asset_tree.get_value(&asset.vault_key().into()) {
+        match self.asset_tree.get_value(&asset.vault_key().as_hashed_key().as_word()) {
             asset if asset == Smt::EMPTY_VALUE => Ok(false),
             _ => Ok(true),
         }
@@ -109,7 +113,7 @@ impl AssetVault {
 
         // if the tree value is [0, 0, 0, 0], the asset is not stored in the vault
         match self.asset_tree.get_value(
-            &AssetVaultKey::from_account_id(faucet_id)
+            &AssetVaultKey::new_fungible(faucet_id)
                 .expect("faucet ID should be of type fungible")
                 .into(),
         ) {
@@ -133,7 +137,7 @@ impl AssetVault {
     ///
     /// The `vault_key` can be obtained with [`Asset::vault_key`].
     pub fn open(&self, vault_key: AssetVaultKey) -> AssetWitness {
-        let smt_proof = self.asset_tree.open(&vault_key.into());
+        let smt_proof = self.asset_tree.open(&vault_key.as_hashed_key().as_word());
         // SAFETY: The asset vault should only contain valid assets.
         AssetWitness::new_unchecked(smt_proof)
     }
@@ -218,15 +222,16 @@ impl AssetVault {
         asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
         // fetch current asset value from the tree and add the new asset to it.
-        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().into()) {
-            current if current == Smt::EMPTY_VALUE => asset,
-            current => {
-                let current = FungibleAsset::new_unchecked(current);
-                current.add(asset).map_err(AssetVaultError::AddFungibleAssetBalanceError)?
-            },
-        };
+        let new: FungibleAsset =
+            match self.asset_tree.get_value(&asset.vault_key().as_hashed_key().as_word()) {
+                current if current == Smt::EMPTY_VALUE => asset,
+                current => {
+                    let current = FungibleAsset::new_unchecked(current);
+                    current.add(asset).map_err(AssetVaultError::AddFungibleAssetBalanceError)?
+                },
+            };
         self.asset_tree
-            .insert(new.vault_key().into(), new.to_value_word())
+            .insert(new.vault_key().as_hashed_key().as_word(), new.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // return the new asset
@@ -243,10 +248,9 @@ impl AssetVault {
         asset: NonFungibleAsset,
     ) -> Result<NonFungibleAsset, AssetVaultError> {
         // add non-fungible asset to the vault
-        // TODO(expand_assets): Replace with hashed key.
         let old = self
             .asset_tree
-            .insert(asset.vault_key().into(), asset.to_value_word())
+            .insert(asset.vault_key().as_hashed_key().as_word(), asset.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // if the asset already exists, return an error
@@ -290,7 +294,10 @@ impl AssetVault {
         asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
         // fetch the asset from the vault.
-        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().into()) {
+        let new: FungibleAsset = match self
+            .asset_tree
+            .get_value(&asset.vault_key().as_hashed_key().as_word())
+        {
             current if current == Smt::EMPTY_VALUE => {
                 return Err(AssetVaultError::FungibleAssetNotFound(asset));
             },
@@ -306,7 +313,7 @@ impl AssetVault {
             _ => new.to_value_word(),
         };
         self.asset_tree
-            .insert(new.vault_key().into(), value)
+            .insert(new.vault_key().as_hashed_key().as_word(), value)
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // return the asset that was removed.
@@ -326,7 +333,7 @@ impl AssetVault {
         // remove the asset from the vault.
         let old = self
             .asset_tree
-            .insert(asset.vault_key().into(), Smt::EMPTY_VALUE)
+            .insert(asset.vault_key().as_hashed_key().as_word(), Smt::EMPTY_VALUE)
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
         // return an error if the asset did not exist in the vault.

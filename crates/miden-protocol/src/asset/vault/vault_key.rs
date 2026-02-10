@@ -1,107 +1,119 @@
-use core::fmt;
+use alloc::boxed::Box;
+use alloc::string::String;
 
+use miden_core::LexicographicWord;
 use miden_crypto::merkle::smt::LeafIndex;
 use miden_processor::SMT_DEPTH;
+use miden_protocol_macros::WordWrapper;
 
-use crate::Word;
-use crate::account::AccountType::FungibleFaucet;
-use crate::account::{AccountId, AccountIdPrefix};
+use crate::account::AccountId;
+use crate::account::AccountType::{self};
+use crate::asset::vault::AssetId;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::errors::AssetError;
+use crate::{Felt, FieldElement, Hasher, Word};
 
-/// The key of an [`Asset`] in the asset vault.
+/// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
-/// The layout of an asset key is:
-/// - Fungible asset key: `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
-/// - Non-fungible asset key: `[faucet_id_prefix, hash1, hash2, hash0']`, where `hash0'` is
-///   equivalent to `hash0` with the fungible bit set to `0`. See [`NonFungibleAsset::vault_key`]
-///   for more details.
+/// Note that the asset vault key is not used directly as the key in an asset vault. See
+/// the derived [`AssetVaultKeyHash`] for details.
 ///
-/// For details on the layout of an asset, see the documentation of [`Asset`].
+/// Its [`Word`] layout is:
+/// ```text
+/// [
+///   asset_id_suffix (64 bits),
+///   asset_id_prefix (64 bits),
+///   faucet_id_suffix (56 bits),
+///   faucet_id_prefix (64 bits)
+/// ]
+/// ```
 ///
-/// ## Guarantees
-///
-/// This type guarantees that it contains a valid fungible or non-fungible asset key:
-/// - For fungible assets
-///   - The felt at index 3 has the fungible bit set to 1 and it is a valid account ID prefix.
-///   - The felt at index 2 is a valid account ID suffix.
-/// - For non-fungible assets
-///   - The felt at index 3 has the fungible bit set to 0.
-///   - The felt at index 0 is a valid account ID prefix.
-///
-/// The fungible bit is the bit in the [`AccountId`] that encodes whether the ID is a faucet.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct AssetVaultKey(Word);
+/// See the [`Asset`] documentation for the differences between fungible and non-fungible assets.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct AssetVaultKey {
+    /// The asset ID of the vault key.
+    asset_id: AssetId,
+
+    /// The ID of the faucet that issued the asset.
+    faucet_id: AccountId,
+
+    /// The cached hash of the vault key's word representation for use in the asset vault.
+    key_hash: AssetVaultKeyHash,
+}
 
 impl AssetVaultKey {
-    /// Creates a new [`AssetVaultKey`] from the given [`Word`] **without performing validation**.
+    /// Creates an [`AssetVaultKey`] from its parts.
+    pub fn new(asset_id: AssetId, faucet_id: AccountId) -> Self {
+        let word = vault_key_to_word(asset_id, faucet_id);
+        let key_hash = Hasher::hash_elements(word.as_elements());
+        let key_hash = AssetVaultKeyHash::from_raw(key_hash);
+
+        Self { asset_id, faucet_id, key_hash }
+    }
+
+    /// Returns the word representation of the vault key.
     ///
-    /// ## Warning
-    ///
-    /// This function **does not check** whether the provided `Word` represents a valid
-    /// fungible or non-fungible asset key.
-    pub fn new_unchecked(value: Word) -> Self {
-        Self(value)
+    /// See the type-level documentation for details.
+    pub fn to_word(self) -> Word {
+        vault_key_to_word(self.asset_id, self.faucet_id)
     }
 
-    /// Returns an [`AccountIdPrefix`] from the asset key.
-    pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
-        if self.is_fungible() {
-            AccountIdPrefix::new_unchecked(self.0[3])
-        } else {
-            AccountIdPrefix::new_unchecked(self.0[0])
-        }
+    /// Returns the [`AssetVaultKeyHash`] of the vault key for use in the asset vault.
+    pub fn as_hashed_key(self) -> AssetVaultKeyHash {
+        self.key_hash
     }
 
-    /// Returns the [`AccountId`] from the asset key if it is a fungible asset, `None` otherwise.
-    pub fn faucet_id(&self) -> Option<AccountId> {
-        if self.is_fungible() {
-            Some(AccountId::new_unchecked([self.0[3], self.0[2]]))
-        } else {
-            None
-        }
+    /// Returns the [`AssetId`] of the vault key that distinguishes different assets issued by the
+    /// same faucet.
+    pub fn asset_id(&self) -> AssetId {
+        self.asset_id
     }
 
-    /// Returns the leaf index of a vault key.
-    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.0)
+    /// Returns the [`AccountId`] of the faucet that issued the asset.
+    pub fn faucet_id(&self) -> AccountId {
+        self.faucet_id
     }
 
     /// Constructs a fungible asset's key from a faucet ID.
     ///
     /// Returns `None` if the provided ID is not of type
     /// [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet)
-    pub fn from_account_id(faucet_id: AccountId) -> Option<Self> {
-        match faucet_id.account_type() {
-            FungibleFaucet => {
-                let mut key = Word::empty();
-                key[2] = faucet_id.suffix();
-                key[3] = faucet_id.prefix().as_felt();
-                Some(AssetVaultKey::new_unchecked(key))
-            },
-            _ => None,
+    pub fn new_fungible(faucet_id: AccountId) -> Option<Self> {
+        if matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
+            let asset_id = AssetId::new(Felt::ZERO, Felt::ZERO);
+            Some(Self::new(asset_id, faucet_id))
+        } else {
+            None
         }
-    }
-
-    /// Returns a reference to the inner [Word] of this key.
-    pub fn as_word(&self) -> &Word {
-        &self.0
     }
 
     /// Returns `true` if the asset key is for a fungible asset, `false` otherwise.
     fn is_fungible(&self) -> bool {
-        self.0[0].as_int() == 0 && self.0[1].as_int() == 0
-    }
-}
-
-impl fmt::Display for AssetVaultKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        matches!(self.faucet_id.account_type(), AccountType::FungibleFaucet)
     }
 }
 
 // CONVERSIONS
 // ================================================================================================
+
+impl From<AssetVaultKey> for Word {
+    fn from(vault_key: AssetVaultKey) -> Self {
+        vault_key.to_word()
+    }
+}
+
+impl Ord for AssetVaultKey {
+    /// Implements comparison based on [`LexicographicWord`].
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        LexicographicWord::new(self.to_word()).cmp(&LexicographicWord::new(other.to_word()))
+    }
+}
+
+impl PartialOrd for AssetVaultKey {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl TryFrom<Word> for AssetVaultKey {
     type Error = AssetError;
@@ -111,18 +123,18 @@ impl TryFrom<Word> for AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - TODO(expand_assets)
+    /// - the faucet ID in the key is invalid.
     fn try_from(key: Word) -> Result<Self, Self::Error> {
-        // TODO(expand_assets): Implement validation once the new structure of the asset vault
-        // key is defined.
+        let asset_id_suffix = key[0];
+        let asset_id_prefix = key[1];
+        let faucet_id_suffix = key[2];
+        let faucet_id_prefix = key[3];
 
-        Ok(Self::new_unchecked(key))
-    }
-}
+        let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
+        let faucet_id = AccountId::try_from([faucet_id_prefix, faucet_id_suffix])
+            .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
-impl From<AssetVaultKey> for Word {
-    fn from(vault_key: AssetVaultKey) -> Self {
-        vault_key.0
+        Ok(Self::new(asset_id, faucet_id))
     }
 }
 
@@ -141,6 +153,36 @@ impl From<FungibleAsset> for AssetVaultKey {
 impl From<NonFungibleAsset> for AssetVaultKey {
     fn from(non_fungible_asset: NonFungibleAsset) -> Self {
         non_fungible_asset.vault_key()
+    }
+}
+
+fn vault_key_to_word(asset_id: AssetId, faucet_id: AccountId) -> Word {
+    Word::new([
+        asset_id.suffix(),
+        asset_id.prefix(),
+        faucet_id.suffix(),
+        faucet_id.prefix().as_felt(),
+    ])
+}
+
+// ASSET VAULT KEY HASH
+// ================================================================================================
+
+/// The key of an asset in the [`AssetVault`](crate::asset::AssetVault).
+///
+/// The hash combines the asset ID and faucet ID into a single hashed value to ensure that assets
+/// from the _same_ faucet with _different_ IDs map to different leaves, while assets sharing both
+/// IDs produce identical keys.
+///
+/// This ensures that non-fungible assets issued by the same faucet are stored in different leaves,
+/// while fungible assets issued by the same faucet are stored in the same leaf.
+#[derive(Debug, Clone, Copy, WordWrapper, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AssetVaultKeyHash(Word);
+
+impl AssetVaultKeyHash {
+    /// Returns the leaf index of a vault key.
+    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
+        LeafIndex::<SMT_DEPTH>::from(self.0)
     }
 }
 
@@ -169,7 +211,7 @@ mod tests {
         );
 
         let key =
-            AssetVaultKey::from_account_id(id).expect("Expected AssetVaultKey for FungibleFaucet");
+            AssetVaultKey::new_fungible(id).expect("Expected AssetVaultKey for FungibleFaucet");
 
         // faucet_id_prefix() should match AccountId prefix
         assert_eq!(key.faucet_id_prefix(), id.prefix());
