@@ -1,4 +1,11 @@
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_INCR_NONCE_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_SET_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_SET_MAP_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_ADD_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_REMOVE_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
 
 # NATIVE ACCOUNT PROCEDURES
 # =================================================================================================
@@ -25,7 +32,7 @@ pub proc get_id
     push.1
     # => [is_native = 1, pad(14)]
 
-    exec.kernel_proc_offsets::account_get_id_offset
+    push.ACCOUNT_GET_ID_OFFSET
     # => [offset, is_native = 0, pad(14)]
 
     syscall.exec_kernel_proc
@@ -57,7 +64,7 @@ pub proc incr_nonce
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_incr_nonce_offset
+    push.ACCOUNT_INCR_NONCE_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -82,7 +89,7 @@ end
 #! return the empty word even if the initial storage commitment and the current storage commitment
 #! are identical (storage hasn't changed). This is because the delta for a new account must
 #! represent its entire newly created state, and the initial storage in a transaction is initialized
-#! to the storage that the account ID commits to, which may be non-empty. This does not have any 
+#! to the storage that the account ID commits to, which may be non-empty. This does not have any
 #! consequences other than being inconsistent in this edge case.
 #!
 #! Inputs:  []
@@ -98,7 +105,7 @@ pub proc compute_delta_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_compute_delta_commitment_offset
+    push.ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -129,7 +136,7 @@ end
 #!
 #! Invocation: exec
 pub proc set_item
-    exec.kernel_proc_offsets::account_set_item_offset
+    push.ACCOUNT_SET_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, VALUE]
 
     # pad the stack
@@ -165,7 +172,7 @@ end
 #!
 #! Invocation: exec
 pub proc set_map_item
-    exec.kernel_proc_offsets::account_set_map_item_offset
+    push.ACCOUNT_SET_MAP_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, KEY, VALUE]
 
     # pad the stack
@@ -207,7 +214,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_asset
-    exec.kernel_proc_offsets::account_add_asset_offset
+    push.ACCOUNT_ADD_ASSET_OFFSET
     # => [offset, ASSET]
 
     # pad the stack
@@ -237,7 +244,7 @@ end
 #!
 #! Invocation: exec
 pub proc remove_asset
-    exec.kernel_proc_offsets::account_remove_asset_offset
+    push.ACCOUNT_REMOVE_ASSET_OFFSET
     # => [offset, ASSET]
 
     # pad the stack
@@ -270,7 +277,7 @@ end
 #!
 #! Invocation: exec
 pub proc was_procedure_called
-    exec.kernel_proc_offsets::account_was_procedure_called_offset
+    push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
     # => [offset, PROC_ROOT]
 
     # pad the stack

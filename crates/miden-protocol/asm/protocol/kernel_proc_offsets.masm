@@ -4,677 +4,87 @@
 ### Account #####################################
 
 # Entire account commitment
-const ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET=0
-const ACCOUNT_COMPUTE_COMMITMENT_OFFSET=1
+pub const ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET=0
+pub const ACCOUNT_COMPUTE_COMMITMENT_OFFSET=1
 
 # ID
-const ACCOUNT_GET_ID_OFFSET=2
+pub const ACCOUNT_GET_ID_OFFSET=2
 
 # Nonce
-const ACCOUNT_GET_NONCE_OFFSET=3                      # accessor
-const ACCOUNT_INCR_NONCE_OFFSET=4                     # mutator
+pub const ACCOUNT_GET_NONCE_OFFSET=3                      # accessor
+pub const ACCOUNT_INCR_NONCE_OFFSET=4                     # mutator
 
 # Code
-const ACCOUNT_GET_CODE_COMMITMENT_OFFSET=5
+pub const ACCOUNT_GET_CODE_COMMITMENT_OFFSET=5
 
 # Storage
-const ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET=6
-const ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET=7
-const ACCOUNT_GET_ITEM_OFFSET=8
-const ACCOUNT_GET_INITIAL_ITEM_OFFSET=9
-const ACCOUNT_SET_ITEM_OFFSET=10
-const ACCOUNT_GET_MAP_ITEM_OFFSET=11
-const ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET=12
-const ACCOUNT_SET_MAP_ITEM_OFFSET=13
+pub const ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET=6
+pub const ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET=7
+pub const ACCOUNT_GET_ITEM_OFFSET=8
+pub const ACCOUNT_GET_INITIAL_ITEM_OFFSET=9
+pub const ACCOUNT_SET_ITEM_OFFSET=10
+pub const ACCOUNT_GET_MAP_ITEM_OFFSET=11
+pub const ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET=12
+pub const ACCOUNT_SET_MAP_ITEM_OFFSET=13
 
 # Vault
-const ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET=14
-const ACCOUNT_GET_VAULT_ROOT_OFFSET=15
-const ACCOUNT_ADD_ASSET_OFFSET=16
-const ACCOUNT_REMOVE_ASSET_OFFSET=17
+pub const ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET=14
+pub const ACCOUNT_GET_VAULT_ROOT_OFFSET=15
+pub const ACCOUNT_ADD_ASSET_OFFSET=16
+pub const ACCOUNT_REMOVE_ASSET_OFFSET=17
 pub const ACCOUNT_GET_ASSET_OFFSET=18
 pub const ACCOUNT_GET_INITIAL_ASSET_OFFSET=19
 
 # Delta
-const ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET=20
+pub const ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET=20
 
 # Procedure introspection
-const ACCOUNT_GET_NUM_PROCEDURES_OFFSET=21
-const ACCOUNT_GET_PROCEDURE_ROOT_OFFSET=22
-const ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET=23
-const ACCOUNT_HAS_PROCEDURE_OFFSET=24
+pub const ACCOUNT_GET_NUM_PROCEDURES_OFFSET=21
+pub const ACCOUNT_GET_PROCEDURE_ROOT_OFFSET=22
+pub const ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET=23
+pub const ACCOUNT_HAS_PROCEDURE_OFFSET=24
 
 ### Faucet ######################################
-const FAUCET_MINT_ASSET_OFFSET=25
-const FAUCET_BURN_ASSET_OFFSET=26
+pub const FAUCET_MINT_ASSET_OFFSET=25
+pub const FAUCET_BURN_ASSET_OFFSET=26
 
 ### Note ########################################
 
 # input notes
-const INPUT_NOTE_GET_METADATA_OFFSET=27
-const INPUT_NOTE_GET_ASSETS_INFO_OFFSET=28
-const INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET=29
-const INPUT_NOTE_GET_STORAGE_INFO_OFFSET=30
-const INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET=31
-const INPUT_NOTE_GET_RECIPIENT_OFFSET=32
+pub const INPUT_NOTE_GET_METADATA_OFFSET=27
+pub const INPUT_NOTE_GET_ASSETS_INFO_OFFSET=28
+pub const INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET=29
+pub const INPUT_NOTE_GET_STORAGE_INFO_OFFSET=30
+pub const INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET=31
+pub const INPUT_NOTE_GET_RECIPIENT_OFFSET=32
 
 # output notes
-const OUTPUT_NOTE_CREATE_OFFSET=33
-const OUTPUT_NOTE_GET_METADATA_OFFSET=34
-const OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET=35
-const OUTPUT_NOTE_GET_RECIPIENT_OFFSET=36
-const OUTPUT_NOTE_ADD_ASSET_OFFSET=37
-const OUTPUT_NOTE_SET_ATTACHMENT_OFFSET=38
+pub const OUTPUT_NOTE_CREATE_OFFSET=33
+pub const OUTPUT_NOTE_GET_METADATA_OFFSET=34
+pub const OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET=35
+pub const OUTPUT_NOTE_GET_RECIPIENT_OFFSET=36
+pub const OUTPUT_NOTE_ADD_ASSET_OFFSET=37
+pub const OUTPUT_NOTE_SET_ATTACHMENT_OFFSET=38
 
 ### Tx ##########################################
 
 # input notes
-const TX_GET_NUM_INPUT_NOTES_OFFSET=39
-const TX_GET_INPUT_NOTES_COMMITMENT_OFFSET=40
+pub const TX_GET_NUM_INPUT_NOTES_OFFSET=39
+pub const TX_GET_INPUT_NOTES_COMMITMENT_OFFSET=40
 
 # output notes
-const TX_GET_NUM_OUTPUT_NOTES_OFFSET=41
-const TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET=42
+pub const TX_GET_NUM_OUTPUT_NOTES_OFFSET=41
+pub const TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET=42
 
 # block info
-const TX_GET_BLOCK_COMMITMENT_OFFSET=43
-const TX_GET_BLOCK_NUMBER_OFFSET=44
-const TX_GET_BLOCK_TIMESTAMP_OFFSET=45
+pub const TX_GET_BLOCK_COMMITMENT_OFFSET=43
+pub const TX_GET_BLOCK_NUMBER_OFFSET=44
+pub const TX_GET_BLOCK_TIMESTAMP_OFFSET=45
 
 # foreign context
-const TX_START_FOREIGN_CONTEXT_OFFSET=46
-const TX_END_FOREIGN_CONTEXT_OFFSET=47
+pub const TX_START_FOREIGN_CONTEXT_OFFSET=46
+pub const TX_END_FOREIGN_CONTEXT_OFFSET=47
 
 # expiration data
-const TX_GET_EXPIRATION_DELTA_OFFSET=48               # accessor
-const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=49      # mutator
-
-# ACCESSORS
-# -------------------------------------------------------------------------------------------------
-
-### ACCOUNT #####################################
-
-#! Returns the offset of the `account_get_initial_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_initial_commitment` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc account_get_initial_commitment_offset
-    push.ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_compute_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_compute_commitment` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc account_compute_commitment_offset
-    push.ACCOUNT_COMPUTE_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_compute_delta_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_compute_delta_commitment` kernel procedure required
-#!   to get the address where this procedure is stored.
-pub proc account_compute_delta_commitment_offset
-    push.ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_get_id` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_id` kernel procedure required to get the address
-#!   where this procedure is stored.
-pub proc account_get_id_offset
-    push.ACCOUNT_GET_ID_OFFSET
-end
-
-#! Returns the offset of the `account_get_nonce` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_nonce` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_get_nonce_offset
-    push.ACCOUNT_GET_NONCE_OFFSET
-end
-
-#! Returns the offset of the `account_incr_nonce` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_incr_nonce` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_incr_nonce_offset
-    push.ACCOUNT_INCR_NONCE_OFFSET
-end
-
-#! Returns the offset of the `account_get_code_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_code_commitment` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc account_get_code_commitment_offset
-    push.ACCOUNT_GET_CODE_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_get_initial_storage_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_initial_storage_commitment` kernel procedure
-#!   required to get the address where this procedure is stored.
-pub proc account_get_initial_storage_commitment_offset
-    push.ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_compute_storage_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_compute_storage_commitment` kernel procedure required
-#!   to get the address where this procedure is stored.
-pub proc account_compute_storage_commitment_offset
-    push.ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `account_get_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_item` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_get_item_offset
-    push.ACCOUNT_GET_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_set_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_set_item` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_set_item_offset
-    push.ACCOUNT_SET_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_get_map_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_map_item` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_get_map_item_offset
-    push.ACCOUNT_GET_MAP_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_set_map_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_set_map_item` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_set_map_item_offset
-    push.ACCOUNT_SET_MAP_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_get_initial_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_initial_item` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc account_get_initial_item_offset
-    push.ACCOUNT_GET_INITIAL_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_get_initial_map_item` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_initial_map_item` kernel procedure required to 
-#!   get the address where this procedure is stored.
-pub proc account_get_initial_map_item_offset
-    push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
-end
-
-#! Returns the offset of the `account_get_initial_vault_root` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_initial_vault_root` kernel procedure required
-#!   to get the address where this procedure is stored.
-pub proc account_get_initial_vault_root_offset
-    push.ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
-end
-
-#! Returns the offset of the `account_get_vault_root` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_vault_root` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc account_get_vault_root_offset
-    push.ACCOUNT_GET_VAULT_ROOT_OFFSET
-end
-
-#! Returns the offset of the `account_add_asset` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_add_asset` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_add_asset_offset
-    push.ACCOUNT_ADD_ASSET_OFFSET
-end
-
-#! Returns the offset of the `account_remove_asset` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_remove_asset` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc account_remove_asset_offset
-    push.ACCOUNT_REMOVE_ASSET_OFFSET
-end
-
-#! Returns the offset of the `account_was_procedure_called` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_was_procedure_called` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc account_was_procedure_called_offset
-    push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
-end
-
-#! Returns the offset of the `account_has_procedure` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_has_procedure` kernel procedure required to get the 
-#!   address where this procedure is stored.
-pub proc account_has_procedure_offset
-    push.ACCOUNT_HAS_PROCEDURE_OFFSET
-end
-
-#! Returns the offset of the `account_get_num_procedures` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_num_procedures` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc account_get_num_procedures_offset
-    push.ACCOUNT_GET_NUM_PROCEDURES_OFFSET
-end
-
-#! Returns the offset of the `account_get_procedure_root` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `account_get_procedure_root` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc account_get_procedure_root_offset
-    push.ACCOUNT_GET_PROCEDURE_ROOT_OFFSET
-end
-
-### FAUCET ######################################
-
-#! Returns the offset of the `faucet_mint_asset` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `faucet_mint_asset` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc faucet_mint_asset_offset
-    push.FAUCET_MINT_ASSET_OFFSET
-end
-
-#! Returns the offset of the `faucet_burn_asset` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `faucet_burn_asset` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc faucet_burn_asset_offset
-    push.FAUCET_BURN_ASSET_OFFSET
-end
-
-### OUTPUT NOTE ########################################
-
-#! Returns the offset of the `output_note_create` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_create` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc output_note_create_offset
-    push.OUTPUT_NOTE_CREATE_OFFSET
-end
-
-#! Returns the offset of the `output_note_add_asset` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_add_asset` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc output_note_add_asset_offset
-    push.OUTPUT_NOTE_ADD_ASSET_OFFSET
-end
-
-#! Returns the offset of the `output_note_set_attachment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_set_attachment` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc output_note_set_attachment_offset
-    push.OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
-end
-
-
-#! Returns the offset of the `output_note_get_assets_info` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_get_assets_info` kernel procedure required to get
-#!  the address where this procedure is stored.
-pub proc output_note_get_assets_info_offset
-    push.OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
-end
-
-#! Returns the offset of the `output_note_get_recipient` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_get_recipient` kernel procedure required to get
-#!  the address where this procedure is stored.
-pub proc output_note_get_recipient_offset
-    push.OUTPUT_NOTE_GET_RECIPIENT_OFFSET
-end
-
-#! Returns the offset of the `output_note_get_metadata` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `output_note_get_metadata` kernel procedure required to get
-#!  the address where this procedure is stored.
-pub proc output_note_get_metadata_offset
-    push.OUTPUT_NOTE_GET_METADATA_OFFSET
-end
-
-### INPUT NOTE ########################################
-
-#! Returns the offset of the `input_note_get_assets_info` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_assets_info` kernel procedure required to get
-#! the address where this procedure is stored.
-pub proc input_note_get_assets_info_offset
-    push.INPUT_NOTE_GET_ASSETS_INFO_OFFSET
-end
-
-#! Returns the offset of the `input_note_get_recipient` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_recipient` kernel procedure required to get
-#!  the address where this procedure is stored.
-pub proc input_note_get_recipient_offset
-    push.INPUT_NOTE_GET_RECIPIENT_OFFSET
-end
-
-#! Returns the offset of the `input_note_get_metadata` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_metadata` kernel procedure required to get
-#!  the address where this procedure is stored.
-pub proc input_note_get_metadata_offset
-    push.INPUT_NOTE_GET_METADATA_OFFSET
-end
-
-#! Returns the offset of the `input_note_get_serial_number` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_serial_number` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc input_note_get_serial_number_offset
-    push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
-end
-
-#! Returns the offset of the `input_note_get_storage_info` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_storage_info` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc input_note_get_storage_info_offset
-    push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
-end
-
-#! Returns the offset of the `input_note_get_script_root` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `input_note_get_script_root` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc input_note_get_script_root_offset
-    push.INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
-end
-
-### TRANSACTION #################################
-
-#! Returns the offset of the `tx_get_input_notes_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_input_notes_commitment` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc tx_get_input_notes_commitment_offset
-    push.TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `tx_get_output_notes_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_output_notes_commitment` kernel procedure required to
-#!   get the address where this procedure is stored.
-pub proc tx_get_output_notes_commitment_offset
-    push.TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `tx_get_num_input_notes` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_num_input_notes` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_num_input_notes_offset
-    push.TX_GET_NUM_INPUT_NOTES_OFFSET
-end
-
-#! Returns the offset of the `tx_get_num_output_notes` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_num_output_notes` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_num_output_notes_offset
-    push.TX_GET_NUM_OUTPUT_NOTES_OFFSET
-end
-
-#! Returns the offset of the `tx_get_block_commitment` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_block_commitment` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_block_commitment_offset
-    push.TX_GET_BLOCK_COMMITMENT_OFFSET
-end
-
-#! Returns the offset of the `tx_get_block_number` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_block_number` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_block_number_offset
-    push.TX_GET_BLOCK_NUMBER_OFFSET
-end
-
-#! Returns the offset of the `tx_get_block_timestamp` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_block_timestamp` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_block_timestamp_offset
-    push.TX_GET_BLOCK_TIMESTAMP_OFFSET
-end
-
-#! Returns the offset of the `tx_start_foreign_context` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_start_foreign_context` kernel procedure required to get
-#!   the address where this procedure is stored.
-pub proc tx_start_foreign_context_offset
-    push.TX_START_FOREIGN_CONTEXT_OFFSET
-end
-
-#! Returns the offset of the `tx_end_foreign_context` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_end_foreign_context` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_end_foreign_context_offset
-    push.TX_END_FOREIGN_CONTEXT_OFFSET
-end
-
-#! Returns the offset of the `tx_update_expiration_block_delta` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_update_expiration_block_delta` kernel procedure required
-#!   to get the address where this procedure is stored.
-pub proc tx_update_expiration_block_delta_offset
-    push.TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
-end
-
-#! Returns the offset of the `tx_get_expiration_delta` kernel procedure.
-#!
-#! Inputs:  []
-#! Outputs: [proc_offset]
-#!
-#! Where:
-#! - proc_offset is the offset of the `tx_get_expiration_delta` kernel procedure required to get the
-#!   address where this procedure is stored.
-pub proc tx_get_expiration_delta_offset
-    push.TX_GET_EXPIRATION_DELTA_OFFSET
-end
+pub const TX_GET_EXPIRATION_DELTA_OFFSET=48               # accessor
+pub const TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET=49      # mutator
