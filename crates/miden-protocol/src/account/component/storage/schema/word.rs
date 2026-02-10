@@ -8,7 +8,7 @@ use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, Schem
 use super::super::{InitStorageData, StorageValueName};
 use super::FeltSchema;
 use crate::account::StorageSlotName;
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 use crate::{Felt, FieldElement, Word};
 
 // WORD SCHEMA
@@ -66,7 +66,7 @@ impl WordSchema {
         value_name: StorageValueName,
         description: Option<String>,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         match self {
             WordSchema::Simple { r#type, default_value } => {
                 if *r#type == SchemaTypeId::void() {
@@ -88,7 +88,7 @@ impl WordSchema {
                     )
                     .is_some()
                 {
-                    return Err(AccountComponentTemplateError::DuplicateInitValueName(value_name));
+                    return Err(ComponentMetadataError::DuplicateInitValueName(value_name));
                 }
 
                 Ok(())
@@ -103,10 +103,10 @@ impl WordSchema {
     }
 
     /// Validates that the defined word type exists and its inner felts (if any) are valid.
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         let type_exists = SCHEMA_TYPE_REGISTRY.contains_word_type(&self.word_type());
         if !type_exists {
-            return Err(AccountComponentTemplateError::InvalidType(
+            return Err(ComponentMetadataError::InvalidType(
                 self.word_type().to_string(),
                 "Word".into(),
             ));
@@ -119,7 +119,7 @@ impl WordSchema {
         {
             SCHEMA_TYPE_REGISTRY
                 .validate_word_value(r#type, *default_value)
-                .map_err(AccountComponentTemplateError::StorageValueParsingError)?;
+                .map_err(ComponentMetadataError::StorageValueParsingError)?;
         }
 
         if let Some(felts) = self.value() {
@@ -140,13 +140,13 @@ impl WordSchema {
         &self,
         init_storage_data: &InitStorageData,
         slot_name: &StorageSlotName,
-    ) -> Result<Word, AccountComponentTemplateError> {
+    ) -> Result<Word, ComponentMetadataError> {
         let slot_prefix = StorageValueName::from_slot_name(slot_name);
         let slot_value = init_storage_data.slot_value_entry(slot_name);
         let has_fields = init_storage_data.has_field_entries_for_slot(slot_name);
 
         if init_storage_data.map_entries(slot_name).is_some() {
-            return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+            return Err(ComponentMetadataError::InvalidInitStorageValue(
                 slot_prefix,
                 "expected a value, got a map".into(),
             ));
@@ -155,7 +155,7 @@ impl WordSchema {
         match self {
             WordSchema::Simple { r#type, default_value } => {
                 if has_fields {
-                    return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+                    return Err(ComponentMetadataError::InvalidInitStorageValue(
                         slot_prefix,
                         "expected a value, got field entries".into(),
                     ));
@@ -169,7 +169,7 @@ impl WordSchema {
                             Ok(Word::empty())
                         } else {
                             default_value.as_ref().copied().ok_or_else(|| {
-                                AccountComponentTemplateError::InitValueNotProvided(slot_prefix)
+                                ComponentMetadataError::InitValueNotProvided(slot_prefix)
                             })
                         }
                     },
@@ -178,7 +178,7 @@ impl WordSchema {
             WordSchema::Composite { value } => {
                 if let Some(value) = slot_value {
                     if has_fields {
-                        return Err(AccountComponentTemplateError::InvalidInitStorageValue(
+                        return Err(ComponentMetadataError::InvalidInitStorageValue(
                             slot_prefix,
                             "expected a single value, got both value and field entries".into(),
                         ));
@@ -200,11 +200,11 @@ impl WordSchema {
         slot_prefix: &StorageValueName,
         label: &str,
         word: Word,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         match self {
             WordSchema::Simple { r#type, .. } => {
                 SCHEMA_TYPE_REGISTRY.validate_word_value(r#type, word).map_err(|err| {
-                    AccountComponentTemplateError::InvalidInitStorageValue(
+                    ComponentMetadataError::InvalidInitStorageValue(
                         slot_prefix.clone(),
                         format!("{label} does not match `{}`: {err}", r#type),
                     )
@@ -215,7 +215,7 @@ impl WordSchema {
                     let felt_type = felt_schema.felt_type();
                     SCHEMA_TYPE_REGISTRY.validate_felt_value(&felt_type, word[index]).map_err(
                         |err| {
-                            AccountComponentTemplateError::InvalidInitStorageValue(
+                            ComponentMetadataError::InvalidInitStorageValue(
                                 slot_prefix.clone(),
                                 format!("{label}[{index}] does not match `{felt_type}`: {err}"),
                             )
