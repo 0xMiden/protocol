@@ -53,7 +53,7 @@ impl AssetWitness {
     /// Returns `true` if this [`AssetWitness`] authenticates the provided [`AssetVaultKey`], i.e.
     /// if its leaf index matches, `false` otherwise.
     pub fn authenticates_asset_vault_key(&self, vault_key: AssetVaultKey) -> bool {
-        self.0.leaf().index() == vault_key.as_hashed_key().to_leaf_index()
+        self.0.leaf().index() == vault_key.to_leaf_index()
     }
 
     /// Searches for an [`Asset`] in the witness with the given `vault_key`.

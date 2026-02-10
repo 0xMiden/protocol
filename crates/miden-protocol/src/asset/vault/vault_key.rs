@@ -1,17 +1,15 @@
 use alloc::boxed::Box;
-use alloc::string::String;
 
 use miden_core::LexicographicWord;
 use miden_crypto::merkle::smt::LeafIndex;
 use miden_processor::SMT_DEPTH;
-use miden_protocol_macros::WordWrapper;
 
 use crate::account::AccountId;
 use crate::account::AccountType::{self};
 use crate::asset::vault::AssetId;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::errors::AssetError;
-use crate::{Felt, FieldElement, Hasher, Word};
+use crate::{Felt, FieldElement, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
@@ -36,19 +34,12 @@ pub struct AssetVaultKey {
 
     /// The ID of the faucet that issued the asset.
     faucet_id: AccountId,
-
-    /// The cached hash of the vault key's word representation for use in the asset vault.
-    key_hash: AssetVaultKeyHash,
 }
 
 impl AssetVaultKey {
     /// Creates an [`AssetVaultKey`] from its parts.
     pub fn new(asset_id: AssetId, faucet_id: AccountId) -> Self {
-        let word = vault_key_to_word(asset_id, faucet_id);
-        let key_hash = Hasher::hash_elements(word.as_elements());
-        let key_hash = AssetVaultKeyHash::from_raw(key_hash);
-
-        Self { asset_id, faucet_id, key_hash }
+        Self { asset_id, faucet_id }
     }
 
     /// Returns the word representation of the vault key.
@@ -56,11 +47,6 @@ impl AssetVaultKey {
     /// See the type-level documentation for details.
     pub fn to_word(self) -> Word {
         vault_key_to_word(self.asset_id, self.faucet_id)
-    }
-
-    /// Returns the [`AssetVaultKeyHash`] of the vault key for use in the asset vault.
-    pub fn as_hashed_key(self) -> AssetVaultKeyHash {
-        self.key_hash
     }
 
     /// Returns the [`AssetId`] of the vault key that distinguishes different assets issued by the
@@ -90,6 +76,11 @@ impl AssetVaultKey {
     /// Returns `true` if the asset key is for a fungible asset, `false` otherwise.
     fn is_fungible(&self) -> bool {
         matches!(self.faucet_id.account_type(), AccountType::FungibleFaucet)
+    }
+
+    /// Returns the leaf index of a vault key.
+    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
+        LeafIndex::<SMT_DEPTH>::from(self.to_word())
     }
 }
 
@@ -163,27 +154,6 @@ fn vault_key_to_word(asset_id: AssetId, faucet_id: AccountId) -> Word {
         faucet_id.suffix(),
         faucet_id.prefix().as_felt(),
     ])
-}
-
-// ASSET VAULT KEY HASH
-// ================================================================================================
-
-/// The key of an asset in the [`AssetVault`](crate::asset::AssetVault).
-///
-/// The hash combines the asset ID and faucet ID into a single hashed value to ensure that assets
-/// from the _same_ faucet with _different_ IDs map to different leaves, while assets sharing both
-/// IDs produce identical keys.
-///
-/// This ensures that non-fungible assets issued by the same faucet are stored in different leaves,
-/// while fungible assets issued by the same faucet are stored in the same leaf.
-#[derive(Debug, Clone, Copy, WordWrapper, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AssetVaultKeyHash(Word);
-
-impl AssetVaultKeyHash {
-    /// Returns the leaf index of a vault key.
-    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        LeafIndex::<SMT_DEPTH>::from(self.0)
-    }
 }
 
 // TESTS
