@@ -428,6 +428,8 @@ end
 
 #! Returns the ID of the foreign account which is going to be loaded during the upcoming FPI call.
 #!
+#! WARNING: The ID felts may be zero.
+#!
 #! Inputs:  []
 #! Outputs: [foreign_account_id_prefix, foreign_account_id_suffix]
 #!

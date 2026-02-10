@@ -45,9 +45,9 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED=
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
 
-const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero"
+const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
 
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero"
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
@@ -1381,7 +1381,7 @@ end
 #! several calls without any changes to the setup, for example (pseudo code):
 #!
 #! ```
-#!     tx_prepare_fpi_call(foreign_account_id, foreign_account::has_asset, 0)
+#!     tx_prepare_fpi(foreign_account_id, foreign_account::has_asset, 0)
 #!     for ASSET in asset_list {
 #!         tx_exec_foreign_proc([ASSET[0], ASSET[1], ASSET[2], ASSET[3], pad(11)])
 #!     }
@@ -1398,7 +1398,11 @@ end
 #! - foreign_procedure_input[15] is the 16th (last) value of the foreign procedure inputs.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi_call(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
+    # validate the provided foreign account ID
+    dup.1 dup.1 exec.account_id::validate
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_input[15], pad(9)]
+
     # store the foreign account ID
     exec.memory::set_fpi_account_id
     # => [FOREIGN_PROC_ROOT, foreign_procedure_input[15], pad(11)]
@@ -1414,8 +1418,8 @@ end
 
 #! Executes the procedure against the foreign account.
 #!
-#! This procedure should be executed after the `tx_prepare_fpi_call`, so it is expected for the 
-#! foreign account ID and foreign procedure root to be already loaded to the kernel memory.
+#! This procedure should be executed after the `tx_prepare_fpi`, so it is expected for the foreign
+#! account ID and foreign procedure root to be already loaded to the kernel memory.
 #!
 #! Inputs:  [foreign_procedure_inputs(15), pad]
 #! Outputs: [foreign_procedure_outputs(16)]
@@ -1445,7 +1449,7 @@ pub proc tx_exec_foreign_proc
     swap drop movdn.15
     # => [foreign_procedure_inputs(16)]
 
-    # load the ID of the foreign account onto the stacks
+    # load the ID of the foreign account onto the stack
     exec.memory::get_fpi_account_id
     # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
 
