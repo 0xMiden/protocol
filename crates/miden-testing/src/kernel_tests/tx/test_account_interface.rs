@@ -536,13 +536,19 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
             tx_args.clone(),
         )
         .await?;
-    assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), format!(
-                        "P2IDE note should have {} storage items, but {} was provided",
-                        StandardNote::P2IDE.expected_num_storage_items(),
-                        p2ide_wrong_inputs_number.recipient().storage().num_items()
-                    ));
-    });
+    assert_matches!(
+        consumability_info,
+        NoteConsumptionStatus::NeverConsumable(reason) => {
+            assert_eq!(
+                reason.to_string(),
+                format!(
+                    "invalid note storage layout: invalid note storage length: expected {}, got {}",
+                    StandardNote::P2IDE.expected_num_storage_items(),
+                    p2ide_wrong_inputs_number.recipient().storage().num_items()
+                )
+            );
+        }
+    );
 
     // check the note with invalid target account ID
     // --------------------------------------------------------------------------------------------

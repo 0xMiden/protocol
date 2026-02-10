@@ -231,12 +231,8 @@ impl StandardNote {
                 // handle the case when the target account of the transaction is sender
                 if target_account_id == note.metadata().sender() {
                     // Effective unlock height = max(reclaim, timelock)
-                    let consumable_after = match (reclaim_height, timelock_height) {
-                        (Some(r), Some(t)) => Some(r.max(t)),
-                        (Some(r), None) => Some(r),
-                        (None, Some(t)) => Some(t),
-                        (None, None) => None,
-                    };
+                    let consumable_after =
+                        [reclaim_height, timelock_height].into_iter().flatten().max();
 
                     // For the sender, the current block height needs to have reached both reclaim
                     // and timelock height to be consumable.
