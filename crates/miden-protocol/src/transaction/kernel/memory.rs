@@ -91,7 +91,7 @@ pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
 // FPI call. This "buffer" value helps to work around the 15 value limitation of the
 // `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
 // values, could be executed as foreign.
-pub const UPCOMING_FOREIGN_PROC_BUFFER_VALUE_PTR: MemoryAddress = 14;
+pub const UPCOMING_FOREIGN_PROC_16TH_INPUT_VALUE_PTR: MemoryAddress = 14;
 
 // Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
 // This root is updated during the `prepare_fpi_call` kernel procedure.

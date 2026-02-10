@@ -221,16 +221,31 @@ end
 #! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
 #! Invocation: exec
-@locals(4)
+@locals(6) # foreign proc root (4) + foreign account ID (2)
 pub proc execute_foreign_procedure
+    # store the foreign account ID and foreign procedure root to the local memory
+    # this will allow us to get the 16th element of the foreign procedure inputs to pass it to the
+    # `tx_prepare_fpi_call` kernel procedure
+    loc_store.4 loc_store.5 loc_storew_be.0
+    # OS => [foreign_procedure_inputs(16)]
+    # LM => [FOREIGN_PROC_ROOT, foreign_account_id_prefix, foreign_account_id_suffix]
+
+    # move up the 16th element of the foreign procedure inputs
+    movup.15
+    # => [foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
+
+    # load the foreign account ID and foreign procedure root back to the operand stack
+    loc_loadw_be.0 loc_load.5 loc_load.4
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
+
     # get the tx_prepare_fpi_call procedure offset
     push.TX_PREPARE_FPI_CALL_OFFSET
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs(16)]
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
     
     # pad the stack before the syscall
     padw padw swapdw
     # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, 
-    #     foreign_procedure_input[0], pad(8), foreign_procedure_inputs(15)]
+    #     foreign_procedure_input[15], pad(8), foreign_procedure_inputs(15)]
 
     # store the foreign account ID, foreign procedure root, and the 0th element of the foreign
     # procedure inputs to the memory
