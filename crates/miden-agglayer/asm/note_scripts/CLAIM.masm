@@ -180,7 +180,7 @@ end
 #! - originNetwork: Origin network identifier (uint32)
 #! - originTokenAddress: Origin token address (address as 5 u32 felts)
 #! - destinationNetwork: Destination network identifier (uint32)
-#! - destinationAddress: Destination address (address as 5 u32 felts)
+#! - destinationAddress: 20-byte Ethereum address decodable into a Miden AccountId (5 u32 felts)
 #! - amount: Amount of tokens (uint256 as 8 u32 felts)
 #! - metadata: ABI encoded metadata (fixed size)
 #! - padding (3 felts)
