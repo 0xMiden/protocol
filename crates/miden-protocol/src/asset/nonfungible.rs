@@ -5,6 +5,7 @@ use core::fmt;
 
 use super::vault::AssetVaultKey;
 use super::{AccountIdPrefix, AccountType, Asset, AssetError, Felt, Hasher, Word};
+use crate::account::AccountId;
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 use crate::{FieldElement, WORD_SIZE};
 
@@ -123,6 +124,11 @@ impl NonFungibleAsset {
     /// Return ID prefix of the faucet which issued this asset.
     pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
         AccountIdPrefix::new_unchecked(self.0[FAUCET_ID_POS_BE])
+    }
+
+    /// Return ID of the faucet which issued this asset.
+    pub fn faucet_id(&self) -> AccountId {
+        todo!()
     }
 
     /// Returns the asset's key encoded to a [`Word`].

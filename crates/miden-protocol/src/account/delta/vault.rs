@@ -12,8 +12,8 @@ use super::{
     Serializable,
 };
 use crate::account::{AccountId, AccountType};
-use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use crate::{Felt, LexicographicWord, ONE, Word, ZERO};
+use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
+use crate::{Felt, LexicographicWord, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
 // ================================================================================================
@@ -327,12 +327,17 @@ impl FungibleAssetDelta {
                 "fungible asset iterator should never yield amount deltas of 0"
             );
 
-            let asset = FungibleAsset::new(*faucet_id, amount_delta.unsigned_abs())
-                .expect("absolute amount delta should be less than i64::MAX");
             let was_added = if *amount_delta > 0 { ONE } else { ZERO };
+            let amount_delta = Felt::try_from(amount_delta.unsigned_abs())
+                .expect("amount delta should be less than i64::MAX");
 
-            elements.extend_from_slice(&[DOMAIN_ASSET, was_added, ZERO, ZERO]);
-            elements.extend_from_slice(Word::from(asset).as_elements());
+            elements.extend_from_slice(&[
+                DOMAIN_ASSET,
+                was_added,
+                faucet_id.suffix(),
+                faucet_id.prefix().as_felt(),
+            ]);
+            elements.extend_from_slice(&[amount_delta, ZERO, ZERO, ZERO]);
         }
     }
 }
@@ -376,13 +381,13 @@ impl Deserializable for FungibleAssetDelta {
 /// in-kernel account delta which uses a link map.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NonFungibleAssetDelta(
-    BTreeMap<LexicographicWord<NonFungibleAsset>, NonFungibleDeltaAction>,
+    BTreeMap<LexicographicWord<AssetVaultKey>, (NonFungibleAsset, NonFungibleDeltaAction)>,
 );
 
 impl NonFungibleAssetDelta {
     /// Creates a new non-fungible asset delta.
     pub const fn new(
-        map: BTreeMap<LexicographicWord<NonFungibleAsset>, NonFungibleDeltaAction>,
+        map: BTreeMap<LexicographicWord<AssetVaultKey>, (NonFungibleAsset, NonFungibleDeltaAction)>,
     ) -> Self {
         Self(map)
     }
@@ -415,7 +420,9 @@ impl NonFungibleAssetDelta {
 
     /// Returns an iterator over the (key, value) pairs of the map.
     pub fn iter(&self) -> impl Iterator<Item = (&NonFungibleAsset, &NonFungibleDeltaAction)> {
-        self.0.iter().map(|(key, value)| (key.inner(), value))
+        self.0
+            .iter()
+            .map(|(_key, (non_fungible_asset, delta_action))| (non_fungible_asset, delta_action))
     }
 
     /// Merges another delta into this one, overwriting any existing values.
@@ -426,8 +433,8 @@ impl NonFungibleAssetDelta {
     /// Returns an error if duplicate non-fungible assets are added or removed.
     pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
         // Merge non-fungible assets. Each non-fungible asset can cancel others out.
-        for (&key, &action) in other.0.iter() {
-            self.apply_action(key.into_inner(), action)?;
+        for (&asset, &action) in other.iter() {
+            self.apply_action(asset, action)?;
         }
 
         Ok(())
@@ -446,13 +453,13 @@ impl NonFungibleAssetDelta {
         asset: NonFungibleAsset,
         action: NonFungibleDeltaAction,
     ) -> Result<(), AccountDeltaError> {
-        match self.0.entry(LexicographicWord::new(asset)) {
+        match self.0.entry(LexicographicWord::new(asset.vault_key())) {
             Entry::Vacant(entry) => {
-                entry.insert(action);
+                entry.insert((asset, action));
             },
             Entry::Occupied(entry) => {
-                let previous = *entry.get();
-                if previous == action {
+                let (_prev_asset, previous_action) = *entry.get();
+                if previous_action == action {
                     // Asset cannot be added nor removed twice.
                     return Err(AccountDeltaError::DuplicateNonFungibleVaultUpdate(asset));
                 }
@@ -471,8 +478,8 @@ impl NonFungibleAssetDelta {
     ) -> impl Iterator<Item = NonFungibleAsset> + '_ {
         self.0
             .iter()
-            .filter(move |&(_, cur_action)| cur_action == &action)
-            .map(|(key, _)| key.into_inner())
+            .filter(move |&(_, (_asset, cur_action))| cur_action == &action)
+            .map(|(_key, (asset, _action))| *asset)
     }
 
     /// Appends the non-fungible asset vault delta to the given `elements` from which the delta
@@ -484,8 +491,13 @@ impl NonFungibleAssetDelta {
                 NonFungibleDeltaAction::Add => ONE,
             };
 
-            elements.extend_from_slice(&[DOMAIN_ASSET, was_added, ZERO, ZERO]);
-            elements.extend_from_slice(Word::from(*asset).as_elements());
+            elements.extend_from_slice(&[
+                DOMAIN_ASSET,
+                was_added,
+                asset.faucet_id().suffix(),
+                asset.faucet_id().prefix().as_felt(),
+            ]);
+            elements.extend_from_slice(asset.to_value_word().as_elements());
         }
     }
 }
@@ -519,14 +531,20 @@ impl Deserializable for NonFungibleAssetDelta {
 
         let num_added = source.read_usize()?;
         for _ in 0..num_added {
-            let added_asset = source.read()?;
-            map.insert(LexicographicWord::new(added_asset), NonFungibleDeltaAction::Add);
+            let added_asset: NonFungibleAsset = source.read()?;
+            map.insert(
+                LexicographicWord::new(added_asset.vault_key()),
+                (added_asset, NonFungibleDeltaAction::Add),
+            );
         }
 
         let num_removed = source.read_usize()?;
         for _ in 0..num_removed {
-            let removed_asset = source.read()?;
-            map.insert(LexicographicWord::new(removed_asset), NonFungibleDeltaAction::Remove);
+            let removed_asset: NonFungibleAsset = source.read()?;
+            map.insert(
+                LexicographicWord::new(removed_asset.vault_key()),
+                (removed_asset, NonFungibleDeltaAction::Remove),
+            );
         }
 
         Ok(Self::new(map))
