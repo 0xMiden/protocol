@@ -64,6 +64,8 @@ pub proc compute_commitment
 
     padw
     # => [EMPTY_WORD, ID_AND_NONCE, CAPACITY]
+    swapw
+    # => [ID_AND_NONCE, EMPTY_WORD, CAPACITY]
 
     hperm
     # => [RATE, RATE, PERM]
@@ -171,7 +173,7 @@ end
 #! Outputs: [RATE, RATE, PERM]
 proc update_value_slot_delta
     exec.account::get_item_delta
-    # => [INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
+    # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE, RATE, PERM]
 
     exec.word::test_eq not
     # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE, RATE, PERM]
@@ -234,9 +236,9 @@ proc update_map_slot_delta
     # => [slot_idx, RATE, RATE, PERM]
 
     dup exec.account::get_slot_id
-    # => [slot_id_prefix, slot_id_suffix, slot_idx, RATE, RATE, PERM]
+    # => [slot_id_suffix, slot_id_prefix, slot_idx, RATE, RATE, PERM]
 
-    loc_store.1 loc_store.0
+    loc_store.0 loc_store.1
     # => [slot_idx, RATE, RATE, PERM]
 
     exec.memory::get_account_delta_storage_map_ptr

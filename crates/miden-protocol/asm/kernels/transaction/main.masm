@@ -100,11 +100,6 @@ proc main
         exec.note::prepare_note
         # => [note_script_root_ptr, NOTE_ARGS, pad(11), pad(16)]
 
-        # debug note script root loaded from memory
-        padw dup.4 mem_loadw_le
-        debug.stack.4
-        dropw
-
         # run note's script
         dyncall
         # => [X, X, X, X, pad(16)]
@@ -145,11 +140,6 @@ proc main
         # pad the stack
         padw padw swapdw push.0.0.0 movup.3
         # => [tx_script_root_ptr, pad(11), pad(16)]
-
-        # debug tx script root loaded from memory
-        padw dup.4 mem_loadw_le
-        debug.stack.4
-        dropw
 
         # load the transaction script arguments onto the stack
         exec.memory::get_tx_script_args movup.4

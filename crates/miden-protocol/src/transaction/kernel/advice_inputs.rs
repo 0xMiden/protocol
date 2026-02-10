@@ -18,10 +18,7 @@ use crate::transaction::{
 use crate::vm::AdviceInputs;
 use crate::{EMPTY_WORD, Felt, ONE, Word, ZERO};
 
-#[cfg(feature = "std")]
-use std::eprintln;
-#[cfg(feature = "std")]
-use miden_core::field::PrimeField64;
+
 
 // TRANSACTION ADVICE INPUTS
 // ================================================================================================
@@ -211,6 +208,7 @@ impl TransactionAdviceInputs {
 
         // --- auth procedure args --------------------------------------------
         self.extend_stack(tx_args.auth_args());
+
     }
 
     // BLOCKCHAIN INJECTIONS
@@ -393,13 +391,13 @@ impl TransactionAdviceInputs {
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
                     note_data.push(Felt::new(u64::from(proof.location().node_index_in_block())));
+
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag
                     note_data.push(ZERO)
                 },
             }
-
             let expected_len = match input_note {
                 InputNote::Authenticated { .. } => 37 + assets_data_len,
                 InputNote::Unauthenticated { .. } => 27 + assets_data_len,
@@ -409,23 +407,6 @@ impl TransactionAdviceInputs {
                 note_data_added,
                 expected_len,
                 "input note data length mismatch (added {note_data_added}, expected {expected_len}, assets_len {assets_data_len})"
-            );
-        }
-
-        #[cfg(feature = "std")]
-        {
-            let preview_len = note_data.len().min(24);
-            eprintln!(
-                "advice_inputs input_notes_commitment={:?}",
-                tx_inputs.input_notes().commitment().map(|v| v.as_canonical_u64())
-            );
-            eprintln!(
-                "advice_inputs note_data[0..{preview_len}]={:?}",
-                note_data
-                    .iter()
-                    .take(preview_len)
-                    .map(|v| v.as_canonical_u64())
-                    .collect::<Vec<_>>()
             );
         }
 

@@ -29,7 +29,6 @@ pub proc receive_asset
     # drop the final asset
     dropw
     exec.sys::truncate_stack
-    sdepth debug.stack.1 drop
     # => [pad(16)]
 end
 
@@ -93,9 +92,7 @@ pub proc add_assets_to_account
     while.true
         # load the asset at ptr
         loc_load.1
-        debug.stack.1
         mem_loadw_le
-        debug.stack.4
         # => [ASSET]
 
         # pad the stack before call
@@ -103,7 +100,6 @@ pub proc add_assets_to_account
         movupw.3
         # => [ASSET, pad(12)]
         exec.sys::truncate_stack
-        sdepth debug.stack.1 drop
 
         # add asset to the account
         call.receive_asset

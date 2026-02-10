@@ -71,19 +71,12 @@ pub proc write_assets_to_memory
     dup.6 swap
     # OS => [even_num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
-    debug.stack.6
-    debug.adv_stack.8
 
     # write the data from the advice stack into memory
     exec.mem::pipe_preimage_to_memory drop
     # OS => [num_assets, dest_ptr]
     # AS => []
 
-    # debug: read back the first asset word
-    dup.1
-    padw movup.4 mem_loadw_le
-    debug.stack.4
-    dropw
 end
 
 #! Writes the inputs data stored in the advice map to the memory specified by the provided

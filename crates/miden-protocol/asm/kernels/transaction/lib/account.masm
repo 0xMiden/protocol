@@ -697,7 +697,6 @@ pub proc add_asset_to_vault
     # => [ASSET, acct_vault_root_ptr, ASSET]
 
     # emit event to signal that an asset is going to be added to the account vault
-    debug.stack.9
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
 
     # add the asset to the account vault
@@ -734,7 +733,6 @@ pub proc remove_asset_from_vault
     # => [ASSET, acct_vault_root_ptr]
 
     # emit event to signal that an asset is going to be removed from the account vault
-    debug.stack.9
     emit.ACCOUNT_VAULT_BEFORE_REMOVE_ASSET_EVENT
 
     # remove the asset from the account vault
@@ -1483,7 +1481,7 @@ end
 #! WARNING: The index must be in bounds.
 #!
 #! Inputs:  [index]
-#! Outputs: [INITIAL_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
+#! Outputs: [INITIAL_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix]
 #!
 #! Where:
 #! - index is the index of the slot.
@@ -1509,6 +1507,8 @@ pub proc get_item_delta
 
     dup.1 add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
     # => [slot_id_prefix, slot_id_suffix, slot_ptr, offset]
+    swap
+    # => [slot_id_suffix, slot_id_prefix, slot_ptr, offset]
 
     # load the current value
     movup.2 exec.get_item_raw
@@ -1522,7 +1522,7 @@ pub proc get_item_delta
     # => [init_slot_ptr, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
 
     exec.get_item_raw
-    # => [INITIAL_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix]
+    # => [INITIAL_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix]
 end
 
 #! Gets the slot ID of the storage slot at the provided index.
@@ -1530,7 +1530,7 @@ end
 #! WARNING: The index must be in bounds.
 #!
 #! Inputs:  [index]
-#! Outputs: [slot_id_prefix, slot_id_suffix]
+#! Outputs: [slot_id_suffix, slot_id_prefix]
 #!
 #! Where:
 #! - index is the index of the slot.
@@ -1550,6 +1550,8 @@ pub proc get_slot_id
 
     swap add.ACCOUNT_SLOT_ID_PREFIX_OFFSET mem_load
     # => [slot_id_prefix, slot_id_suffix]
+    swap
+    # => [slot_id_suffix, slot_id_prefix]
 end
 
 #! Sets the value of the storage slot located at the memory address specified by the provided
@@ -1623,7 +1625,7 @@ proc set_map_item_raw
     # => [OLD_VALUE, NEW_ROOT, KEY, NEW_VALUE]
 
     # store OLD_VALUE until the end of the procedure
-    loc_storew_be.4 swapw
+    loc_storew_le.4 swapw
     # => [NEW_ROOT, OLD_VALUE, KEY, NEW_VALUE]
 
     # store NEW_ROOT into the map slot's VALUE
@@ -1648,7 +1650,7 @@ proc set_map_item_raw
     # => []
 
     # load OLD_VALUE as return value on the stack
-    padw loc_loadw_be.4
+    padw loc_loadw_le.4
     # => [OLD_VALUE]
 end
 

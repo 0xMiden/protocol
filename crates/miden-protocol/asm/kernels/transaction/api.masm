@@ -305,7 +305,6 @@ pub proc account_incr_nonce
     # assert that nonce increment originates from the authentication procedure of the account
     exec.assert_auth_procedure_origin
     # => [pad(16)]
-    debug.stack.1
 
     # increment the account nonce
     exec.account::incr_nonce
@@ -1198,12 +1197,14 @@ end
 
 #! Creates a new note and returns its index.
 #!
-#! Inputs:  [tag, note_type, RECIPIENT, pad(10)]
+#! Inputs:  [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
 #! - tag is the tag to be included in the note.
+#! - aux is the auxiliary metadata to be included in the note.
 #! - note_type is the note storage type.
+#! - execution_hint is the note's execution hint.
 #! - RECIPIENT is the recipient of the note.
 #! - note_idx is the index of the created note.
 #!
@@ -1211,7 +1212,7 @@ end
 pub proc output_note_create
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [tag, note_type, RECIPIENT, pad(10)]
+    # => [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
 
     exec.output_note::create
     # => [note_idx, pad(15)]
@@ -1597,7 +1598,6 @@ end
 #!
 #! Invocation: syscall
 pub proc exec_kernel_proc
-    debug.stack.1
     # check that the provided procedure offset is within expected bounds
     dup exec.memory::get_num_kernel_procedures
     lt assert.err=ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS
@@ -1608,7 +1608,6 @@ pub proc exec_kernel_proc
     # => [procedure_pointer, <procedure_inputs>, <pad>]
 
     # execute loaded procedure
-    debug.stack.1
     dynexec
     # => [<procedure_outputs>, <pad>]
 end
