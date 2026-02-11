@@ -91,7 +91,7 @@ impl NonFungibleAsset {
     /// Returns a mocked non-fungible asset, issued by [ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET].
     pub fn mock(asset_data: &[u8]) -> Asset {
         let non_fungible_asset_details = NonFungibleAssetDetails::new(
-            AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap().prefix(),
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap(),
             asset_data.to_vec(),
         )
         .unwrap();

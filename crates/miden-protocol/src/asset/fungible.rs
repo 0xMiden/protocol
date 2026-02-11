@@ -1,9 +1,8 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetError, Word, ZERO};
+use super::{AccountType, Asset, AssetError, Word};
 use crate::account::{AccountId, AccountIdPrefix};
 use crate::utils::serde::{
     ByteReader,
@@ -12,6 +11,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
+use crate::{Felt, FieldElement};
 
 // FUNGIBLE ASSET
 // ================================================================================================
@@ -46,10 +46,26 @@ impl FungibleAsset {
     /// # Errors
     /// Returns an error if:
     /// - The faucet_id is not a valid fungible faucet ID.
-    /// - The provided amount is greater than 2^63 - 1.
+    /// - The provided amount is greater than [`FungibleAsset::MAX_AMOUNT`].
     pub const fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
-        let asset = Self { faucet_id, amount };
-        asset.validate()
+        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
+            return Err(AssetError::FungibleFaucetIdTypeMismatch(faucet_id));
+        }
+
+        if amount > Self::MAX_AMOUNT {
+            return Err(AssetError::FungibleAssetAmountTooBig(amount));
+        }
+
+        Ok(Self { faucet_id, amount })
+    }
+
+    /// TODO
+    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if key.asset_id().prefix() != Felt::ZERO || key.asset_id().suffix() != Felt::ZERO {
+            return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
+        }
+
+        Self::new(key.faucet_id(), value[0].as_int())
     }
 
     /// Creates a new [FungibleAsset] without checking its validity.
@@ -68,11 +84,6 @@ impl FungibleAsset {
         self.faucet_id
     }
 
-    /// Return ID prefix of the faucet which issued this asset.
-    pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
-        self.faucet_id.prefix()
-    }
-
     /// Returns the amount of this asset.
     pub fn amount(&self) -> u64 {
         self.amount
@@ -85,13 +96,12 @@ impl FungibleAsset {
 
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::from_account_id(self.faucet_id)
-            .expect("faucet ID should be of type fungible")
+        AssetVaultKey::new_fungible(self.faucet_id).expect("faucet ID should be of type fungible")
     }
 
     /// Returns the asset's key encoded to a [`Word`].
     pub fn to_key_word(&self) -> Word {
-        *self.vault_key().as_word()
+        self.vault_key().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
@@ -152,46 +162,11 @@ impl FungibleAsset {
 
         Ok(FungibleAsset { faucet_id: self.faucet_id, amount })
     }
-
-    // HELPER FUNCTIONS
-    // --------------------------------------------------------------------------------------------
-
-    /// Validates this fungible asset.
-    /// # Errors
-    /// Returns an error if:
-    /// - The faucet_id is not a valid fungible faucet ID.
-    /// - The provided amount is greater than 2^63 - 1.
-    const fn validate(self) -> Result<Self, AssetError> {
-        let account_type = self.faucet_id.account_type();
-        if !matches!(account_type, AccountType::FungibleFaucet) {
-            return Err(AssetError::FungibleFaucetIdTypeMismatch(self.faucet_id));
-        }
-
-        if self.amount > Self::MAX_AMOUNT {
-            return Err(AssetError::FungibleAssetAmountTooBig(self.amount));
-        }
-
-        Ok(self)
-    }
 }
 
 impl From<FungibleAsset> for Asset {
     fn from(asset: FungibleAsset) -> Self {
         Asset::Fungible(asset)
-    }
-}
-
-impl TryFrom<Word> for FungibleAsset {
-    type Error = AssetError;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        if value[1] != ZERO {
-            return Err(AssetError::FungibleAssetExpectedZero(value));
-        }
-        let faucet_id = AccountId::try_from([value[3], value[2]])
-            .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
-        let amount = value[0].as_int();
-        Self::new(faucet_id, amount)
     }
 }
 

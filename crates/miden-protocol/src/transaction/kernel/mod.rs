@@ -9,7 +9,7 @@ use crate::account::{AccountHeader, AccountId};
 use crate::assembly::Library;
 use crate::assembly::debuginfo::SourceManagerSync;
 use crate::assembly::{Assembler, DefaultSourceManager, KernelLibrary};
-use crate::asset::FungibleAsset;
+use crate::asset::{AssetVaultKey, FungibleAsset};
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
@@ -294,7 +294,9 @@ impl TransactionKernel {
             ));
         }
 
-        let fee = FungibleAsset::try_from(fee)
+        // TODO(expand_assets): fix when changing tx fee output
+        let vault_key = AssetVaultKey::try_from(Word::empty()).expect("TODO");
+        let fee = FungibleAsset::from_key_value(vault_key, fee)
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
         Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))

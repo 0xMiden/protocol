@@ -7,11 +7,10 @@ use super::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use super::{Felt, Hasher, Word, ZERO};
-use crate::account::AccountIdPrefix;
+use super::{Felt, Hasher, Word};
+use crate::account::{AccountId, AccountIdPrefix};
 
 mod fungible;
-use alloc::boxed::Box;
 
 pub use fungible::FungibleAsset;
 
@@ -93,6 +92,23 @@ pub enum Asset {
 }
 
 impl Asset {
+    /// TODO(expand_assets)
+    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if matches!(key.faucet_id().account_type(), AccountType::FungibleFaucet) {
+            FungibleAsset::from_key_value(key, value).map(Asset::Fungible)
+        } else {
+            NonFungibleAsset::from_key_value(key, value).map(Asset::NonFungible)
+        }
+    }
+
+    /// TODO(expand_assets)
+    ///
+    /// Prefer [`Self::from_key_value`] for more type safety.
+    pub fn from_words(key: Word, value: Word) -> Result<Self, AssetError> {
+        let vault_key = AssetVaultKey::try_from(key)?;
+        Self::from_key_value(vault_key, value)
+    }
+
     /// Creates a new [Asset] without checking its validity.
     pub(crate) fn new_unchecked(value: Word) -> Asset {
         if is_not_a_non_fungible_asset(value) {
@@ -126,14 +142,11 @@ impl Asset {
         matches!(self, Self::NonFungible(_))
     }
 
-    /// Returns the prefix of the faucet ID which issued this asset.
-    ///
-    /// To get the full [`AccountId`](crate::account::AccountId) of a fungible asset the asset
-    /// must be matched on.
-    pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
+    /// Returns the ID of the faucet that issued this asset.
+    pub fn faucet_id(&self) -> AccountId {
         match self {
-            Self::Fungible(asset) => asset.faucet_id_prefix(),
-            Self::NonFungible(asset) => asset.faucet_id_prefix(),
+            Self::Fungible(asset) => asset.faucet_id(),
+            Self::NonFungible(asset) => asset.faucet_id(),
         }
     }
 
@@ -147,7 +160,7 @@ impl Asset {
 
     /// Returns the asset's key encoded to a [`Word`].
     pub fn to_key_word(&self) -> Word {
-        *self.vault_key().as_word()
+        self.vault_key().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
@@ -183,29 +196,15 @@ impl Asset {
     }
 }
 
-impl TryFrom<&Word> for Asset {
-    type Error = AssetError;
-
-    fn try_from(value: &Word) -> Result<Self, Self::Error> {
-        (*value).try_into()
+impl Ord for Asset {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.vault_key().cmp(&other.vault_key())
     }
 }
 
-impl TryFrom<Word> for Asset {
-    type Error = AssetError;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        // Return an error if element 3 is not a valid account ID prefix, which cannot be checked by
-        // is_not_a_non_fungible_asset.
-        // Keep in mind serialized assets do _not_ carry the suffix required to reconstruct the full
-        // account identifier.
-        let prefix = AccountIdPrefix::try_from(value[3])
-            .map_err(|err| AssetError::InvalidFaucetAccountId(Box::from(err)))?;
-        match prefix.account_type() {
-            AccountType::FungibleFaucet => FungibleAsset::try_from(value).map(Asset::from),
-            AccountType::NonFungibleFaucet => NonFungibleAsset::try_from(value).map(Asset::from),
-            _ => Err(AssetError::InvalidFaucetAccountIdPrefix(prefix)),
-        }
+impl PartialOrd for Asset {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -356,7 +355,7 @@ mod tests {
         for asset in [FungibleAsset::mock(300), NonFungibleAsset::mock(&[0xaa, 0xbb])] {
             let serialized_asset = asset.to_bytes();
             let prefix = AccountIdPrefix::read_from_bytes(&serialized_asset).unwrap();
-            assert_eq!(prefix, asset.faucet_id_prefix());
+            assert_eq!(prefix, asset.faucet_id());
         }
     }
 }

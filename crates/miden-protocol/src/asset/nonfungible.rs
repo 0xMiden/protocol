@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::fmt;
@@ -6,6 +5,7 @@ use core::fmt;
 use super::vault::AssetVaultKey;
 use super::{AccountIdPrefix, AccountType, Asset, AssetError, Felt, Hasher, Word};
 use crate::account::AccountId;
+use crate::asset::vault::AssetId;
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 use crate::{FieldElement, WORD_SIZE};
 
@@ -28,18 +28,9 @@ const FAUCET_ID_POS_BE: usize = 3;
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct NonFungibleAsset(Word);
-
-impl PartialOrd for NonFungibleAsset {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for NonFungibleAsset {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
+pub struct NonFungibleAsset {
+    faucet_id: AccountId,
+    value: Word,
 }
 
 impl NonFungibleAsset {
@@ -71,14 +62,21 @@ impl NonFungibleAsset {
     ///
     /// # Errors
     /// Returns an error if the provided faucet ID is not for a non-fungible asset faucet.
-    pub fn from_parts(faucet_id: AccountIdPrefix, mut data_hash: Word) -> Result<Self, AssetError> {
+    pub fn from_parts(faucet_id: AccountId, value: Word) -> Result<Self, AssetError> {
         if !matches!(faucet_id.account_type(), AccountType::NonFungibleFaucet) {
             return Err(AssetError::NonFungibleFaucetIdTypeMismatch(faucet_id));
         }
 
-        data_hash[FAUCET_ID_POS_BE] = Felt::from(faucet_id);
+        Ok(Self { faucet_id, value })
+    }
 
-        Ok(Self(data_hash))
+    /// TODO
+    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if key.asset_id().suffix() != value[0] || key.asset_id().prefix() != value[1] {
+            return Err(AssetError::NonFungibleAssetIdMustMatchValue);
+        }
+
+        Self::from_parts(key.faucet_id(), value)
     }
 
     /// Creates a new [NonFungibleAsset] without checking its validity.
@@ -86,8 +84,8 @@ impl NonFungibleAsset {
     /// # Safety
     /// This function requires that the provided value is a valid word encoding of a
     /// [NonFungibleAsset].
-    pub unsafe fn new_unchecked(value: Word) -> NonFungibleAsset {
-        NonFungibleAsset(value)
+    pub unsafe fn new_unchecked(_value: Word) -> NonFungibleAsset {
+        unimplemented!()
     }
 
     // ACCESSORS
@@ -109,56 +107,26 @@ impl NonFungibleAsset {
     /// asset and a fungible asset, as the former's vault key always has the fungible bit set to `0`
     /// and the latter's vault key always has the bit set to `1`.
     pub fn vault_key(&self) -> AssetVaultKey {
-        let mut vault_key = self.0;
+        let asset_id_suffix = self.value[0];
+        let asset_id_prefix = self.value[1];
+        let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
-        // Swap prefix of faucet ID with hash0.
-        vault_key.swap(0, FAUCET_ID_POS_BE);
-
-        // Set the fungible bit to zero.
-        vault_key[3] =
-            AccountIdPrefix::clear_fungible_bit(self.faucet_id_prefix().version(), vault_key[3]);
-
-        AssetVaultKey::new_unchecked(vault_key)
+        AssetVaultKey::new(asset_id, self.faucet_id)
     }
 
-    /// Return ID prefix of the faucet which issued this asset.
-    pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
-        AccountIdPrefix::new_unchecked(self.0[FAUCET_ID_POS_BE])
-    }
-
-    /// Return ID of the faucet which issued this asset.
+    /// Returns the ID of the faucet which issued this asset.
     pub fn faucet_id(&self) -> AccountId {
-        todo!()
+        self.faucet_id
     }
 
     /// Returns the asset's key encoded to a [`Word`].
     pub fn to_key_word(&self) -> Word {
-        *self.vault_key().as_word()
+        self.vault_key().to_word()
     }
 
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
         todo!()
-    }
-
-    // HELPER FUNCTIONS
-    // --------------------------------------------------------------------------------------------
-
-    /// Validates this non-fungible asset.
-    /// # Errors
-    /// Returns an error if:
-    /// - The faucet_id is not a valid non-fungible faucet ID.
-    /// - The most significant bit of the asset is not ZERO.
-    fn validate(&self) -> Result<(), AssetError> {
-        let faucet_id = AccountIdPrefix::try_from(self.0[FAUCET_ID_POS_BE])
-            .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
-
-        let account_type = faucet_id.account_type();
-        if !matches!(account_type, AccountType::NonFungibleFaucet) {
-            return Err(AssetError::NonFungibleFaucetIdTypeMismatch(faucet_id));
-        }
-
-        Ok(())
     }
 }
 
@@ -168,16 +136,7 @@ impl From<NonFungibleAsset> for Asset {
     }
 }
 
-impl TryFrom<Word> for NonFungibleAsset {
-    type Error = AssetError;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        let asset = Self(value);
-        asset.validate()?;
-        Ok(asset)
-    }
-}
-
+// TODO(expand_assets): Remove.
 impl fmt::Display for NonFungibleAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{self:?}")
@@ -191,10 +150,8 @@ impl Serializable for NonFungibleAsset {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         // All assets should serialize their faucet ID at the first position to allow them to be
         // easily distinguishable during deserialization.
-        target.write(self.faucet_id_prefix());
-        target.write(self.0[2]);
-        target.write(self.0[1]);
-        target.write(self.0[0]);
+        target.write(self.faucet_id());
+        target.write(self.value);
     }
 
     fn get_size_hint(&self) -> usize {
@@ -240,7 +197,7 @@ impl NonFungibleAsset {
 /// Unlike [NonFungibleAsset] struct, this struct contains full details of a non-fungible asset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonFungibleAssetDetails {
-    faucet_id: AccountIdPrefix,
+    faucet_id: AccountId,
     asset_data: Vec<u8>,
 }
 
@@ -249,7 +206,7 @@ impl NonFungibleAssetDetails {
     ///
     /// # Errors
     /// Returns an error if the provided faucet ID is not for a non-fungible asset faucet.
-    pub fn new(faucet_id: AccountIdPrefix, asset_data: Vec<u8>) -> Result<Self, AssetError> {
+    pub fn new(faucet_id: AccountId, asset_data: Vec<u8>) -> Result<Self, AssetError> {
         if !matches!(faucet_id.account_type(), AccountType::NonFungibleFaucet) {
             return Err(AssetError::NonFungibleFaucetIdTypeMismatch(faucet_id));
         }
@@ -258,7 +215,7 @@ impl NonFungibleAssetDetails {
     }
 
     /// Returns ID of the faucet which issued this asset.
-    pub fn faucet_id(&self) -> AccountIdPrefix {
+    pub fn faucet_id(&self) -> AccountId {
         self.faucet_id
     }
 

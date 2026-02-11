@@ -348,8 +348,8 @@ impl TransactionInputs {
         let asset = smt_leaf
             .entries()
             .iter()
-            .find(|(key, _value)| key == asset_key.as_word())
-            .map(|(_key, value)| Asset::try_from(value))
+            .find(|(key, _value)| key == &asset_key.to_word())
+            .map(|(_key, value)| Asset::from_key_value(asset_key, *value))
             .transpose()?;
 
         Ok(asset)

@@ -64,9 +64,7 @@ impl AssetVault {
     pub fn new(assets: &[Asset]) -> Result<Self, AssetVaultError> {
         Ok(Self {
             asset_tree: Smt::with_entries(
-                assets.iter().map(|asset| {
-                    (asset.vault_key().to_word(), asset.to_value_word())
-                }),
+                assets.iter().map(|asset| (asset.vault_key().to_word(), asset.to_value_word())),
             )
             .map_err(AssetVaultError::DuplicateAsset)?,
         })
@@ -83,12 +81,15 @@ impl AssetVault {
     /// Returns the asset corresponding to the provided asset vault key, or `None` if the asset
     /// doesn't exist.
     pub fn get(&self, asset_vault_key: AssetVaultKey) -> Option<Asset> {
-        let word = self.asset_tree.get_value(&asset_vault_key.to_word());
+        let asset_value = self.asset_tree.get_value(&asset_vault_key.to_word());
 
-        if word.is_empty() {
+        if asset_value.is_empty() {
             None
         } else {
-            Some(Asset::try_from(word).expect("asset vault should only store valid assets"))
+            Some(
+                Asset::from_key_value(asset_vault_key, asset_value)
+                    .expect("asset vault should only store valid assets"),
+            )
         }
     }
 
@@ -222,14 +223,13 @@ impl AssetVault {
         asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
         // fetch current asset value from the tree and add the new asset to it.
-        let new: FungibleAsset =
-            match self.asset_tree.get_value(&asset.vault_key().to_word()) {
-                current if current == Smt::EMPTY_VALUE => asset,
-                current => {
-                    let current = FungibleAsset::new_unchecked(current);
-                    current.add(asset).map_err(AssetVaultError::AddFungibleAssetBalanceError)?
-                },
-            };
+        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().to_word()) {
+            current if current == Smt::EMPTY_VALUE => asset,
+            current => {
+                let current = FungibleAsset::new_unchecked(current);
+                current.add(asset).map_err(AssetVaultError::AddFungibleAssetBalanceError)?
+            },
+        };
         self.asset_tree
             .insert(new.vault_key().to_word(), new.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
@@ -294,10 +294,7 @@ impl AssetVault {
         asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
         // fetch the asset from the vault.
-        let new: FungibleAsset = match self
-            .asset_tree
-            .get_value(&asset.vault_key().to_word())
-        {
+        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().to_word()) {
             current if current == Smt::EMPTY_VALUE => {
                 return Err(AssetVaultError::FungibleAssetNotFound(asset));
             },

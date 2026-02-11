@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use miden_crypto::merkle::InnerNodeInfo;
@@ -23,17 +24,12 @@ impl AssetWitness {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - any of the entries in the SMT leaf is not a valid asset.
-    /// - any of the entries' vault keys does not match the expected vault key of the asset.
+    /// - any of the key value pairs in the SMT leaf do not form a valid asset.
     pub fn new(smt_proof: SmtProof) -> Result<Self, AssetError> {
-        for (vault_key, asset) in smt_proof.leaf().entries() {
-            let asset = Asset::try_from(asset)?;
-            if *vault_key != asset.vault_key().into() {
-                return Err(AssetError::AssetVaultKeyMismatch {
-                    actual: *vault_key,
-                    expected: asset.vault_key().into(),
-                });
-            }
+        for (vault_key, asset_value) in smt_proof.leaf().entries() {
+            // This ensures that vault key and value are consistent.
+            Asset::from_words(*vault_key, *asset_value)
+                .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
         }
 
         Ok(Self(smt_proof))
@@ -72,8 +68,8 @@ impl AssetWitness {
             SmtLeaf::Multiple(kv_pairs) => kv_pairs,
         };
 
-        entries.iter().map(|(_key, value)| {
-            Asset::try_from(value).expect("asset witness should track valid assets")
+        entries.iter().map(|(key, value)| {
+            Asset::from_words(*key, *value).expect("asset witness should track valid assets")
         })
     }
 
