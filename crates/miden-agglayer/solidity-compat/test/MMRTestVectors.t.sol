@@ -2,20 +2,51 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@agglayer/v2/lib/DepositContractBase.sol";
+import "@agglayer/v2/lib/DepositContractV2.sol";
 
 /**
  * @title MMRTestVectors
  * @notice Test contract that generates test vectors for verifying compatibility
  *         between Solidity's DepositContractBase and Miden's MMR Frontier implementation.
+ *
+ *         Leaves are constructed via getLeafValue using the same hardcoded fields that
+ *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=0,
+ *         metadataHash=0), parametrised only by amount (i+1), with a fixed destination
+ *         network and address.
  * 
  * Run with: forge test -vv --match-contract MMRTestVectors
  * 
  * The output can be compared against the Rust KeccakMmrFrontier32 implementation
  * in crates/miden-testing/tests/agglayer/mmr_frontier.rs
  */
-contract MMRTestVectors is Test, DepositContractBase {
-    
+contract MMRTestVectors is Test, DepositContractV2 {
+
+    // Constants matching bridge_out.masm hardcoded values
+    uint8  constant LEAF_TYPE            = 0;
+    uint32 constant ORIGIN_NETWORK       = 64;
+    address constant ORIGIN_TOKEN_ADDR   = address(0);
+    bytes32 constant METADATA_HASH       = bytes32(0);
+
+    // Fixed destination parameters written to JSON so the Rust test can read them
+    uint32 constant DESTINATION_NETWORK  = 1;
+    address constant DESTINATION_ADDRESS = 0x1234567890aBCDEF1122334455667788990011aa;
+
+    /**
+     * @notice Builds a leaf hash identical to what bridge_out.masm would produce for the
+     *         given amount.
+     */
+    function _createLeaf(uint256 amount) internal pure returns (bytes32) {
+        return getLeafValue(
+            LEAF_TYPE,
+            ORIGIN_NETWORK,
+            ORIGIN_TOKEN_ADDR,
+            DESTINATION_NETWORK,
+            DESTINATION_ADDRESS,
+            amount,
+            METADATA_HASH
+        );
+    }
+
     /**
      * @notice Generates the canonical zeros and saves to JSON file.
      *         ZERO_0 = 0x0...0 (32 zero bytes)
@@ -43,28 +74,37 @@ contract MMRTestVectors is Test, DepositContractBase {
     
     /**
      * @notice Generates MMR frontier vectors (leaf-root pairs) and saves to JSON file.
-     *         Uses parallel arrays instead of array of objects for cleaner serialization.
+     *         Each leaf is created via _createLeaf(i+1) so that amounts are 1..32.
+     *         The fixed destination_network and destination_address are also written to
+     *         JSON so the Rust bridge_out test can construct matching B2AGG notes.
+     *
      *         Output file: test-vectors/mmr_frontier_vectors.json
      */
     function test_generateVectors() public {
         bytes32[] memory leaves = new bytes32[](32);
         bytes32[] memory roots = new bytes32[](32);
         uint256[] memory counts = new uint256[](32);
+        uint256[] memory amounts = new uint256[](32);
 
         for (uint256 i = 0; i < 32; i++) {
-            bytes32 leaf = bytes32(i);
+            uint256 amount = i + 1;
+            bytes32 leaf = _createLeaf(amount);
             _addLeaf(leaf);
 
             leaves[i] = leaf;
             roots[i] = getRoot();
             counts[i] = depositCount;
+            amounts[i] = amount;
         }
 
         // Serialize parallel arrays to JSON
         string memory obj = "root";
         vm.serializeBytes32(obj, "leaves", leaves);
         vm.serializeBytes32(obj, "roots", roots);
-        string memory json = vm.serializeUint(obj, "counts", counts);
+        vm.serializeUint(obj, "counts", counts);
+        vm.serializeUint(obj, "amounts", amounts);
+        vm.serializeUint(obj, "destination_network", DESTINATION_NETWORK);
+        string memory json = vm.serializeAddress(obj, "destination_address", DESTINATION_ADDRESS);
 
         // Save to file
         string memory outputPath = "test-vectors/mmr_frontier_vectors.json";
