@@ -105,8 +105,8 @@ async fn test_scale_up_exceeds_max_scale() {
 // ================================================================================================
 
 /// Build MASM script for verify_u256_to_native_amount_conversion
-fn build_scale_down_script(x: U256, scale_exp: u32, y: u64) -> String {
-    let x_felts = utils::u256_to_felts(x);
+fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
+    let x_felts = x.to_elements();
     format!(
         r#"
         use miden::core::sys
@@ -137,8 +137,8 @@ fn expected_y(x: U256, scale: u32) -> u64 {
 }
 
 /// Assert that scaling down succeeds with the correct result
-async fn assert_scale_down_ok(x: U256, scale: u32) -> anyhow::Result<u64> {
-    let y = expected_y(x, scale);
+async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
+    let y = expected_y(x.to_u256(), scale);
     let script = build_scale_down_script(x, scale, y);
     let out = execute_masm_script(&script).await?;
     assert_eq!(out.stack[0].as_int(), y);
@@ -146,13 +146,13 @@ async fn assert_scale_down_ok(x: U256, scale: u32) -> anyhow::Result<u64> {
 }
 
 /// Assert that scaling down fails with the given y and expected error
-async fn assert_scale_down_fails(x: U256, scale: u32, y: u64, expected_error: MasmError) {
+async fn assert_scale_down_fails(x: EthAmount, scale: u32, y: u64, expected_error: MasmError) {
     let script = build_scale_down_script(x, scale, y);
     assert_execution_fails_with(&script, expected_error.message()).await;
 }
 
 /// Test that y-1 and y+1 both fail appropriately
-async fn assert_y_plus_minus_one_behavior(x: U256, scale: u32) -> anyhow::Result<()> {
+async fn assert_y_plus_minus_one_behavior(x: EthAmount, scale: u32) -> anyhow::Result<()> {
     let y = assert_scale_down_ok(x, scale).await?;
     if y > 0 {
         assert_scale_down_fails(x, scale, y - 1, ERR_REMAINDER_TOO_LARGE).await;
@@ -164,9 +164,9 @@ async fn assert_y_plus_minus_one_behavior(x: U256, scale: u32) -> anyhow::Result
 #[tokio::test]
 async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
     let cases = [
-        (U256::from_dec_str("1000000000000000000").unwrap(), 10u32),
-        (U256::from(1000u64), 0u32),
-        (U256::from_dec_str("10000000000000000000").unwrap(), 18u32),
+        (EthAmount::from_uint_str("1000000000000000000").unwrap(), 10u32),
+        (EthAmount::from_uint_str("1000").unwrap(), 0u32),
+        (EthAmount::from_uint_str("10000000000000000000").unwrap(), 18u32),
     ];
 
     for (x, s) in cases {
@@ -179,13 +179,13 @@ async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
 async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
     let cases = [
         // With remainder: 1.234e18 scaled down by 1e8 = 1.234e10
-        (U256::from_dec_str("1234567890123456789").unwrap(), 8u32),
+        (EthAmount::from_uint_str("1234567890123456789").unwrap(), 8u32),
         // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
-        (U256::from_dec_str("100000000000000000000").unwrap(), 10u32),
+        (EthAmount::from_uint_str("100000000000000000000").unwrap(), 10u32),
         // USDC (no scaling): 100 USDC
-        (U256::from(100_000_000u64), 0u32),
+        (EthAmount::from_uint_str("100000000").unwrap(), 0u32),
         // Zero amount
-        (U256::zero(), 18u32),
+        (EthAmount::from_uint_str("0").unwrap(), 18u32),
     ];
 
     for (x, scale) in cases {
@@ -200,13 +200,13 @@ async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_scale_down_wrong_y_clean_case() -> anyhow::Result<()> {
-    let x = U256::from_dec_str("10000000000000000000").unwrap();
+    let x = EthAmount::from_uint_str("10000000000000000000").unwrap();
     assert_y_plus_minus_one_behavior(x, 18).await
 }
 
 #[tokio::test]
 async fn test_scale_down_wrong_y_with_remainder() -> anyhow::Result<()> {
-    let x = U256::from_dec_str("1500000000000000000").unwrap();
+    let x = EthAmount::from_uint_str("1500000000000000000").unwrap();
     assert_y_plus_minus_one_behavior(x, 18).await
 }
 
@@ -216,7 +216,7 @@ async fn test_scale_down_wrong_y_with_remainder() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_scale_down_exceeds_max_scale() {
-    let x = U256::from(1000u64);
+    let x = EthAmount::from_uint_str("1000").unwrap();
     let s = 19u32;
     let y = 1u64;
     assert_scale_down_fails(x, s, y, ERR_SCALE_AMOUNT_EXCEEDED_LIMIT).await;
@@ -225,7 +225,7 @@ async fn test_scale_down_exceeds_max_scale() {
 #[tokio::test]
 async fn test_scale_down_x_too_large() {
     // Construct x with upper limbs non-zero (>= 2^128)
-    let x = U256::from(1u64) << 128;
+    let x = EthAmount::from_u256(U256::from(1u64) << 128);
     let s = 0u32;
     let y = 0u64;
     assert_scale_down_fails(x, s, y, ERR_X_TOO_LARGE).await;
@@ -243,7 +243,7 @@ async fn test_scale_down_remainder_edge() -> anyhow::Result<()> {
     let scale_exp = 10u32;
     let scale = 10u64.pow(scale_exp);
     let x_val = y * scale + (scale - 1);
-    let x = U256::from(x_val);
+    let x = EthAmount::from_u256(U256::from(x_val));
 
     assert_scale_down_ok(x, scale_exp).await?;
     Ok(())
@@ -257,7 +257,7 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let wrong_y = 5u64;
     let scale_exp = 10u32;
     let scale = 10u64.pow(scale_exp);
-    let x = U256::from(wrong_y * scale + scale); // This is actually (wrong_y+1)*scale
+    let x = EthAmount::from_u256(U256::from(wrong_y * scale + scale)); // This is actually (wrong_y+1)*scale
 
     assert_scale_down_fails(x, scale_exp, wrong_y, ERR_REMAINDER_TOO_LARGE).await;
 }
@@ -277,10 +277,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     let scale_exp = 10u32;
     let y = 10000000000u64;
 
-    // Convert U256 to 8 u32 limbs (little-endian)
     let x_felts = x.to_elements();
-
-    println!("x felts: {:?}", x_felts);
 
     // Build the MASM script inline
     let script_code = format!(

@@ -1,5 +1,6 @@
 use miden::core::math::u64
 use miden::core::word
+use miden::agglayer::utils
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
@@ -112,6 +113,23 @@ pub proc scale_native_amount_to_u256
     # => [RESULT_U256[0], RESULT_U256[1]]
 end
 
+#! Reverse the limbs and change the byte endianness of the result.
+pub proc reverse_limbs_and_change_byte_endianness
+    # reverse the felts within each word
+    # [a, b, c, d, e, f, g, h] -> [h, g, f, e, d, c, b, a]
+    exec.word::reverse
+    swapw
+    exec.word::reverse
+
+    # change the byte endianness of each felt
+    repeat.8
+        exec.utils::swap_u32_bytes
+        movdn.7
+    end
+
+    # => [RESULT_U256[0], RESULT_U256[1]]
+end
+
 #! Subtract two 128-bit integers (little-endian u32 limbs) and assert no underflow.
 #!
 #! Computes:
@@ -213,19 +231,19 @@ end
 #!
 #! NOTE: For efficiency, this verifier enforces x < 2^128 by requiring x4..x7 == 0.
 #!
-#! Inputs:  [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
-#!          Where x is encoded as 8 u32 limbs in little-endian order.
-#!          (x0 is least significant limb and is at the top of the stack)
+#! Inputs:  [x7, x6, x5, x4, x3, x2, x1, x0, scale_exp, y]
+#!          Where x is encoded as 8 u32 limbs in big-endian order.
+#!          (x7 is most significant limb and is at the top of the stack)
 #! Outputs: [y]
 #!
 #! Where:
 #!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
-#!        It is provided on the operand stack as 8 little-endian u32 limbs:
+#!        It is provided on the operand stack as 8 big-endian u32 limbs:
 #!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
-#!   - x0..x7: 32-bit limbs of x in little-endian order (x0 is least significant).
+#!   - x0..x7: 32-bit limbs of x in big-endian order (x0 is least significant).
 #!   - scale_exp: The base-10 exponent used for scaling down (an integer in [0, 18]).
 #!   - y: The provided quotient (Miden native amount) as a Felt interpreted as an unsigned u64.
-#!   - y_scaled: The 256-bit value y * 10^scale_exp represented as 8 u32 limbs (little-endian).
+#!   - y_scaled: The 256-bit value y * 10^scale_exp represented as 8 u32 limbs (big-endian).
 #!   - z: The remainder-like difference z = x - y_scaled (essentially dust that is lost in the
 #!        conversion due to precision differences). This verifier requires z < 10^scale_exp.
 #!
@@ -237,6 +255,11 @@ end
 #! - z does not fit in 64 bits
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
 pub proc verify_u256_to_native_amount_conversion
+
+    # reverse limbs and byte endianness
+    exec.reverse_limbs_and_change_byte_endianness
+    # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
+
     # =============================================================================================
     # Step 0: Enforce x < 2^128
     #   Constraint: x4 == x5 == x6 == x7 == 0
