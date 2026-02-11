@@ -5,13 +5,7 @@ use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
 
 use super::{
-    AccountError,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Hasher,
+    AccountError, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, Hasher,
     Serializable,
 };
 use crate::Word;
@@ -231,8 +225,9 @@ impl AccountCode {
 
 impl PartialEq for AccountCode {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: consider checking equality based only on the set of procedures
-        self.mast == other.mast && self.procedures == other.procedures
+        // Compare by commitment (which uniquely identifies the code) and procedures.
+        // This avoids expensive comparison of the full MastForest structure.
+        self.commitment == other.commitment && self.procedures == other.procedures
     }
 }
 
