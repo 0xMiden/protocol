@@ -173,7 +173,6 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     let tx_context = mock_chain
         .build_tx_context(agglayer_faucet.id(), &[], &[claim_note])?
-        .add_note_script(p2id_script.clone())
         .foreign_accounts(vec![foreign_account_inputs])
         .build()?;
 
