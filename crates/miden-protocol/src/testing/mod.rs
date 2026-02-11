@@ -14,4 +14,3 @@ pub mod partial_blockchain;
 pub mod random_signer;
 pub mod slot_name;
 pub mod storage;
-pub mod tx;

@@ -215,6 +215,20 @@ impl ProposedBatch {
             return Err(ProposedBatchError::TooManyAccountUpdates(account_updates.len()));
         }
 
+        // Validate that each transaction's fee asset uses the correct native asset.
+        // --------------------------------------------------------------------------------------------
+
+        let expected_native_asset_id = reference_block_header.fee_parameters().native_asset_id();
+        for tx in transactions.iter() {
+            if tx.fee().faucet_id() != expected_native_asset_id {
+                return Err(ProposedBatchError::InvalidFeeAssetId {
+                    transaction_id: tx.id(),
+                    fee_faucet_id: tx.fee().faucet_id(),
+                    expected_native_asset_id,
+                });
+            }
+        }
+
         // Check that all transaction's expiration block numbers are greater than the reference
         // block.
         // --------------------------------------------------------------------------------------------

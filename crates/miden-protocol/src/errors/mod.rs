@@ -922,6 +922,15 @@ pub enum ProposedBatchError {
         block_reference: Word,
         transaction_id: TransactionId,
     },
+
+    #[error(
+        "transaction {transaction_id} has fee asset from faucet {fee_faucet_id} but the expected native asset faucet is {expected_native_asset_id}"
+    )]
+    InvalidFeeAssetId {
+        transaction_id: TransactionId,
+        fee_faucet_id: AccountId,
+        expected_native_asset_id: AccountId,
+    },
 }
 
 // PROVEN BATCH ERROR

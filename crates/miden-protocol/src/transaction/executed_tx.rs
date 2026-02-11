@@ -157,6 +157,19 @@ impl ExecutedTransaction {
         &self.tx_measurements
     }
 
+    /// Computes the fee for this transaction based on the verification cycles and the base fee
+    /// parameters from the block header.
+    ///
+    /// This is a Rust implementation of the `compute_fee` epilogue procedure in MASM.
+    /// The fee is calculated by rounding up the number of cycles to the next power of two,
+    /// taking its log2, and multiplying by the verification base fee.
+    pub fn compute_fee(&self) -> u64 {
+        let verification_cycles = self.measurements().trace_length().ilog2();
+        let fee_amount =
+            self.block_header().fee_parameters().verification_base_fee() * verification_cycles;
+        fee_amount as u64
+    }
+
     // CONVERSIONS
     // --------------------------------------------------------------------------------------------
 

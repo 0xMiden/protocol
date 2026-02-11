@@ -16,6 +16,7 @@
 - Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
+- Moved `compute_fee()` from testing to production code on `ExecutedTransaction` and added fee asset validation in `ProposedBatch` ([#2427](https://github.com/0xMiden/miden-base/pull/2427)).
 
 ### Changes
 
