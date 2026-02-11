@@ -3,14 +3,46 @@ extern crate alloc;
 use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
 use miden_agglayer::{B2AggNote, EthAddressFormat, create_existing_bridge_account};
 use miden_crypto::rand::FeltRng;
-use miden_protocol::Felt;
-use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+use miden_protocol::account::{
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+    StorageSlotName,
+};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
+use miden_protocol::{Felt, Word};
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+
+/// Reads the Local Exit Root (double-word) from the bridge account's storage.
+///
+/// The Local Exit Root is stored in two dedicated value slots:
+/// - `"miden::agglayer::let::root_lo"` — low word of the root
+/// - `"miden::agglayer::let::root_hi"` — high word of the root
+///
+/// Returns `[root_lo, root_hi]`. For an empty/uninitialized tree, both words are zeros.
+fn read_local_exit_root(account: &Account) -> [Word; 2] {
+    let root_lo_slot =
+        StorageSlotName::new("miden::agglayer::let::root_lo").expect("slot name should be valid");
+    let root_hi_slot =
+        StorageSlotName::new("miden::agglayer::let::root_hi").expect("slot name should be valid");
+
+    let root_lo = account
+        .storage()
+        .get_item(&root_lo_slot)
+        .expect("should be able to read LET root lo");
+    let root_hi = account
+        .storage()
+        .get_item(&root_hi_slot)
+        .expect("should be able to read LET root hi");
+
+    [root_lo, root_hi]
+}
 
 /// Tests the B2AGG (Bridge to AggLayer) note script with bridge_out account component.
 ///
@@ -68,6 +100,9 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
+    // Read Local Exit Root before the transaction (should be all zeros for a fresh account)
+    let ler_before = read_local_exit_root(&bridge_account);
+
     // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
     // --------------------------------------------------------------------------------------------
     let tx_context = mock_chain
@@ -118,6 +153,14 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     // Apply the delta to the bridge account
     bridge_account.apply_delta(executed_transaction.account_delta())?;
+
+    // VERIFY LOCAL EXIT ROOT CHANGED
+    // --------------------------------------------------------------------------------------------
+    let ler_after = read_local_exit_root(&bridge_account);
+    assert_ne!(
+        ler_before, ler_after,
+        "Local Exit Root should change after consuming a B2AGG note"
+    );
 
     // Apply the transaction to the mock chain
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;

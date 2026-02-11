@@ -272,9 +272,21 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
 
     let bridge_in_component = bridge_in_component(bridge_in_storage_slots);
 
-    // Create the "bridge_out" component
+    // Create the "bridge_out" component.
+    // - The map slot stores the frontier as a double-word array (absent keys return zeros, which is
+    //   the correct initial state for a frontier with no leaves).
+    // - The root and num_leaves each get their own value slots.
     let let_storage_slot_name = StorageSlotName::new("miden::agglayer::let").unwrap();
-    let bridge_out_storage_slots = vec![StorageSlot::with_empty_map(let_storage_slot_name)];
+    let let_root_lo_slot_name = StorageSlotName::new("miden::agglayer::let::root_lo").unwrap();
+    let let_root_hi_slot_name = StorageSlotName::new("miden::agglayer::let::root_hi").unwrap();
+    let let_num_leaves_slot_name =
+        StorageSlotName::new("miden::agglayer::let::num_leaves").unwrap();
+    let bridge_out_storage_slots = vec![
+        StorageSlot::with_empty_map(let_storage_slot_name),
+        StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),
+        StorageSlot::with_value(let_root_hi_slot_name, Word::empty()),
+        StorageSlot::with_value(let_num_leaves_slot_name, Word::empty()),
+    ];
     let bridge_out_component = bridge_out_component(bridge_out_storage_slots);
 
     // Combine the components into a single account(builder)
