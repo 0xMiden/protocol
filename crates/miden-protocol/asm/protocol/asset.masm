@@ -50,7 +50,7 @@ pub proc create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
-#! Builds a non fungible asset for the specified non-fungible faucet and amount.
+#! Builds a non fungible asset for the specified non-fungible faucet.
 #!
 #! Inputs:  [faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
@@ -72,7 +72,7 @@ pub proc create_non_fungible_asset
     # build the asset
     swap drop
     # => [faucet_id_prefix, hash2, hash1, hash0]
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_VALUE]
 
     dupw exec.::miden::protocol::util::asset::build_non_fungible_asset_vault_key
     # => [ASSET_KEY, ASSET_VALUE]
