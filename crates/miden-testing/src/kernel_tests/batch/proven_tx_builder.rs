@@ -7,6 +7,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
+use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::transaction::{
     InputNote,
     OutputNote,
@@ -41,7 +42,12 @@ impl MockProvenTxBuilder {
             initial_account_commitment,
             final_account_commitment,
             ref_block_commitment: None,
-            fee: FungibleAsset::mock(50).unwrap_fungible(),
+            fee: FungibleAsset::new(
+                AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)
+                    .expect("native asset faucet ID should be valid"),
+                50,
+            )
+            .expect("fee asset should be valid"),
             expiration_block_num: BlockNumber::from(u32::MAX),
             output_notes: None,
             input_notes: None,

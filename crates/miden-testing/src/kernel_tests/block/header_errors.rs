@@ -17,6 +17,7 @@ use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
+use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::transaction::ProvenTransactionBuilder;
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
@@ -390,7 +391,12 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 Word::empty(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
-                FungibleAsset::mock(500).unwrap_fungible(),
+                FungibleAsset::new(
+                    AccountId::try_from(ACCOUNT_ID_NATIVE_ASSET_FAUCET)
+                        .expect("native asset faucet ID should be valid"),
+                    500,
+                )
+                .expect("fee asset should be valid"),
                 BlockNumber::from(u32::MAX),
                 ExecutionProof::new_dummy(),
             )
