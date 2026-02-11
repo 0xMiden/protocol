@@ -1028,7 +1028,8 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub proc get_account_id
-    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_le
+    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET
+    mem_loadw_le
     # => [nonce, 0, account_id_suffix, account_id_prefix]
     drop drop
     swap
@@ -1044,7 +1045,8 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the native account
 #!   of the transaction.
 pub proc get_native_account_id
-    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_le
+    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET
+    mem_loadw_le
     # => [nonce, 0, account_id_suffix, account_id_prefix]
     drop drop
     swap

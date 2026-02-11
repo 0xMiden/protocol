@@ -940,6 +940,9 @@ proc process_input_note
 
     exec.process_note_args_and_metadata
     # => [note_ptr]
+    drop
+    loc_load.0
+    # => [note_ptr]
 
     # note number of storage items
     # ---------------------------------------------------------------------------------------------

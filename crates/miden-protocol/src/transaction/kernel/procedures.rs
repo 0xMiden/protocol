@@ -40,7 +40,7 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_get_vault_root
     word!("0x1e3d8f19d76a87777ca8e07774b5e99c7fd20e51ff834a9f531ca0bde82ed269"),
     // account_add_asset
-    word!("0xcdac1e541f6a36ee2911d95fafd1d768992ad10c6685d2b2e4e8ffc008e248aa"),
+    word!("0x8d28a5895dd99f01ae28c8f57425854d72d43f4f97dfe46eaf024136b7c75533"),
     // account_remove_asset
     word!("0x5cb52110286c44788cd0d2cdefab4d37a1f086d4cc37d5a524da29a96bf01b81"),
     // account_get_balance

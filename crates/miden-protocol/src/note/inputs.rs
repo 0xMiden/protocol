@@ -169,4 +169,5 @@ mod tests {
         let parsed_note_inputs = NoteInputs::read_from_bytes(&bytes).unwrap();
         assert_eq!(note_inputs, parsed_note_inputs);
     }
+
 }

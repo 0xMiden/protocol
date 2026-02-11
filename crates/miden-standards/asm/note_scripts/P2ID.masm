@@ -30,12 +30,11 @@ const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transacti
 #!   greater than 2^63.
 begin
     # store the note inputs to memory starting at address 0
-    padw push.0 exec.active_note::get_inputs
-    # => [num_inputs, inputs_ptr, EMPTY_WORD]
-
+    push.0 exec.active_note::get_inputs
+    # => [num_inputs, inputs_ptr]
     # make sure the number of inputs is 2
     eq.2 assert.err=ERR_P2ID_WRONG_NUMBER_OF_INPUTS
-    # => [inputs_ptr, EMPTY_WORD]
+    # => [inputs_ptr]
 
     # read the target account ID from the note inputs
     mem_loadw_le

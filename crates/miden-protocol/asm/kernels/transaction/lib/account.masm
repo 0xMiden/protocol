@@ -687,23 +687,25 @@ end
 #! - the total value of the fungible asset is greater than or equal to 2^63 after the new asset was
 #!   added.
 #! - the vault already contains the same non-fungible asset.
+@locals(4)
 pub proc add_asset_to_vault
-    # duplicate the ASSET to be able to emit an event after an asset is being added
-    dupw
-    # => [ASSET, ASSET]
+    # stash ASSET for later events and delta updates
+    loc_storew_le.0
+    # => []
 
-    # fetch the account vault root
+    # fetch the account vault root and emit the "before" event
+    loc_loadw_le.0
     exec.memory::get_account_vault_root_ptr movdn.4
-    # => [ASSET, acct_vault_root_ptr, ASSET]
+    # => [ASSET, acct_vault_root_ptr]
 
-    # emit event to signal that an asset is going to be added to the account vault
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
-    # => [ASSET', ASSET]
+    # => [ASSET']
 
-    swapw
+    # restore original asset for delta update + "after" event
+    loc_loadw_le.0
     # => [ASSET, ASSET']
 
     dupw exec.account_delta::add_asset

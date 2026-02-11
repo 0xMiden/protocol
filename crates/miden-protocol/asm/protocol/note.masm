@@ -116,36 +116,45 @@ pub proc write_inputs_to_memory
     # OS => [end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 
-    # duplicate write_ptr so we can later hash from memory
-    dup.6
-    # OS => [write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # prepare the stack for the `pipe_double_words_to_memory` procedure.
+    #
+    # To match `poseidon2::hash_elements` (used for INPUTS_COMMITMENT), we set the first capacity
+    # element to `num_inputs % 8`.
+    dup.6 dup.6
+    # OS => [num_inputs, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 
-    # set initial hasher state (all zeroes) for piping data into memory
-    exec.poseidon2::init_no_padding
-    # OS => [R0, R1, C, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    u32divmod.8 swap drop
+    # OS => [num_inputs_mod_8, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # AS => [[INPUTS_DATA]]
+
+    push.0.0.0
+    movup.3
+    # OS => [A, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr], where A = [num_inputs_mod_8, 0, 0, 0]
+    # AS => [[INPUTS_DATA]]
+
+    padw padw
+    # OS => [PAD, PAD, A, write_ptr, end_ptr, INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 
     # write the inputs from the advice stack into memory
     exec.mem::pipe_double_words_to_memory
-    # OS => [R0, R1, C, write_ptr', INPUTS_COMMITMENT, num_inputs, dest_ptr]
+    # OS => [PERM, PERM, PERM, end_ptr', INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => []
 
-    # drop the hasher state and write_ptr'
+    # drop the hasher state and end pointer; recompute commitment from memory
     dropw dropw dropw drop
     # OS => [INPUTS_COMMITMENT, num_inputs, dest_ptr]
 
-    # compute the inputs commitment from memory
-    movup.5
-    movup.5
-    swap
-    # OS => [dest_ptr, num_inputs, INPUTS_COMMITMENT]
+    dup.5 dup.5 swap
+    # OS => [dest_ptr, num_inputs, INPUTS_COMMITMENT, num_inputs, dest_ptr]
+
     exec.poseidon2::hash_elements
-    # OS => [COMPUTED_COMMITMENT, INPUTS_COMMITMENT]
+    # OS => [COMPUTED_COMMITMENT, INPUTS_COMMITMENT, num_inputs, dest_ptr]
 
     # validate that the inputs written to memory match the inputs commitment
     assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
-    # => []
+    # => [num_inputs, dest_ptr]
 end
 
 #! Builds the recipient hash from note storage, script root, and serial number.

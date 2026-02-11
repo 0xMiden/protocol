@@ -141,10 +141,10 @@ pub proc get_inputs
     swapdw dropw dropw
     movup.5 drop movup.5 drop movup.5 drop
     # => [NOTE_INPUTS_COMMITMENT, num_inputs, dest_ptr]
-
     # write the inputs to the memory using the provided destination pointer
     exec.note::write_inputs_to_memory
     # => [num_inputs, dest_ptr]
+
 end
 
 #! Returns the metadata of the active note.
