@@ -312,7 +312,8 @@ impl TransactionContextBuilder {
 
         let mast_store = {
             let mast_forest_store = TransactionMastStore::new();
-            // Include protocol + standards libraries for note scripts.
+            // Include kernel API and kernel library plus protocol + standards libraries for scripts.
+            mast_forest_store.insert(TransactionKernel::kernel().mast_forest().clone());
             mast_forest_store.insert(TransactionKernel::library().mast_forest().clone());
             mast_forest_store.insert(StandardsLib::default().as_ref().mast_forest().clone());
             mast_forest_store.load_account_code(tx_inputs.account().code());

@@ -276,12 +276,21 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
                             "expected num_inputs to be present in advice provider",
                         )
                     })?;
-                if num_inputs.len() != 1 {
-                    return Err(TransactionKernelError::other(
-                        "expected num_inputs advice entry to contain exactly one element",
-                    ));
-                }
-                let num_inputs = num_inputs[0].as_canonical_u64() as usize;
+                let zero = Felt::new(0);
+                let num_inputs = match num_inputs {
+                    [value] => *value,
+                    [value, pad1, pad2, pad3]
+                        if *pad1 == zero && *pad2 == zero && *pad3 == zero =>
+                    {
+                        *value
+                    },
+                    _ => {
+                        return Err(TransactionKernelError::other(
+                            "expected num_inputs advice entry to contain a single element or a padded word",
+                        ));
+                    },
+                };
+                let num_inputs = num_inputs.as_canonical_u64() as usize;
 
                 let note_inputs = NoteInputs::new(inputs[0..num_inputs].to_vec())
                     .map_err(TransactionKernelError::MalformedNoteInputs)?;

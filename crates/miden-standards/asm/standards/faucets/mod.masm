@@ -14,6 +14,9 @@ const ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED="distr
 
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
+# Scratch memory pointer for note data (avoid clobbering bookkeeping)
+const NOTE_DATA_SCRATCH_PTR=18874368
+
 # CONSTANTS
 # =================================================================================================
 
@@ -98,7 +101,7 @@ end
 #! Invocation: call
 pub proc burn
     # Get the assets from the note. This will fail if not called from a note context.
-    push.0 exec.active_note::get_assets
+    push.NOTE_DATA_SCRATCH_PTR exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
 
     # Verify we have exactly one asset

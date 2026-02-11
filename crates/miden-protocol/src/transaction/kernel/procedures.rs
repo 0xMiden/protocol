@@ -40,13 +40,13 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_get_vault_root
     word!("0x1e3d8f19d76a87777ca8e07774b5e99c7fd20e51ff834a9f531ca0bde82ed269"),
     // account_add_asset
-    word!("0x8d28a5895dd99f01ae28c8f57425854d72d43f4f97dfe46eaf024136b7c75533"),
+    word!("0xa76dfb3df903a3bdc4984ced3560f0eca8cb56f2417c76ecf9b795c11869ed6d"),
     // account_remove_asset
-    word!("0x5cb52110286c44788cd0d2cdefab4d37a1f086d4cc37d5a524da29a96bf01b81"),
+    word!("0xf94428e6b4914310f3b065a15b2d697d17a33d4bc5d6f0a62f92280d937847a0"),
     // account_get_balance
-    word!("0xb8ccac74a4a4b108d15235ec6189d58fe4ed1afca392da19a596858480435869"),
+    word!("0xc4bbc38bf2f239397c9c4aec9ffb415068c5e047f6d3bb36c73cb04e6abe661a"),
     // account_get_initial_balance
-    word!("0x2995d6133c7f9ff5263c0dcbc6553d50b2caa79f92982ab0fbda1e963f8269fc"),
+    word!("0xf5987b8e8ab1b6c47cc0e6ef7b3ab3b346fc362dd208ff01060234debc718535"),
     // account_has_non_fungible_asset
     word!("0x3781397f32da1b58b79757828ccfc3f5e02d4a9e314dcdea85d2648eaca51a21"),
     // account_compute_delta_commitment

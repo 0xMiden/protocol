@@ -17,6 +17,8 @@ const ERR_P2IDE_RECLAIM_DISABLED="P2IDE reclaim is disabled"
 
 const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED="failed to consume P2IDE note because the note is still timelocked"
 
+const NOTE_DATA_SCRATCH_PTR=18874368
+
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -102,7 +104,7 @@ end
 #!   greater than 2^63.
 begin
     # store the note inputs to memory starting at address 0
-    push.0 exec.active_note::get_inputs
+    push.NOTE_DATA_SCRATCH_PTR exec.active_note::get_inputs
     # => [num_inputs, inputs_ptr]
 
     # make sure the number of inputs is 4

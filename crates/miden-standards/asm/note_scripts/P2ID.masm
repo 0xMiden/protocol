@@ -10,6 +10,8 @@ const ERR_P2ID_WRONG_NUMBER_OF_INPUTS="P2ID note expects exactly 2 note inputs"
 
 const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transaction address do not match"
 
+const NOTE_DATA_SCRATCH_PTR=18874368
+
 #! Pay-to-ID script: adds all assets from the note to the account, assuming ID of the account
 #! matches target account ID specified by the note inputs.
 #!
@@ -30,7 +32,7 @@ const ERR_P2ID_TARGET_ACCT_MISMATCH="P2ID's target account address and transacti
 #!   greater than 2^63.
 begin
     # store the note inputs to memory starting at address 0
-    push.0 exec.active_note::get_inputs
+    push.NOTE_DATA_SCRATCH_PTR exec.active_note::get_inputs
     # => [num_inputs, inputs_ptr]
     # make sure the number of inputs is 2
     eq.2 assert.err=ERR_P2ID_WRONG_NUMBER_OF_INPUTS

@@ -1,5 +1,8 @@
 use alloc::vec::Vec;
 
+#[cfg(feature = "std")]
+use std::println;
+
 use miden_core::field::PrimeField64;
 use miden_processor::ProcessorState;
 use miden_processor::advice::AdviceMutation;
@@ -258,6 +261,10 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageAfterSetItem => {
                 // Expected stack state: [event, slot_ptr, VALUE]
                 let slot_ptr = process.get_stack_item(1);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_SLOT_PTR").is_ok() {
+                    println!("debug: AccountStorageAfterSetItem slot_ptr={slot_ptr}");
+                }
                 let new_value = get_stack_word_le(process, 2);
 
                 let (slot_id, slot_type, _old_value) = process.get_storage_slot(slot_ptr)?;
@@ -277,6 +284,10 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageBeforeGetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_SLOT_PTR").is_ok() {
+                    println!("debug: AccountStorageBeforeGetMapItem slot_ptr={slot_ptr}");
+                }
                 let map_key = get_stack_word_le(process, 2);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
@@ -285,6 +296,10 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageBeforeSetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_SLOT_PTR").is_ok() {
+                    println!("debug: AccountStorageBeforeSetMapItem slot_ptr={slot_ptr}");
+                }
                 let map_key = get_stack_word_le(process, 2);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
@@ -293,6 +308,10 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageAfterSetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY, OLD_VALUE, NEW_VALUE]
                 let slot_ptr = process.get_stack_item(1);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_SLOT_PTR").is_ok() {
+                    println!("debug: AccountStorageAfterSetMapItem slot_ptr={slot_ptr}");
+                }
                 let key = get_stack_word_le(process, 2);
                 let old_value = get_stack_word_le(process, 6);
                 let new_value = get_stack_word_le(process, 10);

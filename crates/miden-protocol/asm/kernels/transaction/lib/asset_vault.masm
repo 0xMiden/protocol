@@ -250,7 +250,9 @@ pub proc add_fungible_asset
     swapw dropw
     loc_load.8
     dup u32assert drop
-    padw movup.4 mem_loadw_le
+    padw movup.4
+    debug.stack.9
+    mem_loadw_le
     swapw
 
     # pad empty word for insertion
@@ -299,6 +301,7 @@ pub proc add_non_fungible_asset
 
     padw dup.12
     # => [vault_root_ptr, pad(4), ASSET_KEY, ASSET, vault_root_ptr]
+    debug.stack.9
     mem_loadw_le swapw
     # => [ASSET_KEY, VAULT_ROOT, ASSET, vault_root_ptr]
     dupw.2
@@ -527,7 +530,9 @@ end
 #! - asset is the peeked asset from the vault.
 proc peek_asset
     # load the asset vault root from memory
-    padw movup.8 mem_loadw_le
+    padw movup.8
+    debug.stack.9
+    mem_loadw_le
     # => [ASSET_VAULT_ROOT, ASSET_KEY]
 
     swapw

@@ -192,7 +192,7 @@ end
 #! - num_inputs is greater than 1024.
 #!
 #! Invocation: exec
-@locals(1)
+@locals(4)
 pub proc build_recipient
     dup.1 dup.1
     # => [inputs_ptr, num_inputs, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
@@ -200,12 +200,14 @@ pub proc build_recipient
     exec.compute_inputs_commitment
     # => [INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
 
-    # store num_inputs into local memory
-    dup.5 loc_store.0
+    # store num_inputs into local memory as a word for aligned advice insertion
+    dup.5 push.0.0.0 movup.3
+    loc_storew_le.0 dropw
     # => [INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
 
-    locaddr.0 add.1
     locaddr.0
+    dup push.4 add
+    swap
     # => [num_inputs_start_ptr, num_inputs_end_ptr, INPUTS_COMMITMENT, inputs_ptr, num_inputs, SERIAL_NUM, SCRIPT_ROOT]
 
     dup.5 dup.5 dup.5 dup.5

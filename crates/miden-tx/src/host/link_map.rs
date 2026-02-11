@@ -48,6 +48,12 @@ impl<'process> LinkMap<'process> {
     /// Expected operand stack state before: [map_ptr, KEY, NEW_VALUE]
     /// Advice stack state after: [set_operation, entry_ptr]
     pub fn handle_set_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
+        #[cfg(feature = "std")]
+        if std::env::var("MIDEN_DEBUG_LINK_MAP_STACK").is_ok() {
+            let top: Vec<_> = (0..8).map(|idx| process.get_stack_item(idx)).collect();
+            std::eprintln!("link_map::set stack[0..8]={top:?}");
+        }
+
         let map_ptr = process.get_stack_item(1);
         let map_key = get_stack_word_le(process, 2);
 
@@ -67,6 +73,12 @@ impl<'process> LinkMap<'process> {
     /// Expected operand stack state before: [map_ptr, KEY]
     /// Advice stack state after: [get_operation, entry_ptr]
     pub fn handle_get_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
+        #[cfg(feature = "std")]
+        if std::env::var("MIDEN_DEBUG_LINK_MAP_STACK").is_ok() {
+            let top: Vec<_> = (0..8).map(|idx| process.get_stack_item(idx)).collect();
+            std::eprintln!("link_map::get stack[0..8]={top:?}");
+        }
+
         let map_ptr = process.get_stack_item(1);
         let map_key = get_stack_word_le(process, 2);
 

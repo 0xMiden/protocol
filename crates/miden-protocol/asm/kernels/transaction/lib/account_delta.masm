@@ -542,10 +542,13 @@ pub proc add_asset
     # => [is_fungible_asset, ASSET]
 
     if.true
-        exec.asset_vault::build_fungible_asset_vault_key swapw
-        # => [ASSET, ASSET_KEY]
+        exec.asset_vault::build_fungible_asset_vault_key
+        # => [ASSET_KEY, ASSET]
 
-        drop drop drop movdn.4
+        # extract amount while preserving the asset key
+        dupw
+        exec.::$kernel::util::asset::get_balance_from_fungible_asset
+        dropw
         # => [ASSET_KEY, amount]
 
         exec.add_fungible_asset
@@ -572,10 +575,13 @@ pub proc remove_asset
     # => [is_fungible_asset, ASSET, vault_root_ptr]
 
     if.true
-        exec.asset_vault::build_fungible_asset_vault_key swapw
-        # => [ASSET, ASSET_KEY]
+        exec.asset_vault::build_fungible_asset_vault_key
+        # => [ASSET_KEY, ASSET]
 
-        drop drop drop movdn.4
+        # extract amount while preserving the asset key
+        dupw
+        exec.::$kernel::util::asset::get_balance_from_fungible_asset
+        dropw
         # => [ASSET_KEY, amount]
 
         exec.remove_fungible_asset

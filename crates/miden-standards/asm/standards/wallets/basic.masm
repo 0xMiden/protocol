@@ -7,6 +7,7 @@ use miden::protocol::output_note
 # CONSTANTS
 # =================================================================================================
 const PUBLIC_NOTE=1
+const NOTE_DATA_SCRATCH_PTR=18874368
 
 #! Adds the provided asset to the active account.
 #!
@@ -72,7 +73,7 @@ end
 pub proc add_assets_to_account
     # write assets to memory starting at address 0
     # since the asset memory will be overwritten, we don't have to initialize memory to zero
-    push.0
+    push.NOTE_DATA_SCRATCH_PTR
     exec.active_note::get_assets
     # => [num_of_assets, ptr = 0]
 
@@ -92,6 +93,7 @@ pub proc add_assets_to_account
     while.true
         # load the asset at ptr
         loc_load.1
+        debug.stack.2
         mem_loadw_le
         # => [ASSET]
 

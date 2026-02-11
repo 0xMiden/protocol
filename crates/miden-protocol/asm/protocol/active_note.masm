@@ -71,6 +71,7 @@ pub proc get_assets
     # write the assets from the advice map into memory
     exec.note::write_assets_to_memory
     # => [num_assets, dest_ptr]
+    debug.stack.2
 end
 
 #! Returns the recipient of the active note.

@@ -140,6 +140,7 @@ impl TransactionContext {
         // Load transaction kernel and the program into the mast forest in self.
         // Note that native and foreign account's code are already loaded by the
         // TransactionContextBuilder.
+        self.mast_store.insert(TransactionKernel::kernel().mast_forest().clone());
         self.mast_store.insert(TransactionKernel::library().mast_forest().clone());
         self.mast_store.insert(program.mast_forest().clone());
 

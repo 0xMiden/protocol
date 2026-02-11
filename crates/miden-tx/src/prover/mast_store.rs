@@ -83,6 +83,11 @@ impl TransactionMastStore {
 
 impl MastForestStore for TransactionMastStore {
     fn get(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
-        self.mast_forests.read().get(procedure_root).cloned()
+        let result = self.mast_forests.read().get(procedure_root).cloned();
+        #[cfg(feature = "std")]
+        if result.is_none() && std::env::var("MIDEN_DEBUG_MAST_STORE").is_ok() {
+            std::eprintln!("mast_store::miss root={procedure_root}");
+        }
+        result
     }
 }

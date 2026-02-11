@@ -32,6 +32,8 @@ end
 #! - ASSET is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
 pub proc get_balance_from_fungible_asset
+    # move balance (LE: top element) below the remaining word to drop them
+    movdn.3
     drop drop drop
     # => [balance]
 end

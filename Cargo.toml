@@ -65,3 +65,15 @@ rand_chacha    = { default-features = false, version = "0.9" }
 rstest         = { version = "0.26" }
 thiserror      = { default-features = false, version = "2.0" }
 tokio          = { default-features = false, features = ["sync"], version = "1" }
+
+[patch."https://github.com/0xMiden/miden-vm"]
+miden-air = { path = "/Users/huitseeker/tmp/miden-vm-next/air" }
+miden-assembly = { path = "/Users/huitseeker/tmp/miden-vm-next/crates/assembly" }
+miden-assembly-syntax = { path = "/Users/huitseeker/tmp/miden-vm-next/crates/assembly-syntax" }
+miden-core = { path = "/Users/huitseeker/tmp/miden-vm-next/core" }
+miden-core-lib = { path = "/Users/huitseeker/tmp/miden-vm-next/crates/lib/core" }
+miden-mast-package = { path = "/Users/huitseeker/tmp/miden-vm-next/crates/mast-package" }
+miden-processor = { path = "/Users/huitseeker/tmp/miden-vm-next/processor" }
+miden-prover = { path = "/Users/huitseeker/tmp/miden-vm-next/prover" }
+miden-utils-sync = { path = "/Users/huitseeker/tmp/miden-vm-next/crates/utils-sync" }
+miden-verifier = { path = "/Users/huitseeker/tmp/miden-vm-next/verifier" }

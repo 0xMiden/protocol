@@ -14,6 +14,8 @@ const OUTPUT_NOTE_TYPE_PRIVATE=2
 const OUTPUT_PUBLIC_NOTE_INPUTS_ADDR=12
 const OUTPUT_PUBLIC_NOTE_INPUTS_LEN_MEM_ADDR=0
 
+const NOTE_DATA_SCRATCH_PTR=18874368
+
 # ERRORS
 # =================================================================================================
 const ERR_MINT_WRONG_NUMBER_OF_INPUTS="MINT script expects exactly 8 inputs for private or 12+ inputs for public output notes"
@@ -54,7 +56,7 @@ begin
     dropw
     # => [pad(16)]
     # Load note inputs into memory starting at address 0
-    push.0 exec.active_note::get_inputs
+    push.NOTE_DATA_SCRATCH_PTR exec.active_note::get_inputs
     # => [total_inputs, inputs_ptr, pad(16)]
 
     dup
