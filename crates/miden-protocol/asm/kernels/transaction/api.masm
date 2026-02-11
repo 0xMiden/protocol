@@ -47,96 +47,42 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSE
 
 #! Authenticates that the invocation of a kernel procedure originates from the account context.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  []
+#! Outputs: []
 #!
 #! Panics if:
 #! - the invocation of the kernel procedure does not originate from the account context.
 #!
 #! Invocation: exec
-@locals(16)
 proc authenticate_account_origin
-    # normalize stack depth to 16 before preserving
-    exec.sys::truncate_stack
-
-    # preserve the input stack to keep procedure inputs intact
-    loc_storew_le.0 dropw
-    loc_storew_le.4 dropw
-    loc_storew_le.8 dropw
-    loc_storew_le.12 dropw
-    # => []
-
     # get the hash of the caller
     caller
     # => [CALLER]
 
-    # stash caller root so the auth check runs with a clean stack
-    mem_storew_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
-    dropw
-    # => []
-
     # assert that the caller is from the user context
     exec.account::authenticate_and_track_procedure
     # => []
-
-    # restore the input stack
-    loc_loadw_le.12
-    loc_loadw_le.8
-    loc_loadw_le.4
-    loc_loadw_le.0
-    # => [pad(16)]
-
-    # ensure we return with the required stack depth
-    exec.sys::truncate_stack
-    # => [pad(16)]
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
 #! the account.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  []
+#! Outputs: []
 #!
 #! Panics if:
 #! - the invocation of the kernel procedure does not originate from the authentication procedure
 #!   of the account.
 #!
 #! Invocation: exec
-@locals(16)
 proc assert_auth_procedure_origin
-    # normalize stack depth to 16 before preserving
-    exec.sys::truncate_stack
-
-    # preserve the input stack to keep procedure inputs intact
-    loc_storew_le.0 dropw
-    loc_storew_le.4 dropw
-    loc_storew_le.8 dropw
-    loc_storew_le.12 dropw
-    # => []
-
     # get the hash of the caller
     caller
     # => [CALLER]
 
-    # stash caller root so the auth check runs with a clean stack
-    mem_storew_le.ACCOUNT_SEED_HASH_SCRATCH_PTR
-    dropw
-    # => []
-
     # assert that the caller is from the user context
     exec.account::assert_auth_procedure
     # => []
-
-    # restore the input stack
-    loc_loadw_le.12
-    loc_loadw_le.8
-    loc_loadw_le.4
-    loc_loadw_le.0
-    # => [pad(16)]
-
-    # ensure we return with the required stack depth
-    exec.sys::truncate_stack
-    # => [pad(16)]
 end
 
 # KERNEL PROCEDURES
@@ -448,6 +394,7 @@ pub proc account_set_item
     # set the account storage item
     exec.account::set_item
     # => [OLD_VALUE, pad(12)]
+
 end
 
 #! Returns the VALUE located under the specified KEY within the map contained in the account

@@ -172,7 +172,7 @@ fn note_script_that_creates_notes<'note>(
 ) -> anyhow::Result<String> {
     let mut out = String::from("use miden::protocol::output_note\n\nbegin\n");
 
-    for (idx, note) in output_notes.into_iter().enumerate() {
+    for note in output_notes.into_iter() {
         anyhow::ensure!(
             note.metadata().sender() == sender_id,
             "sender IDs of output notes passed to SPAWN note are inconsistent"
@@ -191,11 +191,6 @@ fn note_script_that_creates_notes<'note>(
           sender_suffix = sender_id.suffix()
         ));
 
-        if idx == 0 {
-            out.push_str("padw padw\n");
-        } else {
-            out.push_str("dropw dropw dropw\n");
-        }
         out.push_str(&format!(
             "
             push.{recipient}
@@ -203,13 +198,20 @@ fn note_script_that_creates_notes<'note>(
             push.{note_type}
             push.{aux}
             push.{tag}
-            call.output_note::create\n",
+            exec.output_note::create\n",
             recipient = note.recipient().digest(),
             hint = Felt::from(note.metadata().execution_hint()),
             note_type = note.metadata().note_type() as u8,
             aux = note.metadata().aux(),
             tag = note.metadata().tag(),
         ));
+        // Pad below note_idx for move_asset_to_note calls.
+        out.push_str(
+            "repeat.11\n\
+                push.0\n\
+                movdn.2\n\
+            end\n",
+        );
 
         let assets_str = prepare_assets(note.assets());
         for asset in assets_str {
@@ -217,10 +219,12 @@ fn note_script_that_creates_notes<'note>(
                 " push.{asset}
                   call.::miden::standards::wallets::basic::move_asset_to_note\n",
             ));
+            out.push_str(" dropw\n");
         }
+        out.push_str("dropw dropw dropw\n");
     }
 
-    out.push_str("repeat.5 dropw end\nend");
+    out.push_str("repeat.4 dropw end\nend");
 
     Ok(out)
 }

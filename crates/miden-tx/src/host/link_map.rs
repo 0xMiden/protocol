@@ -46,7 +46,7 @@ impl<'process> LinkMap<'process> {
     /// Handles a `LINK_MAP_SET_EVENT` emitted from a VM.
     ///
     /// Expected operand stack state before: [map_ptr, KEY, NEW_VALUE]
-    /// Advice stack state after: [entry_ptr, set_operation]
+    /// Advice stack state after: [set_operation, entry_ptr]
     pub fn handle_set_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
         let map_key = get_stack_word_le(process, 2);
@@ -57,15 +57,15 @@ impl<'process> LinkMap<'process> {
         let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(entry_ptr)),
             Felt::new(u64::from(set_op as u8)),
+            Felt::new(u64::from(entry_ptr)),
         ])]
     }
 
     /// Handles a `LINK_MAP_GET_EVENT` emitted from a VM.
     ///
     /// Expected operand stack state before: [map_ptr, KEY]
-    /// Advice stack state after: [entry_ptr, get_operation]
+    /// Advice stack state after: [get_operation, entry_ptr]
     pub fn handle_get_event(process: &ProcessorState<'_>) -> Vec<AdviceMutation> {
         let map_ptr = process.get_stack_item(1);
         let map_key = get_stack_word_le(process, 2);
@@ -75,8 +75,8 @@ impl<'process> LinkMap<'process> {
         let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::new(u64::from(entry_ptr)),
             Felt::new(u64::from(get_op as u8)),
+            Felt::new(u64::from(entry_ptr)),
         ])]
     }
 
