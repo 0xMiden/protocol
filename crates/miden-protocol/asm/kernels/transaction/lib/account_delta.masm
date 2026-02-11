@@ -207,10 +207,7 @@ proc update_value_slot_delta
         reversew
         # => [domain, 0, slot_id_suffix, slot_id_prefix, CURRENT_VALUE, PERM]
 
-        # place CURRENT_VALUE on top so hperm absorbs metadata first
-        swapw
-        # => [CURRENT_VALUE, domain, 0, slot_id_suffix, slot_id_prefix, PERM]
-
+        # keep metadata on top so hperm absorbs metadata first
         hperm
         # => [RATE, RATE, PERM]
     else
@@ -285,6 +282,10 @@ proc update_map_slot_delta
             swapdw dropw dropw
             # => [NEW_VALUE, KEY, PERM]
 
+            # keep KEY on top so hperm absorbs it first
+            swapw
+            # => [KEY, NEW_VALUE, PERM]
+
             hperm
             # => [RATE, RATE, PERM]
         else
@@ -328,6 +329,10 @@ proc update_map_slot_delta
         padw
         # => [EMPTY_WORD, [domain, num_changed_entries, slot_id_suffix, slot_id_prefix], PERM]
 
+        # keep metadata on top so hperm absorbs it first
+        swapw
+        # => [[domain, num_changed_entries, slot_id_suffix, slot_id_prefix], EMPTY_WORD, PERM]
+
         hperm
         # => [RATE, RATE, PERM]
     end
@@ -359,10 +364,10 @@ proc update_fungible_asset_delta
         movup.8 loc_store.1
         # => [KEY, VALUE0, ...]
         # this stack state is equivalent to:
-        # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [delta_amount, 0, 0, 0], ...]
+        # => [[0, 0, faucet_id_suffix, faucet_id_prefix], [delta_amount, 0, 0, 0], ...]
 
         swapw
-        # => [[delta_amount, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, 0, 0], ...]
+        # => [[delta_amount, 0, 0, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
 
         # compute the absolute value of delta amount with a flag indicating whether it's positive
         exec.delta_amount_absolute
@@ -373,25 +378,25 @@ proc update_fungible_asset_delta
         # => [[delta_amount_abs, 0, was_added, 0], ...]
 
         dup neq.0
-        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, was_added, 0], [faucet_id_prefix, faucet_id_suffix, 0, 0], ...]
+        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, was_added, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
 
         # if delta amount is non-zero, update the hasher
         if.true
             # stash was_added and delta_amount_abs
             movup.2 loc_store.2
-            # => [delta_amount_abs, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, 0, RATE, RATE, PERM]
+            # => [delta_amount_abs, 0, 0, 0, faucet_id_suffix, faucet_id_prefix, RATE, RATE, PERM]
 
             loc_store.3
-            # => [0, 0, faucet_id_prefix, faucet_id_suffix, 0, 0, RATE, RATE, PERM]
+            # => [0, 0, faucet_id_suffix, faucet_id_prefix, RATE, RATE, PERM]
 
             # stash faucet_id_suffix and faucet_id_prefix
-            movup.3 loc_store.4
-            # => [0, 0, faucet_id_prefix, 0, 0, RATE, RATE, PERM]
+            movup.4 loc_store.4
+            # => [0, 0, 0, 0, faucet_id_prefix, RATE, RATE, PERM]
 
-            movup.2 loc_store.5
+            movup.4 loc_store.5
             # => [0, 0, 0, 0, RATE, RATE, PERM]
 
-            # drop the padding word
+            # drop padding zeros (VALUE0 + key)
             dropw
             # => [RATE, RATE, PERM]
 
@@ -406,6 +411,10 @@ proc update_fungible_asset_delta
             # drop previous RATE elements
             swapdw dropw dropw
             # => [ASSET, META, PERM]
+
+            # keep META on top so hperm absorbs it first
+            swapw
+            # => [META, ASSET, PERM]
 
             hperm
             # => [RATE, RATE, PERM]
@@ -484,6 +493,10 @@ proc update_non_fungible_asset_delta
             swapdw dropw dropw
             # => [ASSET, [0, 0, was_added, domain], PERM]
 
+            # keep META on top so hperm absorbs it first
+            swapw
+            # => [META, ASSET, PERM]
+
             hperm
             # => [RATE, RATE, PERM]
         else
@@ -546,10 +559,12 @@ pub proc add_asset
         # => [ASSET_KEY, ASSET]
 
         # extract amount while preserving the asset key
-        dupw
+        swapw
+        # => [ASSET, ASSET_KEY]
+
         exec.::$kernel::util::asset::get_balance_from_fungible_asset
-        dropw
         # => [ASSET_KEY, amount]
+        movdn.4
 
         exec.add_fungible_asset
         # => []
@@ -579,10 +594,12 @@ pub proc remove_asset
         # => [ASSET_KEY, ASSET]
 
         # extract amount while preserving the asset key
-        dupw
+        swapw
+        # => [ASSET, ASSET_KEY]
+
         exec.::$kernel::util::asset::get_balance_from_fungible_asset
-        dropw
         # => [ASSET_KEY, amount]
+        movdn.4
 
         exec.remove_fungible_asset
         # => []

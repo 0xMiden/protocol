@@ -299,7 +299,8 @@ proc write_storage_to_memory
     # AS => [[INPUT_VALUES]]
 
     # calculate the number of words required to store the inputs
-    dup.4 u32divmod.4 neq.0 add
+    dup.4
+    u32divmod.4 neq.0 add
     # OS => [num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 

@@ -1198,7 +1198,8 @@ pub proc save_account_storage_data
 
     # push the length of the storage slot data onto the operand stack and compute the number of
     # storage slots from it
-    adv_push.1 div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
+    adv_push.1
+    div.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # OS => [num_storage_slots, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
@@ -1268,7 +1269,8 @@ pub proc save_account_procedure_data
 
     # push the length of the account procedure data onto the operand stack and compute the number of
     # procedures from it
-    adv_push.1 div.ACCOUNT_PROCEDURE_DATA_LENGTH
+    adv_push.1
+    div.ACCOUNT_PROCEDURE_DATA_LENGTH
     # OS => [num_procs, CODE_COMMITMENT]
     # AS => [[ACCOUNT_PROCEDURE_DATA]]
 
@@ -1727,7 +1729,7 @@ proc get_map_item_raw
     # => [VALUE]
 end
 
-#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
+#! Finds the slot identified by the key [slot_id_suffix, slot_id_prefix, 0, 0] (stack order) and
 #! returns the pointer to that slot.
 #!
 #! Inputs:  [storage_slots_ptr, slot_id_prefix, slot_id_suffix]
@@ -1746,10 +1748,14 @@ proc find_storage_slot
     dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
     # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_prefix, slot_id_suffix]
 
-    movdn.3 movdn.2
-    # => [slot_id_prefix, slot_id_suffix, storage_slots_start_ptr, storage_slots_end_ptr]
+    # reorder to [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
+    swap.3
+    swap.2
+    swap.1
+    swap.2
+    # => [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
 
-    # find the slot whose slot key matches [slot_id_prefix, slot_id_suffix, 0, 0]
+    # find the slot whose slot key matches [slot_id_suffix, slot_id_prefix, 0, 0]
     # if the slot key does not exist, this procedure will validate its absence
     exec.sorted_array::find_half_key_value
     # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]

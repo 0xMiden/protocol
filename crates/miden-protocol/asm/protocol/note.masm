@@ -102,7 +102,8 @@ pub proc write_inputs_to_memory
     # AS => [[INPUTS_DATA]]
 
     # calculate the number of words required to store the inputs
-    dup.4 u32divmod.4 neq.0 add
+    dup.4
+    u32divmod.4 neq.0 add
     # OS => [num_words, INPUTS_COMMITMENT, num_inputs, dest_ptr]
     # AS => [[INPUTS_DATA]]
 

@@ -10,7 +10,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{AuthSchemeError, Felt, Hasher, Word};
+use crate::{AuthSchemeError, Felt, Word};
 
 // AUTH SCHEME
 // ================================================================================================
@@ -304,12 +304,11 @@ impl Signature {
     /// Converts this signature to a sequence of field elements in the format expected by the
     /// native verification procedure in the VM.
     ///
-    /// The order of elements in the returned vector is reversed because it is expected that the
-    /// data will be pushed into the advice stack
+    /// The returned vector is ordered from top to bottom as expected by the advice stack.
     pub fn to_prepared_signature(&self, msg: Word) -> Vec<Felt> {
         // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
         // refactoring
-        let mut result = match self {
+        let result = match self {
             Signature::RpoFalcon512(sig) => prepare_falcon512_poseidon2_signature(sig),
             Signature::EcdsaK256Keccak(sig) => {
                 let pk = ecdsa_k256_keccak::PublicKey::recover_from(msg, sig)
@@ -318,9 +317,6 @@ impl Signature {
             },
         };
 
-        // reverse the signature data so that when it is pushed onto the advice stack, the first
-        // element of the vector is at the top of the stack
-        result.reverse();
         result
     }
 }
@@ -371,37 +367,5 @@ impl Deserializable for Signature {
 ///    the Miden field.
 /// 5. The nonce represented as 8 field elements.
 fn prepare_falcon512_poseidon2_signature(sig: &falcon512_poseidon2::Signature) -> Vec<Felt> {
-    use falcon512_poseidon2::Polynomial;
-
-    // The signature is composed of a nonce and a polynomial s2
-    // The nonce is represented as 8 field elements.
-    let nonce = sig.nonce();
-    // We convert the signature to a polynomial
-    let s2 = sig.sig_poly();
-    // We also need in the VM the expanded key corresponding to the public key that was provided
-    // via the operand stack
-    let h = sig.public_key();
-    // Lastly, for the probabilistic product routine that is part of the verification procedure,
-    // we need to compute the product of the expanded key and the signature polynomial in
-    // the ring of polynomials with coefficients in the Miden field.
-    let pi = Polynomial::mul_modulo_p(h, s2);
-
-    // We now push the expanded key, the signature polynomial, and the product of the
-    // expanded key and the signature polynomial to the advice stack. We also push
-    // the challenge point at which the previous polynomials will be evaluated.
-    // Finally, we push the nonce needed for the hash-to-point algorithm.
-
-    let mut polynomials: Vec<Felt> =
-        h.coefficients.iter().map(|a| Felt::new(a.value() as u64)).collect();
-    polynomials.extend(s2.coefficients.iter().map(|a| Felt::new(a.value() as u64)));
-    polynomials.extend(pi.iter().map(|a| Felt::new(*a)));
-
-    let digest_polynomials = Hasher::hash_elements(&polynomials);
-    let challenge = (digest_polynomials[0], digest_polynomials[1]);
-
-    let mut result: Vec<Felt> = vec![challenge.0, challenge.1];
-    result.extend_from_slice(&polynomials);
-    result.extend_from_slice(&nonce.to_elements());
-
-    result
+    miden_core_lib::dsa::falcon512_poseidon2::encode_signature(sig.public_key(), sig)
 }

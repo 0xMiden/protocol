@@ -133,7 +133,8 @@ proc process_kernel_data
 
     # move the number of felt elements in the [KERNEL_PROCEDURE_ROOTS] array to the stack and get
     # the number of procedures from it (which is essentially the number of words)
-    adv_push.1 div.4
+    adv_push.1
+    div.4
     # OS => [num_kernel_procedures, TX_KERNEL_COMMITMENT]
     # AS => [[KERNEL_PROCEDURE_ROOTS]]
 
@@ -787,7 +788,8 @@ proc add_input_note_assets_to_vault
     exec.memory::get_input_vault_root_ptr
     # => [input_vault_root_ptr]
 
-    loc_load.0 padw movup.4 mem_loadw_le
+    loc_load.0
+    padw movup.4 mem_loadw_le
     # => [ASSET, input_vault_root_ptr]
 
     # the witnesses for the note assets should be added prior to transaction execution and so
