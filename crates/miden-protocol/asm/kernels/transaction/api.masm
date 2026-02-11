@@ -9,7 +9,7 @@ use $kernel::output_note
 use $kernel::tx
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
-use $kernel::memory::UPCOMING_FOREIGN_PROC_16TH_INPUT_VALUE_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
 use miden::core::word
 
@@ -1387,7 +1387,7 @@ end
 #!     }
 #! ```
 #!
-#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_input[15], pad(9)]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
@@ -1395,24 +1395,27 @@ end
 #!   account whose procedure is going to be executed.
 #! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
 #!   call.
-#! - foreign_procedure_input[15] is the 16th (last) value of the foreign procedure inputs.
+#! - foreign_proc_input_value_15 is the 16th (last) value of the foreign procedure inputs.
+#!
+#! Panics if:
+#! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
 pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_input[15], pad(9)]
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 
     # store the foreign account ID
     exec.memory::set_fpi_account_id
-    # => [FOREIGN_PROC_ROOT, foreign_procedure_input[15], pad(11)]
+    # => [FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(11)]
 
     # store the foreign procedure root
     exec.memory::set_fpi_procedure_root dropw
-    # => [foreign_procedure_input[15], pad(15)]
+    # => [foreign_proc_input_value_15, pad(15)]
 
     # store the 16th value of the foreign procedure inputs
-    mem_store.UPCOMING_FOREIGN_PROC_16TH_INPUT_VALUE_PTR
+    mem_store.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
     # => [pad(16)]
 end
 
@@ -1442,8 +1445,8 @@ pub proc tx_exec_foreign_proc
     # => [pad, foreign_procedure_inputs(15)]
 
     # load the 16th foreign procedure input value onto the stack
-    mem_load.UPCOMING_FOREIGN_PROC_16TH_INPUT_VALUE_PTR
-    # => [foreign_procedure_inputs[15], pad, foreign_procedure_inputs(15)]
+    mem_load.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+    # => [foreign_proc_input_value_15, pad, foreign_procedure_inputs(15)]
 
     # drop the excess pad and move the 16th inputs value to its 15th position
     swap drop movdn.15

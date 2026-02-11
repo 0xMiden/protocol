@@ -220,6 +220,9 @@ end
 #! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 16 felts.
 #! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
+#! Panics if:
+#! - the provided foreign account ID is invalid.
+#!
 #! Invocation: exec
 @locals(6) # foreign proc root (4) + foreign account ID (2)
 pub proc execute_foreign_procedure
@@ -230,25 +233,25 @@ pub proc execute_foreign_procedure
     # OS => [foreign_procedure_inputs(16)]
     # LM => [FOREIGN_PROC_ROOT, foreign_account_id_prefix, foreign_account_id_suffix]
 
-    # move up the 16th element of the foreign procedure inputs
+    # move up the last element of the foreign procedure inputs
     movup.15
-    # => [foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
+    # => [foreign_proc_input_value_15, foreign_procedure_inputs(15)]
 
     # load the foreign account ID and foreign procedure root back to the operand stack
     loc_loadw_be.0 loc_load.5 loc_load.4
-    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
 
     # get the tx_prepare_fpi procedure offset
     push.TX_PREPARE_FPI_OFFSET
-    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_procedure_inputs[15], foreign_procedure_inputs(15)]
+    # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, foreign_procedure_inputs(15)]
     
     # pad the stack before the syscall
     padw padw swapdw
     # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, 
-    #     foreign_procedure_input[15], pad(8), foreign_procedure_inputs(15)]
+    #     foreign_proc_input_value_15, pad(8), foreign_procedure_inputs(15)]
 
-    # store the foreign account ID, foreign procedure root, and the 0th element of the foreign
-    # procedure inputs to the memory
+    # store the foreign account ID, foreign procedure root, and the 16th (last) element of the
+    # foreign procedure inputs to the memory
     syscall.exec_kernel_proc
     # => [pad(16), foreign_procedure_inputs(15)]
     
