@@ -632,7 +632,6 @@ pub proc account_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET, pad(12)]
-    debug.stack.16
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
@@ -983,7 +982,6 @@ pub proc input_note_get_assets_info
     # requested by index.
     exec.get_requested_note_ptr
     # => [input_note_ptr, pad(15)]
-    debug.stack.4
 
     # assert the pointer is not zero - this would suggest the procedure has been called from an
     # incorrect context

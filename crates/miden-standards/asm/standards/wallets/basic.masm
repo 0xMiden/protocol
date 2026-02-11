@@ -98,7 +98,6 @@ pub proc add_assets_to_account
     while.true
         # load the asset at ptr
         loc_load.1
-        debug.stack.16
         mem_loadw_le
         # => [ASSET]
 

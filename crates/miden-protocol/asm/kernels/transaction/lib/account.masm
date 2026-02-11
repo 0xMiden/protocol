@@ -697,7 +697,6 @@ pub proc add_asset_to_vault
     loc_loadw_le.0
     exec.memory::get_account_vault_root_ptr movdn.4
     # => [ASSET, acct_vault_root_ptr]
-    debug.stack.5
 
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
 
