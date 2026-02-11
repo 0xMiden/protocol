@@ -7,8 +7,8 @@ use super::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use super::{Felt, Hasher, Word};
-use crate::account::{AccountId, AccountIdPrefix};
+use super::{Felt, Word};
+use crate::account::AccountId;
 
 mod fungible;
 
@@ -90,7 +90,12 @@ pub enum Asset {
 }
 
 impl Asset {
-    /// TODO(expand_assets)
+    /// Creates an asset from the provided key and value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - [`FungibleAsset::from_key_value`] or [`NonFungibleAsset::from_key_value`] fails.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
         if matches!(key.faucet_id().account_type(), AccountType::FungibleFaucet) {
             FungibleAsset::from_key_value(key, value).map(Asset::Fungible)
@@ -99,21 +104,18 @@ impl Asset {
         }
     }
 
-    /// TODO(expand_assets)
+    /// Creates an asset from the provided key and value.
     ///
     /// Prefer [`Self::from_key_value`] for more type safety.
-    pub fn from_words(key: Word, value: Word) -> Result<Self, AssetError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The provided key does not contain a valid faucet ID.
+    /// - [`Self::from_key_value`] fails.
+    pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
         let vault_key = AssetVaultKey::try_from(key)?;
         Self::from_key_value(vault_key, value)
-    }
-
-    /// Creates a new [Asset] without checking its validity.
-    pub(crate) fn new_unchecked(value: Word) -> Asset {
-        if is_not_a_non_fungible_asset(value) {
-            Asset::Fungible(FungibleAsset::new_unchecked(value))
-        } else {
-            Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(value) })
-        }
     }
 
     /// Returns true if this asset is the same as the specified asset.
@@ -131,12 +133,12 @@ impl Asset {
     }
 
     /// Returns true if this asset is a fungible asset.
-    pub const fn is_fungible(&self) -> bool {
+    pub fn is_fungible(&self) -> bool {
         matches!(self, Self::Fungible(_))
     }
 
     /// Returns true if this asset is a non fungible asset.
-    pub const fn is_non_fungible(&self) -> bool {
+    pub fn is_non_fungible(&self) -> bool {
         matches!(self, Self::NonFungible(_))
     }
 
@@ -227,44 +229,21 @@ impl Serializable for Asset {
 
 impl Deserializable for Asset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        // Both asset types have their faucet ID prefix as the first element, so we can use it to
-        // inspect what type of asset it is.
-        let faucet_id_prefix: AccountIdPrefix = source.read()?;
+        // Both asset types have their faucet ID as the first element, so we can use it to inspect
+        // what type of asset it is.
+        let faucet_id: AccountId = source.read()?;
 
-        match faucet_id_prefix.account_type() {
+        match faucet_id.account_type() {
             AccountType::FungibleFaucet => {
-                FungibleAsset::deserialize_with_faucet_id_prefix(faucet_id_prefix, source)
-                    .map(Asset::from)
+                FungibleAsset::deserialize_with_faucet_id(faucet_id, source).map(Asset::from)
             },
             AccountType::NonFungibleFaucet => {
-                NonFungibleAsset::deserialize_with_faucet_id_prefix(faucet_id_prefix, source)
-                    .map(Asset::from)
+                NonFungibleAsset::deserialize_with_faucet_id(faucet_id, source).map(Asset::from)
             },
             other_type => Err(DeserializationError::InvalidValue(format!(
-                "failed to deserialize asset: expected an account ID prefix of type faucet, found {other_type:?}"
+                "failed to deserialize asset: expected an account ID prefix of type faucet, found {other_type}"
             ))),
         }
-    }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Returns `true` if asset in [Word] is not a non-fungible asset.
-///
-/// Note: this does not mean that the word is a fungible asset as the word may contain a value
-/// which is not a valid asset.
-fn is_not_a_non_fungible_asset(asset: Word) -> bool {
-    match AccountIdPrefix::try_from(asset[3]) {
-        Ok(prefix) => {
-            matches!(prefix.account_type(), AccountType::FungibleFaucet)
-        },
-        Err(_err) => {
-            #[cfg(debug_assertions)]
-            panic!("invalid account ID prefix passed to is_not_a_non_fungible_asset: {_err}");
-            #[cfg(not(debug_assertions))]
-            false
-        },
     }
 }
 
@@ -277,7 +256,7 @@ mod tests {
     use miden_crypto::utils::{Deserializable, Serializable};
 
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-    use crate::account::{AccountId, AccountIdPrefix};
+    use crate::account::AccountId;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -289,8 +268,9 @@ mod tests {
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     };
 
+    /// Tests the serialization roundtrip for assets for assets <-> bytes and assets <-> words.
     #[test]
-    fn test_asset_serde() {
+    fn test_asset_serde() -> anyhow::Result<()> {
         for fungible_account_id in [
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -301,6 +281,13 @@ mod tests {
             let account_id = AccountId::try_from(fungible_account_id).unwrap();
             let fungible_asset: Asset = FungibleAsset::new(account_id, 10).unwrap().into();
             assert_eq!(fungible_asset, Asset::read_from_bytes(&fungible_asset.to_bytes()).unwrap());
+            assert_eq!(
+                fungible_asset,
+                Asset::from_key_value_words(
+                    fungible_asset.to_key_word(),
+                    fungible_asset.to_value_word()
+                )?,
+            );
         }
 
         for non_fungible_account_id in [
@@ -309,50 +296,32 @@ mod tests {
             ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
         ] {
             let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-            let details = NonFungibleAssetDetails::new(account_id.prefix(), vec![1, 2, 3]).unwrap();
+            let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap();
             let non_fungible_asset: Asset = NonFungibleAsset::new(&details).unwrap().into();
             assert_eq!(
                 non_fungible_asset,
                 Asset::read_from_bytes(&non_fungible_asset.to_bytes()).unwrap()
             );
+            assert_eq!(
+                non_fungible_asset,
+                Asset::from_key_value_words(
+                    non_fungible_asset.to_key_word(),
+                    non_fungible_asset.to_value_word()
+                )?
+            );
         }
+
+        Ok(())
     }
 
-    // TODO(expand_assets): Replace with from_key_value test.
-    // #[test]
-    // fn test_new_unchecked() {
-    //     for fungible_account_id in [
-    //         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    //         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-    //     ] {
-    //         let account_id = AccountId::try_from(fungible_account_id).unwrap();
-    //         let fungible_asset: Asset = FungibleAsset::new(account_id, 10).unwrap().into();
-    //         assert_eq!(fungible_asset, Asset::new_unchecked(Word::from(&fungible_asset)));
-    //     }
-
-    //     for non_fungible_account_id in [
-    //         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-    //         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-    //         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
-    //     ] {
-    //         let account_id = AccountId::try_from(non_fungible_account_id).unwrap();
-    //         let details = NonFungibleAssetDetails::new(account_id.prefix(), vec![1, 2,
-    // 3]).unwrap();         let non_fungible_asset: Asset =
-    // NonFungibleAsset::new(&details).unwrap().into();         assert_eq!(non_fungible_asset,
-    // Asset::new_unchecked(Word::from(non_fungible_asset)));     }
-    // }
-
-    /// This test asserts that account ID's prefix is serialized in the first felt of assets.
+    /// This test asserts that account ID's is serialized in the first felt of assets.
     /// Asset deserialization relies on that fact and if this changes the serialization must
     /// be updated.
     #[test]
-    fn test_account_id_prefix_is_in_first_serialized_felt() {
+    fn test_account_id_prefix_is_serialized_first() {
         for asset in [FungibleAsset::mock(300), NonFungibleAsset::mock(&[0xaa, 0xbb])] {
             let serialized_asset = asset.to_bytes();
-            let prefix = AccountIdPrefix::read_from_bytes(&serialized_asset).unwrap();
+            let prefix = AccountId::read_from_bytes(&serialized_asset).unwrap();
             assert_eq!(prefix, asset.faucet_id());
         }
     }

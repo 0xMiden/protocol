@@ -61,9 +61,6 @@ impl AccountIdV0 {
     pub(crate) const STORAGE_MODE_MASK: u8 = 0b11 << Self::STORAGE_MODE_SHIFT;
     pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
 
-    /// The bit at index 5 of the prefix encodes whether the account is a faucet.
-    pub(crate) const IS_FAUCET_MASK: u64 = 0b10 << Self::TYPE_SHIFT;
-
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 

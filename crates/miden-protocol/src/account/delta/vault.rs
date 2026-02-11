@@ -132,7 +132,7 @@ impl AccountVaultDelta {
 
     /// Returns an iterator over the added assets in this delta.
     pub fn added_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+        use crate::asset::{Asset, FungibleAsset};
         self.fungible
             .0
             .iter()
@@ -140,14 +140,16 @@ impl AccountVaultDelta {
             .map(|(&faucet_id, &diff)| {
                 Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
             })
-            .chain(self.non_fungible.filter_by_action(NonFungibleDeltaAction::Add).map(|key| {
-                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.to_value_word()) })
-            }))
+            .chain(
+                self.non_fungible
+                    .filter_by_action(NonFungibleDeltaAction::Add)
+                    .map(Asset::NonFungible),
+            )
     }
 
     /// Returns an iterator over the removed assets in this delta.
     pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+        use crate::asset::{Asset, FungibleAsset};
         self.fungible
             .0
             .iter()
@@ -155,9 +157,11 @@ impl AccountVaultDelta {
             .map(|(&faucet_id, &diff)| {
                 Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
             })
-            .chain(self.non_fungible.filter_by_action(NonFungibleDeltaAction::Remove).map(|key| {
-                Asset::NonFungible(unsafe { NonFungibleAsset::new_unchecked(key.to_value_word()) })
-            }))
+            .chain(
+                self.non_fungible
+                    .filter_by_action(NonFungibleDeltaAction::Remove)
+                    .map(Asset::NonFungible),
+            )
     }
 }
 
@@ -563,7 +567,7 @@ pub enum NonFungibleDeltaAction {
 #[cfg(test)]
 mod tests {
     use super::{AccountVaultDelta, Deserializable, Serializable};
-    use crate::account::{AccountId, AccountIdPrefix};
+    use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -645,11 +649,11 @@ mod tests {
         /// Creates an [AccountVaultDelta] with an optional [NonFungibleAsset] delta. This delta
         /// will be added if `Some(true)`, removed for `Some(false)` and missing for `None`.
         fn create_delta_with_non_fungible(
-            account_id_prefix: AccountIdPrefix,
+            account_id: AccountId,
             added: Option<bool>,
         ) -> AccountVaultDelta {
             let asset: Asset = NonFungibleAsset::new(
-                &NonFungibleAssetDetails::new(account_id_prefix, vec![1, 2, 3]).unwrap(),
+                &NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap(),
             )
             .unwrap()
             .into();
@@ -661,7 +665,7 @@ mod tests {
             }
         }
 
-        let account_id = NonFungibleAsset::mock_issuer().prefix();
+        let account_id = NonFungibleAsset::mock_issuer();
 
         let mut delta_x = create_delta_with_non_fungible(account_id, x);
         let delta_y = create_delta_with_non_fungible(account_id, y);

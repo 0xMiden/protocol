@@ -697,8 +697,7 @@ mod tests {
                 AccountIdBuilder::new()
                     .account_type(AccountType::NonFungibleFaucet)
                     .storage_mode(AccountStorageMode::Public)
-                    .build_with_rng(&mut rand::rng())
-                    .prefix(),
+                    .build_with_rng(&mut rand::rng()),
                 vec![6],
             )
             .unwrap(),

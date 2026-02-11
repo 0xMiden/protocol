@@ -25,13 +25,10 @@ use crate::account::{
     AccountStorage,
     AccountType,
     StorageSlotId,
-    // StorageValueName,
-    // StorageValueNameError,
-    // TemplateTypeError,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::{AssetId, AssetVaultKey};
+use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
@@ -459,13 +456,15 @@ pub enum AssetError {
     )]
     FungibleFaucetIdTypeMismatch(AccountId),
     #[error(
-        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value"
+        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
     )]
-    NonFungibleAssetIdMustMatchValue,
-    #[error(
-        "asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0:?}"
-    )]
+    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
+    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
     FungibleAssetIdMustBeZero(AssetId),
+    #[error(
+        "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
+    )]
+    FungibleAssetValueMostSignificantElementsMustBeZero(Word),
     #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
       id_type = .0.account_type(),

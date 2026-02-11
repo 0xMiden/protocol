@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use core::fmt;
 
 use miden_core::LexicographicWord;
 use miden_crypto::merkle::smt::LeafIndex;
@@ -73,11 +74,6 @@ impl AssetVaultKey {
         }
     }
 
-    /// Returns `true` if the asset key is for a fungible asset, `false` otherwise.
-    fn is_fungible(&self) -> bool {
-        matches!(self.faucet_id.account_type(), AccountType::FungibleFaucet)
-    }
-
     /// Returns the leaf index of a vault key.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
         LeafIndex::<SMT_DEPTH>::from(self.to_word())
@@ -129,6 +125,20 @@ impl TryFrom<Word> for AssetVaultKey {
     }
 }
 
+impl fmt::Display for AssetVaultKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The faucet ID Display impl includes the 0x prefix.
+        // Write asset ID limbs manually to avoid 0x prefix from asset ID display impl.
+        write!(
+            f,
+            "{}{:016x}{:016x}",
+            self.faucet_id,
+            self.asset_id.prefix().as_int(),
+            self.asset_id.suffix().as_int()
+        )
+    }
+}
+
 impl From<Asset> for AssetVaultKey {
     fn from(asset: Asset) -> Self {
         asset.vault_key()
@@ -156,56 +166,23 @@ fn vault_key_to_word(asset_id: AssetId, faucet_id: AccountId) -> Word {
     ])
 }
 
-// TESTS
-// ================================================================================================
-
 #[cfg(test)]
 mod tests {
-    use miden_core::Felt;
+    use std::string::ToString;
 
     use super::*;
-    use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
-
-    fn make_non_fungible_key(prefix: u64) -> AssetVaultKey {
-        let word = [Felt::new(prefix), Felt::new(11), Felt::new(22), Felt::new(33)].into();
-        AssetVaultKey::new_unchecked(word)
-    }
+    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
 
     #[test]
-    fn test_faucet_id_for_fungible_asset() {
-        let id = AccountId::dummy(
-            [0xff; 15],
-            AccountIdVersion::Version0,
-            AccountType::FungibleFaucet,
-            AccountStorageMode::Public,
+    fn asset_vault_key_to_hex() {
+        let key = AssetVaultKey::new(
+            AssetId::new(1u32.into(), 2u32.into()),
+            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
         );
 
-        let key =
-            AssetVaultKey::new_fungible(id).expect("Expected AssetVaultKey for FungibleFaucet");
-
-        // faucet_id_prefix() should match AccountId prefix
-        assert_eq!(key.faucet_id_prefix(), id.prefix());
-
-        // faucet_id() should return the same account id
-        assert_eq!(key.faucet_id().unwrap(), id);
-    }
-
-    #[test]
-    fn test_faucet_id_for_non_fungible_asset() {
-        let id = AccountId::dummy(
-            [0xff; 15],
-            AccountIdVersion::Version0,
-            AccountType::NonFungibleFaucet,
-            AccountStorageMode::Public,
-        );
-
-        let prefix_value = id.prefix().as_u64();
-        let key = make_non_fungible_key(prefix_value);
-
-        // faucet_id_prefix() should match AccountId prefix
-        assert_eq!(key.faucet_id_prefix(), id.prefix());
-
-        // faucet_id() should return the None
-        assert_eq!(key.faucet_id(), None);
+        assert_eq!(
+            key.to_string(),
+            "0xfa0000000000bba00000cd000000dd00000000000000020000000000000001"
+        )
     }
 }

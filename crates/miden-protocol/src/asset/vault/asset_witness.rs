@@ -28,7 +28,7 @@ impl AssetWitness {
     pub fn new(smt_proof: SmtProof) -> Result<Self, AssetError> {
         for (vault_key, asset_value) in smt_proof.leaf().entries() {
             // This ensures that vault key and value are consistent.
-            Asset::from_words(*vault_key, *asset_value)
+            Asset::from_key_value_words(*vault_key, *asset_value)
                 .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
         }
 
@@ -69,7 +69,8 @@ impl AssetWitness {
         };
 
         entries.iter().map(|(key, value)| {
-            Asset::from_words(*key, *value).expect("asset witness should track valid assets")
+            Asset::from_key_value_words(*key, *value)
+                .expect("asset witness should track valid assets")
         })
     }
 
@@ -128,7 +129,9 @@ mod tests {
 
         let err = AssetWitness::new(proof).unwrap_err();
 
-        assert_matches!(err, AssetError::InvalidFaucetAccountId(_));
+        assert_matches!(err, AssetError::AssetWitnessInvalid(source) => {
+            assert_matches!(*source, AssetError::InvalidFaucetAccountId(_));
+        });
 
         Ok(())
     }
@@ -148,9 +151,8 @@ mod tests {
 
         let err = AssetWitness::new(proof).unwrap_err();
 
-        assert_matches!(err, AssetError::AssetVaultKeyMismatch { actual, expected } => {
-            assert_eq!(actual, fungible_asset.vault_key().into());
-            assert_eq!(expected, non_fungible_asset.vault_key().into());
+        assert_matches!(err, AssetError::AssetWitnessInvalid(source) => {
+            assert_matches!(*source, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
         });
 
         Ok(())

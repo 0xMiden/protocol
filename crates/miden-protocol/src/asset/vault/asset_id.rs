@@ -1,3 +1,5 @@
+use core::fmt::Display;
+
 use crate::Felt;
 
 /// The [`AssetId`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
@@ -22,5 +24,15 @@ impl AssetId {
     /// Returns the prefix of the asset ID.
     pub fn prefix(&self) -> Felt {
         self.prefix
+    }
+}
+
+impl Display for AssetId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "0x{:016x}{:016x}",
+            self.prefix().as_int(),
+            self.suffix().as_int()
+        ))
     }
 }

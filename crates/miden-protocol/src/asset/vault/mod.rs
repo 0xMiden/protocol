@@ -112,21 +112,22 @@ impl AssetVault {
             return Err(AssetVaultError::NotAFungibleFaucetId(faucet_id));
         }
 
-        // if the tree value is [0, 0, 0, 0], the asset is not stored in the vault
-        match self.asset_tree.get_value(
-            &AssetVaultKey::new_fungible(faucet_id)
-                .expect("faucet ID should be of type fungible")
-                .into(),
-        ) {
-            asset if asset == Smt::EMPTY_VALUE => Ok(0),
-            asset => Ok(FungibleAsset::new_unchecked(asset).amount()),
-        }
+        let vault_key =
+            AssetVaultKey::new_fungible(faucet_id).expect("faucet ID should be of type fungible");
+        let asset_value = self.asset_tree.get_value(&vault_key.to_word());
+        let asset = FungibleAsset::from_key_value(vault_key, asset_value)
+            .expect("asset vault should only store valid assets");
+
+        Ok(asset.amount())
     }
 
     /// Returns an iterator over the assets stored in the vault.
     pub fn assets(&self) -> impl Iterator<Item = Asset> + '_ {
         // SAFETY: The asset tree tracks only valid assets.
-        self.asset_tree.entries().map(|(_key, value)| Asset::new_unchecked(*value))
+        self.asset_tree.entries().map(|(key, value)| {
+            Asset::from_key_value_words(*key, *value)
+                .expect("asset vault should only store valid assets")
+        })
     }
 
     /// Returns an iterator over the inner nodes of the underlying [`Smt`].
@@ -171,7 +172,7 @@ impl AssetVault {
     ///
     /// # Errors
     /// Returns an error:
-    /// - If the total value of assets is greater than or equal to 2^63.
+    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
     /// - If the delta contains an addition/subtraction for a fungible asset that is not stored in
     ///   the vault.
     /// - If the delta contains a non-fungible asset removal that is not stored in the vault.
@@ -202,7 +203,7 @@ impl AssetVault {
     /// Add the specified asset to the vault.
     ///
     /// # Errors
-    /// - If the total value of two fungible assets is greater than or equal to 2^63.
+    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
     /// - If the vault already contains the same non-fungible asset.
     /// - The maximum number of leaves per asset is exceeded.
     pub fn add_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
@@ -216,26 +217,26 @@ impl AssetVault {
     /// issued by the same faucet, the amounts are added together.
     ///
     /// # Errors
-    /// - If the total value of assets is greater than or equal to 2^63.
+    /// - If the total value of the added assets is greater than [`FungibleAsset::MAX_AMOUNT`].
     /// - The maximum number of leaves per asset is exceeded.
     fn add_fungible_asset(
         &mut self,
-        asset: FungibleAsset,
+        other_asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
-        // fetch current asset value from the tree and add the new asset to it.
-        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().to_word()) {
-            current if current == Smt::EMPTY_VALUE => asset,
-            current => {
-                let current = FungibleAsset::new_unchecked(current);
-                current.add(asset).map_err(AssetVaultError::AddFungibleAssetBalanceError)?
-            },
-        };
+        let current_asset_value = self.asset_tree.get_value(&other_asset.vault_key().to_word());
+        let current_asset =
+            FungibleAsset::from_key_value(other_asset.vault_key(), current_asset_value)
+                .expect("asset vault should store valid assets");
+
+        let new_asset = current_asset
+            .add(other_asset)
+            .map_err(AssetVaultError::AddFungibleAssetBalanceError)?;
+
         self.asset_tree
-            .insert(new.vault_key().to_word(), new.to_value_word())
+            .insert(new_asset.vault_key().to_word(), new_asset.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
-        // return the new asset
-        Ok(new)
+        Ok(new_asset)
     }
 
     /// Add the specified non-fungible asset to the vault.
@@ -291,30 +292,32 @@ impl AssetVault {
     /// - The maximum number of leaves per asset is exceeded.
     fn remove_fungible_asset(
         &mut self,
-        asset: FungibleAsset,
+        other_asset: FungibleAsset,
     ) -> Result<FungibleAsset, AssetVaultError> {
-        // fetch the asset from the vault.
-        let new: FungibleAsset = match self.asset_tree.get_value(&asset.vault_key().to_word()) {
-            current if current == Smt::EMPTY_VALUE => {
-                return Err(AssetVaultError::FungibleAssetNotFound(asset));
-            },
-            current => {
-                let current = FungibleAsset::new_unchecked(current);
-                current.sub(asset).map_err(AssetVaultError::SubtractFungibleAssetBalanceError)?
-            },
-        };
+        let current_asset_value = self.asset_tree.get_value(&other_asset.vault_key().to_word());
+        let current_asset =
+            FungibleAsset::from_key_value(other_asset.vault_key(), current_asset_value)
+                .expect("asset vault should store valid assets");
 
-        // if the amount of the asset is zero, remove the asset from the vault.
-        let value = match new.amount() {
-            0 => Smt::EMPTY_VALUE,
-            _ => new.to_value_word(),
-        };
+        let new_asset = current_asset
+            .sub(other_asset)
+            .map_err(AssetVaultError::SubtractFungibleAssetBalanceError)?;
+
+        // Note that if new_asset's amount is 0, its value's word representation is equal to
+        // the empty word, which results in the removal of the entire entry from the corresponding
+        // leaf.
+        #[cfg(debug_assertions)]
+        {
+            if new_asset.amount() == 0 {
+                assert!(new_asset.to_value_word().is_empty())
+            }
+        }
+
         self.asset_tree
-            .insert(new.vault_key().to_word(), value)
+            .insert(new_asset.vault_key().to_word(), new_asset.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
-        // return the asset that was removed.
-        Ok(asset)
+        Ok(other_asset)
     }
 
     /// Remove the specified non-fungible asset from the vault and returns the asset that was just

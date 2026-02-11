@@ -141,7 +141,7 @@ impl PartialVault {
     ) -> Result<(), PartialAssetVaultError> {
         for (vault_key, asset_value) in entries {
             // This ensures that vault key and value are consistent.
-            Asset::from_words(*vault_key, *asset_value).map_err(|source| {
+            Asset::from_key_value_words(*vault_key, *asset_value).map_err(|source| {
                 PartialAssetVaultError::InvalidAssetInSmt { entry: *asset_value, source }
             })?;
         }
@@ -218,10 +218,7 @@ mod tests {
         let partial_smt = PartialSmt::from_proofs([proof.clone()])?;
 
         let err = PartialVault::try_from(partial_smt).unwrap_err();
-        assert_matches!(err, PartialAssetVaultError::InvalidAssetInSmt { entry, source } => {
-            assert_eq!(actual, invalid_vault_key);
-            assert_eq!(expected, asset.vault_key());
-        });
+        assert_matches!(err, PartialAssetVaultError::InvalidAssetInSmt { .. });
 
         Ok(())
     }
