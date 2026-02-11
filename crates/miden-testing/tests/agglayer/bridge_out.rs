@@ -3,6 +3,7 @@ extern crate alloc;
 use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
 use miden_agglayer::{B2AggNote, EthAddressFormat, ExitRoot, create_existing_bridge_account};
 use miden_crypto::rand::FeltRng;
+use miden_protocol::Felt;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -15,7 +16,6 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
-use miden_protocol::{Felt, Word};
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
@@ -29,7 +29,7 @@ use super::mmr_frontier::SOLIDITY_MMR_FRONTIER_VECTORS;
 /// - `"miden::agglayer::let::root_hi"` — high word of the root
 ///
 /// Returns `[root_lo, root_hi]`. For an empty/uninitialized tree, both words are zeros.
-fn read_local_exit_root(account: &Account) -> [Word; 2] {
+fn read_local_exit_root(account: &Account) -> Vec<Felt> {
     let root_lo_slot =
         StorageSlotName::new("miden::agglayer::let::root_lo").expect("slot name should be valid");
     let root_hi_slot =
@@ -44,7 +44,10 @@ fn read_local_exit_root(account: &Account) -> [Word; 2] {
         .get_item(&root_hi_slot)
         .expect("should be able to read LET root hi");
 
-    [root_lo, root_hi]
+    let mut root = Vec::with_capacity(8);
+    root.extend(root_lo.to_vec().into_iter().rev());
+    root.extend(root_hi.to_vec().into_iter().rev());
+    root
 }
 
 /// Tests that consuming a single B2AGG note produces the correct Local Exit Root.
@@ -153,14 +156,12 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     // VERIFY LOCAL EXIT ROOT MATCHES SOLIDITY VECTOR
     // --------------------------------------------------------------------------------------------
-    let ler = read_local_exit_root(&bridge_account);
-    let computed_ler_elements =
-        ler.iter().map(|w| w.clone().to_vec()).flatten().collect::<Vec<Felt>>();
+    let computed_ler = read_local_exit_root(&bridge_account);
 
     let expected_ler =
         ExitRoot::new(hex_to_bytes(&vectors.roots[0]).expect("valid root hex")).to_elements();
     assert_eq!(
-        computed_ler_elements, expected_ler,
+        computed_ler, expected_ler,
         "Local Exit Root after 1 leaf should match the Solidity-generated root"
     );
 
