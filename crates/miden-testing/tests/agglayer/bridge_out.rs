@@ -6,7 +6,7 @@ use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
@@ -68,14 +68,10 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    // Get BURN note script to add to the transaction context
-    let burn_note_script: NoteScript = StandardNote::BURN.script();
-
     // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
     // --------------------------------------------------------------------------------------------
     let tx_context = mock_chain
         .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
-        .add_note_script(burn_note_script.clone())
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
@@ -116,7 +112,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Verify the BURN note uses the correct script
     assert_eq!(
         burn_note.recipient().script().root(),
-        burn_note_script.root(),
+        StandardNote::BURN.script_root(),
         "BURN note should use the BURN script"
     );
 
