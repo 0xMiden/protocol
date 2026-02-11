@@ -11,6 +11,10 @@ use miden::standards::wallets::basic->basic_wallet
 
 const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
 
+const STORAGE_START_PTR=8
+const STORAGE_END_PTR=STORAGE_START_PTR + 8
+const ASSET_PTR=0
+
 # ERRORS
 # =================================================================================================
 const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS="B2AGG script requires exactly 1 note asset"
@@ -71,14 +75,14 @@ begin
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]
-        push.8 exec.active_note::get_storage
+        push.STORAGE_START_PTR exec.active_note::get_storage
         # => [num_storage_items, dest_ptr, pad(16)]
 
         push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
         # => [pad(16)]
 
         # Store note assets -> mem[0..4]
-        push.0 exec.active_note::get_assets
+        push.ASSET_PTR exec.active_note::get_assets
         # => [num_assets, ptr, pad(16)]
 
         # Must be exactly 1 asset
@@ -86,11 +90,12 @@ begin
         # => [pad(16)]
 
         # load the 6 B2AGG felts from note storage as two words
-        mem_loadw_be.12 swapw.2 mem_loadw_be.8 swapw
-        # => [EMPTY_WORD, dest_network, dest_address(5), pad(6)]
+        push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
+        # => [dest_network, dest_address(5), pad(10)]
 
         # Load ASSET onto the stack
-        mem_loadw_be.0
+        movupw.2
+        mem_loadw_be.ASSET_PTR
         # => [ASSET, dest_network, dest_address(5), pad(6)]
 
         call.bridge_out::bridge_out
