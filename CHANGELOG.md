@@ -40,6 +40,8 @@
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 - [BREAKING] Refactored assets in the tx kernel and `miden::protocol` from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396), [#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Rename `miden::protocol::asset::build_fungible_asset` to `miden::protocol::asset::create_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Rename `miden::protocol::asset::build_non_fungible_asset` to `miden::protocol::asset::create_non_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
 
 ## 0.13.3 (2026-01-27)
 
