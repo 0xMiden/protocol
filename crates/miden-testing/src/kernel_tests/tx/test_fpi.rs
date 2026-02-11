@@ -544,9 +544,13 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
     let mock_map_slot = AccountStorage::mock_map_slot();
 
-    let foreign_account_code_source = "
+    let foreign_account_code_source = r#"
         use miden::protocol::active_account
 
+        #! Gets an item from the active account storage.
+        #!
+        #! Inputs:  [slot_id_prefix, slot_id_suffix]
+        #! Outputs: [VALUE]
         pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -557,13 +561,28 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             movup.6 movup.6 drop drop
         end
 
+        #! Gets a map item from the active account storage.
+        #!
+        #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+        #! Outputs: [VALUE]
         pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.2 drop
             exec.active_account::get_map_item
         end
-    ";
+
+        #! Validates the correctness of the top 16 elements on the stack
+        #!
+        #! Inputs:  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        #! Outputs: []
+        pub proc assert_inputs_correctness
+            push.[4, 3, 2, 1]     assert_eqw.err="0th stack word is incorrect"
+            push.[8, 7, 6, 5]     assert_eqw.err="1st stack word is incorrect"
+            push.[12, 11, 10, 9]  assert_eqw.err="2nd stack word is incorrect"
+            push.[16, 15, 14, 13] assert_eqw.err="3rd stack word is incorrect"
+        end
+    "#;
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let foreign_account_component = AccountComponent::new(
@@ -592,6 +611,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::tx
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -599,7 +619,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         begin
             # => [pad(16)]
 
-            ### get the storage item ############
+            ### get the storage item ##########################################
 
             # push the slot name of desired storage item
             push.MOCK_VALUE_SLOT0[0..2]
@@ -621,7 +641,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
             # => [pad(16)]
 
-            ### get the storage map item ############
+            ### get the storage map item ######################################
 
             # push the key of desired storage item
             push.{map_key}
@@ -644,8 +664,32 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
             # => [pad(18)]
 
+            ### assert foreign procedure inputs correctness ###################
+
+            # push the elements from 1 to 16 onto the stack as the inputs of the 
+            # `assert_inputs_correctness` account procedure to check that all of them will be
+            # provided to the procedure correctly
+            push.[16, 15, 14, 13]
+            push.[12, 11, 10, 9]
+            push.[8, 7, 6, 5]
+            push.[4, 3, 2, 1]
+            # => [[1, 2, ..., 16], pad(18)]
+
+            # get the hash of the `assert_inputs_correctness` account procedure
+            procref.::foreign_account::assert_inputs_correctness
+            # => [FOREIGN_PROC_ROOT, [1, 2, ..., 16], pad(16)]
+
+            # push the foreign account ID
+            push.{foreign_suffix} push.{foreign_prefix}
+            # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, 
+            #     [1, 2, ..., 16], pad(18)]
+
+            exec.tx::execute_foreign_procedure
+            # => [pad(34)]
+
             # truncate the stack
-            drop drop
+            exec.sys::truncate_stack
+            # => [pad(16)]
         end
         "#,
         mock_value_slot0 = mock_value_slot0.name(),
