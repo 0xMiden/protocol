@@ -165,12 +165,14 @@ struct CanonicalZerosFile {
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
 /// (leafType=0, originNetwork=64, originTokenAddress=0, metadataHash=0), parametrised by
 /// `amounts[i]` with a fixed `destination_network` and `destination_address`.
+///
+/// Amounts are stored as bytes32 hex strings (matching ClaimAssetTestVectors format).
 #[derive(Debug, Deserialize)]
 pub struct MmrFrontierVectorsFile {
     pub leaves: Vec<String>,
     pub roots: Vec<String>,
     pub counts: Vec<u32>,
-    pub amounts: Vec<u64>,
+    pub amounts: Vec<String>,
     pub destination_network: u32,
     pub destination_address: String,
 }

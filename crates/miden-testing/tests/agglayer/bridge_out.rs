@@ -86,8 +86,13 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE WITH ASSETS
     // --------------------------------------------------------------------------------------------
-    // Use the first vector entry: amount = vectors.amounts[0] (= 1)
-    let amount = vectors.amounts[0];
+    // Use the first vector entry: amount from vectors.amounts[0] (bytes32 hex, matching
+    // ClaimAssetTestVectors)
+    let amount_bytes: [u8; 32] = hex_to_bytes(&vectors.amounts[0]).expect("valid amount hex");
+
+    // TODO this probably needs a util in Rust
+    let amount: u64 =
+        u64::from_be_bytes(amount_bytes[24..32].try_into().expect("amount bytes 24..32"));
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
@@ -125,7 +130,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     assert_eq!(burn_note.metadata().note_type(), NoteType::Public, "BURN note should be public");
 
     // Verify the BURN note contains the bridged asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount)?;
     let expected_asset_obj = Asset::from(expected_asset);
     assert!(
         burn_note.assets().iter().any(|asset| asset == &expected_asset_obj),
