@@ -106,15 +106,14 @@ pub proc bridge_out
     # => [origin_token_address_ptr, origin_token_address(5)]
     exec.write_address_to_memory
 
+    # TODO origin network ID should come from the faucet registry
     push.ORIGIN_NETWORK_ID
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     # => [origin_network_ptr, origin_network_id]
-    # TODO byteswap?
     mem_store
 
     push.LEAF_TYPE_ASSET
     push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
-    # TODO byteswap?
     mem_store
 
     # all the leaf data is now written to memory, compute the leaf value and add to MMR frontier
