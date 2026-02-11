@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
-use miden_agglayer::{B2AggNote, EthAddressFormat, create_existing_bridge_account};
+use miden_agglayer::{B2AggNote, EthAddressFormat, ExitRoot, create_existing_bridge_account};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::account::{
     Account,
@@ -18,6 +18,9 @@ use miden_standards::account::faucets::TokenMetadata;
 use miden_protocol::{Felt, Word};
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
+use miden_tx::utils::hex_to_bytes;
+
+use super::mmr_frontier::SOLIDITY_MMR_FRONTIER_VECTORS;
 
 /// Reads the Local Exit Root (double-word) from the bridge account's storage.
 ///
@@ -44,7 +47,11 @@ fn read_local_exit_root(account: &Account) -> [Word; 2] {
     [root_lo, root_hi]
 }
 
-/// Tests the B2AGG (Bridge to AggLayer) note script with bridge_out account component.
+/// Tests that consuming a single B2AGG note produces the correct Local Exit Root.
+///
+/// The leaf data parameters (destination network, address, amount) are taken from the
+/// Solidity-generated `mmr_frontier_vectors.json` so that the resulting LER can be compared
+/// against the expected root produced by the Solidity `DepositContractV2`.
 ///
 /// This test flow:
 /// 1. Creates a network faucet to provide assets
@@ -54,6 +61,11 @@ fn read_local_exit_root(account: &Account) -> [Word; 2] {
 /// 5. Consumes the BURN note
 #[tokio::test]
 async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
+    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
+    let destination_network = vectors.destination_network;
+    let eth_address =
+        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+
     let mut builder = MockChain::builder();
 
     // Create a network faucet owner account
@@ -74,19 +86,11 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE WITH ASSETS
     // --------------------------------------------------------------------------------------------
-
-    let amount = Felt::new(100);
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
-
-    // Create note storage with destination network and address
-    let destination_network = 1u32; // Example network ID
-    let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
-
+    // Use the first vector entry: amount = vectors.amounts[0] (= 1)
+    let amount = vectors.amounts[0];
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
-    // Create the B2AGG note using the helper
     let b2agg_note = B2AggNote::create(
         destination_network,
         eth_address,
@@ -100,9 +104,6 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    // Read Local Exit Root before the transaction (should be all zeros for a fresh account)
-    let ler_before = read_local_exit_root(&bridge_account);
-
     // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
     // --------------------------------------------------------------------------------------------
     let tx_context = mock_chain
@@ -112,22 +113,15 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     // VERIFY PUBLIC BURN NOTE WAS CREATED
     // --------------------------------------------------------------------------------------------
-    // The bridge_out component should create a PUBLIC BURN note addressed to the faucet
     assert_eq!(
         executed_transaction.output_notes().num_notes(),
         1,
         "Expected one BURN note to be created"
     );
-
-    let output_note = executed_transaction.output_notes().get_note(0);
-
-    // Extract the full note from the OutputNote enum
-    let burn_note = match output_note {
+    let burn_note = match executed_transaction.output_notes().get_note(0) {
         OutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant for BURN note"),
     };
-
-    // Verify the BURN note is public
     assert_eq!(burn_note.metadata().note_type(), NoteType::Public, "BURN note should be public");
 
     // Verify the BURN note contains the bridged asset
@@ -143,8 +137,6 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         NoteTag::with_account_target(faucet.id()),
         "BURN note should have the correct tag"
     );
-
-    // Verify the BURN note uses the correct script
     assert_eq!(
         burn_note.recipient().script().root(),
         StandardNote::BURN.script_root(),
@@ -154,12 +146,17 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Apply the delta to the bridge account
     bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    // VERIFY LOCAL EXIT ROOT CHANGED
+    // VERIFY LOCAL EXIT ROOT MATCHES SOLIDITY VECTOR
     // --------------------------------------------------------------------------------------------
-    let ler_after = read_local_exit_root(&bridge_account);
-    assert_ne!(
-        ler_before, ler_after,
-        "Local Exit Root should change after consuming a B2AGG note"
+    let ler = read_local_exit_root(&bridge_account);
+    let computed_ler_elements =
+        ler.iter().map(|w| w.clone().to_vec()).flatten().collect::<Vec<Felt>>();
+
+    let expected_ler =
+        ExitRoot::new(hex_to_bytes(&vectors.roots[0]).expect("valid root hex")).to_elements();
+    assert_eq!(
+        computed_ler_elements, expected_ler,
+        "Local Exit Root after 1 leaf should match the Solidity-generated root"
     );
 
     // Apply the transaction to the mock chain
@@ -177,21 +174,19 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
     let burn_executed_transaction = burn_tx_context.execute().await?;
 
-    // Verify the burn transaction was successful - no output notes should be created
     assert_eq!(
         burn_executed_transaction.output_notes().num_notes(),
         0,
         "Burn transaction should not create output notes"
     );
 
-    // Apply the delta to the faucet account and verify the token issuance decreased
     let mut faucet = faucet;
     faucet.apply_delta(burn_executed_transaction.account_delta())?;
 
     let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_int() - amount.as_int()),
+        Felt::new(initial_token_supply.as_int() - amount),
         "Token issuance should decrease by the burned amount"
     );
 
