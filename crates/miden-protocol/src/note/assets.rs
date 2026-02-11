@@ -11,7 +11,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
+use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 // NOTE ASSETS
 // ================================================================================================
@@ -63,10 +63,9 @@ impl NoteAssets {
             }
         }
 
-        let mut assets = Self { assets, commitment: Word::empty() };
-        assets.commitment = assets.to_commitment();
+        let commitment = to_commitment(&assets);
 
-        Ok(assets)
+        Ok(Self { assets, commitment })
     }
 
     // PUBLIC ACCESSORS
@@ -169,15 +168,28 @@ impl SequentialCommit for NoteAssets {
 
     /// Returns all assets represented as a vector of field elements.
     fn to_elements(&self) -> Vec<Felt> {
-        let mut elements = Vec::with_capacity(self.assets.len() * 2 * WORD_SIZE);
-
-        for asset in self.assets.iter() {
-            elements.extend(asset.to_key_word().as_elements());
-            elements.extend(asset.to_value_word().as_elements());
-        }
-
-        elements
+        to_elements(&self.assets)
     }
+
+    /// Computes the commitment to the assets.
+    fn to_commitment(&self) -> Self::Commitment {
+        to_commitment(&self.assets)
+    }
+}
+
+fn to_elements(assets: &[Asset]) -> Vec<Felt> {
+    let mut elements = Vec::with_capacity(assets.len() * 2 * WORD_SIZE);
+
+    for asset in assets.iter() {
+        elements.extend(asset.to_key_word().as_elements());
+        elements.extend(asset.to_value_word().as_elements());
+    }
+
+    elements
+}
+
+fn to_commitment(assets: &[Asset]) -> Word {
+    Hasher::hash_elements(&to_elements(assets))
 }
 
 // SERIALIZATION
