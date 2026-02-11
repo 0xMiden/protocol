@@ -613,7 +613,8 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_asset
-    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+    exec.asset::validate_asset_key
+    # => [ASSET_KEY, pad(12)]
 
     exec.account::get_asset
     # => [ASSET_VALUE, pad(12)]
@@ -631,7 +632,8 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
-    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+    exec.asset::validate_asset_key
+    # => [ASSET_KEY, pad(12)]
 
     exec.account::get_initial_asset
     # => [ASSET_VALUE, pad(12)]
