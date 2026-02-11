@@ -170,13 +170,13 @@ proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFor
     dup movdn.6 mem_store movup.4 add.1
     # => [mem_ptr+1, address(4)]
 
-    dup movdn.5 mem_store movup.3 add.2
+    dup movdn.5 mem_store movup.3 add.1
     # => [mem_ptr+2, address(3)]
 
-    dup movdn.4 mem_store movup.2 add.3
+    dup movdn.4 mem_store movup.2 add.1
     # => [mem_ptr+3, address(2)]
 
-    dup movdn.3 mem_store swap add.4
+    dup movdn.3 mem_store swap add.1
     # => [mem_ptr+4, address(1)]
 
     mem_store
