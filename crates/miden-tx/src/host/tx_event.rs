@@ -1,7 +1,13 @@
 use alloc::vec::Vec;
 
 use miden_processor::{AdviceMutation, AdviceProvider, ProcessState, RowIndex};
-use miden_protocol::account::{AccountId, StorageMap, StorageSlotName, StorageSlotType};
+use miden_protocol::account::{
+    AccountId,
+    StorageMap,
+    StorageMapKey,
+    StorageSlotName,
+    StorageSlotType,
+};
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_protocol::note::{
     NoteAttachment,
@@ -592,7 +598,8 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     }
 
     let active_account_id = process.get_active_account_id()?;
-    let leaf_index: Felt = StorageMap::map_key_to_leaf_index(map_key)
+    let leaf_index: Felt = StorageMapKey::from_raw(map_key)
+        .to_leaf_index()
         .value()
         .try_into()
         .expect("expected key index to be a felt");

@@ -5,7 +5,7 @@ use miden_crypto::Word;
 use miden_crypto::merkle::smt::{LeafIndex, PartialSmt, SMT_DEPTH, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
-use crate::account::{StorageMap, StorageMapWitness};
+use crate::account::{StorageMap, StorageMapKey, StorageMapWitness};
 use crate::utils::serde::{ByteReader, DeserializationError};
 
 /// A partial representation of a [`StorageMap`], containing only proofs for a subset of the
@@ -98,7 +98,7 @@ impl PartialStorageMap {
     /// - [`Word::empty`] if the key is tracked by this map and does not exist,
     /// - `None` if the key is not tracked by this map.
     pub fn get(&self, raw_key: &Word) -> Option<Word> {
-        let hashed_key = StorageMap::hash_key(*raw_key);
+        let hashed_key: Word = StorageMapKey::from_raw(*raw_key).hash().into();
         // This returns an error if the key is not tracked which we map to a `None`.
         self.partial_smt.get_value(&hashed_key).ok()
     }
@@ -112,7 +112,7 @@ impl PartialStorageMap {
     /// Returns an error if:
     /// - the key is not tracked by this partial storage map.
     pub fn open(&self, raw_key: &Word) -> Result<StorageMapWitness, MerkleError> {
-        let hashed_key = StorageMap::hash_key(*raw_key);
+        let hashed_key: Word = StorageMapKey::from_raw(*raw_key).hash().into();
         let smt_proof = self.partial_smt.open(&hashed_key)?;
         let value = self.entries.get(raw_key).copied().unwrap_or_default();
 
@@ -168,7 +168,7 @@ impl Deserializable for PartialStorageMap {
 
         for _ in 0..num_entries {
             let key: Word = source.read()?;
-            let hashed_map_key = StorageMap::hash_key(key);
+            let hashed_map_key: Word = StorageMapKey::from_raw(key).hash().into();
             let value = partial_smt.get_value(&hashed_map_key).map_err(|err| {
                 DeserializationError::InvalidValue(format!(
                     "failed to find map key {key} in partial SMT: {err}"

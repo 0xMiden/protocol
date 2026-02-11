@@ -51,9 +51,11 @@ pub mod storage;
 pub use storage::{
     AccountStorage,
     AccountStorageHeader,
+    HashedStorageMapKey,
     PartialStorage,
     PartialStorageMap,
     StorageMap,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlot,
     StorageSlotContent,

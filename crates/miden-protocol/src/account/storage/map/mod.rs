@@ -4,11 +4,13 @@ use miden_core::EMPTY_WORD;
 use miden_crypto::merkle::EmptySubtreeRoots;
 
 use super::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable, Word};
-use crate::Hasher;
 use crate::account::StorageMapDelta;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::{AccountError, StorageMapError};
+
+mod key;
+pub use key::{HashedStorageMapKey, StorageMapKey};
 
 mod partial;
 pub use partial::PartialStorageMap;
@@ -99,7 +101,9 @@ impl StorageMap {
 
     /// Creates a new [`StorageMap`] from the given map. For internal use.
     fn from_btree_map(entries: BTreeMap<Word, Word>) -> Self {
-        let hashed_keys_iter = entries.iter().map(|(key, value)| (Self::hash_key(*key), *value));
+        let hashed_keys_iter = entries
+            .iter()
+            .map(|(key, value)| (StorageMapKey::from_raw(*key).hash().into(), *value));
         let smt = Smt::with_entries(hashed_keys_iter)
             .expect("btree maps should not contain duplicate keys");
 
@@ -140,8 +144,8 @@ impl StorageMap {
     ///
     /// Conceptually, an opening is a Merkle path to the leaf, as well as the leaf itself.
     pub fn open(&self, raw_key: &Word) -> StorageMapWitness {
-        let hashed_map_key = Self::hash_key(*raw_key);
-        let smt_proof = self.smt.open(&hashed_map_key);
+        let hashed_map_key = StorageMapKey::from_raw(*raw_key).hash();
+        let smt_proof = self.smt.open(&hashed_map_key.into());
         let value = self.entries.get(raw_key).copied().unwrap_or_default();
 
         // SAFETY: The key value pair is guaranteed to be present in the provided proof since we
@@ -183,9 +187,9 @@ impl StorageMap {
             self.entries.insert(raw_key, value);
         }
 
-        let hashed_key = Self::hash_key(raw_key);
+        let hashed_key = StorageMapKey::from_raw(raw_key).hash();
         self.smt
-            .insert(hashed_key, value)
+            .insert(hashed_key.into(), value)
             .map_err(AccountError::MaxNumStorageMapLeavesExceeded)
     }
 
@@ -202,24 +206,6 @@ impl StorageMap {
     /// Consumes the map and returns the underlying map of entries.
     pub fn into_entries(self) -> BTreeMap<Word, Word> {
         self.entries
-    }
-
-    // UTILITY FUNCTIONS
-    // --------------------------------------------------------------------------------------------
-
-    /// Hashes the given key to get the key of the SMT.
-    pub fn hash_key(raw_key: Word) -> Word {
-        Hasher::hash_elements(raw_key.as_elements())
-    }
-
-    /// Returns leaf index of a raw map key.
-    pub fn map_key_to_leaf_index(raw_key: Word) -> LeafIndex<SMT_DEPTH> {
-        Self::hash_key(raw_key).into()
-    }
-
-    /// Returns the leaf index of a map key.
-    pub fn hashed_map_key_to_leaf_index(hashed_map_key: Word) -> LeafIndex<SMT_DEPTH> {
-        hashed_map_key.into()
     }
 }
 

@@ -14,7 +14,7 @@ use crate::account::{
     AccountStorageHeader,
     PartialAccount,
     PartialStorage,
-    StorageMap,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotId,
     StorageSlotName,
@@ -239,7 +239,7 @@ impl TransactionInputs {
         map_key: Word,
     ) -> Result<StorageMapWitness, TransactionInputsExtractionError> {
         // Convert map key into the index at which the key-value pair for this key is stored
-        let leaf_index = StorageMap::map_key_to_leaf_index(map_key);
+        let leaf_index = StorageMapKey::from_raw(map_key).to_leaf_index();
 
         // Construct sparse Merkle path.
         let merkle_path = self.advice_inputs.store.get_path(map_root, leaf_index.into())?;

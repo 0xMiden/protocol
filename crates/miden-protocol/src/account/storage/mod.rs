@@ -19,7 +19,13 @@ mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
 mod map;
-pub use map::{PartialStorageMap, StorageMap, StorageMapWitness};
+pub use map::{
+    HashedStorageMapKey,
+    PartialStorageMap,
+    StorageMap,
+    StorageMapKey,
+    StorageMapWitness,
+};
 
 mod header;
 pub use header::{AccountStorageHeader, StorageSlotHeader};

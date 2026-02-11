@@ -4,7 +4,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtProof;
 
 use crate::Word;
-use crate::account::StorageMap;
+use crate::account::StorageMapKey;
 use crate::errors::StorageMapError;
 
 /// A witness of an asset in a [`StorageMap`](super::StorageMap).
@@ -46,7 +46,7 @@ impl StorageMapWitness {
         let mut entries = BTreeMap::new();
 
         for raw_key in raw_keys.into_iter() {
-            let hashed_map_key = StorageMap::hash_key(raw_key);
+            let hashed_map_key: Word = StorageMapKey::from_raw(raw_key).hash().into();
             let value =
                 proof.get(&hashed_map_key).ok_or(StorageMapError::MissingKey { raw_key })?;
             entries.insert(raw_key, value);
@@ -84,7 +84,7 @@ impl StorageMapWitness {
     /// - [`Word::empty`] if the key is tracked by this witness and does not exist,
     /// - `None` if the key is not tracked by this witness.
     pub fn get(&self, raw_key: &Word) -> Option<Word> {
-        let hashed_key = StorageMap::hash_key(*raw_key);
+        let hashed_key: Word = StorageMapKey::from_raw(*raw_key).hash().into();
         self.proof.get(&hashed_key)
     }
 
