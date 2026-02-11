@@ -85,22 +85,20 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
     # => [dest_network_id, dest_address(5)]
 
-    # TODO construct metadata hash
-    padw padw
-    # => [METADATA_HASH[8], dest_network_id, dest_address(5)]
-    push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
-    movdn.8
-    # => [METADATA_HASH[8], metadata_hash_ptr, dest_network_id, dest_address(5)]
-    exec.utils::mem_store_double_word_unaligned
-
-    # => [dest_network_id, dest_address(5)]
     push.LEAF_DATA_START_PTR push.DESTINATION_NETWORK_OFFSET add
     mem_store
-
     # => [dest_address(5)]
+
     push.LEAF_DATA_START_PTR push.DESTINATION_ADDRESS_OFFSET add
-    # => [dest_address_ptr, dest_address(5)]
     exec.write_address_to_memory
+
+    # TODO construct metadata hash
+    padw padw
+    # => [METADATA_HASH[8]]
+    push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
+    movdn.8
+    # => [METADATA_HASH[8], metadata_hash_ptr]
+    exec.utils::mem_store_double_word_unaligned
 
     # TODO get the origin token address from the ASSET and map via faucet registry
     push.0.0.0.0.0
@@ -110,12 +108,15 @@ pub proc bridge_out
 
     # TODO origin network ID should come from the faucet registry
     push.ORIGIN_NETWORK_ID
+    exec.utils::swap_u32_bytes
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     # => [origin_network_ptr, origin_network_id]
     mem_store
 
     push.LEAF_TYPE_ASSET
+    exec.utils::swap_u32_bytes
     push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
+    # => [leaf_type_ptr, leaf_type]
     mem_store
 
     # all the leaf data is now written to memory, compute the leaf value and add to MMR frontier
