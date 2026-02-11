@@ -75,6 +75,8 @@ pub proc bridge_out
     # => [native_amount, 0, dest_network_id, dest_address(5)]
 
     exec.asset_conversion::scale_native_amount_to_u256
+    # TODO integrate into scale_native_amount_to_u256
+    exec.asset_conversion::reverse_limbs_and_change_byte_endianness
     # => [AMOUNT[8], dest_network_id, dest_address(5)]
 
     push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
