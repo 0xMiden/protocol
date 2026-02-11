@@ -1,4 +1,6 @@
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use miden_core::field::PrimeField64;
 use miden_processor::advice::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
@@ -289,6 +291,11 @@ impl TransactionAdviceInputs {
         // --- account vault ------------------------------------------------------
 
         // populate Merkle store and advice map with nodes info needed to access vault assets
+        #[cfg(feature = "std")]
+        if std::env::var("MIDEN_DEBUG_ACCOUNT_VAULT_ROOT").is_ok() {
+            let root: [u64; 4] = account.vault().root().map(|felt| felt.as_canonical_u64());
+            std::eprintln!("debug: account_vault_root={root:?}");
+        }
         self.extend_merkle_store(account.vault().inner_nodes());
         self.extend_map(
             account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
@@ -310,6 +317,17 @@ impl TransactionAdviceInputs {
 
     /// Adds an asset witness to the advice inputs.
     fn add_asset_witness(&mut self, witness: AssetWitness) {
+        #[cfg(feature = "std")]
+        if std::env::var("MIDEN_DEBUG_ASSET_WITNESS").is_ok() {
+            let smt_proof = SmtProof::from(witness.clone());
+            let leaf_index = smt_proof.leaf().index().value();
+            let leaf_hash: [u64; 4] =
+                smt_proof.leaf().hash().map(|felt| felt.as_canonical_u64());
+            std::eprintln!(
+                "debug: asset_witness leaf_index={} leaf_hash={leaf_hash:?}",
+                leaf_index
+            );
+        }
         self.extend_merkle_store(witness.authenticated_nodes());
 
         let smt_proof = SmtProof::from(witness);

@@ -214,6 +214,7 @@ pub proc add_asset
     # pad the stack
     push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
     # => [offset, ASSET, pad(11)]
+    debug.stack.16
 
     syscall.exec_kernel_proc
     # => [ASSET', pad(12)]

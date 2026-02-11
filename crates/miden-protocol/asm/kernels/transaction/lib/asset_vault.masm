@@ -255,13 +255,16 @@ pub proc add_fungible_asset
     mem_loadw_le
     swapw
 
-    # pad empty word for insertion
+    # load updated asset; replace with empty word if amount is zero
     padw loc_loadw_le.0
-    padw
-    dup.4 eq.0
-    cdropw
+    dup eq.0
+    if.true
+        dropw
+        padw
+    end
 
     # update asset in vault
+    debug.stack.12
     exec.smt::set
 
     # assert the old value matches the peeked value
@@ -271,6 +274,7 @@ pub proc add_fungible_asset
     # update the vault root
     loc_load.8
     dup u32assert drop
+    debug.stack.5
     mem_storew_le
     dropw
 
@@ -537,6 +541,7 @@ proc peek_asset
 
     swapw
     # => [ASSET_KEY, ASSET_VAULT_ROOT]
+    debug.stack.9
 
     # lookup asset
     emit.SMT_PEEK_EVENT

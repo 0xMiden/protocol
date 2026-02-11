@@ -71,6 +71,10 @@ end
 #! Outputs: []
 @locals(1028)
 pub proc add_assets_to_account
+    # clear any caller-provided stack items
+    exec.sys::truncate_stack
+    dropw dropw dropw dropw
+
     # write assets to memory starting at address 0
     # since the asset memory will be overwritten, we don't have to initialize memory to zero
     push.NOTE_DATA_SCRATCH_PTR
@@ -84,6 +88,7 @@ pub proc add_assets_to_account
     # stash the end_ptr and ptr for loop execution
     loc_store.0
     loc_store.1
+    drop drop
     # => []
 
     # loop if the amount of assets is non-zero
@@ -93,7 +98,7 @@ pub proc add_assets_to_account
     while.true
         # load the asset at ptr
         loc_load.1
-        debug.stack.2
+        debug.stack.16
         mem_loadw_le
         # => [ASSET]
 

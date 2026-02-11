@@ -784,11 +784,12 @@ proc add_input_note_assets_to_vault
         loc_store.1
         # => []
 
-        exec.memory::get_input_vault_root_ptr
-        # => [input_vault_root_ptr]
+    exec.memory::get_input_vault_root_ptr
+    # => [input_vault_root_ptr]
 
-        loc_load.0 padw movup.4 mem_loadw_le
-        # => [ASSET, input_vault_root_ptr]
+    loc_load.0 padw movup.4 mem_loadw_le
+    # => [ASSET, input_vault_root_ptr]
+    debug.stack.5
 
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
