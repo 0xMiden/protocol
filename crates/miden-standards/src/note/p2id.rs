@@ -45,7 +45,7 @@ impl P2idNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the P2ID note.
-    pub const NUM_STORAGE_ITEMS: usize = 2;
+    pub const NUM_STORAGE_ITEMS: usize = P2idNoteStorage::NUM_ITEMS;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -105,6 +105,12 @@ pub struct P2idNoteStorage {
 }
 
 impl P2idNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items of the P2ID note.
+    pub const NUM_ITEMS: usize = 2;
+
     /// Creates new P2ID note storage targeting the given account.
     pub fn new(target: AccountId) -> Self {
         Self { target }

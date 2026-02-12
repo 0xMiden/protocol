@@ -40,14 +40,13 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// Pay-to-ID Extended (P2IDE) note abstraction.
 ///
-/// A P2IDE note enables transferring assets to a target account specified
-/// in the note storage. The note may optionally include:
+/// A P2IDE note enables transferring assets to a target account specified in the note storage.
+/// The note may optionally include:
 ///
 /// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
 /// - A timelock height preventing consumption before a given block
 ///
-/// These constraints are encoded in `P2ideNoteStorage` and enforced by
-/// the associated note script.
+/// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
 pub struct P2ideNote;
 
 impl P2ideNote {
@@ -55,7 +54,7 @@ impl P2ideNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the P2IDE note.
-    pub const NUM_STORAGE_ITEMS: usize = 4;
+    pub const NUM_STORAGE_ITEMS: usize = P2ideNoteStorage::NUM_ITEMS;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -117,6 +116,12 @@ pub struct P2ideNoteStorage {
 }
 
 impl P2ideNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items of the P2IDE note.
+    pub const NUM_ITEMS: usize = 4;
+
     /// Creates new P2IDE note storage.
     pub fn new(
         target: AccountId,
@@ -151,7 +156,6 @@ impl P2ideNoteStorage {
 impl From<P2ideNoteStorage> for NoteStorage {
     fn from(storage: P2ideNoteStorage) -> Self {
         let reclaim = storage.reclaim_height.map(Felt::from).unwrap_or(Felt::ZERO);
-
         let timelock = storage.timelock_height.map(Felt::from).unwrap_or(Felt::ZERO);
 
         NoteStorage::new(vec![
