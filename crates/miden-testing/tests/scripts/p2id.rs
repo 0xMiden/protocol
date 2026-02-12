@@ -323,7 +323,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
             # => [note_idx]
 
             # Add an asset to the created note
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
 
             # Clean up stack
@@ -335,7 +336,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         tag = Felt::from(tag),
         note_type = NoteType::Public as u8,
         serial_num = serial_num,
-        asset = Word::from(FungibleAsset::mock(50)),
+        ASSET_KEY = FungibleAsset::mock(50).to_key_word(),
+        ASSET_VALUE = FungibleAsset::mock(50).to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
