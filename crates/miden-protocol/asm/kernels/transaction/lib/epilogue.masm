@@ -171,7 +171,7 @@ proc build_output_vault
             #     num_assets, note_data_ptr, output_notes_end_ptr]
 
             # read the output note asset from memory
-            dup.4 exec.load_asset_key_and_value
+            dup.1 exec.load_asset_key_and_value
             # => [ASSET_KEY, ASSET_VALUE, output_vault_root_ptr, assets_start_ptr, assets_end_ptr,
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
