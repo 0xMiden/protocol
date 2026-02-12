@@ -21,10 +21,10 @@ mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
 mod p2id;
-pub use p2id::P2idNote;
+pub use p2id::{P2idNote, P2idNoteStorage};
 
 mod p2ide;
-pub use p2ide::P2ideNote;
+pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod swap;
 pub use swap::SwapNote;
@@ -34,8 +34,6 @@ pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError
 
 mod standard_note_attachment;
 use miden_protocol::errors::NoteError;
-pub use p2id::P2idNoteStorage;
-pub use p2ide::P2ideNoteStorage;
 pub use standard_note_attachment::StandardNoteAttachment;
 // STANDARD NOTE
 // ================================================================================================
@@ -210,7 +208,7 @@ impl StandardNote {
         match self {
             StandardNote::P2ID => {
                 let input_account_id = P2idNoteStorage::try_from(note.storage().items())
-                    .map_err(|e| NoteError::InvalidNoteStorage(e.to_string().into()))?;
+                    .map_err(|e| NoteError::other_with_source("invalid P2ID note storage", e))?;
 
                 if input_account_id.target() == target_account_id {
                     Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
@@ -224,7 +222,7 @@ impl StandardNote {
                     reclaim_height,
                     timelock_height,
                 } = P2ideNoteStorage::try_from(note.storage().items())
-                    .map_err(|e| NoteError::InvalidNoteStorage(e.to_string().into()))?;
+                    .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
                 let current_block_height = block_ref;
 

@@ -144,9 +144,8 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             });
         }
 
-        let target = AccountId::try_from([note_storage[1], note_storage[0]]).map_err(|e| {
-            NoteError::invalid_note_storage(format!("failed to create account id: {}", e))
-        })?;
+        let target = AccountId::try_from([note_storage[1], note_storage[0]])
+            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
 
         Ok(Self { target })
     }
@@ -203,6 +202,6 @@ mod tests {
         let err = P2idNoteStorage::try_from(storage.as_slice())
             .expect_err("should fail due to invalid account id encoding");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 }

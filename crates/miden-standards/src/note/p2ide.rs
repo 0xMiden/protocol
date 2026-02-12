@@ -175,9 +175,8 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             });
         }
 
-        let target = AccountId::try_from([note_storage[1], note_storage[0]]).map_err(|e| {
-            NoteError::invalid_note_storage(format!("failed to create account id: {}", e))
-        })?;
+        let target = AccountId::try_from([note_storage[1], note_storage[0]])
+            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
 
         let reclaim_height = if note_storage[2] == Felt::ZERO {
             None
@@ -185,7 +184,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             let height: u32 = note_storage[2]
                 .as_int()
                 .try_into()
-                .map_err(|e| NoteError::invalid_note_storage(format!("{e:?}")))?;
+                .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
             Some(BlockNumber::from(height))
         };
@@ -196,7 +195,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             let height: u32 = note_storage[3]
                 .as_int()
                 .try_into()
-                .map_err(|e| NoteError::invalid_note_storage(format!("{e:?}")))?;
+                .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
             Some(BlockNumber::from(height))
         };
@@ -280,7 +279,7 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("invalid account id encoding must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 
     #[test]
@@ -295,7 +294,7 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow reclaim height must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 
     #[test]
@@ -309,6 +308,6 @@ mod tests {
         let err = P2ideNoteStorage::try_from(storage.as_slice())
             .expect_err("overflow timelock height must fail");
 
-        assert!(matches!(err, NoteError::InvalidNoteStorage(_)));
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 }
