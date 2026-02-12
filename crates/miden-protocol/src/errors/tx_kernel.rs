@@ -122,6 +122,10 @@ pub const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS: MasmError = MasmError::from_sta
 pub const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the non-fungible asset is not this faucet");
 /// Error Message: "malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
 pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID: MasmError = MasmError::from_static_str("malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id");
+/// Error Message: "the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value"
+pub const ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1: MasmError = MasmError::from_static_str("the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value");
+/// Error Message: "the asset ID suffix in a non-fungible asset's vault key must match hash0 of the asset value"
+pub const ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0: MasmError = MasmError::from_static_str("the asset ID suffix in a non-fungible asset's vault key must match hash0 of the asset value");
 /// Error Message: "non-fungible asset vault key's account ID must be of type non-fungible faucet"
 pub const ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE: MasmError = MasmError::from_static_str("non-fungible asset vault key's account ID must be of type non-fungible faucet");
 
