@@ -247,9 +247,9 @@ impl AccountComponentInterface {
                     let asset =
                         partial_note.assets().iter().next().expect("note should contain an asset");
 
-                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                    if asset.faucet_id() != sender_account_id {
                         return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id_prefix(),
+                            asset.faucet_id(),
                         ));
                     }
 

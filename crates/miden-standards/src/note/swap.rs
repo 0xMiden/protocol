@@ -156,10 +156,10 @@ impl SwapNote {
         swap_use_case_id |= (swap_root_bytes[1] >> 2) as u16;
 
         // Get bits 0..8 from the faucet IDs of both assets which will form the tag payload.
-        let offered_asset_id: u64 = offered_asset.faucet_id_prefix().into();
+        let offered_asset_id: u64 = offered_asset.faucet_id().prefix().into();
         let offered_asset_tag = (offered_asset_id >> 56) as u8;
 
-        let requested_asset_id: u64 = requested_asset.faucet_id_prefix().into();
+        let requested_asset_id: u64 = requested_asset.faucet_id().prefix().into();
         let requested_asset_tag = (requested_asset_id >> 56) as u8;
 
         let asset_pair = ((offered_asset_tag as u16) << 8) | (requested_asset_tag as u16);
@@ -216,8 +216,7 @@ mod tests {
                         AccountIdVersion::Version0,
                         AccountType::NonFungibleFaucet,
                         AccountStorageMode::Public,
-                    )
-                    .prefix(),
+                    ),
                     vec![0xaa, 0xbb, 0xcc, 0xdd],
                 )
                 .unwrap(),

@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountId, AccountIdPrefix, AccountType};
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::note::{NoteAttachmentContent, PartialNote};
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
@@ -249,8 +249,8 @@ pub enum NoteAccountCompatibility {
 /// Account interface related errors.
 #[derive(Debug, Error)]
 pub enum AccountInterfaceError {
-    #[error("note asset is not issued by this faucet: {0}")]
-    IssuanceFaucetMismatch(AccountIdPrefix),
+    #[error("note asset is not issued by faucet {0}")]
+    IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
     FaucetNoteWithoutAsset,
     #[error("invalid transaction script")]
