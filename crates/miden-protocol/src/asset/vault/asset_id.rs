@@ -4,7 +4,7 @@ use crate::Felt;
 
 /// The [`AssetId`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
 /// assets issued by the same faucet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AssetId {
     suffix: Felt,
     prefix: Felt,
