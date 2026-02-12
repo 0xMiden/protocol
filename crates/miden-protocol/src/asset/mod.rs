@@ -318,7 +318,7 @@ mod tests {
     /// Asset deserialization relies on that fact and if this changes the serialization must
     /// be updated.
     #[test]
-    fn test_account_id_prefix_is_serialized_first() {
+    fn test_account_id_is_serialized_first() {
         for asset in [FungibleAsset::mock(300), NonFungibleAsset::mock(&[0xaa, 0xbb])] {
             let serialized_asset = asset.to_bytes();
             let prefix = AccountId::read_from_bytes(&serialized_asset).unwrap();

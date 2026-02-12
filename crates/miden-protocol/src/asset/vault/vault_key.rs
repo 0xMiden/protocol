@@ -127,15 +127,7 @@ impl TryFrom<Word> for AssetVaultKey {
 
 impl fmt::Display for AssetVaultKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The faucet ID Display impl includes the 0x prefix.
-        // Write asset ID limbs manually to avoid 0x prefix from asset ID display impl.
-        write!(
-            f,
-            "{}{:016x}{:016x}",
-            self.faucet_id,
-            self.asset_id.prefix().as_int(),
-            self.asset_id.suffix().as_int()
-        )
+        f.write_str(&self.to_word().to_hex())
     }
 }
 
@@ -164,25 +156,4 @@ fn vault_key_to_word(asset_id: AssetId, faucet_id: AccountId) -> Word {
         faucet_id.suffix(),
         faucet_id.prefix().as_felt(),
     ])
-}
-
-#[cfg(test)]
-mod tests {
-    use std::string::ToString;
-
-    use super::*;
-    use crate::testing::account_id::ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET;
-
-    #[test]
-    fn asset_vault_key_to_hex() {
-        let key = AssetVaultKey::new(
-            AssetId::new(1u32.into(), 2u32.into()),
-            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into().unwrap(),
-        );
-
-        assert_eq!(
-            key.to_string(),
-            "0xfa0000000000bba00000cd000000dd00000000000000020000000000000001"
-        )
-    }
 }

@@ -436,8 +436,6 @@ pub enum AssetError {
     FungibleAssetAmountTooBig(u64),
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
-    #[error("fungible asset word {0} does not contain expected ZERO at word index 1")]
-    FungibleAssetExpectedZero(Word),
     #[error(
         "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
     )]
@@ -447,8 +445,6 @@ pub enum AssetError {
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
-    #[error("faucet account ID in asset has a non-faucet prefix: {}", .0)]
-    InvalidFaucetAccountIdPrefix(AccountIdPrefix),
     #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
       id_type = .0.account_type(),
