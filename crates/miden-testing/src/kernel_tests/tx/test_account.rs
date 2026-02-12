@@ -97,17 +97,22 @@ pub async fn compute_commitment() -> miette::Result<()> {
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
     let expected_commitment = account_clone.commitment();
 
-    let tx_script = format!(
+    let tx_context = TransactionContextBuilder::new(account)
+        .build()
+        .map_err(|err| miette::miette!("{err}"))?;
+    let code = format!(
         r#"
         use miden::core::word
 
         use miden::protocol::active_account
         use $kernel::account
-        use mock::account->mock_account
+        use $kernel::prologue
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
         begin
+            exec.prologue::prepare_transaction
+
             exec.active_account::get_initial_commitment
             # => [INITIAL_COMMITMENT]
 
@@ -117,17 +122,14 @@ pub async fn compute_commitment() -> miette::Result<()> {
             assert_eqw.err="initial and current commitment should be equal when no changes have been made"
             # => []
 
-            call.mock_account::compute_storage_commitment
-            # => [STORAGE_COMMITMENT0, pad(12)]
-            swapdw dropw dropw swapw dropw
+            exec.account::compute_storage_commitment
             # => [STORAGE_COMMITMENT0]
 
             # update a value in the storage map
-            padw push.0.0.0
             push.{value}
             push.{key}
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(7)]
+            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, STORAGE_COMMITMENT0]
             exec.account::set_map_item
             dropw
             # => [STORAGE_COMMITMENT0]
@@ -140,10 +142,7 @@ pub async fn compute_commitment() -> miette::Result<()> {
             assert_eqw.err="current commitment should match expected one"
             # => [STORAGE_COMMITMENT0]
 
-            padw padw padw padw
-            call.mock_account::compute_storage_commitment
-            # => [STORAGE_COMMITMENT1, pad(12), STORAGE_COMMITMENT0]
-            swapdw dropw dropw swapw dropw
+            exec.account::compute_storage_commitment
             # => [STORAGE_COMMITMENT1, STORAGE_COMMITMENT0]
 
             # assert that the commitment has changed
@@ -155,22 +154,14 @@ pub async fn compute_commitment() -> miette::Result<()> {
         key = &key,
         value = &value,
         expected_commitment = &expected_commitment,
+        mock_map_slot = mock_map_slot,
     );
 
-    let tx_context_builder = TransactionContextBuilder::new(account);
-    let tx_script = CodeBuilder::with_mock_libraries()
-        .compile_tx_script(tx_script)
-        .into_diagnostic()?;
-    let tx_context = tx_context_builder
-        .tx_script(tx_script)
-        .build()
-        .map_err(|err| miette::miette!("{err}"))?;
-
     tx_context
-        .execute()
+        .execute_code(&code)
         .await
         .into_diagnostic()
-        .wrap_err("failed to execute transaction")?;
+        .wrap_err("failed to execute transaction code")?;
 
     Ok(())
 }
