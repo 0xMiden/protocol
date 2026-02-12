@@ -628,7 +628,7 @@ async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {
     // Create two fungible assets from different faucets
     let faucet_id1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap();
-    
+
     let asset0 = FungibleAsset::new(faucet_id1, FUNGIBLE_ASSET_AMOUNT)?;
     let asset1 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
 
