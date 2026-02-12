@@ -8,12 +8,12 @@ use miden_agglayer::{
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
-use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
+use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
@@ -56,6 +56,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
+        Felt::ZERO,
         bridge_account.id(),
         &origin_token_address,
         origin_network,

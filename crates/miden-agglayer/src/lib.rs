@@ -457,36 +457,8 @@ pub fn create_agglayer_faucet(
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
-pub fn create_existing_agglayer_faucet(
-    seed: Word,
-    token_symbol: &str,
-    decimals: u8,
-    max_supply: Felt,
-    bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
-    origin_network: u32,
-    scale: u8,
-) -> Account {
-    create_existing_agglayer_faucet_with_supply(
-        seed,
-        token_symbol,
-        decimals,
-        max_supply,
-        Felt::ZERO,
-        bridge_account_id,
-        origin_token_address,
-        origin_network,
-        scale,
-    )
-}
-
-/// Creates an existing agglayer faucet account with initial token supply.
-///
-/// This creates an existing account suitable for testing scenarios where
-/// the faucet needs to have already-issued tokens.
-#[cfg(any(feature = "testing", test))]
 #[allow(clippy::too_many_arguments)]
-pub fn create_existing_agglayer_faucet_with_supply(
+pub fn create_existing_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
     decimals: u8,

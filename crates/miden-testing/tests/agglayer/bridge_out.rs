@@ -5,9 +5,9 @@ use miden_agglayer::{
     B2AggNote,
     ConfigAggBridgeNote,
     EthAddressFormat,
-    ExitRoot,
-    create_existing_agglayer_faucet_with_supply,
+    create_existing_agglayer_faucet,
     create_existing_bridge_account,
+    ExitRoot,
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
@@ -98,12 +98,12 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let amount = Felt::new(100);
     let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
 
-    let faucet = create_existing_agglayer_faucet_with_supply(
+    let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         "AGG",
         8,
         max_supply,
-        amount, // initial token supply
+        amount,
         bridge_account.id(),
         &origin_token_address,
         origin_network,
@@ -281,12 +281,12 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
     let origin_token_address = EthAddressFormat::new([0u8; 20]);
-    let faucet = create_existing_agglayer_faucet_with_supply(
+    let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         "AGG",
         8,
         Felt::new(FungibleAsset::MAX_AMOUNT),
-        Felt::new(100), // initial token supply
+        Felt::new(100),
         bridge_account.id(),
         &origin_token_address,
         0, // origin_network
