@@ -14,9 +14,6 @@ use crate::{Felt, FieldElement, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///
-/// Note that the asset vault key is not used directly as the key in an asset vault. See
-/// the derived [`AssetVaultKeyHash`] for details.
-///
 /// Its [`Word`] layout is:
 /// ```text
 /// [

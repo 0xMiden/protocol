@@ -14,13 +14,7 @@ use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError,
 
 /// A commitment to a non-fungible asset.
 ///
-/// The commitment is constructed as follows:
-///
-/// - Hash the asset data producing `[hash0, hash1, hash2, hash3]`.
-/// - Replace the value of `hash3` with the prefix of the faucet id (`faucet_id_prefix`) producing
-///   `[hash0, hash1, hash2, faucet_id_prefix]`.
-/// - This layout ensures that fungible and non-fungible assets are distinguishable by interpreting
-///   the 3rd element of an asset as an [`AccountIdPrefix`] and checking its type.
+/// See [`Asset`] for details on how it is constructed.
 ///
 /// [`NonFungibleAsset`] itself does not contain the actual asset data. The container for this data
 /// is [`NonFungibleAssetDetails`].
@@ -293,7 +287,7 @@ mod tests {
 
         let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
 
-        // Set invalid Faucet ID Prefix.
+        // Set invalid faucet ID.
         asset_bytes[0..AccountId::SERIALIZED_SIZE].copy_from_slice(&fungible_faucet_id.to_bytes());
 
         let err = NonFungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
