@@ -120,8 +120,6 @@ pub const ERR_LINK_MAP_PROVIDED_KEY_NOT_LESS_THAN_ENTRY_KEY: MasmError = MasmErr
 pub const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS: MasmError = MasmError::from_static_str("non-fungible asset that already exists in the note cannot be added again");
 /// Error Message: "the origin of the non-fungible asset is not this faucet"
 pub const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the non-fungible asset is not this faucet");
-/// Error Message: "malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
-pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID: MasmError = MasmError::from_static_str("malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id");
 /// Error Message: "the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value"
 pub const ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1: MasmError = MasmError::from_static_str("the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value");
 /// Error Message: "the asset ID suffix in a non-fungible asset's vault key must match hash0 of the asset value"

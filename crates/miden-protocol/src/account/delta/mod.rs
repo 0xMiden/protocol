@@ -285,10 +285,10 @@ impl AccountDelta {
     /// ```
     ///
     /// `NEW_VALUE` is user-controllable so it can be crafted to match `NON_FUNGIBLE_ASSET`. Users
-    /// would have to choose a slot ID that is equal to the faucet ID which is possible since slot
-    /// IDs can be chosen at account creation time. The domain separator is then the only value that
-    /// differentiates these two deltas. This shows the importance of placing the domain separators
-    /// in the same index within each word's layout to ensure users cannot craft an ambiguous delta.
+    /// would have to choose a slot ID (at account creation time) that is equal to the faucet ID.
+    /// The domain separator is then the only value that differentiates these two deltas. This shows
+    /// the importance of placing the domain separators in the same index within each word's layout
+    /// to ensure users cannot craft an ambiguous delta.
     ///
     /// ### Number of Changed Entries
     ///

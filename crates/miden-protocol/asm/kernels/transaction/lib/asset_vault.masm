@@ -21,14 +21,6 @@ const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to re
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-existent non-fungible asset from the vault"
 
-# RE-EXPORTS
-# =================================================================================================
-
-# Re-export the shared utility procedures
-pub use $kernel::util::asset::build_non_fungible_asset_vault_key
-pub use $kernel::util::asset::build_fungible_asset_vault_key
-pub use $kernel::util::asset::build_asset_vault_key
-
 # ACCESSORS
 # =================================================================================================
 
