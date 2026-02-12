@@ -1894,6 +1894,8 @@ pub proc validate_active_foreign_account
     # get the active account ID
     push.0.0 exec.memory::get_account_id
     # => [account_id_prefix, account_id_suffix, 0, 0, ACCOUNT_DB_ROOT]
+    reversew
+    # => [0, 0, account_id_suffix, account_id_prefix, ACCOUNT_DB_ROOT]
 
     # retrieve the commitment of the foreign account from the active account tree
     # this would abort if the proof for the commitment was invalid for the account root,
