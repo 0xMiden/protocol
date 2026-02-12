@@ -1315,7 +1315,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             # => [note_idx]
 
             push.{REMOVED_ASSET_VALUE}
-            push.{REMOVED_ASSET_KEY}
+            push.{ASSET_KEY}
             exec.util::move_asset_to_note
             # => []
 
@@ -1335,9 +1335,8 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             assert_eqw.err="initial asset is incorrect"
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
+        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
         REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
-        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
         INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
         FINAL_ASSET = final_asset.to_value_word(),
     );

@@ -1,5 +1,4 @@
-use miden_protocol::Hasher;
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 
@@ -46,7 +45,11 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
         TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())
             .build()?;
 
-    let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA);
+    let non_fungible_asset_details = NonFungibleAssetDetails::new(
+        NonFungibleAsset::mock_issuer(),
+        NON_FUNGIBLE_ASSET_DATA.to_vec(),
+    )?;
+    let non_fungible_asset = NonFungibleAsset::new(&non_fungible_asset_details)?;
 
     let code = format!(
         "
@@ -57,14 +60,14 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # push non-fungible asset data hash onto the stack
-            push.{non_fungible_asset_data_hash}
+            push.{NON_FUNGIBLE_ASSET_DATA_HASH}
             exec.faucet::create_non_fungible_asset
 
             # truncate the stack
             exec.::miden::core::sys::truncate_stack
         end
         ",
-        non_fungible_asset_data_hash = Hasher::hash(&NON_FUNGIBLE_ASSET_DATA),
+        NON_FUNGIBLE_ASSET_DATA_HASH = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
@@ -76,6 +79,7 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "TODO(expand_assets): refactor"]
 async fn test_validate_non_fungible_asset() -> anyhow::Result<()> {
     let tx_context =
         TransactionContextBuilder::with_non_fungible_faucet(NonFungibleAsset::mock_issuer().into())

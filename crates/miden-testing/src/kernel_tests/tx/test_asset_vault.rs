@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use miden_protocol::ONE;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
@@ -22,7 +23,6 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::transaction::memory;
-use miden_protocol::{Felt, ONE, Word, ZERO};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -69,7 +69,7 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
 async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
-    let asset_key = AssetVaultKey::from_account_id(faucet_id).unwrap();
+    let asset_key = AssetVaultKey::new_fungible(faucet_id).unwrap();
 
     let code = format!(
         r#"
@@ -96,7 +96,7 @@ async fn peek_asset_returns_correct_asset() -> anyhow::Result<()> {
             swapw dropw
         end
             "#,
-        ASSET_KEY = asset_key
+        ASSET_KEY = asset_key.to_word()
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -179,13 +179,7 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
     let mut account_vault = tx_context.account().vault().clone();
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT;
-    let add_fungible_asset = Asset::try_from(Word::new([
-        Felt::new(amount),
-        ZERO,
-        faucet_id.suffix(),
-        faucet_id.prefix().as_felt(),
-    ]))
-    .unwrap();
+    let add_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
@@ -210,7 +204,10 @@ async fn test_add_fungible_asset_success() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        account_vault.add_asset(add_fungible_asset).unwrap().to_value_word()
+        account_vault
+            .add_asset(Asset::Fungible(add_fungible_asset))
+            .unwrap()
+            .to_value_word()
     );
 
     assert_eq!(
@@ -228,13 +225,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT + 1;
-    let add_fungible_asset = Asset::try_from(Word::new([
-        Felt::new(amount),
-        ZERO,
-        faucet_id.suffix(),
-        faucet_id.prefix().as_felt(),
-    ]))
-    .unwrap();
+    let add_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
@@ -256,7 +247,7 @@ async fn test_add_non_fungible_asset_fail_overflow() -> anyhow::Result<()> {
     let exec_result = tx_context.execute_code(&code).await;
 
     assert_execution_error!(exec_result, ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED);
-    assert!(account_vault.add_asset(add_fungible_asset).is_err());
+    assert!(account_vault.add_asset(Asset::Fungible(add_fungible_asset)).is_err());
 
     Ok(())
 }
@@ -267,7 +258,7 @@ async fn test_add_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?;
     let mut account_vault = tx_context.account().vault().clone();
     let add_non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(faucet_id.prefix(), vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
+        &NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4, 5, 6, 7, 8]).unwrap(),
     )?);
 
     let code = format!(
@@ -310,7 +301,7 @@ async fn test_add_non_fungible_asset_fail_duplicate() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id.prefix(), NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
     let non_fungible_asset =
         Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
 
@@ -346,13 +337,7 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT;
-    let remove_fungible_asset = Asset::try_from(Word::new([
-        Felt::new(amount),
-        ZERO,
-        faucet_id.suffix(),
-        faucet_id.prefix().as_felt(),
-    ]))
-    .unwrap();
+    let remove_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
@@ -377,7 +362,10 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        account_vault.remove_asset(remove_fungible_asset).unwrap().to_value_word()
+        account_vault
+            .remove_asset(Asset::Fungible(remove_fungible_asset))
+            .unwrap()
+            .to_value_word()
     );
 
     assert_eq!(
@@ -393,13 +381,7 @@ async fn test_remove_fungible_asset_fail_remove_too_much() -> anyhow::Result<()>
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT + 1;
-    let remove_fungible_asset = Asset::try_from(Word::new([
-        Felt::new(amount),
-        ZERO,
-        faucet_id.suffix(),
-        faucet_id.prefix().as_felt(),
-    ]))
-    .unwrap();
+    let remove_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
@@ -434,13 +416,7 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
     let amount = FUNGIBLE_ASSET_AMOUNT - 1;
-    let remove_fungible_asset = Asset::try_from(Word::new([
-        Felt::new(amount),
-        ZERO,
-        faucet_id.suffix(),
-        faucet_id.prefix().as_felt(),
-    ]))
-    .unwrap();
+    let remove_fungible_asset = FungibleAsset::new(faucet_id, amount)?;
 
     let code = format!(
         "
@@ -465,7 +441,10 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     assert_eq!(
         exec_output.get_stack_word_be(0),
-        account_vault.remove_asset(remove_fungible_asset).unwrap().to_value_word()
+        account_vault
+            .remove_asset(Asset::Fungible(remove_fungible_asset))
+            .unwrap()
+            .to_value_word()
     );
 
     assert_eq!(
@@ -483,7 +462,7 @@ async fn test_remove_inexisting_non_fungible_asset_fails() -> anyhow::Result<()>
     let mut account_vault = tx_context.account().vault().clone();
 
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id.prefix(), NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
     let nonfungible = NonFungibleAsset::new(&non_fungible_asset_details).unwrap();
     let non_existent_non_fungible_asset = Asset::NonFungible(nonfungible);
 
@@ -527,7 +506,7 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     let faucet_id: AccountId = ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into().unwrap();
     let mut account_vault = tx_context.account().vault().clone();
     let non_fungible_asset_details =
-        NonFungibleAssetDetails::new(faucet_id.prefix(), NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
+        NonFungibleAssetDetails::new(faucet_id, NON_FUNGIBLE_ASSET_DATA.to_vec()).unwrap();
     let non_fungible_asset =
         Asset::NonFungible(NonFungibleAsset::new(&non_fungible_asset_details).unwrap());
 

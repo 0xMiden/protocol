@@ -96,13 +96,13 @@ async fn mint_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result<()>
       use mock::faucet
 
       begin
-          push.{asset_key}
-          push.{asset_value}
+          push.{ASSET_VALUE}
+          push.{ASSET_KEY}
           call.faucet::mint
       end
       ",
-        asset_key = asset.vault_key(),
-        asset_value = asset.to_value_word(),
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 
@@ -130,13 +130,13 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
         begin
             exec.prologue::prepare_transaction
-            push.{asset_key}
-            push.{asset_value}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.faucet::mint
         end
         ",
-        asset_key = asset.vault_key(),
-        asset_value = asset.to_value_word(),
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -156,21 +156,18 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         begin
             push.{max_amount_plus_1}
             push.0
-            push.{faucet_id_suffix}
-            push.{faucet_id_prefix}
+            push.0
+            push.0
             # => [ASSET_VALUE]
 
-            push.0.0
-            push.{faucet_id_suffix}
-            push.{faucet_id_prefix}
+            push.{ASSET_KEY}
             # => [ASSET_KEY, ASSET_VALUE]
 
             call.faucet::mint
             dropw dropw
         end
     ",
-        faucet_id_prefix = FungibleAsset::mock_issuer().prefix().as_felt(),
-        faucet_id_suffix = FungibleAsset::mock_issuer().suffix(),
+        ASSET_KEY = FungibleAsset::mock(0).to_key_word(),
         max_amount_plus_1 = FungibleAsset::MAX_AMOUNT + 1,
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
@@ -277,13 +274,13 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
       use mock::faucet
 
       begin
-          push.{asset_key}
-          push.{asset_value}
+          push.{ASSET_VALUE}
+          push.{ASSET_KEY}
           call.faucet::mint
       end
       ",
-        asset_key = asset.vault_key(),
-        asset_value = asset.to_value_word(),
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(code)?;
 

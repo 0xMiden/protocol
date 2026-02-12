@@ -17,7 +17,13 @@ use miden_protocol::account::{
     StorageSlotDelta,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetVault,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -27,7 +33,6 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
     AccountIdBuilder,
 };
-use miden_protocol::testing::asset::NonFungibleAssetBuilder;
 use miden_protocol::testing::constants::{
     CONSUMED_ASSET_1_AMOUNT,
     CONSUMED_ASSET_3_AMOUNT,
@@ -519,10 +524,22 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         .account_type(AccountType::NonFungibleFaucet)
         .build_with_seed(rng.random());
 
-    let asset0 = NonFungibleAssetBuilder::new(faucet0.prefix(), &mut rng)?.build()?;
-    let asset1 = NonFungibleAssetBuilder::new(faucet1.prefix(), &mut rng)?.build()?;
-    let asset2 = NonFungibleAssetBuilder::new(faucet2.prefix(), &mut rng)?.build()?;
-    let asset3 = NonFungibleAssetBuilder::new(faucet3.prefix(), &mut rng)?.build()?;
+    let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet0,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet1,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset2 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet2,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset3 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet3,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
 
     let TestSetup { mock_chain, account_id, notes } =
         setup_test([], [asset1, asset3].map(Asset::from), [asset0, asset2].map(Asset::from))?;
@@ -570,20 +587,20 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         .account_delta()
         .vault()
         .added_assets()
-        .map(|asset| (asset.faucet_id_prefix(), asset.unwrap_non_fungible()))
+        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
         .collect::<BTreeMap<_, _>>();
     let mut removed_assets = executed_tx
         .account_delta()
         .vault()
         .removed_assets()
-        .map(|asset| (asset.faucet_id_prefix(), asset.unwrap_non_fungible()))
+        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
         .collect::<BTreeMap<_, _>>();
 
     assert_eq!(added_assets.len(), 1);
     assert_eq!(removed_assets.len(), 1);
 
-    assert_eq!(added_assets.remove(&asset0.faucet_id_prefix()).unwrap(), asset0);
-    assert_eq!(removed_assets.remove(&asset1.faucet_id_prefix()).unwrap(), asset1);
+    assert_eq!(added_assets.remove(&asset0.faucet_id()).unwrap(), asset0);
+    assert_eq!(removed_assets.remove(&asset1.faucet_id()).unwrap(), asset1);
 
     Ok(())
 }
