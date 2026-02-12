@@ -89,12 +89,28 @@ end
 #! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset key or value are not well formed.
+#! - the asset key is invalid (see validate_key).
+#! - the three most significant elements in the value are not 0.
+#! - the amount exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
 pub proc validate
     exec.validate_key
     # => [ASSET_KEY, ASSET_VALUE]
 
-    dupw.1 exec.validate_value
+    dupw.1
+    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+
+    # assuming the asset is valid, its layout is:
+    # => [0, 0, 0, amount, ASSET_KEY, ASSET_VALUE]
+
+    # assert the first three elements are zeros
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    # => [amount, ASSET_KEY, ASSET_VALUE]
+
+    # assert amount <= FUNGIBLE_ASSET_MAX_AMOUNT
+    lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
@@ -124,32 +140,6 @@ pub proc validate_key
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
     # => [ASSET_KEY]
-end
-
-#! Validates that a fungible asset value is well formed.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: []
-#!
-#! Where:
-#! - ASSET_VALUE is the asset to validate.
-#!
-#! Panics if:
-#! - the asset value is not well formed.
-proc validate_value
-    # assuming the asset is valid, its layout is:
-    # => [0, 0, 0, amount]
-
-    # assert the first three elements are zeros
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    # => [amount]
-
-    # assert amount <= FUNGIBLE_ASSET_MAX_AMOUNT
-    lte.FUNGIBLE_ASSET_MAX_AMOUNT
-    assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
-    # => []
 end
 
 #! Validates that a fungible asset is associated with the provided faucet_id.

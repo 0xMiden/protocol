@@ -83,7 +83,8 @@ end
 #! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset key or value are not well formed.
+#! - the asset is not a valid fungible or non-fungible asset (see fungible_asset::validate and
+#!   non_fungible_asset::validate_key).
 pub proc validate
     # check if the asset is fungible
     exec.is_fungible_asset
