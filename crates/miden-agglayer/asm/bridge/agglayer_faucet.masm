@@ -91,11 +91,7 @@ pub proc get_origin_token_address
     # => [addr4, origin_network, scale, 0, addr0, addr1, addr2, addr3]
 
     # Keep only addr4 and drop the rest of slot 2
-    movup.3 drop movup.2 drop swap drop
-    # => [addr4, addr0, addr1, addr2, addr3]
-
-    # Reorder to [addr0, addr1, addr2, addr3, addr4]
-    movdn.4
+    movdn.7 drop drop drop
     # => [addr0, addr1, addr2, addr3, addr4]
 end
 
@@ -171,6 +167,7 @@ pub proc asset_to_origin_asset
     # Step 3: Get origin token address (+5 depth) and trim back to 16
     exec.get_origin_token_address
     # => [addr0, addr1, addr2, addr3, addr4, U256_LO(4), U256_HI(4), pad(8)] depth=21
+
     repeat.5
         movup.15 drop
     end
