@@ -114,11 +114,11 @@ end
 
 #! Sets an item in the native account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE]
 #! Outputs: [OLD_VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value to set.
 #! - OLD_VALUE is the previous value of the item.
@@ -131,11 +131,7 @@ end
 #! Invocation: exec
 pub proc set_item
     exec.kernel_proc_offsets::account_set_item_offset
-    # => [offset, slot_id_prefix, slot_id_suffix, VALUE]
-
-    # pad the stack
-    push.0 movdn.7 padw padw swapdw
-    # => [offset, slot_id_prefix, slot_id_suffix, VALUE, pad(9)]
+    # => [offset, slot_id_suffix, slot_id_prefix, VALUE]
 
     syscall.exec_kernel_proc
     # => [OLD_VALUE, pad(12)]
@@ -147,11 +143,11 @@ end
 
 #! Sets a map item in the native account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, VALUE]
 #! Outputs: [OLD_VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - KEY is the key to set at VALUE.
@@ -167,17 +163,7 @@ end
 #! Invocation: exec
 pub proc set_map_item
     exec.kernel_proc_offsets::account_set_map_item_offset
-    # => [offset, slot_id_prefix, slot_id_suffix, KEY, VALUE]
-
-    # pad the stack
-    push.0 padw
-    # => [pad(4), 0, offset, slot_id_prefix, slot_id_suffix, KEY, VALUE]
-
-    movdnw.3
-    # => [0, offset, slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(4)]
-
-    movdn.11
-    # => [offset, slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(5)]
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
     syscall.exec_kernel_proc
     # => [OLD_VALUE, pad(12)]

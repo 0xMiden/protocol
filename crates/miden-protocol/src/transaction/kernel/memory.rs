@@ -304,7 +304,7 @@ pub const NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR: MemoryAddress =
 
 /// The offset at which the account storage slots section begins relative to the start of the
 /// account data segment.
-pub const ACCT_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 2344;
+pub const ACCT_STORAGE_SLOTS_SECTION_OFFSET: MemoryAddress = 2340;
 
 /// The number of elements that each storage slot takes up in memory.
 pub const ACCT_STORAGE_SLOT_NUM_ELEMENTS: u8 = 8;

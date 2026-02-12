@@ -189,6 +189,10 @@ proc compute_output_note_id
     dup.8 exec.compute_output_note_assets_commitment
     # => [ASSETS_COMMITMENT, RECIPIENT, EMPTY_WORD, note_data_ptr]
 
+    # set rate order to [RECIPIENT, ASSETS_COMMITMENT]
+    swapw
+    # => [RECIPIENT, ASSETS_COMMITMENT, EMPTY_WORD, note_data_ptr]
+
     # compute output note commitment (which is also note ID) and extract digest
     exec.poseidon2::permute exec.poseidon2::squeeze_digest
     # => [NOTE_ID, note_data_ptr]
@@ -232,15 +236,21 @@ pub proc compute_output_notes_commitment
         dup exec.compute_output_note_id
         # => [NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
 
-        dup.4 exec.memory::get_output_note_metadata
-        # => [NOTE_METADATA, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+    dup.4 exec.memory::get_output_note_metadata
+    # => [NOTE_METADATA, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
 
-        # replace rate words with note ID and metadata
-        swapdw dropw dropw
-        # => [NOTE_METADATA, NOTE_ID, PERM, current_index, num_notes]
+    # drop current_note_ptr so swapdw operates on word-aligned data
+    movup.8 drop
+    # => [NOTE_METADATA, NOTE_ID, PERM, PERM, PERM, current_index, num_notes]
 
-        # permute over (note_id, note_metadata_commitment)
-        exec.poseidon2::permute
+    # replace rate words with note ID and metadata
+    swapdw dropw dropw
+    # => [NOTE_METADATA, NOTE_ID, PERM, current_index, num_notes]
+    swapw
+    # => [NOTE_ID, NOTE_METADATA, PERM, current_index, num_notes]
+
+    # permute over (note_id, note_metadata_commitment)
+    exec.poseidon2::permute
         # => [PERM, PERM, PERM, current_index, num_notes]
 
         # increment current_index

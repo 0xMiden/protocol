@@ -440,7 +440,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.1.2.3.4
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[0..2] swap
             call.account::set_item
             dropw
 

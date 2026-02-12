@@ -5,6 +5,7 @@ use $kernel::asset
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use miden::core::mem
 use miden::core::math::u64
+use miden::core::sys
 use miden::core::word
 
 # CONSTANTS
@@ -83,7 +84,7 @@ pub proc create
     # => [note_idx, NOTE_METADATA, RECIPIENT, note_idx]
 
     # get a pointer to the memory address at which the note will be stored
-    exec.memory::get_output_note_ptr
+        exec.memory::get_output_note_ptr
     # => [note_ptr, NOTE_METADATA, RECIPIENT, note_idx]
 
     movdn.4
@@ -102,6 +103,8 @@ pub proc create
     # set the RECIPIENT for the output note
     exec.memory::set_output_note_recipient dropw
     # => [note_idx]
+
+    exec.sys::truncate_stack
 end
 
 #! Returns the information about assets in the output note with the specified index.
@@ -277,14 +280,17 @@ pub proc build_metadata
 
     dup.2 eq.PUBLIC_NOTE not
     if.true
-        dup push.NOTE_TAG_PREFIX_MASK and push.NOTE_TAG_PREFIX_MASK eq
+        dup push.NOTE_TAG_PREFIX_MASK u32and push.NOTE_TAG_PREFIX_MASK eq
         assert.err=ERR_NOTE_INVALID_NOTE_TYPE_FOR_NOTE_TAG_PREFIX
     end
     # => [tag, aux, note_type, execution_hint]
 
     # Extract execution hint tag (lower 6 bits).
     dup.3
-    push.0x3f and
+    u32split
+    swap
+    push.0x3f u32and
+    swap drop
     # => [hint_tag, tag, aux, note_type, execution_hint]
 
     # Extract execution hint payload (execution_hint >> 6).
@@ -315,7 +321,8 @@ pub proc build_metadata
     movup.2 movup.2 add
     # => [sender_id_suffix', sender_id_prefix, tag_payload, aux, execution_hint]
 
-    swap drop
+    movup.4 drop
+    swap
     # => [sender_id_prefix, sender_id_suffix', tag_payload, aux]
 end
 

@@ -428,6 +428,17 @@ impl TransactionAdviceInputs {
                 expected_len,
                 "input note data length mismatch (added {note_data_added}, expected {expected_len}, assets_len {assets_data_len})"
             );
+            #[cfg(feature = "std")]
+            if std::env::var("MIDEN_DEBUG_INPUT_NOTE_DATA").is_ok() {
+                let added = &note_data[note_data_len_before..];
+                let tail_start = added.len().saturating_sub(16);
+                let tail = &added[tail_start..];
+                std::eprintln!(
+                    "debug input note data: len={} tail={:?}",
+                    added.len(),
+                    tail.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>()
+                );
+            }
 
         }
 

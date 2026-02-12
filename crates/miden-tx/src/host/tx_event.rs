@@ -346,11 +346,42 @@ impl TransactionEvent {
                 })
             },
 
-            TransactionEventId::NoteBeforeCreated => None,
+            TransactionEventId::NoteBeforeCreated => {
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_NOTE_BEFORE_CREATED").is_ok() {
+                    let tag = process.get_stack_item(1).as_canonical_u64();
+                    let aux = process.get_stack_item(2).as_canonical_u64();
+                    let note_type = process.get_stack_item(3).as_canonical_u64();
+                    let execution_hint = process.get_stack_item(4).as_canonical_u64();
+                    let recipient = get_stack_word_le(process, 5);
+                    let active_account = process
+                        .get_active_account_id()
+                        .map(|id| (id.prefix().as_felt().as_canonical_u64(), id.suffix()))
+                        .ok();
+                    std::eprintln!(
+                        "debug note before created: tag={tag} aux={aux} note_type={note_type} execution_hint={execution_hint} recipient={:?} active_account={active_account:?}",
+                        recipient
+                            .iter()
+                            .map(|v| v.as_canonical_u64())
+                            .collect::<Vec<_>>()
+                    );
+                }
+                None
+            },
 
             TransactionEventId::NoteAfterCreated => {
                 // Expected stack state: [event, NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
                 let metadata_word = get_stack_word_le(process, 1);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_NOTE_METADATA").is_ok() {
+                    std::eprintln!(
+                        "debug note metadata word={:?}",
+                        metadata_word
+                            .iter()
+                            .map(|v| v.as_canonical_u64())
+                            .collect::<Vec<_>>()
+                    );
+                }
                 let metadata = NoteMetadata::try_from(metadata_word)
                     .map_err(TransactionKernelError::MalformedNoteMetadata)?;
 

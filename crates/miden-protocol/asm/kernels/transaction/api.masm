@@ -54,14 +54,31 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSE
 #! - the invocation of the kernel procedure does not originate from the account context.
 #!
 #! Invocation: exec
+@locals(16)
 proc authenticate_account_origin
+    # preserve the top 16 stack elements so caller doesn't clobber inputs
+    loc_storew_le.0 dropw
+    loc_storew_le.4 dropw
+    loc_storew_le.8 dropw
+    loc_storew_le.12 dropw
+    # => [<rest>]
+
+    # provide a word for caller to overwrite
+    padw
+    # => [pad(4), <rest>]
+
     # get the hash of the caller
     caller
-    # => [CALLER]
-
+    # => [CALLER, <rest>]
     # assert that the caller is from the user context
     exec.account::authenticate_and_track_procedure
-    # => []
+    # => [<rest>]
+
+    # restore preserved stack
+    loc_loadw_le.12
+    loc_loadw_le.8
+    loc_loadw_le.4
+    loc_loadw_le.0
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
@@ -328,11 +345,11 @@ end
 
 #! Gets an item from the account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
 #! Outputs: [VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the item.
 #!
@@ -343,7 +360,7 @@ end
 pub proc account_get_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, pad(14)]
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the account storage item
     exec.account::get_item
@@ -356,11 +373,11 @@ end
 
 #! Sets an item in the account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 #! Outputs: [OLD_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value to set.
 #! - OLD_VALUE is the previous value of the item.
@@ -374,22 +391,22 @@ end
 pub proc account_set_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # if the transaction is being executed against a faucet account then assert
     # the slot that is being written to is not the reserved faucet slot.
     dup.1 dup.1 exec.account::is_faucet_storage_data_slot
-    # => [is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [is_faucet_storage_data_slot, slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     exec.account::get_id swap drop exec.account_id::is_faucet
-    # => [is_faucet_account, is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [is_faucet_account, is_faucet_storage_data_slot, slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     and assertz.err=ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
     # set the account storage item
     exec.account::set_item
@@ -400,11 +417,11 @@ end
 #! Returns the VALUE located under the specified KEY within the map contained in the account
 #! storage slot identified by the slot ID.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 #! Outputs: [VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the map item at KEY.
 #!
@@ -416,7 +433,7 @@ end
 pub proc account_get_map_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the map item from account storage
     exec.account::get_map_item
@@ -425,11 +442,11 @@ end
 
 #! Gets an item from the account storage at its initial state (beginning of transaction).
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
 #!
@@ -440,7 +457,7 @@ end
 pub proc account_get_initial_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, pad(14)]
+    # => [slot_id_suffix, slot_id_prefix, pad(14)]
 
     # fetch the initial account storage item
     exec.account::get_initial_item
@@ -454,11 +471,11 @@ end
 #! Returns the initial VALUE located under the specified KEY within the map contained in the
 #! account storage slot identified by the slot ID at the beginning of the transaction.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - INIT_VALUE is the initial value of the map item at KEY at the beginning of the transaction.
@@ -471,7 +488,7 @@ end
 pub proc account_get_initial_map_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
 
     # fetch the initial map item from account storage
     exec.account::get_initial_map_item
@@ -481,11 +498,11 @@ end
 #! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage 
 #! slot.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 #! Outputs: [OLD_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - NEW_VALUE is the value of the new map item for the respective KEY.
@@ -502,11 +519,11 @@ end
 pub proc account_set_map_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
 
     # set the new map item
     exec.account::set_map_item

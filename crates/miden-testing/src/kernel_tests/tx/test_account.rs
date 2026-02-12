@@ -102,6 +102,7 @@ pub async fn compute_commitment() -> miette::Result<()> {
         use miden::core::word
 
         use miden::protocol::active_account
+        use $kernel::account
         use mock::account->mock_account
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -127,8 +128,8 @@ pub async fn compute_commitment() -> miette::Result<()> {
             push.{key}
             push.MOCK_MAP_SLOT[0..2]
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(7)]
-            call.mock_account::set_map_item
-            dropw dropw dropw dropw
+            exec.account::set_map_item
+            dropw
             # => [STORAGE_COMMITMENT0]
 
             # compute the commitment which will recompute the storage commitment
@@ -375,6 +376,11 @@ pub async fn test_compute_code_commitment() -> miette::Result<()> {
 
     let code = format!(
         r#"
+        use $kernel::account
+        use $kernel::account
+        use $kernel::account
+        use $kernel::account
+        use $kernel::account
         use $kernel::prologue
         use mock::account->mock_account
 
@@ -749,6 +755,7 @@ async fn test_set_map_item() -> miette::Result<()> {
         r#"
         use miden::core::sys
 
+        use $kernel::account
         use $kernel::prologue
         use mock::account->mock_account
 
@@ -761,7 +768,7 @@ async fn test_set_map_item() -> miette::Result<()> {
             push.{new_value}
             push.{new_key}
             push.SLOT_NAME[0..2]
-            call.mock_account::set_map_item
+            exec.account::set_map_item
 
             # double check that the storage slot is indeed the new map
             push.SLOT_NAME[0..2]
@@ -881,9 +888,9 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
         [5, 6, 7, 8].map(Felt::new).into(),
     )?;
     let storage_commitment_map = account_storage.to_commitment();
-
     let code = format!(
         r#"
+        use $kernel::account
         use $kernel::prologue
         use mock::account->mock_account
 
@@ -899,9 +906,10 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment at the beginning of the transaction is not equal to the expected one"
 
             # update the value storage slot
-            push.9.10.11.12
+            push.[9,10,11,12]
             push.MOCK_VALUE_SLOT0[0..2]
-            call.mock_account::set_item dropw drop
+            exec.account::set_item
+            dropw
             # => []
 
             # assert the correctness of the storage commitment after the value slot was updated
@@ -916,11 +924,12 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment should remain the same"
 
             # update the map storage slot
-            push.5.6.7.8.101.102.103.104
+            push.[5,6,7,8]
+            push.[101,102,103,104]
             push.MOCK_MAP_SLOT[0..2]
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
 
-            call.mock_account::set_map_item dropw dropw
+            exec.account::set_map_item dropw
             # => []
 
             # assert the correctness of the storage commitment after the map slot was updated
@@ -929,6 +938,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment after the map slot was updated is not equal to the expected one"
         end
         "#,
+        mock_map_slot = mock_map_slot,
     );
 
     tx_context.execute_code(&code).await?;
@@ -1667,7 +1677,7 @@ async fn test_get_initial_item() -> miette::Result<()> {
             # modify the storage slot
             push.9.10.11.12
             push.MOCK_VALUE_SLOT0[0..2]
-            call.mock_account::set_item dropw drop drop
+            call.mock_account::set_item dropw
 
             # get_item should return the new value
             push.MOCK_VALUE_SLOT0[0..2]
@@ -1714,6 +1724,7 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
 
     let code = format!(
         r#"
+        use $kernel::account
         use $kernel::prologue
         use mock::account->mock_account
 
@@ -1725,7 +1736,7 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             # get initial value from map
             push.{initial_key}
             push.MOCK_MAP_SLOT[0..2]
-            call.mock_account::get_initial_map_item
+            exec.account::get_initial_map_item
             push.{initial_value}
             assert_eqw.err="initial map value should match expected"
 
@@ -1733,26 +1744,26 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             push.{new_value}
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
-            call.mock_account::set_map_item dropw dropw
+            exec.account::set_map_item dropw
 
             # get_map_item should return the new value
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
-            call.mock_account::get_map_item
+            exec.account::get_map_item
             push.{new_value}
             assert_eqw.err="current map value should be updated"
 
             # get_initial_map_item should still return the initial value for the initial key
             push.{initial_key}
             push.MOCK_MAP_SLOT[0..2]
-            call.mock_account::get_initial_map_item
+            exec.account::get_initial_map_item
             push.{initial_value}
             assert_eqw.err="initial map value should remain unchanged"
 
             # get_initial_map_item for the new key should return empty word (default)
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
-            call.mock_account::get_initial_map_item
+            exec.account::get_initial_map_item
             padw
             assert_eqw.err="new key should have empty initial value"
 
