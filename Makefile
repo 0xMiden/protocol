@@ -8,7 +8,7 @@ help:
 
 WARNINGS=RUSTDOCFLAGS="-D warnings"
 # Enable file generation in the `src` directory.
-# This is used in the build scripts of miden-lib.
+# This is used in the build scripts of miden-protocol and miden-standards.
 BUILD_GENERATED_FILES_IN_SRC=BUILD_GENERATED_FILES_IN_SRC=1
 # Enable backtraces for tests where we return an anyhow::Result. If enabled, anyhow::Error will
 # then contain a `Backtrace` and print it when a test returns an error.
@@ -108,6 +108,11 @@ check: ## Check all targets and features for errors without code generation
 check-no-std: ## Check the no-std target without any features for errors without code generation
 	$(BUILD_GENERATED_FILES_IN_SRC) cargo check --no-default-features --target wasm32-unknown-unknown --workspace --lib
 
+
+.PHONY: check-features
+check-features: ## Checks all feature combinations compile without warnings using cargo-hack
+	@scripts/check-features.sh
+
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
@@ -123,6 +128,14 @@ build-no-std: ## Build without the standard library
 .PHONY: build-no-std-testing
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
 	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
+
+# --- test vectors --------------------------------------------------------------------------------
+
+.PHONY: generate-solidity-test-vectors
+generate-solidity-test-vectors: ## Regenerate Solidity MMR test vectors using Foundry
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateCanonicalZeros
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
 
 # --- benchmarking --------------------------------------------------------------------------------
 

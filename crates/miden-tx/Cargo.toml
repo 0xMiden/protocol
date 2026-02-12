@@ -15,13 +15,13 @@ version.workspace      = true
 [features]
 concurrent = ["miden-prover/concurrent", "std"]
 default    = ["std"]
-std        = ["miden-lib/std", "miden-objects/std", "miden-processor/std", "miden-prover/std", "miden-verifier/std"]
-testing    = ["miden-lib/testing", "miden-objects/testing", "miden-processor/testing"]
+std        = ["miden-processor/std", "miden-protocol/std", "miden-prover/std", "miden-standards/std", "miden-verifier/std"]
+testing    = ["miden-processor/testing", "miden-protocol/testing", "miden-standards/testing"]
 
 [dependencies]
 # Workspace dependencies
-miden-lib     = { workspace = true }
-miden-objects = { workspace = true }
+miden-protocol  = { workspace = true }
+miden-standards = { workspace = true }
 
 # Miden dependencies
 miden-processor = { workspace = true }

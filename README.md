@@ -16,7 +16,7 @@ Miden is a zero-knowledge rollup for high-throughput and private applications. M
 
 If you want to join the technical discussion or learn more about the project, please check out
 
-- the [Documentation](https://0xMiden.github.io/miden-docs).
+- the [Documentation](https://docs.miden.xyz/miden-base/).
 - the [Telegram](https://t.me/BuildOnMiden)
 - the [Repo](https://github.com/0xMiden)
 - the [Roadmap](https://miden.xyz/roadmap)
@@ -46,8 +46,8 @@ Miden is currently on release v0.13. This is an early version of the protocol an
 
 | Crate                           | Description                                                                     |
 | ------------------------------- | ------------------------------------------------------------------------------- |
-| [objects](crates/miden-objects) | Contains core components defining the Miden rollup protocol.                    |
-| [miden-lib](crates/miden-lib)   | Contains the code of the Miden rollup kernels and standardized smart contracts. |
+| [miden-protocol](crates/miden-protocol) | Contains core components defining the Miden protocol, including the transaction kernel.                    |
+| [miden-standards](crates/miden-standards)   | Contains the code of Miden's standardized smart contracts. |
 | [miden-tx](crates/miden-tx)     | Contains tool for creating, executing, and proving Miden rollup transaction.    |
 | [bench-tx](bin/bench-tx)        | Contains transaction execution and proving benchmarks.                          |
 
@@ -71,7 +71,7 @@ Some of the functions in this project are computationally intensive and may take
 
 ## Documentation
 
-The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/miden-base/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
 
 ## License
 

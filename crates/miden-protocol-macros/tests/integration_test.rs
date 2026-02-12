@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use miden_objects::{Felt, FieldElement, Word};
+    use miden_protocol::{Felt, FieldElement, Word};
     use miden_protocol_macros::WordWrapper;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, WordWrapper)]

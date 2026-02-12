@@ -48,4 +48,4 @@ pub mod auth;
 
 // RE-EXPORTS
 // ================================================================================================
-pub use miden_objects::utils;
+pub use miden_protocol::utils;

@@ -1,6 +1,6 @@
 use anyhow::Context;
-use miden_objects::asset::FungibleAsset;
-use miden_objects::{self, Felt, Word};
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::{self, Felt, Word};
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;

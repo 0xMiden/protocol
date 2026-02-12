@@ -17,6 +17,17 @@ permissions:
   contents: read
 
 jobs:
+  cargo-deny:
+    name: cargo-deny on ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Check dependencies with cargo-deny
+        run: cargo deny check
+
   typos:
     name: spellcheck
     runs-on: ubuntu-latest
@@ -44,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - uses: Swatinem/rust-cache@v2
         with:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
@@ -60,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - uses: Swatinem/rust-cache@v2
         with:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
@@ -77,6 +92,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - uses: Swatinem/rust-cache@v2
         with:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
@@ -93,6 +110,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - uses: Swatinem/rust-cache@v2
         with:
           # Only update the cache on push onto the next branch. This strikes a nice balance between
@@ -108,6 +127,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
+      - name: Cleanup large tools for build space
+        uses: ./.github/actions/cleanup-runner
       - name: Rustup
         run: rustup update --no-self-update
       - uses: Swatinem/rust-cache@v2

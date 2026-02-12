@@ -1,0 +1,160 @@
+# The MASM code of the ECDSA K256 Keccak authentication Account Component with ACL.
+#
+# See the `AuthEcdsaK256KeccakAcl` Rust type's documentation for more details.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+use miden::core::word
+
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot in this component's storage layout where the public key is stored.
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_acl::public_key")
+
+# The slot where the authentication configuration is stored.
+const AUTH_CONFIG_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_acl::config")
+
+# The slot where the map of auth trigger procedure roots is stored.
+const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::ecdsa_k256_keccak_acl::trigger_procedure_roots")
+
+#! Authenticate a transaction using the ECDSA signature scheme based on procedure calls and note usage.
+#!
+#! This authentication procedure checks:
+#! 1. If any of the trigger procedures were called during the transaction
+#! 2. If input notes were consumed and allow_unauthorized_input_notes is false
+#! 3. If output notes were created and allow_unauthorized_output_notes is false
+#!
+#! If any of these conditions are true, standard EcdsaK256Keccak signature verification is performed.
+#! Otherwise, only the nonce is incremented.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+@locals(2)
+pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
+    dropw
+    # => [pad(16)]
+
+    # Get the authentication configuration
+    push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [0, allow_unauthorized_input_notes, allow_unauthorized_output_notes, num_auth_trigger_procs, pad(16)]
+
+    drop
+    # => [allow_unauthorized_input_notes, allow_unauthorized_output_notes, num_auth_trigger_procs, pad(16)]
+
+    loc_store.1 loc_store.0
+    # => [num_auth_trigger_procs, pad(16)]
+
+    # ------ Check if any trigger procedure was called ------
+
+    # Counter `i` starts at `num_auth_trigger_procs` and flag `require_acl_auth` starts at 0
+    # `require_acl_auth` is true if any ACL procedures were called
+    push.0
+    # => [require_acl_auth, i, pad(16)]
+
+    # Loop through trigger procedures
+    dup.1 neq.0
+    while.true
+        # => [require_acl_auth, i, pad(16)]
+
+        # Get the procedure root from storage
+        dup.1 sub.1 push.0.0.0 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
+        # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [0, 0, 0, i-1], require_acl_auth, i, pad(16)]
+
+        exec.active_account::get_map_item
+        # => [AUTH_TRIGGER_PROC_ROOT, require_acl_auth, i, pad(16)]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, require_acl_auth, i, pad(16)]
+
+        # Update require_acl_auth
+        or
+        # => [require_acl_auth', i, pad(16)]
+
+        swap sub.1 swap
+        # => [require_acl_auth', i-1, pad(16)]
+
+        # Check if we should continue looping
+        dup.1 neq.0
+        # => [should_continue, require_acl_auth', i-1, pad(16)]
+    end
+    # => [require_acl_auth, i-1, pad(16)]
+
+    swap drop
+    # => [require_acl_auth, pad(16)]
+
+    # ------ Check if output notes were created ------
+
+    exec.tx::get_num_output_notes
+    # => [num_output_notes, require_acl_auth, pad(16)]
+
+    neq.0
+    # => [were_output_notes_created, require_acl_auth, pad(16)]
+
+    loc_load.0 not
+    # => [!allow_unauthorized_output_notes, were_output_notes_created, require_acl_auth, pad(16)]
+
+    and
+    # => [require_output_note_auth, require_acl_auth, pad(16)]
+
+    or
+    # => [auth_required, pad(16)]
+
+    # ------ Check if input notes were consumed ------
+
+    exec.tx::get_num_input_notes
+    # => [INPUT_NOTES_COMMITMENT, auth_required, pad(16)]
+
+    neq.0
+    # => [were_input_notes_consumed, auth_required, pad(16)]
+
+    loc_load.1 not
+    # => [!allow_unauthorized_input_notes, were_input_notes_consumed, auth_required, pad(16)]
+
+    and
+    # => [require_input_note_auth, auth_required, pad(16)]
+
+    or
+    # => [auth_required, pad(16)]
+
+    # If authentication is required, perform signature verification
+    if.true
+        # Fetch public key from storage.
+        push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+        # => [PUB_KEY, pad(16)]
+
+        exec.::miden::standards::auth::ecdsa_k256_keccak::authenticate_transaction
+    else
+        # ------ Check if initial account commitment differs from current commitment ------
+
+        exec.active_account::get_initial_commitment
+        # => [INITIAL_COMMITMENT, pad(16)]
+
+        exec.active_account::compute_commitment
+        # => [CURRENT_COMMITMENT, INITIAL_COMMITMENT, pad(16)]
+
+        exec.word::eq not
+        # => [has_account_state_changed, pad(16)]
+
+        # check if this is a new account (i.e., nonce == 0); this check is needed because new
+        # accounts are initialized with a non-empty state, and thus, unless the account was
+        # modified during the transaction, the initial and current state commitments will be
+        # the same
+
+        exec.active_account::get_nonce eq.0
+        # => [is_new_account, has_account_state_changed, pad(16)]
+
+        or
+        # => [should_increment_nonce, pad(16)]
+
+        if.true
+            exec.native_account::incr_nonce drop
+        end
+    end
+    # => [pad(16)]
+end

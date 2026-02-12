@@ -1,0 +1,94 @@
+use miden::core::math::u64
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED="note tag length can be at most 32"
+
+# CONSTANTS
+# =================================================================================================
+
+# The maximum account target tag length.
+const MAX_ACCOUNT_TARGET_TAG_LENGTH = 32
+
+# The default account target tag length.
+const DEFAULT_ACCOUNT_TARGET_TAG_LENGTH = 14
+
+# PROCEDURES
+# =================================================================================================
+
+#! Constructs a note tag that targets the given account_id_prefix with the default tag_len of 14.
+#!
+#! The tag is a u32 constructed by taking the 14 most significant bits of the account ID prefix and
+#! setting the remaining bits to zero.
+#!
+#! Inputs:  [account_id_prefix]
+#! Outputs: [note_tag]
+#!
+#! Where:
+#! - account_id_prefix is the account id prefix to compute the note tag for.
+#! - note_tag is the created note tag.
+#!
+#! Invocation: exec
+pub proc create_account_target
+    push.DEFAULT_ACCOUNT_TARGET_TAG_LENGTH
+    exec.create_custom_account_target
+    # => [note_tag]
+end
+
+#! Constructs a note tag that targets the given account_id_prefix with the provided tag_len.
+#!
+#! The tag is a u32 constructed by taking the `tag_len` most significant bits of the account ID
+#! prefix and setting the remaining bits to zero.
+#!
+#! See the Rust `NoteTag` documentation for what changing the tag length means.
+#!
+#! Inputs:  [tag_len, account_id_prefix]
+#! Outputs: [note_tag]
+#!
+#! Where:
+#! - account_id_prefix is the account id prefix to compute the note tag for.
+#! - note_tag is the created note tag.
+#! - tag_len is the number of most significant bits from the account ID prefix that should be used
+#!   for the tag.
+#!
+#! Panics if:
+#! - the tag_len exceeds 32.
+#!
+#! Invocation: exec
+pub proc create_custom_account_target
+    u32assert.err=ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED
+    # => [tag_len, account_id_prefix]
+
+    dup u32lte.MAX_ACCOUNT_TARGET_TAG_LENGTH
+    assert.err=ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED
+    # => [tag_len, account_id_prefix]
+
+    # create a bit mask that zeros out the lower (32 - tag_len) bits.
+    # since u32shl panics for a 32 shift, we need to use u64::shl in case tag_len is 0
+
+    # push u32::MAX as a u64
+    push.0 push.0xffffffff
+    # => [u32::MAX, 0, tag_len, account_id_prefix]
+
+    # compute "number of bits in u32" - tag_len
+    push.32 movup.3 sub
+    # => [shift_by, u32::MAX, 0, account_id_prefix]
+
+    exec.u64::shl
+    # => [bit_mask_hi, bit_mask_lo, account_id_prefix]
+
+    # discard the lo part
+    swap drop
+    # => [bit_mask, account_id_prefix]
+
+    swap u32split
+    # => [account_id_prefix_hi, account_id_prefix_lo, bit_mask]
+
+    # discard the lo part of the ID prefix
+    swap drop
+    # => [account_id_prefix_hi, bit_mask]
+
+    u32and
+    # => [note_tag]
+end

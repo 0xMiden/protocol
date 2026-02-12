@@ -1,10 +1,10 @@
 use anyhow::Result;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::note::NoteType;
-use miden_objects::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_objects::transaction::OutputNote;
-use miden_objects::{Felt, Word};
+use miden_protocol::Word;
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::note::NoteType;
+use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::transaction::OutputNote;
+use miden_standards::code_builder::CodeBuilder;
 use miden_testing::{Auth, MockChain, TransactionContext};
 
 /// Returns the transaction context which could be used to run the transaction which creates a
@@ -25,22 +25,20 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
 
     let tx_note_creation_script = format!(
         "
-        use.miden::output_note
-        use.std::sys
+        use miden::protocol::output_note
+        use miden::core::sys
 
         begin
             # create an output note with fungible asset
             push.{RECIPIENT}
-            push.{note_execution_hint}
             push.{note_type}
-            push.0              # aux
             push.{tag}
-            call.output_note::create
+            exec.output_note::create
             # => [note_idx]
 
             # move the asset to the note
             push.{asset}
-            call.::miden::contracts::wallets::basic::move_asset_to_note
+            call.::miden::standards::wallets::basic::move_asset_to_note
             dropw
             # => [note_idx]
 
@@ -49,7 +47,6 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         end
         ",
         RECIPIENT = output_note.recipient().digest(),
-        note_execution_hint = Felt::from(output_note.metadata().execution_hint()),
         note_type = NoteType::Public as u8,
         tag = output_note.metadata().tag(),
         asset = Word::from(fungible_asset),
@@ -62,6 +59,7 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         .build_tx_context(account.id(), &[], &[])?
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
         .tx_script(tx_script)
+        .disable_debug_mode()
         .build()
 }
 
@@ -89,7 +87,10 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
     let mock_chain = builder.build()?;
 
     // construct the transaction context
-    mock_chain.build_tx_context(target_account.clone(), &[note.id()], &[])?.build()
+    mock_chain
+        .build_tx_context(target_account.clone(), &[note.id()], &[])?
+        .disable_debug_mode()
+        .build()
 }
 
 /// Returns the transaction context which could be used to run the transaction which consumes two
@@ -119,5 +120,6 @@ pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
     // construct the transaction context
     mock_chain
         .build_tx_context(account.id(), &[note_1.id(), note_2.id()], &[])?
+        .disable_debug_mode()
         .build()
 }

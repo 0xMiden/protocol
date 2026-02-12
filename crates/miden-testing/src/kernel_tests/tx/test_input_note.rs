@@ -1,8 +1,8 @@
 use alloc::string::String;
 
-use miden_lib::utils::CodeBuilder;
-use miden_objects::Word;
-use miden_objects::note::Note;
+use miden_protocol::Word;
+use miden_protocol::note::Note;
+use miden_standards::code_builder::CodeBuilder;
 
 use super::{TestSetup, setup_test};
 use crate::TxContextInput;
@@ -47,7 +47,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             {check_note_0}
@@ -104,7 +104,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             # get the recipient from the input note
@@ -120,16 +120,20 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
             # get the metadata from the requested input note
             push.0
             exec.input_note::get_metadata
-            # => [METADATA]
+            # => [NOTE_ATTACHMENT, METADATA_HEADER]
 
-            # assert the correctness of the metadata
-            push.{METADATA}
-            assert_eqw.err="note 0 has incorrect metadata"
+            push.{NOTE_ATTACHMENT}
+            assert_eqw.err="note 0 has incorrect note attachment"
+            # => [METADATA_HEADER]
+
+            push.{METADATA_HEADER}
+            assert_eqw.err="note 0 has incorrect metadata header"
             # => []
         end
     "#,
         RECIPIENT = p2id_note_1_asset.recipient().digest(),
-        METADATA = Word::from(p2id_note_1_asset.metadata()),
+        METADATA_HEADER = p2id_note_1_asset.metadata().to_header_word(),
+        NOTE_ATTACHMENT = p2id_note_1_asset.metadata().to_attachment_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
@@ -158,7 +162,7 @@ async fn test_get_sender() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             # get the sender from the input note
@@ -257,7 +261,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             {check_note_0}
@@ -288,10 +292,10 @@ async fn test_get_assets() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check that the number of the inputs and their commitment of a note with one asset
-/// obtained from the `input_note::get_inputs_info` procedure is correct.
+/// Check that the number of the storage items and their commitment of a note with one asset
+/// obtained from the `input_note::get_storage_info` procedure is correct.
 #[tokio::test]
-async fn test_get_inputs_info() -> anyhow::Result<()> {
+async fn test_get_storage_info() -> anyhow::Result<()> {
     let TestSetup {
         mock_chain,
         account,
@@ -302,28 +306,28 @@ async fn test_get_inputs_info() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
-            # get the inputs commitment and length from the input note with index 0 (the only one
+            # get the storage commitment and length from the input note with index 0 (the only one
             # we have)
             push.0
-            exec.input_note::get_inputs_info
-            # => [NOTE_INPUTS_COMMITMENT, inputs_num]
+            exec.input_note::get_storage_info
+            # => [NOTE_STORAGE_COMMITMENT, num_storage_items]
 
-            # assert the correctness of the inputs commitment
-            push.{INPUTS_COMMITMENT}
-            assert_eqw.err="note 0 has incorrect inputs commitment"
-            # => [inputs_num]
+            # assert the correctness of the storage commitment
+            push.{STORAGE_COMMITMENT}
+            assert_eqw.err="note 0 has incorrect storage commitment"
+            # => [num_storage_items]
 
-            # assert the inputs have correct length
-            push.{inputs_num}
-            assert_eq.err="note 0 has incorrect inputs length"
+            # assert the storage has correct length
+            push.{num_storage_items}
+            assert_eq.err="note 0 has incorrect number of storage items"
             # => []
         end
     "#,
-        INPUTS_COMMITMENT = p2id_note_1_asset.inputs().commitment(),
-        inputs_num = p2id_note_1_asset.inputs().num_values(),
+        STORAGE_COMMITMENT = p2id_note_1_asset.storage().commitment(),
+        num_storage_items = p2id_note_1_asset.storage().num_items(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;
@@ -352,7 +356,7 @@ async fn test_get_script_root() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             # get the script root from the input note with index 0 (the only one we have)
@@ -395,7 +399,7 @@ async fn test_get_serial_number() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.miden::input_note
+        use miden::protocol::input_note
 
         begin
             # get the serial number from the input note with index 0 (the only one we have)

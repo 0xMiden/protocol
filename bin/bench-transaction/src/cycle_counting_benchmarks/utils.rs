@@ -5,7 +5,7 @@ use std::fs::{read_to_string, write};
 use std::path::Path;
 
 use anyhow::Context;
-use miden_objects::transaction::TransactionMeasurements;
+use miden_protocol::transaction::TransactionMeasurements;
 use serde::Serialize;
 use serde_json::{Value, from_str, to_string_pretty};
 

@@ -10,8 +10,8 @@ mod account_procedures;
 pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
-use miden_lib::StdLibrary;
-use miden_lib::transaction::EventId;
+use miden_protocol::CoreLibrary;
+use miden_protocol::vm::EventId;
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -28,29 +28,6 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_objects::Word;
-use miden_objects::account::{
-    AccountCode,
-    AccountDelta,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    PartialAccount,
-    StorageSlotId,
-    StorageSlotName,
-    StorageSlotType,
-};
-use miden_objects::asset::Asset;
-use miden_objects::note::{NoteId, NoteMetadata, NoteRecipient};
-use miden_objects::transaction::{
-    InputNote,
-    InputNotes,
-    OutputNote,
-    OutputNotes,
-    TransactionMeasurements,
-    TransactionSummary,
-};
-use miden_objects::vm::RowIndex;
 use miden_processor::{
     AdviceMutation,
     EventError,
@@ -60,6 +37,29 @@ use miden_processor::{
     MastForestStore,
     ProcessState,
 };
+use miden_protocol::Word;
+use miden_protocol::account::{
+    AccountCode,
+    AccountDelta,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    PartialAccount,
+    StorageSlotHeader,
+    StorageSlotId,
+    StorageSlotName,
+};
+use miden_protocol::asset::Asset;
+use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
+use miden_protocol::transaction::{
+    InputNote,
+    InputNotes,
+    OutputNote,
+    OutputNotes,
+    TransactionMeasurements,
+    TransactionSummary,
+};
+use miden_protocol::vm::RowIndex;
 pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
 pub use tx_progress::TransactionProgress;
 
@@ -101,7 +101,7 @@ pub struct TransactionBaseHost<'store, STORE> {
     output_notes: BTreeMap<usize, OutputNoteBuilder>,
 
     /// Handle the VM default events _before_ passing it to user defined ones.
-    stdlib_handlers: EventHandlerRegistry,
+    core_lib_handlers: EventHandlerRegistry,
 }
 
 impl<'store, STORE> TransactionBaseHost<'store, STORE> {
@@ -116,14 +116,14 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         scripts_mast_store: ScriptMastForestStore,
         acct_procedure_index_map: AccountProcedureIndexMap,
     ) -> Self {
-        let stdlib_handlers = {
+        let core_lib_handlers = {
             let mut registry = EventHandlerRegistry::new();
 
-            let stdlib = StdLibrary::default();
-            for (event_id, handler) in stdlib.handlers() {
+            let core_lib = CoreLibrary::default();
+            for (event_id, handler) in core_lib.handlers() {
                 registry
                     .register(event_id, handler)
-                    .expect("There are no duplicates in the stdlibrary handlers");
+                    .expect("There are no duplicates in the core library handlers");
             }
             registry
         };
@@ -136,7 +136,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
             acct_procedure_index_map,
             output_notes: BTreeMap::default(),
             input_notes,
-            stdlib_handlers,
+            core_lib_handlers,
         }
     }
 
@@ -165,7 +165,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn initial_account_storage_slot(
         &self,
         slot_id: StorageSlotId,
-    ) -> Result<(&StorageSlotName, &StorageSlotType, &Word), TransactionKernelError> {
+    ) -> Result<&StorageSlotHeader, TransactionKernelError> {
         self.initial_account_storage_header()
             .find_slot_header_by_id(slot_id)
             .ok_or_else(|| {
@@ -263,16 +263,16 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     // EVENT HANDLERS
     // --------------------------------------------------------------------------------------------
 
-    /// Handles the event if the stdlib event handler registry contains a handler with the emitted
+    /// Handles the event if the core lib event handler registry contains a handler with the emitted
     /// event ID.
     ///
     /// Returns `Some` if the event was handled, `None` otherwise.
-    pub fn handle_stdlib_events(
+    pub fn handle_core_lib_events(
         &self,
         process: &ProcessState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
-        if let Some(mutations) = self.stdlib_handlers.handle_event(event_id, process)? {
+        if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
             Ok(Some(mutations))
         } else {
             Ok(None)
@@ -296,6 +296,21 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         })?;
 
         note_builder.add_asset(asset)?;
+
+        Ok(Vec::new())
+    }
+
+    /// Sets the attachment on the output note identified by the note index.
+    pub fn on_note_before_set_attachment(
+        &mut self,
+        note_idx: usize,
+        attachment: NoteAttachment,
+    ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
+        let note_builder = self.output_notes.get_mut(&note_idx).ok_or_else(|| {
+            TransactionKernelError::other(format!("failed to find output note {note_idx}"))
+        })?;
+
+        note_builder.set_attachment(attachment);
 
         Ok(Vec::new())
     }

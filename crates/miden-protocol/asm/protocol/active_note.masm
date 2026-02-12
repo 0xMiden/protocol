@@ -1,0 +1,338 @@
+use miden::core::crypto::hashes::rpo256
+use miden::core::mem
+
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_RECIPIENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
+use miden::protocol::note
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the commitment"
+
+const ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS="the specified number of note storage items does not match the actual number"
+
+# ACTIVE NOTE PROCEDURES
+# =================================================================================================
+#
+# By the "active note" notion here we assume the note which is currently being processed by the
+# transaction kernel.
+
+#! Writes the assets of the active note into memory starting at the specified address.
+#!
+#! Inputs:  [dest_ptr]
+#! Outputs: [num_assets, dest_ptr]
+#!
+#! Where:
+#! - dest_ptr is the memory address to write the assets.
+#! - num_assets is the number of assets in the active note.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_assets
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14), dest_ptr]
+
+    # push the flag indicating that we want to request assets info from the active note
+    push.1
+    # => [is_active_note = 1, pad(14), dest_ptr]
+
+    push.INPUT_NOTE_GET_ASSETS_INFO_OFFSET
+    # => [offset, is_active_note = 1, pad(14), dest_ptr]
+
+    syscall.exec_kernel_proc
+    # => [ASSETS_COMMITMENT, num_assets, pad(11), dest_ptr]
+
+    # clean the stack
+    swapdw dropw dropw movup.7 movup.7 movup.7 drop drop drop
+    # => [ASSETS_COMMITMENT, num_assets, dest_ptr]
+
+    # write the assets from the advice map into memory
+    exec.note::write_assets_to_memory
+    # => [num_assets, dest_ptr]
+end
+
+#! Returns the recipient of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [RECIPIENT]
+#!
+#! Where:
+#! - RECIPIENT is the commitment to the active note's script, storage, the serial number.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_recipient
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14)]
+
+    # push the flag indicating that we want to request recipient from the active note
+    push.1
+    # => [is_active_note = 1, pad(14)]
+
+    push.INPUT_NOTE_GET_RECIPIENT_OFFSET
+    # => [offset, is_active_note = 1, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [RECIPIENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [RECIPIENT]
+end
+
+#! Writes the active note's storage to memory starting at the specified address.
+#!
+#! Inputs:
+#!   Stack: [dest_ptr]
+#!   Advice Map: { NOTE_STORAGE_COMMITMENT: [STORAGE] }
+#! Outputs:
+#!   Stack: [num_storage_items, dest_ptr]
+#!
+#! Where:
+#! - dest_ptr is the memory address to write the note storage.
+#! - NOTE_STORAGE_COMMITMENT is the commitment to the note's storage.
+#! - STORAGE is the data corresponding to the note's storage.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_storage
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14), dest_ptr]
+
+    # push the flag indicating that we want to request inputs info from the active note
+    push.1
+    # => [is_active_note = 1, pad(14), dest_ptr]
+
+    push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
+    # => [offset, is_active_note = 1, pad(14), dest_ptr]
+
+    syscall.exec_kernel_proc
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11), dest_ptr]
+
+    # clean the stack
+    swapdw dropw dropw
+    movup.5 drop movup.5 drop movup.5 drop
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # write the inputs to the memory using the provided destination pointer
+    exec.write_storage_to_memory
+    # => [num_storage_items, dest_ptr]
+end
+
+#! Returns the metadata of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [NOTE_ATTACHMENT, METADATA_HEADER]
+#!
+#! Where:
+#! - METADATA_HEADER is the metadata header of the specified input note.
+#! - NOTE_ATTACHMENT is the attachment of the specified input note.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_metadata
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14)]
+
+    # push the flag indicating that we want to request metadata from the active note
+    push.1
+    # => [is_active_note = 1, pad(14)]
+
+    push.INPUT_NOTE_GET_METADATA_OFFSET
+    # => [offset, is_active_note = 1, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [NOTE_ATTACHMENT, METADATA_HEADER, pad(8)]
+
+    # clean the stack
+    swapdw dropw dropw
+    # => [NOTE_ATTACHMENT, METADATA_HEADER]
+end
+
+#! Returns the sender of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [sender_id_prefix, sender_id_suffix]
+#!
+#! Where:
+#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender of the active note.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_sender
+    # get metadata and drop attachment
+    exec.get_metadata dropw
+    # => [METADATA_HEADER]
+
+    # extract the sender ID from the metadata header
+    exec.note::extract_sender_from_metadata
+    # => [sender_id_prefix, sender_id_suffix]
+end
+
+#! Returns the serial number of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [SERIAL_NUMBER]
+#!
+#! Where:
+#! - SERIAL_NUMBER is the serial number of the active note.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_serial_number
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14)]
+
+    # push the flag indicating that we want to request serial number from the active note
+    push.1
+    # => [is_active_note = 1, pad(14)]
+
+    push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
+    # => [offset, is_active_note = 1, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [SERIAL_NUMBER, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [SERIAL_NUMBER]
+end
+
+#! Returns the script root of the active note.
+#!
+#! Inputs:  []
+#! Outputs: [SCRIPT_ROOT]
+#!
+#! Where:
+#! - SCRIPT_ROOT is the script root of the active note.
+#!
+#! Panics if:
+#! - no note is currently active.
+#!
+#! Invocation: exec
+pub proc get_script_root
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14)]
+
+    # push the flag indicating that we want to request script root from the active note
+    push.1
+    # => [is_active_note = 1, pad(14)]
+
+    push.INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
+    # => [offset, is_active_note = 1, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [SCRIPT_ROOT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [SCRIPT_ROOT]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Writes the note storage stored in the advice map to the memory specified by the provided
+#! destination pointer.
+#!
+#! Inputs:
+#!   Operand stack: [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+#!   Advice map: {
+#!     NOTE_STORAGE_COMMITMENT: [[INPUT_VALUES]]
+#!   }
+#! Outputs:
+#!   Operand stack: [num_storage_items, dest_ptr]
+proc write_storage_to_memory
+    # load the inputs from the advice map to the advice stack
+    # we pad the number of inputs to the next multiple of 8 so that we can use the
+    # `pipe_double_words_to_memory` instruction. The padded zeros don't affect the commitment
+    # computation.
+
+    adv.push_mapvaln.8
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [advice_num_storage_items, [INPUT_VALUES]]
+
+    # move the number of inputs obtained from advice map to the operand stack
+    adv_push.1 dup.5
+    # OS => [num_storage_items, advice_num_storage_items, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    assert_eq.err=ERR_NOTE_INVALID_NUMBER_OF_STORAGE_ITEMS
+    # OS => [NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    # calculate the number of words required to store the inputs
+    dup.4 u32divmod.4 neq.0 add
+    # OS => [num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    # round up the number of words to the next multiple of 2
+    dup is_odd add
+    # OS => [even_num_words, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    # compute the end pointer for writing the padded inputs (even_num_words * 4 elements)
+    dup.6 swap mul.4 add
+    # OS => [end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    # prepare the stack for the `pipe_double_words_to_memory` procedure.
+    #
+    # To match `rpo256::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
+    # element to `num_storage_items % 8`.
+    dup.6 dup.6
+    # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    u32divmod.8 swap drop
+    # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    push.0.0.0
+    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [0, 0, 0, num_storage_items_mod_8]
+    # AS => [[INPUT_VALUES]]
+
+    padw padw
+    # OS => [PAD, PAD, A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => [[INPUT_VALUES]]
+
+    # write the inputs from the advice stack into memory
+    exec.mem::pipe_double_words_to_memory
+    # OS => [PERM, PERM, PERM, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # AS => []
+
+    # extract the computed commitment from the hasher state
+    exec.rpo256::squeeze_digest
+    # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # drop end_ptr'
+    movup.4 drop
+    # OS => [COMPUTED_COMMITMENT, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+
+    # validate that the inputs written to memory match the inputs commitment
+    assert_eqw.err=ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT
+    # => [num_storage_items, dest_ptr]
+end

@@ -1,5 +1,12 @@
-use miden_objects::asset::Asset;
-use miden_objects::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, PartialNote};
+use miden_protocol::asset::Asset;
+use miden_protocol::note::{
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteMetadata,
+    NoteRecipient,
+    PartialNote,
+};
 
 use super::{OutputNote, Word};
 use crate::errors::TransactionKernelError;
@@ -75,6 +82,11 @@ impl OutputNoteBuilder {
             .add_asset(asset)
             .map_err(TransactionKernelError::FailedToAddAssetToNote)?;
         Ok(())
+    }
+
+    /// Overwrites the attachment in the note's metadata.
+    pub fn set_attachment(&mut self, attachment: NoteAttachment) {
+        self.metadata.set_attachment(attachment);
     }
 
     /// Converts this builder to an [OutputNote].

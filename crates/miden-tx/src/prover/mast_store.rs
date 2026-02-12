@@ -1,13 +1,13 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-use miden_lib::transaction::TransactionKernel;
-use miden_lib::{MidenLib, StdLibrary};
-use miden_objects::Word;
-use miden_objects::account::AccountCode;
-use miden_objects::assembly::mast::MastForest;
-use miden_objects::utils::sync::RwLock;
 use miden_processor::MastForestStore;
+use miden_protocol::account::AccountCode;
+use miden_protocol::assembly::mast::MastForest;
+use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::sync::RwLock;
+use miden_protocol::{CoreLibrary, ProtocolLib, Word};
+use miden_standards::StandardsLib;
 
 // TRANSACTION MAST STORE
 // ================================================================================================
@@ -28,9 +28,10 @@ impl TransactionMastStore {
     /// Returns a new [TransactionMastStore] instantiated with the default libraries.
     ///
     /// The default libraries include:
-    /// - Miden standard library (miden-stdlib).
-    /// - Miden protocol library (miden-lib).
-    /// - Transaction kernel.
+    /// - Miden core library [`CoreLibrary`].
+    /// - Miden protocol library [`ProtocolLib`].
+    /// - Miden standards library [`StandardsLib`].
+    /// - Transaction kernel [`TransactionKernel::kernel`].
     pub fn new() -> Self {
         let mast_forests = RwLock::new(BTreeMap::new());
         let store = Self { mast_forests };
@@ -39,13 +40,17 @@ impl TransactionMastStore {
         let kernels_forest = TransactionKernel::kernel().mast_forest().clone();
         store.insert(kernels_forest);
 
-        // load miden-stdlib MAST forest
-        let miden_stdlib_forest = StdLibrary::default().mast_forest().clone();
-        store.insert(miden_stdlib_forest);
+        // load miden-core-lib MAST forest
+        let miden_core_lib_forest = CoreLibrary::default().mast_forest().clone();
+        store.insert(miden_core_lib_forest);
 
-        // load miden lib MAST forest
-        let miden_lib_forest = MidenLib::default().mast_forest().clone();
-        store.insert(miden_lib_forest);
+        // load protocol lib MAST forest
+        let protocol_lib_forest = ProtocolLib::default().mast_forest().clone();
+        store.insert(protocol_lib_forest);
+
+        // load standards lib MAST forest
+        let standards_lib_forest = StandardsLib::default().mast_forest().clone();
+        store.insert(standards_lib_forest);
 
         store
     }

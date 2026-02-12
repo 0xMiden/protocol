@@ -1,15 +1,14 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_lib::testing::note::NoteBuilder;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::AccountId;
-use miden_objects::asset::Asset;
-use miden_objects::crypto::rand::FeltRng;
-use miden_objects::note::{Note, NoteType};
-use miden_objects::testing::storage::prepare_assets;
-use miden_processor::Felt;
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::Asset;
+use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::note::{Note, NoteType};
+use miden_protocol::testing::storage::prepare_assets;
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
@@ -20,7 +19,7 @@ use rand::rngs::SmallRng;
 macro_rules! assert_execution_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
-            Err(miden_processor::ExecutionError::FailedAssertion { label: _, source_file: _, clk: _, err_code, err_msg }) => {
+            Err($crate::ExecError(miden_processor::ExecutionError::FailedAssertion { label: _, source_file: _, clk: _, err_code, err_msg, err: _ })) => {
                 if let Some(ref msg) = err_msg {
                   assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
                 }
@@ -48,6 +47,7 @@ macro_rules! assert_transaction_executor_error {
                     clk: _,
                     err_code,
                     err_msg,
+                    err: _,
                 },
             )) => {
                 if let Some(ref msg) = err_msg {
@@ -127,22 +127,22 @@ pub fn create_p2any_note(
     code_body.push_str("dropw dropw dropw dropw");
 
     let code = format!(
-        "
-        use.mock::account
-        use.miden::active_note
-        use.miden::contracts::wallets::basic->wallet
+        r#"
+        use mock::account
+        use miden::protocol::active_note
+        use miden::standards::wallets::basic->wallet
 
         begin
             # fetch pointer & number of assets
             push.0 exec.active_note::get_assets     # [num_assets, dest_ptr]
 
             # runtime-check we got the expected count
-            push.{num_assets} assert_eq             # [dest_ptr]
+            push.{num_assets} assert_eq.err="unexpected number of assets"             # [dest_ptr]
 
             {code_body}
             dropw dropw dropw dropw
         end
-        ",
+        "#,
         num_assets = assets.len(),
     );
 
@@ -198,7 +198,7 @@ fn note_script_that_creates_notes<'note>(
     sender_id: AccountId,
     output_notes: impl Iterator<Item = &'note Note>,
 ) -> anyhow::Result<String> {
-    let mut out = String::from("use.miden::output_note\n\nbegin\n");
+    let mut out = String::from("use miden::protocol::output_note\n\nbegin\n");
 
     for (idx, note) in output_notes.into_iter().enumerate() {
         anyhow::ensure!(
@@ -208,7 +208,7 @@ fn note_script_that_creates_notes<'note>(
 
         // Make sure that the transaction's native account matches the note sender.
         out.push_str(&format!(
-            r#"exec.::miden::native_account::get_id
+            r#"exec.::miden::protocol::native_account::get_id
              # => [native_account_id_prefix, native_account_id_suffix]
              push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
              # => [native_account_id_suffix]
@@ -227,23 +227,34 @@ fn note_script_that_creates_notes<'note>(
         out.push_str(&format!(
             "
             push.{recipient}
-            push.{hint}
             push.{note_type}
-            push.{aux}
             push.{tag}
-            call.output_note::create\n",
+            exec.output_note::create\n",
             recipient = note.recipient().digest(),
-            hint = Felt::from(note.metadata().execution_hint()),
             note_type = note.metadata().note_type() as u8,
-            aux = note.metadata().aux(),
             tag = note.metadata().tag(),
+        ));
+
+        out.push_str(&format!(
+            "
+          push.{ATTACHMENT}
+          push.{attachment_scheme}
+          push.{attachment_kind}
+          dup.6
+          # => [note_idx, attachment_kind, attachment_scheme, ATTACHMENT, note_idx]
+          exec.output_note::set_attachment
+          # => [note_idx]
+        ",
+            ATTACHMENT = note.metadata().to_attachment_word(),
+            attachment_scheme = note.metadata().attachment().attachment_scheme().as_u32(),
+            attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
         ));
 
         let assets_str = prepare_assets(note.assets());
         for asset in assets_str {
             out.push_str(&format!(
                 " push.{asset}
-                  call.::miden::contracts::wallets::basic::move_asset_to_note\n",
+                  call.::miden::standards::wallets::basic::move_asset_to_note\n",
             ));
         }
     }

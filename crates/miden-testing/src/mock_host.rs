@@ -2,9 +2,6 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_lib::StdLibrary;
-use miden_lib::transaction::{EventId, TransactionEventId};
-use miden_objects::Word;
 use miden_processor::{
     AdviceMutation,
     AsyncHost,
@@ -14,6 +11,9 @@ use miden_processor::{
     MastForest,
     ProcessState,
 };
+use miden_protocol::transaction::TransactionEventId;
+use miden_protocol::vm::EventId;
+use miden_protocol::{CoreLibrary, Word};
 use miden_tx::TransactionExecutorHost;
 use miden_tx::auth::UnreachableAuth;
 
@@ -50,12 +50,12 @@ impl<'store> MockHost<'store> {
     pub fn new(
         exec_host: TransactionExecutorHost<'store, 'static, TransactionContext, UnreachableAuth>,
     ) -> Self {
-        // StdLibrary events are always handled.
-        let stdlib_handlers = StdLibrary::default()
+        // CoreLibrary events are always handled.
+        let core_lib_handlers = CoreLibrary::default()
             .handlers()
             .into_iter()
             .map(|(handler_event_name, _)| handler_event_name.to_event_id());
-        let mut handled_events = BTreeSet::from_iter(stdlib_handlers);
+        let mut handled_events = BTreeSet::from_iter(core_lib_handlers);
 
         // The default set of transaction events that are always handled.
         handled_events.extend(
@@ -78,8 +78,7 @@ impl<'store> MockHost<'store> {
         self.handled_events.extend(
             [
                 &TransactionEventId::AccountBeforeForeignLoad,
-                &TransactionEventId::AccountVaultBeforeGetBalance,
-                &TransactionEventId::AccountVaultBeforeHasNonFungibleAsset,
+                &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
                 &TransactionEventId::AccountStorageBeforeSetMapItem,
@@ -93,10 +92,10 @@ impl<'store> MockHost<'store> {
 impl<'store> BaseHost for MockHost<'store> {
     fn get_label_and_source_file(
         &self,
-        location: &miden_objects::assembly::debuginfo::Location,
+        location: &miden_protocol::assembly::debuginfo::Location,
     ) -> (
-        miden_objects::assembly::debuginfo::SourceSpan,
-        Option<Arc<miden_objects::assembly::SourceFile>>,
+        miden_protocol::assembly::debuginfo::SourceSpan,
+        Option<Arc<miden_protocol::assembly::SourceFile>>,
     ) {
         self.exec_host.get_label_and_source_file(location)
     }

@@ -2,23 +2,26 @@
 // ================================================================================================
 use alloc::vec::Vec;
 
-use miden_lib::account::auth::{
+use miden_protocol::Word;
+use miden_protocol::account::AccountComponent;
+use miden_protocol::account::auth::{AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_standards::account::auth::{
     AuthEcdsaK256Keccak,
     AuthEcdsaK256KeccakAcl,
     AuthEcdsaK256KeccakAclConfig,
     AuthEcdsaK256KeccakMultisig,
     AuthEcdsaK256KeccakMultisigConfig,
-    AuthRpoFalcon512,
-    AuthRpoFalcon512Acl,
-    AuthRpoFalcon512AclConfig,
-    AuthRpoFalcon512Multisig,
-    AuthRpoFalcon512MultisigConfig,
+    AuthFalcon512Rpo,
+    AuthFalcon512RpoAcl,
+    AuthFalcon512RpoAclConfig,
+    AuthFalcon512RpoMultisig,
+    AuthFalcon512RpoMultisigConfig,
 };
-use miden_lib::testing::account_component::{ConditionalAuthComponent, IncrNonceAuthComponent};
-use miden_objects::Word;
-use miden_objects::account::AccountComponent;
-use miden_objects::account::auth::{AuthSecretKey, PublicKeyCommitment};
-use miden_objects::testing::noop_auth_component::NoopAuthComponent;
+use miden_standards::testing::account_component::{
+    ConditionalAuthComponent,
+    IncrNonceAuthComponent,
+};
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -27,7 +30,7 @@ use rand_chacha::ChaCha20Rng;
 #[derive(Debug, Clone)]
 pub enum Auth {
     /// Creates a secret key for the account and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthRpoFalcon512].
+    /// authenticate the account with [AuthFalcon512Rpo].
     BasicAuth,
 
     /// Creates a secret key for the account and creates a [BasicAuthenticator] used to
@@ -58,7 +61,7 @@ pub enum Auth {
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
-    /// authenticate the account with [AuthRpoFalcon512Acl]. Authentication will only be
+    /// authenticate the account with [AuthFalcon512RpoAcl]. Authentication will only be
     /// triggered if any of the procedures specified in the list are called during execution.
     Acl {
         auth_trigger_procedures: Vec<Word>,
@@ -88,10 +91,10 @@ impl Auth {
         match self {
             Auth::BasicAuth => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::new_rpo_falcon512_with_rng(&mut rng);
+                let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthRpoFalcon512::new(pub_key).into();
+                let component = AuthFalcon512Rpo::new(pub_key).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
                 (component, Some(authenticator))
@@ -123,10 +126,10 @@ impl Auth {
                 let pub_keys: Vec<_> =
                     approvers.iter().map(|word| PublicKeyCommitment::from(*word)).collect();
 
-                let config = AuthRpoFalcon512MultisigConfig::new(pub_keys, *threshold)
+                let config = AuthFalcon512RpoMultisigConfig::new(pub_keys, *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
-                let component = AuthRpoFalcon512Multisig::new(config)
+                let component = AuthFalcon512RpoMultisig::new(config)
                     .expect("multisig component creation failed")
                     .into();
 
@@ -138,12 +141,12 @@ impl Auth {
                 allow_unauthorized_input_notes,
             } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::new_rpo_falcon512_with_rng(&mut rng);
+                let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthRpoFalcon512Acl::new(
+                let component = AuthFalcon512RpoAcl::new(
                     pub_key,
-                    AuthRpoFalcon512AclConfig::new()
+                    AuthFalcon512RpoAclConfig::new()
                         .with_auth_trigger_procedures(auth_trigger_procedures.clone())
                         .with_allow_unauthorized_output_notes(*allow_unauthorized_output_notes)
                         .with_allow_unauthorized_input_notes(*allow_unauthorized_input_notes),

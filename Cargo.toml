@@ -2,10 +2,11 @@
 members = [
   "bin/bench-note-checker",
   "bin/bench-transaction",
+  "crates/miden-agglayer",
   "crates/miden-block-prover",
-  "crates/miden-lib",
-  "crates/miden-objects",
+  "crates/miden-protocol",
   "crates/miden-protocol-macros",
+  "crates/miden-standards",
   "crates/miden-testing",
   "crates/miden-tx",
   "crates/miden-tx-batch-prover",
@@ -20,7 +21,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/miden-base"
 rust-version = "1.90"
-version      = "0.13.0"
+version      = "0.14.0"
 
 [profile.release]
 codegen-units = 1
@@ -41,32 +42,36 @@ lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.13" }
-miden-lib             = { default-features = false, path = "crates/miden-lib", version = "0.13" }
-miden-objects         = { default-features = false, path = "crates/miden-objects", version = "0.13" }
-miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.13" }
-miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.13" }
-miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.13" }
-miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.13" }
+miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.14" }
+miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.14" }
+miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.14" }
+miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.14" }
+miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.14" }
+miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.14" }
+miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.14" }
+miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.14" }
 
 # Miden dependencies
-miden-air             = { default-features = false, version = "0.19" }
-miden-assembly        = { default-features = false, version = "0.19" }
-miden-assembly-syntax = { default-features = false, version = "0.19" }
-miden-core            = { default-features = false, version = "0.19" }
-miden-crypto          = { default-features = false, version = "0.18.5" }
-miden-mast-package    = { default-features = false, version = "0.19" }
-miden-processor       = { default-features = false, version = "0.19" }
-miden-prover          = { default-features = false, version = "0.19" }
-miden-stdlib          = { default-features = false, version = "0.19" }
-miden-utils-sync      = { default-features = false, version = "0.19" }
-miden-verifier        = { default-features = false, version = "0.19" }
+miden-air             = { default-features = false, version = "0.20" }
+miden-assembly        = { default-features = false, version = "0.20" }
+miden-assembly-syntax = { default-features = false, version = "0.20" }
+miden-core            = { default-features = false, version = "0.20" }
+miden-core-lib        = { default-features = false, version = "0.20" }
+miden-crypto          = { default-features = false, version = "0.19" }
+miden-mast-package    = { default-features = false, version = "0.20" }
+miden-processor       = { default-features = false, version = "0.20" }
+miden-prover          = { default-features = false, version = "0.20" }
+miden-utils-sync      = { default-features = false, version = "0.20" }
+miden-verifier        = { default-features = false, version = "0.20" }
 
 # External dependencies
-anyhow         = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
-assert_matches = { default-features = false, version = "1.5" }
-rand           = { default-features = false, version = "0.9" }
-rand_chacha    = { default-features = false, version = "0.9" }
-rstest         = { version = "0.26" }
-thiserror      = { default-features = false, version = "2.0" }
-tokio          = { default-features = false, features = ["sync"], version = "1" }
+anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
+assert_matches  = { default-features = false, version = "1.5" }
+fs-err          = { default-features = false, version = "3" }
+primitive-types = { default-features = false, version = "0.14" }
+rand            = { default-features = false, version = "0.9" }
+rand_chacha     = { default-features = false, version = "0.9" }
+rstest          = { version = "0.26" }
+serde           = { default-features = false, version = "1.0" }
+thiserror       = { default-features = false, version = "2.0" }
+tokio           = { default-features = false, features = ["sync"], version = "1" }

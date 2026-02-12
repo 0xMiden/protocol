@@ -1,0 +1,72 @@
+# cargo-deny configuration, see https://github.com/EmbarkStudios/cargo-deny
+
+# Graph configuration
+[graph]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
+
+# Advisory database configuration
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+  "RUSTSEC-2024-0436", # paste is unmaintained but no alternative available
+  "RUSTSEC-2025-0055", # tracing-subscriber vulnerability - will be fixed by upgrade
+  "RUSTSEC-2025-0056", # adler is unmaintained but used by miniz_oxide
+]
+yanked = "warn"
+
+# License configuration
+[licenses]
+allow = [
+  "Apache-2.0 WITH LLVM-exception",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Zlib",
+]
+exceptions = [
+  # Each entry is the crate and version constraint, and its specific allowed licenses
+  #{ allow = ["Zlib"], name = "adler32", version = "*" },
+]
+
+# Bans configuration
+[bans]
+allow = [
+  #{ name = "ansi_term", version = "=0.11.0" },
+]
+deny = [
+  #{ name = "ansi_term", version = "=0.11.0" },
+]
+highlight = "all"
+multiple-versions = "deny"
+skip = [
+  #{ name = "ansi_term", version = "=0.11.0" },
+]
+skip-tree = [
+  # Allow getrandom v0.2.x - legacy version used by nanorand
+  { name = "getrandom", version = "=0.2.*" },
+  # Allow rand_core v0.6.x - legacy version used by winterfell crates
+  { name = "rand_core", version = "=0.6.*" },
+  # Allow rustc_version v0.2.x - build dependency version
+  { name = "rustc_version", version = "=0.2.*" },
+  # Allow unicode-width v0.1.x - used by miden-formatting vs textwrap conflict
+  { name = "unicode-width", version = "=0.1.*" },
+  # Allow windows-targets v0.48.x - older Windows target version
+  { name = "windows-targets", version = "=0.48.*" },
+  # Allow windows-sys v0.48.x/v0.59.x - multiple Windows system libraries
+  { name = "windows-sys", version = "=0.48.*" },
+  { name = "windows-sys", version = "=0.59.*" },
+  # Allow syn v1.x and v2.x - our derive macros need v1.x while ecosystem uses v2.x
+  { name = "syn", version = "=1.0.109" },
+  { name = "syn", version = "=2.0.111" },
+]
+wildcards = "allow"
+
+# Sources configuration
+[sources]
+allow-registry   = ["https://github.com/rust-lang/crates.io-index"]
+unknown-git      = "deny"
+unknown-registry = "deny"

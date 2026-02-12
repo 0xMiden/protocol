@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use miden_objects::transaction::TransactionMeasurements;
+use miden_protocol::transaction::TransactionMeasurements;
 
 mod context_setups;
 use context_setups::{

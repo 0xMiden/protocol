@@ -2,11 +2,9 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_lib::block::build_block;
-use miden_lib::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
-use miden_lib::testing::mock_account::MockAccountExt;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::Word;
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -14,13 +12,15 @@ use miden_objects::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_objects::asset::FungibleAsset;
-use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock};
-use miden_objects::note::NoteType;
-use miden_objects::transaction::ProvenTransactionBuilder;
-use miden_objects::vm::ExecutionProof;
-use miden_objects::{AccountTreeError, NullifierTreeError, ProposedBlockError, Word};
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::batch::ProvenBatch;
+use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
+use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
+use miden_protocol::note::NoteType;
+use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::vm::ExecutionProof;
+use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
+use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
@@ -104,7 +104,7 @@ async fn block_building_fails_on_stale_account_witnesses() -> anyhow::Result<()>
     let proposed_block0 = ProposedBlock::new(invalid_account_tree_block_inputs, batches.clone())
         .context("failed to propose block 0")?;
 
-    let error = build_block(proposed_block0).unwrap_err();
+    let error = proposed_block0.into_header_and_body().unwrap_err();
 
     assert_matches!(
         error,
@@ -141,7 +141,7 @@ async fn block_building_fails_on_stale_nullifier_witnesses() -> anyhow::Result<(
     let proposed_block2 = ProposedBlock::new(invalid_nullifier_tree_block_inputs, batches.clone())
         .context("failed to propose block 2")?;
 
-    let error = build_block(proposed_block2).unwrap_err();
+    let error = proposed_block2.into_header_and_body().unwrap_err();
 
     assert_matches!(
         error,
@@ -187,7 +187,7 @@ async fn block_building_fails_on_account_tree_root_mismatch() -> anyhow::Result<
     let proposed_block1 = ProposedBlock::new(stale_account_witness_block_inputs, batches.clone())
         .context("failed to propose block 1")?;
 
-    let error = build_block(proposed_block1).unwrap_err();
+    let error = proposed_block1.into_header_and_body().unwrap_err();
 
     assert_matches!(
         error,
@@ -235,7 +235,7 @@ async fn block_building_fails_on_nullifier_tree_root_mismatch() -> anyhow::Resul
     let proposed_block3 = ProposedBlock::new(invalid_nullifier_witness_block_inputs, batches)
         .context("failed to propose block 3")?;
 
-    let error = build_block(proposed_block3).unwrap_err();
+    let error = proposed_block3.into_header_and_body().unwrap_err();
 
     assert_matches!(
         error,
@@ -329,7 +329,7 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
 
     let block = mock_chain.propose_block(batches).context("failed to propose block")?;
 
-    let err = build_block(block).unwrap_err();
+    let err = block.into_header_and_body().unwrap_err();
 
     // This should fail when we try to _insert_ the same two prefixes into the partial tree.
     assert_matches!(
@@ -426,7 +426,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
 
     let block = mock_chain.propose_block(batches).context("failed to propose block")?;
 
-    let err = build_block(block).unwrap_err();
+    let err = block.into_header_and_body().unwrap_err();
 
     // This should fail when we try to _track_ the same two prefixes in the partial tree.
     assert_matches!(

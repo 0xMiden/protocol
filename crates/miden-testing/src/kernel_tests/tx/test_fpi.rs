@@ -2,26 +2,10 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_lib::errors::tx_kernel_errors::{
-    ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
-    ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
-    ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
-};
-use miden_lib::testing::account_component::MockAccountComponent;
-use miden_lib::transaction::memory::{
-    ACCOUNT_DATA_LENGTH,
-    ACCT_CODE_COMMITMENT_OFFSET,
-    ACCT_ID_AND_NONCE_OFFSET,
-    ACCT_PROCEDURES_SECTION_OFFSET,
-    ACCT_STORAGE_COMMITMENT_OFFSET,
-    ACCT_STORAGE_SLOTS_SECTION_OFFSET,
-    ACCT_VAULT_ROOT_OFFSET,
-    NATIVE_ACCOUNT_DATA_PTR,
-    NUM_ACCT_PROCEDURES_OFFSET,
-    NUM_ACCT_STORAGE_SLOTS_OFFSET,
-};
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::{
+use miden_processor::fast::ExecutionOutput;
+use miden_processor::{AdviceInputs, Felt};
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -31,16 +15,33 @@ use miden_objects::account::{
     AccountStorageMode,
     StorageSlot,
 };
-use miden_objects::assembly::DefaultSourceManager;
-use miden_objects::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-use miden_objects::testing::account_id::{
+use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::errors::tx_kernel::{
+    ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT,
+    ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
+    ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
+};
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
 };
-use miden_objects::testing::storage::STORAGE_LEAVES_2;
-use miden_objects::{FieldElement, Word, ZERO};
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, Felt};
+use miden_protocol::testing::storage::STORAGE_LEAVES_2;
+use miden_protocol::transaction::memory::{
+    ACCOUNT_DATA_LENGTH,
+    ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET,
+    ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_AND_NONCE_OFFSET,
+    ACCT_NUM_PROCEDURES_OFFSET,
+    ACCT_NUM_STORAGE_SLOTS_OFFSET,
+    ACCT_PROCEDURES_SECTION_OFFSET,
+    ACCT_STORAGE_COMMITMENT_OFFSET,
+    ACCT_VAULT_ROOT_OFFSET,
+    NATIVE_ACCOUNT_DATA_PTR,
+};
+use miden_protocol::{FieldElement, Word, ZERO};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -60,9 +61,9 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
     let mock_map_slot = AccountStorage::mock_map_slot();
     let foreign_account_code_source = "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_item_foreign
+        pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.1 drop
@@ -72,7 +73,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             movup.6 movup.6 drop drop
         end
 
-        export.get_map_item_foreign
+        pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.2 drop
@@ -82,11 +83,11 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(source_manager.clone())
+        CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("test::foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -122,10 +123,10 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.$kernel::prologue
-        use.miden::tx
+        use $kernel::prologue
+        use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -176,10 +177,10 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.$kernel::prologue
-        use.miden::tx
+        use $kernel::prologue
+        use miden::protocol::tx
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
@@ -236,10 +237,10 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.$kernel::prologue
-        use.miden::tx
+        use $kernel::prologue
+        use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -316,9 +317,9 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     let mock_value_slot1 = AccountStorage::mock_value_slot1();
 
     let foreign_account_code_source_1 = "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_item_foreign_1
+        pub proc get_item_foreign_1
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.1 drop
@@ -329,9 +330,9 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         end
     ";
     let foreign_account_code_source_2 = "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_item_foreign_2
+        pub proc get_item_foreign_2
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.2 drop
@@ -343,18 +344,18 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     ";
 
     let foreign_account_component_1 = AccountComponent::new(
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
+        CodeBuilder::default()
             .compile_component_code("test::foreign_account_1", foreign_account_code_source_1)?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account_1"),
+    )?;
 
     let foreign_account_component_2 = AccountComponent::new(
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
+        CodeBuilder::default()
             .compile_component_code("test::foreign_account_2", foreign_account_code_source_2)?,
         vec![mock_value_slot1.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::foreign_account_2"),
+    )?;
 
     let foreign_account_1 = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -400,10 +401,10 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.$kernel::prologue
-        use.miden::tx
+        use $kernel::prologue
+        use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
@@ -535,9 +536,9 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let mock_map_slot = AccountStorage::mock_map_slot();
 
     let foreign_account_code_source = "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_item_foreign
+        pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.1 drop
@@ -547,7 +548,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             movup.6 movup.6 drop drop
         end
 
-        export.get_map_item_foreign
+        pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.2 drop
@@ -560,8 +561,8 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -581,9 +582,9 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.miden::tx
+        use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -610,7 +611,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             # => [STORAGE_VALUE]
 
             # assert the correctness of the obtained value
-            push.1.2.3.4 assert_eqw
+            push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
             # => []
 
             # get an item from the storage map
@@ -636,7 +637,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             # => [MAP_VALUE]
 
             # assert the correctness of the obtained value
-            push.1.2.3.4 assert_eqw
+            push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
             # => []
 
             # truncate the stack
@@ -686,9 +687,9 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 
     let foreign_account_code_source = format!(
         "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_asset_balance
+        pub proc get_asset_balance
             # get balance of first asset
             push.{fungible_faucet_id_suffix} push.{fungible_faucet_id_prefix}
             exec.active_account::get_balance
@@ -718,8 +719,8 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("foreign_account_code", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_code"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -740,9 +741,9 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
 
     let code = format!(
         "
-        use.std::sys
+        use miden::core::sys
 
-        use.miden::tx
+        use miden::protocol::tx
 
         begin
             # Get the added balance of two assets from foreign account
@@ -799,9 +800,9 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
     let foreign_account_code_source = format!(
         "
-        use.miden::active_account
+        use miden::protocol::active_account
 
-        export.get_initial_balance
+        pub proc get_initial_balance
             # push the faucet ID on the stack
             push.{fungible_faucet_id_suffix} push.{fungible_faucet_id_prefix}
 
@@ -823,8 +824,8 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
         CodeBuilder::with_source_manager(source_manager.clone())
             .compile_component_code("foreign_account_code", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_code"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -845,9 +846,9 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use.std::sys
+        use miden::core::sys
 
-        use.miden::tx
+        use miden::protocol::tx
 
         begin
             # Get the initial balance of the fungible asset from the foreign account
@@ -914,15 +915,15 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
     let second_foreign_account_code_source = format!(
         r#"
-        use.miden::tx
-        use.miden::active_account
+        use miden::protocol::tx
+        use miden::protocol::active_account
 
-        use.std::sys
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_VALUE_SLOT1 = word("{mock_value_slot1}")
 
-        export.second_account_foreign_proc
+        pub proc second_account_foreign_proc
             # get the storage item at value1
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw
@@ -968,8 +969,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             second_foreign_account_code_source,
         )?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::second_foreign_account"),
+    )?;
 
     let second_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -979,14 +980,14 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     // ------ FIRST FOREIGN ACCOUNT ---------------------------------------------------------------
     let first_foreign_account_code_source = format!(
         r#"
-        use.miden::tx
-        use.miden::active_account
+        use miden::protocol::tx
+        use miden::protocol::active_account
 
-        use.std::sys
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        export.first_account_foreign_proc
+        pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1013,7 +1014,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             exec.sys::truncate_stack
         end
 
-        export.get_item_foreign
+        pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.1 drop
@@ -1030,8 +1031,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("first_foreign_account", first_foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_value_slot1.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("first_foreign_account"),
+    )?;
 
     let first_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1082,10 +1083,8 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
-
-        use.miden::tx
-        use.miden::account
+        use miden::core::sys
+        use miden::protocol::tx
 
         begin
             # pad the stack for the `execute_foreign_procedure` execution
@@ -1147,9 +1146,9 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     // ------ SECOND FOREIGN ACCOUNT ---------------------------------------------------------------
     // unique procedure which just leaves a constant on the stack
     let second_foreign_account_code_source = r#"
-        use.std::sys
+        use miden::core::sys
 
-        export.second_account_foreign_proc
+        pub proc second_account_foreign_proc
             # leave a constant result on the stack
             push.3
 
@@ -1163,8 +1162,8 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         CodeBuilder::with_kernel_library(source_manager.clone())
             .compile_component_code("foreign_account", second_foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let second_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1175,10 +1174,10 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     // unique procedure which calls the second foreign account via FPI and then returns
     let first_foreign_account_code_source = format!(
         r#"
-        use.miden::tx
-        use.std::sys
+        use miden::protocol::tx
+        use miden::core::sys
 
-        export.first_account_foreign_proc
+        pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1206,8 +1205,11 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
         .with_dynamically_linked_library(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
-    let first_foreign_account_component =
-        AccountComponent::new(first_foreign_account_code, vec![])?.with_supports_all_types();
+    let first_foreign_account_component = AccountComponent::new(
+        first_foreign_account_code,
+        vec![],
+        AccountComponentMetadata::mock("first_foreign_account"),
+    )?;
 
     let first_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1242,8 +1244,8 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     // Call the first foreign account's procedure. It will call into the second FA via FPI.
     let code = format!(
         r#"
-        use.std::sys
-        use.miden::tx
+        use miden::core::sys
+        use miden::protocol::tx
 
         begin
             # pad the stack for the `execute_foreign_procedure` execution
@@ -1302,11 +1304,11 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
     let last_foreign_account_code_source = format!(
         r#"
-                use.miden::active_account
+                use miden::protocol::active_account
 
                 const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-                export.get_item_foreign
+                pub proc get_item_foreign
                     # make this foreign procedure unique to make sure that we invoke the procedure
                     # of the foreign account, not the native one
                     push.1 drop
@@ -1320,20 +1322,21 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                     drop drop drop
 
                     # make sure that the resulting value equals 1
-                    assert
+                    assert.err="expected value to be 1"
                 end
         "#,
         mock_value_slot0 = mock_value_slot0.name(),
     );
 
-    let last_foreign_account_code =
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
-            .compile_component_code("test::last_foreign_account", last_foreign_account_code_source)
-            .unwrap();
-    let last_foreign_account_component =
-        AccountComponent::new(last_foreign_account_code, vec![mock_value_slot0.clone()])
-            .unwrap()
-            .with_supports_all_types();
+    let last_foreign_account_code = CodeBuilder::default()
+        .compile_component_code("test::last_foreign_account", last_foreign_account_code_source)
+        .unwrap();
+    let last_foreign_account_component = AccountComponent::new(
+        last_foreign_account_code,
+        vec![mock_value_slot0.clone()],
+        AccountComponentMetadata::mock("test::last_foreign_account"),
+    )
+    .unwrap();
 
     let last_foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1348,10 +1351,10 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
         let foreign_account_code_source = format!(
                     "
-                use.miden::tx
-                use.std::sys
+                use miden::protocol::tx
+                use miden::core::sys
 
-                export.read_first_foreign_storage_slot_{foreign_account_index}
+                pub proc read_first_foreign_storage_slot_{foreign_account_index}
                     # pad the stack for the `execute_foreign_procedure` execution
                     padw padw padw push.0.0.0
                     # => [pad(15)]
@@ -1374,16 +1377,18 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                     next_foreign_prefix = next_account.id().prefix().as_felt(),
                 );
 
-        let foreign_account_code =
-            CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
-                .compile_component_code(
-                    format!("test::foreign_account_chain_{foreign_account_index}"),
-                    foreign_account_code_source,
-                )
-                .unwrap();
-        let foreign_account_component = AccountComponent::new(foreign_account_code, vec![])
-            .unwrap()
-            .with_supports_all_types();
+        let foreign_account_code = CodeBuilder::default()
+            .compile_component_code(
+                format!("test::foreign_account_chain_{foreign_account_index}"),
+                foreign_account_code_source,
+            )
+            .unwrap();
+        let foreign_account_component = AccountComponent::new(
+            foreign_account_code,
+            vec![],
+            AccountComponentMetadata::mock("test::foreign_account_chain"),
+        )
+        .unwrap();
 
         let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
             .with_auth_component(Auth::IncrNonce)
@@ -1422,9 +1427,9 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 
     let code = format!(
                 "
-            use.std::sys
+            use miden::core::sys
 
-            use.miden::tx
+            use miden::protocol::tx
 
             begin
                 # pad the stack for the `execute_foreign_procedure` execution
@@ -1469,11 +1474,11 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
 async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     // ------ FIRST FOREIGN ACCOUNT ---------------------------------------------------------------
     let foreign_account_code_source = "
-        use.miden::tx
+        use miden::protocol::tx
 
-        use.std::sys
+        use miden::core::sys
 
-        export.first_account_foreign_proc
+        pub proc first_account_foreign_proc
             # pad the stack for the `execute_foreign_procedure` execution
             padw padw padw push.0.0.0
             # => [pad(15)]
@@ -1493,11 +1498,11 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     ";
 
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
+        CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1518,9 +1523,9 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
 
     let code = format!(
         "
-        use.std::sys
+        use miden::core::sys
 
-        use.miden::tx
+        use miden::protocol::tx
 
         begin
             # pad the stack for the `execute_foreign_procedure` execution
@@ -1581,10 +1586,10 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
 async fn test_fpi_stale_account() -> anyhow::Result<()> {
     // Prepare the test data
     let foreign_account_code_source = "
-        use.miden::native_account
+        use miden::protocol::native_account
 
         # code is not used in this test
-        export.set_some_item_foreign
+        pub proc set_some_item_foreign
             push.34.1
             exec.native_account::set_item
         end
@@ -1592,11 +1597,11 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
 
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
+        CodeBuilder::default()
             .compile_component_code("foreign_account_invalid", foreign_account_code_source)?,
         vec![mock_value_slot0.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account_invalid"),
+    )?;
 
     let mut foreign_account = AccountBuilder::new([5; 32])
         .with_auth_component(Auth::IncrNonce)
@@ -1643,10 +1648,10 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
 
     let code = format!(
         "
-      use.std::sys
+      use miden::core::sys
 
-      use.$kernel::prologue
-      use.miden::tx
+      use $kernel::prologue
+      use miden::protocol::tx
 
       begin
           exec.prologue::prepare_transaction
@@ -1681,10 +1686,10 @@ async fn test_fpi_stale_account() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     let foreign_account_code_source = "
-        use.miden::active_account
-        use.miden::native_account
+        use miden::protocol::active_account
+        use miden::protocol::native_account
 
-        export.get_current_and_native_ids
+        pub proc get_current_and_native_ids
             # get the ID of the current (foreign) account
             exec.active_account::get_id
             # => [acct_id_prefix, acct_id_suffix, pad(16)]
@@ -1700,11 +1705,11 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     ";
 
     let foreign_account_component = AccountComponent::new(
-        CodeBuilder::with_kernel_library(Arc::new(DefaultSourceManager::default()))
+        CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         Vec::new(),
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1724,10 +1729,10 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.std::sys
+        use miden::core::sys
 
-        use.miden::tx
-        use.miden::account_id
+        use miden::protocol::tx
+        use miden::protocol::account_id
 
         begin
             # get the IDs of the foreign and native accounts
@@ -1824,7 +1829,7 @@ fn foreign_account_data_memory_assertions(
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + NUM_ACCT_STORAGE_SLOTS_OFFSET),
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_STORAGE_SLOTS_OFFSET),
         Word::from([u16::try_from(foreign_account.storage().slots().len()).unwrap(), 0, 0, 0]),
     );
 
@@ -1836,14 +1841,16 @@ fn foreign_account_data_memory_assertions(
     {
         assert_eq!(
             exec_output.get_kernel_mem_word(
-                foreign_account_data_ptr + ACCT_STORAGE_SLOTS_SECTION_OFFSET + (i as u32) * 4
+                foreign_account_data_ptr
+                    + ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
+                    + (i as u32) * 4
             ),
             Word::try_from(elements).unwrap(),
         )
     }
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + NUM_ACCT_PROCEDURES_OFFSET),
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_PROCEDURES_OFFSET),
         Word::from([u16::try_from(foreign_account.code().num_procedures()).unwrap(), 0, 0, 0]),
     );
 
@@ -1880,18 +1887,18 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
     // Create foreign procedures that test get_initial_item and get_initial_map_item
     let foreign_account_code_source = format!(
         r#"
-        use.miden::active_account
-        use.std::sys
+        use miden::protocol::active_account
+        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
-        export.test_get_initial_item
+        pub proc test_get_initial_item
             push.MOCK_VALUE_SLOT0[0..2]
             exec.active_account::get_initial_item
             exec.sys::truncate_stack
         end
 
-        export.test_get_initial_map_item
+        pub proc test_get_initial_map_item
             exec.active_account::get_initial_map_item
             exec.sys::truncate_stack
         end
@@ -1903,8 +1910,8 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         CodeBuilder::default()
             .compile_component_code("foreign_account", foreign_account_code_source)?,
         vec![mock_value_slot0.clone(), mock_map_slot.clone()],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("foreign_account"),
+    )?;
 
     let foreign_account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
         .with_auth_component(Auth::IncrNonce)
@@ -1921,8 +1928,8 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
     let code = format!(
         r#"
-        use.std::sys
-        use.miden::tx
+        use miden::core::sys
+        use miden::protocol::tx
 
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 

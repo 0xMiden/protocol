@@ -3,18 +3,6 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_lib::transaction::TransactionAdviceInputs;
-use miden_objects::account::auth::PublicKeyCommitment;
-use miden_objects::account::{AccountCode, AccountDelta, AccountId, PartialAccount};
-use miden_objects::assembly::debuginfo::Location;
-use miden_objects::assembly::{SourceFile, SourceManagerSync, SourceSpan};
-use miden_objects::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::SmtProof;
-use miden_objects::note::{NoteInputs, NoteMetadata, NoteRecipient};
-use miden_objects::transaction::{InputNote, InputNotes, OutputNote, TransactionSummary};
-use miden_objects::vm::AdviceMap;
-use miden_objects::{Felt, Hasher, Word};
 use miden_processor::{
     AdviceMutation,
     AsyncHost,
@@ -24,6 +12,31 @@ use miden_processor::{
     MastForest,
     ProcessState,
 };
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::{
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    PartialAccount,
+    StorageSlotId,
+    StorageSlotName,
+};
+use miden_protocol::assembly::debuginfo::Location;
+use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
+use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::smt::SmtProof;
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
+use miden_protocol::transaction::{
+    InputNote,
+    InputNotes,
+    OutputNote,
+    TransactionAdviceInputs,
+    TransactionSummary,
+};
+use miden_protocol::vm::AdviceMap;
+use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -71,6 +84,9 @@ where
     ///
     /// This is required for re-executing the transaction, e.g. as part of transaction proving.
     accessed_foreign_account_code: Vec<AccountCode>,
+
+    /// Storage slot names for foreign accounts accessed during transaction execution.
+    foreign_account_slot_names: BTreeMap<StorageSlotId, StorageSlotName>,
 
     /// Contains generated signatures (as a message |-> signature map) required for transaction
     /// execution. Once a signature was created for a given message, it is inserted into this map.
@@ -122,6 +138,7 @@ where
             authenticator,
             ref_block,
             accessed_foreign_account_code: Vec::new(),
+            foreign_account_slot_names: BTreeMap::new(),
             generated_signatures: BTreeMap::new(),
             initial_fee_asset_balance,
             source_manager,
@@ -134,6 +151,11 @@ where
     /// Returns a reference to the `tx_progress` field of this transaction host.
     pub fn tx_progress(&self) -> &TransactionProgress {
         &self.tx_progress
+    }
+
+    /// Returns a reference to the foreign account slot names collected during execution.
+    pub fn foreign_account_slot_names(&self) -> &BTreeMap<StorageSlotId, StorageSlotName> {
+        &self.foreign_account_slot_names
     }
 
     // EVENT HANDLERS
@@ -157,6 +179,11 @@ where
 
         let mut tx_advice_inputs = TransactionAdviceInputs::default();
         tx_advice_inputs.add_foreign_accounts([&foreign_account_inputs]);
+
+        // Extract and store slot names for this foreign account and store.
+        foreign_account_inputs.storage().header().slots().for_each(|slot| {
+            self.foreign_account_slot_names.insert(slot.id(), slot.name().clone());
+        });
 
         self.base_host.load_foreign_account_code(foreign_account_inputs.code());
 
@@ -338,26 +365,48 @@ where
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
 
-    /// Handles a request for a [`NoteScript`] by querying the [`DataStore`].
+    /// Handles a request for a [`NoteScript`] during transaction execution when the script is not
+    /// already in the advice provider.
     ///
-    /// The script is fetched from the data store and used to build a [`NoteRecipient`], which is
-    /// then used to create an [`OutputNoteBuilder`]. This function is only called for public notes
-    /// where the script is not already available in the advice provider.
+    /// Standard note scripts (P2ID, etc.) are resolved directly from [`StandardNote`], avoiding a
+    /// data store round-trip. Non-standard scripts are fetched from the [`DataStore`].
+    ///
+    /// The resolved script is used to build a [`NoteRecipient`], which is then used to create
+    /// an [`OutputNoteBuilder`]. This function is only called for notes where the script is not
+    /// already in the advice provider.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The note is public and the script is not found in the data store.
+    /// - Constructing the recipient with the fetched script does not match the expected recipient
+    ///   digest.
+    /// - The data store returns an error when fetching the script.
     async fn on_note_script_requested(
         &mut self,
         note_idx: usize,
         recipient_digest: Word,
         script_root: Word,
         metadata: NoteMetadata,
-        note_inputs: NoteInputs,
+        note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let note_script_result = self.base_host.store().get_note_script(script_root).await;
+        // Resolve standard note scripts directly, avoiding a data store round-trip.
+        let note_script: Option<NoteScript> =
+            if let Some(standard_note) = StandardNote::from_script_root(script_root) {
+                Some(standard_note.script())
+            } else {
+                self.base_host.store().get_note_script(script_root).await.map_err(|err| {
+                    TransactionKernelError::other_with_source(
+                        "failed to retrieve note script from data store",
+                        err,
+                    )
+                })?
+            };
 
-        match note_script_result {
-            Ok(Some(note_script)) => {
+        match note_script {
+            Some(note_script) => {
                 let script_felts: Vec<Felt> = (&note_script).into();
-                let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+                let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
                     return Err(TransactionKernelError::other(format!(
@@ -373,7 +422,7 @@ where
                     script_felts,
                 )]))])
             },
-            Ok(None) if metadata.is_private() => {
+            None if metadata.is_private() => {
                 self.base_host.output_note_from_recipient_digest(
                     note_idx,
                     metadata,
@@ -382,13 +431,9 @@ where
 
                 Ok(Vec::new())
             },
-            Ok(None) => Err(TransactionKernelError::other(format!(
+            None => Err(TransactionKernelError::other(format!(
                 "note script with root {script_root} not found in data store for public note"
             ))),
-            Err(err) => Err(TransactionKernelError::other_with_source(
-                "failed to retrieve note script from data store",
-                err,
-            )),
         }
     }
 
@@ -404,6 +449,7 @@ where
         Vec<AccountCode>,
         BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
+        BTreeMap<StorageSlotId, StorageSlotName>,
     ) {
         let (account_delta, input_notes, output_notes) = self.base_host.into_parts();
 
@@ -414,6 +460,7 @@ where
             self.accessed_foreign_account_code,
             self.generated_signatures,
             self.tx_progress,
+            self.foreign_account_slot_names,
         )
     }
 }
@@ -451,22 +498,22 @@ where
         &mut self,
         process: &ProcessState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
-        let stdlib_event_result = self.base_host.handle_stdlib_events(process);
+        let core_lib_event_result = self.base_host.handle_core_lib_events(process);
 
-        // If the event was handled by a stdlib handler (Ok(Some)), we will return the result from
+        // If the event was handled by a core lib handler (Ok(Some)), we will return the result from
         // within the async block below. So, we only need to extract th tx event if the event was
         // not yet handled (Ok(None)).
-        let tx_event_result = match stdlib_event_result {
+        let tx_event_result = match core_lib_event_result {
             Ok(None) => Some(TransactionEvent::extract(&self.base_host, process)),
             _ => None,
         };
 
         async move {
-            if let Some(mutations) = stdlib_event_result? {
+            if let Some(mutations) = core_lib_event_result? {
                 return Ok(mutations);
             }
 
-            // The outer None means the event was handled by stdlib handlers.
+            // The outer None means the event was handled by core lib handlers.
             let Some(tx_event_result) = tx_event_result else {
                 return Ok(Vec::new());
             };
@@ -494,13 +541,13 @@ where
                 TransactionEvent::AccountStorageAfterSetMapItem {
                     slot_name,
                     key,
-                    old_map_value: prev_map_value,
-                    new_map_value,
+                    old_value: prev_map_value,
+                    new_value,
                 } => self.base_host.on_account_storage_after_set_map_item(
                     slot_name,
                     key,
                     prev_map_value,
-                    new_map_value,
+                    new_value,
                 ),
 
                 TransactionEvent::AccountVaultBeforeAssetAccess {
@@ -537,7 +584,7 @@ where
                     self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
                 },
 
-                TransactionEvent::NoteAfterCreated { note_idx, metadata, recipient_data } => {
+                TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
                     match recipient_data {
                         RecipientData::Digest(recipient_digest) => {
                             self.base_host.output_note_from_recipient_digest(
@@ -553,14 +600,14 @@ where
                             recipient_digest,
                             serial_num,
                             script_root,
-                            note_inputs,
+                            note_storage,
                         } => {
                             self.on_note_script_requested(
                                 note_idx,
                                 recipient_digest,
                                 script_root,
                                 metadata,
-                                note_inputs,
+                                note_storage,
                                 serial_num,
                             )
                             .await
@@ -571,6 +618,11 @@ where
                 TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {
                     self.base_host.on_note_before_add_asset(note_idx, asset)
                 },
+
+                TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment } => self
+                    .base_host
+                    .on_note_before_set_attachment(note_idx, attachment)
+                    .map(|_| Vec::new()),
 
                 TransactionEvent::AuthRequest { pub_key_hash, tx_summary, signature } => {
                     if let Some(signature) = signature {

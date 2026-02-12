@@ -1,6 +1,0 @@
-# The MASM code of the Basic Fungible Faucet Account Component.
-#
-# See the `BasicFungibleFaucet` Rust type's documentation for more details.
-
-pub proc ::miden::contracts::faucets::basic_fungible::distribute
-pub proc ::miden::contracts::faucets::basic_fungible::burn

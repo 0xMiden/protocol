@@ -3,16 +3,17 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_lib::testing::account_component::MockAccountComponent;
-use miden_lib::testing::note::NoteBuilder;
-use miden_objects::account::{Account, AccountId, AccountStorageMode};
-use miden_objects::batch::ProposedBatch;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::MerkleError;
-use miden_objects::note::{Note, NoteType};
-use miden_objects::testing::account_id::AccountIdBuilder;
-use miden_objects::transaction::{InputNote, InputNoteCommitment, OutputNote, PartialBlockchain};
-use miden_objects::{BatchAccountUpdateError, ProposedBatchError, Word};
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountId, AccountStorageMode};
+use miden_protocol::batch::ProposedBatch;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::MerkleError;
+use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
+use miden_protocol::note::{Note, NoteType};
+use miden_protocol::testing::account_id::AccountIdBuilder;
+use miden_protocol::transaction::{InputNote, InputNoteCommitment, OutputNote, PartialBlockchain};
+use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 

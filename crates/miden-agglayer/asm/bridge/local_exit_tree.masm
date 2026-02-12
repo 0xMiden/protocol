@@ -1,0 +1,120 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# =================================================================================================
+
+const MMR_PTR=42
+const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
+
+#! Adds a leaf to the MMR frontier using Keccak hashing (stubbed implementation).
+#!
+#! This is a stubbed implementation that currently drops all inputs without performing
+#! the actual MMR frontier addition operation.
+#!
+#! Inputs:  [LEAF[1], LEAF[0], mmr_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - LEAF[1], LEAF[0] are the leaf data to add to the MMR frontier.
+#! - mmr_ptr is the pointer to the MMR frontier data structure.
+#!
+#! Invocation: exec
+proc mmr_frontier_keccak_add
+    dropw dropw drop
+    # => []
+end
+
+#! Gets the root of the MMR frontier using Keccak hashing (stubbed implementation).
+#!
+#! This is a stubbed implementation that returns placeholder values instead of
+#! computing the actual MMR frontier root.
+#!
+#! Inputs:  [mmr_ptr]
+#! Outputs: [ROOT[1], ROOT[0]]
+#!
+#! Where:
+#! - ROOT[1], ROOT[0] are the root hash components of the MMR frontier whose memory location starts at mmr_ptr
+#!
+#! Invocation: exec
+pub proc mmr_frontier_keccak_get_root
+  # stubbed out for now
+  drop
+  # => []
+
+  push.0.0.0.1 push.LOCAL_EXIT_TREE_SLOT[0..2]
+  # => [slot_id_prefix, slot_id_suffix, KEY]
+
+  exec.active_account::get_map_item
+  # => [ROOT[0]]
+
+  push.0.0.0.0 push.LOCAL_EXIT_TREE_SLOT[0..2]
+  # => [slot_id_prefix, slot_id_suffix, KEY, ROOT[0]]
+ 
+  exec.active_account::get_map_item
+  # => [ROOT[1], ROOT[0]] 
+end
+
+#! Writes the MMR frontier root to account storage.
+#!
+#! This procedure retrieves the current MMR frontier root and stores it as a double word
+#! in the account's storage map. The root is split across two storage keys:
+#! - Key [0,0,0,0] stores ROOT[1] (high part)
+#! - Key [0,0,0,1] stores ROOT[0] (low part)
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+proc write_mmr_frontier_root
+    push.MMR_PTR
+    # => [MMR_PTR]
+
+    # getting mmr frontier root
+    exec.mmr_frontier_keccak_get_root
+    # => [ROOT[1], ROOT[0]]
+
+    # writing double word root to map keys [0,0,0,0] & [0,0,0,1]
+    push.0.0.0.0 push.LOCAL_EXIT_TREE_SLOT[0..2]
+    # => [index, KEY, ROOT[1], ROOT[0]]
+
+    exec.native_account::set_map_item
+    # => [OLD_MAP_ROOT, OLD_MAP_VALUE, ROOT[0]]
+
+    dropw dropw
+    # => [ROOT[0]]
+
+    push.1.0.0.0 push.LOCAL_EXIT_TREE_SLOT[0..2]
+    # => [index, KEY, ROOT[0]]
+
+    exec.native_account::set_map_item
+    # => [OLD_MAP_ROOT, OLD_MAP_VALUE]
+
+    dropw dropw
+    # => []
+end
+
+#! Adds an asset message to the MMR frontier and updates the stored root.
+#!
+#! This procedure takes a Keccak digest (represented as 8 u32 values) and adds it
+#! as a leaf to the MMR frontier. After adding the leaf, it updates the MMR root
+#! in the account's storage to reflect the new state.
+#!
+#! Inputs:  [DIGEST_U32[8]]
+#! Outputs: []
+#!
+#! Where:
+#! - DIGEST_U32[8] is a Keccak256 hash represented as 8 u32 values (256 bits total).
+#!
+#! Invocation: exec
+pub proc add_asset_message
+  push.MMR_PTR movdn.8
+  # => [LEAF[1], LEAF[0], mmr_ptr]
+
+  exec.mmr_frontier_keccak_add
+  # => []
+
+  exec.write_mmr_frontier_root
+  # => []
+end
+

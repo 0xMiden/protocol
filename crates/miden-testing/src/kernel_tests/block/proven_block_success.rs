@@ -3,15 +3,14 @@ use std::collections::BTreeMap;
 use std::vec::Vec;
 
 use anyhow::Context;
-use miden_lib::note::create_p2id_note;
-use miden_objects::ZERO;
-use miden_objects::asset::FungibleAsset;
-use miden_objects::batch::BatchNoteTree;
-use miden_objects::block::account_tree::AccountTree;
-use miden_objects::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
-use miden_objects::crypto::merkle::Smt;
-use miden_objects::note::NoteType;
-use miden_objects::transaction::InputNoteCommitment;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::batch::BatchNoteTree;
+use miden_protocol::block::account_tree::AccountTree;
+use miden_protocol::block::{BlockInputs, BlockNoteIndex, BlockNoteTree, ProposedBlock};
+use miden_protocol::crypto::merkle::smt::Smt;
+use miden_protocol::note::{NoteAttachment, NoteType};
+use miden_protocol::transaction::InputNoteCommitment;
+use miden_standards::note::P2idNote;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
 use crate::utils::create_p2any_note;
@@ -33,36 +32,36 @@ async fn proven_block_success() -> anyhow::Result<()> {
     let account2 = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
     let account3 = builder.add_existing_mock_account_with_assets(Auth::IncrNonce, [asset])?;
 
-    let output_note0 = create_p2id_note(
+    let output_note0 = P2idNote::create(
         account0.id(),
         account0.id(),
         vec![asset],
         NoteType::Private,
-        ZERO,
+        NoteAttachment::default(),
         builder.rng_mut(),
     )?;
-    let output_note1 = create_p2id_note(
+    let output_note1 = P2idNote::create(
         account1.id(),
         account1.id(),
         vec![asset],
         NoteType::Private,
-        ZERO,
+        NoteAttachment::default(),
         builder.rng_mut(),
     )?;
-    let output_note2 = create_p2id_note(
+    let output_note2 = P2idNote::create(
         account2.id(),
         account2.id(),
         vec![asset],
         NoteType::Private,
-        ZERO,
+        NoteAttachment::default(),
         builder.rng_mut(),
     )?;
-    let output_note3 = create_p2id_note(
+    let output_note3 = P2idNote::create(
         account3.id(),
         account3.id(),
         vec![asset],
         NoteType::Private,
-        ZERO,
+        NoteAttachment::default(),
         builder.rng_mut(),
     )?;
 
@@ -116,7 +115,7 @@ async fn proven_block_success() -> anyhow::Result<()> {
             (
                 BlockNoteIndex::new(batch_idx, note_idx_in_batch).unwrap(),
                 note.id(),
-                *note.metadata(),
+                note.metadata(),
             )
         },
     ))

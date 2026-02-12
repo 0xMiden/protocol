@@ -3,26 +3,26 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::error::Error;
 
-use miden_objects::account::AccountId;
-use miden_objects::account::auth::PublicKeyCommitment;
-use miden_objects::assembly::diagnostics::reporting::PrintDiagnostic;
-use miden_objects::asset::AssetVaultKey;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::SmtProofError;
-use miden_objects::note::{NoteId, NoteMetadata};
-use miden_objects::transaction::TransactionSummary;
-use miden_objects::{
+use miden_processor::{DeserializationError, ExecutionError};
+use miden_protocol::account::AccountId;
+use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_protocol::asset::AssetVaultKey;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::smt::SmtProofError;
+use miden_protocol::errors::{
     AccountDeltaError,
     AccountError,
     AssetError,
-    Felt,
     NoteError,
     ProvenTransactionError,
     TransactionInputError,
+    TransactionInputsExtractionError,
     TransactionOutputError,
-    Word,
 };
-use miden_processor::{DeserializationError, ExecutionError};
+use miden_protocol::note::{NoteId, NoteMetadata};
+use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::{Felt, Word};
 use miden_verifier::VerificationError;
 use thiserror::Error;
 
@@ -73,6 +73,8 @@ impl From<TransactionCheckerError> for TransactionExecutorError {
 
 #[derive(Debug, Error)]
 pub enum TransactionExecutorError {
+    #[error("failed to read fee asset from transaction inputs")]
+    FeeAssetRetrievalFailed(#[source] TransactionInputsExtractionError),
     #[error("failed to fetch transaction inputs from the data store")]
     FetchTransactionInputsFailed(#[source] DataStoreError),
     #[error("failed to fetch asset witnesses from the data store")]
@@ -205,8 +207,8 @@ pub enum TransactionKernelError {
     AccountDeltaRemoveAssetFailed(#[source] AccountDeltaError),
     #[error("failed to add asset to note")]
     FailedToAddAssetToNote(#[source] NoteError),
-    #[error("note input data has hash {actual} but expected hash {expected}")]
-    InvalidNoteInputs { expected: Word, actual: Word },
+    #[error("note storage has commitment {actual} but expected commitment {expected}")]
+    InvalidNoteStorage { expected: Word, actual: Word },
     #[error(
         "failed to respond to signature requested since no authenticator is assigned to the host"
     )]
@@ -223,11 +225,9 @@ pub enum TransactionKernelError {
         source: AssetError,
     },
     #[error(
-        "note inputs data extracted from the advice map by the event handler is not well formed"
+        "note storage data extracted from the advice map by the event handler is not well formed"
     )]
-    MalformedNoteInputs(#[source] NoteError),
-    #[error("note metadata created by the event handler is not well formed")]
-    MalformedNoteMetadata(#[source] NoteError),
+    MalformedNoteStorage(#[source] NoteError),
     #[error(
         "note script data `{data:?}` extracted from the advice map by the event handler is not well formed"
     )]
@@ -243,10 +243,16 @@ pub enum TransactionKernelError {
         "public note with metadata {0:?} and recipient digest {1} is missing details in the advice provider"
     )]
     PublicNoteMissingDetails(NoteMetadata, Word),
+    #[error("attachment provided to set_attachment must be empty when attachment kind is None")]
+    NoteAttachmentNoneIsNotEmpty,
     #[error(
-        "note input data in advice provider contains fewer elements ({actual}) than specified ({specified}) by its inputs length"
+        "commitment of note attachment {actual} does not match attachment {provided} provided to set_attachment"
     )]
-    TooFewElementsForNoteInputs { specified: u64, actual: u64 },
+    NoteAttachmentArrayMismatch { actual: Word, provided: Word },
+    #[error(
+        "note storage in advice provider contains fewer items ({actual}) than specified ({specified}) by its number of storage items"
+    )]
+    TooFewElementsForNoteStorage { specified: u64, actual: u64 },
     #[error("account procedure with procedure root {0} is not in the account procedure index map")]
     UnknownAccountProcedure(Word),
     #[error("code commitment {0} is not in the account procedure index map")]

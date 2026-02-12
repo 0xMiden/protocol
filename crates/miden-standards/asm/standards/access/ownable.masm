@@ -1,0 +1,175 @@
+# miden::standards::access::ownable
+#
+# Provides ownership management functionality for account components.
+# This template can be imported and used by any component that needs owner controls.
+
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::protocol::active_note
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot in this component's storage layout where the owner config is stored.
+const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable::owner_config")
+
+# ZERO_ADDRESS word (all zeros) used to represent no owner
+# Format: [prefix=0, suffix=0, 0, 0] as stored in account storage
+const ZERO_ADDRESS = [0, 0, 0, 0]
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the owner AccountId from storage.
+#!
+#! Inputs:  []
+#! Outputs: [owner_prefix, owner_suffix]
+#!
+#! Where:
+#! - owner_{prefix, suffix} are the prefix and suffix felts of the owner AccountId.
+proc owner
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_prefix, owner_suffix, 0, 0]
+    
+    # Storage format in memory: [0, 0, suffix, prefix] (word[0], word[1], word[2], word[3])
+    # mem_loadw_be loads big-endian (reversed), so stack gets: [prefix, suffix, 0, 0]
+    # Stack: [owner_prefix (pos 0), owner_suffix (pos 1), 0 (pos 2), 0 (pos 3)]
+    # We want: [owner_prefix, owner_suffix]
+    # Move zeros to top using movup, then drop them
+    movup.2
+    # => [0, owner_prefix, owner_suffix, 0] (moves element at pos 2 to pos 0)
+
+    movup.3
+    # => [0, 0, owner_prefix, owner_suffix] (moves element at pos 3 to pos 0)
+
+    drop drop
+    # => [owner_prefix, owner_suffix]
+end
+
+#! Checks if the given account ID is the owner of this component.
+#!
+#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Outputs: [is_owner]
+#!
+#! Where:
+#! - account_id_{prefix, suffix} are the prefix and suffix felts of the AccountId to check.
+#! - is_owner is 1 if the account is the owner, 0 otherwise.
+proc is_owner
+
+    exec.owner
+    # => [owner_prefix, owner_suffix, account_id_prefix, account_id_suffix]
+
+    exec.account_id::is_equal
+    # => [is_owner]
+
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Checks if the note sender is the owner and panics if not.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+pub proc verify_owner
+    exec.active_note::get_sender
+    # => [sender_prefix, sender_suffix]
+
+    exec.is_owner
+    # => [is_owner]
+
+    assert.err=ERR_SENDER_NOT_OWNER
+    # => []
+end
+
+#! Returns the owner AccountId.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [owner_prefix, owner_suffix, pad(14)]
+#!
+#! Where:
+#! - owner_{prefix, suffix} are the prefix and suffix felts of the owner AccountId.
+#!
+#! Invocation: call
+pub proc get_owner
+    exec.owner
+    # => [owner_prefix, owner_suffix, pad(14)]
+end
+
+#! Transfers ownership to a new account.
+#!
+#! Can only be called by the current owner.
+#!
+#! Inputs:  [new_owner_prefix, new_owner_suffix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Where:
+#! - new_owner_{prefix, suffix} are the prefix and suffix felts of the new owner AccountId.
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+pub proc transfer_ownership
+    # Check that the caller is the owner
+    exec.verify_owner
+    # => [new_owner_prefix, new_owner_suffix, pad(14)]
+
+    push.0 movdn.2 push.0 movdn.2
+    # => [new_owner_prefix, new_owner_suffix, 0, 0, pad(14)]
+
+    push.OWNER_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, new_owner_prefix, new_owner_suffix, 0, 0, pad(14)]
+
+    exec.native_account::set_item
+    # => [OLD_OWNER_WORD, pad(14)]
+
+    # When the stack has 16 elements, dropw will shift in zeros from the right,
+    # resulting in [pad(16)]. So dropw is sufficient here.
+    dropw
+    # => [pad(16)]
+end
+
+#! Renounces ownership, leaving the component without an owner.
+#!
+#! Can only be called by the current owner.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+#!
+#! Important Note!
+#! This feature allows the owner to relinquish administrative privileges, a common pattern
+#! after an initial stage with centralized administration is over. Once ownership is renounced,
+#! the component becomes permanently ownerless and cannot be managed by any account.
+pub proc renounce_ownership
+    exec.verify_owner
+    # => [pad(16)]
+    
+    # ---- Push ZERO_ADDRESS to storage ----
+    push.ZERO_ADDRESS
+    # => [0, 0, 0, 0, pad(16)]
+    
+    push.OWNER_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, 0, 0, pad(16)]
+    
+    exec.native_account::set_item
+    # => [OLD_OWNER_WORD, pad(16)]
+    
+    dropw
+    # => [pad(16)]
+end
+

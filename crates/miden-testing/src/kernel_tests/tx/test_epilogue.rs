@@ -1,39 +1,39 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use std::borrow::ToOwned;
 
-use miden_lib::errors::tx_kernel_errors::{
+use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::{Felt, ONE};
+use miden_protocol::Word;
+use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_DELTA_NONCE_MUST_BE_INCREMENTED_IF_VAULT_OR_STORAGE_CHANGED,
     ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY,
     ERR_EPILOGUE_NONCE_CANNOT_BE_0,
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
-use miden_lib::testing::mock_account::MockAccountExt;
-use miden_lib::testing::note::NoteBuilder;
-use miden_lib::transaction::EXPIRATION_BLOCK_ELEMENT_IDX;
-use miden_lib::transaction::memory::{
+use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::testing::account_id::{
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+};
+use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
+use miden_protocol::transaction::memory::{
     NOTE_MEM_SIZE,
     OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_lib::utils::CodeBuilder;
-use miden_objects::Word;
-use miden_objects::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::note::{NoteTag, NoteType};
-use miden_objects::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
-};
-use miden_objects::testing::storage::MOCK_VALUE_SLOT0;
-use miden_objects::transaction::{OutputNote, OutputNotes};
-use miden_processor::{Felt, ONE};
+use miden_protocol::transaction::{OutputNote, OutputNotes, TransactionOutputs};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::mock_account::MockAccountExt;
+use miden_standards::testing::note::NoteBuilder;
 
-use super::{ZERO, create_mock_notes_procedure};
+use super::ZERO;
 use crate::kernel_tests::tx::ExecutionOutputExt;
-use crate::utils::{create_public_p2any_note, create_spawn_note};
+use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
     Auth,
     MockChain,
@@ -43,49 +43,51 @@ use crate::{
     assert_transaction_executor_error,
 };
 
+/// Tests that the return values from the tx kernel main.masm program match the expected values.
 #[tokio::test]
-async fn test_epilogue() -> anyhow::Result<()> {
+async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-    let tx_context = {
-        let output_note_1 = create_public_p2any_note(
-            ACCOUNT_ID_SENDER.try_into().unwrap(),
-            [FungibleAsset::mock(100)],
-        );
+    let asset = FungibleAsset::mock(100);
+    let output_note_1 = create_public_p2any_note(account.id(), [asset]);
+    // input_note_1 is needed for maintaining cohesion of involved assets
+    let input_note_1 =
+        create_public_p2any_note(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap(), [asset]);
 
-        // input_note_1 is needed for maintaining cohesion of involved assets
-        let input_note_1 = create_public_p2any_note(
-            ACCOUNT_ID_SENDER.try_into().unwrap(),
-            [FungibleAsset::mock(100)],
-        );
-        let input_note_2 = create_spawn_note([&output_note_1])?;
-        TransactionContextBuilder::new(account.clone())
-            .extend_input_notes(vec![input_note_1, input_note_2])
-            .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
-            .build()?
-    };
-
-    let output_notes_data_procedure =
-        create_mock_notes_procedure(tx_context.expected_output_notes());
+    let tx_context = TransactionContextBuilder::new(account.clone())
+        .extend_input_notes(vec![input_note_1])
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_1.clone())])
+        .build()?;
 
     let code = format!(
         "
-        use.$kernel::prologue
-        use.$kernel::account
-        use.$kernel::epilogue
-
-        {output_notes_data_procedure}
+        use $kernel::prologue
+        use $kernel::epilogue
+        use miden::protocol::output_note
+        use miden::core::sys
 
         begin
             exec.prologue::prepare_transaction
 
-            exec.create_mock_notes
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+            # => [note_idx]
+
+            push.{asset}
+            exec.output_note::add_asset
+            # => []
 
             exec.epilogue::finalize_transaction
 
             # truncate the stack
-            repeat.13 movup.13 drop end
+            exec.sys::truncate_stack
         end
-        "
+        ",
+        recipient = output_note_1.recipient().digest(),
+        note_type = Felt::from(output_note_1.metadata().note_type()),
+        tag = Felt::from(output_note_1.metadata().tag()),
+        asset = Word::from(asset)
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -112,7 +114,7 @@ async fn test_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        miden_objects::Hasher::merge(&[final_account.commitment(), account_delta_commitment]);
+        miden_protocol::Hasher::merge(&[final_account.commitment(), account_delta_commitment]);
 
     let mut expected_stack = Vec::with_capacity(16);
     expected_stack.extend(output_notes.commitment().as_elements().iter().rev());
@@ -145,48 +147,70 @@ async fn test_epilogue() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_id() -> anyhow::Result<()> {
-    let tx_context = {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let output_note_1 =
-            create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
+    let mut rng = RpoRandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mut assets = account.vault().assets();
+    let asset0 = assets.next().unwrap();
+    let asset1 = assets.next().unwrap();
 
-        // input_note_1 is needed for maintaining cohesion of involved assets
-        let input_note_1 =
-            create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
-        let input_note_2 = create_spawn_note([&output_note_1])?;
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2])
-            .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
-            .build()?
-    };
+    let output_note0 = create_p2any_note(account.id(), NoteType::Private, [asset0], &mut rng);
+    let output_note1 = create_p2any_note(account.id(), NoteType::Private, [asset1], &mut rng);
 
-    let output_notes_data_procedure =
-        create_mock_notes_procedure(tx_context.expected_output_notes());
+    let tx_context = TransactionContextBuilder::new(account.clone())
+        .extend_expected_output_notes(vec![
+            OutputNote::Full(output_note0.clone()),
+            OutputNote::Full(output_note1.clone()),
+        ])
+        .build()?;
 
-    for (note, i) in tx_context.expected_output_notes().iter().zip(0u32..) {
-        let code = format!(
-            "
-            use.$kernel::prologue
-            use.$kernel::epilogue
-
-            {output_notes_data_procedure}
+    let mut code = "
+            use $kernel::prologue
+            use $kernel::epilogue
+            use miden::protocol::output_note
+            use miden::core::sys
 
             begin
-                exec.prologue::prepare_transaction
-                exec.create_mock_notes
-                exec.epilogue::finalize_transaction
+                exec.prologue::prepare_transaction"
+        .to_owned();
 
-                # truncate the stack
-                repeat.13 movup.13 drop end
-            end
+    for note in tx_context.expected_output_notes() {
+        let asset = note.assets().iter().next().unwrap();
+
+        code.push_str(&format!(
             "
-        );
+        push.{recipient}
+        push.{note_type}
+        push.{tag}
+        exec.output_note::create
+        # => [note_idx]
 
-        let exec_output = &tx_context.execute_code(&code).await?;
+        push.{asset}
+        call.::miden::standards::wallets::basic::move_asset_to_note
+        # => []
+        ",
+            recipient = note.recipient().digest(),
+            note_type = Felt::from(note.metadata().note_type()),
+            tag = Felt::from(note.metadata().tag()),
+            asset = Word::from(asset)
+        ));
+    }
 
+    code.push_str(
+        "
+            exec.epilogue::finalize_transaction
+
+            # truncate the stack
+            exec.sys::truncate_stack
+        end",
+    );
+
+    let exec_output = &tx_context.execute_code(&code).await?;
+
+    for (i, note) in tx_context.expected_output_notes().iter().enumerate() {
+        let i = i as u32;
         assert_eq!(
             note.assets().commitment(),
             exec_output.get_kernel_mem_word(
@@ -203,6 +227,7 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
             "NOTE_ID didn't match expected value",
         );
     }
+
     Ok(())
 }
 
@@ -227,13 +252,13 @@ async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyh
 
     let code = format!(
         "
-      use.mock::account
-      use.mock::util
+      use mock::account
+      use mock::util
 
       begin
           # create a note with the output asset
           push.{OUTPUT_ASSET}
-          exec.util::create_random_note_with_asset
+          exec.util::create_default_note_with_asset
           # => []
       end
       ",
@@ -280,13 +305,13 @@ async fn epilogue_fails_when_num_input_assets_exceed_num_output_assets() -> anyh
 
     let code = format!(
         "
-      use.mock::account
-      use.mock::util
+      use mock::account
+      use mock::util
 
       begin
           # create a note with the output asset
           push.{OUTPUT_ASSET}
-          exec.util::create_random_note_with_asset
+          exec.util::create_default_note_with_asset
           # => []
       end
       ",
@@ -318,10 +343,10 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
 
     let test_pairs: [(u64, u64); 3] = [(9, 12), (18, 3), (20, 20)];
     let code_template = "
-        use.$kernel::prologue
-        use.$kernel::tx
-        use.$kernel::epilogue
-        use.$kernel::account
+        use $kernel::prologue
+        use $kernel::tx
+        use $kernel::epilogue
+        use $kernel::account
 
         begin
             exec.prologue::prepare_transaction
@@ -330,7 +355,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
             push.{value_2}
             exec.tx::update_expiration_block_delta
 
-            push.{min_value} exec.tx::get_expiration_delta assert_eq
+            push.{min_value} exec.tx::get_expiration_delta assert_eq.err=\"expiration delta mismatch\"
 
             exec.epilogue::finalize_transaction
 
@@ -352,7 +377,9 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         let expected_expiry =
             v1.min(v2) + tx_context.tx_inputs().block_header().block_num().as_u64();
         assert_eq!(
-            exec_output.get_stack_element(EXPIRATION_BLOCK_ELEMENT_IDX).as_int(),
+            exec_output
+                .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+                .as_int(),
             expected_expiry
         );
     }
@@ -366,7 +393,7 @@ async fn test_invalid_expiration_deltas() -> anyhow::Result<()> {
 
     let test_values = [0u64, u16::MAX as u64 + 1, u32::MAX as u64];
     let code_template = "
-        use.$kernel::tx
+        use $kernel::tx
 
         begin
             push.{value_1}
@@ -389,15 +416,15 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     let tx_context = TransactionContextBuilder::with_existing_mock_account().build()?;
 
     let code_template = "
-    use.$kernel::prologue
-    use.$kernel::epilogue
-    use.$kernel::tx
-    use.$kernel::account
+    use $kernel::prologue
+    use $kernel::epilogue
+    use $kernel::tx
+    use $kernel::account
 
     begin
         exec.prologue::prepare_transaction
 
-        exec.tx::get_expiration_delta assertz
+        exec.tx::get_expiration_delta assertz.err=\"expiration delta should be unset\"
 
         exec.epilogue::finalize_transaction
 
@@ -410,7 +437,9 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
 
     // Default value should be equal to u32::MAX, set in the prologue
     assert_eq!(
-        exec_output.get_stack_element(EXPIRATION_BLOCK_ELEMENT_IDX).as_int() as u32,
+        exec_output
+            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+            .as_int() as u32,
         u32::MAX
     );
 
@@ -425,10 +454,10 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use.$kernel::prologue
-        use.mock::account
-        use.$kernel::epilogue
-        use.$kernel::memory
+        use $kernel::prologue
+        use mock::account
+        use $kernel::epilogue
+        use $kernel::memory
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -446,7 +475,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
             dropw dropw dropw dropw
 
             exec.memory::get_account_nonce
-            push.{expected_nonce} assert_eq
+            push.{expected_nonce} assert_eq.err="nonce mismatch"
         end
         "#,
         mock_value_slot0 = &*MOCK_VALUE_SLOT0,
@@ -461,7 +490,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
 async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> anyhow::Result<()> {
     let code = format!(
         r#"
-        use.mock::account
+        use mock::account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -527,43 +556,36 @@ async fn test_epilogue_execute_empty_transaction() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Result<()> {
     let tag =
-        NoteTag::from_account_id(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?);
-    let aux = Felt::new(26);
+        NoteTag::with_account_target(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?);
     let note_type = NoteType::Private;
 
-    // create an empty output note in the transaction script
-    let tx_script_source = format!(
+    // create an empty output note
+    let code = format!(
         r#"
-        use.std::word
-        use.miden::output_note
-        use.$kernel::prologue
-        use.$kernel::epilogue
-        use.$kernel::note
+        use miden::core::word
+        use miden::protocol::output_note
+        use $kernel::prologue
+        use $kernel::epilogue
+        use $kernel::note
 
         begin
             exec.prologue::prepare_transaction
 
             # prepare the values for note creation
             push.1.2.3.4      # recipient
-            push.1            # note_execution_hint (NoteExecutionHint::Always)
             push.{note_type}  # note_type
-            push.{aux}        # aux
             push.{tag}        # tag
-            # => [tag, aux, note_type, note_execution_hint, RECIPIENT]
-
-            # pad the stack with zeros before calling the `create_note`.
-            padw padw swapdw
-            # => [tag, aux, execution_hint, note_type, RECIPIENT, pad(8)]
+            # => [tag, note_type, RECIPIENT]
 
             # create the note
-            call.output_note::create
-            # => [note_idx, GARBAGE(15)]
+            exec.output_note::create
+            # => [note_idx]
 
             # make sure that output note was created: compare the output note hash with an empty
             # word
             exec.note::compute_output_notes_commitment
             exec.word::eqz assertz.err="output note was created, but the output notes hash remains to be zeros"
-            # => [note_idx, GARBAGE(15)]
+            # => [note_idx]
 
             # clean the stack
             dropw dropw dropw dropw
@@ -577,7 +599,7 @@ async fn test_epilogue_empty_transaction_with_empty_output_note() -> anyhow::Res
 
     let tx_context = TransactionContextBuilder::with_noop_auth_account().build()?;
 
-    let result = tx_context.execute_code(&tx_script_source).await.map(|_| ());
+    let result = tx_context.execute_code(&code).await.map(|_| ());
 
     // assert that even if the output note was created, the transaction is considered empty
     assert_execution_error!(result, ERR_EPILOGUE_EXECUTED_TRANSACTION_IS_EMPTY);

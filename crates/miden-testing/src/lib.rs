@@ -17,7 +17,7 @@ pub use mock_chain::{
 };
 
 mod tx_context;
-pub use tx_context::{TransactionContext, TransactionContextBuilder};
+pub use tx_context::{ExecError, TransactionContext, TransactionContextBuilder};
 
 pub mod executor;
 
@@ -27,3 +27,6 @@ pub mod utils;
 
 #[cfg(test)]
 mod kernel_tests;
+
+#[cfg(test)]
+mod standards;

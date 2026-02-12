@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Result;
 use bench_transaction::context_setups::{tx_consume_single_p2id_note, tx_consume_two_p2id_notes};
 use criterion::{BatchSize, Criterion, SamplingMode, criterion_group, criterion_main};
-use miden_objects::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
 use miden_tx::LocalTransactionProver;
 
 // BENCHMARK NAMES

@@ -17,9 +17,9 @@ bench = false
 
 [features]
 default = ["std"]
-std     = ["miden-objects/std", "miden-tx/std"]
+std     = ["miden-protocol/std", "miden-tx/std"]
 testing = []
 
 [dependencies]
-miden-objects = { workspace = true }
-miden-tx      = { workspace = true }
+miden-protocol = { workspace = true }
+miden-tx       = { workspace = true }

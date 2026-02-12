@@ -2,18 +2,18 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
-use miden_lib::testing::note::NoteBuilder;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::LexicographicWord;
-use miden_objects::account::{AccountId, AccountStorage};
-use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::testing::account_id::{
+use miden_protocol::LexicographicWord;
+use miden_protocol::account::{AccountId, AccountStorage, StorageSlotDelta};
+use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_NATIVE_ASSET_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
-use miden_objects::testing::constants::FUNGIBLE_ASSET_AMOUNT;
-use miden_objects::testing::storage::MOCK_MAP_SLOT;
+use miden_protocol::testing::constants::FUNGIBLE_ASSET_AMOUNT;
+use miden_protocol::testing::storage::MOCK_MAP_SLOT;
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::note::NoteBuilder;
 
 use super::Word;
 use crate::{Auth, MockChain, TransactionContextBuilder};
@@ -40,7 +40,7 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
 
     let code = format!(
         "
-      use.mock::account
+      use mock::account
 
       begin
           push.{FUNGIBLE_ASSET1}
@@ -87,8 +87,8 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
 
     let code = format!(
         "
-      use.mock::account
-      use.mock::util
+      use mock::account
+      use mock::util
 
       begin
           push.{FUNGIBLE_ASSET1}
@@ -96,7 +96,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => []
 
           # move asset to note to adhere to asset preservation rules
-          exec.util::create_random_note_with_asset
+          exec.util::create_default_note_with_asset
           # => []
 
           push.{FUNGIBLE_ASSET2}
@@ -104,7 +104,7 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
           # => [ASSET]
 
           # move asset to note to adhere to asset preservation rules
-          exec.util::create_random_note_with_asset
+          exec.util::create_default_note_with_asset
           # => []
       end
       ",
@@ -185,7 +185,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-      use.mock::account
+      use mock::account
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
@@ -204,7 +204,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           call.account::set_map_item
 
-          exec.::std::sys::truncate_stack
+          exec.::miden::core::sys::truncate_stack
       end
       "#
     );
@@ -220,7 +220,13 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
         .execute()
         .await?;
 
-    let map_delta = tx.account_delta().storage().maps().get(mock_map_slot).unwrap();
+    let map_delta = tx
+        .account_delta()
+        .storage()
+        .get(mock_map_slot)
+        .cloned()
+        .map(StorageSlotDelta::unwrap_map)
+        .unwrap();
     assert_eq!(map_delta.entries().get(&LexicographicWord::new(existing_key)).unwrap(), &value0);
     assert_eq!(
         map_delta.entries().get(&LexicographicWord::new(non_existent_key)).unwrap(),
@@ -247,8 +253,8 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-      use.std::word
-      use.mock::account
+      use miden::core::word
+      use mock::account
 
       const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
@@ -270,7 +276,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
           padw assert_eqw.err="non-existent value should be the empty word"
 
-          exec.::std::sys::truncate_stack
+          exec.::miden::core::sys::truncate_stack
       end
       "#
     );

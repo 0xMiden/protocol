@@ -19,5 +19,5 @@ bench = false
 testing = []
 
 [dependencies]
-miden-objects = { workspace = true }
-thiserror     = { workspace = true }
+miden-protocol = { workspace = true }
+thiserror      = { workspace = true }

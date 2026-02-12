@@ -1,0 +1,293 @@
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_INCR_NONCE_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_SET_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_SET_MAP_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_ADD_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_REMOVE_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
+
+# NATIVE ACCOUNT PROCEDURES
+# =================================================================================================
+
+# ID AND NONCE
+# -------------------------------------------------------------------------------------------------
+
+#! Returns the ID of the native account of the transaction.
+#!
+#! Inputs:  []
+#! Outputs: [account_id_prefix, account_id_suffix]
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the native account ID of the
+#!   transaction.
+#!
+#! Invocation: exec
+pub proc get_id
+    # pad the stack
+    padw padw padw push.0.0
+    # => [pad(14)]
+
+    # push the flag indicating that the ID of the native account was requested
+    push.1
+    # => [is_native = 1, pad(14)]
+
+    push.ACCOUNT_GET_ID_OFFSET
+    # => [offset, is_native = 0, pad(14)]
+
+    syscall.exec_kernel_proc
+    # => [account_id_prefix, account_id_suffix, pad(14)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw movdn.3 movdn.3 drop drop
+    # => [account_id_prefix, account_id_suffix]
+end
+
+#! Increments the nonce of the native account by one and returns the new nonce.
+#!
+#! Inputs:  []
+#! Outputs: [final_nonce]
+#!
+#! Where:
+#! - final_nonce is the new nonce of the account. Since it cannot be incremented again, this will
+#!   also be the final nonce of the account after transaction execution.
+#!
+#! Panics if:
+#! - the invocation of this procedure does not originate from the native account.
+#! - the invocation of this procedure does not originate from the authentication procedure
+#!   of the account.
+#! - the nonce has already been incremented.
+#!
+#! Invocation: exec
+pub proc incr_nonce
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_INCR_NONCE_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [final_nonce, pad(15)]
+
+    swap.15 dropw dropw dropw drop drop drop
+    # => [final_nonce]
+end
+
+# COMMITMENTS
+# -------------------------------------------------------------------------------------------------
+
+#! Computes the commitment to the native account's delta.
+#!
+#! Note that if the account state has changed, the nonce must be incremented before this procedure
+#! is called, otherwise it will panic. This means it can only be called from an auth procedure,
+#! since only auth procedures are allowed to increment the nonce.
+#!
+#! The commitment to an empty delta is defined as the empty word.
+#!
+#! During an account-creating transaction (when the initial nonce is 0), this procedure will not
+#! return the empty word even if the initial storage commitment and the current storage commitment
+#! are identical (storage hasn't changed). This is because the delta for a new account must
+#! represent its entire newly created state, and the initial storage in a transaction is initialized
+#! to the storage that the account ID commits to, which may be non-empty. This does not have any
+#! consequences other than being inconsistent in this edge case.
+#!
+#! Inputs:  []
+#! Outputs: [DELTA_COMMITMENT]
+#!
+#! Where:
+#! - DELTA_COMMITMENT is the commitment to the account delta.
+#!
+#! Panics if:
+#! - the vault or storage delta is not empty but the nonce increment is zero.
+pub proc compute_delta_commitment
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.ACCOUNT_COMPUTE_DELTA_COMMITMENT_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [DELTA_COMMITMENT, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [DELTA_COMMITMENT]
+end
+
+# STORAGE
+# -------------------------------------------------------------------------------------------------
+
+#! Sets an item in the native account storage.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - VALUE is the value to set.
+#! - OLD_VALUE is the previous value of the item.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc set_item
+    push.ACCOUNT_SET_ITEM_OFFSET
+    # => [offset, slot_id_prefix, slot_id_suffix, VALUE]
+
+    # pad the stack
+    push.0 movdn.7 padw padw swapdw
+    # => [offset, slot_id_prefix, slot_id_suffix, VALUE, pad(9)]
+
+    syscall.exec_kernel_proc
+    # => [OLD_VALUE, pad(12)]
+
+    # clean the stack
+    swapw.3 dropw dropw dropw
+    # => [OLD_VALUE]
+end
+
+#! Sets a map item in the native account storage.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#!    - the slot must point to the root of the storage map.
+#! - KEY is the key to set at VALUE.
+#! - VALUE is the value to set at KEY.
+#! - OLD_VALUE is the old value at KEY.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+#! - the requested storage slot type is not map.
+#! - the procedure is called from a non-account context.
+#! - the invocation of this procedure does not originate from the native account.
+#!
+#! Invocation: exec
+pub proc set_map_item
+    push.ACCOUNT_SET_MAP_ITEM_OFFSET
+    # => [offset, slot_id_prefix, slot_id_suffix, KEY, VALUE]
+
+    # pad the stack
+    push.0 padw
+    # => [pad(4), 0, offset, slot_id_prefix, slot_id_suffix, KEY, VALUE]
+
+    movdnw.3
+    # => [0, offset, slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(4)]
+
+    movdn.11
+    # => [offset, slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(5)]
+
+    syscall.exec_kernel_proc
+    # => [OLD_VALUE, pad(12)]
+
+    # drop pad(12)
+    movdnw.3 dropw dropw dropw
+    # => [OLD_VALUE]
+end
+
+# VAULT
+# -------------------------------------------------------------------------------------------------
+
+#! Add the specified asset to the vault.
+#!
+#! Inputs:  [ASSET]
+#! Outputs: [ASSET']
+#!
+#! Where:
+#! - ASSET' is a final asset in the account vault defined as follows:
+#!   - If ASSET is a non-fungible asset, then ASSET' is the same as ASSET.
+#!   - If ASSET is a fungible asset, then ASSET' is the total fungible asset in the account vault
+#!     after ASSET was added to it.
+#!
+#! Panics if:
+#! - the asset is not valid.
+#! - the total value of two fungible assets is greater than or equal to 2^63.
+#! - the vault already contains the same non-fungible asset.
+#!
+#! Invocation: exec
+pub proc add_asset
+    push.ACCOUNT_ADD_ASSET_OFFSET
+    # => [offset, ASSET]
+
+    # pad the stack
+    push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
+    # => [offset, ASSET, pad(11)]
+
+    syscall.exec_kernel_proc
+    # => [ASSET', pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [ASSET']
+end
+
+#! Remove the specified asset from the vault.
+#!
+#! Inputs:  [ASSET]
+#! Outputs: [ASSET]
+#!
+#! Where:
+#! - ASSET is the asset to remove from the vault.
+#!
+#! Panics if:
+#! - the fungible asset is not found in the vault.
+#! - the amount of the fungible asset in the vault is less than the amount to be removed.
+#! - the non-fungible asset is not found in the vault.
+#!
+#! Invocation: exec
+pub proc remove_asset
+    push.ACCOUNT_REMOVE_ASSET_OFFSET
+    # => [offset, ASSET]
+
+    # pad the stack
+    push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
+    # => [offset, ASSET, pad(11)]
+
+    syscall.exec_kernel_proc
+    # => [ASSET, pad(12)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw
+    # => [ASSET]
+end
+
+# CODE
+# -------------------------------------------------------------------------------------------------
+
+#! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
+#!
+#! Note: This returns 1 only if the procedure invoked account-restricted kernel APIs (e.g.,
+#! `exec.faucet::mint`) which trigger `authenticate_and_track_procedure`. Procedures that execute
+#! only local MASM instructions will return 0 even if they were executed.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [was_called]
+#!
+#! Where:
+#! - PROC_ROOT is the hash of the procedure to check.
+#! - was_called is 1 if the procedure was called, 0 otherwise.
+#!
+#! Invocation: exec
+pub proc was_procedure_called
+    push.ACCOUNT_WAS_PROCEDURE_CALLED_OFFSET
+    # => [offset, PROC_ROOT]
+
+    # pad the stack
+    push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
+    # => [offset, PROC_ROOT, pad(11)]
+
+    syscall.exec_kernel_proc
+    # => [was_called, pad(15)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    # => [was_called]
+end

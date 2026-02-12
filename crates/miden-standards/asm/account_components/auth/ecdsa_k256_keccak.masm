@@ -1,0 +1,43 @@
+# The MASM code of the ECDSA K256 Keccak authentication Account Component.
+#
+# See the `AuthEcdsaK256Keccak` Rust type's documentation for more details.
+
+use miden::standards::auth::ecdsa_k256_keccak
+use miden::protocol::active_account
+
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot in this component's storage layout where the public key is stored.
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::ecdsa_k256_keccak::public_key")
+
+#! Authenticate a transaction using the ECDSA signature scheme.
+#!
+#! It first increments the nonce of the account, independent of whether the account's state has
+#! changed or not. Then it computes and signs the following message (in memory order):
+#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!  OUTPUT_NOTES_COMMITMENT, [0, 0, ref_block_num, final_nonce]]
+#!
+#! Including the final_nonce is necessary for replay protection. The reference block number is
+#! included to commit to the transaction creator's intended reference block of the transaction
+#! which determines the fee parameters and therefore the fee amount that is deducted.
+#!
+#! Inputs:  [AUTH_ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc auth_tx_ecdsa_k256_keccak(auth_args: BeWord)
+    dropw
+    # => [pad(16)]
+    
+    # Fetch public key from storage.
+    # ---------------------------------------------------------------------------------------------
+
+    push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+    # => [PUB_KEY, pad(16)]
+
+    exec.ecdsa_k256_keccak::authenticate_transaction
+    # => [pad(16)]
+end

@@ -1,19 +1,19 @@
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_objects::Word;
-use miden_objects::account::AccountId;
-use miden_objects::asset::FungibleAsset;
-use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{Note, NoteInclusionProof, Nullifier};
-use miden_objects::transaction::{
+use miden_protocol::Word;
+use miden_protocol::account::AccountId;
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::BlockNumber;
+use miden_protocol::crypto::merkle::SparseMerklePath;
+use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
+use miden_protocol::transaction::{
     InputNote,
     OutputNote,
     ProvenTransaction,
     ProvenTransactionBuilder,
 };
-use miden_objects::vm::ExecutionProof;
+use miden_protocol::vm::ExecutionProof;
 
 /// A builder to build mocked [`ProvenTransaction`]s.
 pub struct MockProvenTxBuilder {

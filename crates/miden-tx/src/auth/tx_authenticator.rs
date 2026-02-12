@@ -1,13 +1,14 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_objects::account::auth::{AuthSecretKey, PublicKey, PublicKeyCommitment, Signature};
-use miden_objects::crypto::SequentialCommit;
-use miden_objects::transaction::TransactionSummary;
-use miden_objects::{Felt, Hasher, Word};
 use miden_processor::FutureMaybeSend;
+use miden_protocol::account::auth::{AuthSecretKey, PublicKey, PublicKeyCommitment, Signature};
+use miden_protocol::crypto::SequentialCommit;
+use miden_protocol::transaction::TransactionSummary;
+use miden_protocol::{Felt, Hasher, Word};
 
 use crate::errors::AuthenticationError;
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
@@ -145,7 +146,7 @@ pub trait TransactionAuthenticator {
     fn get_public_key(
         &self,
         pub_key_commitment: PublicKeyCommitment,
-    ) -> impl FutureMaybeSend<Option<&PublicKey>>;
+    ) -> impl FutureMaybeSend<Option<Arc<PublicKey>>>;
 }
 
 /// A placeholder type for the generic trait bound of `TransactionAuthenticator<'_,'_,_,T>`
@@ -171,7 +172,7 @@ impl TransactionAuthenticator for UnreachableAuth {
     fn get_public_key(
         &self,
         _pub_key_commitment: PublicKeyCommitment,
-    ) -> impl FutureMaybeSend<Option<&PublicKey>> {
+    ) -> impl FutureMaybeSend<Option<Arc<PublicKey>>> {
         async { unreachable!("Type `UnreachableAuth` must not be instantiated") }
     }
 }
@@ -183,7 +184,7 @@ impl TransactionAuthenticator for UnreachableAuth {
 #[derive(Clone, Debug)]
 pub struct BasicAuthenticator {
     /// pub_key |-> (secret_key, public_key) mapping
-    keys: BTreeMap<PublicKeyCommitment, (AuthSecretKey, PublicKey)>,
+    keys: BTreeMap<PublicKeyCommitment, (AuthSecretKey, Arc<PublicKey>)>,
 }
 
 impl BasicAuthenticator {
@@ -191,7 +192,7 @@ impl BasicAuthenticator {
         let mut key_map = BTreeMap::new();
         for secret_key in keys {
             let pub_key = secret_key.public_key();
-            key_map.insert(pub_key.to_commitment(), (secret_key.clone(), pub_key));
+            key_map.insert(pub_key.to_commitment(), (secret_key.clone(), pub_key.into()));
         }
 
         BasicAuthenticator { keys: key_map }
@@ -200,7 +201,10 @@ impl BasicAuthenticator {
     pub fn from_key_pairs(keys: &[(AuthSecretKey, PublicKey)]) -> Self {
         let mut key_map = BTreeMap::new();
         for (secret_key, public_key) in keys {
-            key_map.insert(public_key.to_commitment(), (secret_key.clone(), public_key.clone()));
+            key_map.insert(
+                public_key.to_commitment(),
+                (secret_key.clone(), public_key.clone().into()),
+            );
         }
 
         BasicAuthenticator { keys: key_map }
@@ -210,7 +214,7 @@ impl BasicAuthenticator {
     ///
     /// Map keys represent the public key commitments, and values represent the (secret_key,
     /// public_key) pair that the authenticator would use to sign messages.
-    pub fn keys(&self) -> &BTreeMap<PublicKeyCommitment, (AuthSecretKey, PublicKey)> {
+    pub fn keys(&self) -> &BTreeMap<PublicKeyCommitment, (AuthSecretKey, Arc<PublicKey>)> {
         &self.keys
     }
 }
@@ -244,12 +248,12 @@ impl TransactionAuthenticator for BasicAuthenticator {
     fn get_public_key(
         &self,
         pub_key_commitment: PublicKeyCommitment,
-    ) -> impl FutureMaybeSend<Option<&PublicKey>> {
-        async move { self.keys.get(&pub_key_commitment).map(|(_, pub_key)| pub_key) }
+    ) -> impl FutureMaybeSend<Option<Arc<PublicKey>>> {
+        async move { self.keys.get(&pub_key_commitment).map(|(_, pub_key)| pub_key.clone()) }
     }
 }
 
-// HELPER FUNCTIONS
+// EMPTY AUTHENTICATOR
 // ================================================================================================
 
 impl TransactionAuthenticator for () {
@@ -269,22 +273,25 @@ impl TransactionAuthenticator for () {
     fn get_public_key(
         &self,
         _pub_key_commitment: PublicKeyCommitment,
-    ) -> impl FutureMaybeSend<Option<&PublicKey>> {
+    ) -> impl FutureMaybeSend<Option<Arc<PublicKey>>> {
         async { None }
     }
 }
 
+// TESTS
+// ================================================================================================
+
 #[cfg(test)]
 mod test {
-    use miden_lib::utils::{Deserializable, Serializable};
-    use miden_objects::account::auth::AuthSecretKey;
-    use miden_objects::{Felt, Word};
+    use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::utils::{Deserializable, Serializable};
+    use miden_protocol::{Felt, Word};
 
     use super::SigningInputs;
 
     #[test]
     fn serialize_auth_key() {
-        let auth_key = AuthSecretKey::new_rpo_falcon512();
+        let auth_key = AuthSecretKey::new_falcon512_rpo();
         let serialized = auth_key.to_bytes();
         let deserialized = AuthSecretKey::read_from_bytes(&serialized).unwrap();
 

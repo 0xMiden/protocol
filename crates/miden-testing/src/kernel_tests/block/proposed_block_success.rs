@@ -4,16 +4,16 @@ use std::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_lib::testing::account_component::MockAccountComponent;
-use miden_lib::testing::note::NoteBuilder;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountId, AccountStorageMode};
-use miden_objects::asset::FungibleAsset;
-use miden_objects::block::{BlockInputs, ProposedBlock};
-use miden_objects::note::{Note, NoteType};
-use miden_objects::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_objects::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
-use miden_objects::{Felt, FieldElement};
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{Account, AccountId, AccountStorageMode};
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::{BlockInputs, ProposedBlock};
+use miden_protocol::note::{Note, NoteType};
+use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
+use miden_protocol::{Felt, FieldElement};
+use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
 use rand::Rng;
 

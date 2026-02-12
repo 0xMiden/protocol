@@ -3,22 +3,22 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_lib::transaction::TransactionKernel;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::{
+use miden_processor::fast::ExecutionOutput;
+use miden_processor::{FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
     StorageMapWitness,
     StorageSlotContent,
 };
-use miden_objects::assembly::debuginfo::{SourceLanguage, Uri};
-use miden_objects::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_objects::asset::{Asset, AssetVaultKey, AssetWitness};
-use miden_objects::block::account_tree::AccountWitness;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteScript};
-use miden_objects::transaction::{
+use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
+use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
+use miden_protocol::block::account_tree::AccountWitness;
+use miden_protocol::block::{BlockHeader, BlockNumber};
+use miden_protocol::note::{Note, NoteScript};
+use miden_protocol::transaction::{
     AccountInputs,
     ExecutedTransaction,
     InputNote,
@@ -26,9 +26,9 @@ use miden_objects::transaction::{
     PartialBlockchain,
     TransactionArgs,
     TransactionInputs,
+    TransactionKernel,
 };
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{ExecutionError, FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_standards::code_builder::CodeBuilder;
 use miden_tx::auth::{BasicAuthenticator, UnreachableAuth};
 use miden_tx::{
     AccountProcedureIndexMap,
@@ -43,6 +43,7 @@ use miden_tx::{
 
 use crate::executor::CodeExecutor;
 use crate::mock_host::MockHost;
+use crate::tx_context::ExecError;
 
 // TRANSACTION CONTEXT
 // ================================================================================================
@@ -59,8 +60,9 @@ pub struct TransactionContext {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) is_lazy_loading_enabled: bool,
     pub(super) note_scripts: BTreeMap<Word, NoteScript>,
+    pub(super) is_lazy_loading_enabled: bool,
+    pub(super) is_debug_mode_enabled: bool,
 }
 
 impl TransactionContext {
@@ -72,10 +74,6 @@ impl TransactionContext {
     /// is run on a modified [`TransactionExecutorHost`] which is loaded with the procedures exposed
     /// by the transaction kernel, and also individual kernel functions (not normally exposed).
     ///
-    /// To improve the error message quality, convert the returned [`ExecutionError`] into a
-    /// [`Report`](miden_objects::assembly::diagnostics::Report) or use `?` with
-    /// [`miden_objects::assembly::diagnostics::Result`].
-    ///
     /// # Errors
     ///
     /// Returns an error if the assembly or execution of the provided code fails.
@@ -83,7 +81,7 @@ impl TransactionContext {
     /// # Panics
     ///
     /// - If the provided `code` is not a valid program.
-    pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    pub async fn execute_code(&self, code: &str) -> Result<ExecutionOutput, ExecError> {
         // Fetch all witnesses for note assets and the fee asset.
         let mut asset_vault_keys = self
             .tx_inputs
@@ -133,7 +131,6 @@ impl TransactionContext {
                 .into();
 
         let program = assembler
-            .with_debug_mode(true)
             .assemble_program(virtual_source_file)
             .expect("code was not well formed");
 
@@ -187,9 +184,13 @@ impl TransactionContext {
         let notes = self.tx_inputs().input_notes().clone();
         let tx_args = self.tx_args().clone();
 
-        let mut tx_executor = TransactionExecutor::new(&self)
-            .with_source_manager(self.source_manager.clone())
-            .with_debug_mode();
+        let mut tx_executor =
+            TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
+
+        if self.is_debug_mode_enabled {
+            tx_executor = tx_executor.with_debug_mode();
+        }
+
         if let Some(authenticator) = self.authenticator() {
             tx_executor = tx_executor.with_authenticator(authenticator);
         }
@@ -402,9 +403,9 @@ impl MastForestStore for TransactionContext {
 
 #[cfg(test)]
 mod tests {
-    use miden_objects::Felt;
-    use miden_objects::assembly::Assembler;
-    use miden_objects::note::NoteScript;
+    use miden_protocol::Felt;
+    use miden_protocol::assembly::Assembler;
+    use miden_protocol::note::NoteScript;
 
     use super::*;
     use crate::TransactionContextBuilder;

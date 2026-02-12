@@ -1,12 +1,26 @@
 use alloc::vec::Vec;
 
-use miden_lib::transaction::{EventId, TransactionEventId};
-use miden_objects::account::{AccountId, StorageMap, StorageSlotName, StorageSlotType};
-use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
-use miden_objects::note::{NoteId, NoteInputs, NoteMetadata, NoteRecipient, NoteScript};
-use miden_objects::transaction::TransactionSummary;
-use miden_objects::{Felt, Hasher, Word};
-use miden_processor::{AdviceMutation, ProcessState, RowIndex};
+use miden_processor::{AdviceMutation, AdviceProvider, ProcessState, RowIndex};
+use miden_protocol::account::{AccountId, StorageMap, StorageSlotName, StorageSlotType};
+use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
+use miden_protocol::note::{
+    NoteAttachment,
+    NoteAttachmentArray,
+    NoteAttachmentContent,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+};
+use miden_protocol::transaction::memory::{NOTE_MEM_SIZE, OUTPUT_NOTE_SECTION_OFFSET};
+use miden_protocol::transaction::{TransactionEventId, TransactionSummary};
+use miden_protocol::vm::EventId;
+use miden_protocol::{Felt, Hasher, Word};
 
 use crate::host::{TransactionBaseHost, TransactionKernelProcess};
 use crate::{LinkMap, TransactionKernelError};
@@ -64,8 +78,8 @@ pub(crate) enum TransactionEvent {
     AccountStorageAfterSetMapItem {
         slot_name: StorageSlotName,
         key: Word,
-        old_map_value: Word,
-        new_map_value: Word,
+        old_value: Word,
+        new_value: Word,
     },
 
     /// The data necessary to request a storage map witness from the data store.
@@ -97,7 +111,7 @@ pub(crate) enum TransactionEvent {
         procedure_root: Word,
     },
 
-    NoteAfterCreated {
+    NoteBeforeCreated {
         /// The note index extracted from the stack.
         note_idx: usize,
         /// The note metadata extracted from the stack.
@@ -111,6 +125,13 @@ pub(crate) enum TransactionEvent {
         note_idx: usize,
         /// The asset that is added to the output note.
         asset: Asset,
+    },
+
+    NoteBeforeSetAttachment {
+        /// The note index on which the attachment is set.
+        note_idx: usize,
+        /// The attachment that is set.
+        attachment: NoteAttachment,
     },
 
     /// The data necessary to handle an auth request.
@@ -213,42 +234,17 @@ impl TransactionEvent {
 
                 Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
             },
-            TransactionEventId::AccountVaultBeforeGetBalance => {
+            TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
-                // [event, faucet_id_prefix, faucet_id_suffix, vault_root_ptr]
-                let stack_top = process.get_stack_word_be(1);
-                let faucet_id =
-                    AccountId::try_from([stack_top[3], stack_top[2]]).map_err(|err| {
-                        TransactionKernelError::other_with_source(
-                            "failed to convert faucet ID word into faucet ID",
-                            err,
-                        )
-                    })?;
-                let vault_root_ptr = stack_top[1];
-                let vault_root = process.get_vault_root(vault_root_ptr)?;
-
-                let vault_key = AssetVaultKey::from_account_id(faucet_id).ok_or_else(|| {
-                    TransactionKernelError::other(format!(
-                        "provided faucet ID {faucet_id} is not valid for fungible assets"
-                    ))
-                })?;
-
-                on_account_vault_asset_accessed(base_host, process, vault_key, vault_root)?
-            },
-            TransactionEventId::AccountVaultBeforeHasNonFungibleAsset => {
-                // Expected stack state: [event, ASSET, vault_root_ptr]
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|err| {
-                    TransactionKernelError::other_with_source(
-                        "provided asset is not a valid asset",
-                        err,
-                    )
-                })?;
-
+                // [event, ASSET_KEY, vault_root_ptr]
+                let asset_key = process.get_stack_word_be(1);
                 let vault_root_ptr = process.get_stack_item(5);
+
+                // TODO(expand_assets): Consider whether validation is necessary.
+                let asset_key = AssetVaultKey::new_unchecked(asset_key);
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
-                on_account_vault_asset_accessed(base_host, process, asset.vault_key(), vault_root)?
+                on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
             },
 
             TransactionEventId::AccountStorageBeforeSetItem => None,
@@ -260,8 +256,8 @@ impl TransactionEvent {
 
                 let (slot_id, slot_type, _old_value) = process.get_storage_slot(slot_ptr)?;
 
-                let (slot_name, ..) = base_host.initial_account_storage_slot(slot_id)?;
-                let slot_name = slot_name.clone();
+                let slot_header = base_host.initial_account_storage_slot(slot_id)?;
+                let slot_name = slot_header.name().clone();
 
                 if !slot_type.is_value() {
                     return Err(TransactionKernelError::other(format!(
@@ -289,23 +285,22 @@ impl TransactionEvent {
             },
 
             TransactionEventId::AccountStorageAfterSetMapItem => {
-                // Expected stack state: [event, slot_ptr, KEY, OLD_MAP_VALUE, NEW_VALUE]
+                // Expected stack state: [event, slot_ptr, KEY, OLD_VALUE, NEW_VALUE]
                 let slot_ptr = process.get_stack_item(1);
                 let key = process.get_stack_word_be(2);
-                let old_map_value = process.get_stack_word_be(6);
-                let new_map_value = process.get_stack_word_be(10);
+                let old_value = process.get_stack_word_be(6);
+                let new_value = process.get_stack_word_be(10);
 
                 // Resolve slot ID to slot name.
                 let (slot_id, ..) = process.get_storage_slot(slot_ptr)?;
-                let (slot_name, ..) = base_host.initial_account_storage_slot(slot_id)?;
-
-                let slot_name = slot_name.clone();
+                let slot_header = base_host.initial_account_storage_slot(slot_id)?;
+                let slot_name = slot_header.name().clone();
 
                 Some(TransactionEvent::AccountStorageAfterSetMapItem {
                     slot_name,
                     key,
-                    old_map_value,
-                    new_map_value,
+                    old_value,
+                    new_value,
                 })
             },
 
@@ -326,20 +321,20 @@ impl TransactionEvent {
                 })
             },
 
-            TransactionEventId::NoteBeforeCreated => None,
+            TransactionEventId::NoteBeforeCreated => {
+                // Expected stack state:  [event, tag, note_type, RECIPIENT]
+                let tag = process.get_stack_item(1);
+                let note_type = process.get_stack_item(2);
+                let recipient_digest = process.get_stack_word_be(3);
 
-            TransactionEventId::NoteAfterCreated => {
-                // Expected stack state: [event, NOTE_METADATA, note_ptr, RECIPIENT, note_idx]
-                let metadata_word = process.get_stack_word_be(1);
-                let metadata = NoteMetadata::try_from(metadata_word)
-                    .map_err(TransactionKernelError::MalformedNoteMetadata)?;
+                let sender = base_host.native_account_id();
+                let metadata = build_note_metadata(sender, note_type, tag)?;
 
-                let recipient_digest = process.get_stack_word_be(6);
-                let note_idx = process.get_stack_item(10).as_int() as usize;
+                let note_idx = process.get_num_output_notes() as usize;
 
                 // try to read the full recipient from the advice provider
                 let recipient_data = if process.has_advice_map_entry(recipient_digest) {
-                    let (note_inputs, script_root, serial_num) =
+                    let (note_storage, script_root, serial_num) =
                         process.read_note_recipient_info_from_adv_map(recipient_digest)?;
 
                     let note_script = process
@@ -358,7 +353,7 @@ impl TransactionEvent {
                     match note_script {
                         Some(note_script) => {
                             let recipient =
-                                NoteRecipient::new(serial_num, note_script, note_inputs);
+                                NoteRecipient::new(serial_num, note_script, note_storage);
 
                             if recipient.digest() != recipient_digest {
                                 return Err(TransactionKernelError::other(format!(
@@ -373,15 +368,17 @@ impl TransactionEvent {
                             recipient_digest,
                             serial_num,
                             script_root,
-                            note_inputs,
+                            note_storage,
                         },
                     }
                 } else {
                     RecipientData::Digest(recipient_digest)
                 };
 
-                Some(TransactionEvent::NoteAfterCreated { note_idx, metadata, recipient_data })
+                Some(TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data })
             },
+
+            TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
                 // Expected stack state: [event, ASSET, note_ptr, num_of_assets, note_idx]
@@ -399,6 +396,28 @@ impl TransactionEvent {
             },
 
             TransactionEventId::NoteAfterAddAsset => None,
+
+            TransactionEventId::NoteBeforeSetAttachment => {
+                // Expected stack state: [
+                //     event, attachment_scheme, attachment_kind,
+                //     note_ptr, note_ptr, ATTACHMENT
+                // ]
+
+                let attachment_scheme = process.get_stack_item(1);
+                let attachment_kind = process.get_stack_item(2);
+                let note_ptr = process.get_stack_item(3);
+                let attachment = process.get_stack_word_be(5);
+
+                let (note_idx, attachment) = extract_note_attachment(
+                    attachment_scheme,
+                    attachment_kind,
+                    attachment,
+                    note_ptr,
+                    process.advice_provider(),
+                )?;
+
+                Some(TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment })
+            },
 
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
@@ -513,7 +532,7 @@ pub(crate) enum RecipientData {
         recipient_digest: Word,
         serial_num: Word,
         script_root: Word,
-        note_inputs: NoteInputs,
+        note_storage: NoteStorage,
     },
 }
 
@@ -573,8 +592,10 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     }
 
     let active_account_id = process.get_active_account_id()?;
-    let hashed_map_key = StorageMap::hash_key(map_key);
-    let leaf_index = StorageMap::hashed_map_key_to_leaf_index(hashed_map_key);
+    let leaf_index: Felt = StorageMap::map_key_to_leaf_index(map_key)
+        .value()
+        .try_into()
+        .expect("expected key index to be a felt");
 
     // For the native account we need to explicitly request the initial map root,
     // while for foreign accounts the current map root is always the initial one.
@@ -582,15 +603,14 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
         // For native accounts, we have to request witnesses against the initial
         // root instead of the _current_ one, since the data
         // store only has witnesses for initial one.
-        let (_slot_name, slot_type, slot_value) =
-            base_host.initial_account_storage_slot(slot_id)?;
+        let slot_header = base_host.initial_account_storage_slot(slot_id)?;
 
-        if *slot_type != StorageSlotType::Map {
+        if slot_header.slot_type() != StorageSlotType::Map {
             return Err(TransactionKernelError::other(format!(
                 "expected slot {slot_id} to be of type map"
             )));
         }
-        *slot_value
+        slot_header.value()
     } else {
         current_map_root
     };
@@ -658,6 +678,96 @@ fn extract_tx_summary<'store, STORE>(
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Builds the note metadata from sender, note type and tag if all inputs are valid.
+fn build_note_metadata(
+    sender: AccountId,
+    note_type: Felt,
+    tag: Felt,
+) -> Result<NoteMetadata, TransactionKernelError> {
+    let note_type = u8::try_from(note_type)
+        .map_err(|_| TransactionKernelError::other("failed to decode note_type into u8"))
+        .and_then(|note_type_byte| {
+            NoteType::try_from(note_type_byte).map_err(|source| {
+                TransactionKernelError::other_with_source(
+                    "failed to decode note_type from u8",
+                    source,
+                )
+            })
+        })?;
+
+    let tag = u32::try_from(tag)
+        .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
+        .map(NoteTag::new)?;
+
+    Ok(NoteMetadata::new(sender, note_type).with_tag(tag))
+}
+
+fn extract_note_attachment(
+    attachment_scheme: Felt,
+    attachment_kind: Felt,
+    attachment: Word,
+    note_ptr: Felt,
+    advice_provider: &AdviceProvider,
+) -> Result<(usize, NoteAttachment), TransactionKernelError> {
+    let note_idx = note_ptr_to_idx(note_ptr)?;
+
+    let attachment_kind = u8::try_from(attachment_kind)
+        .map_err(|_| TransactionKernelError::other("failed to convert attachment kind to u8"))
+        .and_then(|attachment_kind| {
+            NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {
+                TransactionKernelError::other_with_source(
+                    "failed to convert u8 to attachment kind",
+                    source,
+                )
+            })
+        })?;
+
+    let attachment_scheme = u32::try_from(attachment_scheme)
+        .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u32"))
+        .map(NoteAttachmentScheme::new)?;
+
+    let attachment_content = match attachment_kind {
+        NoteAttachmentKind::None => {
+            if !attachment.is_empty() {
+                return Err(TransactionKernelError::NoteAttachmentNoneIsNotEmpty);
+            }
+            NoteAttachmentContent::None
+        },
+        NoteAttachmentKind::Word => NoteAttachmentContent::Word(attachment),
+        NoteAttachmentKind::Array => {
+            let elements = advice_provider.get_mapped_values(&attachment).ok_or_else(|| {
+              TransactionKernelError::other(
+                  "elements of a note attachment commitment must be present in the advice provider",
+              )
+            })?;
+
+            let commitment_attachment =
+                NoteAttachmentArray::new(elements.to_vec()).map_err(|source| {
+                    TransactionKernelError::other_with_source(
+                        "failed to construct note attachment commitment",
+                        source,
+                    )
+                })?;
+
+            if commitment_attachment.commitment() != attachment {
+                return Err(TransactionKernelError::NoteAttachmentArrayMismatch {
+                    actual: commitment_attachment.commitment(),
+                    provided: attachment,
+                });
+            }
+
+            NoteAttachmentContent::Array(commitment_attachment)
+        },
+    };
+
+    let attachment =
+        NoteAttachment::new(attachment_scheme, attachment_content).map_err(|source| {
+            TransactionKernelError::other_with_source("failed to extract note attachment", source)
+        })?;
+
+    Ok((note_idx as usize, attachment))
+}
+
 /// Extracts a word from a slice of field elements.
 #[inline(always)]
 fn extract_word(commitments: &[Felt], start: usize) -> Word {
@@ -667,4 +777,18 @@ fn extract_word(commitments: &[Felt], start: usize) -> Word {
         commitments[start + 2],
         commitments[start + 3],
     ])
+}
+
+/// Converts the provided note ptr into the corresponding note index.
+fn note_ptr_to_idx(note_ptr: Felt) -> Result<u32, TransactionKernelError> {
+    u32::try_from(note_ptr)
+        .map_err(|_| TransactionKernelError::other("failed to convert note_ptr to u32"))
+        .and_then(|note_ptr| {
+            note_ptr
+                .checked_sub(OUTPUT_NOTE_SECTION_OFFSET)
+                .ok_or_else(|| {
+                    TransactionKernelError::other("failed to calculate note_idx from note_ptr")
+                })
+                .map(|note_ptr| note_ptr / NOTE_MEM_SIZE)
+        })
 }

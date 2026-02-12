@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
-use miden_objects::{EMPTY_WORD, LexicographicWord, Word};
 use miden_processor::{ONE, ZERO};
+use miden_protocol::{EMPTY_WORD, LexicographicWord, Word};
 use miden_tx::{LinkMap, MemoryViewer};
 use rand::seq::IteratorRandom;
 use winter_rand_utils::rand_value;
@@ -32,9 +32,9 @@ async fn insertion() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-      use.$kernel::link_map
+      use $kernel::link_map
 
-      const.MAP_PTR={map_ptr}
+      const MAP_PTR={map_ptr}
 
       begin
           # Insert key {entry1_key} into an empty map.
@@ -534,7 +534,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
 
     let code = format!(
         r#"
-      use.$kernel::link_map
+      use $kernel::link_map
       begin
           {test_code}
       end

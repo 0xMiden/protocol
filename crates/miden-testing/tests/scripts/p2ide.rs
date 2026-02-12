@@ -1,17 +1,17 @@
 use core::slice;
 
 use anyhow::Context;
-use miden_lib::errors::note_script_errors::{
+use miden_protocol::Felt;
+use miden_protocol::account::Account;
+use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
+use miden_protocol::block::BlockNumber;
+use miden_protocol::note::{Note, NoteType};
+use miden_standards::errors::standards::{
     ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER,
     ERR_P2IDE_RECLAIM_DISABLED,
     ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED,
     ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED,
 };
-use miden_objects::Felt;
-use miden_objects::account::Account;
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
-use miden_objects::block::BlockNumber;
-use miden_objects::note::{Note, NoteType};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 /// Test that the P2IDE note works like a regular P2ID note

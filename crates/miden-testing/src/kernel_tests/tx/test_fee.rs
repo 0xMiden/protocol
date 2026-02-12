@@ -1,11 +1,11 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_objects::account::{AccountId, StorageMap, StorageSlot, StorageSlotName};
-use miden_objects::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_objects::note::NoteType;
-use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
-use miden_objects::transaction::{ExecutedTransaction, OutputNote};
-use miden_objects::{self, Felt, Word};
+use miden_protocol::account::{AccountId, StorageMap, StorageSlot, StorageSlotName};
+use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use miden_protocol::note::NoteType;
+use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
+use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
+use miden_protocol::{self, Felt, Word};
 use miden_tx::TransactionExecutorError;
 use winter_rand_utils::rand_value;
 

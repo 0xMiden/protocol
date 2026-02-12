@@ -22,6 +22,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@main
+            - name: Cleanup large tools for build space
+              uses: ./.github/actions/cleanup-runner
             - uses: Swatinem/rust-cache@v2
               with:
                   # Only update the cache on push onto the next branch. This strikes a nice balance between
@@ -34,31 +36,30 @@ jobs:
                   make build-no-std
                   make build-no-std-testing
 
-    feature-check:
-      name: Check feature combinations
+    check-features:
+      name: check all feature combinations
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@main
+        - uses: actions/checkout@v4
+        - name: Cleanup large tools for build space
+          uses: ./.github/actions/cleanup-runner
         - uses: Swatinem/rust-cache@v2
           with:
-            # Only update the cache on push onto the next branch. This strikes a nice balance between
-            # cache hits and cache evictions (github has a 10GB cache limit).
             save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-          # Install cargo-hack or restore from cache if already built.
-        - uses: taiki-e/cache-cargo-install-action@v2
-          with:
-            tool: cargo-hack
-        - name: Update Rust toolchain
+        - name: Install rust
           run: rustup update --no-self-update
-          # Run cargo hack check with each feature to ensure crates compile with individual features
-        - name: Check each feature
-          run: cargo hack check --each-feature --workspace --exclude bench-prover
+        - name: Install cargo-hack
+          uses: taiki-e/install-action@cargo-hack
+        - name: Check all feature combinations
+          run: make check-features
 
     build-benches:
       name: Check benchmarks compilation
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@main
+        - name: Cleanup large tools for build space
+          uses: ./.github/actions/cleanup-runner
         - uses: Swatinem/rust-cache@v2
           with:
             # Only update the cache on push onto the next branch. This strikes a nice balance between

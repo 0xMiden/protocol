@@ -1,6 +1,0 @@
-# The MASM code of the Network Fungible Faucet Account Component.
-#
-# See the `NetworkFungibleFaucet` Rust type's documentation for more details.
-
-export.::miden::contracts::faucets::network_fungible::distribute
-export.::miden::contracts::faucets::network_fungible::burn

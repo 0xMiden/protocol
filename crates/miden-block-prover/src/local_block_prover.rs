@@ -1,5 +1,5 @@
-use miden_objects::batch::OrderedBatches;
-use miden_objects::block::{BlockHeader, BlockInputs, BlockProof};
+use miden_protocol::batch::OrderedBatches;
+use miden_protocol::block::{BlockHeader, BlockInputs, BlockProof};
 
 use crate::BlockProverError;
 
@@ -24,7 +24,7 @@ impl LocalBlockProver {
     pub fn prove(
         &self,
         _tx_batches: OrderedBatches,
-        _block_header: BlockHeader,
+        _block_header: &BlockHeader,
         _block_inputs: BlockInputs,
     ) -> Result<BlockProof, BlockProverError> {
         Ok(BlockProof {})

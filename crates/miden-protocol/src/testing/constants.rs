@@ -1,0 +1,9 @@
+pub const FUNGIBLE_ASSET_AMOUNT: u64 = 100;
+
+pub const CONSUMED_ASSET_1_AMOUNT: u64 = 100;
+pub const CONSUMED_ASSET_2_AMOUNT: u64 = 200;
+pub const CONSUMED_ASSET_3_AMOUNT: u64 = 300;
+pub const CONSUMED_ASSET_4_AMOUNT: u64 = 100;
+
+pub const NON_FUNGIBLE_ASSET_DATA: [u8; 4] = [1, 2, 3, 4];
+pub const NON_FUNGIBLE_ASSET_DATA_2: [u8; 4] = [5, 6, 7, 8];

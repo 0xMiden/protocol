@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use miden_objects::{Felt, LexicographicWord, Word, ZERO};
 use miden_processor::fast::ExecutionOutput;
 use miden_processor::{AdviceMutation, ContextId, ProcessState};
+use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
 
 // LINK MAP
 // ================================================================================================
@@ -316,7 +316,7 @@ impl<'mem> MemoryViewer<'mem> {
                 // https://github.com/0xMiden/miden-vm/issues/2237
 
                 // Copy of how Memory::read_element is implemented in Miden VM.
-                let idx = addr % miden_objects::WORD_SIZE as u32;
+                let idx = addr % miden_protocol::WORD_SIZE as u32;
                 let word_addr = addr - idx;
 
                 Some(self.get_kernel_mem_word(word_addr)?[idx as usize])

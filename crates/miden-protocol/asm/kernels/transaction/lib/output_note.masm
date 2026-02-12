@@ -1,0 +1,613 @@
+use $kernel::account
+use $kernel::memory
+use $kernel::note
+use $kernel::asset
+use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use $kernel::util::note::ATTACHMENT_KIND_NONE
+use $kernel::util::note::ATTACHMENT_KIND_WORD
+use $kernel::util::note::ATTACHMENT_KIND_ARRAY
+use miden::core::mem
+use miden::core::word
+
+# CONSTANTS
+# =================================================================================================
+
+# Constants for different note types
+const PUBLIC_NOTE=1     # 0b01
+const PRIVATE_NOTE=2    # 0b10
+
+# The default value of the felt at index 3 in the note metadata header when a new note is created.
+# All zeros sets the attachment kind to None and the user-defined attachment scheme to "none".
+const ATTACHMENT_DEFAULT_KIND_AND_SCHEME=0
+
+#! The default attachment scheme, representing the absence of an attachment scheme.
+const ATTACHMENT_SCHEME_NONE=0
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT="number of output notes in the transaction exceeds the maximum limit of 1024"
+
+const ERR_NOTE_INVALID_TYPE="invalid note type"
+
+const ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS="requested output note index should be less than the total number of created output notes"
+
+const ERR_OUTPUT_NOTE_INVALID_ATTACHMENT_SCHEMES="attachment scheme and attachment kind must fit into u32s"
+
+const ERR_OUTPUT_NOTE_UNKNOWN_ATTACHMENT_KIND="attachment kind variant must be between 0 and 2"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_HAVE_ATTACHMENT_SCHEME_NONE="attachment kind none must have attachment scheme none"
+
+const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD="attachment kind None requires ATTACHMENT to be set to an empty word"
+
+const ERR_NOTE_INVALID_INDEX="failed to find note at the given index; index must be within [0, num_of_notes]"
+
+const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
+
+const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
+
+const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
+
+# EVENTS
+# =================================================================================================
+
+# Event emitted before a new note is created.
+const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
+# Event emitted after a new note is created.
+const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
+
+# Event emitted before an ASSET is added to a note
+const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
+# Event emitted after an ASSET is added to a note
+const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
+
+# Event emitted before an ATTACHMENT is added to a note
+const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::protocol::note::before_set_attachment")
+
+# OUTPUT NOTE PROCEDURES
+# =================================================================================================
+
+#! Creates a new note and returns the index of the note.
+#!
+#! Inputs:  [tag, note_type, RECIPIENT]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - tag is the note tag which can be used by the recipient(s) to identify notes intended for them.
+#! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
+#!   or off-chain).
+#! - RECIPIENT defines spend conditions for the note.
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - the note_type is unknown.
+#! - the note tag is not a u32.
+#! - the number of output notes exceeds the maximum limit of 1024.
+pub proc create
+    emit.NOTE_BEFORE_CREATED_EVENT
+    # => [tag, note_type, RECIPIENT]
+
+    exec.build_metadata_header
+    # => [NOTE_METADATA_HEADER, RECIPIENT]
+
+    # get the index for the next note to be created and increment counter
+    exec.increment_num_output_notes dup movdn.9
+    # => [note_idx, NOTE_METADATA_HEADER, RECIPIENT, note_idx]
+
+    # get a pointer to the memory address at which the note will be stored
+    exec.memory::get_output_note_ptr
+    # => [note_ptr, NOTE_METADATA_HEADER, RECIPIENT, note_idx]
+
+    movdn.4
+    # => [NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
+
+    # emit event to signal that a new note is created
+    emit.NOTE_AFTER_CREATED_EVENT
+
+    # set the metadata for the output note
+    dup.4
+    # => [note_ptr, NOTE_METADATA_HEADER, note_ptr, RECIPIENT, note_idx]
+
+    exec.memory::set_output_note_metadata_header dropw
+    # => [note_ptr, RECIPIENT, note_idx]
+
+    # set the attachment value of a new note to an empty word
+    # note that the attachment kind is set to None by build_metadata_header
+    padw dup.4
+    # => [note_ptr, EMPTY_WORD, note_ptr, RECIPIENT, note_idx]
+
+    exec.memory::set_output_note_attachment
+    # => [note_ptr, RECIPIENT, note_idx]
+
+    # set the RECIPIENT for the output note
+    exec.memory::set_output_note_recipient dropw
+    # => [note_idx]
+end
+
+#! Returns the information about assets in the output note with the specified index.
+#!
+#! The provided output note index is expected to be less than the total number of output notes.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [ASSETS_COMMITMENT, num_assets]
+#!
+#! Where:
+#! - note_index is the index of the output note whose assets info should be returned.
+#! - num_assets is the number of assets in the specified note.
+#! - ASSETS_COMMITMENT is a sequential hash of the assets in the specified note.
+pub proc get_assets_info
+    # get the note data pointer based on the index of the requested note
+    exec.memory::get_output_note_ptr
+    # => [note_data_ptr]
+
+    # get the number of assets in the note
+    dup exec.memory::get_output_note_num_assets swap
+    # => [note_data_ptr, num_assets]
+
+    # get the assets commitment
+    dup exec.note::compute_output_note_assets_commitment
+    # => [ASSETS_COMMITMENT, note_data_ptr, num_assets]
+
+    # next we should store the assets in the advice map using the computed assets commitment to be
+    # able to get the assets later (in the `miden::protocol::output_note::get_assets` procedure)
+
+    # get the start and the end pointers of the asset data
+    #
+    # notice that if the number of assets is odd, the asset data end pointer will be shifted one
+    # word further to make the assets number even (the same way it is done in the
+    # `note::compute_output_note_assets_commitment` procedure)
+    movup.4 exec.memory::get_output_note_asset_data_ptr
+    # => [assets_data_ptr, ASSETS_COMMITMENT, num_assets]
+
+    dup dup.6 dup is_odd add
+    # => [padded_num_assets, assets_data_ptr, assets_data_ptr, ASSETS_COMMITMENT, num_assets]
+
+    mul.4 add
+    # => [assets_end_ptr, assets_start_ptr, ASSETS_COMMITMENT, num_assets]
+
+    movdn.5 movdn.4
+    # => [ASSETS_COMMITMENT, assets_start_ptr, assets_end_ptr, num_assets]
+
+    # store the assets data to the advice map using ASSETS_COMMITMENT as a key
+    adv.insert_mem
+    # => [ASSETS_COMMITMENT, assets_start_ptr, assets_end_ptr, num_assets]
+
+    # remove asset pointers from the stack
+    movup.4 drop movup.4 drop
+    # => [ASSETS_COMMITMENT, num_assets]
+end
+
+#! Adds the ASSET to the note specified by the index.
+#!
+#! Inputs:  [note_idx, ASSET]
+#! Outputs: []
+#!
+#! Where:
+#! - note_idx is the index of the note to which the asset is added.
+#! - ASSET can be a fungible or non-fungible asset.
+#!
+#! Panics if:
+#! - the note index points to a non-existent output note.
+#! - the ASSET is malformed (e.g., invalid faucet ID).
+#! - the max amount of fungible assets is exceeded.
+#! - the non-fungible asset already exists in the note.
+#! - the total number of ASSETs exceeds the maximum of 256.
+pub proc add_asset
+    # check if the note exists, it must be within [0, num_of_notes]
+    dup exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
+    # => [note_idx, ASSET]
+
+    # get a pointer to the memory address of the note at which the asset will be stored
+    dup movdn.5 exec.memory::get_output_note_ptr
+    # => [note_ptr, ASSET, note_idx]
+
+    # get current num of assets
+    dup exec.memory::get_output_note_num_assets movdn.5
+    # => [note_ptr, ASSET, num_of_assets, note_idx]
+
+    # validate the ASSET
+    movdn.4 exec.asset::validate_asset
+    # => [ASSET, note_ptr, num_of_assets, note_idx]
+
+    # emit event to signal that a new asset is going to be added to the note.
+    emit.NOTE_BEFORE_ADD_ASSET_EVENT
+    # => [ASSET, note_ptr, num_of_assets, note_idx]
+
+    # check if ASSET to add is fungible
+    exec.asset::is_fungible_asset
+    # => [is_fungible_asset?, ASSET, note_ptr, num_of_assets, note_idx]
+
+    if.true
+        # ASSET to add is fungible
+        exec.add_fungible_asset
+        # => [note_ptr, note_idx]
+    else
+        # ASSET to add is non-fungible
+        exec.add_non_fungible_asset
+        # => [note_ptr, note_idx]
+    end
+    # => [note_ptr, note_idx]
+
+    # update the assets commitment dirty flag to signal that the current assets commitment is not
+    # valid anymore
+    push.1 swap exec.memory::set_output_note_dirty_flag
+    # => [note_idx]
+
+    # emit event to signal that a new asset was added to the note.
+    emit.NOTE_AFTER_ADD_ASSET_EVENT
+    # => [note_idx]
+
+    # drop the note index
+    drop
+    # => []
+end
+
+#! Sets the attachment of the note specified by the index.
+#!
+#! Inputs:  [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - note_idx is the index of the note on which the attachment is set.
+#! - attachment_scheme is the user-defined scheme of the attachment.
+#! - attachment_kind is the kind of the attachment content.
+#! - ATTACHMENT is the attachment to be set.
+#!
+#! Panics if:
+#! - the note index points to a non-existent output note.
+#! - the attachment kind or scheme does not fit into a u32.
+#! - the attachment kind is an unknown variant.
+pub proc set_attachment
+    dup exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+
+    exec.memory::get_output_note_ptr dup
+    # => [note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+
+    dupw.1
+    # => [ATTACHMENT, note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+
+    dup.7 dup.7
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_ptr, note_ptr,
+    #     attachment_scheme, attachment_kind, ATTACHMENT]
+
+    exec.validate_attachment
+    # => [note_ptr, note_ptr, attachment_scheme, attachment_kind, ATTACHMENT]
+
+    movdn.3 movdn.3
+    # => [attachment_scheme, attachment_kind, note_ptr, note_ptr, ATTACHMENT]
+
+    emit.NOTE_BEFORE_SET_ATTACHMENT_EVENT
+    # => [attachment_scheme, attachment_kind, note_ptr, note_ptr, ATTACHMENT]
+
+    exec.set_attachment_kind_scheme
+    # => [note_ptr, ATTACHMENT]
+
+    exec.memory::set_output_note_attachment
+    # => []
+end
+
+#! Assert that the provided note index is less than the total number of output notes.
+#!
+#! Inputs:  [note_index]
+#! Outputs: [note_index]
+pub proc assert_note_index_in_bounds
+    # assert that the provided note index is less than the total number of notes
+    dup exec.memory::get_num_output_notes
+    # => [output_notes_num, note_index, note_index]
+
+    u32assert2.err=ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS
+    u32lt assert.err=ERR_OUTPUT_NOTE_INDEX_OUT_OF_BOUNDS
+    # => [note_index]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Builds the provided inputs into the NOTE_METADATA_HEADER word.
+#!
+#! - The sender ID is set to the native account's ID.
+#! - The attachment scheme is set to 0 (meaning none by convention) and the attachment content
+#!   type is set to None.
+#!
+#! Note that this procedure is only exported so it can be tested. It should not be called from
+#! non-test code.
+#!
+#! Inputs:  [tag, note_type]
+#! Outputs: [NOTE_METADATA_HEADER]
+#!
+#! Where:
+#! - tag is the note tag which can be used by the recipient(s) to identify notes intended for them.
+#! - note_type is the type of the note, which defines how the note is to be stored (e.g., on-chain
+#!   or off-chain).
+#! - NOTE_METADATA_HEADER is the metadata associated with a note.
+pub proc build_metadata_header
+    # Validate that note type is private or public.
+    # --------------------------------------------------------------------------------------------
+
+    dup.1 eq.PRIVATE_NOTE dup.2 eq.PUBLIC_NOTE or assert.err=ERR_NOTE_INVALID_TYPE
+    # => [tag, note_type]
+
+    # Validate the note tag fits into a u32.
+    # --------------------------------------------------------------------------------------------
+
+    u32assert.err=ERR_NOTE_TAG_MUST_BE_U32
+    # => [tag, note_type]
+
+    # Merge note type and sender ID suffix.
+    # --------------------------------------------------------------------------------------------
+
+    exec.account::get_id swap
+    # => [sender_id_suffix, sender_id_prefix, tag, note_type]
+
+    # the lower bits of an account ID suffix are guaranteed to be zero, so we can safely use that
+    # space to encode the note type
+    movup.3 add swap
+    # => [sender_id_prefix, sender_id_suffix_and_note_type, tag]
+
+    # Build metadata header.
+    # --------------------------------------------------------------------------------------------
+
+    movup.2
+    push.ATTACHMENT_DEFAULT_KIND_AND_SCHEME
+    # => [attachment_kind_scheme, tag, sender_id_prefix, sender_id_suffix_and_note_type]
+    # => [NOTE_METADATA_HEADER]
+end
+
+#! Validate the ATTACHMENT against the attachment kind.
+#!
+#! Inputs:  [attachment_scheme, attachment_kind, ATTACHMENT]
+#! Outputs: []
+#!
+#! Where:
+#! - attachment_scheme is the user-defined scheme of the attachment.
+#! - attachment_kind is the kind of the attachment content.
+#! - ATTACHMENT is the attachment to validate.
+#!
+#! Panics if:
+#! - the attachment kind or scheme does not fit into a u32.
+#! - the attachment kind is an unknown variant.
+#! - the attachment kind is None and the ATTACHMENT is not an empty word.
+proc validate_attachment
+    u32assert2.err=ERR_OUTPUT_NOTE_INVALID_ATTACHMENT_SCHEMES
+    # => [attachment_scheme, attachment_kind, ATTACHMENT]
+
+    # assert that the attachment kind is valid
+    swap dup u32lte.ATTACHMENT_KIND_ARRAY
+    assert.err=ERR_OUTPUT_NOTE_UNKNOWN_ATTACHMENT_KIND
+    # => [attachment_kind, attachment_scheme, ATTACHMENT]
+
+    eq.ATTACHMENT_KIND_NONE
+    # => [is_attachment_none, attachment_scheme, ATTACHMENT]
+
+    if.true
+        eq.ATTACHMENT_SCHEME_NONE
+        assert.err=ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_HAVE_ATTACHMENT_SCHEME_NONE
+        # => [ATTACHMENT]
+
+        padw assert_eqw.err=ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD
+        # => []
+    else
+        drop dropw
+        # => []
+    end
+    # => []
+end
+
+#! Sets an output note's attachment kind and scheme in the note metadata header.
+#!
+#! WARNING: The attachment scheme and kind must be valid.
+#!
+#! Inputs:  [attachment_scheme, attachment_kind, note_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - attachment_scheme is the user-defined type of the attachment.
+#! - attachment_kind is the kind of the attachment content.
+#! - note_ptr is the memory address at which the output note data begins.
+proc set_attachment_kind_scheme
+    exec.merge_attachment_kind_and_scheme
+    # => [attachment_kind_scheme, note_ptr]
+
+    swap
+    # => [note_ptr, attachment_kind_scheme]
+
+    exec.memory::set_output_note_attachment_kind_scheme
+    # => []
+end
+
+#! Merges the attachment kind and scheme into a single felt with the following layout:
+#!
+#! [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
+#!
+#! WARNING: The attachment scheme and kind must be valid.
+#!
+#! Inputs:  [attachment_scheme, attachment_kind]
+#! Outputs: [attachment_kind_scheme]
+#!
+#! Where:
+#! - attachment_scheme is the user-defined scheme of the attachment.
+#! - attachment_kind is the kind of the attachment content.
+#! - attachment_kind_scheme is the felt constructed from the inputs.
+proc merge_attachment_kind_and_scheme
+    # shift the attachment_kind 32 bits to the left, which is the same as multiplying by 2^32
+    # and set the lower bits to the attachment_scheme, which is done by adding the values together
+    swap mul.0x100000000
+    add
+    # => [attachment_kind_scheme]
+end
+
+#! Increments the number of output notes by one. Returns the index of the next note to be created.
+#!
+#! Inputs:  []
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - note_idx is the index of the next note to be created.
+proc increment_num_output_notes
+    # get the current number of output notes
+    exec.memory::get_num_output_notes
+    # => [note_idx]
+
+    # assert that there is space for a new note
+    dup push.MAX_OUTPUT_NOTES_PER_TX lt
+    assert.err=ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT
+    # => [note_idx]
+
+    # increment the number of output notes
+    dup add.1 exec.memory::set_num_output_notes
+    # => [note_idx]
+end
+
+#! Adds a fungible asset to a note. If the note already holds an asset issued by the same faucet id
+#! the two quantities are summed up and the new quantity is stored at the old position in the note.
+#! In the other case, the asset is stored at the next available position.
+#! Returns the pointer to the note the asset was stored at.
+#!
+#! Inputs:  [ASSET, note_ptr, num_of_assets, note_idx]
+#! Outputs: [note_ptr]
+#!
+#! Where:
+#! - ASSET is the fungible asset to be added to the note.
+#! - note_ptr is the pointer to the note the asset will be added to.
+#! - num_of_assets is the current number of assets.
+#! - note_idx is the index of the note the asset will be added to.
+#!
+#! Panics if
+#! - the summed amounts exceed the maximum amount of fungible assets.
+proc add_fungible_asset
+    dup.4 exec.memory::get_output_note_asset_data_ptr
+    # => [asset_ptr, ASSET, note_ptr, num_of_assets, note_idx]
+
+    # compute the pointer at which we should stop iterating
+    dup dup.7 mul.4 add
+    # => [end_asset_ptr, asset_ptr, ASSET, note_ptr, num_of_assets, note_idx]
+
+    # reorganize and pad the stack, prepare for the loop
+    movdn.5 movdn.5 padw dup.9
+    # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+    # compute the loop latch
+    dup dup.10 neq
+    # => [latch, asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
+    #     note_idx]
+
+    while.true
+        mem_loadw_be
+        # => [STORED_ASSET, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+        dup.4 eq
+        # => [are_equal, 0, 0, stored_amount, ASSET, end_asset_ptr, asset_ptr, note_ptr,
+        #     num_of_assets, note_idx]
+
+        if.true
+            # add the asset quantity, we don't overflow here, bc both ASSETs are valid.
+            movup.2 movup.6 add
+            # => [updated_amount, 0, 0, faucet_id, 0, 0, end_asset_ptr, asset_ptr, note_ptr,
+            #     num_of_assets, note_idx]
+
+            # check that we don't overflow bc we use lte
+            dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
+            assert.err=ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED
+            # => [updated_amount, 0, 0, faucet_id, 0, 0, end_asset_ptr, asset_ptr, note_ptr,
+            #     num_of_assets, note_idx]
+
+            # prepare stack to store the "updated" ASSET'' with the new quantity
+            movdn.5
+            # => [0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+            # decrease num_of_assets by 1 to offset incrementing it later
+            movup.9 sub.1 movdn.9
+            # => [0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets - 1, note_idx]
+
+            # end the loop we add 0's to the stack to have the correct number of elements
+            push.0.0 dup.9 push.0
+            # => [0, asset_ptr, 0, 0, 0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr,
+            #     num_of_assets - 1, note_idx]
+        else
+            # => [0, 0, stored_amount, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
+            #     note_idx]
+
+            # drop ASSETs and increment the asset pointer
+            movup.2 drop push.0.0 movup.9 add.4 dup movdn.10
+            # => [asset_ptr + 4, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr + 4, note_ptr,
+            #     num_of_assets, note_idx]
+
+            # check if we reached the end of the loop
+            dup dup.10 neq
+        end
+    end
+    # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+    # prepare stack for storing the ASSET
+    movdn.4 dropw
+    # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+    # store the fungible asset, either the combined ASSET or the new ASSET
+    mem_storew_be dropw drop drop
+    # => [note_ptr, num_of_assets, note_idx]
+
+    # increase the number of assets in the note
+    swap add.1 dup.1 exec.memory::set_output_note_num_assets
+    # => [note_ptr, note_idx]
+end
+
+#! Adds a non-fungible asset to a note at the next available position.
+#! Returns the pointer to the note the asset was stored at.
+#!
+#! Inputs:  [ASSET, note_ptr, num_of_assets, note_idx]
+#! Outputs: [note_ptr, note_idx]
+#!
+#! Where:
+#! - ASSET is the non-fungible asset to be added to the note.
+#! - note_ptr is the pointer to the note the asset will be added to.
+#! - num_of_assets is the current number of assets.
+#! - note_idx is the index of the note the asset will be added to.
+#!
+#! Panics if:
+#! - the non-fungible asset already exists in the note.
+proc add_non_fungible_asset
+    dup.4 exec.memory::get_output_note_asset_data_ptr
+    # => [asset_ptr, ASSET, note_ptr, num_of_assets, note_idx]
+
+    # compute the pointer at which we should stop iterating
+    dup dup.7 mul.4 add
+    # => [end_asset_ptr, asset_ptr, ASSET, note_ptr, num_of_assets, note_idx]
+
+    # reorganize and pad the stack, prepare for the loop
+    movdn.5 movdn.5 padw dup.9
+    # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+    # compute the loop latch
+    dup dup.10 neq
+    # => [latch, asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
+    #     note_idx]
+
+    while.true
+        # load the asset and compare
+        mem_loadw_be exec.word::test_eq
+        assertz.err=ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS
+        # => [ASSET', ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+        # drop ASSET' and increment the asset pointer
+        dropw movup.5 add.4 dup movdn.6 padw movup.4
+        # => [asset_ptr + 4, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr + 4, note_ptr,
+        #     num_of_assets, note_idx]
+
+        # check if we reached the end of the loop
+        dup dup.10 neq
+    end
+    # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+    # prepare stack for storing the ASSET
+    movdn.4 dropw
+    # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+
+    # end of the loop reached, no error so we can store the non-fungible asset
+    mem_storew_be dropw drop drop
+    # => [note_ptr, num_of_assets, note_idx]
+
+    # increase the number of assets in the note
+    swap add.1 dup.1 exec.memory::set_output_note_num_assets
+    # => [note_ptr, note_idx]
+end

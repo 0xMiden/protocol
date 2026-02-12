@@ -3,10 +3,8 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
-use miden_lib::testing::account_component::MockAccountComponent;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
+use miden_protocol::account::delta::AccountUpdateDetails;
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountDelta,
@@ -16,11 +14,12 @@ use miden_objects::account::{
     AccountType,
     StorageMap,
     StorageSlot,
+    StorageSlotDelta,
     StorageSlotName,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
-use miden_objects::note::{Note, NoteExecutionHint, NoteTag, NoteType};
-use miden_objects::testing::account_id::{
+use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+use miden_protocol::note::{Note, NoteTag, NoteType};
+use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
@@ -28,17 +27,19 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_SENDER,
     AccountIdBuilder,
 };
-use miden_objects::testing::asset::NonFungibleAssetBuilder;
-use miden_objects::testing::constants::{
+use miden_protocol::testing::asset::NonFungibleAssetBuilder;
+use miden_protocol::testing::constants::{
     CONSUMED_ASSET_1_AMOUNT,
     CONSUMED_ASSET_3_AMOUNT,
     FUNGIBLE_ASSET_AMOUNT,
     NON_FUNGIBLE_ASSET_DATA,
     NON_FUNGIBLE_ASSET_DATA_2,
 };
-use miden_objects::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
-use miden_objects::transaction::TransactionScript;
-use miden_objects::{EMPTY_WORD, Felt, FieldElement, LexicographicWord, Word, ZERO};
+use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
+use miden_protocol::transaction::TransactionScript;
+use miden_protocol::{EMPTY_WORD, Felt, FieldElement, LexicographicWord, Word, ZERO};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -196,7 +197,6 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
         .account_delta()
         .storage()
         .values()
-        .iter()
         .map(|(slot_name, value)| (slot_name.clone(), *value))
         .collect::<BTreeMap<_, _>>();
 
@@ -347,20 +347,22 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
         .execute()
         .await
         .context("failed to execute transaction")?;
-    let maps_delta = executed_tx.account_delta().storage().maps();
+    let maps_delta = executed_tx.account_delta().storage().maps().collect::<BTreeMap<_, _>>();
 
     // Note that there should be no delta for map2 since it was normalized to an empty map which
     // should be removed.
     assert_eq!(maps_delta.len(), 2);
-    assert!(maps_delta.get(&slot_2_name).is_none(), "map2 should not have a delta");
+    assert!(!maps_delta.contains_key(&slot_2_name), "map2 should not have a delta");
 
     let mut map0_delta = maps_delta
         .get(&slot_0_name)
+        .map(|map_delta| (*map_delta).clone())
         .expect("delta for map 0 should exist")
-        .clone()
         .into_map();
+
     let mut map1_delta = maps_delta
         .get(&slot_1_name)
+        .map(|map_delta| (*map_delta).clone())
         .expect("delta for map 1 should exist")
         .clone()
         .into_map();
@@ -597,26 +599,12 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     let removed_assets = [removed_asset_1, removed_asset_2, removed_asset_3];
 
     let tag1 =
-        NoteTag::from_account_id(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?);
-    let tag2 = NoteTag::for_local_use_case(0, 0)?;
-    let tag3 = NoteTag::for_local_use_case(0, 0)?;
+        NoteTag::with_account_target(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?);
+    let tag2 = NoteTag::default();
+    let tag3 = NoteTag::default();
     let tags = [tag1, tag2, tag3];
 
-    let aux_array = [Felt::new(27), Felt::new(28), Felt::new(29)];
-
     let note_types = [NoteType::Private; 3];
-
-    tag1.validate(NoteType::Private)
-        .expect("note tag 1 should support private notes");
-    tag2.validate(NoteType::Private)
-        .expect("note tag 2 should support private notes");
-    tag3.validate(NoteType::Private)
-        .expect("note tag 3 should support private notes");
-
-    let execution_hint_1 = Felt::from(NoteExecutionHint::always());
-    let execution_hint_2 = Felt::from(NoteExecutionHint::none());
-    let execution_hint_3 = Felt::from(NoteExecutionHint::on_block_slot(1, 1, 1));
-    let hints = [execution_hint_1, execution_hint_2, execution_hint_3];
 
     let mut send_asset_script = String::new();
     for i in 0..3 {
@@ -625,31 +613,23 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             ### note {i}
             # prepare the stack for a new note creation
             push.0.1.2.3           # recipient
-            push.{EXECUTION_HINT}  # note_execution_hint
             push.{NOTETYPE}        # note_type
-            push.{aux}             # aux
             push.{tag}             # tag
-            # => [tag, aux, note_type, execution_hint, RECIPIENT]
-
-            # pad the stack before calling the `create_note`
-            padw padw swapdw
-            # => [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
+            # => [tag, note_type, RECIPIENT]
 
             # create the note
-            call.output_note::create
+            exec.output_note::create
             # => [note_idx, pad(15)]
 
             # move an asset to the created note to partially deplete fungible asset balance
             swapw dropw push.{REMOVED_ASSET}
-            call.::miden::contracts::wallets::basic::move_asset_to_note
+            call.::miden::standards::wallets::basic::move_asset_to_note
             # => [ASSET, note_idx, pad(11)]
 
             # clear the stack
             dropw dropw dropw dropw
         ",
-            EXECUTION_HINT = hints[i],
             NOTETYPE = note_types[i] as u8,
-            aux = aux_array[i],
             tag = tags[i],
             REMOVED_ASSET = Word::from(removed_assets[i])
         ));
@@ -657,8 +637,8 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
     let tx_script_src = format!(
         r#"
-        use.mock::account
-        use.miden::output_note
+        use mock::account
+        use miden::protocol::output_note
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -748,22 +728,27 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     // storage delta
     // --------------------------------------------------------------------------------------------
     // We expect one updated item and one updated map
-    assert_eq!(executed_transaction.account_delta().storage().values().len(), 1);
+    assert_eq!(executed_transaction.account_delta().storage().values().count(), 1);
     assert_eq!(
-        executed_transaction.account_delta().storage().values().get(&MOCK_VALUE_SLOT0),
-        Some(&updated_slot_value)
+        executed_transaction
+            .account_delta()
+            .storage()
+            .get(&MOCK_VALUE_SLOT0)
+            .cloned()
+            .map(StorageSlotDelta::unwrap_value),
+        Some(updated_slot_value)
     );
 
-    assert_eq!(executed_transaction.account_delta().storage().maps().len(), 1);
+    assert_eq!(executed_transaction.account_delta().storage().maps().count(), 1);
     let map_delta = executed_transaction
         .account_delta()
         .storage()
-        .maps()
         .get(&MOCK_MAP_SLOT)
-        .context("failed to get expected value from storage map")?
-        .entries();
+        .cloned()
+        .map(StorageSlotDelta::unwrap_map)
+        .unwrap();
     assert_eq!(
-        *map_delta.get(&LexicographicWord::new(updated_map_key)).unwrap(),
+        *map_delta.entries().get(&LexicographicWord::new(updated_map_key)).unwrap(),
         updated_map_value
     );
 
@@ -841,9 +826,9 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
 
     let code = format!(
         r#"
-      use.mock::account
+      use mock::account
 
-      const.MAP_SLOT=word("{map2_slot_name}")
+      const MAP_SLOT=word("{map2_slot_name}")
 
       begin
           # Update an existing key.
@@ -853,7 +838,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           call.account::set_map_item
 
-          exec.::std::sys::truncate_stack
+          exec.::miden::core::sys::truncate_stack
       end
       "#
     );
@@ -874,7 +859,13 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
     for (slot_name, expected_map) in
         [(map0_slot_name, map0), (map1_slot_name, map1), (map2_slot_name, map2)]
     {
-        let map_delta = tx.account_delta().storage().maps().get(&slot_name).unwrap();
+        let map_delta = tx
+            .account_delta()
+            .storage()
+            .get(&slot_name)
+            .cloned()
+            .map(StorageSlotDelta::unwrap_map)
+            .unwrap();
         assert_eq!(
             map_delta
                 .entries()
@@ -941,9 +932,25 @@ async fn delta_for_new_account_retains_empty_value_storage_slots() -> anyhow::Re
         panic!("expected delta");
     };
 
-    assert_eq!(delta.storage().values().len(), 2);
-    assert_eq!(delta.storage().values().get(&slot_name0).unwrap(), &Word::empty());
-    assert_eq!(delta.storage().values().get(&slot_name1).unwrap(), &slot_value2);
+    assert_eq!(delta.storage().values().count(), 2);
+    assert_eq!(
+        delta
+            .storage()
+            .get(&slot_name0)
+            .cloned()
+            .map(StorageSlotDelta::unwrap_value)
+            .unwrap(),
+        Word::empty()
+    );
+    assert_eq!(
+        delta
+            .storage()
+            .get(&slot_name1)
+            .cloned()
+            .map(StorageSlotDelta::unwrap_value)
+            .unwrap(),
+        slot_value2
+    );
 
     let recreated_account = Account::try_from(delta)?;
     // The recreated account should match the original account with the nonce incremented (and the
@@ -977,8 +984,16 @@ async fn delta_for_new_account_retains_empty_map_storage_slots() -> anyhow::Resu
         panic!("expected delta");
     };
 
-    assert_eq!(delta.storage().maps().len(), 1);
-    assert!(delta.storage().maps().get(&slot_name0).unwrap().is_empty());
+    assert_eq!(delta.storage().maps().count(), 1);
+    assert!(
+        delta
+            .storage()
+            .get(&slot_name0)
+            .cloned()
+            .map(StorageSlotDelta::unwrap_map)
+            .unwrap()
+            .is_empty()
+    );
 
     let recreated_account = Account::try_from(delta)?;
     // The recreated account should match the original account with the nonce incremented (and the
@@ -1067,12 +1082,12 @@ fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
 }
 
 const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
-      use.mock::account
-      use.miden::output_note
+      use mock::account
+      use miden::protocol::output_note
 
       #! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
       #! Outputs: []
-      proc.set_item
+      proc set_item
           repeat.10 push.0 movdn.6 end
           # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
 
@@ -1084,12 +1099,12 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
       #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, VALUE]
       #! Outputs: []
-      proc.set_map_item
+      proc set_map_item
           repeat.6 push.0 movdn.10 end
           # => [index, KEY, VALUE, pad(6)]
 
           call.account::set_map_item
-          # => [OLD_MAP_ROOT, OLD_MAP_VALUE, pad(8)]
+          # => [OLD_VALUE, pad(12)]
 
           dropw dropw dropw dropw
           # => []
@@ -1097,15 +1112,13 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
       #! Inputs:  [ASSET]
       #! Outputs: []
-      proc.create_note_with_asset
+      proc create_note_with_asset
           push.0.1.2.3           # recipient
-          push.1                 # note_execution_hint
           push.2                 # note_type private
-          push.0                 # aux
           push.0xC0000000        # tag
-          # => [tag, aux, note_type, execution_hint, RECIPIENT, ASSET]
+          # => [tag, note_type, RECIPIENT, ASSET]
 
-          exec.create_note
+          exec.output_note::create
           # => [note_idx, ASSET]
 
           movdn.4
@@ -1115,22 +1128,9 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => []
       end
 
-      #! Inputs:  [tag, aux, note_type, execution_hint, RECIPIENT]
-      #! Outputs: [note_idx]
-      proc.create_note
-          repeat.8 push.0 movdn.8 end
-          # => [tag, aux, note_type, execution_hint, RECIPIENT, pad(8)]
-
-          call.output_note::create
-          # => [note_idx, pad(15)]
-
-          repeat.15 swap drop end
-          # => [note_idx]
-      end
-
       #! Inputs:  [ASSET, note_idx]
       #! Outputs: []
-      proc.move_asset_to_note
+      proc move_asset_to_note
           repeat.11 push.0 movdn.5 end
           # => [ASSET, note_idx, pad(11)]
 
@@ -1142,7 +1142,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
       #! Inputs:  [ASSET]
       #! Outputs: [ASSET']
-      proc.add_asset
+      proc add_asset
           repeat.12 push.0 movdn.4 end
           # => [ASSET, pad(12)]
 
@@ -1155,7 +1155,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
       #! Inputs:  [ASSET]
       #! Outputs: [ASSET]
-      proc.remove_asset
+      proc remove_asset
           repeat.12 push.0 movdn.4 end
           # => [ASSET, pad(12)]
 

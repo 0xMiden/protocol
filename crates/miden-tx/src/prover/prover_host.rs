@@ -1,11 +1,6 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_objects::Word;
-use miden_objects::account::{AccountDelta, PartialAccount};
-use miden_objects::assembly::debuginfo::Location;
-use miden_objects::assembly::{SourceFile, SourceSpan};
-use miden_objects::transaction::{InputNote, InputNotes, OutputNote};
 use miden_processor::{
     AdviceMutation,
     BaseHost,
@@ -15,6 +10,11 @@ use miden_processor::{
     ProcessState,
     SyncHost,
 };
+use miden_protocol::Word;
+use miden_protocol::account::{AccountDelta, PartialAccount};
+use miden_protocol::assembly::debuginfo::Location;
+use miden_protocol::assembly::{SourceFile, SourceSpan};
+use miden_protocol::transaction::{InputNote, InputNotes, OutputNote};
 
 use crate::host::{RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent};
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
@@ -91,7 +91,7 @@ where
     }
 
     fn on_event(&mut self, process: &ProcessState) -> Result<Vec<AdviceMutation>, EventError> {
-        if let Some(advice_mutations) = self.base_host.handle_stdlib_events(process)? {
+        if let Some(advice_mutations) = self.base_host.handle_core_lib_events(process)? {
             return Ok(advice_mutations);
         }
 
@@ -122,14 +122,11 @@ where
             TransactionEvent::AccountStorageAfterSetMapItem {
                 slot_name,
                 key,
-                old_map_value,
-                new_map_value,
-            } => self.base_host.on_account_storage_after_set_map_item(
-                slot_name,
-                key,
-                old_map_value,
-                new_map_value,
-            ),
+                old_value,
+                new_value,
+            } => self
+                .base_host
+                .on_account_storage_after_set_map_item(slot_name, key, old_value, new_value),
 
             // Access witnesses should be in the advice provider at proving time.
             TransactionEvent::AccountVaultBeforeAssetAccess { .. } => Ok(Vec::new()),
@@ -143,7 +140,7 @@ where
                 self.base_host.on_account_push_procedure_index(code_commitment, procedure_root)
             },
 
-            TransactionEvent::NoteAfterCreated { note_idx, metadata, recipient_data } => {
+            TransactionEvent::NoteBeforeCreated { note_idx, metadata, recipient_data } => {
                 match recipient_data {
                     RecipientData::Digest(recipient_digest) => self
                         .base_host
@@ -160,6 +157,11 @@ where
             TransactionEvent::NoteBeforeAddAsset { note_idx, asset } => {
                 self.base_host.on_note_before_add_asset(note_idx, asset).map(|_| Vec::new())
             },
+
+            TransactionEvent::NoteBeforeSetAttachment { note_idx, attachment } => self
+                .base_host
+                .on_note_before_set_attachment(note_idx, attachment)
+                .map(|_| Vec::new()),
 
             TransactionEvent::AuthRequest { signature, .. } => {
                 if let Some(signature) = signature {

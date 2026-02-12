@@ -2,11 +2,7 @@ use core::slice;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_lib::account::auth::AuthRpoFalcon512Acl;
-use miden_lib::testing::account_component::MockAccountComponent;
-use miden_lib::testing::note::NoteBuilder;
-use miden_lib::utils::CodeBuilder;
-use miden_objects::account::{
+use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
@@ -14,10 +10,14 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_objects::note::Note;
-use miden_objects::testing::storage::MOCK_VALUE_SLOT0;
-use miden_objects::transaction::OutputNote;
-use miden_objects::{Felt, FieldElement, Word};
+use miden_protocol::note::Note;
+use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
+use miden_protocol::transaction::OutputNote;
+use miden_protocol::{Felt, FieldElement, Word};
+use miden_standards::account::auth::AuthFalcon512RpoAcl;
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use miden_tx::TransactionExecutorError;
 
@@ -25,7 +25,7 @@ use miden_tx::TransactionExecutorError;
 // ================================================================================================
 
 const TX_SCRIPT_NO_TRIGGER: &str = r#"
-    use.mock::account
+    use mock::account
     begin
         call.account::account_procedure_1
         drop
@@ -35,7 +35,7 @@ const TX_SCRIPT_NO_TRIGGER: &str = r#"
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Sets up the basic components needed for RPO Falcon ACL tests.
+/// Sets up the basic components needed for Falcon RPO ACL tests.
 /// Returns (account, mock_chain, note).
 fn setup_rpo_falcon_acl_test(
     allow_unauthorized_output_notes: bool,
@@ -45,10 +45,10 @@ fn setup_rpo_falcon_acl_test(
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
     let get_item_proc_root = component
-        .get_procedure_root_by_name("mock::account::get_item")
+        .get_procedure_root_by_path("mock::account::get_item")
         .expect("get_item procedure should exist");
     let set_item_proc_root = component
-        .get_procedure_root_by_name("mock::account::set_item")
+        .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
 
@@ -87,10 +87,10 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
 
     let get_item_proc_root = component
-        .get_procedure_root_by_name("mock::account::get_item")
+        .get_procedure_root_by_path("mock::account::get_item")
         .expect("get_item procedure should exist");
     let set_item_proc_root = component
-        .get_procedure_root_by_name("mock::account::set_item")
+        .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
 
@@ -103,7 +103,7 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
 
     let tx_script_with_trigger_1 = format!(
         r#"
-        use.mock::account
+        use mock::account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -118,7 +118,7 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
 
     let tx_script_with_trigger_2 = format!(
         r#"
-        use.mock::account
+        use mock::account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -203,7 +203,7 @@ async fn test_rpo_falcon_acl_with_allow_unauthorized_output_notes() -> anyhow::R
     // Verify the storage layout includes both authorization flags
     let config_slot = account
         .storage()
-        .get_item(AuthRpoFalcon512Acl::config_slot())
+        .get_item(AuthFalcon512RpoAcl::config_slot())
         .expect("config storage slot access failed");
     // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
     // allow_unauthorized_input_notes, 0] With 2 procedures,
@@ -243,7 +243,7 @@ async fn test_rpo_falcon_acl_with_disallow_unauthorized_input_notes() -> anyhow:
     // Verify the storage layout includes both flags
     let config_slot = account
         .storage()
-        .get_item(AuthRpoFalcon512Acl::config_slot())
+        .get_item(AuthFalcon512RpoAcl::config_slot())
         .expect("config storage slot access failed");
     // Config Slot should be [num_trigger_procs, allow_unauthorized_output_notes,
     // allow_unauthorized_input_notes, 0] With 2 procedures,

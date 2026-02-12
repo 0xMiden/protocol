@@ -1,0 +1,63 @@
+use miden::core::word
+
+use $kernel::memory
+use $kernel::prologue
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING="the transaction script is missing"
+
+# MAIN
+# =================================================================================================
+
+#! Transaction script program.
+#!
+#! This program will perform the following operations:
+#! 1. Run the prologue to prepare the transaction's root context.
+#! 2. Run the provided arbitrary script, which is executed as a transaction script.
+#!
+#! See `prologue::prepare_transaction` for additional details on the VM's initial state, including
+#! the advice provider.
+#!
+#! Inputs: [
+#!   BLOCK_COMMITMENT,
+#!   INITIAL_ACCOUNT_COMMITMENT,
+#!   INPUT_NOTES_COMMITMENT,
+#!   account_id_prefix, account_id_suffix, block_num,
+#! ]
+#! Outputs: [<values returned from the provided script>]
+#!
+#! Where:
+#! - BLOCK_COMMITMENT is the reference block for the transaction execution.
+#! - block_num is the reference block number.
+#! - account_id is the account that the transaction is being executed against.
+#! - INITIAL_ACCOUNT_COMMITMENT is the account state prior to the transaction, EMPTY_WORD for new accounts.
+#! - INPUT_NOTES_COMMITMENT, see `transaction::api::get_input_notes_commitment`.
+proc main
+    # Prologue
+    # ---------------------------------------------------------------------------------------------
+
+    exec.prologue::prepare_transaction
+    # => []
+
+    # Script Processing
+    # ---------------------------------------------------------------------------------------------
+
+    # get the memory address of the transaction script root and load it to the stack
+    exec.memory::get_tx_script_root_ptr
+    padw dup.4 mem_loadw_be
+    # => [TX_SCRIPT_ROOT, tx_script_root_ptr]
+
+    # return an error if the transaction script was not specified
+    exec.word::eqz assertz.err=ERR_TX_TRANSACTION_SCRIPT_IS_MISSING
+    # => [tx_script_root_ptr]
+
+    # execute the transaction script
+    dyncall
+    # => [OUTPUT_3, OUTPUT_2, OUTPUT_1, OUTPUT_0]
+end
+
+begin
+    exec.main
+end

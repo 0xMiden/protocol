@@ -12,15 +12,15 @@ version                = "0.1.0"
 
 [dependencies]
 # Workspace dependencies
-miden-lib     = { workspace = true }
-miden-objects = { features = ["testing"], workspace = true }
-miden-testing = { workspace = true }
-miden-tx      = { workspace = true }
+miden-protocol  = { features = ["testing"], workspace = true }
+miden-standards = { workspace = true }
+miden-testing   = { workspace = true }
+miden-tx        = { workspace = true }
 
 # External dependencies
 anyhow = { workspace = true }
-serde  = { features = ["derive"], version = "1.0" }
-tokio  = { features = ["macros", "rt"], version = "1.0" }
+serde  = { features = ["derive"], workspace = true }
+tokio  = { features = ["macros", "rt"], workspace = true }
 
 [dev-dependencies]
 criterion  = { features = ["async_tokio", "html_reports"], version = "0.6" }

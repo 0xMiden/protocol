@@ -1,4 +1,4 @@
-use miden_objects::account::AccountCode;
+use miden_protocol::account::AccountCode;
 
 use super::{BTreeMap, Word};
 use crate::errors::TransactionKernelError;

@@ -1,11 +1,11 @@
-use miden_objects::account::{
+use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountId,
     AccountVaultDelta,
     PartialAccount,
 };
-use miden_objects::{Felt, FieldElement, ZERO};
+use miden_protocol::{Felt, FieldElement, ZERO};
 
 use crate::host::storage_delta_tracker::StorageDeltaTracker;
 

@@ -1,0 +1,19 @@
+# This module defines the storage schema functionality for accounts. It exposes the storage
+# slot at which an account stores a commitment to its storage schema, and provides a helper
+# procedure to load that commitment from the active account's storage.
+
+use miden::protocol::active_account
+
+# CONSTANTS
+# =================================================================================================
+
+# The slot in this component's storage layout where the account storage schema commitment is stored
+const SCHEMA_COMMITMENT_SLOT = word("miden::standards::metadata::storage_schema")
+
+pub proc get_schema_commitment
+    dropw
+    # => [pad(16)]
+
+    push.SCHEMA_COMMITMENT_SLOT[0..2] exec.active_account::get_item
+    # => [SCHEMA_COMMITMENT, pad(16)]
+end
