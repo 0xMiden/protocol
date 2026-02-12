@@ -43,8 +43,8 @@ end
 #! Invocation: exec
 pub proc create_non_fungible_asset
     # get the id of the faucet the transaction is being executed against
-    exec.active_account::get_id swap drop
-    # => [faucet_id_prefix, DATA_HASH]
+    exec.active_account::get_id
+    # => [faucet_id_prefix, faucet_id_suffix, DATA_HASH]
 
     # build the non-fungible asset
     exec.asset::create_non_fungible_asset
