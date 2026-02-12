@@ -55,8 +55,7 @@ end
 #! - the asset key's account ID is not valid.
 #! - the asset key's faucet ID is not a non-fungible one.
 pub proc validate_key
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
-
+    exec.asset::get_vault_key_faucet_id
     exec.account_id::validate
     # => [ASSET_KEY]
 

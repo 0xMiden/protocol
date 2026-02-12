@@ -43,7 +43,7 @@ end
 #! Panics if:
 #! - the asset key is not a valid fungible or non-fungible asset key (see
 #!   fungible_asset::validate_key and non_fungible_asset::validate_key).
-pub proc validate_asset_key
+pub proc validate_key
     # check if the asset key is fungible
     exec.is_fungible_asset
     # => [is_fungible_asset, ASSET_KEY]
@@ -84,7 +84,7 @@ end
 #!
 #! Panics if:
 #! - the asset key or value are not well formed.
-pub proc validate_asset
+pub proc validate
     # check if the asset is fungible
     exec.is_fungible_asset
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]

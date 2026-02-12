@@ -613,7 +613,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_asset
-    exec.asset::validate_asset_key
+    exec.asset::validate_key
     # => [ASSET_KEY, pad(12)]
 
     exec.account::get_asset
@@ -632,7 +632,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
-    exec.asset::validate_asset_key
+    exec.asset::validate_key
     # => [ASSET_KEY, pad(12)]
 
     exec.account::get_initial_asset

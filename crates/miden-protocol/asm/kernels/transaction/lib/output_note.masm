@@ -206,7 +206,7 @@ pub proc add_asset
     # => [ASSET_KEY, ASSET_VALUE, note_ptr, note_ptr]
 
     # validate the asset
-    exec.asset::validate_asset
+    exec.asset::validate
     # => [ASSET_KEY, ASSET_VALUE, note_ptr, note_ptr]
 
     # emit event to signal that a new asset is going to be added to the note.
