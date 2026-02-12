@@ -1,6 +1,6 @@
 use miden::core::math::u64
 use miden::core::word
-use miden::protocol::asset
+use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================
@@ -251,7 +251,7 @@ pub proc verify_u256_to_native_amount_conversion
     #   Constraint: y <= MAX_FUNGIBLE_TOKEN_AMOUNT
     # =============================================================================================
     dup.5
-    exec.asset::get_fungible_asset_max_amount
+    push.FUNGIBLE_ASSET_MAX_AMOUNT
     lte
     # => [is_lte, x0, x1, x2, x3, scale_exp, y]
 
