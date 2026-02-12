@@ -28,6 +28,7 @@ const DESTINATION_NETWORK_OFFSET=7
 const DESTINATION_ADDRESS_OFFSET=8
 const AMOUNT_OFFSET=13
 const METADATA_HASH_OFFSET=21
+const PADDING_OFFSET=29
 
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
@@ -99,6 +100,20 @@ pub proc bridge_out
     movdn.8
     # => [METADATA_HASH[8], metadata_hash_ptr]
     exec.utils::mem_store_double_word_unaligned
+
+    # Explicitly zero the 3 padding felts after METADATA_HASH for
+    # crypto_utils::pack_leaf_data
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.1 add
+    mem_store
+
+    push.0
+    push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add
+    mem_store
 
     # TODO get the origin token address from the ASSET and map via faucet registry
     push.0.0.0.0.0
