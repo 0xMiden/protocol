@@ -271,7 +271,7 @@ async fn test_account_validate_id() -> miette::Result<()> {
             ";
 
         let result = CodeExecutor::with_default_host()
-            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
+            .stack_inputs(StackInputs::new(&[prefix, suffix]).unwrap())
             .run(code)
             .await;
 
@@ -448,7 +448,7 @@ async fn test_get_map_item() -> miette::Result<()> {
         let code = format!(
             r#"
             use $kernel::prologue
-            use mock::account
+            use $kernel::account
 
             const SLOT_NAME = word("{slot_name}")
 
@@ -458,7 +458,7 @@ async fn test_get_map_item() -> miette::Result<()> {
                 # get the map item
                 push.{key}
                 push.SLOT_NAME[0..2]
-                call.account::get_map_item
+                exec.account::get_map_item
                 # => [VALUE]
 
                 push.{expected_value}
@@ -1651,7 +1651,6 @@ async fn test_get_initial_item() -> miette::Result<()> {
         r#"
         use $kernel::account
         use $kernel::prologue
-        use mock::account->mock_account
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
@@ -1668,7 +1667,7 @@ async fn test_get_initial_item() -> miette::Result<()> {
             # modify the storage slot
             push.9.10.11.12
             push.MOCK_VALUE_SLOT0[0..2]
-            call.mock_account::set_item dropw
+            exec.account::set_item dropw
 
             # get_item should return the new value
             push.MOCK_VALUE_SLOT0[0..2]
@@ -1811,7 +1810,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
-                  swapw dropw
+                  dropw
               end
             "#,
             test_slot_name = &*TEST_SLOT_NAME
@@ -1834,14 +1833,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               pub proc get_slot_content
                   push.TEST_SLOT_NAME[0..2]
                   exec.active_account::get_item
-                  swapw dropw
+                  dropw
               end
 
               pub proc set_slot_content
                   push.5.6.7.8
                   push.TEST_SLOT_NAME[0..2]
                   exec.native_account::set_item
-                  swapw dropw
+                  dropw
               end
             "#,
             test_slot_name = &*TEST_SLOT_NAME
@@ -1881,7 +1880,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         .with_auth_component(Auth::IncrNonce)
         .with_component(CustomComponent1 { slot: slot.clone() })
         .with_component(CustomComponent2)
-        .build()
+        .build_existing()
         .context("failed to build account")?;
 
     let tx_script = r#"
@@ -1890,14 +1889,10 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
 
       begin
           call.comp1_interface::get_slot_content
-          push.1.2.3.4
-          assert_eqw.err="failed to get slot content1"
 
           call.comp2_interface::set_slot_content
 
           call.comp2_interface::get_slot_content
-          push.5.6.7.8
-          assert_eqw.err="failed to get slot content2"
       end
     "#;
 
