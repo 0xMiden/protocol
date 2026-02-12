@@ -1,14 +1,18 @@
 extern crate alloc;
 
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_agglayer::agglayer_library;
+use miden_agglayer::{agglayer_library, utils};
+use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
+use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_protocol::Felt;
 use miden_protocol::transaction::TransactionKernel;
+use primitive_types::U256;
 
 /// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
 pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
@@ -47,6 +51,40 @@ pub async fn execute_program_with_default_host(
 
     let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
     processor.execute(&program, &mut host).await
+}
+
+/// Execute a MASM script with the default host
+pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    let agglayer_lib = agglayer_library();
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib)
+        .unwrap()
+        .assemble_program(script_code)
+        .unwrap();
+
+    execute_program_with_default_host(program, None).await
+}
+
+/// Helper to assert execution fails with a specific error message
+pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str) {
+    let result = execute_masm_script(script_code).await;
+    assert!(result.is_err(), "Expected execution to fail but it succeeded");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains(expected_error),
+        "Expected error containing '{}', got: {}",
+        expected_error,
+        error_msg
+    );
+}
+
+/// Convert the top 8 u32 values from the execution stack to a U256
+pub fn stack_to_u256(exec_output: &ExecutionOutput) -> U256 {
+    let felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
+    utils::felts_to_u256(felts)
 }
 
 // TESTING HELPERS
