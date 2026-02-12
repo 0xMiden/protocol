@@ -54,11 +54,19 @@ impl TransactionOutputs {
     /// The index of the word at which the account update commitment is stored on the output stack.
     pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 1;
 
-    /// The index of the word at which the fee asset is stored on the output stack.
-    pub const FEE_ASSET_WORD_IDX: usize = 2;
+    /// The index of the element at which the ID prefix of the faucet that issues the native asset
+    /// is stored on the output stack.
+    pub const NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX: usize = 8;
+
+    /// The index of the element at which the ID suffix of the faucet that issues the native asset
+    /// is stored on the output stack.
+    pub const NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX: usize = 9;
+
+    /// The index of the element at which the fee amount is stored on the output stack.
+    pub const FEE_AMOUNT_ELEMENT_IDX: usize = 10;
 
     /// The index of the item at which the expiration block height is stored on the output stack.
-    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 12;
+    pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 11;
 }
 
 impl Serializable for TransactionOutputs {
