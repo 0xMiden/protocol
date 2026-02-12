@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaTypeId};
 use super::super::{StorageValueName, WordValue};
 use super::{FeltSchema, WordSchema};
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 use crate::{Felt, FieldElement, Word};
 
 // HELPER FUNCTIONS
@@ -14,7 +14,7 @@ pub(crate) fn parse_storage_value_with_schema(
     schema: &WordSchema,
     raw_value: &WordValue,
     slot_prefix: &StorageValueName,
-) -> Result<Word, AccountComponentTemplateError> {
+) -> Result<Word, ComponentMetadataError> {
     let word = match (schema, raw_value) {
         (_, WordValue::FullyTyped(word)) => *word,
         (WordSchema::Simple { r#type, .. }, raw_value) => {
@@ -26,7 +26,7 @@ pub(crate) fn parse_storage_value_with_schema(
         (WordSchema::Composite { .. }, WordValue::Atomic(value)) => SCHEMA_TYPE_REGISTRY
             .try_parse_word(&SchemaTypeId::native_word(), value)
             .map_err(|err| {
-                AccountComponentTemplateError::InvalidInitStorageValue(
+                ComponentMetadataError::InvalidInitStorageValue(
                     slot_prefix.clone(),
                     format!("failed to parse value as `word`: {err}"),
                 )
@@ -41,11 +41,11 @@ fn parse_simple_word_value(
     schema_type: &SchemaTypeId,
     raw_value: &WordValue,
     slot_prefix: &StorageValueName,
-) -> Result<Word, AccountComponentTemplateError> {
+) -> Result<Word, ComponentMetadataError> {
     match raw_value {
         WordValue::Atomic(value) => {
             SCHEMA_TYPE_REGISTRY.try_parse_word(schema_type, value).map_err(|err| {
-                AccountComponentTemplateError::InvalidInitStorageValue(
+                ComponentMetadataError::InvalidInitStorageValue(
                     slot_prefix.clone(),
                     format!("failed to parse value as `{}`: {err}", schema_type),
                 )
@@ -59,7 +59,7 @@ fn parse_simple_word_value(
                 })
                 .collect::<Result<_, _>>()
                 .map_err(|err| {
-                    AccountComponentTemplateError::InvalidInitStorageValue(
+                    ComponentMetadataError::InvalidInitStorageValue(
                         slot_prefix.clone(),
                         format!("failed to parse value element as `felt`: {err}"),
                     )
@@ -75,7 +75,7 @@ fn parse_composite_elements(
     schema: &[FeltSchema; 4],
     elements: &[String; 4],
     slot_prefix: &StorageValueName,
-) -> Result<Word, AccountComponentTemplateError> {
+) -> Result<Word, ComponentMetadataError> {
     let mut felts = [Felt::ZERO; 4];
     for (index, felt_schema) in schema.iter().enumerate() {
         let felt_type = felt_schema.felt_type();
@@ -83,7 +83,7 @@ fn parse_composite_elements(
             SCHEMA_TYPE_REGISTRY
                 .try_parse_felt(&felt_type, &elements[index])
                 .map_err(|err| {
-                    AccountComponentTemplateError::InvalidInitStorageValue(
+                    ComponentMetadataError::InvalidInitStorageValue(
                         slot_prefix.clone(),
                         format!("failed to parse value[{index}] as `{felt_type}`: {err}"),
                     )

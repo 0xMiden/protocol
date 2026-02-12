@@ -32,9 +32,9 @@ fn map_slot_schema_default_values_returns_map() {
 #[test]
 fn value_slot_schema_exposes_felt_schema_types() {
     let felt_values = [
-        FeltSchema::new_typed(SchemaTypeId::u8(), "a"),
-        FeltSchema::new_typed(SchemaTypeId::u16(), "b"),
-        FeltSchema::new_typed(SchemaTypeId::u32(), "c"),
+        FeltSchema::u8("a"),
+        FeltSchema::u16("b"),
+        FeltSchema::u32("c"),
         FeltSchema::new_typed(SchemaTypeId::new("felt").unwrap(), "d"),
     ];
 
@@ -54,10 +54,10 @@ fn map_slot_schema_key_and_value_types() {
     let key_schema = WordSchema::new_simple(SchemaTypeId::new("sampling::Key").unwrap());
 
     let value_schema = WordSchema::new_value([
-        FeltSchema::new_typed(SchemaTypeId::native_felt(), "a"),
-        FeltSchema::new_typed(SchemaTypeId::native_felt(), "b"),
-        FeltSchema::new_typed(SchemaTypeId::native_felt(), "c"),
-        FeltSchema::new_typed(SchemaTypeId::native_felt(), "d"),
+        FeltSchema::felt("a"),
+        FeltSchema::felt("b"),
+        FeltSchema::felt("c"),
+        FeltSchema::felt("d"),
     ]);
 
     let slot = MapSlotSchema::new(None, None, key_schema, value_schema);
@@ -103,10 +103,10 @@ fn value_slot_schema_accepts_felt_typed_word_init_value() {
 #[test]
 fn value_slot_schema_accepts_typed_felt_init_value_in_composed_word() {
     let word = WordSchema::new_value([
-        FeltSchema::new_typed(SchemaTypeId::u8(), "a"),
-        FeltSchema::new_typed_with_default(SchemaTypeId::native_felt(), "b", Felt::new(2)),
-        FeltSchema::new_typed_with_default(SchemaTypeId::native_felt(), "c", Felt::new(3)),
-        FeltSchema::new_typed_with_default(SchemaTypeId::native_felt(), "d", Felt::new(4)),
+        FeltSchema::u8("a"),
+        FeltSchema::felt("b").with_default(Felt::new(2)),
+        FeltSchema::felt("c").with_default(Felt::new(3)),
+        FeltSchema::felt("d").with_default(Felt::new(4)),
     ]);
     let slot = ValueSlotSchema::new(None, word);
     let slot_name: StorageSlotName = "demo::slot".parse().unwrap();
