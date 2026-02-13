@@ -546,6 +546,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let foreign_account_code_source = r#"
         use miden::protocol::active_account
+        use miden::core::sys
 
         #! Gets an item from the active account storage.
         #!
@@ -572,15 +573,24 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             exec.active_account::get_map_item
         end
 
-        #! Validates the correctness of the top 16 elements on the stack
+        #! Validates the correctness of the top 16 elements on the stack and returns another 16 
+        #! elements to check that outputs are correctly passed back.
         #!
         #! Inputs:  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-        #! Outputs: []
+        #! Outputs: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
         pub proc assert_inputs_correctness
-            push.[4, 3, 2, 1]     assert_eqw.err="0th stack word is incorrect"
-            push.[8, 7, 6, 5]     assert_eqw.err="1st stack word is incorrect"
-            push.[12, 11, 10, 9]  assert_eqw.err="2nd stack word is incorrect"
-            push.[16, 15, 14, 13] assert_eqw.err="3rd stack word is incorrect"
+            push.[4, 3, 2, 1]     assert_eqw.err="foreign procedure: 0th input word is incorrect"
+            push.[8, 7, 6, 5]     assert_eqw.err="foreign procedure: 1st input word is incorrect"
+            push.[12, 11, 10, 9]  assert_eqw.err="foreign procedure: 2nd input word is incorrect"
+            push.[16, 15, 14, 13] assert_eqw.err="foreign procedure: 3rd input word is incorrect"
+
+            push.[32, 31, 30, 29] push.[28, 27, 26, 25]
+            push.[24, 23, 22, 21] push.[20, 19, 18, 17]
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, pad(16)]
+
+            # truncate the stack
+            exec.sys::truncate_stack
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
         end
     "#;
 
@@ -611,7 +621,6 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let code = format!(
         r#"
         use miden::protocol::tx
-        use miden::core::sys
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
@@ -685,10 +694,18 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             #     [1, 2, ..., 16], pad(18)]
 
             exec.tx::execute_foreign_procedure
-            # => [pad(34)]
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, pad(18)]
+
+            # assert the correctness of the foreign procedure outputs
+            push.[20, 19, 18, 17] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[24, 23, 22, 21] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[28, 27, 26, 25] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[32, 31, 30, 29] assert_eqw.err="transaction script: 0th output word is incorrect"
+
+            # => [pad(18)]
 
             # truncate the stack
-            exec.sys::truncate_stack
+            drop drop
             # => [pad(16)]
         end
         "#,
