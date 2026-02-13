@@ -9,18 +9,6 @@ use primitive_types::U256;
 // UTILITY FUNCTIONS
 // ================================================================================================
 
-/// Converts a bytes32 value (32 bytes) into an array of 8 Felt values.
-///
-/// Note: These utility functions will eventually be replaced with similar functions from miden-vm.
-pub fn bytes32_to_felts(bytes32: &[u8; 32]) -> [Felt; 8] {
-    let mut result = [Felt::ZERO; 8];
-    for (i, chunk) in bytes32.chunks(4).enumerate() {
-        let value = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        result[i] = Felt::from(value);
-    }
-    result
-}
-
 /// Convert 8 Felt values (u32 limbs in little-endian order) to U256 bytes in little-endian format.
 pub fn felts_to_u256_bytes(limbs: [Felt; 8]) -> [u8; 32] {
     let mut bytes = [0u8; 32];
