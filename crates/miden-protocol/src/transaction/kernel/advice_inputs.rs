@@ -152,7 +152,7 @@ impl TransactionAdviceInputs {
     ///     TX_KERNEL_COMMITMENT
     ///     VALIDATOR_KEY_COMMITMENT,
     ///     [block_num, version, timestamp, 0],
-    ///     [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+    ///     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
     ///     kernel_version
@@ -183,10 +183,10 @@ impl TransactionAdviceInputs {
             ZERO,
         ]);
         self.extend_stack([
+            ZERO,
+            header.fee_parameters().verification_base_fee().into(),
             header.fee_parameters().native_asset_id().suffix(),
             header.fee_parameters().native_asset_id().prefix().as_felt(),
-            header.fee_parameters().verification_base_fee().into(),
-            ZERO,
         ]);
         self.extend_stack([ZERO, ZERO, ZERO, ZERO]);
         self.extend_stack(header.note_root());

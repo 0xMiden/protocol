@@ -171,7 +171,7 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0],
+#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix],
 #!     [0, 0, 0, 0],
 #!     NOTE_ROOT,
 #!   ]
@@ -1103,6 +1103,8 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
+#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+#!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
 #!     kernel_version
 #!     [account_nonce, 0, account_id_suffix, account_id_prefix]

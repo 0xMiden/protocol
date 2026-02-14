@@ -148,12 +148,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
-const VERIFICATION_BASE_FEE_PTR=FEE_PARAMETERS_PTR+2
+const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
+
+# The memory address at which the native asset ID is stored.
+const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -776,7 +780,8 @@ end
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 pub proc get_native_asset_id
-    padw mem_loadw_be.FEE_PARAMETERS_PTR drop drop
+    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
+    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
     # => [native_asset_id_prefix, native_asset_id_suffix]
 end
 
