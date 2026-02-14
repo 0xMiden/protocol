@@ -203,12 +203,12 @@ impl Account {
     /// Returns the commitment of this account as used for the initial account state commitment in
     /// transaction proofs.
     ///
-    /// For existing accounts, this is exactly the same as [Account::commitment()], however, for new
-    /// accounts this value is set to [crate::EMPTY_WORD]. This is because when a transaction is
-    /// executed against a new account, public input for the initial account state is set to
-    /// [crate::EMPTY_WORD] to distinguish new accounts from existing accounts. The actual
-    /// commitment of the initial account state (and the initial state itself), are provided to
-    /// the VM via the advice provider.
+    /// For existing accounts, this is exactly the same as [Account::to_commitment], however, for
+    /// new accounts this value is set to [crate::EMPTY_WORD]. This is because when a
+    /// transaction is executed against a new account, public input for the initial account
+    /// state is set to [crate::EMPTY_WORD] to distinguish new accounts from existing accounts.
+    /// The actual commitment of the initial account state (and the initial state itself), are
+    /// provided to the VM via the advice provider.
     pub fn initial_commitment(&self) -> Word {
         if self.is_new() {
             Word::empty()

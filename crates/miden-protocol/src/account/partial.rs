@@ -125,8 +125,8 @@ impl PartialAccount {
     /// Returns the commitment of this account as used for the initial account state commitment in
     /// transaction proofs.
     ///
-    /// For existing accounts, this is exactly the same as [Account::commitment()], however, for new
-    /// accounts this value is set to [`Word::empty`]. This is because when a transaction is
+    /// For existing accounts, this is exactly the same as [Account::to_commitment], however, for
+    /// new accounts this value is set to [`Word::empty`]. This is because when a transaction is
     /// executed against a new account, public input for the initial account state is set to
     /// [`Word::empty`] to distinguish new accounts from existing accounts. The actual
     /// commitment of the initial account state (and the initial state itself), are provided to
