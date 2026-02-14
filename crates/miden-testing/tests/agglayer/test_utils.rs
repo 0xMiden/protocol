@@ -144,14 +144,6 @@ impl ProofValueVector {
             ),
         }
     }
-
-    /// Returns the expected global exit root hash from the test vector.
-    #[allow(dead_code)]
-    pub fn expected_global_exit_root(&self) -> Keccak256Output {
-        Keccak256Output::new(
-            hex_to_bytes(&self.global_exit_root).expect("valid global exit root hex"),
-        )
-    }
 }
 
 /// Deserialized claim asset test vector from Solidity-generated JSON.
