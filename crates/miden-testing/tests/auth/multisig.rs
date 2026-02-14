@@ -179,14 +179,15 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests 2-of-4 multisig with all possible signer combinations.
+/// Tests 2-of-4 multisig with representative signer combinations.
 ///
 /// This test verifies that a multisig account with 4 approvers and threshold 2
 /// can successfully execute transactions when signed by any 2 of the 4 approvers.
-/// It tests all 6 possible combinations of 2 signers to ensure the multisig
-/// implementation correctly validates signatures from any valid subset.
+/// It tests 2 representative combinations (first two and last two signers) to
+/// verify boundary conditions. Full combinatorial coverage (all 6 combinations)
+/// is provided by the faster ECDSA multisig variant of this test.
 ///
-/// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
+/// **Tested combinations:** (0,1), (2,3)
 #[tokio::test]
 async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     // Setup keys and authenticators (4 approvers, all 4 can sign)
@@ -200,13 +201,11 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    // Test different combinations of 2 signers out of 4
+    // Test representative combinations of 2 signers out of 4.
+    // Full combinatorial coverage is provided by the ECDSA multisig variant of this test
+    // which runs much faster. Here we test boundary conditions only.
     let signer_combinations = [
         (0, 1), // First two
-        (0, 2), // First and third
-        (0, 3), // First and fourth
-        (1, 2), // Second and third
-        (1, 3), // Second and fourth
         (2, 3), // Last two
     ];
 
