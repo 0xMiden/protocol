@@ -93,8 +93,6 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     let claim_note = create_claim_note(claim_inputs, sender_account.id(), builder.rng_mut())?;
 
-    let p2id_script = StandardNote::P2ID.script();
-
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
 
