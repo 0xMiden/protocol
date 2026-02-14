@@ -161,7 +161,7 @@ end
 #!   represented as 32 Keccak256Digest values (64 words).
 #! - leaf_idx is the index of the provided leaf in the SMT.
 #! - [ROOT_LO, ROOT_HI] is the calculated root.
-@locals(9) # current hash + is_odd flag
+@locals(8) # current hash
 proc calculate_root(
     leaf_value: DoubleWord,
     merkle_path_ptr: MemoryAddress,
@@ -188,17 +188,12 @@ proc calculate_root(
         dup.9 u32and.1
         # => [is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
 
-        # store the is_odd flag to the local memory, so we could use it while all 16 top elements
-        # are occupied by the nodes
-        loc_store.8
-        # => [PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr+8, leaf_idx]
-
         # load the hash respective to the current height from the local memory
         padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
-        # => [CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
+        # => [CURR_HASH_LO, CURR_HASH_HI, is_odd, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
-        # load the is_odd flag back to the stack
-        loc_load.8
+        # move the `is_odd` flag to the top of the stack
+        movup.8
         # => [is_odd, CURR_HASH_LO, CURR_HASH_HI, PATH_NODE_LO, PATH_NODE_HI, merkle_path_ptr, leaf_idx]
 
         # if is_odd flag equals 1 (`leaf_idx` is odd), change the order of the nodes on the stack
