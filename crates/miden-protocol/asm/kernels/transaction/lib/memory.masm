@@ -89,6 +89,8 @@ const BLOCK_COMMITMENT_PTR=400
 
 # The memory address at which the native account ID is stored.
 const NATIVE_ACCT_ID_PTR=404
+const NATIVE_ACCT_ID_SUFFIX_PTR=NATIVE_ACCT_ID_PTR + 2
+const NATIVE_ACCT_ID_PREFIX_PTR=NATIVE_ACCT_ID_PTR + 3
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408
@@ -186,13 +188,17 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
 const NATIVE_ACCOUNT_DATA_PTR=8192
+const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
+const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
+const ACCT_NONCE_OFFSET=0
 const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_NONCE_OFFSET=3
+const ACCT_ID_SUFFIX_OFFSET=2
+const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -489,10 +495,8 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    mem_storew_be.NATIVE_ACCT_ID_PTR
-    dropw
+    mem_store.NATIVE_ACCT_ID_PREFIX_PTR
+    mem_store.NATIVE_ACCT_ID_SUFFIX_PTR
     # => []
 end
 
@@ -504,9 +508,9 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
-    padw mem_loadw_be.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.NATIVE_ACCT_ID_SUFFIX_PTR
+    mem_load.NATIVE_ACCT_ID_PREFIX_PTR
+    # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the native account commitment at the beginning of the transaction.
@@ -1092,9 +1096,13 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub proc get_account_id
-    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    exec.get_active_account_data_ptr
+    # => [active_account_data_ptr]
+
+    dup add.ACCT_ID_SUFFIX_OFFSET mem_load
+    # => [account_id_suffix, active_account_data_ptr]
+
+    swap add.ACCT_ID_PREFIX_OFFSET mem_load
     # => [account_id_prefix, account_id_suffix]
 end
 
@@ -1107,16 +1115,15 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the native account
 #!   of the transaction.
 pub proc get_native_account_id
-    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.NATIVE_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.NATIVE_ACCOUNT_ID_PREFIX_PTR
     # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the account ID and nonce.
 #!
-#! Inputs:  [nonce, 0, account_id_prefix, account_id_suffix]
-#! Outputs: [nonce, 0, account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_prefix, account_id_suffix, 0, nonce]
+#! Outputs: [account_id_prefix, account_id_suffix, 0, nonce]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
@@ -1150,20 +1157,16 @@ pub proc get_native_account_nonce
     mem_load
 end
 
-#! Sets the nonce of the active account.
+#! Sets the nonce of the native account.
 #!
 #! Inputs:  [nonce]
 #! Outputs: []
 #!
 #! Where:
-#! - nonce is the nonce of the active account.
-pub proc set_account_nonce
-    exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET padw
-    # => [0, 0, 0, 0, account_id_and_nonce_ptr, new_nonce]
-    dup.4 mem_loadw_be
-    # => [old_nonce, 0, old_id_prefix, old_id_suffix, account_id_and_nonce_ptr, new_nonce]
-    drop movup.4 movup.4 mem_storew_be dropw
-    # => []
+#! - nonce is the new nonce of the native account.
+pub proc set_native_account_nonce
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_NONCE_OFFSET
+    mem_store
 end
 
 ### ACCOUNT VAULT #################################################

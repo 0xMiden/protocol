@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use super::{Account, AccountId, Felt, PartialAccount, ZERO, hash_account};
+use super::{Account, AccountId, Felt, PartialAccount, hash_account};
 use crate::errors::AccountError;
 use crate::transaction::memory::{
     ACCT_CODE_COMMITMENT_OFFSET,
@@ -132,7 +132,7 @@ impl AccountHeader {
     /// This is done by first converting the account header data into an array of Words as follows:
     /// ```text
     /// [
-    ///     [account_id_suffix, account_id_prefix, 0, account_nonce]
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix]
     ///     [VAULT_ROOT]
     ///     [STORAGE_COMMITMENT]
     ///     [CODE_COMMITMENT]
@@ -140,8 +140,13 @@ impl AccountHeader {
     /// ```
     /// And then concatenating the resulting elements into a single vector.
     pub fn as_elements(&self) -> Vec<Felt> {
+        let mut id_nonce = Word::empty();
+        id_nonce[ACCT_NONCE_IDX] = self.nonce;
+        id_nonce[ACCT_ID_SUFFIX_IDX] = self.id.suffix();
+        id_nonce[ACCT_ID_PREFIX_IDX] = self.id.prefix().as_felt();
+
         [
-            &[self.id.suffix(), self.id.prefix().as_felt(), ZERO, self.nonce],
+            id_nonce.as_elements(),
             self.vault_root.as_elements(),
             self.storage_commitment.as_elements(),
             self.code_commitment.as_elements(),

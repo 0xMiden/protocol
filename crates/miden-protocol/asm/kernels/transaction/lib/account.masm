@@ -6,6 +6,8 @@ use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
+use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
+use $kernel::memory::ACCT_ID_PREFIX_OFFSET
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::rpo256
@@ -218,9 +220,7 @@ pub use memory::get_account_id->get_id
 #! - nonce is the account nonce.
 pub use memory::get_account_nonce->get_nonce
 
-#! Increments the account nonce by one and returns the new nonce.
-#!
-#! Assumes that it is executed only when the active account is the native account.
+#! Increments the native account's nonce by one and returns the new nonce.
 #!
 #! Inputs:  []
 #! Outputs: [new_nonce]
@@ -238,7 +238,7 @@ pub proc incr_nonce
     # emit event to signal that account nonce is being incremented
     emit.ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT
 
-    exec.memory::get_account_nonce
+    exec.memory::get_native_account_nonce
     # => [current_nonce]
 
     # if the current nonce is the maximum felt value, then incrementing the nonce would overflow
@@ -249,7 +249,7 @@ pub proc incr_nonce
     add.1
     # => [new_nonce]
 
-    dup exec.memory::set_account_nonce
+    dup exec.memory::set_native_account_nonce
     # => [new_nonce]
 
     emit.ACCOUNT_AFTER_INCREMENT_NONCE_EVENT
@@ -848,8 +848,8 @@ pub proc validate_seed
     # => [EMPTY_WORD]
 
     # push the advice map key at which the seed is located
-    exec.memory::get_account_id push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix, EMPTY_WORD]
+    push.0.0 exec.memory::get_native_account_id
+    # => [[account_id_prefix, account_id_suffix, 0, 0], EMPTY_WORD]
 
     # populate first four elements of the rate with the account ID seed
     adv.push_mapval adv_loadw
@@ -1042,18 +1042,18 @@ pub proc load_foreign_account
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_prefix, account_id_suffix]
 
-    # construct the word with account ID to load the core account data from the advice map
-    push.0.0
-    # OS => [0, 0, account_id_prefix, account_id_suffix]
+    # construct the advice map key from the account ID to load the core account data
+    push.0 movdn.2 push.0 movdn.2
+    # OS => [account_id_prefix, account_id_suffix, 0, 0]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [0, 0, account_id_prefix, account_id_suffix]
-    # AS => [[account_id_suffix, account_id_prefix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+    # OS => [account_id_prefix, account_id_suffix, 0, 0]
+    # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the id and nonce of the foreign account to the memory
     adv_loadw
-    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
+    # OS => [account_id_prefix, account_id_suffix, 0, account_nonce]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     exec.memory::set_account_id_and_nonce
@@ -1738,14 +1738,13 @@ pub proc get_account_data_ptr
         exec.memory::get_account_data_length add
         # => [curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
-        # load the first data word at the current account pointer
-        padw dup.4 mem_loadw_be
-        # => [FIRST_DATA_WORD, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+        dup add.ACCT_ID_SUFFIX_OFFSET mem_load
+        dup.1 add.ACCT_ID_PREFIX_OFFSET mem_load
+        # => [account_id_prefix, account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
-        # check whether the last value in the word equals zero
-        # if so it means this memory block was not yet initialized
-        drop drop dup.1 eq.0
-        # => [is_empty_block, maybe_account_id_prefix, maybe_account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+        # check whether the ID is equal to zero, if so it means this memory block was not yet initialized
+        dup.1 dup.1 push.0 push.0 exec.account_id::is_equal
+        # => [is_empty_block, account_id_prefix, account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
         # check whether the current id matches the foreign id
         movdn.2 dup.5 dup.5 exec.account_id::is_equal

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use crate::asset::{Asset, AssetVault};
 use crate::errors::AccountError;
+use crate::transaction::memory::{ACCT_ID_PREFIX_IDX, ACCT_ID_SUFFIX_IDX, ACCT_NONCE_IDX};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -502,9 +503,9 @@ pub fn hash_account(
     code_commitment: Word,
 ) -> Word {
     let mut elements = [ZERO; 16];
-    elements[0] = id.suffix();
-    elements[1] = id.prefix().as_felt();
-    elements[3] = nonce;
+    elements[ACCT_NONCE_IDX] = nonce;
+    elements[ACCT_ID_SUFFIX_IDX] = id.suffix();
+    elements[ACCT_ID_PREFIX_IDX] = id.prefix().as_felt();
     elements[4..8].copy_from_slice(&*vault_root);
     elements[8..12].copy_from_slice(&*storage_commitment);
     elements[12..].copy_from_slice(&*code_commitment);

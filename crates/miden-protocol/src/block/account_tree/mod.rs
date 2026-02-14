@@ -24,8 +24,8 @@ pub use backend::AccountTreeBackend;
 // These module-level functions provide conversions between AccountIds and SMT keys.
 // They avoid the need for awkward syntax like account_id_to_smt_key().
 
-const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
+const KEY_PREFIX_IDX: usize = 3;
 
 /// Converts an [`AccountId`] to an SMT key for use in account trees.
 ///

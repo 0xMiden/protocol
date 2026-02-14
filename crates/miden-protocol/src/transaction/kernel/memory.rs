@@ -123,6 +123,8 @@ pub const BLOCK_COMMITMENT_PTR: MemoryAddress = 400;
 
 /// The memory address at which the native account ID is stored.
 pub const NATIVE_ACCT_ID_PTR: MemoryAddress = 404;
+pub const NATIVE_ACCT_ID_SUFFIX_PTR: MemoryAddress = NATIVE_ACCT_ID_PTR + 2;
+pub const NATIVE_ACCT_ID_PREFIX_PTR: MemoryAddress = NATIVE_ACCT_ID_PTR + 3;
 
 /// The memory address at which the initial account commitment is stored.
 pub const INIT_ACCT_COMMITMENT_PTR: MemoryAddress = 408;
@@ -244,12 +246,12 @@ pub const ACCT_ID_AND_NONCE_OFFSET: MemoryOffset = 0;
 pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
     NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_AND_NONCE_OFFSET;
 
-/// The index of the account ID within the account ID and nonce data.
-pub const ACCT_ID_SUFFIX_IDX: DataIndex = 0;
-pub const ACCT_ID_PREFIX_IDX: DataIndex = 1;
-
 /// The index of the account nonce within the account ID and nonce data.
-pub const ACCT_NONCE_IDX: DataIndex = 3;
+pub const ACCT_NONCE_IDX: DataIndex = 0;
+
+/// The index of the account ID within the account ID and nonce data.
+pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
+pub const ACCT_ID_PREFIX_IDX: DataIndex = 3;
 
 /// The offset at which the account vault root is stored relative to the start of the account
 /// data segment.

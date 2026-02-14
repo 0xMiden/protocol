@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
-use crate::block::account_tree::AccountWitness;
+use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::note::NoteAttachmentContent;
@@ -108,7 +108,8 @@ impl TransactionAdviceInputs {
     /// - the seed for native accounts is stored.
     /// - the account header for foreign accounts is stored.
     pub fn account_id_map_key(id: AccountId) -> Word {
-        Word::from([id.suffix(), id.prefix().as_felt(), ZERO, ZERO])
+        // The format is equivalent to the SMT key format, so we avoid defining it twice.
+        account_id_to_smt_key(id)
     }
 
     // MUTATORS
@@ -140,7 +141,7 @@ impl TransactionAdviceInputs {
 
     /// Extend the advice stack with the transaction inputs.
     ///
-    /// The following data is pushed to the advice stack:
+    /// The following data is pushed to the advice stack (words shown in memory-order):
     ///
     /// [
     ///     PARENT_BLOCK_COMMITMENT,
@@ -155,7 +156,7 @@ impl TransactionAdviceInputs {
     ///     [0, 0, 0, 0]
     ///     NOTE_ROOT,
     ///     kernel_version
-    ///     [account_id, 0, 0, account_nonce],
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
     ///     ACCOUNT_VAULT_ROOT,
     ///     ACCOUNT_STORAGE_COMMITMENT,
     ///     ACCOUNT_CODE_COMMITMENT,
@@ -193,10 +194,10 @@ impl TransactionAdviceInputs {
         // --- core account items (keep in sync with process_account_data) ----
         let account = tx_inputs.account();
         self.extend_stack([
+            account.nonce(),
+            ZERO,
             account.id().suffix(),
             account.id().prefix().as_felt(),
-            ZERO,
-            account.nonce(),
         ]);
         self.extend_stack(account.vault().root());
         self.extend_stack(account.storage().commitment());
