@@ -49,6 +49,11 @@ pub async fn execute_program_with_default_host(
     processor.execute(&program, &mut host).await
 }
 
+/*
+// TODO: Uncomment this when https://github.com/0xMiden/miden-base/issues/2397 is ready.
+// The mainnet exit root is hardcoded to pass the current test (i.e. we set the expected mainnet
+// root to whatever the current implementation computes), and changing any impl. details will break
+// the test, forcing us to artificially change the expected root every time.
 // TESTING HELPERS
 // ================================================================================================
 
@@ -125,3 +130,4 @@ pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
         metadata,
     )
 }
+*/
