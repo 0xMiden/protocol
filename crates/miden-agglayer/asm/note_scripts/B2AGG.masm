@@ -10,6 +10,7 @@ use miden::standards::wallets::basic->basic_wallet
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
 
 # ERRORS
@@ -79,7 +80,7 @@ begin
         # => [pad(16)]
 
         # Store note assets -> mem[0..8]
-        push.0 exec.active_note::get_assets
+        push.ASSET_PTR exec.active_note::get_assets
         # => [num_assets, ptr, pad(16)]
 
         # Must be exactly 1 asset
@@ -90,8 +91,8 @@ begin
         mem_loadw_be.12 swapw.2 mem_loadw_be.8 swapw
         # => [EMPTY_WORD, dest_network, dest_address(5), pad(6)]
 
-        # Load ASSET_VALUE onto the stack from 0 + ASSET_VALUE_MEMORY_OFFSET
-        mem_loadw_be.ASSET_VALUE_MEMORY_OFFSET
+        # Load ASSET_VALUE onto the stack from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+        push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
         # => [ASSET_VALUE, dest_network, dest_address(5), pad(6)]
 
         padw mem_loadw_be.0
