@@ -14,7 +14,6 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::StandardNote;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
