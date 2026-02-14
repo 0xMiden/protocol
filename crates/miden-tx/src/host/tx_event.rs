@@ -210,7 +210,7 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
                 // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
-                let asset_value: Asset =
+                let asset: Asset =
                     process.get_stack_word_be(5).try_into().map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "on_account_vault_after_remove_asset",
@@ -218,12 +218,12 @@ impl TransactionEvent {
                         }
                     })?;
 
-                Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset: asset_value })
+                Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset })
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
 
-                let asset_value: Asset =
+                let asset: Asset =
                     process.get_stack_word_be(5).try_into().map_err(|source| {
                         TransactionKernelError::MalformedAssetInEventHandler {
                             handler: "on_account_vault_after_add_asset",
@@ -231,7 +231,7 @@ impl TransactionEvent {
                         }
                     })?;
 
-                Some(TransactionEvent::AccountVaultAfterAddAsset { asset: asset_value })
+                Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
             },
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
