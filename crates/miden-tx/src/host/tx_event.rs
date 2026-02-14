@@ -607,15 +607,6 @@ fn on_account_vault_asset_accessed<'store, STORE>(
     // enable access to an asset against the current vault root, and so if this
     // condition is already satisfied, there is nothing to request.
     let has_path = process.has_merkle_path::<{ AssetVault::DEPTH }>(vault_root, leaf_index)?;
-    #[cfg(feature = "std")]
-    if std::env::var("MIDEN_DEBUG_VAULT_ROOT").is_ok() {
-        let root: [u64; 4] = vault_root.map(|felt| felt.as_canonical_u64());
-        std::eprintln!(
-            "debug: vault_root={root:?} leaf_index={} has_path={}",
-            leaf_index.as_canonical_u64(),
-            has_path
-        );
-    }
     if has_path {
         // If the witness already exists, the event does not need to be handled.
         Ok(None)

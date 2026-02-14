@@ -67,7 +67,7 @@ pub proc get_balance
     # => [ASSET_VAULT_ROOT, faucet_id_prefix, faucet_id_suffix]
 
     # prepare the key for fungible asset lookup (pad least significant elements with zeros)
-    swap push.0.0
+    swapw movdn.3 movdn.2
     # => [0, 0, faucet_id_suffix, faucet_id_prefix, ASSET_VAULT_ROOT]
 
     # lookup asset
@@ -113,7 +113,7 @@ pub proc peek_balance
     # => [ASSET_VAULT_ROOT, faucet_id_prefix, faucet_id_suffix]
 
     # prepare the vault key for fungible asset lookup (pad least significant elements with zeros)
-    swap push.0.0
+    swapw movdn.3 movdn.2
     # => [0, 0, faucet_id_suffix, faucet_id_prefix, ASSET_VAULT_ROOT]
     # => [ASSET_KEY, ASSET_VAULT_ROOT]
 

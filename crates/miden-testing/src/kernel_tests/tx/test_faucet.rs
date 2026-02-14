@@ -60,11 +60,11 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # mint asset
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{FUNGIBLE_ASSET_AMOUNT}
             call.mock_faucet::mint
 
             # assert the correct asset is returned
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{FUNGIBLE_ASSET_AMOUNT}
             assert_eqw.err="minted asset does not match expected asset"
 
             # assert the input vault has been updated
@@ -357,11 +357,11 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # burn asset
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{FUNGIBLE_ASSET_AMOUNT}
             call.mock_faucet::burn
 
             # assert the correct asset is returned
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{FUNGIBLE_ASSET_AMOUNT}
             assert_eqw.err="burnt asset does not match expected asset"
 
             # assert the input vault has been updated
@@ -433,7 +433,7 @@ async fn test_burn_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
 
         begin
             exec.prologue::prepare_transaction
-            push.{FUNGIBLE_ASSET_AMOUNT} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{FUNGIBLE_ASSET_AMOUNT}
             call.faucet::burn
         end
         ",
@@ -464,7 +464,7 @@ async fn test_burn_fungible_asset_insufficient_input_amount() -> anyhow::Result<
 
         begin
             exec.prologue::prepare_transaction
-            push.{saturating_amount} push.0 push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix} push.0 push.{saturating_amount}
             call.faucet::burn
         end
         ",

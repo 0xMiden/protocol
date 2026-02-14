@@ -28,7 +28,7 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_get_initial_item
     word!("0xff00384d8ac2104a5f574d14dca1361871467d46dc194c4cf4a233532aed2325"),
     // account_set_item
-    word!("0xf05a15cc0507c4b5b89e2de818062aee472d9c89167aadcc8a756491668c5b82"),
+    word!("0xdd160e6ac0053e729d485f69bd45ebd1ac1f3d5463cee5b4e377af88cf722978"),
     // account_get_map_item
     word!("0xe464452d50007452c08a60017447fe8df61268c06e62b30ac04b43e7fdae2c84"),
     // account_get_initial_map_item
@@ -44,9 +44,9 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_remove_asset
     word!("0x329cfa6b81e0d3adab1faa7f34c0af8baba2ac01160b4ee199fb0b9f8a291bb4"),
     // account_get_balance
-    word!("0xc4bbc38bf2f239397c9c4aec9ffb415068c5e047f6d3bb36c73cb04e6abe661a"),
+    word!("0xf125dc1919ccfec89aa24291bbb5ec5ae867f2c7ffecd0d4108d87be715f08b1"),
     // account_get_initial_balance
-    word!("0xf5987b8e8ab1b6c47cc0e6ef7b3ab3b346fc362dd208ff01060234debc718535"),
+    word!("0x20c418d3d6a748337cd0f776b0bf64d9e3463191e70fecea0af8c9c67aecbfc9"),
     // account_has_non_fungible_asset
     word!("0x3781397f32da1b58b79757828ccfc3f5e02d4a9e314dcdea85d2648eaca51a21"),
     // account_compute_delta_commitment
@@ -60,13 +60,13 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_has_procedure
     word!("0xfb2687afc69061527c6583c52597949e99a28e1444dde349ce8f6cb00be2062e"),
     // faucet_mint_asset
-    word!("0x95091967dbccbf7f5b9227e19cd8b7383ebf202b9c80f5fd5971f2caf76a9141"),
+    word!("0x72872254c8b5332ac42c7cd31e2a84238b983267264cf51e3a997e2c3cdd4073"),
     // faucet_burn_asset
-    word!("0x6732056cff7a067a4e884973cd3b90b9ab6667afd532389db081e0869824769e"),
+    word!("0x617e456e768ceb617888766a7df051711aa69b6d1c395bd024b2fba7ba42ad62"),
     // faucet_get_total_fungible_asset_issuance
-    word!("0x5eb9946b9a50b87d55bc5c2bff1327c5a589cd2aa4eff7c43b9317509420acd9"),
+    word!("0x7ad6d6123df1028cc10a6f4cd3a4c7f5cd6218ac125bccd86bd54a53f9e61774"),
     // faucet_is_non_fungible_asset_issued
-    word!("0x91440e8d5f96c7f65f5837d74930580cbcdc63f0f7f449e4ad49b6b0e735ad1d"),
+    word!("0xc8be2dc5e233f0823329f0106cd7efa5ef8c1ad1fff547d00532a1cb00d5059e"),
     // input_note_get_metadata
     word!("0x00054c4b097adae656b7d7a7721425d91a1923164bf16b1cab83c730807944e1"),
     // input_note_get_assets_info

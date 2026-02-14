@@ -704,7 +704,7 @@ pub async fn create_account_non_fungible_faucet_invalid_initial_reserved_slot() 
     let account = Account::new(id, vault, storage, code, ONE, None)?;
     let account = compute_valid_account_id(account);
 
-    let result = create_account_test(account).await;
+    let result = TransactionContextBuilder::new(account).build()?.execute().await;
 
     assert_transaction_executor_error!(
         result,
@@ -731,7 +731,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
-    let account_seed_key = [account.id().suffix(), account.id().prefix().as_felt(), ZERO, ZERO];
+    let account_seed_key = [ZERO, ZERO, account.id().suffix(), account.id().prefix().as_felt()];
     let adv_inputs =
         AdviceInputs::default().with_map([(Word::from(account_seed_key), vec![ZERO; WORD_SIZE])]);
 
