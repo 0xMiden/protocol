@@ -55,11 +55,12 @@ pub proc build_non_fungible_asset
     # assert the faucet is a non-fungible faucet
     dup exec.account_id::is_non_fungible_faucet
     assert.err=ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
-    # => [faucet_id_prefix, hash3, hash2, hash1, hash0]
+    # => [faucet_id_prefix, hash0, hash1, hash2, hash3]
 
-    # build the asset
-    swap drop
-    # => [faucet_id_prefix, hash2, hash1, hash0]
+    # build the asset (drop hash3, then move faucet_id_prefix to the end)
+    movup.4 drop
+    # => [faucet_id_prefix, hash0, hash1, hash2]
+    movdn.3
     # => [ASSET]
 end
 
