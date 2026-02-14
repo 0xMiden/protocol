@@ -10,12 +10,13 @@ use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    PartialStorage,
     StorageMapWitness,
     StorageSlotContent,
 };
 use miden_protocol::assembly::debuginfo::{SourceLanguage, Uri};
 use miden_protocol::assembly::{Assembler, SourceManager, SourceManagerSync};
-use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness};
+use miden_protocol::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
 use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::{Note, NoteScript};
@@ -273,10 +274,19 @@ impl DataStore for TransactionContext {
                     ))
                 })?;
 
-            Ok(AccountInputs::new(
-                PartialAccount::from(foreign_account),
-                account_witness.clone(),
-            ))
+            let partial_storage = PartialStorage::new_full(foreign_account.storage().clone());
+            let partial_vault = PartialVault::new_minimal(foreign_account.vault());
+            let partial_account = PartialAccount::new(
+                foreign_account.id(),
+                foreign_account.nonce(),
+                foreign_account.code().clone(),
+                partial_storage,
+                partial_vault,
+                foreign_account.seed(),
+            )
+            .expect("foreign account should have a valid seed/commitment");
+
+            Ok(AccountInputs::new(partial_account, account_witness.clone()))
         }
     }
 
@@ -330,6 +340,13 @@ impl DataStore for TransactionContext {
         map_key: Word,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
+            #[cfg(feature = "std")]
+            if std::env::var("MIDEN_DEBUG_STORAGE_MAP_WITNESS").is_ok() {
+                std::eprintln!(
+                    "debug: storage_map_witness_request account_id={account_id} map_root={map_root} map_key={map_key} hashed_key={}",
+                    miden_protocol::account::StorageMap::hash_key(map_key)
+                );
+            }
             if account_id == self.account().id() {
                 // Iterate the account storage to find the map with the requested root.
                 let storage_map = self
@@ -349,7 +366,17 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(storage_map.open(&map_key))
+                let witness = storage_map.open(&map_key);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_STORAGE_MAP_WITNESS").is_ok() {
+                    std::eprintln!(
+                        "debug: storage_map_witness_native map_root={} map_key={} value={}",
+                        storage_map.root(),
+                        map_key,
+                        storage_map.get(&map_key)
+                    );
+                }
+                Ok(witness)
             } else {
                 let (foreign_account, _witness) = self
                     .foreign_account_inputs
@@ -379,7 +406,17 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(map.open(&map_key))
+                let witness = map.open(&map_key);
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_STORAGE_MAP_WITNESS").is_ok() {
+                    std::eprintln!(
+                        "debug: storage_map_witness_foreign map_root={} map_key={} value={}",
+                        map.root(),
+                        map_key,
+                        map.get(&map_key)
+                    );
+                }
+                Ok(witness)
             }
         }
     }

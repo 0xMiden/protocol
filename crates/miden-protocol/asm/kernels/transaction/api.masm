@@ -2,6 +2,10 @@ use $kernel::account
 use $kernel::account_delta
 use $kernel::account_id
 use $kernel::constants::ACCOUNT_SEED_HASH_SCRATCH_PTR
+use $kernel::constants::AUTH_STACK_SCRATCH_PTR_0
+use $kernel::constants::AUTH_STACK_SCRATCH_PTR_4
+use $kernel::constants::AUTH_STACK_SCRATCH_PTR_8
+use $kernel::constants::AUTH_STACK_SCRATCH_PTR_12
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
@@ -56,29 +60,29 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSE
 #! Invocation: exec
 @locals(16)
 proc authenticate_account_origin
-    # preserve the top 16 stack elements so caller doesn't clobber inputs
-    loc_storew_le.0 dropw
-    loc_storew_le.4 dropw
-    loc_storew_le.8 dropw
-    loc_storew_le.12 dropw
+    # preserve the top 16 elements so `caller` doesn't overwrite inputs
+    mem_storew_le.AUTH_STACK_SCRATCH_PTR_0 dropw
+    mem_storew_le.AUTH_STACK_SCRATCH_PTR_4 dropw
+    mem_storew_le.AUTH_STACK_SCRATCH_PTR_8 dropw
+    mem_storew_le.AUTH_STACK_SCRATCH_PTR_12 dropw
     # => [<rest>]
 
-    # provide a word for caller to overwrite
-    padw
-    # => [pad(4), <rest>]
-
     # get the hash of the caller
-    caller
+    padw caller
     # => [CALLER, <rest>]
+
     # assert that the caller is from the user context
     exec.account::authenticate_and_track_procedure
     # => [<rest>]
 
     # restore preserved stack
-    loc_loadw_le.12
-    loc_loadw_le.8
-    loc_loadw_le.4
-    loc_loadw_le.0
+    mem_loadw_le.AUTH_STACK_SCRATCH_PTR_12
+    movdnw.3
+    mem_loadw_le.AUTH_STACK_SCRATCH_PTR_8
+    movdnw.2
+    mem_loadw_le.AUTH_STACK_SCRATCH_PTR_4
+    swapw
+    mem_loadw_le.AUTH_STACK_SCRATCH_PTR_0
 end
 
 #! Asserts that the invocation of a kernel procedure originates from the authentication procedure of
@@ -417,12 +421,11 @@ end
 #! Returns the VALUE located under the specified KEY within the map contained in the account
 #! storage slot identified by the slot ID.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
+#! Inputs:  [SLOT_ID, KEY, pad(8)]
 #! Outputs: [VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
+#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
 #! - VALUE is the value of the map item at KEY.
 #!
 #! Panics if:
@@ -431,9 +434,8 @@ end
 #!
 #! Invocation: dynexec
 pub proc account_get_map_item
-    # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
+    # => [SLOT_ID, KEY, pad(8)]
 
     # fetch the map item from account storage
     exec.account::get_map_item
@@ -471,12 +473,11 @@ end
 #! Returns the initial VALUE located under the specified KEY within the map contained in the
 #! account storage slot identified by the slot ID at the beginning of the transaction.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
+#! Inputs:  [SLOT_ID, KEY, pad(8)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
+#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
 #!    - the slot must point to the root of the storage map.
 #! - INIT_VALUE is the initial value of the map item at KEY at the beginning of the transaction.
 #!
@@ -488,7 +489,7 @@ end
 pub proc account_get_initial_map_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_suffix, slot_id_prefix, KEY, pad(10)]
+    # => [SLOT_ID, KEY, pad(8)]
 
     # fetch the initial map item from account storage
     exec.account::get_initial_map_item
@@ -498,12 +499,11 @@ end
 #! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage 
 #! slot.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
+#! Inputs:  [SLOT_ID, KEY, NEW_VALUE, pad(4)]
 #! Outputs: [OLD_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
+#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
 #!    - the slot must point to the root of the storage map.
 #! - NEW_VALUE is the value of the new map item for the respective KEY.
 #! - OLD_VALUE is the value of the old map item for the respective KEY.

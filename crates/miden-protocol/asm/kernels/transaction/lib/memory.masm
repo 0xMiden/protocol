@@ -418,8 +418,8 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix]
+    swap push.0.0
+    # => [0, 0, account_id_suffix, account_id_prefix]
     mem_storew_le.NATIVE_ACCT_ID_PTR
     dropw
     # => []
@@ -434,8 +434,8 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
     padw mem_loadw_le.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    # => [0, 0, account_id_suffix, account_id_prefix]
+    drop drop swap
 end
 
 #! Sets the native account commitment at the beginning of the transaction.

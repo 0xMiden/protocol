@@ -143,12 +143,11 @@ end
 
 #! Sets a map item in the native account storage.
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, VALUE]
+#! Inputs:  [SLOT_ID, KEY, VALUE]
 #! Outputs: [OLD_VALUE]
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
-#!   the first two felts of the hashed slot name.
+#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
 #!    - the slot must point to the root of the storage map.
 #! - KEY is the key to set at VALUE.
 #! - VALUE is the value to set at KEY.
@@ -163,7 +162,7 @@ end
 #! Invocation: exec
 pub proc set_map_item
     exec.kernel_proc_offsets::account_set_map_item_offset
-    # => [offset, slot_id_suffix, slot_id_prefix, KEY, VALUE]
+    # => [offset, SLOT_ID, KEY, VALUE]
 
     syscall.exec_kernel_proc
     # => [OLD_VALUE, pad(12)]

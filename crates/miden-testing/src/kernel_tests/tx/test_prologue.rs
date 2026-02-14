@@ -172,14 +172,14 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[0],
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[2],
         inputs.account().id().suffix(),
-        "The account ID prefix should be stored at the ACCT_ID_PTR[0]"
+        "The account ID suffix should be stored at the ACCT_ID_PTR[2]"
     );
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[1],
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[3],
         inputs.account().id().prefix().as_felt(),
-        "The account ID suffix should be stored at the ACCT_ID_PTR[1]"
+        "The account ID prefix should be stored at the ACCT_ID_PTR[3]"
     );
 
     assert_eq!(

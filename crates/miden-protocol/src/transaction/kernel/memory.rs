@@ -295,7 +295,7 @@ pub const NATIVE_ACCT_PROCEDURES_CALL_TRACKING_PTR: MemoryAddress =
 
 /// The offset at which the number of storage slots contained in the account storage is stored
 /// relative to the start of the account data segment.
-pub const NUM_ACCT_STORAGE_SLOTS_OFFSET: MemoryAddress = 2340;
+pub const NUM_ACCT_STORAGE_SLOTS_OFFSET: MemoryAddress = 1316;
 
 /// The memory address at which number of storage slots contained in the account storage is stored
 /// in the native account.

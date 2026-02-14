@@ -164,6 +164,18 @@ impl TransactionEvent {
         let tx_event = match tx_event_id {
             TransactionEventId::AccountBeforeForeignLoad => {
                 // Expected stack state: [event, account_id_prefix, account_id_suffix]
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_FOREIGN_LOAD").is_ok() {
+                    let stack_items: Vec<Felt> =
+                        (0..16).map(|idx| process.get_stack_item(idx)).collect();
+                    let account_id_word = get_stack_word_le(process, 1);
+                    let suffix = account_id_word[1];
+                    let suffix_u64 = suffix.as_canonical_u64();
+                    std::eprintln!(
+                        "debug: before_foreign_load stack0..15={stack_items:?} account_id_word={account_id_word} suffix_lsb=0x{suffix_lsb:02x}",
+                        suffix_lsb = (suffix_u64 & 0xff)
+                    );
+                }
                 let account_id_word = get_stack_word_le(process, 1);
                 let account_id = AccountId::try_from([account_id_word[0], account_id_word[1]])
                     .map_err(|err| {
@@ -656,7 +668,16 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
         current_map_root
     };
 
-    if process.has_merkle_path::<{ StorageMap::DEPTH }>(current_map_root, leaf_index)? {
+    let has_path = process.has_merkle_path::<{ StorageMap::DEPTH }>(current_map_root, leaf_index)?;
+    #[cfg(feature = "std")]
+    if std::env::var("MIDEN_DEBUG_STORAGE_MAP_ACCESS").is_ok() {
+        let stack_items: Vec<Felt> = (0..64).map(|idx| process.get_stack_item(idx)).collect();
+        std::eprintln!(
+            "debug: storage_map_access account_id={active_account_id} slot_ptr={slot_ptr} map_root={current_map_root} map_key={map_key} hashed_key={hashed_map_key} leaf_index={leaf_index} has_path={has_path} stack0..63={stack_items:?}"
+        );
+    }
+
+    if has_path {
         // If the witness already exists, the event does not need to be handled.
         Ok(None)
     } else {

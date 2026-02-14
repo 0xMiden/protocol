@@ -705,6 +705,8 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # get the index of account storage slot
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             # => [slot_id_prefix, slot_id_suffix, 14, 15, 16, 17, 18, 19, 20, 21]
 
             # update the storage value

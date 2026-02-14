@@ -87,6 +87,15 @@ impl MastForestStore for TransactionMastStore {
         #[cfg(feature = "std")]
         if result.is_none() && std::env::var("MIDEN_DEBUG_MAST_STORE").is_ok() {
             std::eprintln!("mast_store::miss root={procedure_root}");
+            let reversed = Word::new([
+                procedure_root[3],
+                procedure_root[2],
+                procedure_root[1],
+                procedure_root[0],
+            ]);
+            if self.mast_forests.read().contains_key(&reversed) {
+                std::eprintln!("mast_store::miss root reversed_hit={reversed}");
+            }
         }
         result
     }

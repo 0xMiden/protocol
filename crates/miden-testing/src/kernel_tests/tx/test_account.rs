@@ -129,6 +129,8 @@ pub async fn compute_commitment() -> miette::Result<()> {
             push.{value}
             push.{key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, STORAGE_COMMITMENT0]
             exec.account::set_map_item
             dropw
@@ -918,6 +920,8 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             push.[5,6,7,8]
             push.[101,102,103,104]
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
 
             exec.account::set_map_item dropw
@@ -1726,6 +1730,8 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             # get initial value from map
             push.{initial_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             exec.account::get_initial_map_item
             push.{initial_value}
             assert_eqw.err="initial map value should match expected"
@@ -1734,11 +1740,15 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             push.{new_value}
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             exec.account::set_map_item dropw
 
             # get_map_item should return the new value
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             exec.account::get_map_item
             push.{new_value}
             assert_eqw.err="current map value should be updated"
@@ -1746,6 +1756,8 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             # get_initial_map_item should still return the initial value for the initial key
             push.{initial_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             exec.account::get_initial_map_item
             push.{initial_value}
             assert_eqw.err="initial map value should remain unchanged"
@@ -1753,6 +1765,8 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             # get_initial_map_item for the new key should return empty word (default)
             push.{new_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             exec.account::get_initial_map_item
             padw
             assert_eqw.err="new key should have empty initial value"

@@ -63,21 +63,21 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [VALUE, pad(12)]
     end
 
-    #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE, pad(6)]
+    #! Inputs:  [SLOT_ID, KEY, NEW_VALUE, pad(4)]
     #! Outputs: [OLD_VALUE, pad(12)]
     pub proc set_map_item
         exec.native_account::set_map_item
         # => [OLD_VALUE, pad(12)]
     end
 
-    #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    #! Inputs:  [SLOT_ID, KEY, pad(8)]
     #! Outputs: [VALUE, pad(12)]
     pub proc get_map_item
         exec.active_account::get_map_item
         # => [VALUE, pad(12)]
     end
 
-    #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, pad(10)]
+    #! Inputs:  [SLOT_ID, KEY, pad(8)]
     #! Outputs: [INIT_VALUE, pad(12)]
     pub proc get_initial_map_item
         exec.active_account::get_initial_map_item

@@ -19,6 +19,10 @@ pub const NOTE_MEM_SIZE = 2048
 # Scratch memory pointer used for hashing the account seed during validation.
 # Use the gap between output notes and link map memory to avoid overlapping input note data.
 pub const ACCOUNT_SEED_HASH_SCRATCH_PTR = 18874368
+pub const AUTH_STACK_SCRATCH_PTR_0 = 18874368
+pub const AUTH_STACK_SCRATCH_PTR_4 = 18874372
+pub const AUTH_STACK_SCRATCH_PTR_8 = 18874376
+pub const AUTH_STACK_SCRATCH_PTR_12 = 18874380
 
 # The depth of the Merkle tree used to commit to notes produced in a block.
 pub const NOTE_TREE_DEPTH = 16

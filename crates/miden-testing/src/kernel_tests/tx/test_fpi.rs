@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anyhow::Context;
 use miden_core::advice::AdviceInputs;
 use miden_processor::fast::ExecutionOutput;
 use miden_protocol::account::{
@@ -160,7 +161,10 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         get_item_foreign_hash = foreign_account.code().procedures()[1].mast_root(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = tx_context
+        .execute_code(&code)
+        .await
+        .context("execute_code(get_item) failed")?;
 
     assert_eq!(
         exec_output.get_stack_word_le(0),
@@ -195,7 +199,8 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
 
             # push the slot name of the desired storage item
             push.MOCK_MAP_SLOT[0..2]
-
+            push.0
+            push.0
             # get the hash of the `get_map_item_foreign` account procedure
             push.{get_map_item_foreign_hash}
 
@@ -218,15 +223,17 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         get_map_item_foreign_hash = foreign_account.code().procedures()[2].mast_root(),
     );
 
-    let exec_output = tx_context.execute_code(&code).await?;
+    let exec_output = tx_context
+        .execute_code(&code)
+        .await
+        .context("execute_code(get_map_item) failed")?;
 
+    foreign_account_data_memory_assertions(&foreign_account, &exec_output);
     assert_eq!(
         exec_output.get_stack_word_le(0),
         STORAGE_LEAVES_2[0].1,
         "Value at the top of the stack should be equal [1, 2, 3, 4]",
     );
-
-    foreign_account_data_memory_assertions(&foreign_account, &exec_output);
 
     // GET ITEM TWICE
     // --------------------------------------------------------------------------------------------
@@ -293,7 +300,10 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         get_item_foreign_hash = foreign_account.code().procedures()[1].mast_root(),
     );
 
-    let exec_output = &tx_context.execute_code(&code).await?;
+    let exec_output = &tx_context
+        .execute_code(&code)
+        .await
+        .context("execute_code(get_item_twice) failed")?;
 
     // Check that the second invocation of the foreign procedure from the same account does not load
     // the account data again: already loaded data should be reused.
@@ -623,7 +633,8 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
             # push the slot name of the desired storage map
             push.MOCK_MAP_SLOT[0..2]
-
+            push.0
+            push.0
             # get the hash of the `get_map_item_foreign` account procedure
             procref.::foreign_account::get_map_item_foreign
 
@@ -1796,10 +1807,10 @@ fn foreign_account_data_memory_assertions(
     assert_eq!(
         exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET),
         Word::new([
-            foreign_account.id().suffix(),
-            foreign_account.id().prefix().as_felt(),
+            foreign_account.nonce(),
             ZERO,
-            foreign_account.nonce()
+            foreign_account.id().suffix(),
+            foreign_account.id().prefix().as_felt()
         ]),
     );
 
@@ -1935,6 +1946,8 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
             padw padw push.0.0
             push.{map_key}
             push.MOCK_MAP_SLOT[0..2]
+            push.0
+            push.0
             procref.::foreign_account::test_get_initial_map_item
             push.{foreign_account_id_suffix} push.{foreign_account_id_prefix}
             exec.tx::execute_foreign_procedure
