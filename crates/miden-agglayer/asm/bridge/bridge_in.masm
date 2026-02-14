@@ -1,4 +1,5 @@
 use miden::agglayer::crypto_utils
+use miden::agglayer::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::mem
 use miden::protocol::active_account
@@ -122,6 +123,9 @@ end
 
 #! Assert the global index is valid for a mainnet deposit.
 #!
+#! Each element of the global index is a LE-packed u32 felt (as produced by
+#! `bytes_to_packed_u32_felts` / `GlobalIndex::to_elements()`).
+#!
 #! Inputs: [GLOBAL_INDEX[8]]
 #! Outputs: [leaf_index]
 #!
@@ -136,15 +140,18 @@ pub proc process_global_index_mainnet
     # the top 191 bits of the global index are zero
     repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
 
-    # the next element is a u32 mainnet flag bit
-    # enforce that this limb is one
-    # => [mainnet_flag, GLOBAL_INDEX[6..8], LEAF_VALUE[8]]
+    # the next element is the mainnet flag (LE-packed u32)
+    # byte-swap to get the BE value, then assert it is exactly 1
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le, ...]
+    exec.utils::swap_u32_bytes
     assert.err=ERR_BRIDGE_NOT_MAINNET
 
-    # the next element is a u32 rollup index, must be zero for a mainnet deposit
+    # the next element is the rollup index, must be zero for a mainnet deposit
+    # (zero is byte-order-independent, so no swap needed)
     assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
 
-    # finally, the leaf index = lowest 32 bits = last limb
+    # the leaf index is the last element; byte-swap from LE to BE to get the actual index
+    exec.utils::swap_u32_bytes
     # => [leaf_index]
 end
 

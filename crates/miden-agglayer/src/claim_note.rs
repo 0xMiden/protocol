@@ -19,7 +19,7 @@ use miden_protocol::note::{
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::{EthAddressFormat, EthAmount, MetadataHash, claim_script};
+use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
 // CLAIM NOTE STRUCTURES
 // ================================================================================================
@@ -66,8 +66,8 @@ pub struct ProofData {
     pub smt_proof_local_exit_root: [SmtNode; 32],
     /// SMT proof for rollup exit root (32 SMT nodes)
     pub smt_proof_rollup_exit_root: [SmtNode; 32],
-    /// Global index (uint256 as 8 u32 values)
-    pub global_index: [u32; 8],
+    /// Global index (uint256 as 32 bytes)
+    pub global_index: GlobalIndex,
     /// Mainnet exit root hash
     pub mainnet_exit_root: ExitRoot,
     /// Rollup exit root hash
@@ -92,8 +92,8 @@ impl SequentialCommit for ProofData {
             elements.extend(node_felts);
         }
 
-        // Global index (uint256 as 8 u32 felts)
-        elements.extend(self.global_index.iter().map(|&v| Felt::new(v as u64)));
+        // Global index (uint256 as 32 bytes)
+        elements.extend(self.global_index.to_elements());
 
         // Mainnet exit root (bytes32 as 8 u32 felts)
         let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
