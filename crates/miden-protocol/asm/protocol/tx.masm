@@ -1,4 +1,14 @@
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_NUMBER_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_TIMESTAMP_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_INPUT_NOTES_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_OUTPUT_NOTES_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_START_FOREIGN_CONTEXT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_END_FOREIGN_CONTEXT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
+use ::miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
 
 #! Returns the block number of the transaction reference block.
 #!
@@ -14,7 +24,7 @@ pub proc get_block_number
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_block_number_offset
+    push.TX_GET_BLOCK_NUMBER_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -39,7 +49,7 @@ pub proc get_block_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_block_commitment_offset
+    push.TX_GET_BLOCK_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -82,7 +92,7 @@ pub proc get_block_timestamp
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_block_timestamp_offset
+    push.TX_GET_BLOCK_TIMESTAMP_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -109,7 +119,7 @@ pub proc get_input_notes_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_input_notes_commitment_offset
+    push.TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -135,7 +145,7 @@ pub proc get_output_notes_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_output_notes_commitment_offset
+    push.TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -160,7 +170,7 @@ pub proc get_num_input_notes
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_num_input_notes_offset
+    push.TX_GET_NUM_INPUT_NOTES_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -188,7 +198,7 @@ pub proc get_num_output_notes
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_num_output_notes_offset
+    push.TX_GET_NUM_OUTPUT_NOTES_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -218,7 +228,7 @@ end
 @locals(4)
 pub proc execute_foreign_procedure
     # get the start_foreign_context procedure offset
-    push.0 movup.2 movup.2 exec.kernel_proc_offsets::tx_start_foreign_context_offset
+    push.0 movup.2 movup.2 push.TX_START_FOREIGN_CONTEXT_OFFSET
     # => [offset, foreign_account_id_prefix, foreign_account_id_suffix, 0, FOREIGN_PROC_ROOT, <foreign account inputs>, pad(n)]
 
     # pad the stack before the syscall
@@ -244,7 +254,7 @@ pub proc execute_foreign_procedure
 
     # reset the active account data offset to the native offset (2048)
     push.0.0.0 padw padw padw
-    exec.kernel_proc_offsets::tx_end_foreign_context_offset
+    push.TX_END_FOREIGN_CONTEXT_OFFSET
     # => [offset, pad(15), <values returned from the foreign procedure>]
 
     syscall.exec_kernel_proc
@@ -270,7 +280,7 @@ end
 #!
 #! Annotation hint: is not used anywhere
 pub proc update_expiration_block_delta
-    exec.kernel_proc_offsets::tx_update_expiration_block_delta_offset
+    push.TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
     # => [offset, expiration_delta, ...]
 
     # pad the stack
@@ -297,7 +307,7 @@ pub proc get_expiration_block_delta
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::tx_get_expiration_delta_offset
+    push.TX_GET_EXPIRATION_DELTA_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc

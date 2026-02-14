@@ -1,7 +1,22 @@
-use miden::protocol::kernel_proc_offsets
 use ::miden::protocol::account_id
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_CODE_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_VAULT_ROOT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_MAP_ITEM_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ASSET_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NUM_PROCEDURES_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_PROCEDURE_ROOT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_PROCEDURE_OFFSET
 use miden::core::word
 
 # ACTIVE ACCOUNT PROCEDURES
@@ -35,7 +50,7 @@ pub proc get_id
     push.0
     # => [is_native = 0, pad(14)]
 
-    exec.kernel_proc_offsets::account_get_id_offset
+    push.ACCOUNT_GET_ID_OFFSET
     # => [offset, is_native = 0, pad(14)]
 
     syscall.exec_kernel_proc
@@ -64,7 +79,7 @@ pub proc get_nonce
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_nonce_offset
+    push.ACCOUNT_GET_NONCE_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -92,7 +107,7 @@ pub proc get_initial_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_initial_commitment_offset
+    push.ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -117,7 +132,7 @@ pub proc compute_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_compute_commitment_offset
+    push.ACCOUNT_COMPUTE_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -155,7 +170,7 @@ pub proc get_code_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_code_commitment_offset
+    push.ACCOUNT_GET_CODE_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -185,7 +200,7 @@ pub proc get_initial_storage_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_initial_storage_commitment_offset
+    push.ACCOUNT_GET_INITIAL_STORAGE_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -219,7 +234,7 @@ pub proc compute_storage_commitment
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_compute_storage_commitment_offset
+    push.ACCOUNT_COMPUTE_STORAGE_COMMITMENT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -244,7 +259,7 @@ pub proc get_initial_vault_root
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_initial_vault_root_offset
+    push.ACCOUNT_GET_INITIAL_VAULT_ROOT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -269,7 +284,7 @@ pub proc get_vault_root
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_vault_root_offset
+    push.ACCOUNT_GET_VAULT_ROOT_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -301,7 +316,7 @@ pub proc get_item
     push.0 movdn.2
     # => [slot_id_prefix, slot_id_suffix, 0]
 
-    exec.kernel_proc_offsets::account_get_item_offset
+    push.ACCOUNT_GET_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, 0]
 
     # pad the stack
@@ -335,7 +350,7 @@ pub proc get_initial_item
     push.0 movdn.2
     # => [slot_id_prefix, slot_id_suffix, 0]
 
-    exec.kernel_proc_offsets::account_get_initial_item_offset
+    push.ACCOUNT_GET_INITIAL_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, 0]
 
     # pad the stack
@@ -368,7 +383,7 @@ end
 #!
 #! Invocation: exec
 pub proc get_map_item
-    exec.kernel_proc_offsets::account_get_map_item_offset
+    push.ACCOUNT_GET_MAP_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, KEY]
 
     # pad the stack
@@ -401,7 +416,7 @@ end
 #!
 #! Invocation: exec
 pub proc get_initial_map_item
-    exec.kernel_proc_offsets::account_get_initial_map_item_offset
+    push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
     # => [offset, slot_id_prefix, slot_id_suffix, KEY]
 
     push.0 movdn.7 padw padw swapdw
@@ -505,7 +520,7 @@ pub proc get_balance
     # => [balance]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active 
+#! Returns the balance of the fungible asset associated with the provided faucet_id in the active
 #! account's vault at the beginning of the transaction.
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix]
@@ -584,7 +599,7 @@ pub proc get_num_procedures
     padw padw padw push.0.0.0
     # => [pad(15)]
 
-    exec.kernel_proc_offsets::account_get_num_procedures_offset
+    push.ACCOUNT_GET_NUM_PROCEDURES_OFFSET
     # => [offset, pad(15)]
 
     syscall.exec_kernel_proc
@@ -612,7 +627,7 @@ pub proc get_procedure_root
     # => [index]
 
     push.0.0 movup.2
-    exec.kernel_proc_offsets::account_get_procedure_root_offset
+    push.ACCOUNT_GET_PROCEDURE_ROOT_OFFSET
     # => [offset, index, 0, 0]
 
     # pad the stack
@@ -637,12 +652,12 @@ end
 #!
 #! Where:
 #! - PROC_ROOT is the hash of the procedure of interest.
-#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is 
+#! - is_procedure_available is the binary flag indicating whether the procedure with PROC_ROOT is
 #!   available on the active account.
 #!
 #! Invocation: exec
 pub proc has_procedure
-    exec.kernel_proc_offsets::account_has_procedure_offset
+    push.ACCOUNT_HAS_PROCEDURE_OFFSET
     # => [offset, PROC_ROOT]
 
     # pad the stack

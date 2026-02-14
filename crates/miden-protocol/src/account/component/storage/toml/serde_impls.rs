@@ -108,12 +108,10 @@ impl<'de> Deserialize<'de> for FeltSchema {
             })
             .transpose()?;
 
-        let schema = match default_value {
-            Some(default_value) => {
-                FeltSchema::new_typed_with_default(felt_type, name, default_value)
-            },
-            None => FeltSchema::new_typed(felt_type, name),
-        };
+        let mut schema = FeltSchema::new_typed(felt_type, name);
+        if let Some(default_value) = default_value {
+            schema = schema.with_default(default_value);
+        }
         Ok(match description {
             Some(description) => schema.with_description(description),
             None => schema,
