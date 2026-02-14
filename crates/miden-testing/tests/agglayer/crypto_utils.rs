@@ -46,14 +46,7 @@ fn merkle_proof_verification_code(
     for height in 0..32 {
         let path_node = merkle_paths.merkle_paths[index * 32 + height].as_str();
         let smt_node = SmtNode::from(hex_to_bytes(path_node).unwrap());
-        let smt_node_elements: [Word; 2] = smt_node
-            .to_elements()
-            .chunks(4)
-            .map(|chunk| Word::new(chunk.try_into().unwrap()))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-        let (node_lo, node_hi) = (smt_node_elements[0], smt_node_elements[1]);
+        let [node_lo, node_hi] = smt_node.to_words();
         // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
         // memory pointers for the merkle path and the expected root never change
         store_path_source.push_str(&format!(
@@ -68,25 +61,11 @@ fn merkle_proof_verification_code(
 
     // prepare the root for the provided index
     let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
-    let root_elements: [Word; 2] = root
-        .to_elements()
-        .chunks(4)
-        .map(|chunk| Word::new(chunk.try_into().unwrap()))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    let (root_lo, root_hi) = (root_elements[0], root_elements[1]);
+    let [root_lo, root_hi] = root.to_words();
 
     // prepare the leaf for the provided index
     let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
-    let leaf_elements: [Word; 2] = leaf
-        .to_elements()
-        .chunks(4)
-        .map(|chunk| Word::new(chunk.try_into().unwrap()))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    let (leaf_lo, leaf_hi) = (leaf_elements[0], leaf_elements[1]);
+    let [leaf_lo, leaf_hi] = leaf.to_words();
 
     format!(
         r#"

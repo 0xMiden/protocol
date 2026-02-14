@@ -44,6 +44,18 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
+
+    /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.
+    ///
+    /// - `lo` contains the first 4 u32-packed felts (bytes 0..16).
+    /// - `hi` contains the last  4 u32-packed felts (bytes 16..32).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn to_words(&self) -> [Word; 2] {
+        let elements = self.to_elements();
+        let lo: [Felt; 4] = elements[0..4].try_into().expect("to_elements returns 8 felts");
+        let hi: [Felt; 4] = elements[4..8].try_into().expect("to_elements returns 8 felts");
+        [Word::new(lo), Word::new(hi)]
+    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
