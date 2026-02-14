@@ -2,8 +2,8 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::asset::{Asset, AssetVault};
+use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::transaction::memory::{ACCT_ID_PREFIX_IDX, ACCT_ID_SUFFIX_IDX, ACCT_NONCE_IDX};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -195,17 +195,9 @@ impl Account {
 
     /// Returns the commitment of this account.
     ///
-    /// The commitment of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-    /// code_commitment). Computing the account commitment requires 2 permutations of the hash
-    /// function.
-    pub fn commitment(&self) -> Word {
-        hash_account(
-            self.id,
-            self.nonce,
-            self.vault.root(),
-            self.storage.to_commitment(),
-            self.code.commitment(),
-        )
+    /// See [`AccountHeader::to_commitment`] for details on how it is computed.
+    pub fn to_commitment(&self) -> Word {
+        AccountHeader::from(self).to_commitment()
     }
 
     /// Returns the commitment of this account as used for the initial account state commitment in
@@ -221,7 +213,7 @@ impl Account {
         if self.is_new() {
             Word::empty()
         } else {
-            self.commitment()
+            self.to_commitment()
         }
     }
 
@@ -448,6 +440,18 @@ impl TryFrom<Account> for AccountDelta {
     }
 }
 
+impl SequentialCommit for Account {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        AccountHeader::from(self).to_elements()
+    }
+
+    fn to_commitment(&self) -> Self::Commitment {
+        AccountHeader::from(self).to_commitment()
+    }
+}
+
 // SERIALIZATION
 // ================================================================================================
 
@@ -485,31 +489,6 @@ impl Deserializable for Account {
         Self::new(id, vault, storage, code, nonce, seed)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
-}
-
-// HELPERS
-// ================================================================================================
-
-/// Returns hash of an account with the specified ID, nonce, vault root, storage commitment, and
-/// code commitment.
-///
-/// Hash of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-/// code_commitment). Computing the account commitment requires 2 permutations of the hash function.
-pub fn hash_account(
-    id: AccountId,
-    nonce: Felt,
-    vault_root: Word,
-    storage_commitment: Word,
-    code_commitment: Word,
-) -> Word {
-    let mut elements = [ZERO; 16];
-    elements[ACCT_NONCE_IDX] = nonce;
-    elements[ACCT_ID_SUFFIX_IDX] = id.suffix();
-    elements[ACCT_ID_PREFIX_IDX] = id.prefix().as_felt();
-    elements[4..8].copy_from_slice(&*vault_root);
-    elements[8..12].copy_from_slice(&*storage_commitment);
-    elements[12..].copy_from_slice(&*code_commitment);
-    Hasher::hash_elements(&elements)
 }
 
 // HELPER FUNCTIONS

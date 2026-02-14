@@ -135,7 +135,7 @@ impl TransactionAdviceInputs {
             let header = AccountHeader::from(foreign_acc.account());
 
             // ACCOUNT_ID |-> [ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
-            self.add_map_entry(account_id_key, header.as_elements());
+            self.add_map_entry(account_id_key, header.to_elements());
         }
     }
 

@@ -180,7 +180,7 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 
     assert_eq!(
         exec_output.get_kernel_mem_word(INIT_ACCT_COMMITMENT_PTR),
-        inputs.account().commitment(),
+        inputs.account().to_commitment(),
         "The account commitment should be stored at the INIT_ACCT_COMMITMENT_PTR"
     );
 
@@ -370,7 +370,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     let header = AccountHeader::from(inputs.account());
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
-        &header.as_elements()[0..4],
+        &header.to_elements()[0..4],
         "The account ID and nonce should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR"
     );
 

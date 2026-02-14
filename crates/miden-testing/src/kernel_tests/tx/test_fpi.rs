@@ -504,7 +504,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         exec_output
             .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32)
             .as_slice(),
-        &header.as_elements()[0..4]
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the second foreign account slot is correct
@@ -513,7 +513,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
         exec_output
             .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2)
             .as_slice(),
-        &header.as_elements()[0..4]
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the third foreign account slot was not initialized
@@ -1991,7 +1991,7 @@ fn foreign_account_data_memory_assertions(
         exec_output
             .get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET)
             .as_slice(),
-        &header.as_elements()[0..4]
+        &header.to_elements()[0..4]
     );
 
     assert_eq!(
