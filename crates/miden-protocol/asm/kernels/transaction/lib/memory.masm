@@ -87,10 +87,11 @@ const GLOBAL_INPUTS_SECTION_OFFSET=400
 # The memory address at which the transaction reference block's commitment is stored.
 const BLOCK_COMMITMENT_PTR=400
 
-# The memory address at which the native account ID is stored.
-const NATIVE_ACCT_ID_PTR=404
-const NATIVE_ACCT_ID_SUFFIX_PTR=NATIVE_ACCT_ID_PTR + 2
-const NATIVE_ACCT_ID_PREFIX_PTR=NATIVE_ACCT_ID_PTR + 3
+# The memory address at which the native account ID provided as a global transaction input is
+# stored.
+const GLOBAL_ACCOUNT_ID_PTR=404
+const GLOBAL_ACCOUNT_ID_SUFFIX_PTR=GLOBAL_ACCOUNT_ID_PTR + 2
+const GLOBAL_ACCOUNT_ID_PREFIX_PTR=GLOBAL_ACCOUNT_ID_PTR + 3
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408
@@ -487,7 +488,7 @@ pub proc get_block_commitment
     padw mem_loadw_be.BLOCK_COMMITMENT_PTR
 end
 
-#! Sets the ID of the native account.
+#! Sets the global ID of the native account.
 #!
 #! Inputs:  [account_id_prefix, account_id_suffix]
 #! Outputs: []
@@ -495,12 +496,12 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    mem_store.NATIVE_ACCT_ID_PREFIX_PTR
-    mem_store.NATIVE_ACCT_ID_SUFFIX_PTR
+    mem_store.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    mem_store.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
     # => []
 end
 
-#! Returns the ID of the native account.
+#! Returns the global ID of the native account.
 #!
 #! Inputs:  []
 #! Outputs: [account_id_prefix, account_id_suffix]
@@ -508,8 +509,8 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
-    mem_load.NATIVE_ACCT_ID_SUFFIX_PTR
-    mem_load.NATIVE_ACCT_ID_PREFIX_PTR
+    mem_load.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.GLOBAL_ACCOUNT_ID_PREFIX_PTR
     # => [account_id_prefix, account_id_suffix]
 end
 
