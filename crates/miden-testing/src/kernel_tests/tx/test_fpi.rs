@@ -138,7 +138,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
             push.{get_item_foreign_hash}
@@ -198,7 +198,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             push.{map_key}
 
             # push the slot name of the desired storage item
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             # get the hash of the `get_map_item_foreign` account procedure
@@ -259,7 +259,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
             push.{get_item_foreign_hash}
@@ -278,7 +278,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of the desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
             push.{get_item_foreign_hash}
@@ -427,7 +427,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
             push.{get_item_foreign_1_hash}
@@ -446,7 +446,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT1[0..2]
+            push.MOCK_VALUE_SLOT1[2..4]
 
             # get the hash of the `get_item_foreign_2` procedure of the foreign account 2
             push.{get_item_foreign_2_hash}
@@ -465,7 +465,7 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign_1` procedure of the foreign account 1
             push.{get_item_foreign_1_hash}
@@ -505,10 +505,10 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32),
         Word::new([
+            foreign_account_1.nonce(),
+            ZERO,
             foreign_account_1.id().suffix(),
             foreign_account_1.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_1.nonce()
         ])
     );
 
@@ -516,10 +516,10 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2),
         Word::new([
+            foreign_account_2.nonce(),
+            ZERO,
             foreign_account_2.id().suffix(),
             foreign_account_2.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_2.nonce()
         ])
     );
 
@@ -606,7 +606,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the slot name of desired storage item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
 
             # get the hash of the `get_item_foreign` account procedure
             procref.::foreign_account::get_item_foreign
@@ -632,7 +632,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             push.{map_key}
 
             # push the slot name of the desired storage map
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             # get the hash of the `get_map_item_foreign` account procedure
@@ -940,7 +940,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
             # => [pad(8)]
 
             # push the index of desired storage item
-            push.MOCK_VALUE_SLOT1[0..2]
+            push.MOCK_VALUE_SLOT1[2..4]
 
             # get the hash of the `get_item_foreign` account procedure from the advice stack
             adv_push.4
@@ -958,7 +958,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
             # get the first element of the value0 storage slot (it should be 1) and add it to the
             # obtained foreign value.
-            push.MOCK_VALUE_SLOT0[0..2] exec.active_account::get_item
+            push.MOCK_VALUE_SLOT0[2..4] exec.active_account::get_item
             drop drop drop
             add
 
@@ -1014,7 +1014,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
 
             # get the second element of the value0 storage slot (it should be 2) and add it to the
             # obtained foreign value.
-            push.MOCK_VALUE_SLOT0[0..2] exec.active_account::get_item
+            push.MOCK_VALUE_SLOT0[2..4] exec.active_account::get_item
             drop drop swap drop
             add
 
@@ -1321,7 +1321,7 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                     push.1 drop
 
                     # push the index of desired storage item
-                    push.MOCK_VALUE_SLOT0[0..2]
+                    push.MOCK_VALUE_SLOT0[2..4]
 
                     exec.active_account::get_item
 
@@ -1892,7 +1892,7 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
         pub proc test_get_initial_item
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.active_account::get_initial_item
             exec.sys::truncate_stack
         end
@@ -1945,7 +1945,7 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
             # Test get_initial_map_item on foreign account
             padw padw push.0.0
             push.{map_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             procref.::foreign_account::test_get_initial_map_item

@@ -41,7 +41,7 @@ pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
     # => [pad(16)]
 
     # Get the authentication configuration
-    push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_item
+    push.AUTH_CONFIG_SLOT[2..4] exec.active_account::get_item
     # => [0, allow_unauthorized_input_notes, allow_unauthorized_output_notes, num_auth_trigger_procs, pad(16)]
 
     drop
@@ -63,7 +63,7 @@ pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
         # => [require_acl_auth, i, pad(16)]
 
         # Get the procedure root from storage
-        dup.1 sub.1 push.0.0.0 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
+        dup.1 sub.1 push.0.0.0 push.AUTH_TRIGGER_PROCS_MAP_SLOT[2..4]
         # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [0, 0, 0, i-1], require_acl_auth, i, pad(16)]
 
         exec.active_account::get_map_item
@@ -125,7 +125,7 @@ pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
     # If authentication is required, perform signature verification
     if.true
         # Fetch public key from storage.
-        push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+        push.PUBLIC_KEY_SLOT[2..4] exec.active_account::get_item
         # => [PUB_KEY, pad(16)]
 
         exec.::miden::standards::auth::ecdsa_k256_keccak::authenticate_transaction

@@ -193,7 +193,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Update an existing key.
           push.{value0}
           push.{existing_key}
-          push.MOCK_MAP_SLOT[0..2]
+          push.MOCK_MAP_SLOT[2..4]
           push.0
           push.0
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
@@ -202,7 +202,7 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Insert a non-existent key.
           push.{value1}
           push.{non_existent_key}
-          push.MOCK_MAP_SLOT[0..2]
+          push.MOCK_MAP_SLOT[2..4]
           push.0
           push.0
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
@@ -265,7 +265,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
       begin
           # Fetch value from existing key.
           push.{existing_key}
-          push.MOCK_MAP_SLOT[0..2]
+          push.MOCK_MAP_SLOT[2..4]
           push.0
           push.0
           # => [slot_id_prefix, slot_id_suffix, KEY]
@@ -276,7 +276,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
           # Fetch a non-existent key.
           push.{non_existent_key}
-          push.MOCK_MAP_SLOT[0..2]
+          push.MOCK_MAP_SLOT[2..4]
           push.0
           push.0
           # => [slot_id_prefix, slot_id_suffix, KEY]

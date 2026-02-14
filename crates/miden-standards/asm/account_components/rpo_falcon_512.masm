@@ -35,7 +35,7 @@ pub proc auth_tx_rpo_falcon512(auth_args: BeWord)
     # Fetch public key from storage.
     # ---------------------------------------------------------------------------------------------
 
-    push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
+    push.PUBLIC_KEY_SLOT[2..4] exec.active_account::get_item
     # => [PUB_KEY, pad(16)]
 
     exec.rpo_falcon512::authenticate_transaction

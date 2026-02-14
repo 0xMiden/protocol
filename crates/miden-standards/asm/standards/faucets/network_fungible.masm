@@ -21,7 +21,7 @@ const ERR_ONLY_OWNER_CAN_MINT="note sender is not the owner of the faucet who ca
 #! Where:
 #! - is_owner is 1 if the sender is the owner, 0 otherwise.
 proc is_owner
-    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    push.OWNER_CONFIG_SLOT[2..4] exec.active_account::get_item
     # => [owner_prefix, owner_suffix, 0, 0]
 
     exec.active_note::get_sender

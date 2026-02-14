@@ -158,37 +158,37 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
 
       begin
           push.{slot_0_tmp_value}
-          push.SLOT_0_NAME[0..2]
+          push.SLOT_0_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_0_final_value}
-          push.SLOT_0_NAME[0..2]
+          push.SLOT_0_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_1_final_value}
-          push.SLOT_1_NAME[0..2]
+          push.SLOT_1_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_2_final_value}
-          push.SLOT_2_NAME[0..2]
+          push.SLOT_2_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_tmp_value}
-          push.SLOT_3_NAME[0..2]
+          push.SLOT_3_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_final_value}
-          push.SLOT_3_NAME[0..2]
+          push.SLOT_3_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, VALUE]
           exec.set_item
           # => []
@@ -296,55 +296,55 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
 
       begin
           push.{key0_final_value} push.{key0}
-          push.SLOT_0_NAME[0..2]
+          push.SLOT_0_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_tmp_value} push.{key1}
-          push.SLOT_0_NAME[0..2]
+          push.SLOT_0_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_final_value} push.{key1}
-          push.SLOT_0_NAME[0..2]
+          push.SLOT_0_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key2_final_value} push.{key2}
-          push.SLOT_1_NAME[0..2]
+          push.SLOT_1_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key3_final_value} push.{key3}
-          push.SLOT_1_NAME[0..2]
+          push.SLOT_1_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_tmp_value} push.{key4}
-          push.SLOT_1_NAME[0..2]
+          push.SLOT_1_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_final_value} push.{key4}
-          push.SLOT_1_NAME[0..2]
+          push.SLOT_1_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_tmp_value} push.{key5}
-          push.SLOT_2_NAME[0..2]
+          push.SLOT_2_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_final_value} push.{key5}
-          push.SLOT_2_NAME[0..2]
+          push.SLOT_2_NAME[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           exec.set_map_item
           # => []
@@ -687,7 +687,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             # => [13, 11, 9, 7]
 
             # get the index of account storage slot
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             # => [slot_id_prefix, slot_id_suffix, 13, 11, 9, 7]
             # update the storage value
             call.account::set_item dropw
@@ -704,7 +704,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             # => [14, 15, 16, 17, 18, 19, 20, 21]
 
             # get the index of account storage slot
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             # => [slot_id_prefix, slot_id_suffix, 14, 15, 16, 17, 18, 19, 20, 21]
@@ -870,7 +870,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
           # Update an existing key.
           push.{value0}
           push.{existing_key}
-          push.MAP_SLOT[0..2]
+          push.MAP_SLOT[2..4]
           # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
           call.account::set_map_item
 

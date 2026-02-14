@@ -128,7 +128,7 @@ pub async fn compute_commitment() -> miette::Result<()> {
             # update a value in the storage map
             push.{value}
             push.{key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, STORAGE_COMMITMENT0]
@@ -412,7 +412,7 @@ async fn test_get_item() -> miette::Result<()> {
                 exec.prologue::prepare_transaction
 
                 # push the account storage item index
-                push.SLOT_NAME[0..2]
+                push.SLOT_NAME[2..4]
                 # => [slot_id_prefix, slot_id_suffix]
 
                 # assert the item value is correct
@@ -459,7 +459,7 @@ async fn test_get_map_item() -> miette::Result<()> {
 
                 # get the map item
                 push.{key}
-                push.SLOT_NAME[0..2]
+                push.SLOT_NAME[2..4]
                 exec.account::get_map_item
                 # => [VALUE]
 
@@ -568,7 +568,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
             const UNKNOWN_SLOT_NAME = word("unknown::slot::name")
 
             begin
-                push.UNKNOWN_SLOT_NAME[0..2]
+                push.UNKNOWN_SLOT_NAME[2..4]
                 call.account::get_item
             end
             "#;
@@ -603,7 +603,7 @@ async fn test_account_set_item_fails_on_reserved_faucet_metadata_slot() -> anyho
             const FAUCET_SYSDATA_SLOT=word("miden::protocol::faucet::sysdata")
 
             begin
-                push.FAUCET_SYSDATA_SLOT[0..2]
+                push.FAUCET_SYSDATA_SLOT[2..4]
                 exec.native_account::set_item
             end
             "#;
@@ -661,8 +661,8 @@ async fn test_is_slot_id_lt() -> miette::Result<()> {
             use $kernel::account
 
             begin
-                push.{curr_suffix}.{curr_prefix}.{prev_suffix}.{prev_prefix}
-                # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
+                push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
+                # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 
                 exec.account::is_slot_id_lt
                 # => [is_slot_id_lt]
@@ -705,7 +705,7 @@ async fn test_set_item() -> anyhow::Result<()> {
 
             # set the storage item
             push.{new_value}
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             # => [slot_id_prefix, slot_id_suffix, NEW_VALUE]
 
             exec.account::set_item
@@ -715,7 +715,7 @@ async fn test_set_item() -> anyhow::Result<()> {
             assert_eqw.err="old value did not match"
 
             # assert new value has been correctly set
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             # => [slot_id_prefix, slot_id_suffix]
 
             exec.account::get_item
@@ -760,11 +760,11 @@ async fn test_set_map_item() -> miette::Result<()> {
             # set the map item
             push.{new_value}
             push.{new_key}
-            push.SLOT_NAME[0..2]
+            push.SLOT_NAME[2..4]
             exec.account::set_map_item
 
             # double check that the storage slot is indeed the new map
-            push.SLOT_NAME[0..2]
+            push.SLOT_NAME[2..4]
             # => [slot_id_prefix, slot_id_suffix, OLD_VALUE]
 
             # pad the stack
@@ -900,7 +900,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
             # update the value storage slot
             push.[9,10,11,12]
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.account::set_item
             dropw
             # => []
@@ -919,7 +919,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             # update the map storage slot
             push.[5,6,7,8]
             push.[101,102,103,104]
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
@@ -1435,7 +1435,7 @@ async fn test_was_procedure_called() -> miette::Result<()> {
             assertz.err="procedure should not have been called"
 
             # Call the procedure first time
-            push.MOCK_VALUE_SLOT1[0..2]
+            push.MOCK_VALUE_SLOT1[2..4]
             call.mock_account::get_item dropw
             # => []
 
@@ -1444,7 +1444,7 @@ async fn test_was_procedure_called() -> miette::Result<()> {
             assert.err="procedure should have been called"
 
             # Call the procedure second time
-            push.MOCK_VALUE_SLOT1[0..2]
+            push.MOCK_VALUE_SLOT1[2..4]
             call.mock_account::get_item dropw
 
             procref.mock_account::get_item
@@ -1486,7 +1486,7 @@ async fn transaction_executor_account_code_using_custom_library() -> miette::Res
 
       pub proc external_setter
         push.2.3.4.5
-        push.MOCK_VALUE_SLOT0[0..2]
+        push.MOCK_VALUE_SLOT0[2..4]
         exec.native_account::set_item
         dropw dropw
       end"#,
@@ -1662,7 +1662,7 @@ async fn test_get_initial_item() -> miette::Result<()> {
             exec.prologue::prepare_transaction
 
             # get initial value of the storage slot
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.account::get_initial_item
 
             push.{expected_initial_value}
@@ -1670,17 +1670,17 @@ async fn test_get_initial_item() -> miette::Result<()> {
 
             # modify the storage slot
             push.9.10.11.12
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.account::set_item dropw
 
             # get_item should return the new value
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.account::get_item
             push.9.10.11.12
             assert_eqw.err="current value should be updated"
 
             # get_initial_item should still return the initial value
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             exec.account::get_initial_item
             push.{expected_initial_value}
             assert_eqw.err="initial value should remain unchanged"
@@ -1729,7 +1729,7 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
 
             # get initial value from map
             push.{initial_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             exec.account::get_initial_map_item
@@ -1739,14 +1739,14 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
             # add a new key-value pair to the map
             push.{new_value}
             push.{new_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             exec.account::set_map_item dropw
 
             # get_map_item should return the new value
             push.{new_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             exec.account::get_map_item
@@ -1755,7 +1755,7 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
 
             # get_initial_map_item should still return the initial value for the initial key
             push.{initial_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             exec.account::get_initial_map_item
@@ -1764,7 +1764,7 @@ async fn test_get_initial_map_item() -> miette::Result<()> {
 
             # get_initial_map_item for the new key should return empty word (default)
             push.{new_key}
-            push.MOCK_MAP_SLOT[0..2]
+            push.MOCK_MAP_SLOT[2..4]
             push.0
             push.0
             exec.account::get_initial_map_item
@@ -1822,7 +1822,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
               pub proc get_slot_content
-                  push.TEST_SLOT_NAME[0..2]
+                  push.TEST_SLOT_NAME[2..4]
                   exec.active_account::get_item
                   dropw
               end
@@ -1845,14 +1845,14 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               const TEST_SLOT_NAME = word("{test_slot_name}")
 
               pub proc get_slot_content
-                  push.TEST_SLOT_NAME[0..2]
+                  push.TEST_SLOT_NAME[2..4]
                   exec.active_account::get_item
                   dropw
               end
 
               pub proc set_slot_content
                   push.5.6.7.8
-                  push.TEST_SLOT_NAME[0..2]
+                  push.TEST_SLOT_NAME[2..4]
                   exec.native_account::set_item
                   dropw
               end

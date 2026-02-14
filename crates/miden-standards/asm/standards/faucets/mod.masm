@@ -44,7 +44,7 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #! Invocation: exec
 pub proc distribute
     # get max supply of this faucet. We assume it is stored at pos 3 of slot 0
-    push.METADATA_SLOT[0..2] exec.active_account::get_item drop drop drop
+    push.METADATA_SLOT[2..4] exec.active_account::get_item drop drop drop
     # => [max_supply, amount, tag, aux, note_type, execution_hint, RECIPIENT]
 
     # get total issuance of this faucet so far and add amount to be minted

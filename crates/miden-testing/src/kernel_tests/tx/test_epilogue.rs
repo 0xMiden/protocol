@@ -440,7 +440,7 @@ async fn test_epilogue_increment_nonce_success() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             push.1.2.3.4
-            push.MOCK_VALUE_SLOT0[0..2] swap
+            push.MOCK_VALUE_SLOT0[2..4] swap
             call.account::set_item
             dropw
 
@@ -471,7 +471,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
 
         begin
             push.91.92.93.94
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             repeat.5 movup.5 drop end
             # => [slot_id_prefix, slot_id_suffix, VALUE]
             call.account::set_item

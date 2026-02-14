@@ -193,7 +193,7 @@ const ACCOUNT_PUSH_PROCEDURE_INDEX_EVENT=event("miden::account::push_procedure_i
 #! Where:
 #! - FAUCET_SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
 pub proc get_faucet_sysdata_slot_id
-    push.FAUCET_SYSDATA_SLOT[0..2]
+    push.FAUCET_SYSDATA_SLOT[2..4]
     push.0
     push.0
 end
@@ -565,22 +565,18 @@ end
 #! Returns the VALUE located under the specified KEY within the map contained in the account
 #! storage slot identified by the slot ID.
 #!
-#! Inputs:  [SLOT_ID, KEY]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [VALUE]
 #!
 #! Where:
-#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name (in LE word order indices 2 and 3).
 #! - VALUE is the value of the map item at KEY.
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_map_item
-    # convert SLOT_ID word to (suffix, prefix)
-    drop
-    drop
-    # => [slot_id_suffix, slot_id_prefix, KEY]
-
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
 
@@ -590,22 +586,18 @@ end
 #! Returns the VALUE located under the specified KEY within the map contained in the given
 #! account storage slot at its initial state (beginning of transaction).
 #!
-#! Inputs:  [SLOT_ID, KEY]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [INIT_VALUE]
 #!
 #! Where:
-#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name (in LE word order indices 2 and 3).
 #! - INIT_VALUE is the initial value of the map item at KEY at the beginning of the transaction.
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 pub proc get_initial_map_item
-    # convert SLOT_ID word to (suffix, prefix)
-    drop
-    drop
-    # => [slot_id_suffix, slot_id_prefix, KEY]
-
     exec.memory::get_account_initial_storage_slots_ptr
     # => [initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
 
@@ -614,12 +606,12 @@ end
 
 #! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage slot.
 #!
-#! Inputs:  [SLOT_ID, KEY, NEW_VALUE]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 #! Outputs: [OLD_VALUE]
 #!
 #! Where:
-#! - SLOT_ID is the slot identifier word in the layout [0, 0, suffix, prefix].
-#!    - the slot must point to the root of the storage map.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name (in LE word order indices 2 and 3).
 #! - NEW_VALUE is the value to set under KEY.
 #! - KEY is the key to set.
 #! - OLD_VALUE is the previous value of the item.
@@ -629,11 +621,6 @@ end
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
 pub proc set_map_item
-    # convert SLOT_ID word to (suffix, prefix)
-    drop
-    drop
-    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
-
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 
@@ -1061,34 +1048,35 @@ end
 #! Inputs:  [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 #! Outputs: [is_prev_lt_curr]
 pub proc is_slot_id_lt
-    # normalize to [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
-    movup.4
-    swap.2
-    # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
-
-    movup.2
-    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
-
-    # compute prev == curr for prefix
-    dup dup.2 eq
-    # => [is_prefix_eq, curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
-
-    movdn.4
-    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
+    # reorder to [prev_slot_id_prefix, curr_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
+    swap
+    movup.3
+    swap
+    # => [prev_slot_id_prefix, curr_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
 
     # compute prev < curr for prefix
-    lt
-    # => [is_prev_lt_curr_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
+    dup.1
+    dup.1
+    gt
+    # => [is_prefix_lt, prev_slot_id_prefix, curr_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
 
-    swap.2
-    # => [curr_slot_id_suffix, prev_slot_id_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+    # compute prev == curr for prefix
+    dup.2
+    dup.2
+    eq
+    # => [is_prefix_eq, is_prefix_lt, prev_slot_id_prefix, curr_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
 
     # compute prev < curr for suffix
-    lt
-    # => [is_prev_lt_curr_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+    movup.5
+    movup.5
+    gt
+    # => [is_suffix_lt, is_prefix_eq, is_prefix_lt, prev_slot_id_prefix, curr_slot_id_prefix]
 
-    movup.2
-    # => [is_prefix_eq, is_prev_lt_curr_suffix, is_prev_lt_curr_prefix]
+    movup.4
+    drop
+    movup.3
+    drop
+    # => [is_suffix_lt, is_prefix_eq, is_prefix_lt]
 
     # compute result as is_prefix_lt || (is_suffix_lt && is_prefix_eq)
     # is_suffix_lt only affects the result if the prefix was equal, otherwise the prefix
@@ -1693,12 +1681,12 @@ end
 #! Finds the storage map root in the storage slot with the provided name in the provided storage
 #! slots section and returns the VALUE associated with the KEY in the corresponding map.
 #!
-#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY]
+#! Inputs:  [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY]
 #! Outputs: [VALUE]
 #!
 #! Where:
 #! - KEY is the key to look up in the map.
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the map item at KEY.
 #!

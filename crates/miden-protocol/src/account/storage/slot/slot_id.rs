@@ -9,8 +9,8 @@ use crate::Felt;
 
 /// The partial hash of a [`StorageSlotName`](super::StorageSlotName).
 ///
-/// The ID of a slot are the first (`suffix`) and second (`prefix`) field elements of the
-/// blake3-hashed slot name.
+/// The ID of a slot are the third (`suffix`) and fourth (`prefix`) field elements of the
+/// blake3-hashed slot name (i.e. word indices 2 and 3 in LE word order).
 ///
 /// The slot ID is used to uniquely identify a storage slot and is used to sort slots in account
 /// storage.
@@ -34,8 +34,8 @@ impl StorageSlotId {
     /// The provided `name`'s validity is **not** checked.
     pub(super) fn from_str(name: &str) -> StorageSlotId {
         let hashed_word = hash_string_to_word(name);
-        let suffix = hashed_word[0];
-        let prefix = hashed_word[1];
+        let suffix = hashed_word[2];
+        let prefix = hashed_word[3];
         StorageSlotId::new(suffix, prefix)
     }
 

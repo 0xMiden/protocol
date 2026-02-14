@@ -221,7 +221,7 @@ async fn test_mint_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             assert.err="vault should contain asset"
 
             # assert the non-fungible asset has been added to the faucet smt
-            push.FAUCET_SYSDATA_SLOT_NAME[0..2]
+            push.FAUCET_SYSDATA_SLOT_NAME[2..4]
             exec.account::get_item
             push.{asset_vault_key}
             exec.smt::get
@@ -519,7 +519,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
             # check that the non-fungible asset is in the account map
             push.{burnt_asset_vault_key}
-            push.FAUCET_SYSDATA_SLOT_NAME[0..2]
+            push.FAUCET_SYSDATA_SLOT_NAME[2..4]
             exec.account::get_map_item
             push.{non_fungible_asset}
             assert_eqw.err="non-fungible asset should be in the account map"
@@ -541,7 +541,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
             # assert that the non-fungible asset is no longer in the account map
             push.{burnt_asset_vault_key}
-            push.FAUCET_SYSDATA_SLOT_NAME[0..2]
+            push.FAUCET_SYSDATA_SLOT_NAME[2..4]
             exec.account::get_map_item
             padw
             assert_eqw.err="burnt asset should have been removed from map"

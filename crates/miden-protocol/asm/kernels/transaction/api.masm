@@ -437,6 +437,11 @@ pub proc account_get_map_item
     exec.authenticate_account_origin
     # => [SLOT_ID, KEY, pad(8)]
 
+    # convert SLOT_ID word to (suffix, prefix)
+    drop
+    drop
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(8)]
+
     # fetch the map item from account storage
     exec.account::get_map_item
     # => [VALUE, pad(12)]
@@ -444,11 +449,11 @@ end
 
 #! Gets an item from the account storage at its initial state (beginning of transaction).
 #!
-#! Inputs:  [slot_id_suffix, slot_id_prefix, pad(14)]
+#! Inputs:  [slot_id_prefix, slot_id_suffix, pad(14)]
 #! Outputs: [INIT_VALUE, pad(12)]
 #!
 #! Where:
-#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
 #!
@@ -459,7 +464,7 @@ end
 pub proc account_get_initial_item
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_suffix, slot_id_prefix, pad(14)]
+    # => [slot_id_prefix, slot_id_suffix, pad(14)]
 
     # fetch the initial account storage item
     exec.account::get_initial_item
@@ -491,6 +496,11 @@ pub proc account_get_initial_map_item
     exec.authenticate_account_origin
     # => [SLOT_ID, KEY, pad(8)]
 
+    # convert SLOT_ID word to (suffix, prefix)
+    drop
+    drop
+    # => [slot_id_suffix, slot_id_prefix, KEY, pad(8)]
+
     # fetch the initial map item from account storage
     exec.account::get_initial_map_item
     # => [INIT_VALUE, pad(12)]
@@ -519,11 +529,16 @@ end
 pub proc account_set_map_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
+    # => [SLOT_ID, KEY, NEW_VALUE, pad(4)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(6)]
+    # => [SLOT_ID, KEY, NEW_VALUE, pad(4)]
+
+    # convert SLOT_ID word to (suffix, prefix)
+    drop
+    drop
+    # => [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE, pad(4)]
 
     # set the new map item
     exec.account::set_map_item

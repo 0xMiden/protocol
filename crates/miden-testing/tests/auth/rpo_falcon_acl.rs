@@ -108,7 +108,7 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
         begin
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             call.account::get_item
             dropw
         end
@@ -124,7 +124,7 @@ async fn test_rpo_falcon_acl() -> anyhow::Result<()> {
 
         begin
             push.1.2.3.4
-            push.MOCK_VALUE_SLOT0[0..2]
+            push.MOCK_VALUE_SLOT0[2..4]
             call.account::set_item
             dropw dropw
         end
