@@ -247,6 +247,18 @@ end
 #!          | ((next >> 8) & 0xFF) << 16
 #!          | ((next >> 16) & 0xFF) << 24
 #!
+#! To help visualize the packing process, consider that each field element represents a 4-byte
+#! value [u8; 4] (LE).
+#! Memory before is:
+#!   ptr+0:       1 felt: [a, b, c, d]
+#!   ptr+1:       1 felt: [e, f, g, h]
+#!   ptr+2..6:    5 felts: [i, j, k, l, m, ...]
+#!
+#! Memory after:
+#!   ptr+0:       1 felt: [d, e, f, g]
+#!   ptr+1:       1 felt: [h, i, j, k]
+#!   ptr+2..6:    5 felts: [l, ...]
+#!
 #! Inputs:  [leaf_data_start_ptr]
 #! Outputs: []
 #!
