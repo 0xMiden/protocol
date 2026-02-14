@@ -11,7 +11,6 @@ const ERR_NOT_U32="address limb is not u32"
 const ERR_MSB_NONZERO="most-significant 4 bytes must be zero for AccountId"
 const ERR_FELT_OUT_OF_FIELD="combined u64 doesn't fit in field"
 
-
 # ETHEREUM ADDRESS PROCEDURES
 # =================================================================================================
 
@@ -106,7 +105,7 @@ end
 #! Invocation: exec
 pub proc to_account_id
     # limb0 must be 0 (most-significant limb, on top)
-    eq.0 assert.err=ERR_MSB_NONZERO
+    assertz.err=ERR_MSB_NONZERO
     # => [limb1, limb2, limb3, limb4]
 
     # Reorder for suffix = build_felt(limb4, limb3) where limb4=lo, limb3=hi

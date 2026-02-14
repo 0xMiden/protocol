@@ -299,7 +299,8 @@ pub proc pack_leaf_data
         dup push.PACKED_DATA_NUM_ELEMENTS lt
         # => [should_continue, counter]
     end
+    # => [counter]
 
-    # drop the counter
     drop
+    # => []
 end
