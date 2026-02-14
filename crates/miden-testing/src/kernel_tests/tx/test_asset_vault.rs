@@ -18,6 +18,7 @@ use miden_protocol::errors::tx_kernel::{
 use miden_protocol::errors::{AssetError, AssetVaultError};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
 };
@@ -616,6 +617,25 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
 
         assert_execution_error!(exec_output, ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED);
     }
+
+    Ok(())
+}
+
+/// Tests that merging two different fungible assets fails.
+#[tokio::test]
+async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {
+    // Create two fungible assets from different faucets
+    let faucet_id1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap();
+
+    let asset0 = FungibleAsset::new(faucet_id1, FUNGIBLE_ASSET_AMOUNT)?;
+    let asset1 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
+
+    // Sanity check that the Rust implementation errors when adding assets from different faucets.
+    assert_matches!(
+        asset0.add(asset1).unwrap_err(),
+        AssetError::FungibleAssetInconsistentFaucetIds { .. }
+    );
 
     Ok(())
 }
