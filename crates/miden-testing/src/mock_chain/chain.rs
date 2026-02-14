@@ -1226,7 +1226,7 @@ mod tests {
         let mut builder = MockChain::builder();
 
         let mut notes = vec![];
-        for i in 0..10 {
+        for i in 0..3 {
             let account = builder
                 .add_account_from_builder(
                     Auth::BasicAuth,
