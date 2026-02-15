@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+
 use miden_processor::FutureMaybeSend;
 
 use crate::block::BlockHeader;
@@ -12,7 +14,11 @@ use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 /// Production-level implementations will involve some sort of secure remote backend. The trait also
 /// allows for testing with local and ephemeral signers.
 pub trait BlockSigner {
-    fn sign(&self, header: &BlockHeader) -> impl FutureMaybeSend<ecdsa::Signature>;
+    type Error: std::error::Error + 'static;
+    fn sign(
+        &self,
+        header: &BlockHeader,
+    ) -> impl FutureMaybeSend<Result<ecdsa::Signature, Self::Error>>;
     fn public_key(&self) -> ecdsa::PublicKey;
 }
 
@@ -20,8 +26,13 @@ pub trait BlockSigner {
 // ================================================================================================
 
 impl BlockSigner for SecretKey {
-    fn sign(&self, header: &BlockHeader) -> impl FutureMaybeSend<ecdsa::Signature> {
-        async { self.sign(header.commitment()) }
+    type Error = Infallible;
+
+    fn sign(
+        &self,
+        header: &BlockHeader,
+    ) -> impl FutureMaybeSend<Result<ecdsa::Signature, Self::Error>> {
+        async { Ok(self.sign(header.commitment())) }
     }
 
     fn public_key(&self) -> ecdsa::PublicKey {
