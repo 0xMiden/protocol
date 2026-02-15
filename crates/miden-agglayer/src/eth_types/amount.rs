@@ -102,3 +102,73 @@ impl EthAmount {
         &self.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_uint_str_zero() {
+        let amount = EthAmount::from_uint_str("0").unwrap();
+        assert_eq!(amount.as_bytes(), &[0u8; 32]);
+    }
+
+    #[test]
+    fn from_uint_str_small_value() {
+        // 256 = 0x100
+        let amount = EthAmount::from_uint_str("256").unwrap();
+        let mut expected = [0u8; 32];
+        expected[30] = 0x01;
+        expected[31] = 0x00;
+        assert_eq!(amount.as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uint_str_real_amount() {
+        // 100000000000000 = 0x5af3107a4000 (from claim asset test vector)
+        let amount = EthAmount::from_uint_str("100000000000000").unwrap();
+        let mut expected = [0u8; 32];
+        expected[26] = 0x00;
+        expected[27] = 0x00;
+        expected[28] = 0x5a;
+        expected[29] = 0xf3;
+        expected[30] = 0x10;
+        expected[31] = 0x7a;
+        // Actually let me compute this properly:
+        // 100000000000000 = 0x5AF3107A4000
+        // bytes: [0x00, ..., 0x00, 0x5A, 0xF3, 0x10, 0x7A, 0x40, 0x00]
+        expected[26] = 0x5a;
+        expected[27] = 0xf3;
+        expected[28] = 0x10;
+        expected[29] = 0x7a;
+        expected[30] = 0x40;
+        expected[31] = 0x00;
+        assert_eq!(amount.as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uint_str_2e18() {
+        // 2000000000000000000 = 0x1BC16D674EC80000 (from leaf value test vector)
+        let amount = EthAmount::from_uint_str("2000000000000000000").unwrap();
+        let mut expected = [0u8; 32];
+        expected[24] = 0x1b;
+        expected[25] = 0xc1;
+        expected[26] = 0x6d;
+        expected[27] = 0x67;
+        expected[28] = 0x4e;
+        expected[29] = 0xc8;
+        expected[30] = 0x00;
+        expected[31] = 0x00;
+        assert_eq!(amount.as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uint_str_empty() {
+        assert_eq!(EthAmount::from_uint_str(""), Err(EthAmountError::EmptyString));
+    }
+
+    #[test]
+    fn from_uint_str_invalid_digit() {
+        assert_eq!(EthAmount::from_uint_str("12x3"), Err(EthAmountError::InvalidDigit('x')));
+    }
+}
