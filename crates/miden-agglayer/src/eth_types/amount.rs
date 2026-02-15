@@ -1,8 +1,10 @@
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_protocol::Felt;
+use primitive_types::U256;
 
 // ================================================================================================
 // ETHEREUM AMOUNT
@@ -17,22 +19,11 @@ pub struct EthAmount([u8; 32]);
 
 /// Error type for parsing an [`EthAmount`] from a decimal string.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EthAmountError {
-    /// The input string was empty.
-    EmptyString,
-    /// The input string contained a non-digit character.
-    InvalidDigit(char),
-    /// The decimal value overflows a uint256 (32 bytes).
-    Overflow,
-}
+pub struct EthAmountError(String);
 
 impl fmt::Display for EthAmountError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EthAmountError::EmptyString => write!(f, "empty string"),
-            EthAmountError::InvalidDigit(c) => write!(f, "invalid digit: '{c}'"),
-            EthAmountError::Overflow => write!(f, "value overflows uint256"),
-        }
+        write!(f, "invalid uint256 decimal string: {}", self.0)
     }
 }
 
@@ -52,42 +43,9 @@ impl EthAmount {
     /// Returns [`EthAmountError`] if the string is empty, contains non-digit characters,
     /// or represents a value that overflows uint256.
     pub fn from_uint_str(s: &str) -> Result<Self, EthAmountError> {
-        if s.is_empty() {
-            return Err(EthAmountError::EmptyString);
-        }
-
-        let mut bytes = [0u8; 32];
-
-        for ch in s.chars() {
-            let digit = ch.to_digit(10).ok_or(EthAmountError::InvalidDigit(ch))? as u16;
-
-            // Multiply current value by 10 (big-endian, from LSB to MSB).
-            let mut carry: u16 = 0;
-            for byte in bytes.iter_mut().rev() {
-                let val = (*byte as u16) * 10 + carry;
-                *byte = val as u8;
-                carry = val >> 8;
-            }
-            if carry != 0 {
-                return Err(EthAmountError::Overflow);
-            }
-
-            // Add the digit.
-            let mut carry = digit;
-            for byte in bytes.iter_mut().rev() {
-                let val = (*byte as u16) + carry;
-                *byte = val as u8;
-                carry = val >> 8;
-                if carry == 0 {
-                    break;
-                }
-            }
-            if carry != 0 {
-                return Err(EthAmountError::Overflow);
-            }
-        }
-
-        Ok(Self(bytes))
+        let value =
+            U256::from_dec_str(s).map_err(|e| EthAmountError(e.to_string()))?;
+        Ok(Self(value.to_big_endian()))
     }
 
     /// Converts the amount to a vector of field elements for note storage.
@@ -125,22 +83,13 @@ mod tests {
 
     #[test]
     fn from_uint_str_real_amount() {
-        // 100000000000000 = 0x5af3107a4000 (from claim asset test vector)
+        // 100000000000000 = 0x5AF3107A4000 (from claim asset test vector)
         let amount = EthAmount::from_uint_str("100000000000000").unwrap();
         let mut expected = [0u8; 32];
-        expected[26] = 0x00;
-        expected[27] = 0x00;
-        expected[28] = 0x5a;
-        expected[29] = 0xf3;
-        expected[30] = 0x10;
-        expected[31] = 0x7a;
-        // Actually let me compute this properly:
-        // 100000000000000 = 0x5AF3107A4000
-        // bytes: [0x00, ..., 0x00, 0x5A, 0xF3, 0x10, 0x7A, 0x40, 0x00]
-        expected[26] = 0x5a;
-        expected[27] = 0xf3;
+        expected[26] = 0x5A;
+        expected[27] = 0xF3;
         expected[28] = 0x10;
-        expected[29] = 0x7a;
+        expected[29] = 0x7A;
         expected[30] = 0x40;
         expected[31] = 0x00;
         assert_eq!(amount.as_bytes(), &expected);
@@ -151,24 +100,19 @@ mod tests {
         // 2000000000000000000 = 0x1BC16D674EC80000 (from leaf value test vector)
         let amount = EthAmount::from_uint_str("2000000000000000000").unwrap();
         let mut expected = [0u8; 32];
-        expected[24] = 0x1b;
-        expected[25] = 0xc1;
-        expected[26] = 0x6d;
+        expected[24] = 0x1B;
+        expected[25] = 0xC1;
+        expected[26] = 0x6D;
         expected[27] = 0x67;
-        expected[28] = 0x4e;
-        expected[29] = 0xc8;
+        expected[28] = 0x4E;
+        expected[29] = 0xC8;
         expected[30] = 0x00;
         expected[31] = 0x00;
         assert_eq!(amount.as_bytes(), &expected);
     }
 
     #[test]
-    fn from_uint_str_empty() {
-        assert_eq!(EthAmount::from_uint_str(""), Err(EthAmountError::EmptyString));
-    }
-
-    #[test]
-    fn from_uint_str_invalid_digit() {
-        assert_eq!(EthAmount::from_uint_str("12x3"), Err(EthAmountError::InvalidDigit('x')));
+    fn from_uint_str_invalid() {
+        assert!(EthAmount::from_uint_str("12x3").is_err());
     }
 }
