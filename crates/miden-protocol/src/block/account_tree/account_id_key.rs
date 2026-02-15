@@ -1,15 +1,19 @@
 use miden_core::ZERO;
 use miden_crypto::merkle::smt::LeafIndex;
 
-use super::AccountId;
+use super::{AccountId, AccountTreeError};
 use crate::Word;
-use crate::block::account_tree::AccountIdPrefix;
 use crate::crypto::merkle::smt::SMT_DEPTH;
+
 const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
 
-/// A wrapper around AccountId that provides methods for converting to/from the SMT word
-/// representation used by AccountTree.
+/// The account ID encoded as a key for use in [`AccountTree`] and
+/// advice maps in `TransactionAdviceInputs`.
+///
+/// Canonical word layout:
+///
+/// [0, 0, suffix, prefix]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AccountIdKey(AccountId);
 
@@ -27,9 +31,7 @@ impl AccountIdKey {
     // SMT WORD REPRESENTATION
     // ================================================================================================
 
-    /// Converts to SMT word representation used by AccountTree:
-    ///
-    /// `[0, 0, suffix, prefix]`
+    /// Returns `[0, 0, suffix, prefix]`
     pub fn as_word(&self) -> Word {
         let mut key = Word::empty();
 
@@ -42,9 +44,11 @@ impl AccountIdKey {
     /// Construct from SMT word representation.
     ///
     /// Validates structure before converting.
-    pub fn from_word(word: Word) -> AccountId {
-        AccountId::try_from([word[KEY_PREFIX_IDX], word[KEY_SUFFIX_IDX]])
-            .expect("account tree should only contain valid IDs")
+    pub fn from_word(word: Word) -> Result<Self, AccountTreeError> {
+        let id = AccountId::try_from([word[KEY_PREFIX_IDX], word[KEY_SUFFIX_IDX]])
+            .map_err(AccountTreeError::InvalidAccountIdPrefix)?;
+
+        Ok(Self(id))
     }
 
     // LEAF INDEX
@@ -64,11 +68,6 @@ impl AccountIdKey {
     /// `[suffix, prefix, 0, 0]`
     pub fn to_advice_map_word(&self) -> Word {
         Word::from([self.0.suffix(), self.0.prefix().as_felt(), ZERO, ZERO])
-    }
-
-    // Return the prefix of the account ID.
-    pub fn prefix(&self) -> AccountIdPrefix {
-        self.0.prefix()
     }
 }
 
@@ -110,7 +109,7 @@ mod tests {
         );
 
         let key = AccountIdKey::from(id);
-        let recovered = AccountIdKey::from_word(key.as_word());
+        let recovered = AccountIdKey::from_word(key.as_word()).unwrap().account_id();
 
         assert_eq!(id, recovered);
     }
@@ -172,7 +171,7 @@ mod tests {
             );
             let key = AccountIdKey::from(id);
 
-            let recovered = AccountIdKey::from_word(key.as_word());
+            let recovered = AccountIdKey::from_word(key.as_word()).unwrap().account_id();
 
             assert_eq!(id, recovered);
         }
