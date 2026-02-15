@@ -182,11 +182,11 @@ proc build_p2id_output_note
     # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.get_destination_account_id_data
-    # => [prefix, suffix]
+    # => [prefix, suffix, storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     # Write destination account id into memory
     mem_store.1 mem_store.0
-    # => []
+    # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
     # => [RECIPIENT]
