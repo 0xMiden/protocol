@@ -1,24 +1,162 @@
 extern crate alloc;
 
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_agglayer::agglayer_library;
+use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
+use miden_agglayer::{
+    EthAddressFormat,
+    EthAmount,
+    GlobalIndex,
+    LeafData,
+    MetadataHash,
+    agglayer_library,
+};
 use miden_core_lib::CoreLibrary;
-use miden_crypto::hash::keccak::Keccak256Digest;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
+use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
+use miden_protocol::utils::sync::LazyLock;
+use miden_tx::utils::hex_to_bytes;
+use serde::Deserialize;
 
-/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
-pub fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
-    let double_word = (*digest)
-        .chunks(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
-        .rev()
-        .collect::<Vec<_>>();
+// TEST VECTOR STRUCTURES
+// ================================================================================================
 
-    (double_word[0..4].join(", "), double_word[4..8].join(", "))
+/// Claim asset test vectors JSON embedded at compile time - contains both LeafData and ProofData
+/// from a real claimAsset transaction.
+const CLAIM_ASSET_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+
+/// Leaf data test vectors JSON embedded at compile time from the Foundry-generated file.
+pub const LEAF_VALUE_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
+
+/// Merkle proof verification vectors JSON embedded at compile time from the Foundry-generated file.
+pub const MERKLE_PROOF_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/merkle_proof_vectors.json");
+
+/// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol
+/// Uses parallel arrays for leaves and roots. For each element from leaves/roots there are 32
+/// elements from merkle_paths, which represent the merkle path for that leaf + root.
+#[derive(Debug, Deserialize)]
+pub struct MerkleProofVerificationFile {
+    pub leaves: Vec<String>,
+    pub roots: Vec<String>,
+    pub merkle_paths: Vec<String>,
+}
+
+/// Lazily parsed Merkle proof vectors from the JSON file.
+pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
+    LazyLock::new(|| {
+        serde_json::from_str(MERKLE_PROOF_VECTORS_JSON)
+            .expect("failed to parse Merkle proof vectors JSON")
+    });
+
+/// Deserialized leaf value test vector from Solidity-generated JSON.
+#[derive(Debug, Deserialize)]
+pub struct LeafValueVector {
+    pub origin_network: u32,
+    pub origin_token_address: String,
+    pub destination_network: u32,
+    pub destination_address: String,
+    pub amount: String,
+    pub metadata_hash: String,
+    #[allow(dead_code)]
+    pub leaf_value: String,
+}
+
+impl LeafValueVector {
+    /// Converts this test vector into a `LeafData` instance.
+    pub fn to_leaf_data(&self) -> LeafData {
+        LeafData {
+            origin_network: self.origin_network,
+            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
+                .expect("valid origin token address hex"),
+            destination_network: self.destination_network,
+            destination_address: EthAddressFormat::from_hex(&self.destination_address)
+                .expect("valid destination address hex"),
+            amount: EthAmount::new(hex_to_bytes(&self.amount).expect("valid amount hex")),
+            metadata_hash: MetadataHash::new(
+                hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
+            ),
+        }
+    }
+}
+
+/// Deserialized proof value test vector from Solidity-generated JSON.
+/// Contains SMT proofs, exit roots, global index, and expected global exit root.
+#[derive(Debug, Deserialize)]
+pub struct ProofValueVector {
+    pub smt_proof_local_exit_root: Vec<String>,
+    pub smt_proof_rollup_exit_root: Vec<String>,
+    pub global_index: String,
+    pub mainnet_exit_root: String,
+    pub rollup_exit_root: String,
+    /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
+    #[allow(dead_code)]
+    pub global_exit_root: String,
+}
+
+impl ProofValueVector {
+    /// Converts this test vector into a `ProofData` instance.
+    pub fn to_proof_data(&self) -> ProofData {
+        // Parse SMT proofs (32 nodes each)
+        let smt_proof_local: [SmtNode; 32] = self
+            .smt_proof_local_exit_root
+            .iter()
+            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected 32 SMT proof nodes for local exit root");
+
+        let smt_proof_rollup: [SmtNode; 32] = self
+            .smt_proof_rollup_exit_root
+            .iter()
+            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected 32 SMT proof nodes for rollup exit root");
+
+        ProofData {
+            smt_proof_local_exit_root: smt_proof_local,
+            smt_proof_rollup_exit_root: smt_proof_rollup,
+            global_index: GlobalIndex::from_hex(&self.global_index)
+                .expect("valid global index hex"),
+            mainnet_exit_root: Keccak256Output::new(
+                hex_to_bytes(&self.mainnet_exit_root).expect("valid mainnet exit root hex"),
+            ),
+            rollup_exit_root: Keccak256Output::new(
+                hex_to_bytes(&self.rollup_exit_root).expect("valid rollup exit root hex"),
+            ),
+        }
+    }
+}
+
+/// Deserialized claim asset test vector from Solidity-generated JSON.
+/// Contains both LeafData and ProofData from a real claimAsset transaction.
+#[derive(Debug, Deserialize)]
+pub struct ClaimAssetVector {
+    #[serde(flatten)]
+    pub proof: ProofValueVector,
+
+    #[serde(flatten)]
+    pub leaf: LeafValueVector,
+}
+
+/// Lazily parsed claim asset test vector from the JSON file.
+pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
+        .expect("failed to parse claim asset vectors JSON")
+});
+
+/// Returns real claim data from the claim_asset_vectors.json file.
+///
+/// Returns a tuple of (ProofData, LeafData) parsed from the real on-chain claim transaction.
+pub fn real_claim_data() -> (ProofData, LeafData) {
+    let vector = &*CLAIM_ASSET_VECTOR;
+    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data())
 }
 
 /// Execute a program with default host and optional advice inputs
@@ -48,92 +186,3 @@ pub async fn execute_program_with_default_host(
     let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
     processor.execute(&program, &mut host).await
 }
-
-/*
-// TODO: Uncomment this when https://github.com/0xMiden/miden-base/issues/2397 is ready.
-// The mainnet exit root is hardcoded to pass the current test (i.e. we set the expected mainnet
-// root to whatever the current implementation computes), and changing any impl. details will break
-// the test, forcing us to artificially change the expected root every time.
-// TESTING HELPERS
-// ================================================================================================
-
-/// Type alias for the complex return type of claim_note_test_inputs.
-///
-/// Contains native types for the new ClaimNoteParams structure:
-/// - smt_proof_local_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
-/// - smt_proof_rollup_exit_root: `Vec<[u8; 32]>` (256 bytes32 values)
-/// - global_index: [u8; 32]
-/// - mainnet_exit_root: [u8; 32]
-/// - rollup_exit_root: [u8; 32]
-/// - origin_network: u32
-/// - origin_token_address: [u8; 20]
-/// - destination_network: u32
-/// - metadata: [u8; 32]
-pub type ClaimNoteTestInputs = (
-    Vec<[u8; 32]>,
-    Vec<[u8; 32]>,
-    [u8; 32],
-    [u8; 32],
-    [u8; 32],
-    u32,
-    [u8; 20],
-    u32,
-    [u8; 32],
-);
-
-/// Returns dummy test inputs for creating CLAIM notes with native types.
-///
-/// This is a convenience function for testing that provides realistic dummy data
-/// for all the agglayer claimAsset function inputs using native types.
-///
-/// # Returns
-/// A tuple containing native types for the new ClaimNoteParams structure
-pub fn claim_note_test_inputs() -> ClaimNoteTestInputs {
-    // Create SMT proofs with 32 bytes32 values each (SMT path depth)
-    let smt_proof_local_exit_root = vec![[0u8; 32]; 32];
-    let smt_proof_rollup_exit_root = vec![[0u8; 32]; 32];
-    // Global index format (32 bytes, big-endian like Solidity uint256):
-    // - bytes[0..20]: leading zeros (5 limbs)
-    // - bytes[20..24]: mainnet_flag = 1 (BE u32)
-    // - bytes[24..28]: rollup_index = 0 (BE u32)
-    // - bytes[28..32]: leaf_index = 2 (BE u32)
-    let mut global_index = [0u8; 32];
-    global_index[23] = 1; // mainnet flag = 1 (BE: LSB at byte 23)
-    global_index[31] = 2; // leaf index = 2 (BE: LSB at byte 31)
-
-    let mainnet_exit_root: [u8; 32] = [
-        0x05, 0xc2, 0xbe, 0x9d, 0xd7, 0xf4, 0x7e, 0xc6, 0x29, 0xae, 0x6a, 0xc1, 0x1a, 0x24, 0xb5,
-        0x28, 0x59, 0xfd, 0x35, 0x8c, 0x31, 0x39, 0x00, 0xf5, 0x23, 0x1f, 0x84, 0x58, 0x63, 0x22,
-        0xb5, 0x06,
-    ];
-
-    let rollup_exit_root: [u8; 32] = [
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99,
-    ];
-
-    let origin_network = 1u32;
-
-    let origin_token_address: [u8; 20] = [
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xaa, 0xbb, 0xcc,
-    ];
-
-    let destination_network = 2u32;
-
-    let metadata_hash: [u8; 32] = [0u8; 32];
-
-    (
-        smt_proof_local_exit_root,
-        smt_proof_rollup_exit_root,
-        global_index,
-        mainnet_exit_root,
-        rollup_exit_root,
-        origin_network,
-        origin_token_address,
-        destination_network,
-        metadata_hash,
-    )
-}
-*/

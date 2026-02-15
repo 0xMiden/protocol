@@ -44,6 +44,18 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
+
+    /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.
+    ///
+    /// - `lo` contains the first 4 u32-packed felts (bytes 0..16).
+    /// - `hi` contains the last  4 u32-packed felts (bytes 16..32).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn to_words(&self) -> [Word; 2] {
+        let elements = self.to_elements();
+        let lo: [Felt; 4] = elements[0..4].try_into().expect("to_elements returns 8 felts");
+        let hi: [Felt; 4] = elements[4..8].try_into().expect("to_elements returns 8 felts");
+        [Word::new(lo), Word::new(hi)]
+    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
@@ -83,25 +95,19 @@ impl SequentialCommit for ProofData {
 
         // Convert SMT proof elements to felts (each node is 8 felts)
         for node in self.smt_proof_local_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
         // Global index (uint256 as 32 bytes)
         elements.extend(self.global_index.to_elements());
 
-        // Mainnet exit root (bytes32 as 8 u32 felts)
-        let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
-        elements.extend(mainnet_exit_root_felts);
-
-        // Rollup exit root (bytes32 as 8 u32 felts)
-        let rollup_exit_root_felts = self.rollup_exit_root.to_elements();
-        elements.extend(rollup_exit_root_felts);
+        // Mainnet and rollup exit roots
+        elements.extend(self.mainnet_exit_root.to_elements());
+        elements.extend(self.rollup_exit_root.to_elements());
 
         elements
     }
