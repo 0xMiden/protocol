@@ -5,7 +5,7 @@ use miden_crypto::merkle::{InnerNodeInfo, SparseMerklePath};
 
 use crate::Word;
 use crate::account::AccountId;
-use crate::block::account_tree::{account_id_to_smt_key, smt_key_to_account_id};
+use crate::block::account_tree::{AccountIdKey, smt_key_to_account_id};
 use crate::errors::AccountTreeError;
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
@@ -91,7 +91,7 @@ impl AccountWitness {
         };
 
         let commitment = proof
-            .get(&account_id_to_smt_key(witness_id))
+            .get(&AccountIdKey::from(witness_id).as_word())
             .expect("we should have received a proof for the witness key");
 
         // SAFETY: The proof is guaranteed to have depth SMT_DEPTH if it comes from one of
@@ -132,10 +132,10 @@ impl AccountWitness {
     /// Returns the [`SmtLeaf`] of the account witness.
     pub fn leaf(&self) -> SmtLeaf {
         if self.commitment == Word::empty() {
-            let leaf_idx = LeafIndex::from(account_id_to_smt_key(self.id));
+            let leaf_idx = LeafIndex::from(AccountIdKey::from(self.id).as_word());
             SmtLeaf::new_empty(leaf_idx)
         } else {
-            let key = account_id_to_smt_key(self.id);
+            let key = AccountIdKey::from(self.id).as_word();
             SmtLeaf::new_single(key, self.commitment)
         }
     }

@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use super::{AccountId, AccountIdPrefix, AccountTree, AccountTreeError, account_id_to_smt_key};
+use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeError};
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
@@ -205,7 +205,7 @@ impl AccountTree<Smt> {
         let smt = Smt::with_entries(
             entries
                 .into_iter()
-                .map(|(id, commitment)| (account_id_to_smt_key(id), commitment)),
+                .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
         )
         .map_err(|err| {
             let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {

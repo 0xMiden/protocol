@@ -4,7 +4,7 @@ use winter_rand_utils::rand_value;
 
 use crate::Word;
 use crate::account::Account;
-use crate::block::account_tree::{AccountTree, account_id_to_smt_key};
+use crate::block::account_tree::{AccountTree, AccountIdKey};
 use crate::block::{BlockHeader, BlockNumber, FeeParameters};
 use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
@@ -27,7 +27,7 @@ impl BlockHeader {
         let smt = Smt::with_entries(
             accounts
                 .iter()
-                .map(|acct| (account_id_to_smt_key(acct.id()), acct.commitment())),
+                .map(|acct| (AccountIdKey::from(acct.id()).as_word(), acct.commitment())),
         )
         .expect("failed to create account db");
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");
