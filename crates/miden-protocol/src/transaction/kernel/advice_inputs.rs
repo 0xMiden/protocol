@@ -433,10 +433,23 @@ impl TransactionAdviceInputs {
                 let added = &note_data[note_data_len_before..];
                 let tail_start = added.len().saturating_sub(16);
                 let tail = &added[tail_start..];
+                let head = &added[..added.len().min(16)];
+                let serial = recipient.serial_num();
+                let script_root = recipient.script().root();
+                let inputs_commitment = recipient.inputs().commitment();
+                let assets_commitment = assets.commitment();
                 std::eprintln!(
-                    "debug input note data: len={} tail={:?}",
+                    "debug input note data: len={} head={:?} tail={:?}",
                     added.len(),
+                    head.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
                     tail.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>()
+                );
+                std::eprintln!(
+                    "debug note details: serial={:?} script_root={:?} inputs_commitment={:?} assets_commitment={:?}",
+                    serial.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
+                    script_root.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
+                    inputs_commitment.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>(),
+                    assets_commitment.iter().map(|v| v.as_canonical_u64()).collect::<Vec<_>>()
                 );
             }
 

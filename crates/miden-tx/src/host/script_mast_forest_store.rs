@@ -31,10 +31,36 @@ impl ScriptMastForestStore {
         };
 
         for note_script in note_scripts {
+            #[cfg(feature = "std")]
+            if std::env::var("MIDEN_DEBUG_MAST_STORE").is_ok() {
+                let root = note_script.as_ref().root();
+                let mut root_in_forest = false;
+                let mut root_is_external = None;
+                for node in note_script.as_ref().mast().nodes() {
+                    if node.digest() == root {
+                        root_in_forest = true;
+                        root_is_external = Some(node.is_external());
+                        break;
+                    }
+                }
+                std::eprintln!(
+                    "debug mast store: note_script_root={:?} root_in_forest={} root_is_external={:?}",
+                    root,
+                    root_in_forest,
+                    root_is_external
+                );
+            }
             mast_store.insert(note_script.as_ref().mast());
         }
 
         if let Some(tx_script) = tx_script {
+            #[cfg(feature = "std")]
+            if std::env::var("MIDEN_DEBUG_MAST_STORE").is_ok() {
+                std::eprintln!(
+                    "debug mast store: tx_script_root={:?}",
+                    tx_script.root()
+                );
+            }
             mast_store.insert(tx_script.mast());
         }
         mast_store

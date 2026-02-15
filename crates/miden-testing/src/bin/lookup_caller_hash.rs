@@ -1,6 +1,7 @@
 use miden_core::Felt;
 use miden_core::field::PrimeField64;
 use miden_core::mast::MastNodeExt;
+use std::env;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::NoteType;
@@ -76,13 +77,37 @@ fn scan_library_exports(label: &str, lib: &Library, target: [u64; 4], target_rev
     }
 }
 
+fn parse_target_hex(hex: &str) -> Option<[u64; 4]> {
+    let hex = hex.strip_prefix("0x").unwrap_or(hex);
+    if hex.len() != 64 {
+        return None;
+    }
+
+    let mut bytes = Vec::with_capacity(32);
+    for i in (0..hex.len()).step_by(2) {
+        let byte = u8::from_str_radix(&hex[i..i + 2], 16).ok()?;
+        bytes.push(byte);
+    }
+
+    let mut out = [0u64; 4];
+    for i in 0..4 {
+        let start = i * 8;
+        let chunk: [u8; 8] = bytes[start..start + 8].try_into().ok()?;
+        out[i] = u64::from_le_bytes(chunk);
+    }
+    Some(out)
+}
+
 fn main() {
-    let target: [u64; 4] = [
-        4410162016693140613,
-        9339813725324401356,
-        16470561989268149228,
-        1688422771219118252,
-    ];
+    let target: [u64; 4] = env::var("TARGET_HEX")
+        .ok()
+        .and_then(|hex| parse_target_hex(&hex))
+        .unwrap_or([
+            7041614732314314864,
+            7818075479026957272,
+            2645567551762466101,
+            6741592210724925814,
+        ]);
     let target_rev: [u64; 4] = [target[3], target[2], target[1], target[0]];
 
     let mut builder = MockChain::builder();
@@ -159,6 +184,8 @@ fn main() {
         .expect("failed to compile tx script");
 
     let forests = [
+        ("kernel_main", TransactionKernel::main().mast_forest().clone()),
+        ("tx_script_main", TransactionKernel::tx_script_main().mast_forest().clone()),
         ("tx_script", tx_script.mast()),
         ("note_0_script", p2id_note_0_assets.script().mast()),
         ("note_1_script", p2id_note_1_asset.script().mast()),

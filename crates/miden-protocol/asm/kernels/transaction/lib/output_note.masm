@@ -473,7 +473,7 @@ proc add_non_fungible_asset
     # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
     # compute the loop latch
-    dup dup.10 neq
+    dup dup.9 neq
     # => [latch, asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
     #     note_idx]
 
@@ -489,7 +489,7 @@ proc add_non_fungible_asset
         #     num_of_assets, note_idx]
 
         # check if we reached the end of the loop
-        dup dup.10 neq
+        dup dup.9 neq
     end
     # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 

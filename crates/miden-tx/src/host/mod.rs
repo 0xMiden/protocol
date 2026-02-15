@@ -457,9 +457,35 @@ where
     /// Returns the [`MastForest`] that contains the procedure with the given `procedure_root`.
     pub fn get_mast_forest(&self, procedure_root: &Word) -> Option<Arc<MastForest>> {
         // Search in the note MAST forest store, otherwise fall back to the user-provided store
-        match self.scripts_mast_store.get(procedure_root) {
-            Some(forest) => Some(forest),
-            None => self.mast_store.get(procedure_root),
+        let scripts_hit = self.scripts_mast_store.get(procedure_root);
+        let main_hit = self.mast_store.get(procedure_root);
+        #[cfg(feature = "std")]
+        if std::env::var("MIDEN_DEBUG_MAST_LOOKUP").is_ok()
+            && scripts_hit.is_none()
+            && main_hit.is_none()
+        {
+            use miden_processor::field::PrimeField64;
+
+            let reversed = Word::new([
+                procedure_root[3],
+                procedure_root[2],
+                procedure_root[1],
+                procedure_root[0],
+            ]);
+            let byteswapped = Word::new(procedure_root.map(|felt| {
+                Felt::new(felt.as_canonical_u64().swap_bytes())
+            }));
+            let reversed_hit = self.scripts_mast_store.get(&reversed).is_some()
+                || self.mast_store.get(&reversed).is_some();
+            let byteswapped_hit = self.scripts_mast_store.get(&byteswapped).is_some()
+                || self.mast_store.get(&byteswapped).is_some();
+            std::eprintln!(
+                "debug mast lookup: root={:?} scripts_hit=false main_hit=false reversed_hit={} byteswapped_hit={}",
+                procedure_root,
+                reversed_hit,
+                byteswapped_hit
+            );
         }
+        scripts_hit.or(main_hit)
     }
 }

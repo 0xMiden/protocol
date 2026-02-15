@@ -67,9 +67,9 @@ pub proc move_asset_to_note
     loc_storew_le.0 dropw
     # => [pad(11)]
 
-    # call output_note::add_asset with [ASSET, note_idx]
-    loc_load.4
+    # call output_note::add_asset with [note_idx, ASSET]
     loc_loadw_le.0
+    loc_load.4
     exec.output_note::add_asset
     # => [pad(11)]
 

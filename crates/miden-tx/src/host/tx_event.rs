@@ -557,6 +557,41 @@ impl TransactionEvent {
             )),
 
             TransactionEventId::NoteExecutionStart => {
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_NOTE_SCRIPT_ROOT").is_ok() {
+                    use miden_protocol::transaction::memory::{
+                        ACTIVE_INPUT_NOTE_PTR, INPUT_NOTE_SCRIPT_ROOT_OFFSET,
+                    };
+
+                    let note_ptr = process
+                        .get_mem_value(process.ctx(), ACTIVE_INPUT_NOTE_PTR)
+                        .and_then(|felt| felt.as_canonical_u64().try_into().ok());
+                    if let Some(note_ptr) = note_ptr {
+                        let script_root = process
+                            .get_mem_word(process.ctx(), note_ptr + INPUT_NOTE_SCRIPT_ROOT_OFFSET)
+                            .ok()
+                            .flatten();
+                        let script_root_elements = (0..4)
+                            .map(|idx| {
+                                process
+                                    .get_mem_value(
+                                        process.ctx(),
+                                        note_ptr + INPUT_NOTE_SCRIPT_ROOT_OFFSET + idx,
+                                    )
+                                    .map(|felt| felt.as_canonical_u64())
+                            })
+                            .collect::<Vec<_>>();
+                        let note_id = process.get_mem_word(process.ctx(), note_ptr).ok().flatten();
+                        std::eprintln!(
+                            "debug note exec start: note_ptr={note_ptr} note_id={:?} script_root={:?} script_root_elements={script_root_elements:?}",
+                            note_id.map(|word| word.map(|v| v.as_canonical_u64())),
+                            script_root.map(|word| word.map(|v| v.as_canonical_u64())),
+                        );
+                    } else {
+                        std::eprintln!("debug note exec start: active note ptr unavailable");
+                    }
+                }
+
                 let note_id = process.get_active_note_id()?.ok_or_else(|| TransactionKernelError::other(
                     "note execution interval measurement is incorrect: check the placement of the start and the end of the interval",
                 ))?;
