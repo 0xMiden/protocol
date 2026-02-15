@@ -1,7 +1,7 @@
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
-use miden_processor::fast::FastProcessor;
+use miden_processor::FastProcessor;
 use miden_processor::{ExecutionError, StackInputs};
 pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;

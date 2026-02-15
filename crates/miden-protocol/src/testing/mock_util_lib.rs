@@ -27,9 +27,6 @@ const MOCK_UTIL_LIBRARY_CODE: &str = "
         exec.create_random_note
         # => [note_idx, ASSET]
 
-        movdn.4
-        # => [ASSET, note_idx]
-
         exec.output_note::add_asset
         # => []
     end

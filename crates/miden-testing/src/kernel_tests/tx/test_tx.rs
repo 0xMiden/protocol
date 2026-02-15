@@ -272,7 +272,13 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
             push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
             # => [ASSET, note_idx, pad(11)]
 
+            movup.4
+            # => [note_idx, ASSET, pad(11)]
+
             call.wallet::move_asset_to_note
+            # => [note_idx, ASSET, pad(11)]
+
+            movdn.4
             # => [ASSET, note_idx, pad(11)]
 
             # remove excess PADs from the stack

@@ -2,7 +2,7 @@ use alloc::string::String;
 
 use anyhow::Context;
 use miden_processor::ContextId;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};

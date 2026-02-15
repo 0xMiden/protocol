@@ -190,8 +190,22 @@ impl TransactionEvent {
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset => {
                 // Expected stack state: [event, ASSET, account_vault_root_ptr]
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_ASSET_EVENT").is_ok() {
+                    let stack_items: Vec<Felt> =
+                        (0..16).map(|idx| process.get_stack_item(idx)).collect();
+                    let stack_1 = process.get_stack_item(1);
+                    let stack_2 = process.get_stack_item(2);
+                    let prefix_1 = miden_protocol::account::AccountIdPrefix::try_from(stack_1);
+                    let prefix_2 = miden_protocol::account::AccountIdPrefix::try_from(stack_2);
+                    let prefix_1_type = prefix_1.as_ref().map(|p| p.account_type());
+                    let prefix_2_type = prefix_2.as_ref().map(|p| p.account_type());
+                    std::eprintln!(
+                        "debug: account_vault_before_add_remove stack0..15={stack_items:?} prefix1={prefix_1:?} prefix1_type={prefix_1_type:?} prefix2={prefix_2:?} prefix2_type={prefix_2_type:?}"
+                    );
+                }
                 let asset_word = get_stack_word_le(process, 1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
+                let asset = parse_asset_with_fallback(asset_word).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_account_vault_before_add_or_remove_asset",
                         source,
@@ -210,7 +224,8 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
                 // Expected stack state: [event, ASSET]
-                let asset: Asset = get_stack_word_le(process, 1).try_into().map_err(|source| {
+                let asset_word = get_stack_word_le(process, 1);
+                let asset = parse_asset_with_fallback(asset_word).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_account_vault_after_remove_asset",
                         source,
@@ -221,7 +236,8 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
                 // Expected stack state: [event, ASSET]
-                let asset: Asset = get_stack_word_le(process, 1).try_into().map_err(|source| {
+                let asset_word = get_stack_word_le(process, 1);
+                let asset = parse_asset_with_fallback(asset_word).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_account_vault_after_add_asset",
                         source,
@@ -255,7 +271,7 @@ impl TransactionEvent {
             TransactionEventId::AccountVaultBeforeHasNonFungibleAsset => {
                 // Expected stack state: [event, ASSET, vault_root_ptr]
                 let asset_word = get_stack_word_le(process, 1);
-                let asset = Asset::try_from(asset_word).map_err(|err| {
+                let asset = parse_asset_with_fallback(asset_word).map_err(|err| {
                     TransactionKernelError::other_with_source(
                         "provided asset is not a valid asset",
                         err,
@@ -451,7 +467,7 @@ impl TransactionEvent {
                 let note_idx = process.get_stack_item(7).as_canonical_u64() as usize;
 
                 let asset_word = get_stack_word_le(process, 1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
+                let asset = parse_asset_with_fallback(asset_word).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_note_before_add_asset",
                         source,
@@ -740,4 +756,12 @@ fn extract_word(commitments: &[Felt], start: usize) -> Word {
         commitments[start + 2],
         commitments[start + 3],
     ])
+}
+
+fn parse_asset_with_fallback(asset_word: Word) -> Result<Asset, miden_protocol::AssetError> {
+    Asset::try_from(asset_word).or_else(|_| {
+        // Some legacy call sites push assets in BE stack order; reorder to LE and retry.
+        let reordered = Word::new([asset_word[3], asset_word[2], asset_word[0], asset_word[1]]);
+        Asset::try_from(reordered)
+    })
 }

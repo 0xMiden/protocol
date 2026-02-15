@@ -1355,10 +1355,23 @@ dependencies = [
 [[package]]
 name = "miden-air"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
- "miden-core",
+ "miden-core 0.21.0",
  "miden-crypto",
- "miden-utils-indexing",
+ "miden-utils-indexing 0.21.0",
+ "serde",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "miden-air"
+version = "0.22.0"
+dependencies = [
+ "miden-core 0.22.0",
+ "miden-crypto",
+ "miden-utils-indexing 0.22.0",
  "serde",
  "thiserror",
  "tracing",
@@ -1367,12 +1380,26 @@ dependencies = [
 [[package]]
 name = "miden-assembly"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "env_logger",
  "log",
- "miden-assembly-syntax",
- "miden-core",
- "miden-mast-package",
+ "miden-assembly-syntax 0.21.0",
+ "miden-core 0.21.0",
+ "miden-mast-package 0.21.0",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-assembly"
+version = "0.22.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "miden-assembly-syntax 0.22.0",
+ "miden-core 0.22.0",
+ "miden-mast-package 0.22.0",
  "smallvec",
  "thiserror",
 ]
@@ -1380,15 +1407,38 @@ dependencies = [
 [[package]]
 name = "miden-assembly-syntax"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "aho-corasick",
  "env_logger",
  "lalrpop",
  "lalrpop-util",
  "log",
- "miden-core",
- "miden-debug-types",
- "miden-utils-diagnostics",
+ "miden-core 0.21.0",
+ "miden-debug-types 0.21.0",
+ "miden-utils-diagnostics 0.21.0",
+ "midenc-hir-type",
+ "proptest",
+ "proptest-derive",
+ "regex",
+ "rustc_version 0.4.1",
+ "semver 1.0.27",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-assembly-syntax"
+version = "0.22.0"
+dependencies = [
+ "aho-corasick",
+ "env_logger",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "miden-core 0.22.0",
+ "miden-debug-types 0.22.0",
+ "miden-utils-diagnostics 0.22.0",
  "midenc-hir-type",
  "proptest",
  "proptest-derive",
@@ -1410,15 +1460,36 @@ dependencies = [
 [[package]]
 name = "miden-core"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "derive_more",
  "itertools 0.14.0",
  "miden-crypto",
- "miden-debug-types",
+ "miden-debug-types 0.21.0",
  "miden-formatting",
- "miden-utils-core-derive",
- "miden-utils-indexing",
- "miden-utils-sync",
+ "miden-utils-core-derive 0.21.0",
+ "miden-utils-indexing 0.21.0",
+ "miden-utils-sync 0.21.0",
+ "num-derive",
+ "num-traits",
+ "proptest",
+ "proptest-derive",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-core"
+version = "0.22.0"
+dependencies = [
+ "derive_more",
+ "itertools 0.14.0",
+ "miden-crypto",
+ "miden-debug-types 0.22.0",
+ "miden-formatting",
+ "miden-utils-core-derive 0.22.0",
+ "miden-utils-indexing 0.22.0",
+ "miden-utils-sync 0.22.0",
  "num-derive",
  "num-traits",
  "proptest",
@@ -1429,15 +1500,15 @@ dependencies = [
 
 [[package]]
 name = "miden-core-lib"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "env_logger",
  "fs-err",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.22.0",
+ "miden-core 0.22.0",
  "miden-crypto",
- "miden-processor",
- "miden-utils-sync",
+ "miden-processor 0.22.0",
+ "miden-utils-sync 0.22.0",
  "thiserror",
 ]
 
@@ -1503,13 +1574,30 @@ dependencies = [
 [[package]]
 name = "miden-debug-types"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "memchr",
  "miden-crypto",
  "miden-formatting",
  "miden-miette",
- "miden-utils-indexing",
- "miden-utils-sync",
+ "miden-utils-indexing 0.21.0",
+ "miden-utils-sync 0.21.0",
+ "paste",
+ "serde",
+ "serde_spanned",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-debug-types"
+version = "0.22.0"
+dependencies = [
+ "memchr",
+ "miden-crypto",
+ "miden-formatting",
+ "miden-miette",
+ "miden-utils-indexing 0.22.0",
+ "miden-utils-sync 0.22.0",
  "paste",
  "serde",
  "serde_spanned",
@@ -1528,10 +1616,21 @@ dependencies = [
 [[package]]
 name = "miden-mast-package"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "derive_more",
- "miden-assembly-syntax",
- "miden-core",
+ "miden-assembly-syntax 0.21.0",
+ "miden-core 0.21.0",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-mast-package"
+version = "0.22.0"
+dependencies = [
+ "derive_more",
+ "miden-assembly-syntax 0.22.0",
+ "miden-core 0.22.0",
  "thiserror",
 ]
 
@@ -1574,13 +1673,31 @@ dependencies = [
 [[package]]
 name = "miden-processor"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "itertools 0.14.0",
- "miden-air",
- "miden-core",
- "miden-debug-types",
- "miden-utils-diagnostics",
- "miden-utils-indexing",
+ "miden-air 0.21.0",
+ "miden-core 0.21.0",
+ "miden-debug-types 0.21.0",
+ "miden-utils-diagnostics 0.21.0",
+ "miden-utils-indexing 0.21.0",
+ "paste",
+ "rayon",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "miden-processor"
+version = "0.22.0"
+dependencies = [
+ "itertools 0.14.0",
+ "miden-air 0.22.0",
+ "miden-core 0.22.0",
+ "miden-debug-types 0.22.0",
+ "miden-utils-diagnostics 0.22.0",
+ "miden-utils-indexing 0.22.0",
  "paste",
  "rayon",
  "thiserror",
@@ -1599,19 +1716,19 @@ dependencies = [
  "criterion 0.5.1",
  "fs-err",
  "getrandom 0.3.4",
- "miden-air",
- "miden-assembly",
- "miden-assembly-syntax",
- "miden-core",
+ "miden-air 0.22.0",
+ "miden-assembly 0.22.0",
+ "miden-assembly-syntax 0.22.0",
+ "miden-core 0.22.0",
  "miden-core-lib",
  "miden-crypto",
- "miden-mast-package",
- "miden-processor",
+ "miden-mast-package 0.22.0",
+ "miden-processor 0.22.0",
  "miden-protocol",
  "miden-protocol-macros",
  "miden-test-utils",
- "miden-utils-sync",
- "miden-verifier",
+ "miden-utils-sync 0.22.0",
+ "miden-verifier 0.22.0",
  "pprof",
  "rand",
  "rand_chacha",
@@ -1640,13 +1757,29 @@ dependencies = [
 [[package]]
 name = "miden-prover"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "bincode",
- "miden-air",
- "miden-core",
+ "miden-air 0.21.0",
+ "miden-core 0.21.0",
  "miden-crypto",
- "miden-debug-types",
- "miden-processor",
+ "miden-debug-types 0.21.0",
+ "miden-processor 0.21.0",
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "miden-prover"
+version = "0.22.0"
+dependencies = [
+ "bincode",
+ "miden-air 0.22.0",
+ "miden-core 0.22.0",
+ "miden-crypto",
+ "miden-debug-types 0.22.0",
+ "miden-processor 0.22.0",
  "serde",
  "tokio",
  "tracing",
@@ -1669,10 +1802,10 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "fs-err",
- "miden-assembly",
- "miden-core",
+ "miden-assembly 0.22.0",
+ "miden-core 0.22.0",
  "miden-core-lib",
- "miden-processor",
+ "miden-processor 0.22.0",
  "miden-protocol",
  "miden-standards",
  "rand",
@@ -1687,13 +1820,13 @@ version = "0.1.0"
 source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "env_logger",
- "miden-air",
- "miden-assembly",
- "miden-core",
+ "miden-air 0.21.0",
+ "miden-assembly 0.21.0",
+ "miden-core 0.21.0",
  "miden-crypto",
- "miden-processor",
- "miden-prover",
- "miden-verifier",
+ "miden-processor 0.21.0",
+ "miden-prover 0.21.0",
+ "miden-verifier 0.21.0",
  "pretty_assertions",
  "proptest",
  "test-case",
@@ -1706,10 +1839,10 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "itertools 0.14.0",
- "miden-air",
+ "miden-air 0.22.0",
  "miden-block-prover",
- "miden-core",
- "miden-processor",
+ "miden-core 0.22.0",
+ "miden-processor 0.22.0",
  "miden-protocol",
  "miden-standards",
  "miden-tx",
@@ -1728,16 +1861,16 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bincode",
- "miden-air",
- "miden-assembly",
- "miden-core",
+ "miden-air 0.22.0",
+ "miden-assembly 0.22.0",
+ "miden-core 0.22.0",
  "miden-crypto",
- "miden-processor",
+ "miden-processor 0.22.0",
  "miden-protocol",
- "miden-prover",
+ "miden-prover 0.22.0",
  "miden-standards",
  "miden-tx",
- "miden-verifier",
+ "miden-verifier 0.22.0",
  "rstest",
  "thiserror",
 ]
@@ -1753,6 +1886,16 @@ dependencies = [
 [[package]]
 name = "miden-utils-core-derive"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "miden-utils-core-derive"
+version = "0.22.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1762,9 +1905,21 @@ dependencies = [
 [[package]]
 name = "miden-utils-diagnostics"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "miden-crypto",
- "miden-debug-types",
+ "miden-debug-types 0.21.0",
+ "miden-miette",
+ "paste",
+ "tracing",
+]
+
+[[package]]
+name = "miden-utils-diagnostics"
+version = "0.22.0"
+dependencies = [
+ "miden-crypto",
+ "miden-debug-types 0.22.0",
  "miden-miette",
  "paste",
  "tracing",
@@ -1773,6 +1928,16 @@ dependencies = [
 [[package]]
 name = "miden-utils-indexing"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
+dependencies = [
+ "miden-crypto",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "miden-utils-indexing"
+version = "0.22.0"
 dependencies = [
  "miden-crypto",
  "serde",
@@ -1782,6 +1947,17 @@ dependencies = [
 [[package]]
 name = "miden-utils-sync"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
+dependencies = [
+ "lock_api",
+ "loom",
+ "once_cell",
+ "parking_lot",
+]
+
+[[package]]
+name = "miden-utils-sync"
+version = "0.22.0"
 dependencies = [
  "lock_api",
  "loom",
@@ -1792,10 +1968,23 @@ dependencies = [
 [[package]]
 name = "miden-verifier"
 version = "0.21.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=next#ea1870fc30113ac2dd611e38fc5b022b57e7b637"
 dependencies = [
  "bincode",
- "miden-air",
- "miden-core",
+ "miden-air 0.21.0",
+ "miden-core 0.21.0",
+ "miden-crypto",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "miden-verifier"
+version = "0.22.0"
+dependencies = [
+ "bincode",
+ "miden-air 0.22.0",
+ "miden-core 0.22.0",
  "miden-crypto",
  "thiserror",
  "tracing",

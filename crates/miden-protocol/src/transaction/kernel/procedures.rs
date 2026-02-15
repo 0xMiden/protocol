@@ -40,9 +40,9 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // account_get_vault_root
     word!("0x1e3d8f19d76a87777ca8e07774b5e99c7fd20e51ff834a9f531ca0bde82ed269"),
     // account_add_asset
-    word!("0x04ec58460df393a44498eefaae516f02331d924cd2b25cf398e675456def3df8"),
+    word!("0x133a2206c11f843fc0a5e4f234fad60982014bf91db1e29197fcee2c08b1415f"),
     // account_remove_asset
-    word!("0x329cfa6b81e0d3adab1faa7f34c0af8baba2ac01160b4ee199fb0b9f8a291bb4"),
+    word!("0x5ba6a99e374cd8861447b40be9d1235af3c4bfe9f793b7fc79f4ed13f6770812"),
     // account_get_balance
     word!("0xf125dc1919ccfec89aa24291bbb5ec5ae867f2c7ffecd0d4108d87be715f08b1"),
     // account_get_initial_balance
@@ -80,7 +80,7 @@ pub const KERNEL_PROCEDURES: [Word; 52] = [
     // input_note_get_recipient
     word!("0xcb486b16e78907161dda464e7f8ab4ce05d55b78d2f1d0af7dba32b20b842cc0"),
     // output_note_create
-    word!("0xe2021acbfca124a80153d660811ce66077ba173c75757347d42382d3d9b1ac46"),
+    word!("0x32c8f85c2b7d0aa70f7aefc1fecffd89bd8bac09bd58ea9e74f3bdfc325e4700"),
     // output_note_get_metadata
     word!("0x3536347c35d038e03ae573a13fe44ef800452617f3ff905a0be32161f35092b0"),
     // output_note_get_assets_info

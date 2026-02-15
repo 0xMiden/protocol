@@ -75,8 +75,8 @@ pub proc distribute
     exec.output_note::create
     # => [note_idx, ASSET]
 
-    # load the ASSET and add it to the note
-    movdn.4 exec.output_note::add_asset
+    # add the ASSET to the note
+    exec.output_note::add_asset
     # => []
 end
 

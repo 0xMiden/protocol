@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 
 use miden_core::field::PrimeField64;
 use miden_processor::advice::AdviceMutation;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_processor::{ContextId, ProcessorState};
 use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
 

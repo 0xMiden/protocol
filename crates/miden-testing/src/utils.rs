@@ -217,6 +217,7 @@ fn note_script_that_creates_notes<'note>(
         for asset in assets_str {
             out.push_str(&format!(
                 " push.{asset}
+                  movup.4
                   call.::miden::standards::wallets::basic::move_asset_to_note\n",
             ));
             out.push_str(" dropw\n");

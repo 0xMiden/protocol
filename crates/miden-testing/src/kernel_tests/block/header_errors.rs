@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_core::proof::HashFunction;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -392,7 +393,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
                 genesis_block.commitment(),
                 FungibleAsset::mock(500).unwrap_fungible(),
                 BlockNumber::from(u32::MAX),
-                ExecutionProof::new_dummy(),
+                ExecutionProof::new(Vec::new(), HashFunction::Blake3_256, Vec::new()),
             )
             .account_update_details(AccountUpdateDetails::Private)
             .build()

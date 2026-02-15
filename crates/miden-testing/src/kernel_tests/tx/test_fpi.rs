@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_core::advice::AdviceInputs;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::account::{
     Account,
     AccountBuilder,

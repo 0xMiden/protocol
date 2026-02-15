@@ -1,7 +1,7 @@
 use miden_core::advice::AdviceInputs;
 #[cfg(test)]
 use miden_processor::DefaultHost;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
+use miden_processor::{ExecutionOutput, FastProcessor};
 use miden_processor::{ExecutionError, Host, Program, StackInputs};
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;

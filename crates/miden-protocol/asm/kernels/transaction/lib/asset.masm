@@ -153,7 +153,6 @@ pub proc validate_fungible_asset_origin
     # assert the origin of the asset is the faucet_id provided via the stack
     dup.5 dup.5 swap
     # => [asset_id_prefix, asset_id_suffix, faucet_id_prefix, faucet_id_suffix, ASSET]
-
     exec.account_id::is_equal assert.err=ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
     # => [ASSET]
 

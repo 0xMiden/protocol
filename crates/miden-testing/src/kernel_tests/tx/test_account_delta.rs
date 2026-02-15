@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_core::field::PrimeField64;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -430,6 +431,31 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     let removed_asset2 = FungibleAsset::new(faucet2, 100)?;
     let removed_asset3 = FungibleAsset::new(faucet3, FungibleAsset::MAX_AMOUNT)?;
 
+    let word0 = Word::from(removed_asset0);
+    let word0_elems: Vec<u64> = word0.iter().map(|f| f.as_canonical_u64()).collect();
+    let asset0_list = format!(
+        "[{}, {}, {}, {}]",
+        word0_elems[0], word0_elems[1], word0_elems[2], word0_elems[3]
+    );
+    let asset1_word = Word::from(removed_asset1);
+    let asset1_elems: Vec<u64> = asset1_word.iter().map(|f| f.as_canonical_u64()).collect();
+    let asset1_list = format!(
+        "[{}, {}, {}, {}]",
+        asset1_elems[0], asset1_elems[1], asset1_elems[2], asset1_elems[3]
+    );
+    let asset2_word = Word::from(removed_asset2);
+    let asset2_elems: Vec<u64> = asset2_word.iter().map(|f| f.as_canonical_u64()).collect();
+    let asset2_list = format!(
+        "[{}, {}, {}, {}]",
+        asset2_elems[0], asset2_elems[1], asset2_elems[2], asset2_elems[3]
+    );
+    let asset3_word = Word::from(removed_asset3);
+    let asset3_elems: Vec<u64> = asset3_word.iter().map(|f| f.as_canonical_u64()).collect();
+    let asset3_list = format!(
+        "[{}, {}, {}, {}]",
+        asset3_elems[0], asset3_elems[1], asset3_elems[2], asset3_elems[3]
+    );
+
     let TestSetup { mock_chain, account_id, notes } = setup_test(
         [],
         [original_asset0, original_asset1, original_asset2, original_asset3].map(Asset::from),
@@ -438,7 +464,9 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
 
     let tx_script = parse_tx_script(format!(
         "
+    use miden::protocol::account_id
     begin
+        push.{faucet0_prefix} exec.account_id::is_fungible_faucet assert
         push.{asset0} exec.create_note_with_asset
         # => []
         push.{asset1} exec.create_note_with_asset
@@ -449,10 +477,11 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
         # => []
     end
     ",
-        asset0 = Word::from(removed_asset0),
-        asset1 = Word::from(removed_asset1),
-        asset2 = Word::from(removed_asset2),
-        asset3 = Word::from(removed_asset3),
+        faucet0_prefix = faucet0.prefix().as_felt(),
+        asset0 = asset0_list,
+        asset1 = asset1_list,
+        asset2 = asset2_list,
+        asset3 = asset3_list,
     ))?;
 
     let executed_tx = mock_chain
@@ -655,6 +684,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # move an asset to the created note to partially deplete fungible asset balance
             swapw dropw push.{REMOVED_ASSET}
+            movup.4
             call.::miden::standards::wallets::basic::move_asset_to_note
             # => [ASSET, note_idx, pad(11)]
 
@@ -1159,9 +1189,6 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           exec.create_note
           # => [note_idx, ASSET]
 
-          movdn.4
-          # => [ASSET, note_idx]
-
           exec.move_asset_to_note
           # => []
       end
@@ -1181,9 +1208,19 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
 
       #! Inputs:  [ASSET, note_idx]
       #! Outputs: []
+      @locals(8)
       proc move_asset_to_note
-          repeat.11 push.0 movdn.5 end
-          # => [ASSET, note_idx, pad(11)]
+          # Preserve inputs and rebuild a correctly padded stack in LE order.
+          loc_store.0
+          loc_storew_le.4 dropw
+
+          repeat.11 push.0 end
+          # => [pad(11)]
+
+          loc_load.0
+          loc_loadw_le.4
+          movdn.4
+          # => [note_idx, ASSET, pad(11)]
 
           call.account::move_asset_to_note
 

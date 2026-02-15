@@ -5,7 +5,7 @@ use anyhow::Context;
 use miden_core::advice::AdviceInputs;
 use miden_core::field::PrimeField64;
 use miden_processor::Word;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::account::{
     Account,
     AccountBuilder,

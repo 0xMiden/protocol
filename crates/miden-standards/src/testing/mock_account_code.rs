@@ -30,6 +30,21 @@ const MOCK_ACCOUNT_CODE: &str = "
     pub use ::miden::standards::wallets::basic::receive_asset
     pub use ::miden::standards::wallets::basic::move_asset_to_note
 
+    #! Inputs:  [ASSET]
+    #! Outputs: [ASSET']
+    @locals(4)
+    proc reorder_asset_for_native_account
+        loc_store.0 drop
+        loc_store.1 drop
+        loc_store.2 drop
+        loc_store.3 drop
+
+        loc_load.3
+        loc_load.2
+        loc_load.0
+        loc_load.1
+    end
+
     # Note: all account's export procedures below should be only called or dyncall'ed, so it
     # is assumed that the operand stack at the beginning of their execution is pad'ed and
     # does not have any other valuable information.
@@ -108,6 +123,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET, pad(12)]
     #! Outputs: [ASSET', pad(12)]
     pub proc add_asset
+        exec.reorder_asset_for_native_account
         exec.native_account::add_asset
         # => [ASSET', pad(12)]
     end
@@ -115,6 +131,7 @@ const MOCK_ACCOUNT_CODE: &str = "
     #! Inputs:  [ASSET, pad(12)]
     #! Outputs: [ASSET, pad(12)]
     pub proc remove_asset
+        exec.reorder_asset_for_native_account
         exec.native_account::remove_asset
         # => [ASSET, pad(12)]
     end
