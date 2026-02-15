@@ -109,7 +109,7 @@ end
 
 #! Adds the ASSET to the note specified by the index.
 #!
-#! Inputs:  [ASSET, note_idx]
+#! Inputs:  [note_idx, ASSET]
 #! Outputs: []
 #!
 #! Where:
@@ -118,7 +118,7 @@ end
 #!
 #! Invocation: exec
 pub proc add_asset
-    movup.4 exec.kernel_proc_offsets::output_note_add_asset_offset
+    exec.kernel_proc_offsets::output_note_add_asset_offset
     # => [offset, note_idx, ASSET]
 
     # pad the stack before the syscall to prevent accidental modification of the deeper stack
