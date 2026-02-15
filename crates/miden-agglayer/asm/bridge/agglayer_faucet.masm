@@ -48,6 +48,10 @@ const DESTINATION_ADDRESS_2 = 546
 const DESTINATION_ADDRESS_3 = 547
 const DESTINATION_ADDRESS_4 = 548
 
+# Memory locals in claim
+const CLAIM_PREFIX_MEM_LOC = 0
+const CLAIM_SUFFIX_MEM_LOC = 1
+
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
@@ -163,11 +167,14 @@ end
 #! It reads the destination account ID, amount, and other note parameters from memory to construct
 #! the output note.
 #!
-#! Inputs: []
+#! Inputs: [prefix, suffix]
 #! Outputs: []
 #!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 proc build_p2id_output_note
+    # Write destination account id into memory
+    push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
+
     # Build P2ID output note
     procref.::miden::standards::notes::p2id::main
     # => [SCRIPT_ROOT]
@@ -179,13 +186,6 @@ proc build_p2id_output_note
     # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     push.OUTPUT_NOTE_STORAGE_MEM_ADDR
-    # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    exec.get_destination_account_id_data
-    # => [prefix, suffix, storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    # Write destination account id into memory
-    push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
     # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
@@ -252,9 +252,14 @@ end
 #! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
+@locals(2)
 pub proc claim
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
+    # => [pad(16)]
+
+    exec.get_destination_account_id_data
+    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
     # => [pad(16)]
 
     # VALIDATE CLAIM 
@@ -269,6 +274,7 @@ pub proc claim
     # => [pad(16)]
 
     # Create P2ID output note
+    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
     exec.build_p2id_output_note
     # => [pad(16)] 
 end
