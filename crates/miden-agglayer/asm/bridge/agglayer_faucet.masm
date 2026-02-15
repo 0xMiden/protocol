@@ -30,7 +30,7 @@ const LEAF_DATA_KEY_MEM_ADDR = 704
 const OUTPUT_NOTE_DATA_MEM_ADDR = 708
 const CLAIM_NOTE_DATA_MEM_ADDR = 712
 
-const OUTPUT_NOTE_INPUTS_MEM_ADDR = 0
+const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
 const OUTPUT_NOTE_TAG_MEM_ADDR = 574
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
@@ -178,7 +178,7 @@ proc build_p2id_output_note
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
     # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    push.OUTPUT_NOTE_INPUTS_MEM_ADDR
+    push.OUTPUT_NOTE_STORAGE_MEM_ADDR
     # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.get_destination_account_id_data
