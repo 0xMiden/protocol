@@ -1,3 +1,4 @@
+use miden::agglayer::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
 
@@ -8,9 +9,8 @@ const U32_MAX=4294967295
 const TWO_POW_32=4294967296
 
 const ERR_NOT_U32="address limb is not u32"
-const ERR_ADDR4_NONZERO="most-significant 4 bytes (addr4) must be zero"
+const ERR_MSB_NONZERO="most-significant 4 bytes must be zero for AccountId"
 const ERR_FELT_OUT_OF_FIELD="combined u64 doesn't fit in field"
-
 
 # ETHEREUM ADDRESS PROCEDURES
 # =================================================================================================
@@ -25,22 +25,29 @@ const ERR_FELT_OUT_OF_FIELD="combined u64 doesn't fit in field"
 proc build_felt
     # --- validate u32 limbs ---
     u32assert2.err=ERR_NOT_U32
+    # => [lo_be, hi_be]
+
+    # limbs are little-endian bytes; swap to big-endian for building account ID
+    exec.utils::swap_u32_bytes
+    swap
+    exec.utils::swap_u32_bytes
+    swap
     # => [lo, hi]
 
     # keep copies for the overflow check
     dup.1 dup.1
-    # => [lo, hi, lo, hi]
+    # => [lo_be, hi_be, lo_be, hi_be]
 
     # felt = (hi * 2^32) + lo
     swap
     push.TWO_POW_32 mul
     add
-    # => [felt, lo, hi]
+    # => [felt, lo_be, hi_be]
 
     # ensure no reduction mod p happened:
     # split felt back into (hi, lo) and compare to inputs
     dup u32split
-    # => [hi2, lo2, felt, lo, hi]
+    # => [hi2, lo2, felt, lo_be, hi_be]
 
     movup.4 assert_eq.err=ERR_FELT_OUT_OF_FIELD
     # => [lo2, felt, lo]
@@ -51,37 +58,42 @@ end
 
 #! Converts an Ethereum address format (address[5] type) back into an AccountId [prefix, suffix] type.
 #!
-#! The Ethereum address format is represented as 5 u32 limbs (20 bytes total) in *little-endian limb order*:
-#!   addr0 = bytes[16..19]  (least-significant 4 bytes)
-#!   addr1 = bytes[12..15]
-#!   addr2 = bytes[ 8..11]
-#!   addr3 = bytes[ 4.. 7]
-#!   addr4 = bytes[ 0.. 3]  (most-significant 4 bytes)
+#! The Ethereum address format is represented as 5 u32 limbs (20 bytes total) in *big-endian limb order*
+#! (matching Solidity ABI encoding). Each limb encodes its 4 bytes in little-endian order:
+#!   limb0 = bytes[0..4]   (most-significant 4 bytes, must be zero for AccountId)
+#!   limb1 = bytes[4..8]
+#!   limb2 = bytes[8..12]
+#!   limb3 = bytes[12..16]
+#!   limb4 = bytes[16..20] (least-significant 4 bytes)
 #!
-#! The most-significant 4 bytes must be zero for a valid AccountId conversion (addr4 == 0).
+#! The most-significant 4 bytes must be zero for a valid AccountId conversion (be0 == 0).
 #! The remaining 16 bytes are treated as two 8-byte words (conceptual u64 values):
-#!   prefix = (addr3 << 32) | addr2   # bytes[4..11]
-#!   suffix = (addr1 << 32) | addr0   # bytes[12..19]
+#!   prefix = (bswap(limb1) << 32) | bswap(limb2)   # bytes[4..12]
+#!   suffix = (bswap(limb3) << 32) | bswap(limb4)   # bytes[12..20]
 #!
 #! These 8-byte words are represented as field elements by packing two u32 limbs into a felt.
 #! The packing is done via build_felt, which validates limbs are u32 and checks the packed value
 #! did not reduce mod p (i.e. the word fits in the field).
 #!
-#! Inputs:  [addr0, addr1, addr2, addr3, addr4]
+#! Inputs:  [limb0, limb1, limb2, limb3, limb4]
 #! Outputs: [prefix, suffix]
 #!
 #! Invocation: exec
 pub proc to_account_id
-    # addr4 must be 0 (most-significant limb)
-    movup.4
-    eq.0 assert.err=ERR_ADDR4_NONZERO
-    # => [addr0, addr1, addr2, addr3]
+    # limb0 must be 0 (most-significant limb, on top)
+    assertz.err=ERR_MSB_NONZERO
+    # => [limb1, limb2, limb3, limb4]
+
+    # Reorder for suffix = build_felt(limb4, limb3) where limb4=lo, limb3=hi
+    movup.2 movup.3
+    # => [limb4, limb3, limb1, limb2]
 
     exec.build_felt
-    # => [suffix, addr2, addr3]
+    # => [suffix, limb1, limb2]
 
-    movdn.2
-    # => [addr2, addr3, suffix]
+    # Reorder for prefix = build_felt(limb2, limb1) where limb2=lo, limb1=hi
+    swap movup.2
+    # => [limb2, limb1, suffix]
 
     exec.build_felt
     # => [prefix, suffix]

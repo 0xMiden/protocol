@@ -64,7 +64,7 @@ pub mod protocol;
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum AccountComponentTemplateError {
+pub enum ComponentMetadataError {
     #[error("storage slot name `{0}` is duplicate")]
     DuplicateSlotName(StorageSlotName),
     #[error("storage init value name `{0}` is duplicate")]
@@ -112,8 +112,6 @@ pub enum AccountError {
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
     AccountComponentMastForestMergeError(#[source] MastForestError),
-    // #[error("failed to create account component")]
-    // AccountComponentTemplateInstantiationError(#[source] AccountComponentTemplateError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
     #[error("failed to update asset vault")]

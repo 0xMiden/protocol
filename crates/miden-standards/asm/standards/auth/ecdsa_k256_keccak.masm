@@ -1,15 +1,13 @@
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 use miden::core::crypto::hashes::rpo256
 use miden::protocol::active_account
+use miden::protocol::auth::AUTH_REQUEST_EVENT
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth
 
 # CONSTANTS
 # =================================================================================================
-
-# Auth event constant (workaround for linker bug - see https://github.com/0xMiden/miden-base/pull/2377)
-const AUTH_REQUEST_EVENT = ::miden::protocol::auth::AUTH_REQUEST_EVENT
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0

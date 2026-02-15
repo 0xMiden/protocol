@@ -1,13 +1,14 @@
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_processor::DeserializationError;
 
-use super::super::type_registry::SchemaRequirement;
+use super::super::type_registry::{SchemaRequirement, SchemaTypeId};
 use super::super::{InitStorageData, StorageValueName};
-use super::{MapSlotSchema, ValueSlotSchema};
+use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 // STORAGE SLOT SCHEMA
 // ================================================================================================
@@ -22,11 +23,33 @@ pub enum StorageSlotSchema {
 }
 
 impl StorageSlotSchema {
+    /// Creates a value slot schema with the given description and word schema.
+    ///
+    /// Accepts anything convertible to [`WordSchema`]: a [`SchemaTypeId`] for simple typed slots,
+    /// a `[FeltSchema; 4]` for composite slots, or a [`WordSchema`] directly.
+    pub fn value(description: impl Into<String>, word: impl Into<WordSchema>) -> Self {
+        Self::Value(ValueSlotSchema::new(Some(description.into()), word.into()))
+    }
+
+    /// Creates a map slot schema with the given description and simple key/value types.
+    pub fn map(
+        description: impl Into<String>,
+        key_type: SchemaTypeId,
+        value_type: SchemaTypeId,
+    ) -> Self {
+        Self::Map(MapSlotSchema::new(
+            Some(description.into()),
+            None,
+            WordSchema::new_simple(key_type),
+            WordSchema::new_simple(value_type),
+        ))
+    }
+
     pub(super) fn collect_init_value_requirements(
         &self,
         slot_name: &StorageSlotName,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         let slot_name = StorageValueName::from_slot_name(slot_name);
         match self {
             StorageSlotSchema::Value(slot) => {
@@ -42,7 +65,7 @@ impl StorageSlotSchema {
         &self,
         slot_name: &StorageSlotName,
         init_storage_data: &InitStorageData,
-    ) -> Result<StorageSlot, AccountComponentTemplateError> {
+    ) -> Result<StorageSlot, ComponentMetadataError> {
         match self {
             StorageSlotSchema::Value(slot) => {
                 let word = slot.try_build_word(init_storage_data, slot_name)?;
@@ -55,7 +78,7 @@ impl StorageSlotSchema {
         }
     }
 
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         match self {
             StorageSlotSchema::Value(slot) => slot.validate()?,
             StorageSlotSchema::Map(slot) => slot.validate()?,

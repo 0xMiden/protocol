@@ -19,7 +19,7 @@ use miden_protocol::note::{
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::{EthAddressFormat, EthAmount, claim_script};
+use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
 // CLAIM NOTE STRUCTURES
 // ================================================================================================
@@ -44,6 +44,18 @@ impl Keccak256Output {
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
     }
+
+    /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.
+    ///
+    /// - `lo` contains the first 4 u32-packed felts (bytes 0..16).
+    /// - `hi` contains the last  4 u32-packed felts (bytes 16..32).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn to_words(&self) -> [Word; 2] {
+        let elements = self.to_elements();
+        let lo: [Felt; 4] = elements[0..4].try_into().expect("to_elements returns 8 felts");
+        let hi: [Felt; 4] = elements[4..8].try_into().expect("to_elements returns 8 felts");
+        [Word::new(lo), Word::new(hi)]
+    }
 }
 
 impl From<[u8; 32]> for Keccak256Output {
@@ -66,8 +78,8 @@ pub struct ProofData {
     pub smt_proof_local_exit_root: [SmtNode; 32],
     /// SMT proof for rollup exit root (32 SMT nodes)
     pub smt_proof_rollup_exit_root: [SmtNode; 32],
-    /// Global index (uint256 as 8 u32 values)
-    pub global_index: [u32; 8],
+    /// Global index (uint256 as 32 bytes)
+    pub global_index: GlobalIndex,
     /// Mainnet exit root hash
     pub mainnet_exit_root: ExitRoot,
     /// Rollup exit root hash
@@ -83,25 +95,19 @@ impl SequentialCommit for ProofData {
 
         // Convert SMT proof elements to felts (each node is 8 felts)
         for node in self.smt_proof_local_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
         for node in self.smt_proof_rollup_exit_root.iter() {
-            let node_felts = node.to_elements();
-            elements.extend(node_felts);
+            elements.extend(node.to_elements());
         }
 
-        // Global index (uint256 as 8 u32 felts)
-        elements.extend(self.global_index.iter().map(|&v| Felt::new(v as u64)));
+        // Global index (uint256 as 32 bytes)
+        elements.extend(self.global_index.to_elements());
 
-        // Mainnet exit root (bytes32 as 8 u32 felts)
-        let mainnet_exit_root_felts = self.mainnet_exit_root.to_elements();
-        elements.extend(mainnet_exit_root_felts);
-
-        // Rollup exit root (bytes32 as 8 u32 felts)
-        let rollup_exit_root_felts = self.rollup_exit_root.to_elements();
-        elements.extend(rollup_exit_root_felts);
+        // Mainnet and rollup exit roots
+        elements.extend(self.mainnet_exit_root.to_elements());
+        elements.extend(self.rollup_exit_root.to_elements());
 
         elements
     }
@@ -121,15 +127,15 @@ pub struct LeafData {
     pub destination_address: EthAddressFormat,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
-    /// ABI encoded metadata (fixed size of 8 u32 values)
-    pub metadata: [u32; 8],
+    /// Metadata hash (32 bytes)
+    pub metadata_hash: MetadataHash,
 }
 
 impl SequentialCommit for LeafData {
     type Commitment = Word;
 
     fn to_elements(&self) -> Vec<Felt> {
-        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 3 + 1 + 5 + 1 + 5 + 8 + 8 (leafType + padding + networks + addresses + amount + metadata)
+        const LEAF_DATA_ELEMENT_COUNT: usize = 32; // 1 + 1 + 5 + 1 + 5 + 8 + 8 + 3 (leafType + networks + addresses + amount + metadata + padding)
         let mut elements = Vec::with_capacity(LEAF_DATA_ELEMENT_COUNT);
 
         // LeafType (uint32 as Felt): 0u32 for transfer Ether / ERC20 tokens, 1u32 for message
@@ -137,17 +143,16 @@ impl SequentialCommit for LeafData {
         // for a `CLAIM` note, leafType is always 0 (transfer Ether / ERC20 tokens)
         elements.push(Felt::ZERO);
 
-        // Padding
-        elements.extend(vec![Felt::ZERO; 3]);
-
-        // Origin network
-        elements.push(Felt::new(self.origin_network as u64));
+        // Origin network (encode as little-endian bytes for keccak)
+        let origin_network = u32::from_le_bytes(self.origin_network.to_be_bytes());
+        elements.push(Felt::from(origin_network));
 
         // Origin token address (5 u32 felts)
         elements.extend(self.origin_token_address.to_elements());
 
-        // Destination network
-        elements.push(Felt::new(self.destination_network as u64));
+        // Destination network (encode as little-endian bytes for keccak)
+        let destination_network = u32::from_le_bytes(self.destination_network.to_be_bytes());
+        elements.push(Felt::from(destination_network));
 
         // Destination address (5 u32 felts)
         elements.extend(self.destination_address.to_elements());
@@ -155,8 +160,11 @@ impl SequentialCommit for LeafData {
         // Amount (uint256 as 8 u32 felts)
         elements.extend(self.amount.to_elements());
 
-        // Metadata (8 u32 felts)
-        elements.extend(self.metadata.iter().map(|&v| Felt::new(v as u64)));
+        // Metadata hash (8 u32 felts)
+        elements.extend(self.metadata_hash.to_elements());
+
+        // Padding
+        elements.extend(vec![Felt::ZERO; 3]);
 
         elements
     }

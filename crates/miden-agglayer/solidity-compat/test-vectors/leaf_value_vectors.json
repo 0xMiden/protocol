@@ -1,0 +1,10 @@
+{
+  "amount": "0x0000000000000000000000000000000000000000000000001bc16d674ec80000",
+  "destination_address": "0xD9b20Fe633b609B01081aD0428e81f8Dd604F5C5",
+  "destination_network": 7,
+  "leaf_type": 0,
+  "leaf_value": "0xb67e42971034605367b7e92d1ad1d4648c3ffe0bea9b08115cd9aa2e616b2f88",
+  "metadata_hash": "0x6c7a91a5fb41dee8f0bc1c86b5587334583186f14acfa253e2f7c2833d1d6fdf",
+  "origin_network": 0,
+  "origin_token_address": "0xD9343a049D5DBd89CD19DC6BcA8c48fB3a0a42a7"
+}
