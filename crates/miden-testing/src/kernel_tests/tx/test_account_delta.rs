@@ -1206,7 +1206,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => [note_idx]
       end
 
-      #! Inputs:  [ASSET, note_idx]
+      #! Inputs:  [note_idx, ASSET]
       #! Outputs: []
       @locals(8)
       proc move_asset_to_note
@@ -1217,9 +1217,9 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           repeat.11 push.0 end
           # => [pad(11)]
 
-          loc_load.0
           loc_loadw_le.4
-          movdn.4
+          # => [ASSET, pad(11)]
+          loc_load.0
           # => [note_idx, ASSET, pad(11)]
 
           call.account::move_asset_to_note

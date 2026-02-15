@@ -9,27 +9,6 @@ use miden::protocol::output_note
 const PUBLIC_NOTE=1
 const NOTE_DATA_SCRATCH_PTR=18874368
 
-#! Reorders a standard asset word to the native_account syscall order.
-#!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET']
-#!
-#! Where:
-#! - ASSET  is in standard LE order: [amount, 0, faucet_id_suffix, faucet_id_prefix]
-#! - ASSET' is reordered to:        [faucet_id_prefix, faucet_id_suffix, amount, 0]
-@locals(4)
-proc reorder_asset_for_native_account
-    loc_store.0 drop
-    loc_store.1 drop
-    loc_store.2 drop
-    loc_store.3 drop
-
-    loc_load.3
-    loc_load.2
-    loc_load.0
-    loc_load.1
-end
-
 #! Adds the provided asset to the active account.
 #!
 #! Inputs:  [ASSET, pad(12)]
@@ -45,7 +24,6 @@ end
 #!
 #! Invocation: call
 pub proc receive_asset
-    exec.reorder_asset_for_native_account
     exec.native_account::add_asset
     # => [ASSET', pad(12)]
 
@@ -75,33 +53,31 @@ end
 #! - the non-fungible asset is not found in the vault.
 #!
 #! Invocation: call
-@locals(1)
+@locals(5)
 pub proc move_asset_to_note
     # store note_idx to avoid stack interference during remove_asset
-    loc_store.0
+    loc_store.4
     # => [ASSET, pad(11)]
 
     # remove the asset from the account
-    exec.reorder_asset_for_native_account
     exec.native_account::remove_asset
     # => [ASSET]
 
-    # restore note_idx and prepare inputs for output_note::add_asset
-    loc_load.0
-    # => [note_idx, ASSET]
-    movdn.4
-    # => [ASSET, note_idx]
-    dupw dup.8
-    # => [note_idx, ASSET, ASSET, note_idx]
+    # store asset so we can reuse it after output_note::add_asset
+    loc_storew_le.0 dropw
+    # => [pad(11)]
 
+    # call output_note::add_asset with [ASSET, note_idx]
+    loc_load.4
+    loc_loadw_le.0
     exec.output_note::add_asset
-    # => [ASSET, note_idx]
+    # => [pad(11)]
 
-    # restore padding for call-compatible output
-    movup.4
-    # => [note_idx, ASSET]
-    repeat.11 push.0 movdn.5 end
+    # restore [note_idx, ASSET] and padding for call-compatible output
+    loc_loadw_le.0
+    loc_load.4
     # => [note_idx, ASSET, pad(11)]
+    exec.sys::truncate_stack
 end
 
 #! Adds all assets from the active note to the native account's vault.

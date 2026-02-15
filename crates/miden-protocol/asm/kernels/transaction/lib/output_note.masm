@@ -377,7 +377,7 @@ proc add_fungible_asset
     # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
     # compute the loop latch
-    dup dup.10 neq
+    dup dup.9 neq
     # => [latch, asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
     #     note_idx]
 
@@ -385,45 +385,51 @@ proc add_fungible_asset
         mem_loadw_le
         # => [STORED_ASSET, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
-        dup.4 eq
-        # => [are_equal, 0, 0, stored_amount, ASSET, end_asset_ptr, asset_ptr, note_ptr,
-        #     num_of_assets, note_idx]
+        # compare faucet IDs (LE layout) and ensure the stored asset is fungible
+        dup.1 eq.0
+        dup.7 dup.4 eq
+        and
+        dup.8 dup.5 eq
+        and
+        # => [are_equal, STORED_ASSET, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
+        #     note_idx]
 
         if.true
             # add the asset quantity, we don't overflow here, bc both ASSETs are valid.
-            movup.2 movup.6 add
-            # => [updated_amount, 0, 0, faucet_id, 0, 0, end_asset_ptr, asset_ptr, note_ptr,
+            dup.4 add
+            # => [updated_amount, stored_asset[1..3], ASSET, end_asset_ptr, asset_ptr, note_ptr,
             #     num_of_assets, note_idx]
 
             # check that we don't overflow bc we use lte
             dup exec.asset::get_fungible_asset_max_amount lte
             assert.err=ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED
-            # => [updated_amount, 0, 0, faucet_id, 0, 0, end_asset_ptr, asset_ptr, note_ptr,
+            # => [updated_amount, stored_asset[1..3], ASSET, end_asset_ptr, asset_ptr, note_ptr,
             #     num_of_assets, note_idx]
 
             # prepare stack to store the "updated" ASSET'' with the new quantity
-            movdn.5
-            # => [0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
+            movupw.2 dropw
+            # => [ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
             # decrease num_of_assets by 1 to offset incrementing it later
-            movup.9 sub.1 movdn.9
-            # => [0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets - 1, note_idx]
+            movup.7 sub.1 movdn.7
+            # => [ASSET'', end_asset_ptr, asset_ptr, note_ptr, num_of_assets - 1, note_idx]
 
             # end the loop we add 0's to the stack to have the correct number of elements
-            push.0.0 dup.9 push.0
+            padw dup.9 push.0
             # => [0, asset_ptr, 0, 0, 0, 0, ASSET'', end_asset_ptr, asset_ptr, note_ptr,
             #     num_of_assets - 1, note_idx]
         else
-            # => [0, 0, stored_amount, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets,
-            #     note_idx]
+            # => [STORED_ASSET, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
             # drop ASSETs and increment the asset pointer
-            movup.2 drop push.0.0 movup.9 add.4 dup movdn.10
+            dropw
+            movup.5 add.4
+            padw movup.4 dup movdn.10
             # => [asset_ptr + 4, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr + 4, note_ptr,
             #     num_of_assets, note_idx]
 
             # check if we reached the end of the loop
-            dup dup.10 neq
+            dup dup.9 neq
         end
     end
     # => [asset_ptr, 0, 0, 0, 0, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]

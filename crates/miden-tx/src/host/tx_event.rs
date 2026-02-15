@@ -196,12 +196,18 @@ impl TransactionEvent {
                         (0..16).map(|idx| process.get_stack_item(idx)).collect();
                     let stack_1 = process.get_stack_item(1);
                     let stack_2 = process.get_stack_item(2);
+                    let stack_3 = process.get_stack_item(3);
+                    let stack_4 = process.get_stack_item(4);
                     let prefix_1 = miden_protocol::account::AccountIdPrefix::try_from(stack_1);
                     let prefix_2 = miden_protocol::account::AccountIdPrefix::try_from(stack_2);
+                    let prefix_3 = miden_protocol::account::AccountIdPrefix::try_from(stack_3);
+                    let prefix_4 = miden_protocol::account::AccountIdPrefix::try_from(stack_4);
                     let prefix_1_type = prefix_1.as_ref().map(|p| p.account_type());
                     let prefix_2_type = prefix_2.as_ref().map(|p| p.account_type());
+                    let prefix_3_type = prefix_3.as_ref().map(|p| p.account_type());
+                    let prefix_4_type = prefix_4.as_ref().map(|p| p.account_type());
                     std::eprintln!(
-                        "debug: account_vault_before_add_remove stack0..15={stack_items:?} prefix1={prefix_1:?} prefix1_type={prefix_1_type:?} prefix2={prefix_2:?} prefix2_type={prefix_2_type:?}"
+                        "debug: account_vault_before_add_remove stack0..15={stack_items:?} prefix1={prefix_1:?} prefix1_type={prefix_1_type:?} prefix2={prefix_2:?} prefix2_type={prefix_2_type:?} prefix3={prefix_3:?} prefix3_type={prefix_3_type:?} prefix4={prefix_4:?} prefix4_type={prefix_4_type:?}"
                     );
                 }
                 let asset_word = get_stack_word_le(process, 1);
@@ -466,6 +472,15 @@ impl TransactionEvent {
                 // Expected stack state: [event, ASSET, note_ptr, num_of_assets, note_idx]
                 let note_idx = process.get_stack_item(7).as_canonical_u64() as usize;
 
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_ASSET_EVENT").is_ok() {
+                    let stack_items: Vec<Felt> =
+                        (0..16).map(|idx| process.get_stack_item(idx)).collect();
+                    std::eprintln!(
+                        "debug: note_before_add_asset stack0..15={stack_items:?} note_idx={note_idx}"
+                    );
+                }
+
                 let asset_word = get_stack_word_le(process, 1);
                 let asset = parse_asset_with_fallback(asset_word).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
@@ -505,6 +520,14 @@ impl TransactionEvent {
 
             TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
                 // Expected stack state: [event, FEE_ASSET]
+                #[cfg(feature = "std")]
+                if std::env::var("MIDEN_DEBUG_ASSET_EVENT").is_ok() {
+                    let stack_items: Vec<Felt> =
+                        (0..16).map(|idx| process.get_stack_item(idx)).collect();
+                    std::eprintln!(
+                        "debug: epilogue_before_fee stack0..15={stack_items:?}"
+                    );
+                }
                 let fee_asset = get_stack_word_le(process, 1);
                 let fee_asset = FungibleAsset::try_from(fee_asset)
                     .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
