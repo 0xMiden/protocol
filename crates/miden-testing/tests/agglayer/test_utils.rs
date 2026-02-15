@@ -21,6 +21,25 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
+// SERDE HELPERS
+// ================================================================================================
+
+/// Deserializes a JSON value that may be either a number or a string into a `String`.
+///
+/// Foundry's `vm.serializeUint` outputs JSON numbers for uint256 values.
+/// This deserializer accepts both `"100"` (string) and `100` (number) forms.
+fn deserialize_uint_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        _ => Err(serde::de::Error::custom("expected a number or string for amount")),
+    }
+}
+
 // TEST VECTOR STRUCTURES
 // ================================================================================================
 
@@ -61,6 +80,7 @@ pub struct LeafValueVector {
     pub origin_token_address: String,
     pub destination_network: u32,
     pub destination_address: String,
+    #[serde(deserialize_with = "deserialize_uint_to_string")]
     pub amount: String,
     pub metadata_hash: String,
     #[allow(dead_code)]
@@ -77,7 +97,7 @@ impl LeafValueVector {
             destination_network: self.destination_network,
             destination_address: EthAddressFormat::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
-            amount: EthAmount::new(hex_to_bytes(&self.amount).expect("valid amount hex")),
+            amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
             metadata_hash: MetadataHash::new(
                 hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
             ),
