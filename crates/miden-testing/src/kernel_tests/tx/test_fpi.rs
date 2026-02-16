@@ -9,6 +9,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountHeader,
     AccountId,
     AccountProcedureRoot,
     AccountStorage,
@@ -498,25 +499,21 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     // Next account slot: [32768; 40959] <- should not be initialized
 
     // check that the first word of the first foreign account slot is correct
+    let header = AccountHeader::from(&foreign_account_1);
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32),
-        Word::new([
-            foreign_account_1.id().suffix(),
-            foreign_account_1.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_1.nonce()
-        ])
+        exec_output
+            .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32)
+            .as_slice(),
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the second foreign account slot is correct
+    let header = AccountHeader::from(&foreign_account_2);
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2),
-        Word::new([
-            foreign_account_2.id().suffix(),
-            foreign_account_2.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_2.nonce()
-        ])
+        exec_output
+            .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2)
+            .as_slice(),
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the third foreign account slot was not initialized
@@ -1988,14 +1985,13 @@ fn foreign_account_data_memory_assertions(
     // foreign procedure root should be zero word after FPI has ended
     assert_eq!(exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR), EMPTY_WORD);
 
+    // Check that account id and nonce match.
+    let header = AccountHeader::from(foreign_account);
     assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET),
-        Word::new([
-            foreign_account.id().suffix(),
-            foreign_account.id().prefix().as_felt(),
-            ZERO,
-            foreign_account.nonce()
-        ]),
+        exec_output
+            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET)
+            .as_slice(),
+        &header.to_elements()[0..4]
     );
 
     assert_eq!(

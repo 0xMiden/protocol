@@ -212,7 +212,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let mut account_tree = AccountTree::<Smt>::default();
 
     // Insert native account.
-    let native_commitment = AccountHeader::from(&native_account).commitment();
+    let native_commitment = AccountHeader::from(&native_account).to_commitment();
     account_tree.insert(native_account_id, native_commitment).unwrap();
 
     // Insert foreign account.
@@ -225,7 +225,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
         None,
     )
     .unwrap();
-    account_tree.insert(foreign_account_id, foreign_header.commitment()).unwrap();
+    account_tree.insert(foreign_account_id, foreign_header.to_commitment()).unwrap();
 
     // Get the account tree root and create witness.
     let account_tree_root = account_tree.root();
