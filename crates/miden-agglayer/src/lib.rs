@@ -27,6 +27,7 @@ use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
 pub mod claim_note;
+pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod update_ger_note;
@@ -42,6 +43,7 @@ pub use claim_note::{
     SmtNode,
     create_claim_note,
 };
+pub use config_note::ConfigAggBridgeNote;
 pub use eth_types::{EthAddressFormat, EthAmount, GlobalIndex, GlobalIndexError, MetadataHash};
 pub use update_ger_note::UpdateGerNote;
 
@@ -195,6 +197,49 @@ pub fn asset_conversion_component(storage_slots: Vec<StorageSlot>) -> AccountCom
     )
 }
 
+// FAUCET CONVERSION STORAGE HELPERS
+// ================================================================================================
+
+/// Builds the two storage slot values for faucet conversion metadata.
+///
+/// The conversion metadata is stored in two value storage slots:
+/// - Slot 1 (`miden::agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
+///   4 felts of the origin token address (5 × u32 limbs).
+/// - Slot 2 (`miden::agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
+///   remaining address felt + origin network + scale factor.
+///
+/// # Parameters
+/// - `origin_token_address`: The EVM token address in Ethereum format
+/// - `origin_network`: The origin network/chain ID
+/// - `scale`: The decimal scaling factor (exponent for 10^scale)
+///
+/// # Returns
+/// A tuple of two `Word` values representing the two storage slot contents.
+pub fn agglayer_faucet_conversion_slots(
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
+) -> (Word, Word) {
+    let addr_elements = origin_token_address.to_elements();
+
+    let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
+
+    let slot2 =
+        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
+
+    (slot1, slot2)
+}
+
+// FAUCET REGISTRY HELPERS
+// ================================================================================================
+
+/// Creates a faucet registry map key from a faucet account ID.
+///
+/// The key format is `[faucet_id_prefix, faucet_id_suffix, 0, 0]`.
+pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
+    Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
+}
+
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
 
@@ -215,14 +260,20 @@ pub fn create_bridge_account_component() -> AccountComponent {
 /// Creates an agglayer faucet account component with the specified configuration.
 ///
 /// This function creates all the necessary storage slots for an agglayer faucet:
-/// - Network faucet metadata slot (max_supply, decimals, token_symbol)
+/// - Network faucet metadata slot (token_supply, max_supply, decimals, token_symbol)
 /// - Bridge account reference slot for FPI validation
+/// - Conversion info slot 1: first 4 felts of origin token address
+/// - Conversion info slot 2: 5th address felt + origin network + scale
 ///
 /// # Parameters
 /// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
 /// - `decimals`: Number of decimal places for the token
 /// - `max_supply`: Maximum supply of the token
+/// - `token_supply`: Initial outstanding token supply (0 for new faucets)
 /// - `bridge_account_id`: The account ID of the bridge account for validation
+/// - `origin_token_address`: The EVM origin token address
+/// - `origin_network`: The origin network/chain ID
+/// - `scale`: The decimal scaling factor (exponent for 10^scale)
 ///
 /// # Returns
 /// Returns an [`AccountComponent`] configured for agglayer faucet operations.
@@ -233,12 +284,16 @@ pub fn create_agglayer_faucet_component(
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
+    token_supply: Felt,
     bridge_account_id: AccountId,
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
 ) -> AccountComponent {
-    // Create network faucet metadata slot: [0, max_supply, decimals, token_symbol]
+    // Create network faucet metadata slot: [token_supply, max_supply, decimals, token_symbol]
     let token_symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
     let metadata_word =
-        Word::new([FieldElement::ZERO, max_supply, Felt::from(decimals), token_symbol.into()]);
+        Word::new([token_supply, max_supply, Felt::from(decimals), token_symbol.into()]);
     let metadata_slot =
         StorageSlot::with_value(NetworkFungibleFaucet::metadata_slot().clone(), metadata_word);
 
@@ -253,12 +308,28 @@ pub fn create_agglayer_faucet_component(
         .expect("Agglayer faucet storage slot name should be valid");
     let bridge_slot = StorageSlot::with_value(agglayer_storage_slot_name, bridge_account_id_word);
 
+    // Create conversion metadata storage slots
+    let (conversion_slot1_word, conversion_slot2_word) =
+        agglayer_faucet_conversion_slots(origin_token_address, origin_network, scale);
+
+    let conversion_info_1_name = StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
+        .expect("Conversion info 1 storage slot name should be valid");
+    let conversion_slot1 = StorageSlot::with_value(conversion_info_1_name, conversion_slot1_word);
+
+    let conversion_info_2_name = StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
+        .expect("Conversion info 2 storage slot name should be valid");
+    let conversion_slot2 = StorageSlot::with_value(conversion_info_2_name, conversion_slot2_word);
+
     // Combine all storage slots for the agglayer faucet component
-    let agglayer_storage_slots = vec![metadata_slot, bridge_slot];
+    let agglayer_storage_slots =
+        vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
     agglayer_faucet_component(agglayer_storage_slots)
 }
 
 /// Creates a complete bridge account builder with the standard configuration.
+///
+/// The bridge starts with an empty faucet registry. Faucets are registered at runtime
+/// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     // Create the "bridge_in" component
     let ger_upper_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger_upper")
@@ -281,15 +352,21 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let let_root_hi_slot_name = StorageSlotName::new("miden::agglayer::let::root_hi").unwrap();
     let let_num_leaves_slot_name =
         StorageSlotName::new("miden::agglayer::let::num_leaves").unwrap();
+    let faucet_registry_slot_name =
+        StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
+            .expect("Faucet registry storage slot name should be valid");
     let bridge_out_storage_slots = vec![
         StorageSlot::with_empty_map(let_storage_slot_name),
         StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),
         StorageSlot::with_value(let_root_hi_slot_name, Word::empty()),
         StorageSlot::with_value(let_num_leaves_slot_name, Word::empty()),
+        StorageSlot::with_empty_map(faucet_registry_slot_name),
     ];
     let bridge_out_component = bridge_out_component(bridge_out_storage_slots);
 
-    // Combine the components into a single account(builder)
+    // Combine the components into a single account(builder).
+    // Note: bridge_config::register_faucet is also exposed via the agglayer library
+    // included in bridge_out_component, using the faucet_registry storage slot above.
     Account::builder(seed.into())
         .storage_mode(AccountStorageMode::Network)
         .with_component(bridge_out_component)
@@ -318,15 +395,28 @@ pub fn create_existing_bridge_account(seed: Word) -> Account {
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
+#[allow(clippy::too_many_arguments)]
 pub fn create_agglayer_faucet_builder(
     seed: Word,
     token_symbol: &str,
     decimals: u8,
     max_supply: Felt,
+    token_supply: Felt,
     bridge_account_id: AccountId,
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
 ) -> AccountBuilder {
-    let agglayer_component =
-        create_agglayer_faucet_component(token_symbol, decimals, max_supply, bridge_account_id);
+    let agglayer_component = create_agglayer_faucet_component(
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+        origin_token_address,
+        origin_network,
+        scale,
+    );
 
     Account::builder(seed.into())
         .account_type(AccountType::FungibleFaucet)
@@ -343,11 +433,24 @@ pub fn create_agglayer_faucet(
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
 ) -> Account {
-    create_agglayer_faucet_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
-        .build()
-        .expect("Agglayer faucet account should be valid")
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account_id,
+        origin_token_address,
+        origin_network,
+        scale,
+    )
+    .with_auth_component(AccountComponent::from(NoAuth))
+    .build()
+    .expect("Agglayer faucet account should be valid")
 }
 
 /// Creates an existing agglayer faucet account with the specified configuration.
@@ -360,9 +463,52 @@ pub fn create_existing_agglayer_faucet(
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
 ) -> Account {
-    create_agglayer_faucet_builder(seed, token_symbol, decimals, max_supply, bridge_account_id)
-        .with_auth_component(AccountComponent::from(NoAuth))
-        .build_existing()
-        .expect("Agglayer faucet account should be valid")
+    create_existing_agglayer_faucet_with_supply(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account_id,
+        origin_token_address,
+        origin_network,
+        scale,
+    )
+}
+
+/// Creates an existing agglayer faucet account with initial token supply.
+///
+/// This creates an existing account suitable for testing scenarios where
+/// the faucet needs to have already-issued tokens.
+#[cfg(any(feature = "testing", test))]
+#[allow(clippy::too_many_arguments)]
+pub fn create_existing_agglayer_faucet_with_supply(
+    seed: Word,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    bridge_account_id: AccountId,
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
+) -> Account {
+    create_agglayer_faucet_builder(
+        seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        token_supply,
+        bridge_account_id,
+        origin_token_address,
+        origin_network,
+        scale,
+    )
+    .with_auth_component(AccountComponent::from(NoAuth))
+    .build_existing()
+    .expect("Agglayer faucet account should be valid")
 }

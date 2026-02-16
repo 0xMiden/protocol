@@ -22,6 +22,14 @@ pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge
 /// Error Message: "CLAIM's target account address and transaction address do not match"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM's target account address and transaction address do not match");
 
+/// Error Message: "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
+pub const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE note attachment target account does not match consuming account");
+/// Error Message: "CONFIG_AGG_BRIDGE expects exactly 2 note storage items"
+pub const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE expects exactly 2 note storage items");
+
+/// Error Message: "faucet is not registered in the bridge's faucet registry"
+pub const ERR_FAUCET_NOT_REGISTERED: MasmError = MasmError::from_static_str("faucet is not registered in the bridge's faucet registry");
+
 /// Error Message: "combined u64 doesn't fit in field"
 pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combined u64 doesn't fit in field");
 

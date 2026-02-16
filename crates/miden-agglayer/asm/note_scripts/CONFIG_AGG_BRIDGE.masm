@@ -1,0 +1,44 @@
+use miden::agglayer::bridge_config
+use miden::protocol::active_note
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 2 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
+
+begin
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory starting at address 0
+    push.0 exec.active_note::get_storage
+    # => [num_storage_items, dest_ptr, pad(16)]
+
+    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
+    # => [pad(16)]
+
+    # Load the faucet ID from memory into the top of the stack.
+    # mem_loadw_be.0 loads a word from memory and REPLACES the top 4 elements,
+    # keeping the depth at 16. The word at addr 0 contains
+    # [faucet_id_prefix, faucet_id_suffix, 0, 0] (note storage items + padding).
+    mem_loadw_le.0
+    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+
+    # Register the faucet in the bridge's faucet registry
+    call.bridge_config::register_faucet
+    # => [pad(16)]
+end

@@ -1,7 +1,14 @@
 extern crate alloc;
 
-use miden_agglayer::errors::ERR_B2AGG_TARGET_ACCOUNT_MISMATCH;
-use miden_agglayer::{B2AggNote, EthAddressFormat, ExitRoot, create_existing_bridge_account};
+use miden_agglayer::errors::{ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED};
+use miden_agglayer::{
+    B2AggNote,
+    ConfigAggBridgeNote,
+    EthAddressFormat,
+    ExitRoot,
+    create_existing_agglayer_faucet_with_supply,
+    create_existing_bridge_account,
+};
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::{
@@ -13,7 +20,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
@@ -56,12 +63,19 @@ fn read_local_exit_root(account: &Account) -> Vec<Felt> {
 /// Solidity-generated `mmr_frontier_vectors.json` so that the resulting LER can be compared
 /// against the expected root produced by the Solidity `DepositContractV2`.
 ///
-/// This test flow:
-/// 1. Creates a network faucet to provide assets
-/// 2. Creates a bridge account with the bridge_out component (using network storage)
-/// 3. Creates a B2AGG note with assets from the network faucet
-/// 4. Executes the B2AGG note consumption via network transaction
-/// 5. Consumes the BURN note
+/// This test exercises the complete bridge-out lifecycle:
+/// 1. Creates a bridge account (empty faucet registry) and an agglayer faucet with conversion
+///    metadata (origin token address, network, scale)
+/// 2. Registers the faucet in the bridge's faucet registry via a CONFIG_AGG_BRIDGE note
+/// 3. Creates a B2AGG note with assets from the agglayer faucet
+/// 4. Consumes the B2AGG note against the bridge account — the bridge's `bridge_out` procedure:
+///    - Validates the faucet is registered via `convert_asset`
+///    - Calls the faucet's `asset_to_origin_asset` via FPI to get the scaled amount, origin token
+///      address, and origin network
+///    - Writes the leaf data and computes the Keccak hash for the MMR
+///    - Creates a BURN note addressed to the faucet
+/// 5. Verifies the BURN note was created with the correct asset, tag, and script
+/// 6. Consumes the BURN note with the faucet to burn the tokens
 #[tokio::test]
 async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
@@ -71,23 +85,37 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
 
-    // Create a network faucet owner account
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    // Create a network faucet to provide assets for the B2AGG note
-    let faucet =
-        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
-
-    // Create a bridge account (includes a `bridge_out` component tested here)
+    // CREATE BRIDGE ACCOUNT (empty faucet registry)
+    // --------------------------------------------------------------------------------------------
     let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
     builder.add_account(bridge_account.clone())?;
 
-    // CREATE B2AGG NOTE WITH ASSETS
+    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    // --------------------------------------------------------------------------------------------
+    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let origin_network = 64u32;
+    let scale = 0u8;
+    let amount = Felt::new(100);
+    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+
+    let faucet = create_existing_agglayer_faucet_with_supply(
+        builder.rng_mut().draw_word(),
+        "AGG",
+        8,
+        max_supply,
+        amount, // initial token supply
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+    );
+    builder.add_account(faucet.clone())?;
+
+    // CREATE SENDER ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE ALL NOTES UPFRONT (before building mock chain)
     // --------------------------------------------------------------------------------------------
     // Use the first vector entry: amount from vectors.amounts[0] (bytes32 hex, matching
     // ClaimAssetTestVectors)
@@ -97,6 +125,15 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let amount: u64 =
         u64::from_be_bytes(amount_bytes[24..32].try_into().expect("amount bytes 24..32"));
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+
+    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge
+    let config_note = ConfigAggBridgeNote::create(
+        faucet.id(),
+        sender_account.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     let b2agg_note = B2AggNote::create(
@@ -108,14 +145,35 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    // Add the B2AGG note to the mock chain
+    builder.add_output_note(OutputNote::Full(config_note.clone()));
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
-    let mut mock_chain = builder.build()?;
 
-    // EXECUTE B2AGG NOTE AGAINST BRIDGE ACCOUNT (NETWORK TRANSACTION)
+    let mut mock_chain = builder.clone().build()?;
+    mock_chain.prove_next_block()?;
+
+    // STEP 1: REGISTER FAUCET VIA CONFIG_AGG_BRIDGE NOTE
     // --------------------------------------------------------------------------------------------
+    let config_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    let config_executed = config_tx_context.execute().await?;
+
+    // Apply bridge state changes (faucet is now registered)
+    bridge_account.apply_delta(config_executed.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // STEP 2: BRIDGE OUT VIA B2AGG NOTE (with faucet as foreign account for FPI)
+    // --------------------------------------------------------------------------------------------
+    let burn_note_script: NoteScript = StandardNote::BURN.script();
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    // Pass the updated bridge_account directly (not by ID) so the transaction
+    // uses the account state that includes the faucet registry update.
     let tx_context = mock_chain
-        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .build_tx_context(bridge_account.clone(), &[b2agg_note.id()], &[])?
+        .add_note_script(burn_note_script.clone())
+        .foreign_accounts(vec![foreign_account_inputs])
         .build()?;
     let executed_transaction = tx_context.execute().await?;
 
@@ -126,20 +184,22 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         1,
         "Expected one BURN note to be created"
     );
-    let burn_note = match executed_transaction.output_notes().get_note(0) {
+
+    let output_note = executed_transaction.output_notes().get_note(0);
+    let burn_note = match output_note {
         OutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant for BURN note"),
     };
     assert_eq!(burn_note.metadata().note_type(), NoteType::Public, "BURN note should be public");
 
     // Verify the BURN note contains the bridged asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount)?;
-    let expected_asset_obj = Asset::from(expected_asset);
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
     assert!(
-        burn_note.assets().iter().any(|asset| asset == &expected_asset_obj),
+        burn_note.assets().iter().any(|asset| asset == &Asset::from(expected_asset)),
         "BURN note should contain the bridged asset"
     );
 
+    // Verify the BURN note tag targets the faucet
     assert_eq!(
         burn_note.metadata().tag(),
         NoteTag::with_account_target(faucet.id()),
@@ -151,7 +211,8 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         "BURN note should use the BURN script"
     );
 
-    // Apply the delta to the bridge account
+    // STEP 3: CONSUME BURN NOTE WITH THE AGGLAYER FAUCET
+    // --------------------------------------------------------------------------------------------
     bridge_account.apply_delta(executed_transaction.account_delta())?;
 
     // VERIFY LOCAL EXIT ROOT MATCHES SOLIDITY VECTOR
@@ -178,16 +239,17 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     // Execute the BURN note against the network faucet
     let burn_tx_context =
         mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
-    let burn_executed_transaction = burn_tx_context.execute().await?;
+    let burn_executed = burn_tx_context.execute().await?;
 
+    // Verify the burn transaction was successful — no output notes should be created
     assert_eq!(
-        burn_executed_transaction.output_notes().num_notes(),
+        burn_executed.output_notes().num_notes(),
         0,
         "Burn transaction should not create output notes"
     );
 
     let mut faucet = faucet;
-    faucet.apply_delta(burn_executed_transaction.account_delta())?;
+    faucet.apply_delta(burn_executed.account_delta())?;
 
     let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
@@ -195,6 +257,77 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
         Felt::new(initial_token_supply.as_int() - amount),
         "Token issuance should decrease by the burned amount"
     );
+
+    Ok(())
+}
+
+/// Tests that bridging out fails when the faucet is not registered in the bridge's registry.
+///
+/// This test verifies the faucet allowlist check in bridge_out's `convert_asset` procedure:
+/// 1. Creates a bridge account with an empty faucet registry (no faucets registered)
+/// 2. Creates a B2AGG note with an asset from an agglayer faucet
+/// 3. Attempts to consume the B2AGG note against the bridge — this should fail because
+///    `convert_asset` checks the faucet registry and panics with ERR_FAUCET_NOT_REGISTERED when the
+///    faucet is not found
+#[tokio::test]
+async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
+    // --------------------------------------------------------------------------------------------
+    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
+    // --------------------------------------------------------------------------------------------
+    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let faucet = create_existing_agglayer_faucet_with_supply(
+        builder.rng_mut().draw_word(),
+        "AGG",
+        8,
+        Felt::new(FungibleAsset::MAX_AMOUNT),
+        Felt::new(100), // initial token supply
+        bridge_account.id(),
+        &origin_token_address,
+        0, // origin_network
+        0, // scale
+    );
+    builder.add_account(faucet.clone())?;
+
+    // CREATE B2AGG NOTE WITH ASSETS FROM THE UNREGISTERED FAUCET
+    // --------------------------------------------------------------------------------------------
+    let amount = Felt::new(100);
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+
+    let destination_address = "0x1234567890abcdef1122334455667788990011aa";
+    let eth_address =
+        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
+
+    let b2agg_note = B2AggNote::create(
+        1u32, // destination_network
+        eth_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+
+    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // ATTEMPT TO BRIDGE OUT WITHOUT REGISTERING THE FAUCET (SHOULD FAIL)
+    // --------------------------------------------------------------------------------------------
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_FAUCET_NOT_REGISTERED);
 
     Ok(())
 }
@@ -226,7 +359,7 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
-    // Create a bridge account (includes a `bridge_out` component tested here)
+    // Create a bridge account (includes a `bridge_out` component)
     let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
     builder.add_account(bridge_account.clone())?;
 
@@ -235,11 +368,9 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
-
     let amount = Felt::new(50);
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
 
-    // Create note storage with destination network and address
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
@@ -247,8 +378,8 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
-    // Create the B2AGG note with the USER ACCOUNT as the sender
-    // This is the key difference - the note sender will be the same as the consuming account
+    // Create the B2AGG note with the USER ACCOUNT as the sender.
+    // This is the key difference — the note sender will be the same as the consuming account.
     let b2agg_note = B2AggNote::create(
         destination_network,
         eth_address,
@@ -258,7 +389,6 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    // Add the B2AGG note to the mock chain
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
@@ -274,7 +404,6 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // VERIFY NO BURN NOTE WAS CREATED (RECLAIM BRANCH)
     // --------------------------------------------------------------------------------------------
-    // In the reclaim scenario, no BURN note should be created
     assert_eq!(
         executed_transaction.output_notes().num_notes(),
         0,
@@ -287,14 +416,12 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     // VERIFY ASSETS WERE ADDED BACK TO THE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
-    let expected_balance = initial_balance + amount.as_int();
-
     assert_eq!(
-        final_balance, expected_balance,
+        final_balance,
+        initial_balance + amount.as_int(),
         "User account should have received the assets back from the B2AGG note"
     );
 
-    // Apply the transaction to the mock chain
     mock_chain.add_pending_executed_transaction(&executed_transaction)?;
     mock_chain.prove_next_block()?;
 
@@ -343,11 +470,9 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
 
     // CREATE B2AGG NOTE
     // --------------------------------------------------------------------------------------------
-
     let amount = Felt::new(50);
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
 
-    // Create note storage with destination network and address
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
@@ -355,7 +480,7 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
 
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
-    // Create the B2AGG note
+    // Create the B2AGG note targeting the real bridge account
     let b2agg_note = B2AggNote::create(
         destination_network,
         eth_address,
@@ -365,7 +490,6 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
         builder.rng_mut(),
     )?;
 
-    // Add the B2AGG note to the mock chain
     builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
     let mock_chain = builder.build()?;
 

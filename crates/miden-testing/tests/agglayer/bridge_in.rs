@@ -2,6 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::{
     ClaimNoteStorage,
+    EthAddressFormat,
     OutputNoteData,
     create_claim_note,
     create_existing_agglayer_faucet,
@@ -45,12 +46,20 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
+    // Origin token address for the faucet's conversion metadata
+    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let origin_network = 0u32;
+    let scale = 0u8;
+
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
         token_symbol,
         decimals,
         max_supply,
         bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
