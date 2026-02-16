@@ -28,6 +28,9 @@ miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
 
+# Third-party dependencies
+primitive-types = { workspace = true }
+
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }
 

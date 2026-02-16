@@ -30,7 +30,7 @@ const LEAF_DATA_KEY_MEM_ADDR = 704
 const OUTPUT_NOTE_DATA_MEM_ADDR = 708
 const CLAIM_NOTE_DATA_MEM_ADDR = 712
 
-const OUTPUT_NOTE_INPUTS_MEM_ADDR = 0
+const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
 const OUTPUT_NOTE_TAG_MEM_ADDR = 574
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
@@ -47,6 +47,16 @@ const DESTINATION_ADDRESS_1 = 545
 const DESTINATION_ADDRESS_2 = 546
 const DESTINATION_ADDRESS_3 = 547
 const DESTINATION_ADDRESS_4 = 548
+
+# Memory locals in claim
+const CLAIM_PREFIX_MEM_LOC = 5
+const CLAIM_SUFFIX_MEM_LOC = 6
+const CLAIM_AMOUNT_MEM_LOC_0 = 0
+const CLAIM_AMOUNT_MEM_LOC_1 = 4
+
+# Memory locals in build_p2id_output_note
+const BUILD_P2ID_AMOUNT_MEM_LOC_0 = 0
+const BUILD_P2ID_AMOUNT_MEM_LOC_1 = 4
 
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
@@ -163,11 +173,19 @@ end
 #! It reads the destination account ID, amount, and other note parameters from memory to construct
 #! the output note.
 #!
-#! Inputs: []
+#! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
 #!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
+@locals(8)
 proc build_p2id_output_note
+    # write destination account id into memory for use in note::build_recipient
+    push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
+
+    # store amount in memory locals for use in faucets::distribute
+    loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
+    # => [pad(16)]
+
     # Build P2ID output note
     procref.::miden::standards::notes::p2id::main
     # => [SCRIPT_ROOT]
@@ -178,15 +196,8 @@ proc build_p2id_output_note
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
     # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    push.OUTPUT_NOTE_INPUTS_MEM_ADDR
-    # => [storage_ptr = 0, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    exec.get_destination_account_id_data
-    # => [prefix, suffix]
-
-    # Write destination account id into memory
-    mem_store.1 mem_store.0
-    # => []
+    push.OUTPUT_NOTE_STORAGE_MEM_ADDR
+    # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
     # => [RECIPIENT]
@@ -197,10 +208,9 @@ proc build_p2id_output_note
     mem_load.OUTPUT_NOTE_TAG_MEM_ADDR
     # => [tag, RECIPIENT]
 
-    exec.get_raw_claim_amount
-    # => [AMOUNT[1], AMOUNT[0], tag, note_type, RECIPIENT]
-
     # TODO: implement scale down logic; stubbed out for now
+    padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
+    # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
     exec.asset_conversion::scale_u256_to_native_amount
     # => [amount, tag, note_type, RECIPIENT]
 
@@ -252,9 +262,20 @@ end
 #! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
+@locals(10) # 2 for prefix and suffix, 8 for amount
 pub proc claim
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
+    # => [pad(16)]
+
+    # validate_claim will overwrite memory in-place, so we need to load the account and amount
+    # before calling validate_claim and store it in memory locals
+    exec.get_destination_account_id_data
+    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
+    # => [pad(16)]
+
+    exec.get_raw_claim_amount
+    loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
     # => [pad(16)]
 
     # VALIDATE CLAIM 
@@ -269,6 +290,10 @@ pub proc claim
     # => [pad(16)]
 
     # Create P2ID output note
+    loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
+    # => [AMOUNT[0], AMOUNT[1], pad(8)]
+    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
+    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
     exec.build_p2id_output_note
     # => [pad(16)] 
 end
