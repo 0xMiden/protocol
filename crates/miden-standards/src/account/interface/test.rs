@@ -21,7 +21,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::{Felt, Word};
 
-use crate::AuthScheme;
+use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
 use crate::account::faucets::BasicFungibleFaucet;
 use crate::account::interface::{
@@ -657,12 +657,12 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
         .find(|component| matches!(component, AccountComponentInterface::AuthSingleSig))
         .expect("should have EcdsaK256Keccak component");
 
-    // Test get_auth_schemes method
-    let auth_schemes = ecdsa_k256_keccak_component.get_auth_schemes(wallet_account.storage());
-    assert_eq!(auth_schemes.len(), 1);
-    let auth_scheme = &auth_schemes[0];
-    match auth_scheme {
-        AuthScheme::SingleSig { pub_key, scheme_id } => {
+    // Test get_auth_methods method
+    let auth_methods = ecdsa_k256_keccak_component.get_auth_methods(wallet_account.storage());
+    assert_eq!(auth_methods.len(), 1);
+    let auth_method = &auth_methods[0];
+    match auth_method {
+        AuthMethod::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*scheme_id, 1);
         },
@@ -688,12 +688,12 @@ fn test_get_auth_scheme_falcon512_rpo() {
         .find(|component| matches!(component, AccountComponentInterface::AuthSingleSig))
         .expect("should have Falcon512Rpo component");
 
-    // Test get_auth_schemes method
-    let auth_schemes = rpo_falcon_component.get_auth_schemes(wallet_account.storage());
-    assert_eq!(auth_schemes.len(), 1);
-    let auth_scheme = &auth_schemes[0];
-    match auth_scheme {
-        AuthScheme::SingleSig { pub_key, scheme_id } => {
+    // Test get_auth_methods method
+    let auth_methods = rpo_falcon_component.get_auth_methods(wallet_account.storage());
+    assert_eq!(auth_methods.len(), 1);
+    let auth_method = &auth_methods[0];
+    match auth_method {
+        AuthMethod::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*scheme_id, 0);
         },
@@ -719,13 +719,13 @@ fn test_get_auth_scheme_no_auth() {
         .find(|component| matches!(component, AccountComponentInterface::AuthNoAuth))
         .expect("should have NoAuth component");
 
-    // Test get_auth_schemes method
-    let auth_schemes = no_auth_component.get_auth_schemes(no_auth_account.storage());
-    assert_eq!(auth_schemes.len(), 1);
-    let auth_scheme = &auth_schemes[0];
-    match auth_scheme {
-        AuthScheme::NoAuth => {},
-        _ => panic!("Expected NoAuth auth scheme"),
+    // Test get_auth_methods method
+    let auth_methods = no_auth_component.get_auth_methods(no_auth_account.storage());
+    assert_eq!(auth_methods.len(), 1);
+    let auth_method = &auth_methods[0];
+    match auth_method {
+        AuthMethod::NoAuth => {},
+        _ => panic!("Expected NoAuth auth method"),
     }
 }
 
@@ -740,8 +740,8 @@ fn test_get_auth_scheme_non_auth_component() {
         .build_existing()
         .expect("failed to create wallet account");
 
-    let auth_schemes = basic_wallet_component.get_auth_schemes(wallet_account.storage());
-    assert!(auth_schemes.is_empty());
+    let auth_methods = basic_wallet_component.get_auth_methods(wallet_account.storage());
+    assert!(auth_methods.is_empty());
 }
 
 /// Test that the From<&Account> implementation correctly uses get_auth_scheme
@@ -760,12 +760,12 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(wallet_account_interface.auth().len(), 1);
 
     match &wallet_account_interface.auth()[0] {
-        AuthScheme::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, scheme_id } => {
             let expected_pub_key = PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32]));
             assert_eq!(*pub_key, expected_pub_key);
             assert_eq!(*scheme_id, 0);
         },
-        _ => panic!("Expected SingleSig auth scheme"),
+        _ => panic!("Expected SingleSig auth method"),
     }
 
     // Test with NoAuth
@@ -781,8 +781,8 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(no_auth_account_interface.auth().len(), 1);
 
     match &no_auth_account_interface.auth()[0] {
-        AuthScheme::NoAuth => {},
-        _ => panic!("Expected NoAuth auth scheme"),
+        AuthMethod::NoAuth => {},
+        _ => panic!("Expected NoAuth auth method"),
     }
 }
 
@@ -801,11 +801,11 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(wallet_account_interface.auth().len(), 1);
     match &wallet_account_interface.auth()[0] {
-        AuthScheme::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, scheme_id } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*scheme_id, 0);
         },
-        _ => panic!("Expected SingleSig auth scheme"),
+        _ => panic!("Expected SingleSig auth method"),
     }
 
     // Test AccountInterface.get_auth_scheme() method with NoAuth
@@ -820,8 +820,8 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(no_auth_account_interface.auth().len(), 1);
     match &no_auth_account_interface.auth()[0] {
-        AuthScheme::NoAuth => {},
-        _ => panic!("Expected NoAuth auth scheme"),
+        AuthMethod::NoAuth => {},
+        _ => panic!("Expected NoAuth auth method"),
     }
 
     // Note: We don't test the case where an account has no auth components because

@@ -12,7 +12,7 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use thiserror::Error;
 
-use super::AuthScheme;
+use super::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig};
 use crate::account::components::basic_wallet_library;
 use crate::procedure_digest;
@@ -112,7 +112,7 @@ pub enum BasicWalletError {
 /// authentication scheme.
 pub fn create_basic_wallet(
     init_seed: [u8; 32],
-    auth_scheme: AuthScheme,
+    auth_method: AuthMethod,
     account_type: AccountType,
     account_storage_mode: AccountStorageMode,
 ) -> Result<Account, BasicWalletError> {
@@ -122,11 +122,11 @@ pub fn create_basic_wallet(
         )));
     }
 
-    let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::SingleSig { pub_key, scheme_id } => {
+    let auth_component: AccountComponent = match auth_method {
+        AuthMethod::SingleSig { pub_key, scheme_id } => {
             AuthSingleSig::new(pub_key, scheme_id).into()
         },
-        AuthScheme::Multisig { threshold, pub_keys, scheme_ids } => {
+        AuthMethod::Multisig { threshold, pub_keys, scheme_ids } => {
             let config = AuthMultisigConfig::new(pub_keys, scheme_ids, threshold)
                 .and_then(|cfg| {
                     cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
@@ -134,12 +134,12 @@ pub fn create_basic_wallet(
                 .map_err(BasicWalletError::AccountError)?;
             AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
         },
-        AuthScheme::NoAuth => {
+        AuthMethod::NoAuth => {
             return Err(BasicWalletError::UnsupportedAuthScheme(
                 "basic wallets cannot be created with NoAuth authentication scheme".into(),
             ));
         },
-        AuthScheme::Unknown => {
+        AuthMethod::Unknown => {
             return Err(BasicWalletError::UnsupportedAuthScheme(
                 "basic wallets cannot be created with Unknown authentication scheme".into(),
             ));
@@ -166,7 +166,7 @@ mod tests {
     use miden_protocol::account::auth::PublicKeyCommitment;
     use miden_protocol::{ONE, Word};
 
-    use super::{Account, AccountStorageMode, AccountType, AuthScheme, create_basic_wallet};
+    use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
         let scheme_id = 2u8;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthScheme::SingleSig { pub_key, scheme_id },
+            AuthMethod::SingleSig { pub_key, scheme_id },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         );
@@ -191,7 +191,7 @@ mod tests {
         let scheme_id = 1u8;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthScheme::SingleSig { pub_key, scheme_id },
+            AuthMethod::SingleSig { pub_key, scheme_id },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )

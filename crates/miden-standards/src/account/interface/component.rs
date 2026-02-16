@@ -6,7 +6,7 @@ use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, S
 use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, FieldElement, Word};
 
-use crate::AuthScheme;
+use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::interface::AccountInterfaceError;
 
@@ -87,10 +87,10 @@ impl AccountComponentInterface {
     }
 
     /// Returns the authentication schemes associated with this component interface.
-    pub fn get_auth_schemes(&self, storage: &AccountStorage) -> Vec<AuthScheme> {
+    pub fn get_auth_methods(&self, storage: &AccountStorage) -> Vec<AuthMethod> {
         match self {
             AccountComponentInterface::AuthSingleSig => {
-                vec![AuthScheme::SingleSig {
+                vec![AuthMethod::SingleSig {
                     pub_key: PublicKeyCommitment::from(
                         storage
                             .get_item(AuthSingleSig::public_key_slot())
@@ -103,7 +103,7 @@ impl AccountComponentInterface {
                 }]
             },
             AccountComponentInterface::AuthSingleSigAcl => {
-                vec![AuthScheme::SingleSig {
+                vec![AuthMethod::SingleSig {
                     pub_key: PublicKeyCommitment::from(
                         storage
                             .get_item(AuthSingleSigAcl::public_key_slot())
@@ -116,14 +116,14 @@ impl AccountComponentInterface {
                 }]
             },
             AccountComponentInterface::AuthMultisig => {
-                vec![extract_multisig_auth_scheme(
+                vec![extract_multisig_auth_method(
                     storage,
                     AuthMultisig::threshold_config_slot(),
                     AuthMultisig::approver_public_keys_slot(),
                     AuthMultisig::approver_scheme_ids_slot(),
                 )]
             },
-            AccountComponentInterface::AuthNoAuth => vec![AuthScheme::NoAuth],
+            AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
             _ => vec![], // Non-auth components return empty vector
         }
     }
@@ -271,13 +271,13 @@ impl AccountComponentInterface {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Extracts authentication scheme from a multisig component.
-fn extract_multisig_auth_scheme(
+/// Extracts authentication method from a multisig component.
+fn extract_multisig_auth_method(
     storage: &AccountStorage,
     config_slot: &StorageSlotName,
     approver_public_keys_slot: &StorageSlotName,
     approver_scheme_ids_slot: &StorageSlotName,
-) -> AuthScheme {
+) -> AuthMethod {
     // Read the multisig configuration from the config slot
     // Format: [threshold, num_approvers, 0, 0]
     let config = storage
@@ -321,5 +321,5 @@ fn extract_multisig_auth_scheme(
         scheme_ids.push(scheme_id);
     }
 
-    AuthScheme::Multisig { threshold, pub_keys, scheme_ids }
+    AuthMethod::Multisig { threshold, pub_keys, scheme_ids }
 }

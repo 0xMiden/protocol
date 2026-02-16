@@ -45,7 +45,7 @@ pub enum FungibleFaucetError {
         actual: StorageSlotName,
     },
     #[error("unsupported authentication scheme: {0}")]
-    UnsupportedAuthScheme(String),
+    UnsupportedAuthMethod(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

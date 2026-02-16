@@ -1,4 +1,4 @@
-use super::auth_scheme::AuthScheme;
+use super::auth_method::AuthMethod;
 
 pub mod auth;
 pub mod components;

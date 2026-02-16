@@ -8,7 +8,7 @@ use miden_protocol::account::{Account, AccountCode, AccountId, AccountProcedureR
 use miden_protocol::assembly::mast::{MastForest, MastNode, MastNodeId};
 use miden_protocol::note::{Note, NoteScript};
 
-use crate::AuthScheme;
+use crate::AuthMethod;
 use crate::account::components::{
     StandardAccountComponent,
     basic_fungible_faucet_library,
@@ -32,8 +32,8 @@ use crate::note::StandardNote;
 /// An extension for [`AccountInterface`] that allows instantiation from higher-level types.
 pub trait AccountInterfaceExt {
     /// Creates a new [`AccountInterface`] instance from the provided account ID, authentication
-    /// schemes and account code.
-    fn from_code(account_id: AccountId, auth: Vec<AuthScheme>, code: &AccountCode) -> Self;
+    /// methods and account code.
+    fn from_code(account_id: AccountId, auth: Vec<AuthMethod>, code: &AccountCode) -> Self;
 
     /// Creates a new [`AccountInterface`] instance from the provided [`Account`].
     fn from_account(account: &Account) -> Self;
@@ -47,7 +47,7 @@ pub trait AccountInterfaceExt {
 }
 
 impl AccountInterfaceExt for AccountInterface {
-    fn from_code(account_id: AccountId, auth: Vec<AuthScheme>, code: &AccountCode) -> Self {
+    fn from_code(account_id: AccountId, auth: Vec<AuthMethod>, code: &AccountCode) -> Self {
         let components = AccountComponentInterface::from_procedures(code.procedures());
 
         Self::new(account_id, auth, components)
@@ -57,11 +57,11 @@ impl AccountInterfaceExt for AccountInterface {
         let components = AccountComponentInterface::from_procedures(account.code().procedures());
         let mut auth = Vec::new();
 
-        // Find the auth component and extract all auth schemes from it
+        // Find the auth component and extract all auth methods from it
         // An account should have only one auth component
         for component in components.iter() {
             if component.is_auth_component() {
-                auth = component.get_auth_schemes(account.storage());
+                auth = component.get_auth_methods(account.storage());
                 break;
             }
         }

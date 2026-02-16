@@ -52,7 +52,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
-use miden_standards::AuthScheme;
+use miden_standards::AuthMethod;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -535,12 +535,12 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthScheme::SingleSig { pub_key, .. } => pub_key,
-        AuthScheme::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthScheme::Multisig { .. } => {
+        AuthMethod::SingleSig { pub_key, .. } => pub_key,
+        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
+        AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Falcon512RpoMultisig")
         },
-        AuthScheme::Unknown => panic!("Expected Falcon512Rpo auth scheme, got Unknown"),
+        AuthMethod::Unknown => panic!("Expected Falcon512Rpo auth scheme, got Unknown"),
     };
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
@@ -593,12 +593,12 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthScheme::SingleSig { pub_key, .. } => pub_key,
-        AuthScheme::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
-        AuthScheme::Multisig { .. } => {
+        AuthMethod::SingleSig { pub_key, .. } => pub_key,
+        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
+        AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
         },
-        AuthScheme::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
+        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check

@@ -1,6 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthSecretKey;
-use miden_standards::AuthScheme;
+use miden_standards::AuthMethod;
 use miden_standards::account::wallets::create_basic_wallet;
 use rand_chacha::ChaCha20Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -19,7 +19,7 @@ fn wallet_creation() {
     let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
     let scheme_id = 2u8;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id };
+    let auth_method: AuthMethod = AuthMethod::SingleSig { pub_key, scheme_id };
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
@@ -30,7 +30,7 @@ fn wallet_creation() {
     let account_type = AccountType::RegularAccountImmutableCode;
     let storage_mode = AccountStorageMode::Private;
 
-    let wallet = create_basic_wallet(init_seed, auth_scheme, account_type, storage_mode).unwrap();
+    let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
 
     let expected_code = AccountCode::from_components(
         &[AuthSingleSig::new(pub_key, scheme_id).into(), BasicWallet.into()],
@@ -60,7 +60,7 @@ fn wallet_creation_2() {
     let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
     let scheme_id = 1u8;
     let pub_key = sec_key.public_key().to_commitment();
-    let auth_scheme: AuthScheme = AuthScheme::SingleSig { pub_key, scheme_id };
+    let auth_method: AuthMethod = AuthMethod::SingleSig { pub_key, scheme_id };
 
     // we need to use an initial seed to create the wallet account
     let init_seed: [u8; 32] = [
@@ -71,7 +71,7 @@ fn wallet_creation_2() {
     let account_type = AccountType::RegularAccountImmutableCode;
     let storage_mode = AccountStorageMode::Private;
 
-    let wallet = create_basic_wallet(init_seed, auth_scheme, account_type, storage_mode).unwrap();
+    let wallet = create_basic_wallet(init_seed, auth_method, account_type, storage_mode).unwrap();
 
     let expected_code = AccountCode::from_components(
         &[AuthSingleSig::new(pub_key, scheme_id).into(), BasicWallet.into()],

@@ -18,7 +18,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
 use super::{FungibleFaucetError, TokenMetadata};
-use crate::account::AuthScheme;
+use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
 
@@ -277,12 +277,12 @@ pub fn create_basic_fungible_faucet(
     decimals: u8,
     max_supply: Felt,
     account_storage_mode: AccountStorageMode,
-    auth_scheme: AuthScheme,
+    auth_method: AuthMethod,
 ) -> Result<Account, FungibleFaucetError> {
     let distribute_proc_root = BasicFungibleFaucet::distribute_digest();
 
-    let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::SingleSig { pub_key, scheme_id } => AuthSingleSigAcl::new(
+    let auth_component: AccountComponent = match auth_method {
+        AuthMethod::SingleSig { pub_key, scheme_id } => AuthSingleSigAcl::new(
             pub_key,
             scheme_id,
             AuthSingleSigAclConfig::new()
@@ -291,19 +291,19 @@ pub fn create_basic_fungible_faucet(
         )
         .map_err(FungibleFaucetError::AccountError)?
         .into(),
-        AuthScheme::NoAuth => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "basic fungible faucets cannot be created with NoAuth authentication scheme".into(),
+        AuthMethod::NoAuth => {
+            return Err(FungibleFaucetError::UnsupportedAuthMethod(
+                "basic fungible faucets cannot be created with NoAuth authentication method".into(),
             ));
         },
-        AuthScheme::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "basic fungible faucets cannot be created with Unknown authentication scheme"
+        AuthMethod::Unknown => {
+            return Err(FungibleFaucetError::UnsupportedAuthMethod(
+                "basic fungible faucets cannot be created with Unknown authentication method"
                     .into(),
             ));
         },
-        AuthScheme::Multisig { threshold: _, pub_keys: _, scheme_ids: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
+        AuthMethod::Multisig { threshold: _, pub_keys: _, scheme_ids: _ } => {
+            return Err(FungibleFaucetError::UnsupportedAuthMethod(
                 "basic fungible faucets do not support Multisig authentication".into(),
             ));
         },
@@ -333,7 +333,7 @@ mod tests {
         AccountBuilder,
         AccountStorageMode,
         AccountType,
-        AuthScheme,
+        AuthMethod,
         BasicFungibleFaucet,
         Felt,
         FungibleFaucetError,
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn faucet_contract_creation() {
         let pub_key_word = Word::new([ONE; 4]);
-        let auth_scheme: AuthScheme = AuthScheme::SingleSig {
+        let auth_method: AuthMethod = AuthMethod::SingleSig {
             pub_key: pub_key_word.into(),
             scheme_id: 2,
         };
@@ -369,7 +369,7 @@ mod tests {
             decimals,
             max_supply,
             storage_mode,
-            auth_scheme,
+            auth_method,
         )
         .unwrap();
 
