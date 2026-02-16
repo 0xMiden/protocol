@@ -68,3 +68,9 @@ pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("faile
 
 /// Error Message: "number of approvers or threshold must not be zero"
 pub const ERR_ZERO_IN_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers or threshold must not be zero");
+
+/// Error Message: "initial and new number of approvers must be u32"
+pub const ERR_APPROVER_COUNTS_NOT_U32: MasmError = MasmError::from_static_str("initial and new number of approvers must be u32");
+
+/// Error Message: "signer index must be u32"
+pub const ERR_SIGNER_INDEX_NOT_U32: MasmError = MasmError::from_static_str("signer index must be u32");

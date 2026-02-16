@@ -55,6 +55,10 @@ const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or g
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
 
+const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
+
+const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
+
 #! Check if transaction has already been executed and add it to executed transactions for replay protection.
 #!
 #! Inputs:  [MSG]
@@ -87,8 +91,7 @@ end
 #! from the approver public key and scheme id mappings.
 #!
 #! This procedure cleans up the storage by removing public keys and signature scheme ids of approvers 
-#! that are no longer part of the multisig configuration. This procedure assumes that 
-#! init_num_of_approvers and new_num_of_approvers are u32 values.
+#! that are no longer part of the multisig configuration.
 #!
 #! Inputs: [init_num_of_approvers, new_num_of_approvers]
 #! Outputs: []
@@ -96,9 +99,13 @@ end
 #! Where:
 #! - init_num_of_approvers is the original number of approvers before the update
 #! - new_num_of_approvers is the new number of approvers after the update
+#!
+#! Panics if:
+#! - init_num_of_approvers is not a u32 value.
+#! - new_num_of_approvers is not a u32 value.
 proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
     dup.1 dup.1
-    u32assert2
+    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
     u32lt
     # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
 
@@ -234,20 +241,17 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         padw adv_loadw
         # => [PUB_KEY, [0, 0, 0, i-1], i-1, pad(12)]
 
-        swapw
-        # => [[0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+        dupw
+        # => [PUB_KEY, PUB_KEY, [0, 0, 0, i-1], i-1, pad(12)]
 
-        dupw.1
-        # => [PUB_KEY, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
-
-        swapw
-        # => [[0, 0, 0, i-1], PUB_KEY, PUB_KEY, i-1, pad(12)]
+        movupw.2
+        # => [[0, 0, 0, i-1], PUB_KEY, PUB_KEY, i-1i pad(12)]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
         # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, PUB_KEY, i-1, pad(12)]
 
         exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
+        # => [OLD_VALUE, PUB_KEY, i-1, pad(12)]
 
         # override OLD_VALUE with SCHEME_ID_WORD
         adv_loadw
@@ -399,8 +403,11 @@ end
 #!
 #! Inputs: [index]
 #! Outputs: [PUB_KEY]
+#!
+#! Panics if:
+#! - index is not a u32 value.
 pub proc get_signer_at
-    u32assert
+    u32assert.err=ERR_SIGNER_INDEX_NOT_U32
     # => [index]
 
     push.0.0.0
@@ -414,7 +421,7 @@ pub proc get_signer_at
 end
 
 
-#! Returns 1 if PUB_KEY is a current signer (scheme_id is supported), else 0.
+#! Returns 1 if PUB_KEY is a current signer (auth_scheme is supported), else 0.
 #! Inputs: [PUB_KEY]
 #! Outputs: [is_signer]
 pub proc is_signer(pub_key: BeWord) -> felt
@@ -435,10 +442,6 @@ end
 #! Returns all signer public keys for indices [0..num_approvers]
 #! Inputs: []
 #! Outputs: [PUB_KEY_0, PUB_KEY_1, ..., PUBKEY_N-1]
-#!
-#! Notes
-#! - Signers needs to be properly added to the mapping starting from 0, ..., num_approvers
-#!
 pub proc get_signers
     exec.get_threshold_and_num_approvers drop
     # => [num_approvers]
@@ -446,19 +449,19 @@ pub proc get_signers
     dup neq.0
     while.true
         sub.1
-        # => [i-1, num_approvers]
+        # => [i-1]
 
         dup
-        # => [i-1, i-1, num_approvers]
+        # => [i-1, i-1]
 
         exec.get_signer_at
-        # => [PUB_KEY_WORD, i-1, num_approvers]
+        # => [PUB_KEY_WORD, i-1]
 
         movup.4
-        # => [i-1, PUB_KEY, num_approvers]
+        # => [i-1, PUB_KEY]
 
         dup neq.0
-        # => [should_continue, i-1, PUB_KEY_WORD, num_approvers]
+        # => [should_continue, i-1, PUB_KEY_WORD]
     end
 
     drop
