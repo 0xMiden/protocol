@@ -234,6 +234,7 @@ end
 #! Inputs:  [x7, x6, x5, x4, x3, x2, x1, x0, scale_exp, y]
 #!          Where x is encoded as 8 u32 limbs in big-endian order.
 #!          (x7 is most significant limb and is at the top of the stack)
+#!          Each limb is expected to contain little-endian bytes.
 #! Outputs: [y]
 #!
 #! Where:

@@ -64,6 +64,9 @@ impl EthAmount {
     }
 
     /// Creates an EthAmount from a U256 value.
+    ///
+    /// This constructor is only available in test code to make test arithmetic easier.
+    #[cfg(any(test, feature = "testing"))]
     pub fn from_u256(value: U256) -> Self {
         Self(value.to_big_endian())
     }
