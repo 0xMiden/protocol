@@ -20,7 +20,7 @@ use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
-use super::mmr_frontier::SOLIDITY_MMR_FRONTIER_VECTORS;
+use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
 
 /// Reads the Local Exit Root (double-word) from the bridge account's storage.
 ///

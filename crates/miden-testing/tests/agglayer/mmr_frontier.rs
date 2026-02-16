@@ -7,8 +7,6 @@ use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
-use serde::Deserialize;
-
 // KECCAK MMR FRONTIER
 // ================================================================================================
 
@@ -146,47 +144,7 @@ async fn test_check_empty_mmr_root() -> anyhow::Result<()> {
 // Test vectors generated from: https://github.com/agglayer/agglayer-contracts
 // Run `make generate-solidity-test-vectors` to regenerate the test vectors.
 
-/// Canonical zeros JSON embedded at compile time from the Foundry-generated file.
-const CANONICAL_ZEROS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
-
-/// MMR frontier vectors JSON embedded at compile time from the Foundry-generated file.
-pub const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
-
-/// Deserialized canonical zeros from Solidity DepositContractBase.sol
-#[derive(Debug, Deserialize)]
-struct CanonicalZerosFile {
-    canonical_zeros: Vec<String>,
-}
-
-/// Deserialized MMR frontier vectors from Solidity DepositContractV2.
-///
-/// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
-/// (leafType=0, originNetwork=64, originTokenAddress=0, metadataHash=0), parametrised by
-/// `amounts[i]` with a fixed `destination_network` and `destination_address`.
-///
-/// Amounts are stored as bytes32 hex strings (matching ClaimAssetTestVectors format).
-#[derive(Debug, Deserialize)]
-pub struct MmrFrontierVectorsFile {
-    pub leaves: Vec<String>,
-    pub roots: Vec<String>,
-    pub counts: Vec<u32>,
-    pub amounts: Vec<String>,
-    pub destination_network: u32,
-    pub destination_address: String,
-}
-
-/// Lazily parsed canonical zeros from the JSON file.
-static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::new(|| {
-    serde_json::from_str(CANONICAL_ZEROS_JSON).expect("Failed to parse canonical zeros JSON")
-});
-
-/// Lazily parsed MMR frontier vectors from the JSON file.
-pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
-    serde_json::from_str(MMR_FRONTIER_VECTORS_JSON)
-        .expect("failed to parse MMR frontier vectors JSON")
-});
+use super::test_utils::{SOLIDITY_CANONICAL_ZEROS, SOLIDITY_MMR_FRONTIER_VECTORS};
 
 /// Verifies that the Rust KeccakMmrFrontier32 produces the same canonical zeros as Solidity.
 #[test]
