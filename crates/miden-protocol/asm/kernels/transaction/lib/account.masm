@@ -49,8 +49,6 @@ const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitme
 
 const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
 
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero"
-
 const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign account to be loaded (64) was exceeded"
 
 const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT="commitment of the foreign account in the advice provider does not match the commitment in the account tree"
@@ -1023,7 +1021,10 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
 #! - ACCOUNT_ID is the word constructed from the account_id as follows:
-#!   [account_id_suffix, account_id_prefix, 0, 0].
+#!   [0, 0, account_id_prefix, account_id_suffix]. Notice that the actual advice map
+#!   key is reversed: [account_id_suffix, account_id_prefix, 0, 0]. That is the  specificity of the
+#!   `adv.push_mapval` instruction which takes the top stack word in the big-endian (reversed)
+#!   order.
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
@@ -1048,17 +1049,20 @@ pub proc load_foreign_account
     # move the core account data to the advice stack
     adv.push_mapval
     # OS => [0, 0, account_id_prefix, account_id_suffix]
-    # AS => [[account_id_prefix, account_id_suffix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+    # AS => [[account_id_suffix, account_id_prefix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the id and nonce of the foreign account to the memory
     adv_loadw
+    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
     exec.memory::set_account_id_and_nonce
-    # OS => []
+    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the vault root of the foreign account to the memory
     adv_loadw exec.memory::set_account_vault_root
-    # OS => []
+    # OS => [VAULT_ROOT]
     # AS => [STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # move the storage root and the code root to the operand stack
@@ -1710,17 +1714,16 @@ end
 #!   data, depending on the value of the was_loaded flag.
 #!
 #! Panics if:
-#! - the prefix or suffix of the provided foreign account ID equal zero.
 #! - the maximum allowed number of foreign account to be loaded (64) was exceeded.
 pub proc get_account_data_ptr
-    # check that foreign account ID is not equal zero
-    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
-    # => [foreign_account_id_prefix, foreign_account_id_suffix]
-
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
     exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
     # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+
+    # push the pad element onto the stack: it will represent the `is_equal_id` flag during the cycle
+    push.0 movdn.3
+    # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix, is_equal_id=0]
 
     # push the flag to enter the loop
     push.1

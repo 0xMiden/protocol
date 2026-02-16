@@ -3,6 +3,13 @@ use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use miden::core::mem
 
+# TYPE ALIASES
+# =================================================================================================
+
+type AccountID = struct { prefix: felt, suffix: felt }
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type MemoryAddress = u32
+
 # ERRORS
 # =================================================================================================
 
@@ -25,36 +32,51 @@ const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maxi
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which a pointer to the currently active input note is stored.
-const ACTIVE_INPUT_NOTE_PTR=0
+const ACTIVE_INPUT_NOTE_PTR = 0
 
 # The memory address at which the number of output notes is stored.
-const NUM_OUTPUT_NOTES_PTR=4
+const NUM_OUTPUT_NOTES_PTR = 1
 
-# The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR=8
-
-# The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR=12
+# The memory address at which the absolute expiration block number is stored.
+const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 
 # The memory address at which the dirty flag of the storage commitment of the native account is
 # stored.
 #
 # This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 # made to the account storage since the last re-computation, and 0 otherwise.
-const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR=16
+const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
-# The memory address at which the absolute expiration block number is stored.
-const TX_EXPIRATION_BLOCK_NUM_PTR=20
+# The memory address at which the input vault root is stored.
+const INPUT_VAULT_ROOT_PTR = 4
+
+# The memory address at which the output vault root is stored.
+const OUTPUT_VAULT_ROOT_PTR = 8
+
+# Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
+# upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = 12
+const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1
+
+# Pointer to the 16th input value (with index 15) of the foreign procedure which will be loaded
+# during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
+# the `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
+# values, could be executed as foreign.
+const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
+
+# Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+# This root is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
-const ACCOUNT_STACK_TOP_PTR=24
+const ACCOUNT_STACK_TOP_PTR=20
 
 # Pointer to the first element on the account stack.
-const MIN_ACCOUNT_STACK_PTR=25
+const MIN_ACCOUNT_STACK_PTR=21
 
 # Pointer to the last element on the account stack.
-const MAX_ACCOUNT_STACK_PTR=88
+const MAX_ACCOUNT_STACK_PTR=84
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -386,6 +408,52 @@ end
 #! - OUTPUT_VAULT_ROOT is the output vault root.
 pub proc set_output_vault_root
     mem_storew_be.OUTPUT_VAULT_ROOT_PTR
+end
+
+#! Sets the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix]
+#! Outputs: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc set_fpi_account_id(foreign_account_id: AccountID)
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => [foreign_account_id_suffix]
+
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => []
+end
+
+#! Returns the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! WARNING: The ID felts may be zero.
+#!
+#! Inputs:  []
+#! Outputs: [foreign_account_id_prefix, foreign_account_id_suffix]
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc get_fpi_account_id() -> (AccountID)
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => [foreign_account_id_suffix]
+
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => [foreign_account_id_prefix, foreign_account_id_suffix]
+end
+
+#! Sets the root of the foreign procedure which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [FOREIGN_PROC_ROOT]
+#! Outputs: [FOREIGN_PROC_ROOT]
+#!
+#! Where:
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+pub proc set_fpi_procedure_root(foreign_proc_root: BeWord) -> BeWord
+    mem_storew_be.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
 # GLOBAL INPUTS
