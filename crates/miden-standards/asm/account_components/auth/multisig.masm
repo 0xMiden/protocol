@@ -500,7 +500,7 @@ end
 #!
 #! Invocation: call
 @locals(1)
-pub proc auth_tx_ecdsa_k256_keccak_multisig(salt: BeWord)
+pub proc auth_tx_multisig(salt: BeWord)
     exec.native_account::incr_nonce drop
     # => [SALT]
 

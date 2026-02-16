@@ -31,7 +31,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme_id")
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
-pub proc auth_tx_ecdsa_k256_keccak(auth_args: BeWord)
+pub proc auth_tx(auth_args: BeWord)
     dropw
     # => [pad(16)]
     
