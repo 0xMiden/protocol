@@ -89,9 +89,8 @@ const BLOCK_COMMITMENT_PTR=400
 
 # The memory address at which the native account ID provided as a global transaction input is
 # stored.
-const GLOBAL_ACCOUNT_ID_PTR=404
-const GLOBAL_ACCOUNT_ID_SUFFIX_PTR=GLOBAL_ACCOUNT_ID_PTR + 2
-const GLOBAL_ACCOUNT_ID_PREFIX_PTR=GLOBAL_ACCOUNT_ID_PTR + 3
+const GLOBAL_ACCOUNT_ID_SUFFIX_PTR = 404
+const GLOBAL_ACCOUNT_ID_PREFIX_PTR = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408

@@ -27,6 +27,8 @@ use miden_protocol::transaction::memory::{
     BLOCK_NUMBER_IDX,
     CHAIN_COMMITMENT_PTR,
     FEE_PARAMETERS_PTR,
+    GLOBAL_ACCOUNT_ID_PREFIX_PTR,
+    GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
     INIT_ACCT_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_VAULT_ROOT_PTR,
@@ -48,8 +50,6 @@ use miden_protocol::transaction::memory::{
     KERNEL_PROCEDURES_PTR,
     NATIVE_ACCT_CODE_COMMITMENT_PTR,
     NATIVE_ACCT_ID_AND_NONCE_PTR,
-    NATIVE_ACCT_ID_PREFIX_PTR,
-    NATIVE_ACCT_ID_SUFFIX_PTR,
     NATIVE_ACCT_PROCEDURES_SECTION_PTR,
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
@@ -168,14 +168,14 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_element(NATIVE_ACCT_ID_SUFFIX_PTR),
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_SUFFIX_PTR),
         inputs.account().id().suffix(),
-        "The account ID prefix should be stored at the NATIVE_ACCT_ID_SUFFIX_PTR"
+        "The account ID prefix should be stored at the GLOBAL_ACCOUNT_ID_SUFFIX_PTR"
     );
     assert_eq!(
-        exec_output.get_kernel_mem_element(NATIVE_ACCT_ID_PREFIX_PTR),
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_PREFIX_PTR),
         inputs.account().id().prefix().as_felt(),
-        "The account ID suffix should be stored at the NATIVE_ACCT_ID_PREFIX_PTR"
+        "The account ID suffix should be stored at the GLOBAL_ACCOUNT_ID_PREFIX_PTR"
     );
 
     assert_eq!(

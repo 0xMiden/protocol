@@ -121,10 +121,12 @@ pub const GLOBAL_INPUTS_SECTION_OFFSET: MemoryOffset = 400;
 /// The memory address at which the commitment of the transaction's reference block is stored.
 pub const BLOCK_COMMITMENT_PTR: MemoryAddress = 400;
 
-/// The memory address at which the native account ID is stored.
-pub const NATIVE_ACCT_ID_PTR: MemoryAddress = 404;
-pub const NATIVE_ACCT_ID_SUFFIX_PTR: MemoryAddress = NATIVE_ACCT_ID_PTR + 2;
-pub const NATIVE_ACCT_ID_PREFIX_PTR: MemoryAddress = NATIVE_ACCT_ID_PTR + 3;
+/// The memory address at which the native account ID suffix provided as a global transaction input
+/// is stored.
+pub const GLOBAL_ACCOUNT_ID_SUFFIX_PTR: MemoryAddress = 404;
+/// The memory address at which the native account ID prefix provided as a global transaction input
+/// is stored.
+pub const GLOBAL_ACCOUNT_ID_PREFIX_PTR: MemoryAddress = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1;
 
 /// The memory address at which the initial account commitment is stored.
 pub const INIT_ACCT_COMMITMENT_PTR: MemoryAddress = 408;
