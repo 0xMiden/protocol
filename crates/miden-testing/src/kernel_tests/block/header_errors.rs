@@ -325,7 +325,7 @@ async fn block_building_fails_on_creating_account_with_existing_account_id_prefi
     // The witness should be for the **existing** account, because that's the one that exists in
     // the tree and is therefore in the same SMT leaf that we would insert the new ID into.
     assert_eq!(witness.id(), existing_id);
-    assert_eq!(witness.state_commitment(), existing_account.commitment());
+    assert_eq!(witness.state_commitment(), existing_account.to_commitment());
 
     let block = mock_chain.propose_block(batches).context("failed to propose block")?;
 

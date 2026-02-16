@@ -6,6 +6,8 @@ use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
+use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
+use $kernel::memory::ACCT_ID_PREFIX_OFFSET
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
 use miden::core::crypto::hashes::rpo256
@@ -48,8 +50,6 @@ const ERR_ACCOUNT_TOO_MANY_STORAGE_SLOTS="number of account storage slots exceed
 const ERR_ACCOUNT_STORAGE_COMMITMENT_MISMATCH="computed account storage commitment does not match recorded account storage commitment"
 
 const ERR_ACCOUNT_STORAGE_MAP_ENTRIES_DO_NOT_MATCH_MAP_ROOT="storage map entries provided as advice inputs do not have the same storage map root as the root of the map the new account commits to"
-
-const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero"
 
 const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED="maximum allowed number of foreign account to be loaded (64) was exceeded"
 
@@ -220,9 +220,7 @@ pub use memory::get_account_id->get_id
 #! - nonce is the account nonce.
 pub use memory::get_account_nonce->get_nonce
 
-#! Increments the account nonce by one and returns the new nonce.
-#!
-#! Assumes that it is executed only when the active account is the native account.
+#! Increments the native account's nonce by one and returns the new nonce.
 #!
 #! Inputs:  []
 #! Outputs: [new_nonce]
@@ -240,7 +238,7 @@ pub proc incr_nonce
     # emit event to signal that account nonce is being incremented
     emit.ACCOUNT_BEFORE_INCREMENT_NONCE_EVENT
 
-    exec.memory::get_account_nonce
+    exec.memory::get_native_account_nonce
     # => [current_nonce]
 
     # if the current nonce is the maximum felt value, then incrementing the nonce would overflow
@@ -251,7 +249,7 @@ pub proc incr_nonce
     add.1
     # => [new_nonce]
 
-    dup exec.memory::set_account_nonce
+    dup exec.memory::set_native_account_nonce
     # => [new_nonce]
 
     emit.ACCOUNT_AFTER_INCREMENT_NONCE_EVENT
@@ -850,8 +848,9 @@ pub proc validate_seed
     # => [EMPTY_WORD]
 
     # push the advice map key at which the seed is located
-    exec.memory::get_account_id push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix, EMPTY_WORD]
+    exec.memory::get_native_account_id
+    exec.create_id_key
+    # => [ACCOUNT_ID_KEY, EMPTY_WORD]
 
     # populate first four elements of the rate with the account ID seed
     adv.push_mapval adv_loadw
@@ -1023,7 +1022,10 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the account.
 #! - ACCOUNT_ID is the word constructed from the account_id as follows:
-#!   [account_id_suffix, account_id_prefix, 0, 0].
+#!   [0, 0, account_id_prefix, account_id_suffix]. Notice that the actual advice map
+#!   key is reversed: [account_id_suffix, account_id_prefix, 0, 0]. That is the  specificity of the
+#!   `adv.push_mapval` instruction which takes the top stack word in the big-endian (reversed)
+#!   order.
 #! - account_nonce is the nonce of the account.
 #! - VAULT_ROOT is the commitment of the account's vault.
 #! - STORAGE_COMMITMENT is the commitment to the account's storage.
@@ -1041,24 +1043,27 @@ pub proc load_foreign_account
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_prefix, account_id_suffix]
 
-    # construct the word with account ID to load the core account data from the advice map
-    push.0.0
-    # OS => [0, 0, account_id_prefix, account_id_suffix]
+    # construct the advice map key from the account ID to load the core account data
+    exec.create_id_key
+    # OS => [ACCOUNT_ID_KEY]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [0, 0, account_id_prefix, account_id_suffix]
-    # AS => [[account_id_prefix, account_id_suffix, 0, account_nonce], VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+    # OS => [ACCOUNT_ID_KEY]
+    # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # store the id and nonce of the foreign account to the memory
+    # store the id and nonce of the foreign account to memory
     adv_loadw
+    # OS => [account_id_prefix, account_id_suffix, 0, account_nonce]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
     exec.memory::set_account_id_and_nonce
-    # OS => []
+    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the vault root of the foreign account to the memory
     adv_loadw exec.memory::set_account_vault_root
-    # OS => []
+    # OS => [VAULT_ROOT]
     # AS => [STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # move the storage root and the code root to the operand stack
@@ -1710,17 +1715,16 @@ end
 #!   data, depending on the value of the was_loaded flag.
 #!
 #! Panics if:
-#! - the prefix or suffix of the provided foreign account ID equal zero.
 #! - the maximum allowed number of foreign account to be loaded (64) was exceeded.
 pub proc get_account_data_ptr
-    # check that foreign account ID is not equal zero
-    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
-    # => [foreign_account_id_prefix, foreign_account_id_suffix]
-
     # move pointer one account block back so that the first account pointer in the cycle will point
     # to the native account
     exec.memory::get_native_account_data_ptr exec.memory::get_account_data_length sub
     # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix]
+
+    # push the pad element onto the stack: it will represent the `is_equal_id` flag during the cycle
+    push.0 movdn.3
+    # => [curr_account_ptr, foreign_account_id_prefix, foreign_account_id_suffix, is_equal_id=0]
 
     # push the flag to enter the loop
     push.1
@@ -1735,14 +1739,13 @@ pub proc get_account_data_ptr
         exec.memory::get_account_data_length add
         # => [curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
-        # load the first data word at the current account pointer
-        padw dup.4 mem_loadw_be
-        # => [FIRST_DATA_WORD, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+        dup add.ACCT_ID_SUFFIX_OFFSET mem_load
+        dup.1 add.ACCT_ID_PREFIX_OFFSET mem_load
+        # => [account_id_prefix, account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
-        # check whether the last value in the word equals zero
-        # if so it means this memory block was not yet initialized
-        drop drop dup.1 eq.0
-        # => [is_empty_block, maybe_account_id_prefix, maybe_account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
+        # check whether the ID is equal to zero, if so it means this memory block was not yet initialized
+        dup.1 dup.1 push.0 push.0 exec.account_id::is_equal
+        # => [is_empty_block, account_id_prefix, account_id_suffix, curr_account_ptr', foreign_account_id_prefix, foreign_account_id_suffix]
 
         # check whether the current id matches the foreign id
         movdn.2 dup.5 dup.5 exec.account_id::is_equal
@@ -1772,15 +1775,18 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the hash of the active account is not represented in the account database.
+#! - the commitment of the loaded foreign account does not match the commitment stored in the
+#!   account tree.
 pub proc validate_active_foreign_account
     # get the account database root
     exec.memory::get_account_db_root
     # => [ACCOUNT_DB_ROOT]
 
-    # get the active account ID
-    push.0.0 exec.memory::get_account_id
-    # => [account_id_prefix, account_id_suffix, 0, 0, ACCOUNT_DB_ROOT]
+    # get the account ID of the foreign account (the currently active account) and build the
+    # corresponding key in the account tree
+    exec.memory::get_account_id
+    exec.create_id_key
+    # => [ACCOUNT_ID_KEY, ACCOUNT_DB_ROOT]
 
     # retrieve the commitment of the foreign account from the active account tree
     # this would abort if the proof for the commitment was invalid for the account root,
@@ -1986,4 +1992,19 @@ pub proc has_procedure
     # clean the stack
     dropw drop drop
     # => [is_procedure_available']
+end
+
+#! Returns the key build from the provided account ID for use in the advice map or the account
+#! tree.
+#!
+#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Outputs: [ACCOUNT_ID_KEY]
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
+#! - ACCOUNT_ID_KEY is the key word built from the provided account ID.
+proc create_id_key
+    push.0 movdn.2 push.0 movdn.2
+    # => [account_id_prefix, account_id_suffix, 0, 0]
+    # => [ACCOUNT_ID_KEY]
 end
