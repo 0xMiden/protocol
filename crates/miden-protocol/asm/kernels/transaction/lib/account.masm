@@ -848,8 +848,9 @@ pub proc validate_seed
     # => [EMPTY_WORD]
 
     # push the advice map key at which the seed is located
-    push.0.0 exec.memory::get_native_account_id
-    # => [[account_id_prefix, account_id_suffix, 0, 0], EMPTY_WORD]
+    exec.memory::get_native_account_id
+    exec.account_id::create_key
+    # => [ACCOUNT_ID_KEY, EMPTY_WORD]
 
     # populate first four elements of the rate with the account ID seed
     adv.push_mapval adv_loadw
@@ -1043,15 +1044,15 @@ pub proc load_foreign_account
     # => [account_id_prefix, account_id_suffix]
 
     # construct the advice map key from the account ID to load the core account data
-    push.0 movdn.2 push.0 movdn.2
-    # OS => [account_id_prefix, account_id_suffix, 0, 0]
+    exec.account_id::create_key
+    # OS => [ACCOUNT_ID_KEY]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [account_id_prefix, account_id_suffix, 0, 0]
+    # OS => [ACCOUNT_ID_KEY]
     # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # store the id and nonce of the foreign account to the memory
+    # store the id and nonce of the foreign account to memory
     adv_loadw
     # OS => [account_id_prefix, account_id_suffix, 0, account_nonce]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
@@ -1774,15 +1775,18 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - the hash of the active account is not represented in the account database.
+#! - the commitment of the loaded foreign account does not match the commitment stored in the
+#!   account tree.
 pub proc validate_active_foreign_account
     # get the account database root
     exec.memory::get_account_db_root
     # => [ACCOUNT_DB_ROOT]
 
-    # get the active account ID
-    push.0.0 exec.memory::get_account_id
-    # => [account_id_prefix, account_id_suffix, 0, 0, ACCOUNT_DB_ROOT]
+    # get the account ID of the foreign account (the currently active account) and build the
+    # corresponding key in the account tree
+    exec.memory::get_account_id
+    exec.account_id::create_key
+    # => [ACCOUNT_ID_KEY, ACCOUNT_DB_ROOT]
 
     # retrieve the commitment of the foreign account from the active account tree
     # this would abort if the proof for the commitment was invalid for the account root,
