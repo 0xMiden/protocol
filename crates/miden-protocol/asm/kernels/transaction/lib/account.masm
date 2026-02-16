@@ -849,7 +849,7 @@ pub proc validate_seed
 
     # push the advice map key at which the seed is located
     exec.memory::get_native_account_id
-    exec.account_id::create_key
+    exec.create_id_key
     # => [ACCOUNT_ID_KEY, EMPTY_WORD]
 
     # populate first four elements of the rate with the account ID seed
@@ -1044,7 +1044,7 @@ pub proc load_foreign_account
     # => [account_id_prefix, account_id_suffix]
 
     # construct the advice map key from the account ID to load the core account data
-    exec.account_id::create_key
+    exec.create_id_key
     # OS => [ACCOUNT_ID_KEY]
 
     # move the core account data to the advice stack
@@ -1785,7 +1785,7 @@ pub proc validate_active_foreign_account
     # get the account ID of the foreign account (the currently active account) and build the
     # corresponding key in the account tree
     exec.memory::get_account_id
-    exec.account_id::create_key
+    exec.create_id_key
     # => [ACCOUNT_ID_KEY, ACCOUNT_DB_ROOT]
 
     # retrieve the commitment of the foreign account from the active account tree
@@ -1992,4 +1992,19 @@ pub proc has_procedure
     # clean the stack
     dropw drop drop
     # => [is_procedure_available']
+end
+
+#! Returns the key build from the provided account ID for use in the advice map or the account
+#! tree.
+#!
+#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Outputs: [ACCOUNT_ID_KEY]
+#!
+#! Where:
+#! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
+#! - ACCOUNT_ID_KEY is the key word built from the provided account ID.
+proc create_id_key
+    push.0 movdn.2 push.0 movdn.2
+    # => [account_id_prefix, account_id_suffix, 0, 0]
+    # => [ACCOUNT_ID_KEY]
 end

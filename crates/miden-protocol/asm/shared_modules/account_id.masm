@@ -135,21 +135,6 @@ pub proc is_immutable_account
     # => [is_immutable_account]
 end
 
-#! Returns the key build from the provided account ID for use in the advice map or the account
-#! tree.
-#!
-#! Inputs:  [account_id_prefix, account_id_suffix]
-#! Outputs: [ACCOUNT_ID_KEY]
-#!
-#! Where:
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
-#! - ACCOUNT_ID_KEY is the key word built from the provided account ID.
-pub proc create_key
-    push.0 movdn.2 push.0 movdn.2
-    # => [account_id_prefix, account_id_suffix, 0, 0]
-    # => [ACCOUNT_ID_KEY]
-end
-
 #! Validates an account ID. Note that this does not validate anything about the account type,
 #! since any 2-bit pattern is a valid account type.
 #!
