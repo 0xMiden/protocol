@@ -31,9 +31,8 @@ pub enum Auth {
     /// Multisig
     Multisig {
         threshold: u32,
-        approvers: Vec<Word>,
+        approvers: Vec<(Word, AuthScheme)>,
         proc_threshold_map: Vec<(Word, u32)>,
-        scheme_ids: Vec<u8>,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -81,12 +80,13 @@ impl Auth {
                 threshold,
                 approvers,
                 proc_threshold_map,
-                scheme_ids,
             } => {
-                let pub_keys: Vec<_> =
-                    approvers.iter().map(|word| PublicKeyCommitment::from(*word)).collect();
+                let approvers = approvers
+                    .iter()
+                    .map(|(pub_key, auth_scheme)| (PublicKeyCommitment::from(*pub_key), *auth_scheme))
+                    .collect();
 
-                let config = AuthMultisigConfig::new(pub_keys, scheme_ids.clone(), *threshold)
+                let config = AuthMultisigConfig::new(approvers, *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
                 let component =

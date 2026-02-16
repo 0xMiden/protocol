@@ -295,7 +295,7 @@ fn extract_multisig_auth_method(
     let num_approvers = config[1].as_int() as u8;
 
     let mut pub_keys = Vec::new();
-    let mut scheme_ids = Vec::new();
+    let mut auth_schemes: Vec<AuthScheme> = Vec::new();
 
     // Read each public key from the map
     for key_index in 0..num_approvers {
@@ -325,8 +325,9 @@ fn extract_multisig_auth_method(
             });
 
         let scheme_id = scheme_word[0].as_int() as u8;
-        scheme_ids.push(scheme_id);
+        let auth_scheme = AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
+        auth_schemes.push(auth_scheme);
     }
 
-    AuthMethod::Multisig { threshold, pub_keys, scheme_ids }
+    AuthMethod::Multisig { threshold, pub_keys, auth_schemes }
 }

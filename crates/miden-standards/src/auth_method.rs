@@ -21,7 +21,7 @@ pub enum AuthMethod {
     Multisig {
         threshold: u32,
         pub_keys: Vec<PublicKeyCommitment>,
-        scheme_ids: Vec<u8>,
+        auth_schemes: Vec<AuthScheme>,
     },
     /// A non-standard authentication method.
     Unknown,

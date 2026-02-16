@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::Word;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
@@ -50,8 +50,7 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
 /// Configuration for [`AuthMultisig`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigConfig {
-    approvers: Vec<PublicKeyCommitment>,
-    scheme_ids: Vec<u8>,
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     proc_thresholds: Vec<(Word, u32)>,
 }
@@ -61,8 +60,7 @@ impl AuthMultisigConfig {
     ///
     /// The `default_threshold` must be at least 1 and at most the number of approvers.
     pub fn new(
-        approvers: Vec<PublicKeyCommitment>,
-        scheme_ids: Vec<u8>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         default_threshold: u32,
     ) -> Result<Self, AccountError> {
         if default_threshold == 0 {
@@ -75,18 +73,14 @@ impl AuthMultisigConfig {
         }
 
         // Check for duplicate approvers
-        if approvers.len() != approvers.iter().collect::<BTreeSet<_>>().len() {
-            return Err(AccountError::other("duplicate approver public keys are not allowed"));
-        }
+        let unique_approvers: BTreeSet<_> = approvers.iter().map(|(pk, _)| pk).collect();
 
-        // Check for scheme_ids for each approver
-        if scheme_ids.len() != approvers.len() {
-            return Err(AccountError::other("number of scheme IDs must match number of approvers"));
+        if unique_approvers.len() != approvers.len() {
+            return Err(AccountError::other("duplicate approver public keys are not allowed"));
         }
 
         Ok(Self {
             approvers,
-            scheme_ids,
             default_threshold,
             proc_thresholds: vec![],
         })
@@ -112,12 +106,8 @@ impl AuthMultisigConfig {
         Ok(self)
     }
 
-    pub fn approvers(&self) -> &[PublicKeyCommitment] {
+    pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
         &self.approvers
-    }
-
-    pub fn scheme_ids(&self) -> &[u8] {
-        &self.scheme_ids
     }
 
     pub fn default_threshold(&self) -> u32 {
@@ -258,7 +248,7 @@ impl From<AuthMultisig> for AccountComponent {
             .approvers()
             .iter()
             .enumerate()
-            .map(|(i, pub_key)| (Word::from([i as u32, 0, 0, 0]), (*pub_key).into()));
+            .map(|(i, (pub_key, _))| (Word::from([i as u32, 0, 0, 0]), Word::from(*pub_key)));
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -268,9 +258,9 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Approver scheme IDs slot (map)
         let scheme_id_entries = multisig.config.approvers().iter().enumerate().map(|(i, _)| {
-            let pub_key = multisig.config.approvers()[i];
-            let scheme_id = multisig.config.scheme_ids()[i];
-            (Word::from(pub_key), Word::from([scheme_id as u32, 0, 0, 0]))
+            let pub_key = multisig.config.approvers()[i].0;
+            let auth_scheme = multisig.config.approvers()[i].1;
+            (Word::from(pub_key), Word::from([auth_scheme as u32, 0, 0, 0]))
         });
 
         storage_slots.push(StorageSlot::with_map(
@@ -326,7 +316,7 @@ mod tests {
     use alloc::string::ToString;
 
     use miden_protocol::Word;
-    use miden_protocol::account::AccountBuilder;
+    use miden_protocol::account::{AccountBuilder, auth};
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
@@ -339,20 +329,24 @@ mod tests {
         let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
         let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
         let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
-        let approvers = vec![pub_key_1, pub_key_2, pub_key_3];
+        
+        let auth_scheme_1 = auth::AuthScheme::Falcon512Rpo;
+        let auth_scheme_2 = auth::AuthScheme::Falcon512Rpo;
+        let auth_scheme_3 = auth::AuthScheme::Falcon512Rpo;
+        
+        let approvers = vec![
+            (pub_key_1, auth_scheme_1),
+            (pub_key_2, auth_scheme_2),
+            (pub_key_3, auth_scheme_3),
+        ];
 
-        let scheme_id_0 = 0u8; // Falcon512Rpo
-        let scheme_id_1 = 0u8; // Falcon512Rpo
-        let scheme_id_2 = 0u8; // Falcon512Rpo
-
-        let scheme_ids = vec![scheme_id_0, scheme_id_1, scheme_id_2];
         let threshold = 2u32;
 
         // How de we know the corresponding scheme IDs for the approvers? 0 for falcon, 1 for ecdsa
 
         // Create multisig component
         let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), threshold)
+            AuthMultisigConfig::new(approvers.clone(), threshold)
                 .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
@@ -372,7 +366,7 @@ mod tests {
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
         // Verify approver pub keys slot
-        for (i, expected_pub_key) in approvers.iter().enumerate() {
+        for (i, (expected_pub_key, _)) in approvers.iter().enumerate() {
             let stored_pub_key = account
                 .storage()
                 .get_map_item(
@@ -388,12 +382,11 @@ mod tests {
     #[test]
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let approvers = vec![pub_key];
-        let scheme_ids = vec![1u8];
+        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
         let threshold = 1u32;
 
         let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), threshold)
+            AuthMultisigConfig::new(approvers.clone(), threshold)
                 .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
@@ -422,15 +415,14 @@ mod tests {
     #[test]
     fn test_multisig_component_error_cases() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let approvers = vec![pub_key];
-        let scheme_ids = vec![1u8];
+        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
 
         // Test threshold = 0 (should fail)
-        let result = AuthMultisigConfig::new(approvers.clone(), scheme_ids.clone(), 0);
+        let result = AuthMultisigConfig::new(approvers.clone(), 0);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
         // Test threshold > number of approvers (should fail)
-        let result = AuthMultisigConfig::new(approvers, scheme_ids, 2);
+        let result = AuthMultisigConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()
@@ -445,10 +437,15 @@ mod tests {
         let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
 
+
         // Test with duplicate approvers (should fail)
-        let approvers = vec![pub_key_1, pub_key_2, pub_key_1];
-        let scheme_ids = vec![1u8, 1u8, 1u8];
-        let result = AuthMultisigConfig::new(approvers, scheme_ids, 2);
+        let approvers = vec![
+            (pub_key_1, auth::AuthScheme::EcdsaK256Keccak),
+            (pub_key_1, auth::AuthScheme::EcdsaK256Keccak),
+            (pub_key_2, auth::AuthScheme::EcdsaK256Keccak),
+        ];
+
+        let result = AuthMultisigConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()

@@ -302,7 +302,7 @@ pub fn create_basic_fungible_faucet(
                     .into(),
             ));
         },
-        AuthMethod::Multisig { threshold: _, pub_keys: _, scheme_ids: _ } => {
+        AuthMethod::Multisig { threshold: _, pub_keys: _, auth_schemes: _ } => {
             return Err(FungibleFaucetError::UnsupportedAuthMethod(
                 "basic fungible faucets do not support Multisig authentication".into(),
             ));

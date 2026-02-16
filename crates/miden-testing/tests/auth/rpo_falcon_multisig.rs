@@ -1,6 +1,6 @@
 use miden_processor::AdviceInputs;
 use miden_processor::crypto::RpoRandomCoin;
-use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -36,7 +36,7 @@ use rand_chacha::ChaCha20Rng;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<u8>, Vec<PublicKey>, Vec<BasicAuthenticator>);
+type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
 /// Sets up secret keys, public keys, and authenticators for multisig testing
 fn setup_keys_and_authenticators(
@@ -47,7 +47,7 @@ fn setup_keys_and_authenticators(
     let mut rng = ChaCha20Rng::from_seed(seed);
 
     let mut secret_keys = Vec::new();
-    let mut scheme_ids = Vec::new();
+    let mut auth_schemes = Vec::new();
     let mut public_keys = Vec::new();
     let mut authenticators = Vec::new();
 
@@ -56,7 +56,7 @@ fn setup_keys_and_authenticators(
         let pub_key = sec_key.public_key();
 
         secret_keys.push(sec_key);
-        scheme_ids.push(2u8);
+        auth_schemes.push(AuthScheme::Falcon512Rpo);
         public_keys.push(pub_key);
     }
 
@@ -66,26 +66,26 @@ fn setup_keys_and_authenticators(
         authenticators.push(authenticator);
     }
 
-    Ok((secret_keys, scheme_ids, public_keys, authenticators))
+    Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
 /// Creates a multisig account with the specified configuration
 fn create_multisig_account(
     threshold: u32,
-    public_keys: &[PublicKey],
-    signature_scheme_ids: &[u8],
+    approvers: &[(PublicKey, AuthScheme)],
     asset_amount: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> = public_keys.iter().map(|pk| pk.to_commitment().into()).collect();
-    let scheme_ids: Vec<_> = signature_scheme_ids.to_vec();
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment().into(), *auth_scheme))
+        .collect();
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig {
             threshold,
             approvers,
             proc_threshold_map,
-            scheme_ids,
         })
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
@@ -112,15 +112,18 @@ fn create_multisig_account(
 #[tokio::test]
 async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(2, 2)?;
+
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let mut multisig_account = create_multisig_account(
         2,
-        &public_keys,
-        &signature_scheme_ids,
+        &approvers,
         multisig_starting_balance,
         vec![],
     )?;
@@ -205,12 +208,16 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     // Setup keys and authenticators (4 approvers, all 4 can sign)
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(4, 4)?;
+
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
 
     // Create multisig account with 4 approvers but threshold of 2
     let multisig_account =
-        create_multisig_account(2, &public_keys, &signature_scheme_ids, 10, vec![])?;
+        create_multisig_account(2, &approvers, 10, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -285,12 +292,16 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_multisig_replay_protection() -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(3, 2)?;
+
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
 
     // Create 2/3 multisig account
     let multisig_account =
-        create_multisig_account(2, &public_keys, &signature_scheme_ids, 20, vec![])?;
+        create_multisig_account(2, &approvers, 20, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -364,11 +375,15 @@ async fn test_multisig_replay_protection() -> anyhow::Result<()> {
 /// - 1 Transaction Script calling multisig procedures
 #[tokio::test]
 async fn test_multisig_update_signers() -> anyhow::Result<()> {
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
+
     let multisig_account =
-        create_multisig_account(2, &public_keys, &signature_scheme_ids, 10, vec![])?;
+        create_multisig_account(2, &approvers, 10, vec![])?;
 
     // SECTION 1: Execute a transaction script to update signers and threshold
     // ================================================================================
@@ -644,10 +659,16 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Setup 5 original owners with threshold 4
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(5, 5)?;
+    
+    
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
+
     let multisig_account =
-        create_multisig_account(4, &public_keys, &signature_scheme_ids, 10, vec![])?;
+        create_multisig_account(4, &approvers, 10, vec![])?;
 
     // Build mock chain
     let mock_chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -833,11 +854,15 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     // SECTION 1: Create a multisig account with 2 original approvers
     // ================================================================================
 
-    let (_secret_keys, signature_scheme_ids, public_keys, _authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+        (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
+
     let multisig_account =
-        create_multisig_account(2, &public_keys, &signature_scheme_ids, 10, vec![])?;
+        create_multisig_account(2, &approvers, 10, vec![])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -853,12 +878,12 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, _new_signature_scheme_ids, new_public_keys, new_authenticators) =
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, new_authenticators) =
         setup_keys_and_authenticators(4, 4)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
-    let scheme_id = 2u64;
+    let auth_scheme = AuthScheme::Falcon512Rpo;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -875,7 +900,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(scheme_id),
+            Felt::new(auth_scheme as u64),
             Felt::new(0),
             Felt::new(0),
             Felt::new(0),
@@ -970,17 +995,20 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 #[tokio::test]
 async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+
+    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
+         (pk.clone(), *scheme)
+    }).collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let mut multisig_account = create_multisig_account(
         2,
-        &public_keys,
-        &signature_scheme_ids,
+        &approvers,
         multisig_starting_balance,
         proc_threshold_map,
     )?;
