@@ -11,9 +11,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    AccountIdBuilder,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, AccountIdBuilder,
 };
 use miden_protocol::transaction::TransactionKernel;
 

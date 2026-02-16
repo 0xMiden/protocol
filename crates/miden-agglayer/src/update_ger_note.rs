@@ -14,13 +14,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
+    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, NoteScript, NoteStorage,
     NoteType,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};

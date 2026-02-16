@@ -3,11 +3,7 @@ use alloc::string::String;
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountStorageMode,
-    AccountType,
+    Account, AccountBuilder, AccountComponent, AccountStorageMode, AccountType,
 };
 use miden_protocol::errors::AccountError;
 use thiserror::Error;

@@ -1,11 +1,6 @@
 use miden_protocol::asset::Asset;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteMetadata,
-    NoteRecipient,
-    PartialNote,
+    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, PartialNote,
 };
 
 use super::{OutputNote, Word};

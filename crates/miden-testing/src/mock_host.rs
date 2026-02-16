@@ -3,13 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_processor::{
-    AdviceMutation,
-    AsyncHost,
-    BaseHost,
-    EventError,
-    FutureMaybeSend,
-    MastForest,
-    ProcessState,
+    AdviceMutation, AsyncHost, BaseHost, EventError, FutureMaybeSend, MastForest, ProcessState,
 };
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::EventId;

@@ -4,14 +4,7 @@ use crate::Word;
 use crate::assembly::Assembler;
 use crate::asset::FungibleAsset;
 use crate::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
 };
 use crate::testing::account_id::ACCOUNT_ID_SENDER;
 

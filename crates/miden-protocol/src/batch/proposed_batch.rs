@@ -9,13 +9,8 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::errors::ProposedBatchError;
 use crate::note::{NoteId, NoteInclusionProof};
 use crate::transaction::{
-    InputNoteCommitment,
-    InputNotes,
-    OrderedTransactionHeaders,
-    OutputNote,
-    PartialBlockchain,
-    ProvenTransaction,
-    TransactionHeader,
+    InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote, PartialBlockchain,
+    ProvenTransaction, TransactionHeader,
 };
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};

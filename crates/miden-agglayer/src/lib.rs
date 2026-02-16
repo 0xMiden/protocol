@@ -10,14 +10,8 @@ use miden_assembly::utils::Deserializable;
 use miden_core::{Felt, FieldElement, Program, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountId,
-    AccountStorageMode,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountComponent, AccountId, AccountStorageMode, AccountType,
+    StorageSlot, StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
@@ -34,13 +28,7 @@ pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use claim_note::{
-    ClaimNoteStorage,
-    ExitRoot,
-    LeafData,
-    OutputNoteData,
-    ProofData,
-    SmtNode,
-    create_claim_note,
+    ClaimNoteStorage, ExitRoot, LeafData, OutputNoteData, ProofData, SmtNode, create_claim_note,
 };
 pub use eth_types::{EthAddressFormat, EthAmount, EthAmountError};
 pub use update_ger_note::UpdateGerNote;

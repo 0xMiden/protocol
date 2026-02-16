@@ -1,11 +1,7 @@
 use super::account::AccountType;
 use super::errors::{AssetError, TokenSymbolError};
 use super::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use super::{Felt, Hasher, Word, ZERO};
 use crate::account::AccountIdPrefix;
@@ -285,14 +281,10 @@ mod tests {
     use super::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::account::{AccountId, AccountIdPrefix};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
     };
 
     #[test]

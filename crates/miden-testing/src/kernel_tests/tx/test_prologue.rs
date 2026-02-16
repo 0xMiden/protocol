@@ -17,8 +17,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
@@ -91,11 +90,7 @@ use super::{Felt, ZERO};
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::create_public_p2any_note;
 use crate::{
-    Auth,
-    MockChain,
-    TransactionContext,
-    TransactionContextBuilder,
-    assert_execution_error,
+    Auth, MockChain, TransactionContext, TransactionContextBuilder, assert_execution_error,
 };
 
 #[tokio::test]

@@ -6,11 +6,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
 use miden_protocol::transaction::{
-    InputNote,
-    InputNotes,
-    TransactionArgs,
-    TransactionInputs,
-    TransactionKernel,
+    InputNote, InputNotes, TransactionArgs, TransactionInputs, TransactionKernel,
 };
 use miden_prover::AdviceInputs;
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};

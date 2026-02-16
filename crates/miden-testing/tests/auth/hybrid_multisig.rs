@@ -2,17 +2,12 @@ use miden_processor::AdviceInputs;
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountId,
-    AccountStorageMode,
-    AccountType,
+    Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::vm::AdviceMap;
@@ -36,7 +31,8 @@ use rand_chacha::ChaCha20Rng;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
+type MultisigTestSetup =
+    (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
 /// Sets up secret keys, public keys, and authenticators for multisig testing
 fn setup_keys_and_authenticators(
@@ -92,11 +88,7 @@ fn create_multisig_account(
         .collect();
 
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::Multisig {
-            threshold,
-            approvers,
-            proc_threshold_map,
-        })
+        .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -125,18 +117,16 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
-    let mut multisig_account = create_multisig_account(
-        2,
-        &approvers,
-        multisig_starting_balance,
-        vec![],
-    )?;
+    let mut multisig_account =
+        create_multisig_account(2, &approvers, multisig_starting_balance, vec![])?;
 
     let output_note_asset = FungibleAsset::mock(0);
 
@@ -221,13 +211,14 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(4, 4)?;
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account with 4 approvers but threshold of 2
-    let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -305,13 +296,14 @@ async fn test_multisig_replay_protection() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(3, 2)?;
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create 2/3 multisig account
-    let multisig_account =
-        create_multisig_account(2, &approvers, 20, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -388,12 +380,13 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
-    let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
     // SECTION 1: Execute a transaction script to update signers and threshold
     // ================================================================================
 
@@ -431,8 +424,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         Felt::new(0),
     ]);
 
-    for (public_key, auth_scheme) in
-        new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
+    for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
@@ -671,11 +663,12 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Setup 5 original owners with threshold 4
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators(5, 5)?;
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
-    let multisig_account =
-        create_multisig_account(4, &approvers, 10, vec![])?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+    let multisig_account = create_multisig_account(4, &approvers, 10, vec![])?;
 
     // Build mock chain
     let mock_chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -693,8 +686,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
 
     // Add each public key to the vector
-    for (public_key, auth_scheme) in
-        new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
+    for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
@@ -869,12 +861,13 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     let (_secret_keys, auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators(2, 2)?;
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
-    let multisig_account =
-        create_multisig_account(2, &approvers, 10, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
         .build()
@@ -905,8 +898,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     ]);
 
     // Add each public key to the vector
-    for (public_key, auth_scheme) in
-        new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
+    for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
     {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
@@ -1012,18 +1004,16 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
 
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
 
-    let approvers = public_keys.iter().zip(auth_schemes.iter()).map(|(pk, scheme)| {
-        (pk.clone(), *scheme)
-    }).collect::<Vec<_>>();
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
-    let mut multisig_account = create_multisig_account(
-        2,
-        &approvers,
-        multisig_starting_balance,
-        proc_threshold_map,
-    )?;
+    let mut multisig_account =
+        create_multisig_account(2, &approvers, multisig_starting_balance, proc_threshold_map)?;
 
     // SECTION 1: Test note consumption with 1 signature
     // ================================================================================

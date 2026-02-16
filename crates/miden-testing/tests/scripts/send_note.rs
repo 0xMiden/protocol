@@ -5,16 +5,8 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentScheme,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-    PartialNote,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
+    NoteStorage, NoteTag, NoteType, PartialNote,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
@@ -91,8 +83,12 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_fungible_faucet_account =
-        builder.add_existing_basic_faucet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, "POL", 200, None)?;
+    let sender_basic_fungible_faucet_account = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "POL",
+        200,
+        None,
+    )?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface =

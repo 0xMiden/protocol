@@ -2,11 +2,7 @@
 
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    AccountBuilder,
-    AccountComponent,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
+    AccountBuilder, AccountComponent, StorageMap, StorageSlot, StorageSlotName,
 };
 use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::code_builder::CodeBuilder;

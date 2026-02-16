@@ -206,11 +206,7 @@ mod test {
     use assert_matches::assert_matches;
 
     use super::{
-        Felt,
-        TokenSymbol,
-        TokenSymbolError,
-        decode_felt_to_symbol,
-        encode_symbol_to_felt,
+        Felt, TokenSymbol, TokenSymbolError, decode_felt_to_symbol, encode_symbol_to_felt,
     };
 
     #[test]

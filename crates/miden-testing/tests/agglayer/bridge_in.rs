@@ -4,28 +4,15 @@ use core::slice;
 
 use miden_agglayer::claim_note::{ExitRoot, SmtNode};
 use miden_agglayer::{
-    ClaimNoteStorage,
-    EthAddressFormat,
-    EthAmount,
-    LeafData,
-    OutputNoteData,
-    ProofData,
-    create_claim_note,
-    create_existing_agglayer_faucet,
-    create_existing_bridge_account,
+    ClaimNoteStorage, EthAddressFormat, EthAmount, LeafData, OutputNoteData, ProofData,
+    create_claim_note, create_existing_agglayer_faucet, create_existing_bridge_account,
 };
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::wallets::BasicWallet;

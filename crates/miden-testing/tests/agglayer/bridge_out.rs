@@ -188,7 +188,8 @@ async fn test_b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account that will create and consume the B2AGG note
-    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let mut user_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
@@ -292,7 +293,8 @@ async fn test_b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<(
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let sender_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());

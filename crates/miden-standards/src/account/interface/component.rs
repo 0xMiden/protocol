@@ -325,7 +325,8 @@ fn extract_multisig_auth_method(
             });
 
         let scheme_id = scheme_word[0].as_int() as u8;
-        let auth_scheme = AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
+        let auth_scheme =
+            AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
         auth_schemes.push(auth_scheme);
     }
 

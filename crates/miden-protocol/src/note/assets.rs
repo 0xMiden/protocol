@@ -3,11 +3,7 @@ use alloc::vec::Vec;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word, ZERO};
 
@@ -245,8 +241,7 @@ mod tests {
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
 

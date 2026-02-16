@@ -6,11 +6,7 @@ use miden_protocol_macros::WordWrapper;
 use super::{Felt, Hasher, NoteDetails, Word};
 use crate::WordError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // NOTE ID

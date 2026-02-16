@@ -6,51 +6,26 @@ use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountCode,
-    AccountComponent,
-    AccountStorage,
-    AccountStorageMode,
-    AccountType,
-    StorageSlot,
-    StorageSlotName,
+    Account, AccountBuilder, AccountCode, AccountComponent, AccountStorage, AccountStorageMode,
+    AccountType, StorageSlot, StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentScheme,
-    NoteHeader,
-    NoteId,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentContent, NoteAttachmentScheme, NoteHeader,
+    NoteId, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
-    ACCOUNT_ID_SENDER,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ACCOUNT_ID_SENDER,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
 use miden_protocol::transaction::{
-    InputNotes,
-    OutputNote,
-    OutputNotes,
-    TransactionArgs,
-    TransactionKernel,
-    TransactionSummary,
+    InputNotes, OutputNote, OutputNotes, TransactionArgs, TransactionKernel, TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
 use miden_standards::AuthMethod;
@@ -74,10 +49,14 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     // Create a chain with an account
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
-    let account1 =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, [asset])?;
-    let account2 =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, [asset])?;
+    let account1 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [asset],
+    )?;
+    let account2 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [asset],
+    )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
     let spawn_note = builder.add_spawn_note([&output_note])?;
     let mut mock_chain = builder.build()?;
@@ -502,7 +481,8 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let mut rng = RpoRandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -560,7 +540,8 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
     let mut rng = RpoRandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -819,7 +800,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
 async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     // Use basic auth so the tx requires a signature for successful execution.
-    let account = builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),

@@ -5,35 +5,20 @@ use std::string::String;
 use anyhow::Context;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountDelta,
-    AccountId,
-    AccountStorage,
-    AccountStorageMode,
-    AccountType,
-    StorageMap,
-    StorageSlot,
-    StorageSlotDelta,
-    StorageSlotName,
+    Account, AccountBuilder, AccountDelta, AccountId, AccountStorage, AccountStorageMode,
+    AccountType, StorageMap, StorageSlot, StorageSlotDelta, StorageSlotName,
 };
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
-    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
-    ACCOUNT_ID_SENDER,
-    AccountIdBuilder,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_SENDER, AccountIdBuilder,
 };
 use miden_protocol::testing::asset::NonFungibleAssetBuilder;
 use miden_protocol::testing::constants::{
-    CONSUMED_ASSET_1_AMOUNT,
-    CONSUMED_ASSET_3_AMOUNT,
-    FUNGIBLE_ASSET_AMOUNT,
-    NON_FUNGIBLE_ASSET_DATA,
-    NON_FUNGIBLE_ASSET_DATA_2,
+    CONSUMED_ASSET_1_AMOUNT, CONSUMED_ASSET_3_AMOUNT, FUNGIBLE_ASSET_AMOUNT,
+    NON_FUNGIBLE_ASSET_DATA, NON_FUNGIBLE_ASSET_DATA_2,
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;

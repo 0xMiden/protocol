@@ -8,10 +8,8 @@ use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteType};
 use miden_standards::errors::standards::{
-    ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER,
-    ERR_P2IDE_RECLAIM_DISABLED,
-    ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED,
-    ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED,
+    ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER, ERR_P2IDE_RECLAIM_DISABLED,
+    ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED, ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED,
 };
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
@@ -372,9 +370,12 @@ fn setup_p2ide_test(
     let mut builder = MockChain::builder();
 
     // Create sender and target accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let sender_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let malicious_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     let p2ide_note = builder.add_p2ide_note(
         sender_account.id(),

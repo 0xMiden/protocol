@@ -5,17 +5,8 @@ use miden_crypto::WordError;
 use miden_protocol_macros::WordWrapper;
 
 use super::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Felt,
-    Hasher,
-    NoteDetails,
-    Serializable,
-    WORD_SIZE,
-    Word,
-    ZERO,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, Hasher, NoteDetails,
+    Serializable, WORD_SIZE, Word, ZERO,
 };
 
 // CONSTANTS

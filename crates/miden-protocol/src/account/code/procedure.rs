@@ -9,11 +9,7 @@ use miden_protocol_macros::WordWrapper;
 use super::Felt;
 use crate::Word;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 
 // ACCOUNT PROCEDURE ROOT

@@ -4,11 +4,7 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaTypeId,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentMetadata, FeltSchema, SchemaTypeId, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
@@ -18,6 +14,7 @@ use crate::account::components::multisig_library;
 
 /// The schema type ID for Public Key Commitments used in the multisig component.
 const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
+const AUTH_SCHEME_TYPE_ID: &str = "miden::standards::auth::signature::auth_scheme";
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
@@ -202,7 +199,11 @@ impl AuthMultisig {
         let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
             Self::approver_scheme_ids_slot().clone(),
-            StorageSlotSchema::map("Approver scheme IDs", pub_key_type, SchemaTypeId::u8()),
+            StorageSlotSchema::map(
+                "Approver scheme IDs",
+                pub_key_type,
+                SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
+            ),
         )
     }
 
@@ -316,8 +317,8 @@ mod tests {
     use alloc::string::ToString;
 
     use miden_protocol::Word;
-    use miden_protocol::account::{AccountBuilder, auth};
     use miden_protocol::account::auth::AuthSecretKey;
+    use miden_protocol::account::{AccountBuilder, auth};
 
     use super::*;
     use crate::account::wallets::BasicWallet;
@@ -329,11 +330,11 @@ mod tests {
         let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
         let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
         let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
-        
+
         let auth_scheme_1 = auth::AuthScheme::Falcon512Rpo;
         let auth_scheme_2 = auth::AuthScheme::Falcon512Rpo;
         let auth_scheme_3 = auth::AuthScheme::Falcon512Rpo;
-        
+
         let approvers = vec![
             (pub_key_1, auth_scheme_1),
             (pub_key_2, auth_scheme_2),
@@ -346,8 +347,7 @@ mod tests {
 
         // Create multisig component
         let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold)
-                .expect("invalid multisig config"),
+            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
 
@@ -386,8 +386,7 @@ mod tests {
         let threshold = 1u32;
 
         let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold)
-                .expect("invalid multisig config"),
+            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
 
@@ -436,7 +435,6 @@ mod tests {
     fn test_multisig_component_duplicate_approvers() {
         let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-
 
         // Test with duplicate approvers (should fail)
         let approvers = vec![

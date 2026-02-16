@@ -5,11 +5,7 @@ use rand::{CryptoRng, Rng};
 use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_rpo};
 use crate::errors::AuthSchemeError;
 use crate::utils::serde::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
+    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
 };
 use crate::{Felt, Hasher, Word};
 
@@ -125,7 +121,7 @@ impl AuthSecretKey {
 
     /// Generates a new secret key for the specified authentication scheme using the provided
     /// random number generator.
-    /// 
+    ///
     /// Returns an error if the specified authentication scheme is not supported.
     pub fn new_for_scheme_id_with_rng<R: Rng + CryptoRng>(
         scheme: AuthScheme,
@@ -139,7 +135,7 @@ impl AuthSecretKey {
 
     /// Generates a new secret key for the specified authentication scheme from the
     /// OS-provided randomness.
-    /// 
+    ///
     /// Returns an error if the specified authentication scheme is not supported.
     #[cfg(feature = "std")]
     pub fn new_for_scheme_id(scheme: AuthScheme) -> Result<Self, AuthSchemeError> {

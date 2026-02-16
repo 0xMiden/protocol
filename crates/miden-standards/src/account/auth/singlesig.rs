@@ -1,10 +1,7 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    SchemaTypeId,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentMetadata, SchemaTypeId, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
@@ -13,6 +10,7 @@ use crate::account::components::singlesig_library;
 
 // The schema type ID for Public Key Commitments used in the singlesig component.
 const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
+const AUTH_SCHEME_TYPE_ID: &str = "miden::standards::auth::signature::auth_scheme";
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig::public_key")
@@ -75,7 +73,10 @@ impl AuthSingleSig {
     pub fn scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaTypeId::u8()),
+            StorageSlotSchema::value(
+                "Scheme ID",
+                SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
+            ),
         )
     }
 }

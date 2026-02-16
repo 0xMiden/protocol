@@ -5,9 +5,7 @@ use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteDetails, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
-    AccountIdBuilder,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1, AccountIdBuilder,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
@@ -238,8 +236,10 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // CREATE ACCOUNT 1: Has asset A, wants asset B
     // --------------------------------------------------------------------------------------------
-    let account_1 =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, vec![asset_a])?;
+    let account_1 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        vec![asset_a],
+    )?;
 
     let payback_note_type = NoteType::Private;
     let (swap_note_1, payback_note_1) =
@@ -247,8 +247,10 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // CREATE ACCOUNT 2: Has asset B, wants asset A
     // --------------------------------------------------------------------------------------------
-    let account_2 =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, vec![asset_b])?;
+    let account_2 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        vec![asset_b],
+    )?;
     let (swap_note_2, payback_note_2) =
         builder.add_swap_note(account_2.id(), asset_b, asset_a, payback_note_type)?;
 
@@ -317,10 +319,14 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
     let mut builder = MockChain::builder();
-    let sender_account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, vec![offered_asset])?;
-    let target_account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, vec![requested_asset])?;
+    let sender_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        vec![offered_asset],
+    )?;
+    let target_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        vec![requested_asset],
+    )?;
 
     let (swap_note, payback_note) = builder
         .add_swap_note(sender_account.id(), offered_asset, requested_asset, payback_note_type)

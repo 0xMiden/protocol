@@ -4,15 +4,8 @@ use miden_crypto::merkle::InnerNodeInfo;
 use miden_processor::SMT_DEPTH;
 
 use super::{
-    AccountType,
-    Asset,
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    FungibleAsset,
-    NonFungibleAsset,
-    Serializable,
+    AccountType, Asset, ByteReader, ByteWriter, Deserializable, DeserializationError,
+    FungibleAsset, NonFungibleAsset, Serializable,
 };
 use crate::Word;
 use crate::account::{AccountId, AccountVaultDelta, NonFungibleDeltaAction};

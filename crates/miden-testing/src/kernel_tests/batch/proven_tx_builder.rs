@@ -8,10 +8,7 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
-    InputNote,
-    OutputNote,
-    ProvenTransaction,
-    ProvenTransactionBuilder,
+    InputNote, OutputNote, ProvenTransaction, ProvenTransactionBuilder,
 };
 use miden_protocol::vm::ExecutionProof;
 

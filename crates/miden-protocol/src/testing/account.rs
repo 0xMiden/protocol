@@ -3,8 +3,7 @@ use crate::Felt;
 use crate::account::{Account, AccountCode, AccountId, AccountStorage};
 use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use crate::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
 };
 

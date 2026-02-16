@@ -7,15 +7,10 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
-    AuthMultisig,
-    AuthMultisigConfig,
-    AuthSingleSig,
-    AuthSingleSigAcl,
-    AuthSingleSigAclConfig,
+    AuthMultisig, AuthMultisigConfig, AuthSingleSig, AuthSingleSigAcl, AuthSingleSigAclConfig,
 };
 use miden_standards::testing::account_component::{
-    ConditionalAuthComponent,
-    IncrNonceAuthComponent,
+    ConditionalAuthComponent, IncrNonceAuthComponent,
 };
 use miden_tx::auth::BasicAuthenticator;
 use rand::SeedableRng;
@@ -76,14 +71,12 @@ impl Auth {
 
                 (component, Some(authenticator))
             },
-            Auth::Multisig {
-                threshold,
-                approvers,
-                proc_threshold_map,
-            } => {
+            Auth::Multisig { threshold, approvers, proc_threshold_map } => {
                 let approvers = approvers
                     .iter()
-                    .map(|(pub_key, auth_scheme)| (PublicKeyCommitment::from(*pub_key), *auth_scheme))
+                    .map(|(pub_key, auth_scheme)| {
+                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
+                    })
                     .collect();
 
                 let config = AuthMultisigConfig::new(approvers, *threshold)

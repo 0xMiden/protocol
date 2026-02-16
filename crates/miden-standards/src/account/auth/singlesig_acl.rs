@@ -2,18 +2,10 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaTypeId,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentMetadata, FeltSchema, SchemaTypeId, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountCode,
-    AccountComponent,
-    StorageMap,
-    StorageSlot,
-    StorageSlotName,
+    AccountCode, AccountComponent, StorageMap, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -23,6 +15,7 @@ use crate::account::components::singlesig_acl_library;
 
 // The schema type ID for Public Key Commitments used in the ACL singlesig component.
 const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
+const AUTH_SCHEME_TYPE_ID: &str = "miden::standards::auth::signature::auth_scheme";
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig_acl::public_key")
@@ -225,7 +218,10 @@ impl AuthSingleSigAcl {
     pub fn scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaTypeId::u8()),
+            StorageSlotSchema::value(
+                "Scheme ID",
+                SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
+            ),
         )
     }
 
@@ -308,7 +304,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
-    use miden_protocol::account::{AccountBuilder};
+    use miden_protocol::account::AccountBuilder;
 
     use super::*;
     use crate::account::components::StandardAccountComponent;
