@@ -6,9 +6,8 @@ use crate::Word;
 use crate::account::Account;
 use crate::block::account_tree::{AccountTree, account_id_to_smt_key};
 use crate::block::{BlockHeader, BlockNumber, FeeParameters};
-use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use crate::testing::random_signer::RandomBlockSigner;
+use crate::testing::random_secret_key::random_secret_key;
 
 impl BlockHeader {
     /// Creates a mock block. The account tree is formed from the provided `accounts`,
@@ -35,7 +34,7 @@ impl BlockHeader {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
                 .expect("native asset ID should be a fungible faucet ID");
-        let validator_key = SecretKey::random().public_key();
+        let validator_key = random_secret_key();
 
         #[cfg(not(target_family = "wasm"))]
         let (
@@ -92,7 +91,7 @@ impl BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_key.public_key(),
             fee_parameters,
             timestamp,
         )
