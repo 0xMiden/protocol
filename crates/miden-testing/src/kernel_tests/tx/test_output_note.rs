@@ -88,8 +88,8 @@ async fn test_create_note() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -346,8 +346,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([2u32, 0, 0, 0]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(2u32),
         "The test creates two notes",
     );
     assert_eq!(
@@ -660,8 +660,8 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 

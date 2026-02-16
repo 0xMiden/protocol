@@ -14,7 +14,7 @@ pub type StorageSlot = u8;
 //
 // | Section            | Start address | Size in elements | Comment                                    |
 // | ------------------ | ------------- | ---------------- | ------------------------------------------ |
-// | Bookkeeping        | 0             | 89               |                                            |
+// | Bookkeeping        | 0             | 85               |                                            |
 // | Global inputs      | 400           | 40               |                                            |
 // | Block header       | 800           | 44               |                                            |
 // | Partial blockchain | 1_200         | 132              |                                            |
@@ -63,23 +63,39 @@ pub type StorageSlot = u8;
 pub const ACTIVE_INPUT_NOTE_PTR: MemoryAddress = 0;
 
 /// The memory address at which the number of output notes is stored.
-pub const NUM_OUTPUT_NOTES_PTR: MemoryAddress = 4;
+pub const NUM_OUTPUT_NOTES_PTR: MemoryAddress = 1;
 
-/// The memory address at which the input vault root is stored.
-pub const INPUT_VAULT_ROOT_PTR: MemoryAddress = 8;
-
-/// The memory address at which the output vault root is stored.
-pub const OUTPUT_VAULT_ROOT_PTR: MemoryAddress = 12;
+/// The memory address at which the transaction expiration block number is stored.
+pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 2;
 
 /// The memory address at which the dirty flag of the storage commitment of the native account is
 /// stored.
 ///
 /// This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 /// made to the account storage since the last re-computation, and 0 otherwise.
-pub const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR: MemoryAddress = 16;
+pub const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR: MemoryAddress = 3;
 
-/// The memory address at which the transaction expiration block number is stored.
-pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 20;
+/// The memory address at which the input vault root is stored.
+pub const INPUT_VAULT_ROOT_PTR: MemoryAddress = 4;
+
+/// The memory address at which the output vault root is stored.
+pub const OUTPUT_VAULT_ROOT_PTR: MemoryAddress = 8;
+
+// Pointer to the suffix and prefix of the ID of the foreign account which will be loaded during the
+// upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
+pub const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR: MemoryAddress = 12;
+pub const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR: MemoryAddress =
+    UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1;
+
+// Pointer to the 16th input value of the foreign procedure which will be loaded during the upcoming
+// FPI call. This "buffer" value helps to work around the 15 value limitation of the
+// `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
+// values, could be executed as foreign.
+pub const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR: MemoryAddress = 14;
+
+// Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+// This root is updated during the `prepare_fpi_call` kernel procedure.
+pub const UPCOMING_FOREIGN_PROCEDURE_PTR: MemoryAddress = 16;
 
 /// The memory address at which the pointer to the stack element containing the pointer to the
 /// active account data is stored.
@@ -92,9 +108,9 @@ pub const TX_EXPIRATION_BLOCK_NUM_PTR: MemoryAddress = 20;
 /// ┌───────────────┬────────────────┬───────────────────┬─────┬────────────────────┐
 /// │ STACK TOP PTR │ NATIVE ACCOUNT │ FOREIGN ACCOUNT 1 │ ... │ FOREIGN ACCOUNT 63 │
 /// ├───────────────┼────────────────┼───────────────────┼─────┼────────────────────┤
-///        24               25                30                         88
+///        20               21                22                         84
 /// ```
-pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 24;
+pub const ACCOUNT_STACK_TOP_PTR: MemoryAddress = 20;
 
 // GLOBAL INPUTS
 // ------------------------------------------------------------------------------------------------
@@ -334,11 +350,11 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
 // memory offset 4_194_304 with a word containing the total number of input notes and is followed
 // by note nullifiers and note data like so:
 //
-// ┌─────────┬───────────┬───────────┬─────┬───────────┬─────────┬────────┬────────┬───────┬────────┐
-// │   NUM   │  NOTE 0   │  NOTE 1   │ ... │  NOTE n   │ PADDING │ NOTE 0 │ NOTE 1 │  ...  │ NOTE n │
-// │  NOTES  │ NULLIFIER │ NULLIFIER │     │ NULLIFIER │         │  DATA  │  DATA  │       │  DATA  │
-// └─────────┴───────────┴───────────┴─────┴───────────┴─────────┴────────┴────────┴───────┴────────┘
-//  4_194_304 4_194_308   4_194_312         4_194_304+4(n+1)  4_259_840   +2048    +4096   +2048n
+// ┌──────────┬───────────┬───────────┬─────┬────────────────┬─────────┬──────────┬────────┬───────┬────────┐
+// │    NUM   │  NOTE 0   │  NOTE 1   │ ... │     NOTE n     │ PADDING │  NOTE 0  │ NOTE 1 │  ...  │ NOTE n │
+// │   NOTES  │ NULLIFIER │ NULLIFIER │     │    NULLIFIER   │         │   DATA   │  DATA  │       │  DATA  │
+// ├──────────┼───────────┼───────────┼─────┼────────────────┼─────────┼──────────┼────────┼───────┼────────┤
+// 4_194_304  4_194_308   4_194_312         4_194_304+4(n+1)           4_259_840  +2048    +4096   +2048n
 //
 // Here `n` represents number of input notes.
 //
@@ -349,7 +365,7 @@ pub const NOTE_MEM_SIZE: MemoryAddress = 2048;
 // │ NOTE │ SERIAL │ SCRIPT │ STORAGE │   ASSETS   | RECIPIENT │ METADATA │ ATTACHMENT │ NOTE  │ STORAGE │  NUM   │ ASSET │ ... │ ASSET │ PADDING │
 // │  ID  │  NUM   │  ROOT  │  COMM   │ COMMITMENT |           │  HEADER  │            │ ARGS  │ LENGTH  │ ASSETS │   0   │     │   n   │         │
 // ├──────┼────────┼────────┼─────────┼────────────┼───────────┼──────────┼────────────┼───────┼─────────┼────────┼───────┼─────┼───────┼─────────┤
-// 0      4        8        12        16           20          24         28           32       36       40       44 + 4n
+// 0      4        8        12        16           20          24         28           32      36        40       44 + 4n
 //
 // - NUM_STORAGE_ITEMS is encoded as [num_storage_items, 0, 0, 0].
 // - NUM_ASSETS is encoded as [num_assets, 0, 0, 0].
