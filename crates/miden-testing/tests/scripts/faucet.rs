@@ -1244,15 +1244,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     builder.add_output_note(OutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    let mut tx_context_builder =
-        mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?;
-
-    if note_type == NoteType::Public {
-        let p2id_script = StandardNote::P2ID.script();
-        tx_context_builder = tx_context_builder.add_note_script(p2id_script);
-    }
-
-    let tx_context = tx_context_builder.build()?;
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
