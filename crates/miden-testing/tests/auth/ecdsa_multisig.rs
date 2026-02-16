@@ -406,7 +406,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    let scheme_id = 1u64;
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -423,7 +423,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(scheme_id),
+            Felt::new(auth_scheme as u64),
             Felt::new(0),
             Felt::new(0),
             Felt::new(0),
@@ -673,7 +673,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     let new_public_keys = &public_keys[0..2];
     let threshold = 1u64;
     let num_of_approvers = 2u64;
-    let scheme_id = 1u64;
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create multisig config vector
     let mut config_and_pubkeys_vector =
@@ -685,7 +685,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(scheme_id),
+            Felt::new(auth_scheme as u64),
             Felt::new(0),
             Felt::new(0),
             Felt::new(0),
@@ -881,7 +881,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
-    let scheme_id = 1u64;
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -898,7 +898,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
 
         config_and_pubkeys_vector.extend_from_slice(&[
-            Felt::new(scheme_id),
+            Felt::new(auth_scheme as u64),
             Felt::new(0),
             Felt::new(0),
             Felt::new(0),
