@@ -121,8 +121,12 @@ pub const GLOBAL_INPUTS_SECTION_OFFSET: MemoryOffset = 400;
 /// The memory address at which the commitment of the transaction's reference block is stored.
 pub const BLOCK_COMMITMENT_PTR: MemoryAddress = 400;
 
-/// The memory address at which the native account ID is stored.
-pub const NATIVE_ACCT_ID_PTR: MemoryAddress = 404;
+/// The memory address at which the native account ID suffix provided as a global transaction input
+/// is stored.
+pub const GLOBAL_ACCOUNT_ID_SUFFIX_PTR: MemoryAddress = 404;
+/// The memory address at which the native account ID prefix provided as a global transaction input
+/// is stored.
+pub const GLOBAL_ACCOUNT_ID_PREFIX_PTR: MemoryAddress = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1;
 
 /// The memory address at which the initial account commitment is stored.
 pub const INIT_ACCT_COMMITMENT_PTR: MemoryAddress = 408;
@@ -190,14 +194,14 @@ pub const TIMESTAMP_IDX: DataIndex = 2;
 /// The memory address at which the fee parameters are stored. These occupy a double word.
 pub const FEE_PARAMETERS_PTR: MemoryAddress = 832;
 
+/// The index of the verification base fee within the block fee parameters.
+pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 1;
+
 /// The index of the native asset ID suffix within the block fee parameters.
-pub const NATIVE_ASSET_ID_SUFFIX_IDX: DataIndex = 0;
+pub const NATIVE_ASSET_ID_SUFFIX_IDX: DataIndex = 2;
 
 /// The index of the native asset ID prefix within the block fee parameters.
-pub const NATIVE_ASSET_ID_PREFIX_IDX: DataIndex = 1;
-
-/// The index of the verification base fee within the block fee parameters.
-pub const VERIFICATION_BASE_FEE_IDX: DataIndex = 2;
+pub const NATIVE_ASSET_ID_PREFIX_IDX: DataIndex = 3;
 
 /// The memory address at which the note root is stored.
 pub const NOTE_ROOT_PTR: MemoryAddress = 840;
@@ -244,12 +248,12 @@ pub const ACCT_ID_AND_NONCE_OFFSET: MemoryOffset = 0;
 pub const NATIVE_ACCT_ID_AND_NONCE_PTR: MemoryAddress =
     NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_AND_NONCE_OFFSET;
 
-/// The index of the account ID within the account ID and nonce data.
-pub const ACCT_ID_SUFFIX_IDX: DataIndex = 0;
-pub const ACCT_ID_PREFIX_IDX: DataIndex = 1;
-
 /// The index of the account nonce within the account ID and nonce data.
-pub const ACCT_NONCE_IDX: DataIndex = 3;
+pub const ACCT_NONCE_IDX: DataIndex = 0;
+
+/// The index of the account ID within the account ID and nonce data.
+pub const ACCT_ID_SUFFIX_IDX: DataIndex = 2;
+pub const ACCT_ID_PREFIX_IDX: DataIndex = 3;
 
 /// The offset at which the account vault root is stored relative to the start of the account
 /// data segment.

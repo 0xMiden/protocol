@@ -87,8 +87,10 @@ const GLOBAL_INPUTS_SECTION_OFFSET=400
 # The memory address at which the transaction reference block's commitment is stored.
 const BLOCK_COMMITMENT_PTR=400
 
-# The memory address at which the native account ID is stored.
-const NATIVE_ACCT_ID_PTR=404
+# The memory address at which the native account ID provided as a global transaction input is
+# stored.
+const GLOBAL_ACCOUNT_ID_SUFFIX_PTR = 404
+const GLOBAL_ACCOUNT_ID_PREFIX_PTR = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408
@@ -145,12 +147,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
-const VERIFICATION_BASE_FEE_PTR=FEE_PARAMETERS_PTR+2
+const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
+
+# The memory address at which the native asset ID is stored.
+const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -186,13 +192,17 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
 const NATIVE_ACCOUNT_DATA_PTR=8192
+const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
+const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
+const ACCT_NONCE_OFFSET=0
 const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_NONCE_OFFSET=3
+const ACCT_ID_SUFFIX_OFFSET=2
+const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -481,7 +491,7 @@ pub proc get_block_commitment
     padw mem_loadw_be.BLOCK_COMMITMENT_PTR
 end
 
-#! Sets the ID of the native account.
+#! Sets the global ID of the native account.
 #!
 #! Inputs:  [account_id_prefix, account_id_suffix]
 #! Outputs: []
@@ -489,14 +499,12 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    mem_storew_be.NATIVE_ACCT_ID_PTR
-    dropw
+    mem_store.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    mem_store.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
     # => []
 end
 
-#! Returns the ID of the native account.
+#! Returns the global ID of the native account.
 #!
 #! Inputs:  []
 #! Outputs: [account_id_prefix, account_id_suffix]
@@ -504,9 +512,9 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
-    padw mem_loadw_be.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the native account commitment at the beginning of the transaction.
@@ -771,7 +779,8 @@ end
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 pub proc get_native_asset_id
-    padw mem_loadw_be.FEE_PARAMETERS_PTR drop drop
+    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
+    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
     # => [native_asset_id_prefix, native_asset_id_suffix]
 end
 
@@ -1092,9 +1101,13 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub proc get_account_id
-    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    exec.get_active_account_data_ptr
+    # => [active_account_data_ptr]
+
+    dup add.ACCT_ID_SUFFIX_OFFSET mem_load
+    # => [account_id_suffix, active_account_data_ptr]
+
+    swap add.ACCT_ID_PREFIX_OFFSET mem_load
     # => [account_id_prefix, account_id_suffix]
 end
 
@@ -1107,16 +1120,15 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the native account
 #!   of the transaction.
 pub proc get_native_account_id
-    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.NATIVE_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.NATIVE_ACCOUNT_ID_PREFIX_PTR
     # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the account ID and nonce.
 #!
-#! Inputs:  [nonce, 0, account_id_prefix, account_id_suffix]
-#! Outputs: [nonce, 0, account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_prefix, account_id_suffix, 0, nonce]
+#! Outputs: [account_id_prefix, account_id_suffix, 0, nonce]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
@@ -1150,20 +1162,16 @@ pub proc get_native_account_nonce
     mem_load
 end
 
-#! Sets the nonce of the active account.
+#! Sets the nonce of the native account.
 #!
 #! Inputs:  [nonce]
 #! Outputs: []
 #!
 #! Where:
-#! - nonce is the nonce of the active account.
-pub proc set_account_nonce
-    exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET padw
-    # => [0, 0, 0, 0, account_id_and_nonce_ptr, new_nonce]
-    dup.4 mem_loadw_be
-    # => [old_nonce, 0, old_id_prefix, old_id_suffix, account_id_and_nonce_ptr, new_nonce]
-    drop movup.4 movup.4 mem_storew_be dropw
-    # => []
+#! - nonce is the new nonce of the native account.
+pub proc set_native_account_nonce
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_NONCE_OFFSET
+    mem_store
 end
 
 ### ACCOUNT VAULT #################################################

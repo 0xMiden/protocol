@@ -289,12 +289,15 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
         generate_conditional_tx(&mut chain, account0.clone(), noop_note1, true).await;
 
     // sanity check: NOOP transaction's init and final commitment should be the same.
-    assert_eq!(noop_tx.initial_account().commitment(), noop_tx.final_account().commitment());
+    assert_eq!(
+        noop_tx.initial_account().to_commitment(),
+        noop_tx.final_account().to_commitment()
+    );
     // sanity check: State-updating transaction's init and final commitment should *not* be the
     // same.
     assert_ne!(
-        state_updating_tx.initial_account().commitment(),
-        state_updating_tx.final_account().commitment()
+        state_updating_tx.initial_account().to_commitment(),
+        state_updating_tx.final_account().to_commitment()
     );
 
     let tx0 = LocalTransactionProver::default().prove_dummy(noop_tx)?;
@@ -309,7 +312,7 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
     let block = ProposedBlock::new(block_inputs, batches.clone())?;
 
     let (_, update) = block.updated_accounts().iter().next().unwrap();
-    assert_eq!(update.initial_state_commitment(), account0.commitment());
+    assert_eq!(update.initial_state_commitment(), account0.to_commitment());
     assert_eq!(update.final_state_commitment(), tx1.account_update().final_state_commitment());
 
     Ok(())
