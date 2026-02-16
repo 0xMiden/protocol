@@ -75,9 +75,9 @@ serve-docs: ## Serves the docs
 
 # --- testing -------------------------------------------------------------------------------------
 
-.PHONY: test-build
-test-build: ## Build the test binary
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --features concurrent,testing,std --no-run
+.PHONY: testf-build
+testf-build: ## Build the test binary
+	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --no-default-features --features concurrent,testing,std --no-run
 
 
 # Run all tests without debug mode. This is f = fast but produces worse error message.

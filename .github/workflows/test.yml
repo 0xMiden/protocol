@@ -31,9 +31,9 @@ jobs:
       - name: Install rust
         run: rustup update --no-self-update 
       - name: Build tests
-        run: make test-build
+        run: make testf-build
       - name: test
-        run: make test
+        run: make testf # runs without debug mode
 
   doc-tests:
     name: doc-tests
