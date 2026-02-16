@@ -64,6 +64,24 @@ where
     }
 }
 
+/// Deserializes a JSON array of values that may be either numbers or strings into `Vec<String>`.
+///
+/// Array-level counterpart of [`deserialize_uint_to_string`].
+fn deserialize_uint_vec_to_strings<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    values
+        .into_iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => Ok(s),
+            serde_json::Value::Number(n) => Ok(n.to_string()),
+            _ => Err(serde::de::Error::custom("expected a number or string for amount")),
+        })
+        .collect()
+}
+
 // TEST VECTOR TYPES
 // ================================================================================================
 
@@ -180,12 +198,13 @@ pub struct CanonicalZerosFile {
 /// (leafType=0, originNetwork=64, originTokenAddress=0, metadataHash=0), parametrised by
 /// `amounts[i]` with a fixed `destination_network` and `destination_address`.
 ///
-/// Amounts are stored as bytes32 hex strings (matching ClaimAssetTestVectors format).
+/// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
 pub struct MmrFrontierVectorsFile {
     pub leaves: Vec<String>,
     pub roots: Vec<String>,
     pub counts: Vec<u32>,
+    #[serde(deserialize_with = "deserialize_uint_vec_to_strings")]
     pub amounts: Vec<String>,
     pub destination_network: u32,
     pub destination_address: String,

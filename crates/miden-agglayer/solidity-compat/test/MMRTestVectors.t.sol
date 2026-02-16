@@ -84,7 +84,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
         bytes32[] memory leaves = new bytes32[](32);
         bytes32[] memory roots = new bytes32[](32);
         uint256[] memory counts = new uint256[](32);
-        bytes32[] memory amounts = new bytes32[](32);
+        uint256[] memory amounts = new uint256[](32);
 
         for (uint256 i = 0; i < 32; i++) {
             uint256 amount = i + 1;
@@ -94,15 +94,15 @@ contract MMRTestVectors is Test, DepositContractV2 {
             leaves[i] = leaf;
             roots[i] = getRoot();
             counts[i] = depositCount;
-            amounts[i] = bytes32(amount);
+            amounts[i] = amount;
         }
 
-        // Serialize parallel arrays to JSON (amounts as bytes32, matching ClaimAssetTestVectors)
+        // Serialize parallel arrays to JSON
         string memory obj = "root";
         vm.serializeBytes32(obj, "leaves", leaves);
         vm.serializeBytes32(obj, "roots", roots);
         vm.serializeUint(obj, "counts", counts);
-        vm.serializeBytes32(obj, "amounts", amounts);
+        vm.serializeUint(obj, "amounts", amounts);
         vm.serializeUint(obj, "destination_network", DESTINATION_NETWORK);
         string memory json = vm.serializeAddress(obj, "destination_address", DESTINATION_ADDRESS);
 
