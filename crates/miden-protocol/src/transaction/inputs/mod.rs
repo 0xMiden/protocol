@@ -356,8 +356,7 @@ impl TransactionInputs {
 
     /// Reads `AccountInputs` for a foreign account from the advice inputs.
     ///
-    /// This function reverses the process of
-    /// [`crate::transaction::AccountIdKey::to_advice_map_word`] by:
+    /// This function reverses the process of `TransactionAdviceInputs::add_foreign_accounts` by:
     /// 1. Reading the account header from the advice map using the account_id_key.
     /// 2. Building a `PartialAccount` from the header and foreign account code.
     /// 3. Creating an `AccountWitness`.
