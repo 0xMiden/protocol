@@ -109,7 +109,7 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let eth_address = EthAddressFormat::from_account_id(*original_account_id);
 
         let address_felts = eth_address.to_elements().to_vec();
-        let le: Vec<u32> = address_felts
+        let limbs: Vec<u32> = address_felts
             .iter()
             .map(|f| {
                 let val = f.as_int();
@@ -118,13 +118,13 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
             })
             .collect();
 
-        assert_eq!(le[4], 0, "test {}: expected msw limb (le[4]) to be zero", idx);
+        let limb0 = limbs[0];
+        let limb1 = limbs[1];
+        let limb2 = limbs[2];
+        let limb3 = limbs[3];
+        let limb4 = limbs[4];
 
-        let addr0 = le[0];
-        let addr1 = le[1];
-        let addr2 = le[2];
-        let addr3 = le[3];
-        let addr4 = le[4];
+        assert_eq!(limb0, 0, "test {}: expected msb limb (limb0) to be zero", idx);
 
         let account_id_felts: [Felt; 2] = (*original_account_id).into();
         let expected_prefix = account_id_felts[0].as_int();
@@ -141,7 +141,7 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
                 exec.sys::truncate_stack
             end
             "#,
-            addr4, addr3, addr2, addr1, addr0
+            limb4, limb3, limb2, limb1, limb0
         );
 
         let program = Assembler::new(Arc::new(DefaultSourceManager::default()))

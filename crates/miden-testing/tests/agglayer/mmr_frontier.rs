@@ -1,9 +1,9 @@
 use alloc::format;
 use alloc::string::ToString;
 
-use miden_agglayer::agglayer_library;
+use miden_agglayer::claim_note::SmtNode;
+use miden_agglayer::{ExitRoot, agglayer_library};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
-use miden_protocol::Felt;
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
@@ -75,7 +75,8 @@ impl<const TREE_HEIGHT: usize> KeccakMmrFrontier32<TREE_HEIGHT> {
 async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let mut mmr_frontier = KeccakMmrFrontier32::<32>::new();
 
-    let mut source = "use miden::agglayer::mmr_frontier32_keccak begin".to_string();
+    let mut source =
+        "use miden::agglayer::mmr_frontier32_keccak use miden::core::word begin".to_string();
 
     for round in 0..32 {
         // construct the leaf from the hex representation of the round number
@@ -83,7 +84,11 @@ async fn test_append_and_update_frontier() -> anyhow::Result<()> {
         let root = mmr_frontier.append_and_update_frontier(leaf);
         let num_leaves = mmr_frontier.num_leaves;
 
-        source.push_str(&leaf_assertion_code(leaf, root, num_leaves));
+        source.push_str(&leaf_assertion_code(
+            SmtNode::new(leaf.into()),
+            ExitRoot::new(root.into()),
+            num_leaves,
+        ));
     }
 
     source.push_str("end");
@@ -107,11 +112,16 @@ async fn test_check_empty_mmr_root() -> anyhow::Result<()> {
     let zero_31 = *CANONICAL_ZEROS_32.get(31).expect("zeros should have 32 values total");
     let empty_mmr_root = Keccak256::merge(&[zero_31, zero_31]);
 
-    let mut source = "use miden::agglayer::mmr_frontier32_keccak begin".to_string();
+    let mut source =
+        "use miden::agglayer::mmr_frontier32_keccak use miden::core::word begin".to_string();
 
     for round in 1..=32 {
         // check that pushing the zero leaves into the MMR doesn't change its root
-        source.push_str(&leaf_assertion_code(zero_leaf, empty_mmr_root, round));
+        source.push_str(&leaf_assertion_code(
+            SmtNode::new(zero_leaf.into()),
+            ExitRoot::new(empty_mmr_root.into()),
+            round,
+        ));
     }
 
     source.push_str("end");
@@ -221,38 +231,28 @@ fn test_solidity_mmr_frontier_compatibility() {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Transforms the `[Keccak256Digest]` into two word strings: (`a, b, c, d`, `e, f, g, h`)
-fn keccak_digest_to_word_strings(digest: Keccak256Digest) -> (String, String) {
-    let double_word = (*digest)
-        .chunks(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())).to_string())
-        .rev()
-        .collect::<Vec<_>>();
-
-    (double_word[0..4].join(", "), double_word[4..8].join(", "))
-}
-
-fn leaf_assertion_code(
-    leaf: Keccak256Digest,
-    expected_root: Keccak256Digest,
-    num_leaves: u32,
-) -> String {
-    let (leaf_hi, leaf_lo) = keccak_digest_to_word_strings(leaf);
-    let (root_hi, root_lo) = keccak_digest_to_word_strings(expected_root);
+fn leaf_assertion_code(leaf: SmtNode, expected_root: ExitRoot, num_leaves: u32) -> String {
+    let [leaf_lo, leaf_hi] = leaf.to_words();
+    let [root_lo, root_hi] = expected_root.to_words();
 
     format!(
         r#"
-            # load the provided leaf onto the stack
-            push.[{leaf_hi}]
-            push.[{leaf_lo}]
+            # load the provided leaf onto the stack and reverse (the leaf value would have been
+            # reversed by the keccak hash call in a real get_leaf_value)
+            push.{leaf_hi}
+            exec.word::reverse
+            push.{leaf_lo}
+            exec.word::reverse
 
             # add this leaf to the MMR frontier
             exec.mmr_frontier32_keccak::append_and_update_frontier
             # => [NEW_ROOT_LO, NEW_ROOT_HI, new_leaf_count]
 
             # assert the root correctness after the first leaf was added
-            push.[{root_lo}]
-            push.[{root_hi}]
+            push.{root_lo}
+            exec.word::reverse
+            push.{root_hi}
+            exec.word::reverse
             movdnw.3
             # => [EXPECTED_ROOT_LO, NEW_ROOT_LO, NEW_ROOT_HI, EXPECTED_ROOT_HI, new_leaf_count]
 

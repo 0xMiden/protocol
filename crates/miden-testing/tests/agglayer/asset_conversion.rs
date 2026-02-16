@@ -164,7 +164,7 @@ async fn assert_y_plus_minus_one_behavior(x: U256, scale: u32) -> anyhow::Result
 #[tokio::test]
 async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
     let cases = [
-        (U256::from_dec_str("1000000000000000000").unwrap(), 18u32),
+        (U256::from_dec_str("1000000000000000000").unwrap(), 10u32),
         (U256::from(1000u64), 0u32),
         (U256::from_dec_str("10000000000000000000").unwrap(), 18u32),
     ];
@@ -273,12 +273,14 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // x = 100 * 1e18 = 100000000000000000000
     // y = x / 1e10 = 10000000000 (100 * 1e8)
 
-    let x = U256::from_dec_str("100000000000000000000").unwrap();
+    let x = EthAmount::from_uint_str("100000000000000000000").unwrap();
     let scale_exp = 10u32;
     let y = 10000000000u64;
 
     // Convert U256 to 8 u32 limbs (little-endian)
-    let x_felts = utils::u256_to_felts(x);
+    let x_felts = x.to_elements();
+
+    println!("x felts: {:?}", x_felts);
 
     // Build the MASM script inline
     let script_code = format!(
@@ -323,4 +325,42 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     assert_eq!(result, y);
 
     Ok(())
+}
+
+#[test]
+fn test_felts_to_u256_bytes_sequential_values() {
+    let limbs = [
+        Felt::new(1),
+        Felt::new(2),
+        Felt::new(3),
+        Felt::new(4),
+        Felt::new(5),
+        Felt::new(6),
+        Felt::new(7),
+        Felt::new(8),
+    ];
+    let result = utils::felts_to_bytes(&limbs);
+    assert_eq!(result.len(), 32);
+
+    // Verify the byte layout: limbs are processed in little-endian order, each as little-endian u32
+    // First byte should be 1 (limbs[0] = 1, least significant limb, least significant byte)
+    assert_eq!(result[0], 1);
+    // Byte at position 28 should be 8 (limbs[7] = 8, most significant limb, least significant
+    // byte)
+    assert_eq!(result[28], 8);
+}
+
+#[test]
+fn test_felts_to_u256_bytes_edge_cases() {
+    // Test case 1: All zeros (minimum)
+    let limbs = [Felt::new(0); 8];
+    let result = utils::felts_to_bytes(&limbs);
+    assert_eq!(result.len(), 32);
+    assert!(result.iter().all(|&b| b == 0));
+
+    // Test case 2: All max u32 values (maximum)
+    let limbs = [Felt::new(u32::MAX as u64); 8];
+    let result = utils::felts_to_bytes(&limbs);
+    assert_eq!(result.len(), 32);
+    assert!(result.iter().all(|&b| b == 255));
 }

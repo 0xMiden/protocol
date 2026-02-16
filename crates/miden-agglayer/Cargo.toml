@@ -28,7 +28,7 @@ miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
 
-# External dependencies
+# Third-party dependencies
 primitive-types = { workspace = true }
 thiserror       = { workspace = true }
 

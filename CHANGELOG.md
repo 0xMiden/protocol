@@ -40,6 +40,7 @@
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 - Unified the underlying representation of `ExitRoot` and `SmtNode` and use type aliases ([#2387](https://github.com/0xMiden/miden-base/pull/2387)).
+- [BREAKING] Moved padding to the end of `CLAIM` `NoteStorage` layout ([#2405](https://github.com/0xMiden/miden-base/pull/2405)).
 
 ### Fixes
 - Fixed byte-to-felt conversion for `ExitRoot` and `SmtNode`'s `to_elements()` method ([#2387](https://github.com/0xMiden/miden-base/pull/2387)).

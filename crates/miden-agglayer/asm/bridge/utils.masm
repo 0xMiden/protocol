@@ -1,4 +1,4 @@
-# Utility module containing helper procedures for the double word handling.
+# Utility module containing helper procedures for double word handling and byte manipulation.
 
 # TYPE ALIASES
 # =================================================================================================
@@ -7,7 +7,35 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
 type MemoryAddress = u32
 
-# PUBLIC INTERFACE
+# BYTE MANIPULATION
+# =================================================================================================
+
+#! Swaps byte order in a u32 limb (LE <-> BE).
+#!
+#! Inputs:  [value]
+#! Outputs: [swapped]
+pub proc swap_u32_bytes
+    # part0 = (value & 0xFF) << 24
+    dup u32and.0xFF u32shl.24
+    # => [part0, value]
+
+    # part1 = ((value >> 8) & 0xFF) << 16
+    dup.1 u32shr.8 u32and.0xFF u32shl.16 u32or
+    # => [part01, value]
+
+    # part2 = ((value >> 16) & 0xFF) << 8
+    dup.1 u32shr.16 u32and.0xFF u32shl.8 u32or
+    # => [part012, value]
+
+    # part3 = (value >> 24)
+    dup.1 u32shr.24 u32or
+    # => [swapped, value]
+
+    swap drop
+    # => [swapped]
+end
+
+# DOUBLE WORD MEMORY OPERATIONS
 # =================================================================================================
 
 #! Stores two words to the provided global memory address.
@@ -18,10 +46,10 @@ pub proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
 ) -> (DoubleWord, MemoryAddress)
-    dup.8 mem_storew_be swapw
+    dup.8 mem_storew_le swapw
     # => [WORD_2, WORD_1, ptr]
 
-    dup.8 add.4 mem_storew_be swapw
+    dup.8 add.4 mem_storew_le swapw
     # => [WORD_1, WORD_2, ptr]
 end
 
@@ -30,9 +58,9 @@ end
 #! Inputs:  [ptr]
 #! Outputs: [WORD_1, WORD_2]
 pub proc mem_load_double_word(mem_ptr: MemoryAddress) -> DoubleWord
-    padw dup.4 add.4 mem_loadw_be
+    padw dup.4 add.4 mem_loadw_le
     # => [WORD_2, ptr]
 
-    padw movup.8 mem_loadw_be
+    padw movup.8 mem_loadw_le
     # => [WORD_1, WORD_2]
 end
