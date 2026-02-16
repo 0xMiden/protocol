@@ -28,7 +28,10 @@ use super::mmr_frontier::SOLIDITY_MMR_FRONTIER_VECTORS;
 /// - `"miden::agglayer::let::root_lo"` — low word of the root
 /// - `"miden::agglayer::let::root_hi"` — high word of the root
 ///
-/// Returns `[root_lo, root_hi]`. For an empty/uninitialized tree, both words are zeros.
+/// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
+/// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
+/// reverse of their storage order). For an empty/uninitialized tree, all elements are
+/// zeros.
 fn read_local_exit_root(account: &Account) -> Vec<Felt> {
     let root_lo_slot =
         StorageSlotName::new("miden::agglayer::let::root_lo").expect("slot name should be valid");
