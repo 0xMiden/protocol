@@ -17,8 +17,8 @@ const IS_REGISTERED_FLAG=1
 #! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
 #! non-existent entries (SMTs return EMPTY_WORD for missing keys).
 #!
-#! No sender validation is performed — anyone can register a faucet.
-#! Re-registration is idempotent (overwrites with the same sentinel).
+#! TODO: Currently, no sender validation is performed — anyone can register a faucet.
+#! Tracked in https://github.com/0xMiden/miden-base/issues/2450
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
 #! Outputs: [pad(16)]
