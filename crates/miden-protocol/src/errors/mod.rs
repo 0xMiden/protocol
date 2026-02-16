@@ -52,13 +52,15 @@ pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod tx_kernel;
+pub mod tx_kernel {
+    include!(concat!(env!("OUT_DIR"), "/tx_kernel_errors.rs"));
+}
 
 /// The errors from the MASM code of the Miden protocol library.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod protocol;
+pub mod protocol {
+    include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
