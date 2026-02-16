@@ -197,18 +197,20 @@ pub proc start_foreign_context
         # load the advice data into the active account memory section
         exec.account::load_foreign_account
         # => []
-    end
-    # => []
 
-    # make sure that the state of the loaded foreign account corresponds to this commitment in the
-    # account database
-    exec.account::validate_active_foreign_account
+        # make sure that the state of the loaded foreign account corresponds to its commitment in
+        # the account database
+        exec.account::validate_active_foreign_account
+        # => []
+    end
     # => []
 end
 
 #! Ends a foreign account context.
 #!
-#! This pops the top of the account stack, making the previous account the active account.
+#! This pops the top of the account stack, making the previous account the active account, and 
+#! resets the foreign procedure info (foreign account ID and foreign procedure root) in the kernel
+#! memory.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -219,5 +221,13 @@ end
 #! Invocation: dynexec
 pub proc end_foreign_context
     exec.memory::pop_ptr_from_account_stack
+    # => []
+
+    # set the upcoming foreign account ID to zero
+    push.0 push.0 exec.memory::set_fpi_account_id
+    # => []
+
+    # set the upcoming foreign procedure root to zero
+    padw exec.memory::set_fpi_procedure_root dropw
     # => []
 end

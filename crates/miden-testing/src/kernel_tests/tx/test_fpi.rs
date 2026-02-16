@@ -3,7 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, Felt};
+use miden_processor::{AdviceInputs, EMPTY_WORD, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -173,7 +173,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         "Value at the top of the stack should be equal to [1, 2, 3, 4]",
     );
 
-    foreign_account_data_memory_assertions(&foreign_account, get_item_foreign_root, &exec_output);
+    foreign_account_data_memory_assertions(&foreign_account, &exec_output);
 
     // GET MAP ITEM
     // --------------------------------------------------------------------------------------------
@@ -232,11 +232,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         "Value at the top of the stack should be equal [1, 2, 3, 4]",
     );
 
-    foreign_account_data_memory_assertions(
-        &foreign_account,
-        get_map_item_foreign_root,
-        &exec_output,
-    );
+    foreign_account_data_memory_assertions(&foreign_account, &exec_output);
 
     // GET ITEM TWICE
     // --------------------------------------------------------------------------------------------
@@ -1974,7 +1970,6 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
 
 fn foreign_account_data_memory_assertions(
     foreign_account: &Account,
-    foreign_procedure_root: &Word,
     exec_output: &ExecutionOutput,
 ) {
     let foreign_account_data_ptr = NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32;
@@ -1984,23 +1979,14 @@ fn foreign_account_data_memory_assertions(
     // pointers respectively hold the ID and root of the account and procedure which were used
     // during the FPI
 
-    // check the foreign account ID prefix
-    assert_eq!(
-        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR),
-        foreign_account.id().prefix().as_felt()
-    );
+    // foreign account ID prefix should be zero after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR), ZERO);
 
-    // check the foreign account ID suffix
-    assert_eq!(
-        exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR),
-        foreign_account.id().suffix()
-    );
+    // foreign account ID suffix should be zero after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR), ZERO);
 
-    // check the foreign procedure root
-    assert_eq!(
-        exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR),
-        *foreign_procedure_root
-    );
+    // foreign procedure root should be zero word after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR), EMPTY_WORD);
 
     assert_eq!(
         exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET),

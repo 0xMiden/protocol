@@ -1376,17 +1376,6 @@ end
 #! 16th value of the foreign procedure inputs to the kernel memory: this allows to FPI any account 
 #! procedure, even if it has 16 input values.
 #!
-#! Storing 16th value instead of the 1st allows a potential power user (in case he intends to call
-#! the foreign procedure which has less than 16 elements) to prepare the FPI only once and then do
-#! several calls without any changes to the setup, for example (pseudo code):
-#!
-#! ```
-#!     tx_prepare_fpi(foreign_account_id, foreign_account::has_asset, 0)
-#!     for ASSET in asset_list {
-#!         tx_exec_foreign_proc([ASSET[0], ASSET[1], ASSET[2], ASSET[3], pad(11)])
-#!     }
-#! ```
-#!
 #! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 #! Outputs: [pad(16)]
 #!
