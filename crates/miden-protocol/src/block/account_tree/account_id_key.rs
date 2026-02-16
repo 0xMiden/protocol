@@ -1,10 +1,10 @@
 use miden_core::ZERO;
 use miden_crypto::merkle::smt::LeafIndex;
 
-use super::{AccountId, AccountTreeError};
+use super::AccountId;
 use crate::Word;
+use crate::block::account_tree::AccountIdPrefix;
 use crate::crypto::merkle::smt::SMT_DEPTH;
-
 const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
 
@@ -44,11 +44,9 @@ impl AccountIdKey {
     /// Construct from SMT word representation.
     ///
     /// Validates structure before converting.
-    pub fn from_word(word: Word) -> Result<Self, AccountTreeError> {
-        let id = AccountId::try_from([word[KEY_PREFIX_IDX], word[KEY_SUFFIX_IDX]])
-            .map_err(AccountTreeError::InvalidAccountIdPrefix)?;
-
-        Ok(Self(id))
+    pub fn from_word(word: Word) -> AccountId {
+        AccountId::try_from([word[KEY_PREFIX_IDX], word[KEY_SUFFIX_IDX]])
+            .expect("account tree should only contain valid IDs")
     }
 
     // LEAF INDEX
@@ -68,6 +66,11 @@ impl AccountIdKey {
     /// `[suffix, prefix, 0, 0]`
     pub fn to_advice_map_word(&self) -> Word {
         Word::from([self.0.suffix(), self.0.prefix().as_felt(), ZERO, ZERO])
+    }
+
+    // Return the prefix of the account ID.
+    pub fn prefix(&self) -> AccountIdPrefix {
+        self.0.prefix()
     }
 }
 
@@ -109,7 +112,7 @@ mod tests {
         );
 
         let key = AccountIdKey::from(id);
-        let recovered = AccountIdKey::from_word(key.as_word()).unwrap().account_id();
+        let recovered = AccountIdKey::from_word(key.as_word());
 
         assert_eq!(id, recovered);
     }
@@ -171,7 +174,7 @@ mod tests {
             );
             let key = AccountIdKey::from(id);
 
-            let recovered = AccountIdKey::from_word(key.as_word()).unwrap().account_id();
+            let recovered = AccountIdKey::from_word(key.as_word());
 
             assert_eq!(id, recovered);
         }

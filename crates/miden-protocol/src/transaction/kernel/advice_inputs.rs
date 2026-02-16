@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use miden_processor::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
-use crate::block::account_tree::AccountWitness;
+use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::note::NoteAttachmentContent;
@@ -56,8 +56,8 @@ impl TransactionAdviceInputs {
         // If a seed was provided, extend the map appropriately.
         if let Some(seed) = tx_inputs.account().seed() {
             // ACCOUNT_ID |-> ACCOUNT_SEED
-            let account_id_key = Self::account_id_map_key(partial_native_acc.id());
-            inputs.add_map_entry(account_id_key, seed.to_vec());
+            let account_id_key = AccountIdKey::from(partial_native_acc.id());
+            inputs.add_map_entry(account_id_key.to_advice_map_word(), seed.to_vec());
         }
 
         // if the account is new, insert the storage map entries into the advice provider.
@@ -104,13 +104,6 @@ impl TransactionAdviceInputs {
     // PUBLIC UTILITIES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the advice map key where:
-    /// - the seed for native accounts is stored.
-    /// - the account header for foreign accounts is stored.
-    pub fn account_id_map_key(id: AccountId) -> Word {
-        Word::from([id.suffix(), id.prefix().as_felt(), ZERO, ZERO])
-    }
-
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -130,11 +123,11 @@ impl TransactionAdviceInputs {
 
             // for foreign accounts, we need to insert the id to state mapping
             // NOTE: keep this in sync with the account::load_from_advice procedure
-            let account_id_key = Self::account_id_map_key(foreign_acc.id());
+            let account_id_key = AccountIdKey::from(foreign_acc.id());
             let header = AccountHeader::from(foreign_acc.account());
 
             // ACCOUNT_ID |-> [ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
-            self.add_map_entry(account_id_key, header.as_elements());
+            self.add_map_entry(account_id_key.to_advice_map_word(), header.as_elements());
         }
     }
 

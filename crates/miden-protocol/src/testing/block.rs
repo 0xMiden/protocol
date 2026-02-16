@@ -4,7 +4,7 @@ use winter_rand_utils::rand_value;
 
 use crate::Word;
 use crate::account::Account;
-use crate::block::account_tree::{AccountTree, AccountIdKey};
+use crate::block::account_tree::{AccountIdKey, AccountTree};
 use crate::block::{BlockHeader, BlockNumber, FeeParameters};
 use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;

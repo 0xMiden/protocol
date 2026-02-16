@@ -22,17 +22,6 @@ pub use backend::AccountTreeBackend;
 pub mod account_id_key;
 pub use account_id_key::AccountIdKey;
 
-/// Recovers an [`AccountId`] from an SMT key.
-///
-/// # Panics
-///
-/// Panics if the key does not represent a valid account ID. This should never happen when used
-/// with keys from account trees, as the tree only stores valid IDs.
-pub fn smt_key_to_account_id(key: Word) -> AccountId {
-    AccountId::try_from([key[KEY_PREFIX_IDX], key[KEY_SUFFIX_IDX]])
-        .expect("account tree should only contain valid IDs")
-}
-
 /// Converts an AccountId to an SMT leaf index for use with MerkleStore operations.
 pub fn account_id_to_smt_index(account_id: AccountId) -> LeafIndex<SMT_DEPTH> {
     AccountIdKey::from(account_id).as_word().into()
@@ -99,13 +88,13 @@ where
                 },
                 SmtLeaf::Single((key, _)) => {
                     // Single entry is good - verify it's a valid account ID
-                    smt_key_to_account_id(key);
+                    let _ = AccountIdKey::from_word(key);
                 },
                 SmtLeaf::Multiple(entries) => {
                     // Multiple entries means duplicate prefixes
                     // Extract one of the keys to identify the duplicate prefix
                     if let Some((key, _)) = entries.first() {
-                        let account_id = smt_key_to_account_id(*key);
+                        let account_id = AccountIdKey::from_word(*key);
                         return Err(AccountTreeError::DuplicateIdPrefix {
                             duplicate_prefix: account_id.prefix(),
                         });
@@ -233,7 +222,7 @@ where
                     // valid. If it does not match, then we would insert a duplicate.
                     if existing_key != *id_key {
                         return Err(AccountTreeError::DuplicateIdPrefix {
-                            duplicate_prefix: smt_key_to_account_id(*id_key).prefix(),
+                            duplicate_prefix: AccountIdKey::from_word(*id_key).prefix(),
                         });
                     }
                 },

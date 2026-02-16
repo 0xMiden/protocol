@@ -5,7 +5,7 @@ use miden_crypto::merkle::{InnerNodeInfo, SparseMerklePath};
 
 use crate::Word;
 use crate::account::AccountId;
-use crate::block::account_tree::{AccountIdKey, smt_key_to_account_id};
+use crate::block::account_tree::AccountIdKey;
 use crate::errors::AccountTreeError;
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
@@ -83,7 +83,7 @@ impl AccountWitness {
             SmtLeaf::Empty(_) => requested_account_id,
             SmtLeaf::Single((key_in_leaf, _)) => {
                 // SAFETY: By construction, the tree only contains valid IDs.
-                smt_key_to_account_id(*key_in_leaf)
+                AccountIdKey::from_word(*key_in_leaf)
             },
             SmtLeaf::Multiple(_) => {
                 unreachable!("account tree should only contain zero or one entry per ID prefix")

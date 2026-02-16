@@ -20,14 +20,13 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
-use crate::block::account_tree::{AccountWitness, account_id_to_smt_index};
+use crate::block::account_tree::{AccountIdKey, AccountWitness, account_id_to_smt_index};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
-use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
+use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::{Felt, Word};
-
 #[cfg(test)]
 mod tests;
 
@@ -370,13 +369,13 @@ impl TransactionInputs {
         }
 
         // Read the account header elements from the advice map.
-        let account_id_key = TransactionAdviceInputs::account_id_map_key(account_id);
+        let account_id_key = AccountIdKey::from(account_id);
+
         let header_elements = self
             .advice_inputs
             .map
-            .get(&account_id_key)
+            .get(&account_id_key.to_advice_map_word())
             .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
-
         // Parse the header from elements.
         let header = AccountHeader::try_from_elements(header_elements)?;
 
