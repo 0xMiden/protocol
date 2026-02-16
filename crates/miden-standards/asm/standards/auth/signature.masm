@@ -18,6 +18,8 @@ const CURRENT_PK_LOC=8
 const SUCCESSFUL_VERIFICATIONS_LOC=12
 const SCHEME_ID_SUFFIX_LOC=16
 const SCHEME_ID_PREFIX_LOC=17
+const ECDSA_K256_KECCAK_SCHEME_ID=1
+const RPO_FALCON_512_SCHEME_ID=2
 
 # ERRORS
 # =================================================================================================
@@ -35,7 +37,7 @@ const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three
 #! included to commit to the transaction creator's intended reference block of the transaction
 #! which determines the fee parameters and therefore the fee amount that is deducted.
 #!
-#! Inputs:  [PUB_KEY, SCHEME_ID]
+#! Inputs:  [PUB_KEY, scheme_id]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -45,18 +47,18 @@ pub proc authenticate_transaction
     # This has to happen before computing the delta commitment, otherwise that procedure will abort
     push.0.0 exec.tx::get_block_number
     exec.native_account::incr_nonce
-    # => [[final_nonce, ref_block_num, 0, 0], PUB_KEY, SCHEME_ID]
+    # => [[final_nonce, ref_block_num, 0, 0], PUB_KEY, scheme_id]
 
     # Compute the message that is signed.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT, PUB_KEY, SCHEME_ID]
+    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT, PUB_KEY, scheme_id]
 
     exec.auth::adv_insert_hqword
 
     # The commitment to the tx summary is the message that is signed
     exec.auth::hash_tx_summary
-    # OS => [MESSAGE, PUB_KEY, SCHEME_ID]
+    # OS => [MESSAGE, PUB_KEY, scheme_id]
     # AS => []
 
     # Fetch signature from advice provider and verify.
@@ -64,15 +66,15 @@ pub proc authenticate_transaction
     # Emit the authentication request event that pushes a signature for the message to the advice stack
     emit.AUTH_REQUEST_EVENT
     swapw
-    # OS => [PUB_KEY, MESSAGE, SCHEME_ID]
+    # OS => [PUB_KEY, MESSAGE, scheme_id]
     # AS => [SIGNATURE]
 
     movup.8
-    # OS => [SCHEME_ID, PUB_KEY, MESSAGE]
+    # OS => [scheme_id, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
     dup.0 exec.validate_scheme_id
-    # OS => [SCHEME_ID, PUB_KEY, MESSAGE]
+    # OS => [scheme_id, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
     # Verify the signature against the public key and the message. The procedure gets as inputs the
@@ -87,10 +89,10 @@ end
 #   1 => ECDSA (ecdsa_k256_keccak)
 #   2 => Falcon (rpo_falcon512)
 #
-# Inputs:  [SCHEME_ID, PUB_KEY, MSG]
+# Inputs:  [scheme_id, PUB_KEY, MSG]
 # Outputs: []
 proc verify_signature_by_scheme
-    dup eq.1
+    dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_one, PUB_KEY, MESSAGE]
 
     if.true
@@ -101,7 +103,7 @@ proc verify_signature_by_scheme
         # OS => []
         # AS => []
     else
-        dup eq.2
+        dup eq.RPO_FALCON_512_SCHEME_ID
         # => [is_2, PUB_KEY, MESSAGE]
 
         if.true
@@ -122,10 +124,10 @@ end
 #! Inputs:  [scheme_id]
 #! Outputs: [is_supported]
 pub proc is_scheme_id
-    dup eq.1
+    dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
 
-    swap eq.2
+    swap eq.RPO_FALCON_512_SCHEME_ID
     # => [is_2, is_1]
 
     add neq.0
@@ -173,7 +175,7 @@ end
 #!
 #! Inputs:  [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
-@locals(20)
+@locals(18)
 pub proc verify_signatures
     loc_store.SCHEME_ID_PREFIX_LOC
     loc_store.SCHEME_ID_SUFFIX_LOC
@@ -259,10 +261,10 @@ pub proc verify_signatures
             
             # Get scheme_id for the corresponding public key from initial storage state
             exec.active_account::get_initial_map_item
-            # => [0, 0, 0, SCHEME_ID, PUB_KEY, MSG, MSG, i-1]
+            # => [0, 0, 0, scheme_id, PUB_KEY, MSG, MSG, i-1]
 
             drop drop drop
-            # OS => [SCHEME_ID, PUB_KEY, MSG, MSG, i-1]
+            # OS => [scheme_id, PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 
             exec.verify_signature_by_scheme

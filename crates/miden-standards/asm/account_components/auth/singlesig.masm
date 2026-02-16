@@ -42,10 +42,10 @@ pub proc auth_tx(auth_args: BeWord)
     # => [PUB_KEY, pad(16)]
 
     push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
-    # => [0, 0, 0, SCHEME_ID, PUB_KEY, pad(16)]
+    # => [0, 0, 0, scheme_id, PUB_KEY, pad(16)]
 
     drop drop drop movdn.4
-    # => [PUB_KEY, SCHEME_ID, pad(16)]
+    # => [PUB_KEY, scheme_id, pad(16)]
 
     exec.signature::authenticate_transaction
     # => [pad(16)]

@@ -108,7 +108,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         sub.1
         # => [i-1, new_num_of_approvers]
 
-        dup 
+        dup
         # => [i-1, i-1, new_num_of_approvers]
 
         push.0.0.0
@@ -120,7 +120,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         exec.active_account::get_initial_map_item
         # => [OLD_PUB_KEY, i-1, new_num_of_approvers]
 
-        push.0.0.0.0 swapw
+        padw swapw
         # => [OLD_PUB_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
@@ -135,12 +135,12 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         dup push.0.0.0
         # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
 
-        push.0.0.0.0 swapw
+        padw swapw
         # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
         # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
-        
+
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
 
@@ -249,10 +249,8 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
 
-        dropw
-        # => [PUB_KEY, i-1, pad(12)]
-
-        padw adv_loadw
+        # override OLD_VALUE with SCHEME_ID_WORD
+        adv_loadw
         # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
 
         # validate the scheme id word is in a correct form
