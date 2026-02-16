@@ -30,9 +30,9 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth { scheme_id: 2 })?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let sender_account = builder.create_new_wallet(Auth::BasicAuth {scheme_id: 2})?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth {scheme_id: 2})?;
+    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth {scheme_id: 2})?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -285,8 +285,8 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(100)])?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        builder.add_existing_wallet_with_assets(Auth::BasicAuth { scheme_id: 2}, [FungibleAsset::mock(100)])?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
 
     let mock_chain = builder.build()?;
 
