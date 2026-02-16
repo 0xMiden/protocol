@@ -84,7 +84,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
-    let expected_commitment = account_clone.commitment();
+    let expected_commitment = account_clone.to_commitment();
 
     let tx_script = format!(
         r#"

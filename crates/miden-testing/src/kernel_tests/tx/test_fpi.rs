@@ -3,12 +3,13 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, Felt};
+use miden_processor::{AdviceInputs, EMPTY_WORD, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountHeader,
     AccountId,
     AccountProcedureRoot,
     AccountStorage,
@@ -38,6 +39,9 @@ use miden_protocol::transaction::memory::{
     ACCT_STORAGE_COMMITMENT_OFFSET,
     ACCT_VAULT_ROOT_OFFSET,
     NATIVE_ACCOUNT_DATA_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR,
+    UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR,
+    UPCOMING_FOREIGN_PROCEDURE_PTR,
 };
 use miden_protocol::{FieldElement, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
@@ -121,6 +125,8 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     // Check the correctness of the memory layout after `get_item_foreign` account procedure
     // invocation
 
+    let get_item_foreign_root = foreign_account.code().procedures()[1].mast_root();
+
     let code = format!(
         r#"
         use miden::core::sys
@@ -141,7 +147,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             push.MOCK_VALUE_SLOT0[0..2]
 
             # get the hash of the `get_item_foreign` procedure of the foreign account
-            push.{get_item_foreign_hash}
+            push.{get_item_foreign_root}
 
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
@@ -158,7 +164,6 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         mock_value_slot0 = mock_value_slot0.name(),
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
-        get_item_foreign_hash = foreign_account.code().procedures()[1].mast_root(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -174,6 +179,8 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     // GET MAP ITEM
     // --------------------------------------------------------------------------------------------
     // Check the correctness of the memory layout after `get_map_item` account procedure invocation
+
+    let get_map_item_foreign_root = foreign_account.code().procedures()[2].mast_root();
 
     let code = format!(
         r#"
@@ -198,7 +205,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
             push.MOCK_MAP_SLOT[0..2]
 
             # get the hash of the `get_map_item_foreign` account procedure
-            push.{get_map_item_foreign_hash}
+            push.{get_map_item_foreign_root}
 
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
@@ -216,7 +223,6 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
         foreign_prefix = foreign_account.id().prefix().as_felt(),
         foreign_suffix = foreign_account.id().suffix(),
         map_key = STORAGE_LEAVES_2[0].0,
-        get_map_item_foreign_hash = foreign_account.code().procedures()[2].mast_root(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -493,25 +499,21 @@ async fn test_fpi_memory_two_accounts() -> anyhow::Result<()> {
     // Next account slot: [32768; 40959] <- should not be initialized
 
     // check that the first word of the first foreign account slot is correct
+    let header = AccountHeader::from(&foreign_account_1);
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32),
-        Word::new([
-            foreign_account_1.id().suffix(),
-            foreign_account_1.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_1.nonce()
-        ])
+        exec_output
+            .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32)
+            .as_slice(),
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the second foreign account slot is correct
+    let header = AccountHeader::from(&foreign_account_2);
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2),
-        Word::new([
-            foreign_account_2.id().suffix(),
-            foreign_account_2.id().prefix().as_felt(),
-            ZERO,
-            foreign_account_2.nonce()
-        ])
+        exec_output
+            .get_kernel_mem_word(NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32 * 2)
+            .as_slice(),
+        &header.to_elements()[0..4]
     );
 
     // check that the first word of the third foreign account slot was not initialized
@@ -535,9 +537,14 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     let mock_value_slot0 = AccountStorage::mock_value_slot0();
     let mock_map_slot = AccountStorage::mock_map_slot();
 
-    let foreign_account_code_source = "
+    let foreign_account_code_source = r#"
         use miden::protocol::active_account
+        use miden::core::sys
 
+        #! Gets an item from the active account storage.
+        #!
+        #! Inputs:  [slot_id_prefix, slot_id_suffix]
+        #! Outputs: [VALUE]
         pub proc get_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
@@ -548,13 +555,37 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             movup.6 movup.6 drop drop
         end
 
+        #! Gets a map item from the active account storage.
+        #!
+        #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+        #! Outputs: [VALUE]
         pub proc get_map_item_foreign
             # make this foreign procedure unique to make sure that we invoke the procedure of the
             # foreign account, not the native one
             push.2 drop
             exec.active_account::get_map_item
         end
-    ";
+
+        #! Validates the correctness of the top 16 elements on the stack and returns another 16 
+        #! elements to check that outputs are correctly passed back.
+        #!
+        #! Inputs:  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        #! Outputs: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+        pub proc assert_inputs_correctness
+            push.[4, 3, 2, 1]     assert_eqw.err="foreign procedure: 0th input word is incorrect"
+            push.[8, 7, 6, 5]     assert_eqw.err="foreign procedure: 1st input word is incorrect"
+            push.[12, 11, 10, 9]  assert_eqw.err="foreign procedure: 2nd input word is incorrect"
+            push.[16, 15, 14, 13] assert_eqw.err="foreign procedure: 3rd input word is incorrect"
+
+            push.[32, 31, 30, 29] push.[28, 27, 26, 25]
+            push.[24, 23, 22, 21] push.[20, 19, 18, 17]
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, pad(16)]
+
+            # truncate the stack
+            exec.sys::truncate_stack
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+        end
+    "#;
 
     let source_manager = Arc::new(DefaultSourceManager::default());
     let foreign_account_component = AccountComponent::new(
@@ -582,42 +613,37 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
 
     let code = format!(
         r#"
-        use miden::core::sys
-
         use miden::protocol::tx
 
         const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
         const MOCK_MAP_SLOT = word("{mock_map_slot}")
 
         begin
-            # get the storage item
-            # pad the stack for the `execute_foreign_procedure` execution
-            # pad the stack for the `execute_foreign_procedure` execution
-            padw padw
-            # => [pad(8)]
+            # => [pad(16)]
+
+            ### get the storage item ##########################################
 
             # push the slot name of desired storage item
             push.MOCK_VALUE_SLOT0[0..2]
+            # => [slot_id_prefix, slot_id_suffix, pad(16)]
 
             # get the hash of the `get_item_foreign` account procedure
             procref.::foreign_account::get_item_foreign
+            # => [FOREIGN_PROC_ROOT, slot_id_prefix, slot_id_suffix, pad(16)]
 
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
             # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT
-            #     slot_id_prefix, slot_id_suffix, pad(8)]]
+            #     slot_id_prefix, slot_id_suffix, pad(16)]]
 
             exec.tx::execute_foreign_procedure
-            # => [STORAGE_VALUE]
+            # => [STORAGE_VALUE, pad(14)]
 
             # assert the correctness of the obtained value
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
-            # => []
+            # => [pad(16)]
 
-            # get an item from the storage map
-            # pad the stack for the `execute_foreign_procedure` execution
-            padw
-            # => [pad(4)]
+            ### get the storage map item ######################################
 
             # push the key of desired storage item
             push.{map_key}
@@ -631,17 +657,49 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
             # push the foreign account ID
             push.{foreign_suffix} push.{foreign_prefix}
             # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT,
-            #     slot_id_prefix, slot_id_suffix, MAP_ITEM_KEY, pad(4)]
+            #     slot_id_prefix, slot_id_suffix, MAP_ITEM_KEY, pad(16)]
 
             exec.tx::execute_foreign_procedure
-            # => [MAP_VALUE]
+            # => [MAP_VALUE, pad(18)]
 
             # assert the correctness of the obtained value
             push.1.2.3.4 assert_eqw.err="foreign proc returned unexpected value"
-            # => []
+            # => [pad(18)]
+
+            ### assert foreign procedure inputs correctness ###################
+
+            # push the elements from 1 to 16 onto the stack as the inputs of the 
+            # `assert_inputs_correctness` account procedure to check that all of them will be
+            # provided to the procedure correctly
+            push.[16, 15, 14, 13]
+            push.[12, 11, 10, 9]
+            push.[8, 7, 6, 5]
+            push.[4, 3, 2, 1]
+            # => [[1, 2, ..., 16], pad(18)]
+
+            # get the hash of the `assert_inputs_correctness` account procedure
+            procref.::foreign_account::assert_inputs_correctness
+            # => [FOREIGN_PROC_ROOT, [1, 2, ..., 16], pad(16)]
+
+            # push the foreign account ID
+            push.{foreign_suffix} push.{foreign_prefix}
+            # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, 
+            #     [1, 2, ..., 16], pad(18)]
+
+            exec.tx::execute_foreign_procedure
+            # => [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, pad(18)]
+
+            # assert the correctness of the foreign procedure outputs
+            push.[20, 19, 18, 17] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[24, 23, 22, 21] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[28, 27, 26, 25] assert_eqw.err="transaction script: 0th output word is incorrect"
+            push.[32, 31, 30, 29] assert_eqw.err="transaction script: 0th output word is incorrect"
+
+            # => [pad(18)]
 
             # truncate the stack
-            exec.sys::truncate_stack
+            drop drop
+            # => [pad(16)]
         end
         "#,
         mock_value_slot0 = mock_value_slot0.name(),
@@ -1794,81 +1852,6 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-// HELPER FUNCTIONS
-// ================================================================================================
-
-fn foreign_account_data_memory_assertions(
-    foreign_account: &Account,
-    exec_output: &ExecutionOutput,
-) {
-    let foreign_account_data_ptr = NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32;
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET),
-        Word::new([
-            foreign_account.id().suffix(),
-            foreign_account.id().prefix().as_felt(),
-            ZERO,
-            foreign_account.nonce()
-        ]),
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_VAULT_ROOT_OFFSET),
-        foreign_account.vault().root(),
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_STORAGE_COMMITMENT_OFFSET),
-        foreign_account.storage().to_commitment(),
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_CODE_COMMITMENT_OFFSET),
-        foreign_account.code().commitment(),
-    );
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_STORAGE_SLOTS_OFFSET),
-        Word::from([u16::try_from(foreign_account.storage().slots().len()).unwrap(), 0, 0, 0]),
-    );
-
-    for (i, elements) in foreign_account
-        .storage()
-        .to_elements()
-        .chunks(StorageSlot::NUM_ELEMENTS / 2)
-        .enumerate()
-    {
-        assert_eq!(
-            exec_output.get_kernel_mem_word(
-                foreign_account_data_ptr
-                    + ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
-                    + (i as u32) * 4
-            ),
-            Word::try_from(elements).unwrap(),
-        )
-    }
-
-    assert_eq!(
-        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_PROCEDURES_OFFSET),
-        Word::from([u16::try_from(foreign_account.code().num_procedures()).unwrap(), 0, 0, 0]),
-    );
-
-    for (i, elements) in foreign_account
-        .code()
-        .as_elements()
-        .chunks(AccountProcedureRoot::NUM_ELEMENTS)
-        .enumerate()
-    {
-        assert_eq!(
-            exec_output.get_kernel_mem_word(
-                foreign_account_data_ptr + ACCT_PROCEDURES_SECTION_OFFSET + (i as u32) * 4
-            ),
-            Word::try_from(elements).unwrap(),
-        );
-    }
-}
-
 /// Test that get_initial_item and get_initial_map_item work correctly with foreign accounts.
 #[tokio::test]
 async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -> anyhow::Result<()>
@@ -1977,4 +1960,92 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
         .await?;
 
     Ok(())
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+fn foreign_account_data_memory_assertions(
+    foreign_account: &Account,
+    exec_output: &ExecutionOutput,
+) {
+    let foreign_account_data_ptr = NATIVE_ACCOUNT_DATA_PTR + ACCOUNT_DATA_LENGTH as u32;
+
+    // assert that the account ID and procedure root stored in the
+    // UPCOMING_FOREIGN_ACCOUNT_{SUFFIX, PREFIX}_PTR and UPCOMING_FOREIGN_PROCEDURE_PTR memory
+    // pointers respectively hold the ID and root of the account and procedure which were used
+    // during the FPI
+
+    // foreign account ID prefix should be zero after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR), ZERO);
+
+    // foreign account ID suffix should be zero after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_element(UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR), ZERO);
+
+    // foreign procedure root should be zero word after FPI has ended
+    assert_eq!(exec_output.get_kernel_mem_word(UPCOMING_FOREIGN_PROCEDURE_PTR), EMPTY_WORD);
+
+    // Check that account id and nonce match.
+    let header = AccountHeader::from(foreign_account);
+    assert_eq!(
+        exec_output
+            .get_kernel_mem_word(foreign_account_data_ptr + ACCT_ID_AND_NONCE_OFFSET)
+            .as_slice(),
+        &header.to_elements()[0..4]
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_VAULT_ROOT_OFFSET),
+        foreign_account.vault().root(),
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_STORAGE_COMMITMENT_OFFSET),
+        foreign_account.storage().to_commitment(),
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_CODE_COMMITMENT_OFFSET),
+        foreign_account.code().commitment(),
+    );
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_STORAGE_SLOTS_OFFSET),
+        Word::from([u16::try_from(foreign_account.storage().slots().len()).unwrap(), 0, 0, 0]),
+    );
+
+    for (i, elements) in foreign_account
+        .storage()
+        .to_elements()
+        .chunks(StorageSlot::NUM_ELEMENTS / 2)
+        .enumerate()
+    {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                foreign_account_data_ptr
+                    + ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET
+                    + (i as u32) * 4
+            ),
+            Word::try_from(elements).unwrap(),
+        )
+    }
+
+    assert_eq!(
+        exec_output.get_kernel_mem_word(foreign_account_data_ptr + ACCT_NUM_PROCEDURES_OFFSET),
+        Word::from([u16::try_from(foreign_account.code().num_procedures()).unwrap(), 0, 0, 0]),
+    );
+
+    for (i, elements) in foreign_account
+        .code()
+        .as_elements()
+        .chunks(AccountProcedureRoot::NUM_ELEMENTS)
+        .enumerate()
+    {
+        assert_eq!(
+            exec_output.get_kernel_mem_word(
+                foreign_account_data_ptr + ACCT_PROCEDURES_SECTION_OFFSET + (i as u32) * 4
+            ),
+            Word::try_from(elements).unwrap(),
+        );
+    }
 }

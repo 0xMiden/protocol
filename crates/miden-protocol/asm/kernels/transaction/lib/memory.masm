@@ -3,6 +3,13 @@ use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use miden::core::mem
 
+# TYPE ALIASES
+# =================================================================================================
+
+type AccountID = struct { prefix: felt, suffix: felt }
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type MemoryAddress = u32
+
 # ERRORS
 # =================================================================================================
 
@@ -25,36 +32,51 @@ const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maxi
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which a pointer to the currently active input note is stored.
-const ACTIVE_INPUT_NOTE_PTR=0
+const ACTIVE_INPUT_NOTE_PTR = 0
 
 # The memory address at which the number of output notes is stored.
-const NUM_OUTPUT_NOTES_PTR=4
+const NUM_OUTPUT_NOTES_PTR = 1
 
-# The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR=8
-
-# The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR=12
+# The memory address at which the absolute expiration block number is stored.
+const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 
 # The memory address at which the dirty flag of the storage commitment of the native account is
 # stored.
 #
 # This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 # made to the account storage since the last re-computation, and 0 otherwise.
-const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR=16
+const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
-# The memory address at which the absolute expiration block number is stored.
-const TX_EXPIRATION_BLOCK_NUM_PTR=20
+# The memory address at which the input vault root is stored.
+const INPUT_VAULT_ROOT_PTR = 4
+
+# The memory address at which the output vault root is stored.
+const OUTPUT_VAULT_ROOT_PTR = 8
+
+# Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
+# upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = 12
+const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1
+
+# Pointer to the 16th input value (with index 15) of the foreign procedure which will be loaded
+# during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
+# the `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
+# values, could be executed as foreign.
+const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
+
+# Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+# This root is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
-const ACCOUNT_STACK_TOP_PTR=24
+const ACCOUNT_STACK_TOP_PTR=20
 
 # Pointer to the first element on the account stack.
-const MIN_ACCOUNT_STACK_PTR=25
+const MIN_ACCOUNT_STACK_PTR=21
 
 # Pointer to the last element on the account stack.
-const MAX_ACCOUNT_STACK_PTR=88
+const MAX_ACCOUNT_STACK_PTR=84
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -65,8 +87,10 @@ const GLOBAL_INPUTS_SECTION_OFFSET=400
 # The memory address at which the transaction reference block's commitment is stored.
 const BLOCK_COMMITMENT_PTR=400
 
-# The memory address at which the native account ID is stored.
-const NATIVE_ACCT_ID_PTR=404
+# The memory address at which the native account ID provided as a global transaction input is
+# stored.
+const GLOBAL_ACCOUNT_ID_SUFFIX_PTR = 404
+const GLOBAL_ACCOUNT_ID_PREFIX_PTR = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408
@@ -123,12 +147,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
-const VERIFICATION_BASE_FEE_PTR=FEE_PARAMETERS_PTR+2
+const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
+
+# The memory address at which the native asset ID is stored.
+const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -164,13 +192,17 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
 const NATIVE_ACCOUNT_DATA_PTR=8192
+const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
+const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
+const ACCT_NONCE_OFFSET=0
 const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_NONCE_OFFSET=3
+const ACCT_ID_SUFFIX_OFFSET=2
+const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -388,6 +420,52 @@ pub proc set_output_vault_root
     mem_storew_be.OUTPUT_VAULT_ROOT_PTR
 end
 
+#! Sets the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix]
+#! Outputs: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc set_fpi_account_id(foreign_account_id: AccountID)
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => [foreign_account_id_suffix]
+
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => []
+end
+
+#! Returns the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! WARNING: The ID felts may be zero.
+#!
+#! Inputs:  []
+#! Outputs: [foreign_account_id_prefix, foreign_account_id_suffix]
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc get_fpi_account_id() -> (AccountID)
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => [foreign_account_id_suffix]
+
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => [foreign_account_id_prefix, foreign_account_id_suffix]
+end
+
+#! Sets the root of the foreign procedure which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [FOREIGN_PROC_ROOT]
+#! Outputs: [FOREIGN_PROC_ROOT]
+#!
+#! Where:
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+pub proc set_fpi_procedure_root(foreign_proc_root: BeWord) -> BeWord
+    mem_storew_be.UPCOMING_FOREIGN_PROCEDURE_PTR
+end
+
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
 
@@ -413,7 +491,7 @@ pub proc get_block_commitment
     padw mem_loadw_be.BLOCK_COMMITMENT_PTR
 end
 
-#! Sets the ID of the native account.
+#! Sets the global ID of the native account.
 #!
 #! Inputs:  [account_id_prefix, account_id_suffix]
 #! Outputs: []
@@ -421,14 +499,12 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    mem_storew_be.NATIVE_ACCT_ID_PTR
-    dropw
+    mem_store.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    mem_store.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
     # => []
 end
 
-#! Returns the ID of the native account.
+#! Returns the global ID of the native account.
 #!
 #! Inputs:  []
 #! Outputs: [account_id_prefix, account_id_suffix]
@@ -436,9 +512,9 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
-    padw mem_loadw_be.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the native account commitment at the beginning of the transaction.
@@ -703,7 +779,8 @@ end
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 pub proc get_native_asset_id
-    padw mem_loadw_be.FEE_PARAMETERS_PTR drop drop
+    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
+    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
     # => [native_asset_id_prefix, native_asset_id_suffix]
 end
 
@@ -1024,9 +1101,13 @@ end
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub proc get_account_id
-    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    exec.get_active_account_data_ptr
+    # => [active_account_data_ptr]
+
+    dup add.ACCT_ID_SUFFIX_OFFSET mem_load
+    # => [account_id_suffix, active_account_data_ptr]
+
+    swap add.ACCT_ID_PREFIX_OFFSET mem_load
     # => [account_id_prefix, account_id_suffix]
 end
 
@@ -1039,16 +1120,15 @@ end
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the native account
 #!   of the transaction.
 pub proc get_native_account_id
-    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.NATIVE_ACCOUNT_ID_SUFFIX_PTR
+    mem_load.NATIVE_ACCOUNT_ID_PREFIX_PTR
     # => [account_id_prefix, account_id_suffix]
 end
 
 #! Sets the account ID and nonce.
 #!
-#! Inputs:  [nonce, 0, account_id_prefix, account_id_suffix]
-#! Outputs: [nonce, 0, account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_prefix, account_id_suffix, 0, nonce]
+#! Outputs: [account_id_prefix, account_id_suffix, 0, nonce]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
@@ -1082,20 +1162,16 @@ pub proc get_native_account_nonce
     mem_load
 end
 
-#! Sets the nonce of the active account.
+#! Sets the nonce of the native account.
 #!
 #! Inputs:  [nonce]
 #! Outputs: []
 #!
 #! Where:
-#! - nonce is the nonce of the active account.
-pub proc set_account_nonce
-    exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET padw
-    # => [0, 0, 0, 0, account_id_and_nonce_ptr, new_nonce]
-    dup.4 mem_loadw_be
-    # => [old_nonce, 0, old_id_prefix, old_id_suffix, account_id_and_nonce_ptr, new_nonce]
-    drop movup.4 movup.4 mem_storew_be dropw
-    # => []
+#! - nonce is the new nonce of the native account.
+pub proc set_native_account_nonce
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_NONCE_OFFSET
+    mem_store
 end
 
 ### ACCOUNT VAULT #################################################
