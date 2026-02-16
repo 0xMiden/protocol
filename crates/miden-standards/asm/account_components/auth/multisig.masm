@@ -12,14 +12,24 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # CONSTANTS
 # =================================================================================================
 
-# Storage Layout Constants
+# Storage Slots
 #
-# ┌───────────────────────────────┬──────────┬──────────────┬───────────────────┐
-# │ THRESHOLD & APPROVERS CONFIG  │ PUB KEYS │ EXECUTED TXS │  PROC THRESHOLDS  │
-# │           (slot)              │   (map)  │    (map)     │       (map)       │
-# ├───────────────────────────────┼──────────┼──────────────┼───────────────────┤
-# │              0                │    1     │      2       │         3         │
-# └───────────────────────────────┴──────────┴──────────────┴───────────────────┘
+# This authentication component uses named storage slots.
+# - THRESHOLD_CONFIG_SLOT:
+#   [default_threshold, num_approvers, 0, 0]
+#
+# - APPROVER_PUBLIC_KEYS_SLOT (map):
+#   [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
+#
+# - APPROVER_SCHEME_ID_SLOT (map):
+#   APPROVER_PUBLIC_KEY => [scheme_id, 0, 0, 0]
+#
+# - EXECUTED_TXS_SLOT (map):
+#   transaction_message => [is_executed, 0, 0, 0]
+#
+# - PROC_THRESHOLD_ROOTS_SLOT (map):
+#   PROC_ROOT => [proc_threshold, 0, 0, 0]
+
 
 # The slot in this component's storage layout where the default signature threshold and
 # number of approvers are stored as:
