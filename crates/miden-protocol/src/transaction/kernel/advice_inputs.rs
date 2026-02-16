@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_processor::AdviceMutation;
 
-use crate::account::{AccountHeader, AccountId, PartialAccount};
+use crate::account::{AccountHeader, PartialAccount};
 use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;

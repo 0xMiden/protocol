@@ -17,6 +17,7 @@
 - Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
+- Introduced AccountIdKey to unify and centralize all AccountId → SMT and advice-map key conversions across the account tree and transaction layers, replacing duplicated helper functions with a single strongly-typed abstraction([#2449](https://github.com/0xMiden/miden-base/pull/2449)).
 
 ### Changes
 
