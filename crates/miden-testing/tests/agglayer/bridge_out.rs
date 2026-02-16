@@ -5,9 +5,9 @@ use miden_agglayer::{
     B2AggNote,
     ConfigAggBridgeNote,
     EthAddressFormat,
+    ExitRoot,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
-    ExitRoot,
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
@@ -193,7 +193,7 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     assert_eq!(burn_note.metadata().note_type(), NoteType::Public, "BURN note should be public");
 
     // Verify the BURN note contains the bridged asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount)?;
     assert!(
         burn_note.assets().iter().any(|asset| asset == &Asset::from(expected_asset)),
         "BURN note should contain the bridged asset"
