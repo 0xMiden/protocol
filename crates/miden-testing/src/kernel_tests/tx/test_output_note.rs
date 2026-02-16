@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
@@ -706,7 +707,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { scheme_id: 2 },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [fungible_asset_0, fungible_asset_1],
     )?;
 
@@ -830,7 +831,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { scheme_id: 2 },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [FungibleAsset::mock(2000)],
     )?;
 

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 
 /// Defines authentication methods available to standard and faucet accounts.
 pub enum AuthMethod {
@@ -13,7 +13,7 @@ pub enum AuthMethod {
     /// A single-key authentication method which relies on either RpoFalcon512 or ECDSA signatures.
     SingleSig {
         pub_key: PublicKeyCommitment,
-        scheme_id: u8,
+        auth_scheme: AuthScheme,
     },
     /// A multi-signature authentication method using either RpoFalcon512 or ECDSA signatures.
     ///

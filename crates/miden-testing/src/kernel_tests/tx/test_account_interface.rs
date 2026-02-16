@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
@@ -100,9 +101,11 @@ async fn check_note_consumability_custom_notes_success(
     #[case] notes: Vec<Note>,
 ) -> anyhow::Result<()> {
     let tx_context = {
+        use miden_protocol::account::auth::AuthScheme;
+
         let account =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
-        let (_, authenticator) = Auth::BasicAuth { scheme_id: 2 }.build_component();
+        let (_, authenticator) = Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }.build_component();
         TransactionContextBuilder::new(account)
             .extend_input_notes(notes.clone())
             .authenticator(authenticator)
@@ -253,7 +256,7 @@ async fn check_note_consumability_epilogue_failure() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
@@ -415,7 +418,7 @@ async fn test_check_note_consumability_without_signatures() -> anyhow::Result<()
     let mut builder = MockChain::builder();
 
     // Use basic auth which will cause epilogue failure when paired up with unreachable auth.
-    let account = builder.add_existing_wallet(Auth::BasicAuth { scheme_id: 2 })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     let successful_note = builder.add_p2id_note(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),

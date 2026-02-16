@@ -123,8 +123,8 @@ pub fn create_basic_wallet(
     }
 
     let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { pub_key, scheme_id } => {
-            AuthSingleSig::new(pub_key, scheme_id).into()
+        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+            AuthSingleSig::new(pub_key, auth_scheme).into()
         },
         AuthMethod::Multisig { threshold, pub_keys, scheme_ids } => {
             let config = AuthMultisigConfig::new(pub_keys, scheme_ids, threshold)
@@ -163,7 +163,7 @@ pub fn create_basic_wallet(
 #[cfg(test)]
 mod tests {
     use miden_processor::utils::{Deserializable, Serializable};
-    use miden_protocol::account::auth::PublicKeyCommitment;
+    use miden_protocol::account::auth::{self, PublicKeyCommitment};
     use miden_protocol::{ONE, Word};
 
     use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
@@ -172,10 +172,10 @@ mod tests {
     #[test]
     fn test_create_basic_wallet() {
         let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let scheme_id = 2u8;
+        let auth_scheme = auth::AuthScheme::Falcon512Rpo;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { pub_key, scheme_id },
+            AuthMethod::SingleSig { pub_key, auth_scheme },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         );
@@ -188,10 +188,10 @@ mod tests {
     #[test]
     fn test_serialize_basic_wallet() {
         let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let scheme_id = 1u8;
+        let auth_scheme = auth::AuthScheme::EcdsaK256Keccak;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { pub_key, scheme_id },
+            AuthMethod::SingleSig { pub_key, auth_scheme },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )

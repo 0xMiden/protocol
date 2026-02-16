@@ -1,5 +1,5 @@
 use miden_protocol::Word;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     SchemaTypeId,
@@ -41,7 +41,7 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct AuthSingleSig {
     pub_key: PublicKeyCommitment,
-    scheme_id: u8,
+    auth_scheme: AuthScheme,
 }
 
 impl AuthSingleSig {
@@ -49,8 +49,8 @@ impl AuthSingleSig {
     pub const NAME: &'static str = "miden::auth::singlesig";
 
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
-    pub fn new(pub_key: PublicKeyCommitment, scheme_id: u8) -> Self {
-        Self { pub_key, scheme_id }
+    pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
+        Self { pub_key, auth_scheme }
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -100,7 +100,7 @@ impl From<AuthSingleSig> for AccountComponent {
             ),
             StorageSlot::with_value(
                 AuthSingleSig::scheme_id_slot().clone(),
-                Word::from([basic_signature.scheme_id, 0, 0, 0]),
+                Word::from([basic_signature.auth_scheme.as_u8(), 0, 0, 0]),
             ),
         ];
 

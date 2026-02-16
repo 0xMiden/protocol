@@ -1,5 +1,5 @@
 use assert_matches::assert_matches;
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{self, PublicKeyCommitment};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountType};
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
@@ -626,14 +626,14 @@ fn test_custom_account_multiple_components_custom_notes() {
 fn get_mock_falcon_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(mock_public_key, 0)
+    AuthSingleSig::new(mock_public_key, auth::AuthScheme::Falcon512Rpo)
 }
 
 /// Helper function to create a mock Ecdsa auth component for testing
 fn get_mock_ecdsa_auth_component() -> AuthSingleSig {
     let mock_word = Word::from([0, 1, 2, 3u32]);
     let mock_public_key = PublicKeyCommitment::from(mock_word);
-    AuthSingleSig::new(mock_public_key, 1)
+    AuthSingleSig::new(mock_public_key, auth::AuthScheme::EcdsaK256Keccak)
 }
 
 // GET AUTH SCHEME TESTS
@@ -662,9 +662,9 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, auth_scheme } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*scheme_id, 1);
+            assert_eq!(*auth_scheme, auth::AuthScheme::EcdsaK256Keccak);
         },
         _ => panic!("Expected EcdsaK256Keccak auth scheme"),
     }
@@ -693,9 +693,9 @@ fn test_get_auth_scheme_falcon512_rpo() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, auth_scheme } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*scheme_id, 0);
+            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
         },
         _ => panic!("Expected Falcon512Rpo auth scheme"),
     }
@@ -760,10 +760,10 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(wallet_account_interface.auth().len(), 1);
 
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, auth_scheme } => {
             let expected_pub_key = PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32]));
             assert_eq!(*pub_key, expected_pub_key);
-            assert_eq!(*scheme_id, 0);
+            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
         },
         _ => panic!("Expected SingleSig auth method"),
     }
@@ -801,9 +801,9 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(wallet_account_interface.auth().len(), 1);
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { pub_key, scheme_id } => {
+        AuthMethod::SingleSig { pub_key, auth_scheme } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
-            assert_eq!(*scheme_id, 0);
+            assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
         },
         _ => panic!("Expected SingleSig auth method"),
     }

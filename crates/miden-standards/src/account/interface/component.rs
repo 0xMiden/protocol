@@ -1,7 +1,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
 use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, FieldElement, Word};
@@ -89,32 +89,16 @@ impl AccountComponentInterface {
     /// Returns the authentication schemes associated with this component interface.
     pub fn get_auth_methods(&self, storage: &AccountStorage) -> Vec<AuthMethod> {
         match self {
-            AccountComponentInterface::AuthSingleSig => {
-                vec![AuthMethod::SingleSig {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthSingleSig::public_key_slot())
-                            .expect("invalid storage index of the public key"),
-                    ),
-                    scheme_id: storage
-                        .get_item(AuthSingleSig::scheme_id_slot())
-                        .expect("invalid storage index of the scheme id")[0]
-                        .as_int() as u8,
-                }]
-            },
-            AccountComponentInterface::AuthSingleSigAcl => {
-                vec![AuthMethod::SingleSig {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthSingleSigAcl::public_key_slot())
-                            .expect("invalid storage index of the public key"),
-                    ),
-                    scheme_id: storage
-                        .get_item(AuthSingleSigAcl::scheme_id_slot())
-                        .expect("invalid storage index of the scheme id")[0]
-                        .as_int() as u8,
-                }]
-            },
+            AccountComponentInterface::AuthSingleSig => vec![extract_singlesig_auth_method(
+                storage,
+                AuthSingleSig::public_key_slot(),
+                AuthSingleSig::scheme_id_slot(),
+            )],
+            AccountComponentInterface::AuthSingleSigAcl => vec![extract_singlesig_auth_method(
+                storage,
+                AuthSingleSigAcl::public_key_slot(),
+                AuthSingleSigAcl::scheme_id_slot(),
+            )],
             AccountComponentInterface::AuthMultisig => {
                 vec![extract_multisig_auth_method(
                     storage,
@@ -270,6 +254,29 @@ impl AccountComponentInterface {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Extracts authentication method from a single-signature component.
+fn extract_singlesig_auth_method(
+    storage: &AccountStorage,
+    public_key_slot: &StorageSlotName,
+    scheme_id_slot: &StorageSlotName,
+) -> AuthMethod {
+    let pub_key = PublicKeyCommitment::from(
+        storage
+            .get_item(public_key_slot)
+            .expect("invalid storage index of the public key"),
+    );
+
+    let scheme_id = storage
+        .get_item(scheme_id_slot)
+        .expect("invalid storage index of the scheme id")[0]
+        .as_int() as u8;
+
+    let auth_scheme =
+        AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
+
+    AuthMethod::SingleSig { pub_key, auth_scheme }
+}
 
 /// Extracts authentication method from a multisig component.
 fn extract_multisig_auth_method(

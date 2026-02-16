@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use miden_protocol::account::auth::AuthScheme;
 use core::slice;
 
 use miden_processor::crypto::RpoRandomCoin;
@@ -132,7 +133,7 @@ pub fn verify_minted_output_note(
 async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet =
-        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 2 }, "TST", 200, None)?;
+        builder.add_existing_basic_faucet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, "TST", 200, None)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -156,7 +157,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     // --------------------------------------------------------------------------------------------
     let mut builder = MockChain::builder();
     let faucet =
-        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 2 }, "TST", 200, None)?;
+        builder.add_existing_basic_faucet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, "TST", 200, None)?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -206,7 +207,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 #[tokio::test]
 async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.create_new_faucet(Auth::BasicAuth { scheme_id: 2 }, "TST", 200)?;
+    let faucet = builder.create_new_faucet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, "TST", 200)?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -234,7 +235,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth { scheme_id: 2 },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -297,7 +298,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth { scheme_id: 2 },
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -348,7 +349,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet =
-        builder.add_existing_basic_faucet(Auth::BasicAuth { scheme_id: 2 }, "TST", 200, None)?;
+        builder.add_existing_basic_faucet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }, "TST", 200, None)?;
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;

@@ -1154,6 +1154,7 @@ impl From<Account> for TxContextInput {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountStorageMode};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
@@ -1185,9 +1186,9 @@ mod tests {
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
-        let scheme_id = 2u8;
+        let auth_scheme = AuthScheme::EcdsaK256Keccak;
         let account = builder.add_account_from_builder(
-            Auth::BasicAuth { scheme_id },
+            Auth::BasicAuth { auth_scheme },
             account_builder,
             AccountState::New,
         )?;
@@ -1231,7 +1232,7 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth { scheme_id: 2 },
+                    Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

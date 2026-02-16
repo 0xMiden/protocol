@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
-use miden_protocol::account::auth::{AuthSecretKey, PublicKeyCommitment};
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
     AuthMultisig,
@@ -26,7 +26,7 @@ use rand_chacha::ChaCha20Rng;
 pub enum Auth {
     /// Creates a secret key for the account and creates a [BasicAuthenticator] used to
     /// authenticate the account with [AuthSingleSig].
-    BasicAuth { scheme_id: u8 },
+    BasicAuth { auth_scheme: AuthScheme },
 
     /// Multisig
     Multisig {
@@ -43,7 +43,7 @@ pub enum Auth {
         auth_trigger_procedures: Vec<Word>,
         allow_unauthorized_output_notes: bool,
         allow_unauthorized_input_notes: bool,
-        scheme_id: u8,
+        auth_scheme: AuthScheme,
     },
 
     /// Creates a mock authentication mechanism for the account that only increments the nonce.
@@ -66,13 +66,13 @@ impl Auth {
     /// `Some` when [`Auth::BasicAuth`] is passed."
     pub fn build_component(&self) -> (AccountComponent, Option<BasicAuthenticator>) {
         match self {
-            Auth::BasicAuth { scheme_id } => {
+            Auth::BasicAuth { auth_scheme } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::new_for_scheme_id_with_rng(*scheme_id, &mut rng)
+                let sec_key = AuthSecretKey::new_for_scheme_id_with_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
-                let component = AuthSingleSig::new(pub_key, *scheme_id).into();
+                let component = AuthSingleSig::new(pub_key, *auth_scheme).into();
                 let authenticator = BasicAuthenticator::new(&[sec_key]);
 
                 (component, Some(authenticator))
@@ -98,16 +98,16 @@ impl Auth {
                 auth_trigger_procedures,
                 allow_unauthorized_output_notes,
                 allow_unauthorized_input_notes,
-                scheme_id,
+                auth_scheme,
             } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::new_for_scheme_id_with_rng(*scheme_id, &mut rng)
+                let sec_key = AuthSecretKey::new_for_scheme_id_with_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
                 let component = AuthSingleSigAcl::new(
                     pub_key,
-                    *scheme_id,
+                    *auth_scheme,
                     AuthSingleSigAclConfig::new()
                         .with_auth_trigger_procedures(auth_trigger_procedures.clone())
                         .with_allow_unauthorized_output_notes(*allow_unauthorized_output_notes)

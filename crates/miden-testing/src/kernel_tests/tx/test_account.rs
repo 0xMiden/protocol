@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use miden_protocol::account::auth::AuthScheme;
 use std::collections::BTreeMap;
 
 use anyhow::Context;
@@ -533,7 +534,7 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     assert_eq!(account_empty_storage.storage().num_slots(), 0);
 
     let account_non_empty_storage =
-        builder.add_existing_mock_account(Auth::BasicAuth { scheme_id: 2 })?;
+        builder.add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     assert_eq!(account_non_empty_storage.storage().num_slots(), 2);
 
     let chain = builder.build()?;
@@ -1045,7 +1046,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { scheme_id: 2 },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [fungible_asset_for_account],
     )?;
 
@@ -1195,7 +1196,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { scheme_id: 2 },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [fungible_asset_for_account],
     )?;
 
@@ -1302,7 +1303,7 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth { scheme_id: 2 },
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [fungible_asset_for_account],
     )?;
 

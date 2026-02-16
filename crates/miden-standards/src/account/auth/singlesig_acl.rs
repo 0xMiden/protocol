@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
@@ -149,7 +149,7 @@ impl Default for AuthSingleSigAclConfig {
 /// This component supports all account types.
 pub struct AuthSingleSigAcl {
     pub_key: PublicKeyCommitment,
-    scheme_id: u8,
+    auth_scheme: AuthScheme,
     config: AuthSingleSigAclConfig,
 }
 
@@ -163,7 +163,7 @@ impl AuthSingleSigAcl {
     /// Panics if more than [AccountCode::MAX_NUM_PROCEDURES] procedures are specified.
     pub fn new(
         pub_key: PublicKeyCommitment,
-        scheme_id: u8,
+        auth_scheme: AuthScheme,
         config: AuthSingleSigAclConfig,
     ) -> Result<Self, AccountError> {
         let max_procedures = AccountCode::MAX_NUM_PROCEDURES;
@@ -173,7 +173,7 @@ impl AuthSingleSigAcl {
             )));
         }
 
-        Ok(Self { pub_key, scheme_id, config })
+        Ok(Self { pub_key, auth_scheme, config })
     }
 
     /// Returns the [`StorageSlotName`] where the public key is stored.
@@ -255,7 +255,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Scheme ID slot
         storage_slots.push(StorageSlot::with_value(
             AuthSingleSigAcl::scheme_id_slot().clone(),
-            Word::from([singlesig_acl.scheme_id, 0, 0, 0]),
+            Word::from([singlesig_acl.auth_scheme.as_u8(), 0, 0, 0]),
         ));
 
         // Config slot
@@ -308,7 +308,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
-    use miden_protocol::account::AccountBuilder;
+    use miden_protocol::account::{AccountBuilder};
 
     use super::*;
     use crate::account::components::StandardAccountComponent;
@@ -339,7 +339,7 @@ mod tests {
     /// Parametrized test helper for ACL component testing
     fn test_acl_component(config: AclTestConfig) {
         let public_key = PublicKeyCommitment::from(Word::empty());
-        let scheme_id = 2u8;
+        let auth_scheme = AuthScheme::Falcon512Rpo;
 
         // Build the configuration
         let mut acl_config = AuthSingleSigAclConfig::new()
@@ -355,7 +355,7 @@ mod tests {
         };
 
         // Create component and account
-        let component = AuthSingleSigAcl::new(public_key, scheme_id, acl_config)
+        let component = AuthSingleSigAcl::new(public_key, auth_scheme, acl_config)
             .expect("component creation failed");
 
         let account = AccountBuilder::new([0; 32])

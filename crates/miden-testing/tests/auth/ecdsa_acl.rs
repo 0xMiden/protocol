@@ -1,6 +1,7 @@
 use core::slice;
 
 use assert_matches::assert_matches;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -52,13 +53,13 @@ fn setup_ecdsa_acl_test(
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let scheme_id = 1u8;
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     let (auth_component, _authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
         allow_unauthorized_output_notes,
         allow_unauthorized_input_notes,
-        scheme_id,
+        auth_scheme,
     }
     .build_component();
 
@@ -96,13 +97,13 @@ async fn test_ecdsa_acl() -> anyhow::Result<()> {
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let scheme_id = 1u8;
+    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     let (_, authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
         allow_unauthorized_output_notes: false,
         allow_unauthorized_input_notes: true,
-        scheme_id,
+        auth_scheme,
     }
     .build_component();
 
