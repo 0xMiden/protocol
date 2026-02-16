@@ -121,7 +121,7 @@ fn test_read_foreign_account_inputs_with_storage_data() {
     let mut advice_inputs = crate::vm::AdviceInputs::default();
     let account_id_key =
         crate::transaction::TransactionAdviceInputs::account_id_map_key(foreign_account_id);
-    advice_inputs.map.insert(account_id_key, foreign_header.as_elements().to_vec());
+    advice_inputs.map.insert(account_id_key, foreign_header.to_elements());
     advice_inputs
         .map
         .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
@@ -209,7 +209,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let mut account_tree = AccountTree::<Smt>::default();
 
     // Insert native account.
-    let native_commitment = AccountHeader::from(&native_account).commitment();
+    let native_commitment = AccountHeader::from(&native_account).to_commitment();
     account_tree.insert(native_account_id, native_commitment).unwrap();
 
     // Insert foreign account.
@@ -222,7 +222,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
         None,
     )
     .unwrap();
-    account_tree.insert(foreign_account_id, foreign_header.commitment()).unwrap();
+    account_tree.insert(foreign_account_id, foreign_header.to_commitment()).unwrap();
 
     // Get the account tree root and create witness.
     let account_tree_root = account_tree.root();
@@ -234,7 +234,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     // Add account header to advice map.
     let account_id_key =
         crate::transaction::TransactionAdviceInputs::account_id_map_key(foreign_account_id);
-    advice_inputs.map.insert(account_id_key, foreign_header.as_elements().to_vec());
+    advice_inputs.map.insert(account_id_key, foreign_header.to_elements().to_vec());
 
     // Add storage header to advice map.
     advice_inputs

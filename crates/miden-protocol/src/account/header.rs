@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
-use super::{Account, AccountId, Felt, PartialAccount, ZERO, hash_account};
+use super::{Account, AccountId, Felt, PartialAccount};
+use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::transaction::memory::{
     ACCT_CODE_COMMITMENT_OFFSET,
@@ -89,17 +90,11 @@ impl AccountHeader {
 
     /// Returns the commitment of this account.
     ///
-    /// The commitment of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-    /// code_commitment). Computing the account commitment requires 2 permutations of the hash
-    /// function.
-    pub fn commitment(&self) -> Word {
-        hash_account(
-            self.id,
-            self.nonce,
-            self.vault_root,
-            self.storage_commitment,
-            self.code_commitment,
-        )
+    /// The commitment of an account is computed as a hash over the account header elements returned
+    /// by [`Self::to_elements`]. Computing the account commitment requires 2 permutations of the
+    /// hash function.
+    pub fn to_commitment(&self) -> Word {
+        <Self as SequentialCommit>::to_commitment(self)
     }
 
     /// Returns the id of this account.
@@ -127,26 +122,19 @@ impl AccountHeader {
         self.code_commitment
     }
 
-    /// Converts the account header into a vector of field elements.
+    /// Returns the account header encoded to a vector of field elements.
     ///
-    /// This is done by first converting the account header data into an array of Words as follows:
+    /// This is a vector of the following field elements:
     /// ```text
     /// [
-    ///     [account_id_suffix, account_id_prefix, 0, account_nonce]
-    ///     [VAULT_ROOT]
-    ///     [STORAGE_COMMITMENT]
-    ///     [CODE_COMMITMENT]
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
+    ///     VAULT_ROOT,
+    ///     STORAGE_COMMITMENT,
+    ///     CODE_COMMITMENT,
     /// ]
     /// ```
-    /// And then concatenating the resulting elements into a single vector.
-    pub fn as_elements(&self) -> Vec<Felt> {
-        [
-            &[self.id.suffix(), self.id.prefix().as_felt(), ZERO, self.nonce],
-            self.vault_root.as_elements(),
-            self.storage_commitment.as_elements(),
-            self.code_commitment.as_elements(),
-        ]
-        .concat()
+    pub fn to_elements(&self) -> Vec<Felt> {
+        <Self as SequentialCommit>::to_elements(self)
     }
 }
 
@@ -185,6 +173,28 @@ impl From<&Account> for AccountHeader {
         }
     }
 }
+
+impl SequentialCommit for AccountHeader {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        let mut id_nonce = Word::empty();
+        id_nonce[ACCT_NONCE_IDX] = self.nonce;
+        id_nonce[ACCT_ID_SUFFIX_IDX] = self.id.suffix();
+        id_nonce[ACCT_ID_PREFIX_IDX] = self.id.prefix().as_felt();
+
+        [
+            id_nonce.as_elements(),
+            self.vault_root.as_elements(),
+            self.storage_commitment.as_elements(),
+            self.code_commitment.as_elements(),
+        ]
+        .concat()
+    }
+}
+
+// SERIALIZATION
+// ================================================================================================
 
 impl Serializable for AccountHeader {
     fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {

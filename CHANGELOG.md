@@ -43,6 +43,10 @@
 - [BREAKING] Refactored assets in the tx kernel and `miden::protocol` from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396), [#2410](https://github.com/0xMiden/miden-base/pull/2410)).
 - [BREAKING] Rename `miden::protocol::asset::build_fungible_asset` to `miden::protocol::asset::create_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
 - [BREAKING] Rename `miden::protocol::asset::build_non_fungible_asset` to `miden::protocol::asset::create_non_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Refactored assets in the tx kernel from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396)).
+- [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 
 ## 0.13.3 (2026-01-27)
 

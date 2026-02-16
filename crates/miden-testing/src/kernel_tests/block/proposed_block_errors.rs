@@ -652,8 +652,8 @@ async fn proposed_block_fails_on_inconsistent_account_state_transition() -> anyh
       state_commitment,
       remaining_state_commitments
     } if account_id == account.id() &&
-      state_commitment == executed_tx0.final_account().commitment() &&
-      remaining_state_commitments == [executed_tx2.initial_account().commitment()]
+      state_commitment == executed_tx0.final_account().to_commitment() &&
+      remaining_state_commitments == [executed_tx2.initial_account().to_commitment()]
     );
 
     Ok(())
