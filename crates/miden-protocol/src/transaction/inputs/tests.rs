@@ -239,7 +239,6 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     advice_inputs
         .map
         .insert(account_id_key.to_advice_map_word(), foreign_header.as_elements().to_vec());
-
     // Add storage header to advice map.
     advice_inputs
         .map
