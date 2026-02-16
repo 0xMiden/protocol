@@ -21,6 +21,30 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
 
+// EMBEDDED TEST VECTOR JSON FILES
+// ================================================================================================
+
+/// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
+/// transaction.
+const CLAIM_ASSET_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+
+/// Leaf data test vectors JSON from the Foundry-generated file.
+pub const LEAF_VALUE_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
+
+/// Merkle proof verification vectors JSON from the Foundry-generated file.
+pub const MERKLE_PROOF_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/merkle_proof_vectors.json");
+
+/// Canonical zeros JSON from the Foundry-generated file.
+pub const CANONICAL_ZEROS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
+
+/// MMR frontier vectors JSON from the Foundry-generated file.
+pub const MMR_FRONTIER_VECTORS_JSON: &str =
+    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
+
 // SERDE HELPERS
 // ================================================================================================
 
@@ -40,38 +64,8 @@ where
     }
 }
 
-// TEST VECTOR STRUCTURES
+// TEST VECTOR TYPES
 // ================================================================================================
-
-/// Claim asset test vectors JSON embedded at compile time - contains both LeafData and ProofData
-/// from a real claimAsset transaction.
-const CLAIM_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
-
-/// Leaf data test vectors JSON embedded at compile time from the Foundry-generated file.
-pub const LEAF_VALUE_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
-
-/// Merkle proof verification vectors JSON embedded at compile time from the Foundry-generated file.
-pub const MERKLE_PROOF_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/merkle_proof_vectors.json");
-
-/// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol
-/// Uses parallel arrays for leaves and roots. For each element from leaves/roots there are 32
-/// elements from merkle_paths, which represent the merkle path for that leaf + root.
-#[derive(Debug, Deserialize)]
-pub struct MerkleProofVerificationFile {
-    pub leaves: Vec<String>,
-    pub roots: Vec<String>,
-    pub merkle_paths: Vec<String>,
-}
-
-/// Lazily parsed Merkle proof vectors from the JSON file.
-pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
-    LazyLock::new(|| {
-        serde_json::from_str(MERKLE_PROOF_VECTORS_JSON)
-            .expect("failed to parse Merkle proof vectors JSON")
-    });
 
 /// Deserialized leaf value test vector from Solidity-generated JSON.
 #[derive(Debug, Deserialize)]
@@ -122,7 +116,6 @@ pub struct ProofValueVector {
 impl ProofValueVector {
     /// Converts this test vector into a `ProofData` instance.
     pub fn to_proof_data(&self) -> ProofData {
-        // Parse SMT proofs (32 nodes each)
         let smt_proof_local: [SmtNode; 32] = self
             .smt_proof_local_exit_root
             .iter()
@@ -165,32 +158,17 @@ pub struct ClaimAssetVector {
     pub leaf: LeafValueVector,
 }
 
-/// Lazily parsed claim asset test vector from the JSON file.
-pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
-    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
-        .expect("failed to parse claim asset vectors JSON")
-});
-
-/// Returns real claim data from the claim_asset_vectors.json file.
-///
-/// Returns a tuple of (ProofData, LeafData) parsed from the real on-chain claim transaction.
-pub fn real_claim_data() -> (ProofData, LeafData) {
-    let vector = &*CLAIM_ASSET_VECTOR;
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data())
+/// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol.
+/// Uses parallel arrays for leaves and roots. For each element from leaves/roots there are 32
+/// elements from merkle_paths, which represent the merkle path for that leaf + root.
+#[derive(Debug, Deserialize)]
+pub struct MerkleProofVerificationFile {
+    pub leaves: Vec<String>,
+    pub roots: Vec<String>,
+    pub merkle_paths: Vec<String>,
 }
 
-// MMR FRONTIER TEST VECTORS
-// ================================================================================================
-
-/// Canonical zeros JSON embedded at compile time from the Foundry-generated file.
-pub const CANONICAL_ZEROS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
-
-/// MMR frontier vectors JSON embedded at compile time from the Foundry-generated file.
-pub const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
-
-/// Deserialized canonical zeros from Solidity DepositContractBase.sol
+/// Deserialized canonical zeros from Solidity DepositContractBase.sol.
 #[derive(Debug, Deserialize)]
 pub struct CanonicalZerosFile {
     pub canonical_zeros: Vec<String>,
@@ -213,6 +191,22 @@ pub struct MmrFrontierVectorsFile {
     pub destination_address: String,
 }
 
+// LAZY-PARSED TEST VECTORS
+// ================================================================================================
+
+/// Lazily parsed claim asset test vector from the JSON file.
+pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(CLAIM_ASSET_VECTORS_JSON)
+        .expect("failed to parse claim asset vectors JSON")
+});
+
+/// Lazily parsed Merkle proof vectors from the JSON file.
+pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
+    LazyLock::new(|| {
+        serde_json::from_str(MERKLE_PROOF_VECTORS_JSON)
+            .expect("failed to parse Merkle proof vectors JSON")
+    });
+
 /// Lazily parsed canonical zeros from the JSON file.
 pub static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::new(|| {
     serde_json::from_str(CANONICAL_ZEROS_JSON).expect("Failed to parse canonical zeros JSON")
@@ -224,7 +218,18 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
         .expect("failed to parse MMR frontier vectors JSON")
 });
 
-/// Execute a program with default host and optional advice inputs
+// HELPER FUNCTIONS
+// ================================================================================================
+
+/// Returns real claim data from the claim_asset_vectors.json file.
+///
+/// Returns a tuple of (ProofData, LeafData) parsed from the real on-chain claim transaction.
+pub fn real_claim_data() -> (ProofData, LeafData) {
+    let vector = &*CLAIM_ASSET_VECTOR;
+    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data())
+}
+
+/// Execute a program with a default host and optional advice inputs.
 pub async fn execute_program_with_default_host(
     program: Program,
     advice_inputs: Option<AdviceInputs>,
@@ -237,7 +242,6 @@ pub async fn execute_program_with_default_host(
     let std_lib = CoreLibrary::default();
     host.load_library(std_lib.mast_forest()).unwrap();
 
-    // Register handlers from std_lib
     for (event_name, handler) in std_lib.handlers() {
         host.register_handler(event_name, handler)?;
     }
