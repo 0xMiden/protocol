@@ -1,5 +1,5 @@
 {
-  "amount": "0x0000000000000000000000000000000000000000000000001bc16d674ec80000",
+  "amount": 2000000000000000000,
   "destination_address": "0xD9b20Fe633b609B01081aD0428e81f8Dd604F5C5",
   "destination_network": 7,
   "leaf_type": 0,
