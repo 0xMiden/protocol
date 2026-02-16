@@ -43,7 +43,7 @@ use miden_protocol::transaction::memory::{
     UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 };
-use miden_protocol::{FieldElement, Word};
+use miden_protocol::{FieldElement, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
