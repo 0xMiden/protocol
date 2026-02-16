@@ -75,17 +75,20 @@ serve-docs: ## Serves the docs
 
 # --- testing -------------------------------------------------------------------------------------
 
-.PHONY: testf-build
-testf-build: ## Build the test binary
+.PHONY: test-release-build
+test-release-build: ## Build the test binary
 	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --no-default-features --features concurrent,testing,std --no-run
 
 
-# Run all tests without debug mode. This is f = fast but produces worse error message.
-# Running `make testf name=test_name` will only run the test `test_name`.
-.PHONY: testf
-testf:
+# Run all tests without debug mode. This is fast but produces worse error message.
+# Running `make test-release name=test_name` will only run the test `test_name`.
+.PHONY: test-release
+test-release:
 	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --no-default-features --features concurrent,testing,std $(name)
 
+# Shorthand for make test-release.
+.PHONY: test-release testr
+testr: test-release
 
 # Run all tests with debug mode. This is slower but produces better error message.
 # Running `make test name=test_name` will only run the test `test_name`.
