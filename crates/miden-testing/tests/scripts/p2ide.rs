@@ -54,8 +54,8 @@ async fn p2ide_script_success_without_reclaim_or_timelock() -> anyhow::Result<()
         Felt::new(2),
     );
     assert_eq!(
-        executed_transaction_2.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction_2.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
 
     Ok(())
@@ -92,8 +92,8 @@ async fn p2ide_script_success_timelock_unlock_before_reclaim_height() -> anyhow:
         Felt::new(2),
     );
     assert_eq!(
-        executed_transaction_1.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction_1.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
 
     Ok(())
@@ -168,7 +168,7 @@ async fn p2ide_script_timelocked_reclaim_disabled() -> anyhow::Result<()> {
         Felt::new(2),
     );
 
-    assert_eq!(final_tx.final_account().commitment(), target_after.commitment());
+    assert_eq!(final_tx.final_account().to_commitment(), target_after.to_commitment());
 
     Ok(())
 }
@@ -220,8 +220,8 @@ async fn p2ide_script_reclaim_fails_before_timelock_expiry() -> anyhow::Result<(
     );
 
     assert_eq!(
-        executed_transaction_2.final_account().commitment(),
-        sender_account_after.commitment()
+        executed_transaction_2.final_account().to_commitment(),
+        sender_account_after.to_commitment()
     );
 
     Ok(())
@@ -303,7 +303,7 @@ async fn p2ide_script_reclaimable_timelockable() -> anyhow::Result<()> {
         Felt::new(2),
     );
 
-    assert_eq!(final_tx.final_account().commitment(), target_after.commitment());
+    assert_eq!(final_tx.final_account().to_commitment(), target_after.to_commitment());
 
     Ok(())
 }
@@ -349,7 +349,7 @@ async fn p2ide_script_reclaim_success_after_timelock() -> anyhow::Result<()> {
         Felt::new(2),
     );
 
-    assert_eq!(final_tx.final_account().commitment(), sender_after.commitment());
+    assert_eq!(final_tx.final_account().to_commitment(), sender_after.to_commitment());
 
     Ok(())
 }

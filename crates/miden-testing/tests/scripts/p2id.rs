@@ -64,8 +64,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     );
 
     assert_eq!(
-        executed_transaction.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
 
     // CONSTRUCT AND EXECUTE TX (Failure)
@@ -126,8 +126,8 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     );
 
     assert_eq!(
-        executed_transaction.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
     prove_and_verify_transaction(executed_transaction)?;
     Ok(())
