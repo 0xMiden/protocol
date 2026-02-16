@@ -8,12 +8,8 @@ use crate::crypto::merkle::smt::SMT_DEPTH;
 const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
 
-/// The account ID encoded as a key for use in [`AccountTree`] and
-/// advice maps in `TransactionAdviceInputs`.
-///
-/// Canonical word layout:
-///
-/// [0, 0, suffix, prefix]
+/// A wrapper around AccountId that provides methods for converting to/from the SMT word
+/// representation used by AccountTree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AccountIdKey(AccountId);
 
@@ -31,7 +27,9 @@ impl AccountIdKey {
     // SMT WORD REPRESENTATION
     // ================================================================================================
 
-    /// Returns `[0, 0, suffix, prefix]`
+    /// Converts to SMT word representation used by AccountTree:
+    ///
+    /// `[0, 0, suffix, prefix]`
     pub fn as_word(&self) -> Word {
         let mut key = Word::empty();
 
