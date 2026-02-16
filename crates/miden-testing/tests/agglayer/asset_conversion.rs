@@ -11,6 +11,8 @@ use miden_agglayer::utils;
 use miden_protocol::Felt;
 use miden_protocol::errors::MasmError;
 use primitive_types::U256;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use super::test_utils::{assert_execution_fails_with, execute_masm_script, stack_to_u256};
 
@@ -131,14 +133,9 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
     )
 }
 
-/// Compute the expected quotient using Rust implementation
-fn expected_y(x: U256, scale: u32) -> u64 {
-    EthAmount::from_u256(x).scale_to_token_amount(scale).unwrap().as_int()
-}
-
 /// Assert that scaling down succeeds with the correct result
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
-    let y = expected_y(x.to_u256(), scale);
+    let y = x.scale_to_token_amount(scale).unwrap().as_int();
     let script = build_scale_down_script(x, scale, y);
     let out = execute_masm_script(&script).await?;
     assert_eq!(out.stack[0].as_int(), y);
@@ -175,22 +172,56 @@ async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_scale_down_realistic_scenarios() -> anyhow::Result<()> {
-    let cases = [
-        // With remainder: 1.234e18 scaled down by 1e8 = 1.234e10
-        (EthAmount::from_uint_str("1234567890123456789").unwrap(), 8u32),
-        // ETH to Miden: 100 ETH (wei) scaled down by 10 = 100e8
-        (EthAmount::from_uint_str("100000000000000000000").unwrap(), 10u32),
-        // USDC (no scaling): 100 USDC
-        (EthAmount::from_uint_str("100000000").unwrap(), 0u32),
-        // Zero amount
-        (EthAmount::from_uint_str("0").unwrap(), 18u32),
-    ];
+// ================================================================================================
+// FUZZING TESTS
+// ================================================================================================
 
-    for (x, scale) in cases {
+#[tokio::test]
+async fn test_scale_down_realistic_scenarios_fuzzing() -> anyhow::Result<()> {
+    const SEED: u64 = 42;
+    const NUM_CASES: usize = 10;
+    const MAX_ATTEMPTS_PER_CASE: usize = 10;
+
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let min_amount = U256::from(10_000_000_000_000u64); // 1e13
+    let desired_max = U256::from_dec_str("1000000000000000000000000").unwrap(); // 1e24
+    let u63_max = U256::from((1u64 << 63) - (1u64 << 31)); // 2^63 - 2^31
+
+    for _ in 0..NUM_CASES {
+        let mut attempts = 0;
+
+        let (x, scale) = loop {
+            attempts += 1;
+            if attempts > MAX_ATTEMPTS_PER_CASE {
+                anyhow::bail!("could not generate a valid fuzz case within attempt cap");
+            }
+
+            let scale: u32 = rng.random_range(0..=18);
+
+            let scale_factor = U256::from(10u64).pow(U256::from(scale));
+            let max_amount = desired_max.min(u63_max * scale_factor);
+
+            if min_amount >= max_amount {
+                continue;
+            }
+
+            let span: u128 =
+                (max_amount - min_amount).try_into().expect("span fits in u128 (<= 1e24)");
+            let offset: u128 = rng.random_range(0..span);
+
+            let x = EthAmount::from_u256(min_amount + U256::from(offset));
+
+            if x.scale_to_token_amount(scale).is_err() {
+                continue;
+            }
+
+            break (x, scale);
+        };
+
         assert_scale_down_ok(x, scale).await?;
     }
+
     Ok(())
 }
 
@@ -239,10 +270,9 @@ async fn test_scale_down_x_too_large() {
 async fn test_scale_down_remainder_edge() -> anyhow::Result<()> {
     // Force z = scale - 1: pick y=5, s=10, so scale=10^10
     // Set x = y*scale + (scale-1) = 5*10^10 + (10^10 - 1) = 59999999999
-    let y = 5u64;
     let scale_exp = 10u32;
     let scale = 10u64.pow(scale_exp);
-    let x_val = y * scale + (scale - 1);
+    let x_val = 5u64 * scale + (scale - 1);
     let x = EthAmount::from_u256(U256::from(x_val));
 
     assert_scale_down_ok(x, scale_exp).await?;
@@ -252,13 +282,18 @@ async fn test_scale_down_remainder_edge() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_scale_down_remainder_exactly_scale_fails() {
     // If remainder z = scale, it should fail
-    // Pick y=5, s=10, x = y*scale + scale = (y+1)*scale
-    // This means the correct y should be y+1, so providing y should fail
-    let wrong_y = 5u64;
+    // Pick s=10, x = 6*scale (where scale = 10^10)
+    // The correct y should be 6, so providing y=5 should fail
     let scale_exp = 10u32;
     let scale = 10u64.pow(scale_exp);
-    let x = EthAmount::from_u256(U256::from(wrong_y * scale + scale)); // This is actually (wrong_y+1)*scale
+    let x = EthAmount::from_u256(U256::from(6u64 * scale));
 
+    // Calculate the correct y using scale_to_token_amount
+    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
+    assert_eq!(correct_y, 6);
+
+    // Providing wrong_y = correct_y - 1 should fail with ERR_REMAINDER_TOO_LARGE
+    let wrong_y = correct_y - 1;
     assert_scale_down_fails(x, scale_exp, wrong_y, ERR_REMAINDER_TOO_LARGE).await;
 }
 
@@ -272,10 +307,9 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // This means we divide by 1e10 (scale_exp = 10)
     // x = 100 * 1e18 = 100000000000000000000
     // y = x / 1e10 = 10000000000 (100 * 1e8)
-
     let x = EthAmount::from_uint_str("100000000000000000000").unwrap();
     let scale_exp = 10u32;
-    let y = 10000000000u64;
+    let y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
 
     let x_felts = x.to_elements();
 
