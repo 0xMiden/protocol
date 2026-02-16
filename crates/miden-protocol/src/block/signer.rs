@@ -1,4 +1,5 @@
 use core::convert::Infallible;
+use core::error;
 
 use miden_processor::FutureMaybeSend;
 
@@ -14,7 +15,7 @@ use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 /// Production-level implementations will involve some sort of secure remote backend. The trait also
 /// allows for testing with local and ephemeral signers.
 pub trait BlockSigner {
-    type Error: std::error::Error + 'static;
+    type Error: error::Error + 'static;
     fn sign(
         &self,
         header: &BlockHeader,
