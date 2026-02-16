@@ -41,6 +41,9 @@
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 - [BREAKING] Refactored assets in the tx kernel from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396)).
+- [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 
 ## 0.13.3 (2026-01-27)
 
