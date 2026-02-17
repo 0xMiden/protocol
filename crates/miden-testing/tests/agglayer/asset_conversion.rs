@@ -8,8 +8,8 @@ use miden_agglayer::errors::{
 };
 use miden_agglayer::eth_types::amount::EthAmount;
 use miden_agglayer::utils;
-use miden_protocol::asset::FungibleAsset;
 use miden_protocol::Felt;
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
 use primitive_types::U256;
 use rand::rngs::StdRng;
@@ -177,50 +177,35 @@ async fn test_scale_down_basic_examples() -> anyhow::Result<()> {
 // FUZZING TESTS
 // ================================================================================================
 
+// Fuzz test that validates verify_u256_to_native_amount_conversion (U256 → Felt)
+// with random realistic amounts for all scale exponents (0..=18).
 #[tokio::test]
 async fn test_scale_down_realistic_scenarios_fuzzing() -> anyhow::Result<()> {
-    const SEED: u64 = 42;
-    const NUM_CASES: usize = 10;
-    const MAX_ATTEMPTS_PER_CASE: usize = 10;
+    const CASES_PER_SCALE: usize = 2;
+    const MAX_SCALE: u32 = 18;
 
-    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut rng = StdRng::seed_from_u64(42);
 
-    let min_amount = U256::from(10_000_000_000_000u64); // 1e13
-    let desired_max = U256::from_dec_str("1000000000000000000000000").unwrap(); // 1e24
-    let u63_max = U256::from(FungibleAsset::MAX_AMOUNT);
+    let min_x = U256::from(10_000_000_000_000u64); // 1e13
+    let desired_max_x = U256::from_dec_str("1000000000000000000000000").unwrap(); // 1e24
+    let max_y = U256::from(FungibleAsset::MAX_AMOUNT); // 2^63 - 2^31
 
-    for _ in 0..NUM_CASES {
-        let mut attempts = 0;
+    for scale in 0..=MAX_SCALE {
+        let scale_factor = U256::from(10u64).pow(U256::from(scale));
 
-        let (x, scale) = loop {
-            attempts += 1;
-            if attempts > MAX_ATTEMPTS_PER_CASE {
-                anyhow::bail!("could not generate a valid fuzz case within attempt cap");
-            }
+        // Ensure x always scales down into a y that fits the fungible-token bound.
+        let max_x = desired_max_x.min(max_y * scale_factor);
 
-            let scale: u32 = rng.random_range(0..=18);
+        assert!(max_x > min_x, "max_x must exceed min_x for scale={scale}");
 
-            let scale_factor = U256::from(10u64).pow(U256::from(scale));
-            let max_amount = desired_max.min(u63_max * scale_factor);
+        // Sample x uniformly from [min_x, max_x).
+        let span: u128 = (max_x - min_x).try_into().expect("span fits in u128");
 
-            if min_amount >= max_amount {
-                continue;
-            }
-
-            let span: u128 =
-                (max_amount - min_amount).try_into().expect("span fits in u128 (<= 1e24)");
+        for _ in 0..CASES_PER_SCALE {
             let offset: u128 = rng.random_range(0..span);
-
-            let x = EthAmount::from_u256(min_amount + U256::from(offset));
-
-            if x.scale_to_token_amount(scale).is_err() {
-                continue;
-            }
-
-            break (x, scale);
-        };
-
-        assert_scale_down_ok(x, scale).await?;
+            let x = EthAmount::from_u256(min_x + U256::from(offset));
+            assert_scale_down_ok(x, scale).await?;
+        }
     }
 
     Ok(())
