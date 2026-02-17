@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use crate::account::AccountDelta;
 use crate::crypto::SequentialCommit;
 use crate::transaction::{InputNote, InputNotes, OutputNotes};
-use crate::utils::{Deserializable, Serializable};
+use crate::utils::serde::{Deserializable, Serializable};
 use crate::{Felt, Word};
 
 /// The summary of the changes that result from executing a transaction.
@@ -82,7 +82,7 @@ impl SequentialCommit for TransactionSummary {
 }
 
 impl Serializable for TransactionSummary {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
         self.account_delta.write_into(target);
         self.input_notes.write_into(target);
         self.output_notes.write_into(target);
@@ -91,9 +91,9 @@ impl Serializable for TransactionSummary {
 }
 
 impl Deserializable for TransactionSummary {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: crate::utils::serde::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, crate::utils::serde::DeserializationError> {
         let account_delta = source.read()?;
         let input_notes = source.read()?;
         let output_notes = source.read()?;

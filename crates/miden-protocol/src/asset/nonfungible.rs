@@ -7,7 +7,13 @@ use super::{AccountType, Asset, AssetError, Word};
 use crate::Hasher;
 use crate::account::AccountId;
 use crate::asset::vault::AssetId;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // NON-FUNGIBLE ASSET
 // ================================================================================================

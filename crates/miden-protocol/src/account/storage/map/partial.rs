@@ -1,12 +1,11 @@
 use alloc::collections::BTreeMap;
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_crypto::Word;
 use miden_crypto::merkle::smt::{LeafIndex, PartialSmt, SMT_DEPTH, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{InnerNodeInfo, MerkleError};
 
 use crate::account::{StorageMap, StorageMapWitness};
-use crate::utils::serde::{ByteReader, DeserializationError};
+use crate::utils::serde::{ByteReader, Deserializable, DeserializationError, Serializable};
 
 /// A partial representation of a [`StorageMap`], containing only proofs for a subset of the
 /// key-value pairs.
@@ -152,7 +151,7 @@ impl PartialStorageMap {
 }
 
 impl Serializable for PartialStorageMap {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
         target.write(&self.partial_smt);
         target.write_usize(self.entries.len());
         target.write_many(self.entries.keys());

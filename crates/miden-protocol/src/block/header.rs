@@ -400,7 +400,7 @@ impl Deserializable for FeeParameters {
 mod tests {
     use assert_matches::assert_matches;
     use miden_core::Word;
-    use winter_rand_utils::rand_value;
+    use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET;

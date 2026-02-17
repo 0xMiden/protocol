@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::MastNodeExt;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};

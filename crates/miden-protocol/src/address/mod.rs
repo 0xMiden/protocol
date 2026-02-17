@@ -12,13 +12,12 @@ mod network_id;
 use alloc::string::String;
 
 pub use interface::AddressInterface;
-use miden_processor::DeserializationError;
 pub use network_id::{CustomNetworkId, NetworkId};
 
 use crate::crypto::ies::SealingKey;
 use crate::errors::AddressError;
 use crate::note::NoteTag;
-use crate::utils::serde::{ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{ByteWriter, Deserializable, DeserializationError, Serializable};
 
 mod address_id;
 pub use address_id::AddressId;
@@ -184,7 +183,7 @@ impl Serializable for Address {
 }
 
 impl Deserializable for Address {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: crate::utils::serde::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let identifier: AddressId = source.read()?;

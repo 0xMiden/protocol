@@ -1,11 +1,16 @@
 use alloc::collections::BTreeSet;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_crypto::merkle::mmr::{Forest, Mmr, MmrError, MmrPeaks, MmrProof, PartialMmr};
-use miden_processor::DeserializationError;
 
 use crate::Word;
 use crate::block::BlockNumber;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// The [Merkle Mountain Range](Mmr) defining the Miden blockchain.
 ///

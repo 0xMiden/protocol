@@ -1,10 +1,15 @@
 use miden_core::EMPTY_WORD;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
 
 use crate::account::StorageSlotType;
 use crate::account::storage::map::EMPTY_STORAGE_MAP_ROOT;
 use crate::account::storage::{StorageMap, Word};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // STORAGE SLOT CONTENT
 // ================================================================================================

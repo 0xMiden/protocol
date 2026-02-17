@@ -197,7 +197,7 @@ impl SequentialCommit for AccountHeader {
 // ================================================================================================
 
 impl Serializable for AccountHeader {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -207,9 +207,9 @@ impl Serializable for AccountHeader {
 }
 
 impl Deserializable for AccountHeader {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: crate::utils::serde::ByteReader>(
         source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    ) -> Result<Self, crate::utils::serde::DeserializationError> {
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;

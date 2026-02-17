@@ -12,7 +12,13 @@ use crate::account::{
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word, ZERO};
 
 mod storage;
@@ -589,7 +595,6 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_core::utils::Serializable;
     use miden_core::{Felt, FieldElement};
 
     use super::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
@@ -617,6 +622,7 @@ mod tests {
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
+    use crate::utils::serde::Serializable;
     use crate::{ONE, Word, ZERO};
 
     #[test]

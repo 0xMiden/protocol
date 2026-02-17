@@ -1,8 +1,7 @@
 use core::fmt;
 
-use miden_core::EventId;
-
 use crate::errors::TransactionEventError;
+use crate::vm::EventId;
 
 // CONSTANTS
 // ================================================================================================

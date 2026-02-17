@@ -1,14 +1,18 @@
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
-
 use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaTypeId};
 use super::super::{InitStorageData, StorageValueName};
 use super::FeltSchema;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, FieldElement, Word};
 
 // WORD SCHEMA

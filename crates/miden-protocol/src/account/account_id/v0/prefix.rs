@@ -3,12 +3,17 @@ use core::fmt;
 use core::hash::Hash;
 
 use miden_core::Felt;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
 
 use crate::account::account_id::v0::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT ID PREFIX VERSION 0
 // ================================================================================================

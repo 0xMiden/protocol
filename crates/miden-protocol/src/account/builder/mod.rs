@@ -1,8 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_core::FieldElement;
-
 use crate::account::component::StorageSchema;
 use crate::account::{
     Account,
@@ -295,7 +293,7 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
     use miden_core::FieldElement;
-    use miden_processor::MastNodeExt;
+    use miden_core::mast::MastNodeExt;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;

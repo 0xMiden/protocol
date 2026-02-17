@@ -223,7 +223,6 @@ mod tests {
     use alloc::sync::Arc;
 
     use miden_assembly::Assembler;
-    use miden_core::utils::Serializable;
     use miden_mast_package::{
         MastArtifact,
         Package,
@@ -236,6 +235,7 @@ mod tests {
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {

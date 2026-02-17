@@ -288,12 +288,10 @@ impl Deserializable for AccountStorageDelta {
         }
 
         let num_maps = source.read_u8()? as usize;
-        deltas.extend(
-            source
-                .read_many::<(StorageSlotName, StorageMapDelta)>(num_maps)?
-                .into_iter()
-                .map(|(slot_name, map_delta)| (slot_name, StorageSlotDelta::Map(map_delta))),
-        );
+        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapDelta)>(num_maps)? {
+            let (slot_name, map_delta) = read_result?;
+            deltas.insert(slot_name, StorageSlotDelta::Map(map_delta));
+        }
 
         Ok(Self::from_raw(deltas))
     }

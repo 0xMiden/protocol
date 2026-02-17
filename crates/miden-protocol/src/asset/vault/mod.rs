@@ -1,7 +1,6 @@
 use alloc::string::ToString;
 
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::SMT_DEPTH;
 
 use super::{
     AccountType,
@@ -16,7 +15,7 @@ use super::{
 };
 use crate::Word;
 use crate::account::{AccountId, AccountVaultDelta, NonFungibleDeltaAction};
-use crate::crypto::merkle::smt::Smt;
+use crate::crypto::merkle::smt::{SMT_DEPTH, Smt};
 use crate::errors::AssetVaultError;
 
 mod partial;
@@ -374,7 +373,7 @@ impl Serializable for AssetVault {
 impl Deserializable for AssetVault {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_assets = source.read_usize()?;
-        let assets = source.read_many::<Asset>(num_assets)?;
+        let assets = source.read_many_iter::<Asset>(num_assets)?.collect::<Result<Vec<_>, _>>()?;
         Self::new(&assets).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }

@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_processor::AdviceMutation;
+use miden_processor::advice::AdviceMutation;
 
 use crate::account::{AccountHeader, AccountId, PartialAccount};
 use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};

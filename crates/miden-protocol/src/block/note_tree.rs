@@ -6,7 +6,13 @@ use crate::batch::BatchNoteTree;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
 use crate::note::{NoteId, NoteMetadata, compute_note_commitment};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{
     BLOCK_NOTE_TREE_DEPTH,
     MAX_BATCHES_PER_BLOCK,

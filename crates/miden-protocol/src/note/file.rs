@@ -6,13 +6,17 @@ use std::{
     vec::Vec,
 };
 
-#[cfg(feature = "std")]
-use miden_core::utils::SliceReader;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
-
 use super::{Note, NoteDetails, NoteId, NoteInclusionProof, NoteTag};
 use crate::block::BlockNumber;
+#[cfg(feature = "std")]
+use crate::utils::serde::SliceReader;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 const MAGIC: &str = "note";
 

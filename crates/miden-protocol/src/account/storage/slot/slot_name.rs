@@ -245,7 +245,7 @@ impl Serializable for StorageSlotName {
 }
 
 impl Deserializable for StorageSlotName {
-    fn read_from<R: miden_core::utils::ByteReader>(
+    fn read_from<R: crate::utils::serde::ByteReader>(
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let len = source.read_u8()?;
