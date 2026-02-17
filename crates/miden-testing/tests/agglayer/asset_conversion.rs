@@ -15,7 +15,7 @@ use primitive_types::U256;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use super::test_utils::{assert_execution_fails_with, execute_masm_script, stack_to_u256};
+use super::test_utils::{assert_execution_fails_with, execute_masm_script};
 
 // ================================================================================================
 // SCALE UP TESTS (Felt -> U256)
@@ -25,7 +25,7 @@ use super::test_utils::{assert_execution_fails_with, execute_masm_script, stack_
 async fn test_scale_up_helper(
     miden_amount: Felt,
     scale_exponent: Felt,
-    expected_result_u256: U256,
+    expected_result: EthAmount,
 ) -> anyhow::Result<()> {
     let script_code = format!(
         "
@@ -42,9 +42,19 @@ async fn test_scale_up_helper(
     );
 
     let exec_output = execute_masm_script(&script_code).await?;
-    let actual_result_u256 = stack_to_u256(&exec_output);
+    let actual_felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
 
-    assert_eq!(actual_result_u256, expected_result_u256);
+    // to_elements() returns big-endian limb order with each limb byte-swapped (LE-interpreted
+    // from BE source bytes). The scale-up output is native u32 limbs in LE limb order, so we
+    // reverse the limbs and swap bytes within each u32 to match.
+    let expected_felts: Vec<Felt> = expected_result
+        .to_elements()
+        .into_iter()
+        .rev()
+        .map(|f| Felt::new((f.as_int() as u32).swap_bytes() as u64))
+        .collect();
+
+    assert_eq!(actual_felts, expected_felts);
 
     Ok(())
 }
@@ -52,13 +62,14 @@ async fn test_scale_up_helper(
 #[tokio::test]
 async fn test_scale_up_basic_examples() -> anyhow::Result<()> {
     // Test case 1: amount=1, no scaling (scale_exponent=0)
-    test_scale_up_helper(Felt::new(1), Felt::new(0), U256::from(1u64)).await?;
+    test_scale_up_helper(Felt::new(1), Felt::new(0), EthAmount::from_uint_str("1").unwrap())
+        .await?;
 
     // Test case 2: amount=1, scale to 1e18 (scale_exponent=18)
     test_scale_up_helper(
         Felt::new(1),
         Felt::new(18),
-        U256::from_dec_str("1000000000000000000").unwrap(),
+        EthAmount::from_uint_str("1000000000000000000").unwrap(),
     )
     .await?;
 
@@ -71,7 +82,7 @@ async fn test_scale_up_realistic_amounts() -> anyhow::Result<()> {
     test_scale_up_helper(
         Felt::new(100_000_000),
         Felt::new(12),
-        U256::from_dec_str("100000000000000000000").unwrap(),
+        EthAmount::from_uint_str("100000000000000000000").unwrap(),
     )
     .await?;
 
@@ -79,7 +90,7 @@ async fn test_scale_up_realistic_amounts() -> anyhow::Result<()> {
     test_scale_up_helper(
         Felt::new(1000000000000000000),
         Felt::new(8),
-        U256::from_dec_str("100000000000000000000000000").unwrap(),
+        EthAmount::from_uint_str("100000000000000000000000000").unwrap(),
     )
     .await?;
 
