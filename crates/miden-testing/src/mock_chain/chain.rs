@@ -64,6 +64,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_protocol::{
+/// #    account::auth::AuthScheme,
 /// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType,
 /// # };
@@ -129,7 +130,12 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// ```
 /// # use anyhow::Result;
-/// # use miden_protocol::{Felt, asset::{Asset, FungibleAsset}, note::NoteType};
+/// # use miden_protocol::{
+/// #    Felt,
+/// #    account::auth::AuthScheme,
+/// #    asset::{Asset, FungibleAsset},
+/// #    note::NoteType
+/// # };
 /// # use miden_testing::{Auth, MockChain, TransactionContextBuilder};
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
