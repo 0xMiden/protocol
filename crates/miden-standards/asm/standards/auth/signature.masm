@@ -10,16 +10,19 @@ use miden::standards::auth
 # CONSTANTS
 # =================================================================================================
 
+# Auth Scheme ID Structure
+const ECDSA_K256_KECCAK_SCHEME_ID=1
+const RPO_FALCON_512_SCHEME_ID=2
+
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0
+const SIGNER_INDEX_LOC=1
 const PUB_KEY_SLOT_SUFFIX_LOC=4
 const PUB_KEY_SLOT_PREFIX_LOC=5
 const CURRENT_PK_LOC=8
 const SUCCESSFUL_VERIFICATIONS_LOC=12
 const SCHEME_ID_SUFFIX_LOC=16
 const SCHEME_ID_PREFIX_LOC=17
-const ECDSA_K256_KECCAK_SCHEME_ID=1
-const RPO_FALCON_512_SCHEME_ID=2
 
 # ERRORS
 # =================================================================================================
@@ -202,7 +205,7 @@ pub proc verify_signatures
         # Fetch public key from storage map.
         # -----------------------------------------------------------------------------------------
 
-        sub.1 dup push.0.0.0
+        sub.1 dup loc_store.SIGNER_INDEX_LOC dup push.0.0.0
         loc_load.PUB_KEY_SLOT_SUFFIX_LOC loc_load.PUB_KEY_SLOT_PREFIX_LOC
         # => [owner_key_slot_prefix, owner_key_slot_suffix, [0, 0, 0, i-1], i-1, MSG]
 
@@ -253,13 +256,14 @@ pub proc verify_signatures
             swapw
             # => [PUB_KEY, MSG, MSG, i-1]
 
-            dupw
-            # => [PUB_KEY, PUB_KEY, MSG, MSG, i-1]
+            # Build map key [0, 0, 0, i-1] from the current signer index.
+            loc_load.SIGNER_INDEX_LOC push.0.0.0
+            # => [[0, 0, 0, i-1], PUB_KEY, MSG, MSG, i-1]
 
             loc_load.SCHEME_ID_SUFFIX_LOC loc_load.SCHEME_ID_PREFIX_LOC
-            # => [scheme_id_prefix_loc, scheme_id_suffix_loc, PUB_KEY, PUB_KEY, MSG, MSG, i-1]
+            # => [scheme_id_prefix_loc, scheme_id_suffix_loc, [0, 0, 0, i-1], PUB_KEY, MSG, MSG, i-1]
             
-            # Get scheme_id for the corresponding public key from initial storage state
+            # Get scheme_id for signer index i-1 from initial storage state.
             exec.active_account::get_initial_map_item
             # => [0, 0, 0, scheme_id, PUB_KEY, MSG, MSG, i-1]
 

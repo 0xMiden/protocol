@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
 use miden_protocol::note::PartialNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
@@ -299,11 +299,11 @@ fn extract_multisig_auth_method(
 
     // Read each public key from the map
     for key_index in 0..num_approvers {
-        // The multisig component stores keys using pattern [index, 0, 0, 0]
-        let map_key = [Felt::new(key_index as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+        // The multisig component stores keys and scheme IDs using pattern [index, 0, 0, 0]
+        let map_key = Word::from([key_index as u32, 0, 0, 0]);
 
         let pub_key_word = storage
-            .get_map_item(approver_public_keys_slot, map_key.into())
+            .get_map_item(approver_public_keys_slot, map_key)
             .unwrap_or_else(|_| {
                 panic!(
                     "Failed to read public key {} from multisig configuration at storage slot {}. \
@@ -316,10 +316,11 @@ fn extract_multisig_auth_method(
         pub_keys.push(pub_key);
 
         let scheme_word = storage
-            .get_map_item(approver_scheme_ids_slot, pub_key_word)
+            .get_map_item(approver_scheme_ids_slot, map_key)
             .unwrap_or_else(|_| {
                 panic!(
-                    "Failed to read scheme id for approver {} from multisig configuration at storage slot {}.",
+                    "Failed to read scheme id for approver {} from multisig configuration at storage slot {}. \
+                     Expected key pattern [index, 0, 0, 0].",
                     key_index, approver_scheme_ids_slot
                 )
             });

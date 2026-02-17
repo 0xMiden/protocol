@@ -126,8 +126,9 @@ impl AuthMultisigConfig {
 /// The storage layout is:
 /// - Slot 0(value): [threshold, num_approvers, 0, 0]
 /// - Slot 1(map): A map with approver public keys (index -> pubkey)
-/// - Slot 2(map): A map which stores executed transactions
-/// - Slot 3(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
+/// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
+/// - Slot 3(map): A map which stores executed transactions
+/// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
 ///
 /// This component supports all account types.
 #[derive(Debug)]
@@ -196,12 +197,11 @@ impl AuthMultisig {
 
     // Returns the storage slot schema for the approver scheme IDs slot.
     pub fn approver_scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
             Self::approver_scheme_ids_slot().clone(),
             StorageSlotSchema::map(
                 "Approver scheme IDs",
-                pub_key_type,
+                SchemaTypeId::u32(),
                 SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
             ),
         )
@@ -234,7 +234,7 @@ impl AuthMultisig {
 
 impl From<AuthMultisig> for AccountComponent {
     fn from(multisig: AuthMultisig) -> Self {
-        let mut storage_slots = Vec::with_capacity(3);
+        let mut storage_slots = Vec::with_capacity(5);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -257,12 +257,15 @@ impl From<AuthMultisig> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        // Approver scheme IDs slot (map)
-        let scheme_id_entries = multisig.config.approvers().iter().enumerate().map(|(i, _)| {
-            let pub_key = multisig.config.approvers()[i].0;
-            let auth_scheme = multisig.config.approvers()[i].1;
-            (Word::from(pub_key), Word::from([auth_scheme as u32, 0, 0, 0]))
-        });
+        // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+        let scheme_id_entries = multisig
+            .config
+            .approvers()
+            .iter()
+            .enumerate()
+            .map(|(i, (_, auth_scheme))| {
+                (Word::from([i as u32, 0, 0, 0]), Word::from([*auth_scheme as u32, 0, 0, 0]))
+            });
 
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::approver_scheme_ids_slot().clone(),
@@ -301,7 +304,7 @@ impl From<AuthMultisig> for AccountComponent {
 
         let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
             .with_description(
-                "Multisig authentication component using ECDSA K256 Keccak signature scheme",
+                "Multisig authentication component using hybrid signature schemes",
             )
             .with_supports_all_types()
             .with_storage_schema(storage_schema);
@@ -376,6 +379,18 @@ mod tests {
                 .expect("approver public key storage map access failed");
             assert_eq!(stored_pub_key, Word::from(*expected_pub_key));
         }
+
+        // Verify approver scheme IDs slot
+        for (i, (_, expected_auth_scheme)) in approvers.iter().enumerate() {
+            let stored_scheme_id = account
+                .storage()
+                .get_map_item(
+                    AuthMultisig::approver_scheme_ids_slot(),
+                    Word::from([i as u32, 0, 0, 0]),
+                )
+                .expect("approver scheme ID storage map access failed");
+            assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
+        }
     }
 
     /// Test multisig component with minimum threshold (1 of 1)
@@ -408,6 +423,15 @@ mod tests {
             .get_map_item(AuthMultisig::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
             .expect("approver pub keys storage map access failed");
         assert_eq!(stored_pub_key, Word::from(pub_key));
+
+        let stored_scheme_id = account
+            .storage()
+            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("approver scheme IDs storage map access failed");
+        assert_eq!(
+            stored_scheme_id,
+            Word::from([auth::AuthScheme::EcdsaK256Keccak as u32, 0, 0, 0])
+        );
     }
 
     /// Test multisig component error cases

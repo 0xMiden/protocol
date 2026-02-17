@@ -6,6 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
+use miden::core::word
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
@@ -22,7 +23,7 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 #   [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
 #
 # - APPROVER_SCHEME_ID_SLOT (map):
-#   APPROVER_PUBLIC_KEY => [scheme_id, 0, 0, 0]
+#   [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
 #
 # - EXECUTED_TXS_SLOT (map):
 #   transaction_message => [is_executed, 0, 0, 0]
@@ -42,7 +43,7 @@ const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_
 const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
 
 # The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
-# Map entries: APPROVER_PUBLIC_KEY => [scheme_id, 0, 0, 0]
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
 const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_scheme_id")
 
 # The slot in this component's storage layout where executed transactions are stored.
@@ -125,30 +126,23 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         sub.1
         # => [i-1, new_num_of_approvers]
 
-        dup
-        # => [i-1, i-1, new_num_of_approvers]
-
-        push.0.0.0
+        # clear scheme id at [i-1, 0, 0, 0]
+        dup push.0.0.0
         # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
 
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], i-1, new_num_of_approvers]
-
-        exec.active_account::get_initial_map_item
-        # => [OLD_PUB_KEY, i-1, new_num_of_approvers]
-
         padw swapw
-        # => [OLD_PUB_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+        # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, OLD_PUB_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
-        
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
+
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
-       
+
         dropw
         # => [i-1, new_num_of_approvers]
 
+        # clear public key at [i-1, 0, 0, 0]
         dup push.0.0.0
         # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
 
@@ -273,8 +267,14 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         swapw
         # => [PUB_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
+        dropw
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        dup.4 push.0.0.0
+        # => [[0, 0, 0, i-1], SCHEME_ID_WORD, i-1, pad(12)]
+
         push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, PUB_KEY, SCHEME_WORD, i-1, pad(12)]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, [0, 0, 0, i-1], SCHEME_WORD, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -434,20 +434,99 @@ end
 #! Returns 1 if PUB_KEY is a current signer (auth_scheme is supported), else 0.
 #! Inputs: [PUB_KEY]
 #! Outputs: [is_signer]
+#! Locals:
+#! 0: is_signer_found
+#! 1: current_signer_index
+@locals(2)
 pub proc is_signer(pub_key: BeWord) -> felt
-    push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [APPROVER_SCHEME_ID_SLOT]
+    push.0 loc_store.0
+    # => [PUB_KEY]
 
-    exec.active_account::get_initial_map_item
-    # => [0, 0, 0, scheme_id]
+    exec.get_threshold_and_num_approvers
+    # => [threshold, num_approvers, PUB_KEY]
 
-    drop drop drop
-    # => [scheme_id]
+    drop
+    # => [num_approvers, PUB_KEY]
 
-    exec.auth::signature::is_scheme_id
+    dup neq.0
+    # => [has_remaining_signers, num_approvers, PUB_KEY]
+
+    if.true
+        loc_load.0 eq.0
+        # => [found_signer_is_zero, num_approvers, PUB_KEY]
+    else
+        push.0
+        # => [0, num_approvers, PUB_KEY]
+
+    end
+    # => [should_loop, num_approvers, PUB_KEY]
+    while.true
+        # => [i, PUB_KEY]
+
+        sub.1
+        # => [i-1, PUB_KEY]
+
+        dup push.0.0.0
+        # => [[0, 0, 0, i-1], i-1, PUB_KEY]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], i-1, PUB_KEY]
+
+        exec.active_account::get_initial_map_item
+        # => [CURRENT_PUB_KEY, i-1, PUB_KEY]
+
+        # move i-1 to the top and store it in local memory for this loop iteration
+        movup.4 loc_store.1
+        # => [CURRENT_PUB_KEY, PUB_KEY]
+
+        dupw.1 exec.word::eq
+        # => [is_pub_key_match, PUB_KEY]
+
+        if.true
+            loc_load.1
+            # => [i-1, PUB_KEY]
+
+            push.0.0.0
+            # => [[0, 0, 0, i-1], PUB_KEY]
+
+            push.APPROVER_SCHEME_ID_SLOT[0..2]
+            # => [scheme_id_slot_prefix, scheme_id_slot_suffix, [0, 0, 0, i-1], PUB_KEY]
+
+            exec.active_account::get_initial_map_item
+            # => [SCHEME_ID_WORD, PUB_KEY]
+
+            drop drop drop
+            # => [scheme_id, PUB_KEY]
+
+            exec.auth::signature::is_scheme_id
+            # => [is_supported_scheme, PUB_KEY]
+
+            loc_store.0
+            # => [PUB_KEY]
+        end
+
+        loc_load.1
+        # => [i-1, PUB_KEY]
+
+        dup neq.0
+        # => [has_remaining_signers, i-1, PUB_KEY]
+
+        if.true
+            loc_load.0 eq.0
+            # => [found_signer_is_zero, i-1, PUB_KEY]
+        else
+            push.0
+            # => [0, i-1, PUB_KEY]
+        end
+        # => [should_loop, i-1, PUB_KEY]
+    end
+
+    drop dropw
+    # => []
+
+    loc_load.0
     # => [is_signer]
 end
-
 
 #! Returns all signer public keys for indices [0..num_approvers]
 #! Inputs: []
