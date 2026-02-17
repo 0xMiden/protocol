@@ -63,78 +63,6 @@ fn read_let_num_leaves(account: &Account) -> u64 {
     value.to_vec()[0].as_int()
 }
 
-async fn assert_bridge_out_consumes_n_notes_updates_ler(num_notes: usize) -> anyhow::Result<()> {
-    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
-    assert!(
-        num_notes <= vectors.amounts.len() && num_notes <= vectors.roots.len(),
-        "requested {num_notes} notes, but vectors contain {} amounts and {} roots",
-        vectors.amounts.len(),
-        vectors.roots.len()
-    );
-
-    let destination_network = vectors.destination_network;
-    let eth_address =
-        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
-
-    let mut builder = MockChain::builder();
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let faucet =
-        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
-
-    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
-    builder.add_account(bridge_account.clone())?;
-
-    let mut notes = Vec::with_capacity(num_notes);
-    for amount in vectors.amounts.iter().take(num_notes) {
-        let amount: u64 = amount.parse().expect("valid amount decimal string");
-        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
-        let note = B2AggNote::create(
-            destination_network,
-            eth_address,
-            NoteAssets::new(vec![bridge_asset])?,
-            bridge_account.id(),
-            faucet.id(),
-            builder.rng_mut(),
-        )?;
-
-        builder.add_output_note(OutputNote::Full(note.clone()));
-        notes.push(note);
-    }
-
-    let mut mock_chain = builder.build()?;
-    for (i, note) in notes.iter().enumerate() {
-        let tx = mock_chain
-            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
-            .build()?
-            .execute()
-            .await?;
-        bridge_account.apply_delta(tx.account_delta())?;
-
-        let leaves = (i + 1) as u64;
-        assert_eq!(read_let_num_leaves(&bridge_account), leaves);
-
-        let expected_ler =
-            ExitRoot::new(hex_to_bytes(&vectors.roots[i]).expect("valid root hex")).to_elements();
-        assert_eq!(
-            read_local_exit_root(&bridge_account),
-            expected_ler,
-            "Local Exit Root after {} leaves should match the Solidity-generated root",
-            i + 1
-        );
-
-        mock_chain.add_pending_executed_transaction(&tx)?;
-        mock_chain.prove_next_block()?;
-    }
-
-    Ok(())
-}
-
 /// Tests that consuming a single B2AGG note produces the correct Local Exit Root.
 ///
 /// The leaf data parameters (destination network, address, amount) are taken from the
@@ -279,21 +207,128 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that two sequential B2AGG note consumptions update the Local Exit Root cumulatively.
-///
-/// This specifically validates frontier persistence across transactions: the second bridge-out
-/// must use the frontier state produced by the first one.
-#[tokio::test]
-async fn test_bridge_out_consumes_two_notes_updates_ler() -> anyhow::Result<()> {
-    assert_bridge_out_consumes_n_notes_updates_ler(2).await
-}
-
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
 ///
 /// This validates full-vector compatibility of bridge-out frontier persistence and root updates.
 #[tokio::test]
 async fn test_bridge_out_consumes_thirty_two_notes_updates_ler() -> anyhow::Result<()> {
-    assert_bridge_out_consumes_n_notes_updates_ler(32).await
+    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
+    let note_count = 32usize;
+    assert_eq!(vectors.amounts.len(), note_count, "amount vectors should contain 32 entries");
+    assert_eq!(vectors.roots.len(), note_count, "root vectors should contain 32 entries");
+
+    let destination_network = vectors.destination_network;
+    let eth_address =
+        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+
+    let mut builder = MockChain::builder();
+    let faucet_owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    // We burn all 32 produced burn notes at the end; initial supply must cover their total amount.
+    let faucet = builder
+        .add_existing_network_faucet("AGG", 10_000, faucet_owner_account_id, Some(10_000))?;
+
+    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
+
+    let mut notes = Vec::with_capacity(note_count);
+    let mut expected_amounts = Vec::with_capacity(note_count);
+    for amount in vectors.amounts.iter().take(note_count) {
+        let amount: u64 = amount.parse().expect("valid amount decimal string");
+        expected_amounts.push(amount);
+
+        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+        let note = B2AggNote::create(
+            destination_network,
+            eth_address,
+            NoteAssets::new(vec![bridge_asset])?,
+            bridge_account.id(),
+            faucet.id(),
+            builder.rng_mut(),
+        )?;
+        builder.add_output_note(OutputNote::Full(note.clone()));
+        notes.push(note);
+    }
+
+    let mut mock_chain = builder.build()?;
+    let mut burn_note_ids = Vec::with_capacity(note_count);
+
+    for (i, note) in notes.iter().enumerate() {
+        let executed_tx = mock_chain
+            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+
+        assert_eq!(
+            executed_tx.output_notes().num_notes(),
+            1,
+            "Expected one BURN note after consume #{}",
+            i + 1
+        );
+        let burn_note = match executed_tx.output_notes().get_note(0) {
+            OutputNote::Full(note) => note,
+            _ => panic!("Expected OutputNote::Full variant for BURN note"),
+        };
+        burn_note_ids.push(burn_note.id());
+
+        let expected_asset = Asset::from(FungibleAsset::new(faucet.id(), expected_amounts[i])?);
+        assert!(
+            burn_note.assets().iter().any(|asset| asset == &expected_asset),
+            "BURN note after consume #{} should contain the bridged asset",
+            i + 1
+        );
+
+        bridge_account.apply_delta(executed_tx.account_delta())?;
+        assert_eq!(
+            read_let_num_leaves(&bridge_account),
+            (i + 1) as u64,
+            "LET leaf count should match consumed notes"
+        );
+
+        let expected_ler =
+            ExitRoot::new(hex_to_bytes(&vectors.roots[i]).expect("valid root hex")).to_elements();
+        assert_eq!(
+            read_local_exit_root(&bridge_account),
+            expected_ler,
+            "Local Exit Root after {} leaves should match the Solidity-generated root",
+            i + 1
+        );
+
+        mock_chain.add_pending_executed_transaction(&executed_tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let total_burned: u64 = expected_amounts.iter().sum();
+
+    let mut faucet = faucet;
+    for burn_note_id in burn_note_ids {
+        let burn_executed_tx =
+            mock_chain.build_tx_context(faucet.id(), &[burn_note_id], &[])?.build()?.execute().await?;
+        assert_eq!(
+            burn_executed_tx.output_notes().num_notes(),
+            0,
+            "Burn transaction should not create output notes"
+        );
+        faucet.apply_delta(burn_executed_tx.account_delta())?;
+        mock_chain.add_pending_executed_transaction(&burn_executed_tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    assert_eq!(
+        final_token_supply,
+        Felt::new(initial_token_supply.as_int() - total_burned),
+        "Token supply should decrease by the sum of 32 bridged amounts"
+    );
+
+    Ok(())
 }
 
 /// Tests the B2AGG (Bridge to AggLayer) note script reclaim functionality.
