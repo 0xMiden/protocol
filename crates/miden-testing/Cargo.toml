@@ -41,7 +41,6 @@ itertools   = { default-features = false, features = ["use_alloc"], version = "0
 rand        = { features = ["os_rng", "small_rng"], workspace = true }
 rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
-winterfell  = { version = "0.13" }
 
 [dev-dependencies]
 anyhow            = { features = ["backtrace", "std"], workspace = true }
