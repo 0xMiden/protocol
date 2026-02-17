@@ -78,9 +78,9 @@ fn read_let_num_leaves(account: &Account) -> u64 {
 #[tokio::test]
 async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
     let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
-    let destination_network = vectors.destination_network;
-    let eth_address =
-        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+    let destination_network = vectors.destination_networks[0];
+    let eth_address = EthAddressFormat::from_hex(&vectors.destination_addresses[0])
+        .expect("valid destination address");
 
     let mut builder = MockChain::builder();
 
@@ -216,10 +216,16 @@ async fn test_bridge_out_consumes_thirty_two_notes_updates_ler() -> anyhow::Resu
     let note_count = 32usize;
     assert_eq!(vectors.amounts.len(), note_count, "amount vectors should contain 32 entries");
     assert_eq!(vectors.roots.len(), note_count, "root vectors should contain 32 entries");
-
-    let destination_network = vectors.destination_network;
-    let eth_address =
-        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+    assert_eq!(
+        vectors.destination_networks.len(),
+        note_count,
+        "destination network vectors should contain 32 entries"
+    );
+    assert_eq!(
+        vectors.destination_addresses.len(),
+        note_count,
+        "destination address vectors should contain 32 entries"
+    );
 
     let mut builder = MockChain::builder();
     let faucet_owner_account_id = AccountId::dummy(
@@ -238,9 +244,12 @@ async fn test_bridge_out_consumes_thirty_two_notes_updates_ler() -> anyhow::Resu
 
     let mut notes = Vec::with_capacity(note_count);
     let mut expected_amounts = Vec::with_capacity(note_count);
-    for amount in vectors.amounts.iter().take(note_count) {
-        let amount: u64 = amount.parse().expect("valid amount decimal string");
+    for i in 0..note_count {
+        let amount: u64 = vectors.amounts[i].parse().expect("valid amount decimal string");
         expected_amounts.push(amount);
+        let destination_network = vectors.destination_networks[i];
+        let eth_address = EthAddressFormat::from_hex(&vectors.destination_addresses[i])
+            .expect("valid destination address");
 
         let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
         let note = B2AggNote::create(

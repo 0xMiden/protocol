@@ -11,8 +11,8 @@ import "@agglayer/v2/lib/DepositContractV2.sol";
  *
  *         Leaves are constructed via getLeafValue using the same hardcoded fields that
  *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=0,
- *         metadataHash=0), parametrised only by amount (i+1), with a fixed destination
- *         network and address.
+ *         metadataHash=0), parametrised by amount (i+1) and deterministic per-leaf
+ *         destination network/address values derived from a fixed seed.
  * 
  * Run with: forge test -vv --match-contract MMRTestVectors
  * 
@@ -27,24 +27,36 @@ contract MMRTestVectors is Test, DepositContractV2 {
     address constant ORIGIN_TOKEN_ADDR   = address(0);
     bytes32 constant METADATA_HASH       = bytes32(0);
 
-    // Fixed destination parameters written to JSON so the Rust test can read them
-    uint32 constant DESTINATION_NETWORK  = 1;
-    address constant DESTINATION_ADDRESS = 0x1234567890aBCDEF1122334455667788990011aa;
+    // Fixed seed for deterministic "random" destination vectors.
+    // Keeping this constant ensures everyone regenerates the exact same JSON vectors.
+    uint256 constant VECTOR_SEED = uint256(keccak256("miden::agglayer::mmr_frontier_vectors::v2"));
 
     /**
      * @notice Builds a leaf hash identical to what bridge_out.masm would produce for the
      *         given amount.
      */
-    function _createLeaf(uint256 amount) internal pure returns (bytes32) {
+    function _createLeaf(
+        uint256 amount,
+        uint32 destinationNetwork,
+        address destinationAddress
+    ) internal pure returns (bytes32) {
         return getLeafValue(
             LEAF_TYPE,
             ORIGIN_NETWORK,
             ORIGIN_TOKEN_ADDR,
-            DESTINATION_NETWORK,
-            DESTINATION_ADDRESS,
+            destinationNetwork,
+            destinationAddress,
             amount,
             METADATA_HASH
         );
+    }
+
+    function _destinationNetworkAt(uint256 idx) internal pure returns (uint32) {
+        return uint32(uint256(keccak256(abi.encodePacked(VECTOR_SEED, bytes1(0x01), idx))));
+    }
+
+    function _destinationAddressAt(uint256 idx) internal pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(VECTOR_SEED, bytes1(0x02), idx)))));
     }
 
     /**
@@ -74,9 +86,12 @@ contract MMRTestVectors is Test, DepositContractV2 {
     
     /**
      * @notice Generates MMR frontier vectors (leaf-root pairs) and saves to JSON file.
-     *         Each leaf is created via _createLeaf(i+1) so that amounts are 1..32.
-     *         The fixed destination_network and destination_address are also written to
-     *         JSON so the Rust bridge_out test can construct matching B2AGG notes.
+     *         Each leaf is created via _createLeaf(i+1, network[i], address[i]) so that:
+     *         - amounts are 1..32
+     *         - destination networks/addresses are deterministic per index from VECTOR_SEED
+     *
+     *         The destination vectors are also written to JSON so the Rust bridge_out test
+     *         can construct matching B2AGG notes.
      *
      *         Output file: test-vectors/mmr_frontier_vectors.json
      */
@@ -85,16 +100,22 @@ contract MMRTestVectors is Test, DepositContractV2 {
         bytes32[] memory roots = new bytes32[](32);
         uint256[] memory counts = new uint256[](32);
         uint256[] memory amounts = new uint256[](32);
+        uint256[] memory destinationNetworks = new uint256[](32);
+        address[] memory destinationAddresses = new address[](32);
 
         for (uint256 i = 0; i < 32; i++) {
             uint256 amount = i + 1;
-            bytes32 leaf = _createLeaf(amount);
+            uint32 destinationNetwork = _destinationNetworkAt(i);
+            address destinationAddress = _destinationAddressAt(i);
+            bytes32 leaf = _createLeaf(amount, destinationNetwork, destinationAddress);
             _addLeaf(leaf);
 
             leaves[i] = leaf;
             roots[i] = getRoot();
             counts[i] = depositCount;
             amounts[i] = amount;
+            destinationNetworks[i] = destinationNetwork;
+            destinationAddresses[i] = destinationAddress;
         }
 
         // Serialize parallel arrays to JSON
@@ -103,8 +124,8 @@ contract MMRTestVectors is Test, DepositContractV2 {
         vm.serializeBytes32(obj, "roots", roots);
         vm.serializeUint(obj, "counts", counts);
         vm.serializeUint(obj, "amounts", amounts);
-        vm.serializeUint(obj, "destination_network", DESTINATION_NETWORK);
-        string memory json = vm.serializeAddress(obj, "destination_address", DESTINATION_ADDRESS);
+        vm.serializeUint(obj, "destination_networks", destinationNetworks);
+        string memory json = vm.serializeAddress(obj, "destination_addresses", destinationAddresses);
 
         // Save to file
         string memory outputPath = "test-vectors/mmr_frontier_vectors.json";

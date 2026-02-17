@@ -196,7 +196,7 @@ pub struct CanonicalZerosFile {
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
 /// (leafType=0, originNetwork=64, originTokenAddress=0, metadataHash=0), parametrised by
-/// `amounts[i]` with a fixed `destination_network` and `destination_address`.
+/// `amounts[i]` and per-index `destination_networks[i]` / `destination_addresses[i]`.
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
@@ -206,8 +206,8 @@ pub struct MmrFrontierVectorsFile {
     pub counts: Vec<u32>,
     #[serde(deserialize_with = "deserialize_uint_vec_to_strings")]
     pub amounts: Vec<String>,
-    pub destination_network: u32,
-    pub destination_address: String,
+    pub destination_networks: Vec<u32>,
+    pub destination_addresses: Vec<String>,
 }
 
 // LAZY-PARSED TEST VECTORS
