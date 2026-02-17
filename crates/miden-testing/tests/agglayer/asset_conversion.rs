@@ -8,6 +8,7 @@ use miden_agglayer::errors::{
 };
 use miden_agglayer::eth_types::amount::EthAmount;
 use miden_agglayer::utils;
+use miden_protocol::asset::FungibleAsset;
 use miden_protocol::Felt;
 use miden_protocol::errors::MasmError;
 use primitive_types::U256;
