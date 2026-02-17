@@ -53,6 +53,16 @@ fn read_local_exit_root(account: &Account) -> Vec<Felt> {
     root
 }
 
+fn read_let_num_leaves(account: &Account) -> u64 {
+    let num_leaves_slot = StorageSlotName::new("miden::agglayer::let::num_leaves")
+        .expect("slot name should be valid");
+    let value = account
+        .storage()
+        .get_item(&num_leaves_slot)
+        .expect("should be able to read LET num leaves");
+    value.to_vec()[0].as_int()
+}
+
 /// Tests that consuming a single B2AGG note produces the correct Local Exit Root.
 ///
 /// The leaf data parameters (destination network, address, amount) are taken from the
@@ -257,6 +267,7 @@ async fn test_bridge_out_consumes_two_notes_updates_ler() -> anyhow::Result<()> 
         .execute()
         .await?;
     bridge_account.apply_delta(tx_0.account_delta())?;
+    assert_eq!(read_let_num_leaves(&bridge_account), 1);
 
     let expected_ler_0 =
         ExitRoot::new(hex_to_bytes(&vectors.roots[0]).expect("valid root hex")).to_elements();
@@ -276,6 +287,7 @@ async fn test_bridge_out_consumes_two_notes_updates_ler() -> anyhow::Result<()> 
         .execute()
         .await?;
     bridge_account.apply_delta(tx_1.account_delta())?;
+    assert_eq!(read_let_num_leaves(&bridge_account), 2);
 
     let expected_ler_1 =
         ExitRoot::new(hex_to_bytes(&vectors.roots[1]).expect("valid root hex")).to_elements();
