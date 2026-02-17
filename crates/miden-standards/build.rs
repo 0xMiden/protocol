@@ -427,9 +427,24 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        std::fs::write(module.file_name, output).into_diagnostic()?;
+        write_if_changed(module.file_name, output)?;
 
         Ok(())
+    }
+
+    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
+    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
+    /// cargo from treating the crate as dirty on the next build.
+    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
+        let path = path.as_ref();
+        let new_contents = contents.as_ref();
+        if path.exists() {
+            let existing = std::fs::read(path).into_diagnostic()?;
+            if existing == new_contents {
+                return Ok(());
+            }
+        }
+        std::fs::write(path, new_contents).into_diagnostic()
     }
 
     pub type ErrorName = String;

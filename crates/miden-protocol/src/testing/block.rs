@@ -27,7 +27,7 @@ impl BlockHeader {
         let smt = Smt::with_entries(
             accounts
                 .iter()
-                .map(|acct| (account_id_to_smt_key(acct.id()), acct.commitment())),
+                .map(|acct| (account_id_to_smt_key(acct.id()), acct.to_commitment())),
         )
         .expect("failed to create account db");
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");
