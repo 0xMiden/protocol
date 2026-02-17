@@ -186,7 +186,7 @@ async fn test_scale_down_realistic_scenarios_fuzzing() -> anyhow::Result<()> {
 
     let min_amount = U256::from(10_000_000_000_000u64); // 1e13
     let desired_max = U256::from_dec_str("1000000000000000000000000").unwrap(); // 1e24
-    let u63_max = U256::from((1u64 << 63) - (1u64 << 31)); // 2^63 - 2^31
+    let u63_max = U256::from(FungibleAsset::MAX_AMOUNT);
 
     for _ in 0..NUM_CASES {
         let mut attempts = 0;
