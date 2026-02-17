@@ -9,6 +9,7 @@ use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotContent,
 };
@@ -349,7 +350,7 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(storage_map.open(&map_key))
+                Ok(storage_map.open(&StorageMapKey::from_raw(map_key)))
             } else {
                 let (foreign_account, _witness) = self
                     .foreign_account_inputs
@@ -379,7 +380,7 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(map.open(&map_key))
+                Ok(map.open(&StorageMapKey::from_raw(map_key)))
             }
         }
     }

@@ -3,7 +3,7 @@
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
 use miden_protocol::LexicographicWord;
-use miden_protocol::account::{AccountId, AccountStorage, StorageSlotDelta};
+use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_NATIVE_ASSET_FAUCET,
@@ -173,7 +173,11 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
     let non_existent_key = Word::from([5, 5, 5, 5u32]);
     assert!(
-        mock_map.open(&non_existent_key).get(&non_existent_key).unwrap() == Word::empty(),
+        mock_map
+            .open(&StorageMapKey::from_raw(non_existent_key))
+            .get(StorageMapKey::from_raw(non_existent_key))
+            .unwrap()
+            == Word::empty(),
         "test setup requires that the non existent key does not exist"
     );
 
@@ -245,7 +249,11 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
 
     let non_existent_key = Word::from([5, 5, 5, 5u32]);
     assert!(
-        mock_map.open(&non_existent_key).get(&non_existent_key).unwrap() == Word::empty(),
+        mock_map
+            .open(&StorageMapKey::from_raw(non_existent_key))
+            .get(StorageMapKey::from_raw(non_existent_key))
+            .unwrap()
+            == Word::empty(),
         "test setup requires that the non existent key does not exist"
     );
 

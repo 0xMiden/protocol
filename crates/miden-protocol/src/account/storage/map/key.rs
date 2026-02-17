@@ -13,25 +13,18 @@ use crate::{Felt, Hasher, Word};
 /// Storage map keys are user-chosen and thus not necessarily uniformly distributed. To mitigate
 /// potential tree imbalance, keys are hashed before being inserted into the underlying SMT.
 ///
-/// Use [`StorageMapKey::hash`] to produce the corresponding [`HashedStorageMapKey`] that is used
+/// Use [`StorageMapKey::hash`] to produce the corresponding [`StorageMapKeyHash`] that is used
 /// in the SMT.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, WordWrapper)]
 pub struct StorageMapKey(Word);
 
 impl StorageMapKey {
-    /// Hashes this raw map key to produce a [`HashedStorageMapKey`].
+    /// Hashes this raw map key to produce a [`StorageMapKeyHash`].
     ///
     /// Storage map keys are hashed before being inserted into the SMT to ensure a uniform
     /// key distribution.
-    pub fn hash(&self) -> HashedStorageMapKey {
-        HashedStorageMapKey::from_raw(Hasher::hash_elements(self.0.as_elements()))
-    }
-
-    /// Returns the leaf index in the SMT for this raw key.
-    ///
-    /// This first hashes the key, then converts it to a leaf index.
-    pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        self.hash().to_leaf_index()
+    pub fn hash(&self) -> StorageMapKeyHash {
+        StorageMapKeyHash::from_raw(Hasher::hash_elements(self.0.as_elements()))
     }
 }
 
@@ -41,13 +34,7 @@ impl From<StorageMapKey> for Word {
     }
 }
 
-impl From<Word> for StorageMapKey {
-    fn from(word: Word) -> Self {
-        Self(word)
-    }
-}
-
-// HASHED STORAGE MAP KEY
+// STORAGE MAP KEY HASH
 // ================================================================================================
 
 /// A hashed key for a [`StorageMap`](super::StorageMap).
@@ -56,17 +43,23 @@ impl From<Word> for StorageMapKey {
 /// underlying SMT. Wrapping the hashed key in a distinct type prevents accidentally using a raw
 /// key where a hashed key is expected and vice-versa.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, WordWrapper)]
-pub struct HashedStorageMapKey(Word);
+pub struct StorageMapKeyHash(Word);
 
-impl HashedStorageMapKey {
+impl StorageMapKeyHash {
     /// Returns the leaf index in the SMT for this hashed key.
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
         self.0.into()
     }
 }
 
-impl From<HashedStorageMapKey> for Word {
-    fn from(key: HashedStorageMapKey) -> Self {
+impl From<StorageMapKeyHash> for Word {
+    fn from(key: StorageMapKeyHash) -> Self {
         key.0
+    }
+}
+
+impl From<StorageMapKey> for StorageMapKeyHash {
+    fn from(key: StorageMapKey) -> Self {
+        key.hash()
     }
 }

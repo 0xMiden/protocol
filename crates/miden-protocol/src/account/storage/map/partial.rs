@@ -97,13 +97,13 @@ impl PartialStorageMap {
     /// - a non-empty [`Word`] if the key is tracked by this map and exists in it,
     /// - [`Word::empty`] if the key is tracked by this map and does not exist,
     /// - `None` if the key is not tracked by this map.
-    pub fn get(&self, raw_key: &Word) -> Option<Word> {
-        let hashed_key: Word = StorageMapKey::from_raw(*raw_key).hash().into();
+    pub fn get(&self, key: &StorageMapKey) -> Option<Word> {
+        let hash_word = key.hash().as_word();
         // This returns an error if the key is not tracked which we map to a `None`.
-        self.partial_smt.get_value(&hashed_key).ok()
+        self.partial_smt.get_value(&hash_word).ok()
     }
 
-    /// Returns an opening of the leaf associated with the raw key.
+    /// Returns an opening of the leaf associated with the given key.
     ///
     /// Conceptually, an opening is a Merkle path to the leaf, as well as the leaf itself.
     ///
@@ -111,14 +111,13 @@ impl PartialStorageMap {
     ///
     /// Returns an error if:
     /// - the key is not tracked by this partial storage map.
-    pub fn open(&self, raw_key: &Word) -> Result<StorageMapWitness, MerkleError> {
-        let hashed_key: Word = StorageMapKey::from_raw(*raw_key).hash().into();
-        let smt_proof = self.partial_smt.open(&hashed_key)?;
-        let value = self.entries.get(raw_key).copied().unwrap_or_default();
+    pub fn open(&self, key: &StorageMapKey) -> Result<StorageMapWitness, MerkleError> {
+        let smt_proof = self.partial_smt.open(&key.hash().as_word())?;
+        let value = self.entries.get(&key.as_word()).copied().unwrap_or_default();
 
         // SAFETY: The key value pair is guaranteed to be present in the provided proof since we
         // open its hashed version and because of the guarantees of the partial storage map.
-        Ok(StorageMapWitness::new_unchecked(smt_proof, [(*raw_key, value)]))
+        Ok(StorageMapWitness::new_unchecked(smt_proof, [(*key, value)]))
     }
 
     // ITERATORS

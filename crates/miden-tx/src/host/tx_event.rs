@@ -599,6 +599,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 
     let active_account_id = process.get_active_account_id()?;
     let leaf_index: Felt = StorageMapKey::from_raw(map_key)
+        .hash()
         .to_leaf_index()
         .value()
         .try_into()

@@ -19,13 +19,7 @@ mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
 mod map;
-pub use map::{
-    HashedStorageMapKey,
-    PartialStorageMap,
-    StorageMap,
-    StorageMapKey,
-    StorageMapWitness,
-};
+pub use map::{PartialStorageMap, StorageMap, StorageMapKey, StorageMapKeyHash, StorageMapWitness};
 
 mod header;
 pub use header::{AccountStorageHeader, StorageSlotHeader};
@@ -197,7 +191,7 @@ impl AccountStorage {
         self.get(slot_name)
             .ok_or_else(|| AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })
             .and_then(|slot| match slot.content() {
-                StorageSlotContent::Map(map) => Ok(map.get(&key)),
+                StorageSlotContent::Map(map) => Ok(map.get(&StorageMapKey::from_raw(key))),
                 _ => Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             })
     }

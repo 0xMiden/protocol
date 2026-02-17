@@ -163,6 +163,7 @@ mod tests {
         PartialStorage,
         PartialStorageMap,
         StorageMap,
+        StorageMapKey,
         StorageSlot,
         StorageSlotName,
     };
@@ -175,7 +176,10 @@ mod tests {
         let mut map_1 = StorageMap::new();
         map_1.insert(map_key_absent, Word::try_from([1u64, 2, 3, 2])?).unwrap();
         map_1.insert(map_key_present, Word::try_from([5u64, 4, 3, 2])?).unwrap();
-        assert_eq!(map_1.get(&map_key_present), [5u64, 4, 3, 2].try_into()?);
+        assert_eq!(
+            map_1.get(&StorageMapKey::from_raw(map_key_present)),
+            [5u64, 4, 3, 2].try_into()?
+        );
 
         let slot_name = StorageSlotName::new("miden::test_map")?;
 
@@ -185,7 +189,7 @@ mod tests {
 
         // Create partial storage with validation of one map key
         let storage_header = AccountStorageHeader::from(&storage);
-        let witness = map_1.open(&map_key_present);
+        let witness = map_1.open(&StorageMapKey::from_raw(map_key_present));
 
         let partial_storage =
             PartialStorage::new(storage_header, [PartialStorageMap::with_witnesses([witness])?])
@@ -193,8 +197,8 @@ mod tests {
 
         let slot_header = partial_storage.header.find_slot_header_by_name(&slot_name).unwrap();
         let retrieved_map = partial_storage.maps.get(&slot_header.value()).unwrap();
-        assert!(retrieved_map.open(&map_key_absent).is_err());
-        assert!(retrieved_map.open(&map_key_present).is_ok());
+        assert!(retrieved_map.open(&StorageMapKey::from_raw(map_key_absent)).is_err());
+        assert!(retrieved_map.open(&StorageMapKey::from_raw(map_key_present)).is_ok());
         Ok(())
     }
 }

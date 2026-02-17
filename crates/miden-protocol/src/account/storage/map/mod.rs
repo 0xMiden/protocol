@@ -10,7 +10,7 @@ use crate::crypto::merkle::smt::{LeafIndex, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::{AccountError, StorageMapError};
 
 mod key;
-pub use key::{HashedStorageMapKey, StorageMapKey};
+pub use key::{StorageMapKey, StorageMapKeyHash};
 
 mod partial;
 pub use partial::PartialStorageMap;
@@ -136,21 +136,20 @@ impl StorageMap {
 
     /// Returns the value corresponding to the key or [`Self::EMPTY_VALUE`] if the key is not
     /// associated with a value.
-    pub fn get(&self, raw_key: &Word) -> Word {
-        self.entries.get(raw_key).copied().unwrap_or_default()
+    pub fn get(&self, key: &StorageMapKey) -> Word {
+        self.entries.get(&key.as_word()).copied().unwrap_or_default()
     }
 
-    /// Returns an opening of the leaf associated with raw key.
+    /// Returns an opening of the leaf associated with the given key.
     ///
     /// Conceptually, an opening is a Merkle path to the leaf, as well as the leaf itself.
-    pub fn open(&self, raw_key: &Word) -> StorageMapWitness {
-        let hashed_map_key = StorageMapKey::from_raw(*raw_key).hash();
-        let smt_proof = self.smt.open(&hashed_map_key.into());
-        let value = self.entries.get(raw_key).copied().unwrap_or_default();
+    pub fn open(&self, key: &StorageMapKey) -> StorageMapWitness {
+        let smt_proof = self.smt.open(&key.hash().as_word());
+        let value = self.entries.get(&key.as_word()).copied().unwrap_or_default();
 
         // SAFETY: The key value pair is guaranteed to be present in the provided proof since we
         // open its hashed version and because of the guarantees of the storage map.
-        StorageMapWitness::new_unchecked(smt_proof, [(*raw_key, value)])
+        StorageMapWitness::new_unchecked(smt_proof, [(*key, value)])
     }
 
     // ITERATORS

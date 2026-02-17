@@ -17,6 +17,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotDelta,
@@ -742,7 +743,9 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     );
 
     let old_value_for_key = match slot.content() {
-        StorageSlotContent::Map(original_map) => original_map.get(&new_key),
+        StorageSlotContent::Map(original_map) => {
+            original_map.get(&StorageMapKey::from_raw(new_key))
+        },
         _ => panic!("expected map"),
     };
     assert_eq!(
