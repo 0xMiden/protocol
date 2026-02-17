@@ -127,7 +127,7 @@ pub fn create_basic_wallet(
             AuthSingleSig::new(pub_key, auth_scheme).into()
         },
         AuthMethod::Multisig { threshold, pub_keys, auth_schemes } => {
-            let approvers = pub_keys.into_iter().zip(auth_schemes.into_iter()).collect();
+            let approvers = pub_keys.into_iter().zip(auth_schemes).collect();
             let config = AuthMultisigConfig::new(approvers, threshold)
                 .and_then(|cfg| {
                     cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
