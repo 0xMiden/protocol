@@ -180,7 +180,7 @@ impl MockChainBuilder {
             .into_values()
             .map(|account| {
                 let account_id = account.id();
-                let account_commitment = account.commitment();
+                let account_commitment = account.to_commitment();
                 let account_delta = AccountDelta::try_from(account)
                     .expect("chain builder should only store existing accounts without seeds");
                 let update_details = AccountUpdateDetails::Delta(account_delta);

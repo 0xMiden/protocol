@@ -8,6 +8,11 @@ use $kernel::note
 use $kernel::output_note
 use $kernel::tx
 
+use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+
+use miden::core::word
+
 # NOTE
 # =================================================================================================
 # `exec_kernel_proc` procedure is expected to be invoked using a `syscall` instruction. It makes  #
@@ -16,6 +21,12 @@ use $kernel::tx
 # All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
 # the memory.                                                                                     #
 # =================================================================================================
+
+# TYPE ALIASES
+# =================================================================================================
+
+type AccountID = struct { prefix: felt, suffix: felt }
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # ERRORS
 # =================================================================================================
@@ -33,6 +44,10 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="fai
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
+
+const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
@@ -1354,76 +1369,108 @@ pub proc tx_get_block_timestamp
     # => [timestamp, pad(15)]
 end
 
-#! Starts a foreign account context.
+#! Saves the foreign account ID, foreign procedure root, and the 16th (last) element of the foreign
+#! procedure inputs to the memory.
 #!
-#! This allows calling procedures on an account different from the native account. It loads the
-#! foreign account into memory, unless already loaded. It pushes the foreign account onto the
-#! account stack, which makes the foreign account the active account.
+#! To work around the 15 value limitation of the `exec_kernel_proc` kernel procedure we store the 
+#! 16th value of the foreign procedure inputs to the kernel memory: this allows to FPI any account 
+#! procedure, even if it has 16 input values.
 #!
-#! Inputs:
-#!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
-#!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
-#!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
-#!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
-#!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-#! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0].
-#! - account_nonce is the nonce of the foreign account.
-#! - VAULT_ROOT is the commitment of the foreign account's vault.
-#! - STORAGE_ROOT is the commitment of the foreign account's storage.
-#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0].
-#! - CODE_COMMITMENT is the commitment of the foreign account's code.
-#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+#! - foreign_proc_input_value_15 is the 16th (last) value of the foreign procedure inputs.
 #!
 #! Panics if:
-#! - foreign context is created against the native account.
+#! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_start_foreign_context
-    # get the memory address and a flag whether this account was already loaded.
-    exec.account::get_account_data_ptr
-    # OS => [was_loaded, ptr, foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
+pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
+    # validate the provided foreign account ID
+    dup.1 dup.1 exec.account_id::validate
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 
-    if.true
-        exec.memory::push_ptr_to_account_stack drop drop
-        # OS => [pad(16)]
-    else
-        exec.memory::push_ptr_to_account_stack
-        # OS => [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
+    # store the foreign account ID
+    exec.memory::set_fpi_account_id
+    # => [FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(11)]
 
-        # load the advice data into the active account memory section
-        exec.account::load_foreign_account
-    end
+    # store the foreign procedure root
+    exec.memory::set_fpi_procedure_root dropw
+    # => [foreign_proc_input_value_15, pad(15)]
 
-    # make sure that the state of the loaded foreign account corresponds to this commitment in the
-    # account database
-    exec.account::validate_active_foreign_account
+    # store the 16th value of the foreign procedure inputs
+    mem_store.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
     # => [pad(16)]
 end
 
-#! Ends a foreign account context.
+#! Executes the procedure against the foreign account.
 #!
-#! This pops the top of the account stack, making the previous account the active account.
+#! This procedure should be executed after the `tx_prepare_fpi`, so it is expected for the foreign
+#! account ID and foreign procedure root to be already loaded to the kernel memory.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [foreign_procedure_inputs(15), pad]
+#! Outputs: [foreign_procedure_outputs(16)]
+#!
+#! Where:
+#! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 15 felts. Notice 
+#!   that the 16th (last) element of the inputs is not here and stored in the memory: it will be
+#!   loaded during the setup.
+#! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
 #! Panics if:
-#! - the active account is the native account.
+#! - foreign context is created against the native account.
+#! - the ID of the foreign account loaded from the kernel memory is zero (ID was not set).
+#! - the root of the foreign procedure loaded from the kernel memory is zero (root was not set).
 #!
 #! Invocation: dynexec
-pub proc tx_end_foreign_context
-    exec.memory::pop_ptr_from_account_stack
-    # => [pad(16)]
+pub proc tx_exec_foreign_proc
+    # move up the pad value to the top of the stack so we could drop it later
+    movup.15
+    # => [pad, foreign_procedure_inputs(15)]
+
+    # load the 16th foreign procedure input value onto the stack
+    mem_load.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+    # => [foreign_proc_input_value_15, pad, foreign_procedure_inputs(15)]
+
+    # drop the excess pad and move the 16th inputs value to its 15th position
+    swap drop movdn.15
+    # => [foreign_procedure_inputs(16)]
+
+    # load the ID of the foreign account onto the stack
+    exec.memory::get_fpi_account_id
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+
+    # check that foreign account ID is not equal zero
+    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+
+    # load the foreign account to the memory
+    exec.tx::start_foreign_context
+    # => [foreign_procedure_inputs(16)]
+
+    # get the pointer to the foreign procedure root to perform the dyncall
+    push.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    # check that the foreign procedure root is not zero
+    padw mem_loadw_be.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [FOREIGN_PROC_ROOT, foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    exec.word::eqz assertz.err=ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO
+    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    # call the foreign procedure
+    dyncall
+    # => [foreign_procedure_outputs(16)]
+
+    # end the foreign context
+    exec.tx::end_foreign_context
+    # => [foreign_procedure_outputs(16)]
 end
 
 #! Updates the transaction expiration block delta.
