@@ -1,6 +1,6 @@
 use miden::protocol::native_account
 use miden::protocol::tx
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 
 #! Inputs:  [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 #! Outputs: [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
@@ -72,26 +72,25 @@ end
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 pub proc hash_tx_summary
-    swapdw
-    # => [INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT, SALT, OUTPUT_NOTES_COMMITMENT]
+    # reorder stack for hashing
+    swapw swapdw swapw
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
     # pad capacity element of the hasher
     padw movdnw.2
-    # => [INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT, CAPACITY, SALT, OUTPUT_NOTES_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
 
-    exec.rpo256::permute
-    # => [RATE, RATE, PERM, SALT, OUTPUT_NOTES_COMMITMENT]
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
 
     # drop rate words
     dropw dropw
-    # => [PERM, SALT, OUTPUT_NOTES_COMMITMENT]
+    # => [CAPACITY, OUTPUT_NOTES_COMMITMENT, SALT]
 
     movdnw.2
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, PERM]
+    # => [OUTPUT_NOTES_COMMITMENT, SALT, CAPACITY]
 
-    exec.rpo256::permute
-    # => [RATE, RATE, PERM]
-
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
     # => [TX_SUMMARY_COMMITMENT]
 end

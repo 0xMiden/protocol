@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
@@ -301,7 +301,7 @@ proc write_storage_to_memory
 
     # prepare the stack for the `pipe_double_words_to_memory` procedure.
     #
-    # To match `rpo256::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
+    # To match `poseidon2::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
     # element to `num_storage_items % 8`.
     dup.6 dup.6
     # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
@@ -325,7 +325,7 @@ proc write_storage_to_memory
     # AS => []
 
     # extract the computed commitment from the hasher state
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # drop end_ptr'

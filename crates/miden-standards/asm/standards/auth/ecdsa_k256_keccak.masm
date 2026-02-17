@@ -1,5 +1,5 @@
 use miden::core::crypto::dsa::ecdsa_k256_keccak
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_account
 use miden::protocol::auth::AUTH_REQUEST_EVENT
 use miden::protocol::native_account
@@ -117,10 +117,13 @@ pub proc verify_signatures
         # Check if signature exists for this signer.
         # -----------------------------------------------------------------------------------------
 
-        movup.4 movdn.8 swapw dupw movdnw.2
-        # => [MSG, OWNER_PUB_KEY, MSG, i-1]
+        movup.4 movdn.8
+        # => [OWNER_PUB_KEY, MSG, i-1]
 
-        exec.rpo256::merge
+        dupw.1 swapw
+        # => [OWNER_PUB_KEY, MSG, MSG, i-1]
+
+        exec.poseidon2::merge
         # => [SIG_KEY, MSG, i-1]
 
         adv.has_mapkey

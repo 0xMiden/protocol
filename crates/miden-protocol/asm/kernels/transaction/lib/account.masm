@@ -10,7 +10,7 @@ use $kernel::memory::ACCT_ID_SUFFIX_OFFSET
 use $kernel::memory::ACCT_ID_PREFIX_OFFSET
 use miden::core::collections::smt
 use miden::core::collections::sorted_array
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 
@@ -301,17 +301,18 @@ pub proc compute_commitment
     # => []
 
     # prepare the stack for computing the account commitment
-    exec.memory::get_active_account_data_ptr padw padw padw
-    # => [RATE, RATE, PERM, account_data_ptr]
+    exec.memory::get_active_account_data_ptr
+    exec.poseidon2::init_no_padding
+    # => [RATE0, RATE1, CAPACITY, account_data_ptr]
 
     # stream account data and compute sequential hash. We perform two `mem_stream` operations
     # because the account data consists of exactly 4 words.
-    mem_stream exec.rpo256::permute
-    mem_stream exec.rpo256::permute
-    # => [RATE, RATE, PERM, account_data_ptr']
+    mem_stream exec.poseidon2::permute
+    mem_stream exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY, account_data_ptr']
 
     # extract account commitment
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [ACCOUNT_COMMITMENT, account_data_ptr']
 
     # drop account_data_ptr
@@ -868,30 +869,27 @@ pub proc validate_seed
 
     # pad capacity element of hasher
     padw swapw
-    # => [SEED, 0, 0, 0, 0, EMPTY_WORD]
+    # => [SEED, CAPACITY, EMPTY_WORD]
 
     # populate last four elements of the hasher rate with the code commitment
     exec.memory::get_account_code_commitment
-    # => [CODE_COMMITMENT, SEED, 0, 0, 0, 0, EMPTY_WORD]
+    # => [CODE_COMMITMENT, SEED, CAPACITY, EMPTY_WORD]
 
     # perform first permutation of seed and code_commitment (from advice stack)
     # perm(seed, code_commitment)
-    exec.rpo256::permute
-    # => [RATE, RATE, PERM, EMPTY_WORD]
+    swapw exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY, EMPTY_WORD]
 
     # clear rate elements
     dropw dropw
-    # => [PERM, EMPTY_WORD]
+    # => [CAPACITY, EMPTY_WORD]
 
-    # perform second permutation perm(storage_commitment, 0, 0, 0, 0)
+    # perform second permutation perm(storage_commitment, EMPTY_WORD)
     swapw exec.memory::get_account_storage_commitment swapw
-    # => [EMPTY_WORD, STORAGE_COMMITMENT, PERM]
+    # => [EMPTY_WORD, STORAGE_COMMITMENT, CAPACITY]
 
-    exec.rpo256::permute
-    # => [RATE, RATE, CAP]
-
-    # extract digest
-    exec.rpo256::squeeze_digest
+    swapw exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
     # => [DIGEST]
 
     # Shape suffix to set the lower 8 bits to zero and compare the computed and provided ID.
@@ -1149,18 +1147,18 @@ pub proc save_account_storage_data
     # OS => [acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
-    # pad stack before reading from advice stack
-    padw padw padw
-    # OS => [PAD, PAD, PAD, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
+    # initialize hasher state before reading from advice stack
+    exec.poseidon2::init_no_padding
+    # OS => [RATE0, RATE1, CAPACITY, acct_storage_slots_ptr, end_ptr, STORAGE_COMMITMENT]
     # AS => [[STORAGE_SLOT_DATA]]
 
     # read the data from advice stack to memory and hash
     exec.mem::pipe_double_words_to_memory
-    # OS => [PERM, PERM, PERM, end_ptr', STORAGE_COMMITMENT]
+    # OS => [RATE0, RATE1, CAPACITY, end_ptr', STORAGE_COMMITMENT]
     # AS => []
 
     # extract the digest
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [DIGEST, end_ptr', STORAGE_COMMITMENT]
 
     # drop end_ptr
@@ -1230,11 +1228,11 @@ pub proc save_account_procedure_data
 
     # read the data from advice stack to memory and hash
     exec.mem::pipe_words_to_memory
-    # OS => [PERM, PERM, PERM, end_ptr', CODE_COMMITMENT]
+    # OS => [RATE0, RATE1, CAPACITY, end_ptr', CODE_COMMITMENT]
     # AS => []
 
     # extract the digest
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [DIGEST, end_ptr', CODE_COMMITMENT]
 
     # drop end_ptr
@@ -1821,7 +1819,7 @@ end
 #! Inputs:  [KEY]
 #! Outputs: [HASHED_KEY]
 proc hash_map_key
-    exec.rpo256::hash
+    exec.poseidon2::hash
     # => [HASHED_KEY]
 end
 
@@ -1855,15 +1853,15 @@ proc refresh_storage_commitment
         # => [start_ptr, end_ptr]
 
         # pad stack to read and hash from memory
-        padw padw padw
-        # => [PAD, PAD, PAD, start_ptr, end_ptr]
+        exec.poseidon2::init_no_padding
+        # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
 
         # hash elements from memory
-        exec.rpo256::absorb_double_words_from_memory
-        # => [PERM, PERM, PERM, start_ptr, end_ptr]
+        exec.poseidon2::absorb_double_words_from_memory
+        # => [RATE0, RATE1, CAPACITY, start_ptr, end_ptr]
 
         # extract the digest
-        exec.rpo256::squeeze_digest
+        exec.poseidon2::squeeze_digest
         # => [DIGEST, end_ptr, end_ptr]
 
         # clean stack

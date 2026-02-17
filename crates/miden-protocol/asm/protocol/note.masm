@@ -1,5 +1,5 @@
 use miden::protocol::account_id
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 # Re-export the max inputs per note constant.
@@ -39,7 +39,7 @@ pub proc compute_storage_commitment
     # => [storage_ptr, num_storage_items]
 
     # compute the storage commitment (over the unpadded values)
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [STORAGE_COMMITMENT]
 end
 
@@ -135,17 +135,20 @@ pub proc build_recipient
     movdnw.2
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    padw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
+    padw swapw
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT]
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw adv.insert_hdword exec.rpo256::merge
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    adv.insert_hdword exec.poseidon2::merge
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and storage commitment.
+#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
 #!
 #! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
@@ -158,14 +161,17 @@ end
 #!
 #! Invocation: exec
 pub proc build_recipient_hash
-    padw exec.rpo256::merge
+    padw swapw
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    exec.poseidon2::merge
     # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw exec.rpo256::merge
+    exec.poseidon2::merge
     # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
-    swapw exec.rpo256::merge
-    # [RECIPIENT]
+    exec.poseidon2::merge
+    # => [RECIPIENT]
 end
 
 #! Extracts the sender ID from the provided metadata header.
