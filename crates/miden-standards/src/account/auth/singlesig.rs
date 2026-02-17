@@ -1,7 +1,10 @@
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata, SchemaTypeId, StorageSchema, StorageSlotSchema,
+    AccountComponentMetadata,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;

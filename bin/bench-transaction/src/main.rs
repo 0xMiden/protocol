@@ -7,7 +7,9 @@ use miden_protocol::transaction::TransactionMeasurements;
 
 mod context_setups;
 use context_setups::{
-    tx_consume_single_p2id_note, tx_consume_two_p2id_notes, tx_create_single_p2id_note,
+    tx_consume_single_p2id_note,
+    tx_consume_two_p2id_notes,
+    tx_create_single_p2id_note,
 };
 
 mod cycle_counting_benchmarks;

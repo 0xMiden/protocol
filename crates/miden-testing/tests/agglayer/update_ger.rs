@@ -1,8 +1,9 @@
 use miden_agglayer::{ExitRoot, UpdateGerNote, create_existing_bridge_account};
+use miden_protocol::Word;
 use miden_protocol::account::StorageSlotName;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Word, account::auth::AuthScheme};
 use miden_testing::{Auth, MockChain};
 
 #[tokio::test]

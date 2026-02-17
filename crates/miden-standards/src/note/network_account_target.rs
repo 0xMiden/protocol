@@ -2,7 +2,10 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::errors::{AccountIdError, NoteError};
 use miden_protocol::note::{
-    NoteAttachment, NoteAttachmentContent, NoteAttachmentKind, NoteAttachmentScheme,
+    NoteAttachment,
+    NoteAttachmentContent,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
 };
 
 use crate::note::{NoteExecutionHint, StandardNoteAttachment};

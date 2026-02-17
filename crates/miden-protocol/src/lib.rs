@@ -39,8 +39,20 @@ pub mod assembly {
     pub use miden_assembly::debuginfo::SourceManagerSync;
     pub use miden_assembly::library::LibraryExport;
     pub use miden_assembly::{
-        Assembler, DefaultSourceManager, KernelLibrary, Library, Parse, ParseOptions, Path,
-        SourceFile, SourceId, SourceManager, SourceSpan, debuginfo, diagnostics, mast,
+        Assembler,
+        DefaultSourceManager,
+        KernelLibrary,
+        Library,
+        Parse,
+        ParseOptions,
+        Path,
+        SourceFile,
+        SourceId,
+        SourceManager,
+        SourceSpan,
+        debuginfo,
+        diagnostics,
+        mast,
     };
 }
 
@@ -55,7 +67,11 @@ pub mod utils {
 
     pub mod serde {
         pub use miden_core::utils::{
-            ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+            ByteReader,
+            ByteWriter,
+            Deserializable,
+            DeserializationError,
+            Serializable,
         };
     }
 }
@@ -65,8 +81,14 @@ pub mod vm {
     pub use miden_core::sys_events::SystemEvent;
     pub use miden_core::{AdviceMap, EventId, Program, ProgramInfo};
     pub use miden_mast_package::{
-        MastArtifact, Package, PackageExport, PackageKind, PackageManifest, ProcedureExport,
-        Section, SectionId,
+        MastArtifact,
+        Package,
+        PackageExport,
+        PackageKind,
+        PackageManifest,
+        ProcedureExport,
+        Section,
+        SectionId,
     };
     pub use miden_processor::{AdviceInputs, FutureMaybeSend, RowIndex, StackInputs, StackOutputs};
     pub use miden_verifier::ExecutionProof;

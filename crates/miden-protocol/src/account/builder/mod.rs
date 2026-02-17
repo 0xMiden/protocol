@@ -5,8 +5,15 @@ use miden_core::FieldElement;
 
 use crate::account::component::StorageSchema;
 use crate::account::{
-    Account, AccountCode, AccountComponent, AccountId, AccountIdV0, AccountIdVersion,
-    AccountStorage, AccountStorageMode, AccountType,
+    Account,
+    AccountCode,
+    AccountComponent,
+    AccountId,
+    AccountIdV0,
+    AccountIdVersion,
+    AccountStorage,
+    AccountStorageMode,
+    AccountType,
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;

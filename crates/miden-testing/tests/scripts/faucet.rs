@@ -2,28 +2,42 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::slice;
-use miden_protocol::account::auth::AuthScheme;
 
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountId, AccountIdVersion, AccountStorageMode, AccountType,
+    Account,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteId, NoteMetadata, NoteRecipient, NoteStorage, NoteTag,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteId,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
     NoteType,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::{
-    BasicFungibleFaucet, NetworkFungibleFaucet, TokenMetadata,
+    BasicFungibleFaucet,
+    NetworkFungibleFaucet,
+    TokenMetadata,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
-    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY, ERR_SENDER_NOT_OWNER,
+    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;

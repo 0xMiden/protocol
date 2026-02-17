@@ -1,17 +1,23 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
-    Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails,
+    Asset,
+    AssetVaultKey,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
 };
 use miden_protocol::errors::AssetVaultError;
 use miden_protocol::errors::protocol::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET;
 use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
-    ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED, ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
+    ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED,
+    ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};

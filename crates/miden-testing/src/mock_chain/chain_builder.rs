@@ -16,14 +16,28 @@ use itertools::Itertools;
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountDelta, AccountId, AccountStorageMode, AccountType, StorageSlot,
+    Account,
+    AccountBuilder,
+    AccountDelta,
+    AccountId,
+    AccountStorageMode,
+    AccountType,
+    StorageSlot,
 };
 use miden_protocol::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_protocol::block::account_tree::AccountTree;
 use miden_protocol::block::nullifier_tree::NullifierTree;
 use miden_protocol::block::{
-    BlockAccountUpdate, BlockBody, BlockHeader, BlockNoteTree, BlockNumber, BlockProof, Blockchain,
-    FeeParameters, OutputNoteBatch, ProvenBlock,
+    BlockAccountUpdate,
+    BlockBody,
+    BlockHeader,
+    BlockNoteTree,
+    BlockNumber,
+    BlockProof,
+    Blockchain,
+    FeeParameters,
+    OutputNoteBatch,
+    ProvenBlock,
 };
 use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::crypto::merkle::smt::Smt;

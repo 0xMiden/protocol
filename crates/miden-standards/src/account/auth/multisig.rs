@@ -4,7 +4,11 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata, FeltSchema, SchemaTypeId, StorageSchema, StorageSlotSchema,
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountError;
@@ -258,12 +262,8 @@ impl From<AuthMultisig> for AccountComponent {
         ));
 
         // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-        let scheme_id_entries = multisig
-            .config
-            .approvers()
-            .iter()
-            .enumerate()
-            .map(|(i, (_, auth_scheme))| {
+        let scheme_id_entries =
+            multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
                 (Word::from([i as u32, 0, 0, 0]), Word::from([*auth_scheme as u32, 0, 0, 0]))
             });
 
@@ -303,9 +303,7 @@ impl From<AuthMultisig> for AccountComponent {
         .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
-            .with_description(
-                "Multisig authentication component using hybrid signature schemes",
-            )
+            .with_description("Multisig authentication component using hybrid signature schemes")
             .with_supports_all_types()
             .with_storage_schema(storage_schema);
 

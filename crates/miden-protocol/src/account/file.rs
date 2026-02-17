@@ -9,7 +9,11 @@ use std::{
 use miden_crypto::utils::SliceReader;
 
 use super::super::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use super::Account;
 use super::auth::AuthSecretKey;

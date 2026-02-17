@@ -4,7 +4,12 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use super::{
-    AccountDeltaError, ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    AccountDeltaError,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::account::{AccountId, AccountType};
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
@@ -543,7 +548,8 @@ mod tests {
     use crate::account::{AccountId, AccountIdPrefix};
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
-        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
 
     #[test]

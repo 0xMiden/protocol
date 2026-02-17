@@ -302,9 +302,8 @@ fn extract_multisig_auth_method(
         // The multisig component stores keys and scheme IDs using pattern [index, 0, 0, 0]
         let map_key = Word::from([key_index as u32, 0, 0, 0]);
 
-        let pub_key_word = storage
-            .get_map_item(approver_public_keys_slot, map_key)
-            .unwrap_or_else(|_| {
+        let pub_key_word =
+            storage.get_map_item(approver_public_keys_slot, map_key).unwrap_or_else(|_| {
                 panic!(
                     "Failed to read public key {} from multisig configuration at storage slot {}. \
                      Expected key pattern [index, 0, 0, 0].",

@@ -4,7 +4,9 @@ use alloc::sync::Arc;
 
 use miden_agglayer::agglayer_library;
 use miden_agglayer::errors::{
-    ERR_BRIDGE_NOT_MAINNET, ERR_LEADING_BITS_NON_ZERO, ERR_ROLLUP_INDEX_NON_ZERO,
+    ERR_BRIDGE_NOT_MAINNET,
+    ERR_LEADING_BITS_NON_ZERO,
+    ERR_ROLLUP_INDEX_NON_ZERO,
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;

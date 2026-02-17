@@ -225,7 +225,12 @@ mod tests {
     use miden_assembly::Assembler;
     use miden_core::utils::Serializable;
     use miden_mast_package::{
-        MastArtifact, Package, PackageKind, PackageManifest, Section, SectionId,
+        MastArtifact,
+        Package,
+        PackageKind,
+        PackageManifest,
+        Section,
+        SectionId,
     };
     use semver::Version;
 

@@ -5,7 +5,13 @@ use miden_core::mast::MastForest;
 use miden_core::prettier::PrettyPrint;
 
 use super::{
-    AccountError, ByteReader, ByteWriter, Deserializable, DeserializationError, Felt, Hasher,
+    AccountError,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Felt,
+    Hasher,
     Serializable,
 };
 use crate::Word;

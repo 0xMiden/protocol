@@ -10,7 +10,11 @@ use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContribut
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 use crate::vm::{AdviceMap, Program};
 use crate::{PrettyPrint, Word};

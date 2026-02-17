@@ -8,7 +8,13 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 

@@ -3,7 +3,11 @@ use core::ops::Add;
 
 use crate::Felt;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 // BLOCK NUMBER

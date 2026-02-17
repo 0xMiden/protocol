@@ -5,8 +5,16 @@ use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
-    NoteStorage, NoteTag, NoteType, PartialNote,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteMetadata,
+    NoteRecipient,
+    NoteStorage,
+    NoteTag,
+    NoteType,
+    PartialNote,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};

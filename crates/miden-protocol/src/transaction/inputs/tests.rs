@@ -6,8 +6,15 @@ use std::vec::Vec;
 use miden_core::utils::{Deserializable, Serializable};
 
 use crate::account::{
-    AccountCode, AccountHeader, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
-    StorageSlotHeader, StorageSlotName, StorageSlotType,
+    AccountCode,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    PartialAccount,
+    PartialStorage,
+    StorageSlotHeader,
+    StorageSlotName,
+    StorageSlotType,
 };
 use crate::asset::PartialVault;
 use crate::errors::TransactionInputsExtractionError;
@@ -286,7 +293,11 @@ fn test_transaction_inputs_serialization_with_foreign_slot_names() {
     use miden_core::Felt;
 
     use crate::account::{
-        AccountCode, AccountId, AccountStorageHeader, PartialAccount, PartialStorage,
+        AccountCode,
+        AccountId,
+        AccountStorageHeader,
+        PartialAccount,
+        PartialStorage,
         StorageSlotName,
     };
     use crate::asset::PartialVault;

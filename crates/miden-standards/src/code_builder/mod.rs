@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::AccountComponentCode;
 use miden_protocol::assembly::{
-    Assembler, DefaultSourceManager, Library, Parse, ParseOptions, Path, SourceManagerSync,
+    Assembler,
+    DefaultSourceManager,
+    Library,
+    Parse,
+    ParseOptions,
+    Path,
+    SourceManagerSync,
 };
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{TransactionKernel, TransactionScript};

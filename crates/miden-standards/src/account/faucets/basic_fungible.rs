@@ -1,8 +1,17 @@
 use miden_protocol::account::component::{
-    AccountComponentMetadata, FeltSchema, SchemaTypeId, StorageSchema, StorageSlotSchema,
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountStorage, AccountStorageMode, AccountType,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountStorage,
+    AccountStorageMode,
+    AccountType,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
@@ -325,8 +334,15 @@ mod tests {
     use miden_protocol::{FieldElement, ONE, Word};
 
     use super::{
-        AccountBuilder, AccountStorageMode, AccountType, AuthMethod, BasicFungibleFaucet, Felt,
-        FungibleFaucetError, TokenSymbol, create_basic_fungible_faucet,
+        AccountBuilder,
+        AccountStorageMode,
+        AccountType,
+        AuthMethod,
+        BasicFungibleFaucet,
+        Felt,
+        FungibleFaucetError,
+        TokenSymbol,
+        create_basic_fungible_faucet,
     };
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
     use crate::account::wallets::BasicWallet;

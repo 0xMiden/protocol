@@ -8,8 +8,14 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::super::{
-    FeltSchema, MapSlotSchema, StorageSchema, StorageSlotSchema, StorageValueName, ValueSlotSchema,
-    WordSchema, WordValue,
+    FeltSchema,
+    MapSlotSchema,
+    StorageSchema,
+    StorageSlotSchema,
+    StorageValueName,
+    ValueSlotSchema,
+    WordSchema,
+    WordValue,
 };
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
 use crate::account::component::{AccountComponentMetadata, SchemaTypeId};

@@ -6,7 +6,11 @@ use crate::account::delta::AccountUpdateDetails;
 use crate::errors::BatchAccountUpdateError;
 use crate::transaction::ProvenTransaction;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 // BATCH ACCOUNT UPDATE

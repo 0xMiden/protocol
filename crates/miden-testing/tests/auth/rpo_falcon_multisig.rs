@@ -2,12 +2,17 @@ use miden_processor::AdviceInputs;
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::vm::AdviceMap;

@@ -6,7 +6,11 @@ use miden_core::utils::hash_string_to_word;
 
 use crate::Felt;
 use crate::utils::serde::{
-    ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable,
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
 };
 
 /// The partial hash of a [`StorageSlotName`](super::StorageSlotName).

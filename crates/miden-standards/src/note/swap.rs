@@ -6,8 +6,16 @@ use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteDetails, NoteMetadata, NoteRecipient, NoteScript,
-    NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteDetails,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};

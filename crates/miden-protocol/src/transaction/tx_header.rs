@@ -6,8 +6,14 @@ use crate::Word;
 use crate::asset::FungibleAsset;
 use crate::note::NoteHeader;
 use crate::transaction::{
-    AccountId, ExecutedTransaction, InputNoteCommitment, InputNotes, OutputNote, OutputNotes,
-    ProvenTransaction, TransactionId,
+    AccountId,
+    ExecutedTransaction,
+    InputNoteCommitment,
+    InputNotes,
+    OutputNote,
+    OutputNotes,
+    ProvenTransaction,
+    TransactionId,
 };
 use crate::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 

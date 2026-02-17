@@ -1,9 +1,20 @@
 use miden_protocol::account::component::{
-    AccountComponentMetadata, FeltSchema, SchemaTypeId, StorageSchema, StorageSlotSchema,
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountStorageMode,
-    AccountType, StorageSlot, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountId,
+    AccountStorage,
+    AccountStorageMode,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::sync::LazyLock;

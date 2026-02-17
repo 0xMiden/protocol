@@ -315,7 +315,8 @@ impl FeltType for u8 {
 
 impl FeltType for AuthScheme {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::signature::auth_scheme").expect("type is well formed")
+        SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
+            .expect("type is well formed")
     }
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
@@ -729,7 +730,8 @@ mod tests {
 
     #[test]
     fn auth_scheme_type_supports_named_and_numeric_values() {
-        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme").expect("type is well formed");
+        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
+            .expect("type is well formed");
 
         let numeric_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "2")
@@ -750,7 +752,8 @@ mod tests {
 
     #[test]
     fn auth_scheme_type_rejects_invalid_values() {
-        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme").expect("type is well formed");
+        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
+            .expect("type is well formed");
 
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "invalid").is_err());
