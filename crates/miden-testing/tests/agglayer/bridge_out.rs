@@ -63,6 +63,78 @@ fn read_let_num_leaves(account: &Account) -> u64 {
     value.to_vec()[0].as_int()
 }
 
+async fn assert_bridge_out_consumes_n_notes_updates_ler(num_notes: usize) -> anyhow::Result<()> {
+    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
+    assert!(
+        num_notes <= vectors.amounts.len() && num_notes <= vectors.roots.len(),
+        "requested {num_notes} notes, but vectors contain {} amounts and {} roots",
+        vectors.amounts.len(),
+        vectors.roots.len()
+    );
+
+    let destination_network = vectors.destination_network;
+    let eth_address =
+        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+
+    let mut builder = MockChain::builder();
+    let faucet_owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet =
+        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
+
+    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    builder.add_account(bridge_account.clone())?;
+
+    let mut notes = Vec::with_capacity(num_notes);
+    for amount in vectors.amounts.iter().take(num_notes) {
+        let amount: u64 = amount.parse().expect("valid amount decimal string");
+        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
+        let note = B2AggNote::create(
+            destination_network,
+            eth_address,
+            NoteAssets::new(vec![bridge_asset])?,
+            bridge_account.id(),
+            faucet.id(),
+            builder.rng_mut(),
+        )?;
+
+        builder.add_output_note(OutputNote::Full(note.clone()));
+        notes.push(note);
+    }
+
+    let mut mock_chain = builder.build()?;
+    for (i, note) in notes.iter().enumerate() {
+        let tx = mock_chain
+            .build_tx_context(bridge_account.id(), &[note.id()], &[])?
+            .build()?
+            .execute()
+            .await?;
+        bridge_account.apply_delta(tx.account_delta())?;
+
+        let leaves = (i + 1) as u64;
+        assert_eq!(read_let_num_leaves(&bridge_account), leaves);
+
+        let expected_ler =
+            ExitRoot::new(hex_to_bytes(&vectors.roots[i]).expect("valid root hex")).to_elements();
+        assert_eq!(
+            read_local_exit_root(&bridge_account),
+            expected_ler,
+            "Local Exit Root after {} leaves should match the Solidity-generated root",
+            i + 1
+        );
+
+        mock_chain.add_pending_executed_transaction(&tx)?;
+        mock_chain.prove_next_block()?;
+    }
+
+    Ok(())
+}
+
 /// Tests that consuming a single B2AGG note produces the correct Local Exit Root.
 ///
 /// The leaf data parameters (destination network, address, amount) are taken from the
@@ -213,91 +285,15 @@ async fn test_bridge_out_consumes_b2agg_note() -> anyhow::Result<()> {
 /// must use the frontier state produced by the first one.
 #[tokio::test]
 async fn test_bridge_out_consumes_two_notes_updates_ler() -> anyhow::Result<()> {
-    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
-    let destination_network = vectors.destination_network;
-    let eth_address =
-        EthAddressFormat::from_hex(&vectors.destination_address).expect("Valid Ethereum address");
+    assert_bridge_out_consumes_n_notes_updates_ler(2).await
+}
 
-    let mut builder = MockChain::builder();
-
-    let faucet_owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let faucet =
-        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
-
-    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
-    builder.add_account(bridge_account.clone())?;
-
-    let amount_0: u64 = vectors.amounts[0].parse().expect("valid amount decimal string");
-    let amount_1: u64 = vectors.amounts[1].parse().expect("valid amount decimal string");
-
-    let bridge_asset_0: Asset = FungibleAsset::new(faucet.id(), amount_0).unwrap().into();
-    let bridge_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1).unwrap().into();
-
-    let note_0 = B2AggNote::create(
-        destination_network,
-        eth_address,
-        NoteAssets::new(vec![bridge_asset_0])?,
-        bridge_account.id(),
-        faucet.id(),
-        builder.rng_mut(),
-    )?;
-    let note_1 = B2AggNote::create(
-        destination_network,
-        eth_address,
-        NoteAssets::new(vec![bridge_asset_1])?,
-        bridge_account.id(),
-        faucet.id(),
-        builder.rng_mut(),
-    )?;
-
-    builder.add_output_note(OutputNote::Full(note_0.clone()));
-    builder.add_output_note(OutputNote::Full(note_1.clone()));
-    let mut mock_chain = builder.build()?;
-
-    // Consume first note and verify first root.
-    let tx_0 = mock_chain
-        .build_tx_context(bridge_account.id(), &[note_0.id()], &[])?
-        .build()?
-        .execute()
-        .await?;
-    bridge_account.apply_delta(tx_0.account_delta())?;
-    assert_eq!(read_let_num_leaves(&bridge_account), 1);
-
-    let expected_ler_0 =
-        ExitRoot::new(hex_to_bytes(&vectors.roots[0]).expect("valid root hex")).to_elements();
-    assert_eq!(
-        read_local_exit_root(&bridge_account),
-        expected_ler_0,
-        "Local Exit Root after 1 leaf should match the Solidity-generated root"
-    );
-
-    mock_chain.add_pending_executed_transaction(&tx_0)?;
-    mock_chain.prove_next_block()?;
-
-    // Consume second note and verify cumulative root.
-    let tx_1 = mock_chain
-        .build_tx_context(bridge_account.id(), &[note_1.id()], &[])?
-        .build()?
-        .execute()
-        .await?;
-    bridge_account.apply_delta(tx_1.account_delta())?;
-    assert_eq!(read_let_num_leaves(&bridge_account), 2);
-
-    let expected_ler_1 =
-        ExitRoot::new(hex_to_bytes(&vectors.roots[1]).expect("valid root hex")).to_elements();
-    assert_eq!(
-        read_local_exit_root(&bridge_account),
-        expected_ler_1,
-        "Local Exit Root after 2 leaves should match the Solidity-generated root"
-    );
-
-    Ok(())
+/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
+///
+/// This validates full-vector compatibility of bridge-out frontier persistence and root updates.
+#[tokio::test]
+async fn test_bridge_out_consumes_thirty_two_notes_updates_ler() -> anyhow::Result<()> {
+    assert_bridge_out_consumes_n_notes_updates_ler(32).await
 }
 
 /// Tests the B2AGG (Bridge to AggLayer) note script reclaim functionality.
