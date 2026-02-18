@@ -88,10 +88,14 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
     // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
-    // Note: In MASM, when stack is [GER_LOWER, GER_UPPER], merge produces hash(GER_UPPER ||
-    // GER_LOWER) because the second word on stack is the first argument to merge
     let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
     let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
+    // Elements are reversed: rpo256::merge treats stack as if loaded BE from memory
+    // The following will produce matching hashes:
+    // Rust
+    // Hasher::merge(&[a, b, c, d], &[e, f, g, h])
+    // MASM
+    // rpo256::merge(h, g, f, e, d, c, b, a)
     ger_lower.reverse();
     ger_upper.reverse();
 

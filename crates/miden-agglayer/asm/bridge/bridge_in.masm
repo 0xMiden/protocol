@@ -33,7 +33,7 @@ const GER_KNOWN_FLAG=1
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
-#! Computes hash(GER) = rpo256::merge(GER_LOWER, GER_UPPER) and stores it in a map
+#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
 #! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
 #!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
@@ -41,7 +41,8 @@ const GER_KNOWN_FLAG=1
 #!
 #! Invocation: call
 pub proc update_ger
-    # compute hash(GER) = rpo256::merge(GER_LOWER, GER_UPPER)
+    # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
+    # inputs: [B, A] => output: hash(A || B)
     exec.rpo256::merge
     # => [GER_HASH, pad(12)]
 
