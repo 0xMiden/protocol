@@ -22,7 +22,7 @@ tx_context_debug = []
 
 [dependencies]
 # Workspace dependencies
-miden-agglayer        = { features = ["testing"], workspace = true }
+# miden-agglayer        = { features = ["testing"], workspace = true }
 miden-block-prover    = { features = ["testing"], workspace = true }
 miden-protocol        = { features = ["testing"], workspace = true }
 miden-standards       = { features = ["testing"], workspace = true }
