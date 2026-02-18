@@ -36,6 +36,14 @@ pub enum FungibleFaucetError {
         "account interface does not have the procedures of the network fungible faucet component"
     )]
     MissingNetworkFungibleFaucetInterface,
+    #[error(
+        "account interface does not have the procedures of the timed fungible faucet component"
+    )]
+    MissingTimedFungibleFaucetInterface,
+    #[error(
+        "account interface does not have the procedures of the unlimited fungible faucet component"
+    )]
+    MissingUnlimitedFungibleFaucetInterface,
     #[error("failed to retrieve storage slot with name {slot_name}")]
     StorageLookupFailed {
         slot_name: StorageSlotName,

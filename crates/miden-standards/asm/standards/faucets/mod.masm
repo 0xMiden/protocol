@@ -184,8 +184,8 @@ pub proc burn
     # Prepare stack for update_supply_after_burn: [amount, pad(15)]
     # Current stack is [amount, pad(16)].
     
-    # Move one zero to top to drop it and get pad(15)
-    movup.16 drop
+    # Drop one zero to get pad(15)
+    swap drop
     # => [amount, pad(15)]
     
     exec.fixed_supply::update_supply_after_burn

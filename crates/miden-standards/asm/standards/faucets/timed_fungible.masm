@@ -220,7 +220,7 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
     
     # Prepare stack for update_supply_after_burn: [amount, pad(15)]
-    movup.16 drop
+    swap drop
     # => [amount, pad(15)]
     
     exec.flexible_supply::update_supply_after_burn
