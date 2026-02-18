@@ -449,7 +449,7 @@ impl TransactionInputs {
         let sparse_path = SparseMerklePath::from_sized_iter(merkle_path.path)?;
 
         // Create the account witness.
-        let witness = AccountWitness::new(header.id(), header.commitment(), sparse_path)?;
+        let witness = AccountWitness::new(header.id(), header.to_commitment(), sparse_path)?;
 
         Ok(witness)
     }

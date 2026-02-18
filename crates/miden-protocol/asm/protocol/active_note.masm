@@ -1,10 +1,15 @@
 use miden::core::crypto::hashes::rpo256
 use miden::core::mem
 
-use miden::protocol::kernel_proc_offsets
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_RECIPIENT_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
+use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
 use miden::protocol::note
 
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_NOTE_DATA_DOES_NOT_MATCH_COMMITMENT="note data does not match the commitment"
@@ -39,7 +44,7 @@ pub proc get_assets
     push.1
     # => [is_active_note = 1, pad(14), dest_ptr]
 
-    exec.kernel_proc_offsets::input_note_get_assets_info_offset
+    push.INPUT_NOTE_GET_ASSETS_INFO_OFFSET
     # => [offset, is_active_note = 1, pad(14), dest_ptr]
 
     syscall.exec_kernel_proc
@@ -75,7 +80,7 @@ pub proc get_recipient
     push.1
     # => [is_active_note = 1, pad(14)]
 
-    exec.kernel_proc_offsets::input_note_get_recipient_offset
+    push.INPUT_NOTE_GET_RECIPIENT_OFFSET
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
@@ -112,7 +117,7 @@ pub proc get_storage
     push.1
     # => [is_active_note = 1, pad(14), dest_ptr]
 
-    exec.kernel_proc_offsets::input_note_get_storage_info_offset
+    push.INPUT_NOTE_GET_STORAGE_INFO_OFFSET
     # => [offset, is_active_note = 1, pad(14), dest_ptr]
 
     syscall.exec_kernel_proc
@@ -150,7 +155,7 @@ pub proc get_metadata
     push.1
     # => [is_active_note = 1, pad(14)]
 
-    exec.kernel_proc_offsets::input_note_get_metadata_offset
+    push.INPUT_NOTE_GET_METADATA_OFFSET
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
@@ -204,7 +209,7 @@ pub proc get_serial_number
     push.1
     # => [is_active_note = 1, pad(14)]
 
-    exec.kernel_proc_offsets::input_note_get_serial_number_offset
+    push.INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
@@ -236,7 +241,7 @@ pub proc get_script_root
     push.1
     # => [is_active_note = 1, pad(14)]
 
-    exec.kernel_proc_offsets::input_note_get_script_root_offset
+    push.INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
     # => [offset, is_active_note = 1, pad(14)]
 
     syscall.exec_kernel_proc
@@ -247,7 +252,7 @@ pub proc get_script_root
     # => [SCRIPT_ROOT]
 end
 
-# HELPER PROCEDURES
+# HELPER PROCEDURES
 # =================================================================================================
 
 #! Writes the note storage stored in the advice map to the memory specified by the provided

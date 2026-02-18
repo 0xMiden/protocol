@@ -13,12 +13,16 @@
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
+- Added `p2id::new` MASM constructor procedure for creating P2ID notes from MASM code ([#2381](https://github.com/0xMiden/miden-base/pull/2381)).
 - Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
+- Increased `TokenSymbol` max allowed length from 6 to 12 uppercase characters ([#2420](https://github.com/0xMiden/miden-base/pull/2420)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
+- Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
 
 ### Changes
 
-- [BREAKING] Made `AccountComponentMetadata` a required parameter of `AccountComponent::new()`; removed `with_supported_type`, `with_supports_all_types`, and `with_metadata` methods from `AccountComponent`; simplified `AccountComponentMetadata::new()` to take just `name` ([#2373](https://github.com/0xMiden/miden-base/pull/2373)).
+- Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
+- [BREAKING] Made `AccountComponentMetadata` a required parameter of `AccountComponent::new()`; removed `with_supported_type`, `with_supports_all_types`, and `with_metadata` methods from `AccountComponent`; simplified `AccountComponentMetadata::new()` to take just `name`; renamed `AccountComponentTemplateError` to `ComponentMetadataError` ([#2373](https://github.com/0xMiden/miden-base/pull/2373), [#2395](https://github.com/0xMiden/miden-base/pull/2395)).
 - Fixed MASM inline comment casing to adhere to commenting conventions ([#2398](https://github.com/0xMiden/miden-base/pull/2398)).
 - Removed redundant note storage item count from advice map ([#2376](https://github.com/0xMiden/miden-base/pull/2376)).
 - Moved `NoteExecutionHint` to `miden-standards` ([#2378](https://github.com/0xMiden/miden-base/pull/2378)).
@@ -38,6 +42,9 @@
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 - [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents ([#2348](https://github.com/0xMiden/miden-base/issues/2348)).
+- [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 
 ## 0.13.3 (2026-01-27)
 

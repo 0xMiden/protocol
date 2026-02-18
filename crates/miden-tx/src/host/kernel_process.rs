@@ -5,6 +5,8 @@ use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
     ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_PREFIX_IDX,
+    ACCT_ID_SUFFIX_IDX,
     ACCT_STORAGE_SLOT_ID_PREFIX_OFFSET,
     ACCT_STORAGE_SLOT_ID_SUFFIX_OFFSET,
     ACCT_STORAGE_SLOT_TYPE_OFFSET,
@@ -93,12 +95,15 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 TransactionKernelError::other("active account id should be initialized")
             })?;
 
-        AccountId::try_from([active_account_id_and_nonce[1], active_account_id_and_nonce[0]])
-            .map_err(|_| {
-                TransactionKernelError::other(
-                    "active account id ptr should point to a valid account ID",
-                )
-            })
+        AccountId::try_from([
+            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+            active_account_id_and_nonce[ACCT_ID_SUFFIX_IDX],
+        ])
+        .map_err(|_| {
+            TransactionKernelError::other(
+                "active account id ptr should point to a valid account ID",
+            )
+        })
     }
 
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError> {

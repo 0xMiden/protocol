@@ -8,7 +8,7 @@ use super::super::type_registry::{SchemaRequirement, SchemaTypeId};
 use super::super::{InitStorageData, StorageValueName};
 use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 // STORAGE SLOT SCHEMA
 // ================================================================================================
@@ -49,7 +49,7 @@ impl StorageSlotSchema {
         &self,
         slot_name: &StorageSlotName,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
-    ) -> Result<(), AccountComponentTemplateError> {
+    ) -> Result<(), ComponentMetadataError> {
         let slot_name = StorageValueName::from_slot_name(slot_name);
         match self {
             StorageSlotSchema::Value(slot) => {
@@ -65,7 +65,7 @@ impl StorageSlotSchema {
         &self,
         slot_name: &StorageSlotName,
         init_storage_data: &InitStorageData,
-    ) -> Result<StorageSlot, AccountComponentTemplateError> {
+    ) -> Result<StorageSlot, ComponentMetadataError> {
         match self {
             StorageSlotSchema::Value(slot) => {
                 let word = slot.try_build_word(init_storage_data, slot_name)?;
@@ -78,7 +78,7 @@ impl StorageSlotSchema {
         }
     }
 
-    pub(super) fn validate(&self) -> Result<(), AccountComponentTemplateError> {
+    pub(super) fn validate(&self) -> Result<(), ComponentMetadataError> {
         match self {
             StorageSlotSchema::Value(slot) => slot.validate()?,
             StorageSlotSchema::Map(slot) => slot.validate()?,

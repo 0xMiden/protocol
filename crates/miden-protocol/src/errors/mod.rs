@@ -64,7 +64,7 @@ pub mod protocol;
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum AccountComponentTemplateError {
+pub enum ComponentMetadataError {
     #[error("storage slot name `{0}` is duplicate")]
     DuplicateSlotName(StorageSlotName),
     #[error("storage init value name `{0}` is duplicate")]
@@ -112,8 +112,6 @@ pub enum AccountError {
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
     AccountComponentMastForestMergeError(#[source] MastForestError),
-    // #[error("failed to create account component")]
-    // AccountComponentTemplateInstantiationError(#[source] AccountComponentTemplateError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
     #[error("failed to update asset vault")]
@@ -477,7 +475,7 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
-    #[error("token symbol should have length between 1 and 6 characters, but {0} was provided")]
+    #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
     InvalidCharacter,

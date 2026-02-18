@@ -115,7 +115,7 @@ mod tests {
         let storage = AccountStorage::new(vec![]).unwrap();
         let account = Account::new_existing(id, vault, storage, code, Felt::new(10));
 
-        let commitment = account.commitment();
+        let commitment = account.to_commitment();
 
         let mut merkle_nodes = Vec::with_capacity(SMT_DEPTH as usize);
         for _ in 0..(SMT_DEPTH as usize) {
