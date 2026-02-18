@@ -114,7 +114,8 @@ static UNLIMITED_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         env!("OUT_DIR"),
         "/assets/account_components/faucets/unlimited_fungible_faucet.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Unlimited Fungible Faucet library is well-formed")
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Unlimited Fungible Faucet library is well-formed")
 });
 
 // Initialize the Timed Fungible Faucet library only once.

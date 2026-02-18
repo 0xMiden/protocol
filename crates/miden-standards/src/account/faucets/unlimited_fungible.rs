@@ -89,7 +89,8 @@ impl UnlimitedFungibleFaucet {
 
     /// Creates a new [`UnlimitedFungibleFaucet`] component.
     ///
-    /// The max supply is set to [`FungibleAsset::MAX_AMOUNT`](miden_protocol::asset::FungibleAsset::MAX_AMOUNT)
+    /// The max supply is set to
+    /// [`FungibleAsset::MAX_AMOUNT`](miden_protocol::asset::FungibleAsset::MAX_AMOUNT)
     /// since this faucet does not enforce supply limits at runtime.
     ///
     /// # Errors
@@ -219,9 +220,7 @@ impl From<UnlimitedFungibleFaucet> for AccountComponent {
             .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(UnlimitedFungibleFaucet::NAME)
-            .with_description(
-                "Unlimited fungible faucet component for minting and burning tokens",
-            )
+            .with_description("Unlimited fungible faucet component for minting and burning tokens")
             .with_supported_type(AccountType::FungibleFaucet)
             .with_storage_schema(storage_schema);
 
@@ -344,7 +343,7 @@ mod tests {
         UnlimitedFungibleFaucet,
         create_unlimited_fungible_faucet,
     };
-    use crate::account::auth::{AuthFalcon512Rpo, AuthFalcon512RpoAcl};
+    use crate::account::auth::AuthFalcon512Rpo;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -389,8 +388,7 @@ mod tests {
         );
 
         // Verify the faucet can be extracted via TryFrom
-        let faucet_component =
-            UnlimitedFungibleFaucet::try_from(faucet_account.clone()).unwrap();
+        let faucet_component = UnlimitedFungibleFaucet::try_from(faucet_account.clone()).unwrap();
         assert_eq!(faucet_component.symbol(), token_symbol);
         assert_eq!(faucet_component.decimals(), decimals);
         assert_eq!(faucet_component.max_supply(), Felt::new(FungibleAsset::MAX_AMOUNT));

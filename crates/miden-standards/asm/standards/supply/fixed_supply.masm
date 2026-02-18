@@ -39,7 +39,7 @@ proc get_supply_state
     # => [token_symbol, decimals, max_supply, token_supply]
     
     # We want: [max_supply, token_supply, decimals, token_symbol]
-    movdn.3 movdn.2 swap
+    movdn.3 movdn.2
     # => [max_supply, token_supply, decimals, token_symbol]
 end
 
@@ -62,23 +62,22 @@ pub proc check_supply_limit
     # => [max, token, dec, sym, amount, pad(10)]
     
     # Assert token_supply <= max_supply
-    dup dup.2
-    # => [max, token, max, token, dec, sym, amount, pad(9)]
-    # lte [b, a] -> a <= b. 
+    # Need [max, token] on top for lte: a=token, b=max → token <= max
+    dup.1 dup.1
+    # => [max, token, max, token, dec, sym, amount, ...]
     lte assert.err=ERR_SUPPLY_EXCEEDED
-    # => [max, token, dec, sym, amount, pad(10)]
+    # => [max, token, dec, sym, amount, ...]
     
     # Calculate max_mint_amount = max_supply - token_supply
     dup dup.2 sub
     # => [max_mint, max, token, dec, sym, amount, pad(9)]
     
     # Assert amount <= max_mint_amount
-    dup.5 dup
-    # => [max_mint, amount, max_mint, max, token, dec, sym, amount, pad(8)]
-    swap
-    # => [amount, max_mint, max_mint, max, token, dec, sym, amount, pad(8)]
+    # Need [max_mint, amount] on top for lte: a=amount, b=max_mint → amount <= max_mint
+    dup dup.6 swap
+    # => [max_mint, amount, max_mint, max, token, dec, sym, amount, ...]
     lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
-    # => [max_mint, max, token, dec, sym, amount, pad(9)]
+    # => [max_mint, max, token, dec, sym, amount, ...]
     
     # Clean up and return [max_mint, token, max, pad(12)]
     # Current indices: 0:max_mint, 1:max, 2:token, 3:dec, 4:sym, 5:amount
@@ -146,10 +145,11 @@ pub proc update_supply_after_burn
     # => [max, token, dec, sym, amount, pad(11)]
     
     # Assert amount <= token_supply
-    dup.1 dup.5
-    # => [amount, token, max, token, dec, sym, amount, pad(10)]
+    # Need [token, amount] on top for lte: a=amount, b=token → amount <= token
+    dup.4 dup.2
+    # => [token, amount, max, token, dec, sym, amount, ...]
     lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
-    # => [max, token, dec, sym, amount, pad(11)]
+    # => [max, token, dec, sym, amount, ...]
     
     # Calculate new_token_supply = token_supply - amount
     dup.1 dup.5 sub

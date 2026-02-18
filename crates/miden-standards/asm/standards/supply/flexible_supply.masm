@@ -78,8 +78,9 @@ pub proc check_can_distribute
     # => [max_mint, token, max, end, burn, amount, pad(9)]
     
     # Assert amount <= max_mint
-    dup.5 dup lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
-    # => [max_mint, token, max, end, burn, amount, pad(10)]
+    # Need [max_mint, amount] on top for lte: a=amount, b=max_mint → amount <= max_mint
+    dup dup.6 swap lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    # => [max_mint, token, max, end, burn, amount, ...]
     
     # Clean up and return [max_mint, token, max, pad(12)]
     movup.5 drop # amount
@@ -101,16 +102,17 @@ pub proc check_can_burn
     dup.3
     if.true
         dup.2 # end
-        dup push.0 eq assert.err=ERR_BURN_NOT_ALLOWED # end block must be set for burn-only mode
+        dup push.0 neq assert.err=ERR_BURN_NOT_ALLOWED # end block must be set for burn-only mode
         
         exec.get_current_block_height
         swap gte assert.err=ERR_BURN_NOT_ALLOWED
     end
     # => [token, max, end, burn, amount, pad(11)]
     
-    # Assert amount <= token
-    dup dup.5 lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
-    # => [token, max, end, burn, amount, pad(11)]
+    # Assert amount <= token_supply
+    # Need [token, amount] on top for lte: a=amount, b=token → amount <= token
+    dup.4 dup.1 lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    # => [token, max, end, burn, amount, ...]
     
     # Clean up and return pad(16)
     drop drop drop drop drop
@@ -130,25 +132,25 @@ pub proc update_supply_after_mint
     dup dup.5 add
     # => [new, token, max, end, burn, amount, pad(11)]
     
-    # Remove old token and amount not needed for storage
-    movdn.4 swap drop
-    # => [max, end, burn, new, amount, pad(11)]
-    
+    # Remove old token
+    swap drop
+    # => [new, max, end, burn, amount, ...]
+
     # Reorder to [burn, end, max, new]
-    # Current: 0:max, 1:end, 2:burn, 3:new
+    movdn.3
+    # => [max, end, burn, new, amount, ...]
     movup.2 # burn
     movup.2 # end
     swap
-    # => [burn, end, max, new, amount, pad(11)]
-    
+    # => [burn, end, max, new, amount, ...]
+
     push.FLEXIBLE_SUPPLY_CONFIG_SLOT[0..2]
-    # => [pre, suf, burn, end, max, new, ... (18 items total)]
     movdn.5 movdn.5
-    # => [burn, end, max, new, pre, suf, amount, pad(11)]
-    
+    # => [burn, end, max, new, pre, suf, amount, ...]
+
     exec.native_account::set_item
-    # => [OLD, amount, pad(11)]
-    
+    # => [OLD, amount, ...]
+
     dropw drop repeat.11 drop end
     padw padw padw padw
 end
@@ -159,21 +161,23 @@ end
 #! Outputs: [pad(16)]
 pub proc update_supply_after_burn
     exec.get_flexible_supply_state
-    # => [token, max, end, burn, amount, pad(11)]
-    
+    # => [token, max, end, burn, amount, ...]
+
     # Calculate new_token = token - amount
     dup dup.5 sub
-    # => [new, token, max, end, burn, amount, pad(11)]
-    
+    # => [new, token, max, end, burn, amount, ...]
+
     # Remove old token
-    movdn.4 swap drop
-    # => [max, end, burn, new, amount, pad(11)]
-    
+    swap drop
+    # => [new, max, end, burn, amount, ...]
+
     # Reorder to [burn, end, max, new]
+    movdn.3
+    # => [max, end, burn, new, amount, ...]
     movup.2 # burn
     movup.2 # end
     swap
-    # => [burn, end, max, new, amount, pad(11)]
+    # => [burn, end, max, new, amount, ...]
     
     push.FLEXIBLE_SUPPLY_CONFIG_SLOT[0..2]
     movdn.5 movdn.5

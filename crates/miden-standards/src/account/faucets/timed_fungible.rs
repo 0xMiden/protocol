@@ -72,8 +72,8 @@ procedure_digest!(
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
-/// - [`Self::supply_config_slot`]: Stores supply config
-///   `[token_supply, max_supply, distribution_end, burn_only]`.
+/// - [`Self::supply_config_slot`]: Stores supply config `[token_supply, max_supply,
+///   distribution_end, burn_only]`.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct TimedFungibleFaucet {
@@ -115,19 +115,11 @@ impl TimedFungibleFaucet {
         burn_only: bool,
     ) -> Result<Self, FungibleFaucetError> {
         let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
-        Ok(Self {
-            metadata,
-            distribution_end,
-            burn_only,
-        })
+        Ok(Self { metadata, distribution_end, burn_only })
     }
 
     /// Creates a new [`TimedFungibleFaucet`] component from the given [`TokenMetadata`].
-    pub fn from_metadata(
-        metadata: TokenMetadata,
-        distribution_end: u32,
-        burn_only: bool,
-    ) -> Self {
+    pub fn from_metadata(metadata: TokenMetadata, distribution_end: u32, burn_only: bool) -> Self {
         Self { metadata, distribution_end, burn_only }
     }
 
@@ -432,7 +424,7 @@ mod tests {
         TokenSymbol,
         create_timed_fungible_faucet,
     };
-    use crate::account::auth::{AuthFalcon512Rpo, AuthFalcon512RpoAcl};
+    use crate::account::auth::AuthFalcon512Rpo;
     use crate::account::wallets::BasicWallet;
 
     #[test]
