@@ -362,8 +362,9 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
         .expect("LET root_hi storage slot name should be valid");
     let let_num_leaves_slot_name = StorageSlotName::new("miden::agglayer::let::num_leaves")
         .expect("LET num_leaves storage slot name should be valid");
-    let faucet_registry_slot_name = StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
-        .expect("Faucet registry storage slot name should be valid");
+    let faucet_registry_slot_name =
+        StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
+            .expect("Faucet registry storage slot name should be valid");
     let bridge_out_storage_slots = vec![
         StorageSlot::with_empty_map(let_storage_slot_name),
         StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),

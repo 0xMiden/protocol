@@ -147,12 +147,12 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     // CREATE ALL B2AGG NOTES UPFRONT (before building mock chain)
     // --------------------------------------------------------------------------------------------
     let mut notes = Vec::with_capacity(note_count);
-    for i in 0..note_count {
+    for (i, &amount) in expected_amounts.iter().enumerate().take(note_count) {
         let destination_network = vectors.destination_networks[i];
         let eth_address = EthAddressFormat::from_hex(&vectors.destination_addresses[i])
             .expect("valid destination address");
 
-        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), expected_amounts[i]).unwrap().into();
+        let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
         let note = B2AggNote::create(
             destination_network,
             eth_address,
