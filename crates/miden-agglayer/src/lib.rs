@@ -338,15 +338,9 @@ pub fn create_agglayer_faucet_component(
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
 pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
-    // Create the "bridge_in" component
-    let ger_upper_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger_upper")
+    let ger_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger")
         .expect("Bridge storage slot name should be valid");
-    let ger_lower_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger_lower")
-        .expect("Bridge storage slot name should be valid");
-    let bridge_in_storage_slots = vec![
-        StorageSlot::with_value(ger_upper_storage_slot_name, Word::empty()),
-        StorageSlot::with_value(ger_lower_storage_slot_name, Word::empty()),
-    ];
+    let bridge_in_storage_slots = vec![StorageSlot::with_empty_map(ger_storage_slot_name)];
 
     let bridge_in_component = bridge_in_component(bridge_in_storage_slots);
 
