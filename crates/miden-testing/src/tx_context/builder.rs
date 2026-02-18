@@ -103,7 +103,7 @@ impl TransactionContextBuilder {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: true,
+            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
     }
 
