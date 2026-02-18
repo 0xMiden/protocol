@@ -91,18 +91,20 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 #!
 #! Invocation: exec
 pub proc get_origin_token_address
-    # Read slot 1: [addr0, addr1, addr2, addr3]
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
+    # => [addr3, addr2, addr1, addr0]
+    exec.word::reverse
     # => [addr0, addr1, addr2, addr3]
 
-    # Read slot 2: [addr4, origin_network, scale, 0]
+    # Read slot 2: [0, scale, origin_network, addr4]
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [addr4, origin_network, scale, 0, addr0, addr1, addr2, addr3]
+    # => [0, scale, origin_network, addr4, addr0, addr1, addr2, addr3]
 
-    # Keep only addr4 and drop the rest of slot 2
-    movdn.7 drop drop drop
+    # Keep only addr4 from slot 2 and append it after slot 1 limbs
+    drop drop drop
+    movdn.4
     # => [addr0, addr1, addr2, addr3, addr4]
 end
 
