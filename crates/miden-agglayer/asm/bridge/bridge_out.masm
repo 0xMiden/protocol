@@ -23,7 +23,9 @@ type MemoryAddress = u32
 
 # CONSTANTS
 # =================================================================================================
-const BURN_ASSET_LOC=0
+
+# bridge_out memory locals
+const BRIDGE_OUT_BURN_ASSET_LOC=0
 const DESTINATION_ADDRESS_0_LOC=4
 const DESTINATION_ADDRESS_1_LOC=5
 const DESTINATION_ADDRESS_2_LOC=6
@@ -90,7 +92,7 @@ const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet
 @locals(10)
 pub proc bridge_out
     # Save ASSET to memory for later BURN note creation
-    loc_storew_be.BURN_ASSET_LOC dropw
+    loc_storew_be.BRIDGE_OUT_BURN_ASSET_LOC dropw
     loc_store.DESTINATION_NETWORK_LOC
     loc_store.DESTINATION_ADDRESS_0_LOC
     loc_store.DESTINATION_ADDRESS_1_LOC
@@ -100,7 +102,7 @@ pub proc bridge_out
     # => []
 
     # --- 1. Validate faucet registration and convert asset via FPI ---
-    loc_loadw_be.BURN_ASSET_LOC
+    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
     exec.convert_asset
     # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, dest_network_id, dest_address(5)]
 
@@ -172,7 +174,7 @@ pub proc bridge_out
     exec.add_leaf_bridge
 
     # --- 4. Create BURN output note for ASSET ---
-    loc_loadw_be.BURN_ASSET_LOC
+    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
     exec.create_burn_note
 end
 
