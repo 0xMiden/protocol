@@ -1,0 +1,69 @@
+use miden::agglayer::bridge_config
+use miden::protocol::active_note
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::standards::attachments::network_account_target
+
+# CONSTANTS
+# =================================================================================================
+
+const STORAGE_START_PTR = 0
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 2 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
+
+#! Registers a faucet in the bridge's faucet registry.
+#!
+#! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
+#! attachment. Upon consumption, it registers the faucet ID from note storage in the bridge's
+#! faucet registry.
+
+#! Note: Currently, there are no sender validation checks, so anyone can register a faucet.
+#!
+#! Requires that the account exposes:
+#! - agglayer::bridge_config::register_faucet procedure.
+#!
+#! Inputs:  [ARGS, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! NoteStorage layout (2 felts total):
+#! - faucet_id_prefix [0]: 1 felt
+#! - faucet_id_suffix [1]: 1 felt
+#!
+#! Where:
+#! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
+#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
+#!
+#! Panics if:
+#! - The note attachment target account does not match the consuming bridge account.
+#! - The note does not contain exactly 2 storage items.
+#! - The account does not expose the register_faucet procedure.
+#!
+begin
+    dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Load note storage to memory
+    push.STORAGE_START_PTR exec.active_note::get_storage
+    # => [num_storage_items, dest_ptr, pad(16)]
+
+    push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
+    # => [pad(16)]
+
+    # Load the faucet ID from memory, replacing the top 4 zeros
+    mem_loadw_le.STORAGE_START_PTR
+    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+
+    # Register the faucet in the bridge's faucet registry
+    call.bridge_config::register_faucet
+    # => [pad(16)]
+end

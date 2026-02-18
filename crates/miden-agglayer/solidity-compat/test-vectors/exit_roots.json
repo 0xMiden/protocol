@@ -1,0 +1,14 @@
+{
+  "global_exit_roots": [
+    "0x207f0b7db488bbc423fc3d12db21b97e574453e12b49ca21205181af677d7b04",
+    "0x8e10e03b7db5ffe76edbea651052f8045289ece97947297de6279ce9f6730252"
+  ],
+  "mainnet_exit_roots": [
+    "0x98c911b6dcface93fd0bb490d09390f2f7f9fcf36fc208cbb36528a229298326",
+    "0xbb71d991caf89fe64878259a61ae8d0b4310c176e66d90fd2370b02573e80c90"
+  ],
+  "rollup_exit_roots": [
+    "0x6a2533a24cc2a3feecf5c09b6a270bbb24a5e2ce02c18c0e26cd54c3dddc2d70",
+    "0xd9b546933b59acd388dc0c6520cbf2d4dbb9bac66f74f167ba70f221d82a440c"
+  ]
+}

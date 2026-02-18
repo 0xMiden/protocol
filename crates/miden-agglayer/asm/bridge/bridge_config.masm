@@ -1,0 +1,45 @@
+use miden::protocol::native_account
+
+# CONSTANTS
+# =================================================================================================
+
+const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+const IS_REGISTERED_FLAG=1
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Registers a faucet in the bridge's faucet registry.
+#!
+#! Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
+#! `KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]`.
+#!
+#! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
+#! non-existent entries (SMTs return EMPTY_WORD for missing keys).
+#!
+#! TODO: Currently, no sender validation is performed — anyone can register a faucet.
+#! Tracked in https://github.com/0xMiden/miden-base/issues/2450
+#!
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc register_faucet
+    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+
+    # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
+    push.IS_REGISTERED_FLAG
+    # => [IS_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
+
+    movdn.7
+    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_REGISTERED_FLAG], pad(9)]
+
+    # Place slot ID on top
+    push.FAUCET_REGISTRY_SLOT[0..2]
+    # Stack: [slot0, slot1, [prefix, suffix, 0, 0], [0, 0, 0, 1], pad(9)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE(4), pad(9)]
+
+    dropw
+end

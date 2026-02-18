@@ -7,8 +7,6 @@ use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::TransactionContextBuilder;
-use serde::Deserialize;
-
 // KECCAK MMR FRONTIER
 // ================================================================================================
 
@@ -146,39 +144,7 @@ async fn test_check_empty_mmr_root() -> anyhow::Result<()> {
 // Test vectors generated from: https://github.com/agglayer/agglayer-contracts
 // Run `make generate-solidity-test-vectors` to regenerate the test vectors.
 
-/// Canonical zeros JSON embedded at compile time from the Foundry-generated file.
-const CANONICAL_ZEROS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
-
-/// MMR frontier vectors JSON embedded at compile time from the Foundry-generated file.
-const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
-
-/// Deserialized canonical zeros from Solidity DepositContractBase.sol
-#[derive(Debug, Deserialize)]
-struct CanonicalZerosFile {
-    canonical_zeros: Vec<String>,
-}
-
-/// Deserialized MMR frontier vectors from Solidity DepositContractBase.sol
-/// Uses parallel arrays for leaves, roots, and counts instead of array of objects
-#[derive(Debug, Deserialize)]
-struct MmrFrontierVectorsFile {
-    leaves: Vec<String>,
-    roots: Vec<String>,
-    counts: Vec<u32>,
-}
-
-/// Lazily parsed canonical zeros from the JSON file.
-static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::new(|| {
-    serde_json::from_str(CANONICAL_ZEROS_JSON).expect("Failed to parse canonical zeros JSON")
-});
-
-/// Lazily parsed MMR frontier vectors from the JSON file.
-static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
-    serde_json::from_str(MMR_FRONTIER_VECTORS_JSON)
-        .expect("failed to parse MMR frontier vectors JSON")
-});
+use super::test_utils::{SOLIDITY_CANONICAL_ZEROS, SOLIDITY_MMR_FRONTIER_VECTORS};
 
 /// Verifies that the Rust KeccakMmrFrontier32 produces the same canonical zeros as Solidity.
 #[test]

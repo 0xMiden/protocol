@@ -1,6 +1,7 @@
 pub mod asset_conversion;
 mod bridge_in;
 mod bridge_out;
+mod config_bridge;
 mod crypto_utils;
 mod global_index;
 mod mmr_frontier;

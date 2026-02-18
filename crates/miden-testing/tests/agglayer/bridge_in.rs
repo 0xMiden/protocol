@@ -2,17 +2,19 @@ extern crate alloc;
 
 use miden_agglayer::{
     ClaimNoteStorage,
+    EthAddressFormat,
     OutputNoteData,
+    UpdateGerNote,
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
-use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
+use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
@@ -45,18 +47,27 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
+    // Origin token address for the faucet's conversion metadata
+    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let origin_network = 0u32;
+    let scale = 10u8;
+
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
         token_symbol,
         decimals,
         max_supply,
+        Felt::ZERO,
         bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
     // GET REAL CLAIM DATA FROM JSON
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data) = real_claim_data();
+    let (proof_data, leaf_data, ger) = real_claim_data();
 
     // Get the destination account ID from the leaf data
     // This requires the destination_address to be in the embedded Miden AccountId format
@@ -82,10 +93,19 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Generate a serial number for the P2ID note
     let serial_num = builder.rng_mut().draw_word();
 
+    // Calculate the scaled-down Miden amount
+    // Using scale_exp = 10 for 8-decimal tokens (matching the faucet's decimals)
+    let scale_exp = 10u32;
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale_exp)
+        .expect("amount should scale successfully");
+
     let output_note_data = OutputNoteData {
         output_p2id_serial_num: serial_num,
         target_faucet_account_id: agglayer_faucet.id(),
         output_note_tag: NoteTag::with_account_target(destination_account_id),
+        miden_claim_amount,
     };
 
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
@@ -95,9 +115,24 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
 
+    // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_note =
+        UpdateGerNote::create(ger, sender_account.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
     let mut mock_chain = builder.clone().build()?;
+
+    // EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // EXECUTE CLAIM NOTE AGAINST AGGLAYER FAUCET (with FPI to Bridge)
