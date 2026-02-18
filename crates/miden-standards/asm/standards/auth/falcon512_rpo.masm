@@ -1,4 +1,5 @@
-use miden::core::crypto::dsa::falcon512rpo
+# TODO(bele): Rename module to poseidon2. Not done for now to avoid conflicts with PR 2390.
+use miden::core::crypto::dsa::falcon512poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::protocol::active_account
 use miden::protocol::auth::AUTH_REQUEST_EVENT
@@ -62,7 +63,7 @@ pub proc authenticate_transaction
     # Verify the signature against the public key and the message. The procedure gets as inputs the
     # hash of the public key and the message via the operand stack. The signature is provided via
     # the advice stack. The signature is valid if and only if the procedure returns.
-    exec.falcon512rpo::verify
+    exec.falcon512poseidon2::verify
     # OS => []
     # AS => []
 end
@@ -158,7 +159,7 @@ pub proc verify_signatures
             # OS => [PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 
-            exec.falcon512rpo::verify
+            exec.falcon512poseidon2::verify
             # => [MSG, i-1]
 
             loc_load.SUCCESSFUL_VERIFICATIONS_LOC

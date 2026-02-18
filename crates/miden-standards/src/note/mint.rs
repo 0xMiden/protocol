@@ -4,6 +4,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -202,8 +203,8 @@ impl From<MintNoteStorage> for NoteStorage {
                 tag,
                 attachment,
             } => {
-                let attachment_scheme = Felt::from(attachment.attachment_scheme().as_u32());
-                let attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
+                let attachment_scheme = Felt::from_num(attachment.attachment_scheme().as_u32());
+                let attachment_kind = Felt::from_num(attachment.attachment_kind().as_u8());
                 let attachment = attachment.content().to_word();
 
                 let mut storage_values = Vec::with_capacity(12);
@@ -219,8 +220,8 @@ impl From<MintNoteStorage> for NoteStorage {
                     .expect("number of storage items should not exceed max storage items")
             },
             MintNoteStorage::Public { recipient, amount, tag, attachment } => {
-                let attachment_scheme = Felt::from(attachment.attachment_scheme().as_u32());
-                let attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
+                let attachment_scheme = Felt::from_num(attachment.attachment_scheme().as_u32());
+                let attachment_kind = Felt::from_num(attachment.attachment_kind().as_u8());
                 let attachment = attachment.content().to_word();
 
                 let mut storage_values = vec![tag, amount, attachment_kind, attachment_scheme];

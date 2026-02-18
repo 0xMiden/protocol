@@ -7,6 +7,7 @@ use miden_protocol::assembly::debuginfo::{SourceLanguage, SourceManagerSync, Uri
 use miden_protocol::assembly::{DefaultSourceManager, Library};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -132,8 +133,8 @@ impl NoteBuilder {
             SourceLanguage::Masm,
             Uri::new(format!(
                 "note_{:x}{:x}",
-                self.serial_num[0].as_int(),
-                self.serial_num[1].as_int()
+                self.serial_num[0].as_canonical_u64(),
+                self.serial_num[1].as_canonical_u64()
             )),
             self.code,
         );

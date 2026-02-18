@@ -12,7 +12,6 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
-    PartialStorage,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
@@ -345,8 +344,9 @@ pub fn create_basic_fungible_faucet(
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_protocol::Word;
     use miden_protocol::account::auth::PublicKeyCommitment;
-    use miden_protocol::{FieldElement, ONE, Word};
+    use miden_protocol::field::PrimeCharacteristicRing;
 
     use super::{
         AccountBuilder,
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn faucet_contract_creation() {
-        let pub_key_word = Word::new([ONE; 4]);
+        let pub_key_word = Word::new([Felt::ONE; 4]);
         let auth_scheme: AuthScheme = AuthScheme::Falcon512Rpo { pub_key: pub_key_word.into() };
 
         // we need to use an initial seed to create the wallet account

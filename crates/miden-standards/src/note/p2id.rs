@@ -162,9 +162,10 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::errors::NoteError;
-    use miden_protocol::{Felt, FieldElement};
+    use miden_protocol::field::PrimeCharacteristicRing;
 
     use super::*;
 

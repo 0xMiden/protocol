@@ -1,7 +1,8 @@
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::field::{FromNum, PrimeCharacteristicRing, PrimeField64};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use super::FungibleFaucetError;
 
@@ -78,17 +79,17 @@ impl TokenMetadata {
             });
         }
 
-        if max_supply.as_int() > FungibleAsset::MAX_AMOUNT {
+        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
             return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_int(),
+                actual: max_supply.as_canonical_u64(),
                 max: FungibleAsset::MAX_AMOUNT,
             });
         }
 
-        if token_supply.as_int() > max_supply.as_int() {
+        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_int(),
-                max_supply: max_supply.as_int(),
+                token_supply: token_supply.as_canonical_u64(),
+                max_supply: max_supply.as_canonical_u64(),
             });
         }
 
@@ -138,10 +139,10 @@ impl TokenMetadata {
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_int() > self.max_supply.as_int() {
+        if token_supply.as_canonical_u64() > self.max_supply.as_canonical_u64() {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_int(),
-                max_supply: self.max_supply.as_int(),
+                token_supply: token_supply.as_canonical_u64(),
+                max_supply: self.max_supply.as_canonical_u64(),
             });
         }
 
@@ -166,11 +167,12 @@ impl TryFrom<Word> for TokenMetadata {
         let symbol =
             TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
 
-        let decimals =
-            decimals.as_int().try_into().map_err(|_| FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_int(),
+        let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
+            FungibleFaucetError::TooManyDecimals {
+                actual: decimals.as_canonical_u64(),
                 max: Self::MAX_DECIMALS,
-            })?;
+            }
+        })?;
 
         Self::with_supply(symbol, decimals, max_supply, token_supply)
     }
@@ -182,7 +184,7 @@ impl From<TokenMetadata> for Word {
         Word::new([
             metadata.token_supply,
             metadata.max_supply,
-            Felt::from(metadata.decimals),
+            Felt::from_num(metadata.decimals),
             metadata.symbol.into(),
         ])
     }
@@ -236,7 +238,7 @@ impl TryFrom<&AccountStorage> for TokenMetadata {
 #[cfg(test)]
 mod tests {
     use miden_protocol::asset::TokenSymbol;
-    use miden_protocol::{Felt, FieldElement, Word};
+    use miden_protocol::{Felt, Word};
 
     use super::*;
 
@@ -305,7 +307,7 @@ mod tests {
         // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(word[0], Felt::ZERO); // token_supply
         assert_eq!(word[1], max_supply);
-        assert_eq!(word[2], Felt::from(decimals));
+        assert_eq!(word[2], Felt::from_num(decimals));
         assert_eq!(word[3], symbol.into());
     }
 

@@ -6,6 +6,7 @@ use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
+use miden_protocol::field::{PrimeCharacteristicRing, PrimeField64};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -18,7 +19,7 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 // NOTE SCRIPT
@@ -186,7 +187,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             None
         } else {
             let height: u32 = note_storage[2]
-                .as_int()
+                .as_canonical_u64()
                 .try_into()
                 .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
@@ -197,7 +198,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             None
         } else {
             let height: u32 = note_storage[3]
-                .as_int()
+                .as_canonical_u64()
                 .try_into()
                 .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
@@ -213,10 +214,11 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
-    use miden_protocol::{Felt, FieldElement};
+    use miden_protocol::field::FromNum;
 
     use super::*;
 
@@ -236,8 +238,8 @@ mod tests {
         let storage = vec![
             target.suffix(),
             target.prefix().as_felt(),
-            Felt::from(42u32),
-            Felt::from(100u32),
+            Felt::from_num(42u32),
+            Felt::from_num(100u32),
         ];
 
         let decoded = P2ideNoteStorage::try_from(storage.as_slice())
