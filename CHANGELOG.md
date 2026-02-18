@@ -45,6 +45,7 @@
 - [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
+- [BREAKING] Remove `BlockSigner` trait ([#2447](https://github.com/0xMiden/miden-base/pull/2447)).
 
 ## 0.13.3 (2026-01-27)
 
