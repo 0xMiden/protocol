@@ -43,6 +43,9 @@ pub const ERR_MSB_NONZERO: MasmError = MasmError::from_static_str("most-signific
 /// Error Message: "address limb is not u32"
 pub const ERR_NOT_U32: MasmError = MasmError::from_static_str("address limb is not u32");
 
+/// Error Message: "remainder z must be < 10^s"
+pub const ERR_REMAINDER_TOO_LARGE: MasmError = MasmError::from_static_str("remainder z must be < 10^s");
+
 /// Error Message: "rollup index must be zero for a mainnet deposit"
 pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rollup index must be zero for a mainnet deposit");
 
@@ -52,7 +55,16 @@ pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_st
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
 
+/// Error Message: "x < y*10^s (underflow detected)"
+pub const ERR_UNDERFLOW: MasmError = MasmError::from_static_str("x < y*10^s (underflow detected)");
+
 /// Error Message: "UPDATE_GER note attachment target account does not match consuming account"
 pub const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("UPDATE_GER note attachment target account does not match consuming account");
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"
 pub const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("UPDATE_GER script expects exactly 8 note storage items");
+
+/// Error Message: "x must fit into 128 bits (x4..x7 must be 0)"
+pub const ERR_X_TOO_LARGE: MasmError = MasmError::from_static_str("x must fit into 128 bits (x4..x7 must be 0)");
+
+/// Error Message: "y exceeds max fungible token amount"
+pub const ERR_Y_TOO_LARGE: MasmError = MasmError::from_static_str("y exceeds max fungible token amount");

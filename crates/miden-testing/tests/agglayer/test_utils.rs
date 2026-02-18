@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -14,6 +15,7 @@ use miden_agglayer::{
     MetadataHash,
     agglayer_library,
 };
+use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
@@ -21,6 +23,25 @@ use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
 use serde::Deserialize;
+
+// SERDE HELPERS
+// ================================================================================================
+
+/// Deserializes a JSON value that may be either a number or a string into a `String`.
+///
+/// Foundry's `vm.serializeUint` outputs JSON numbers for uint256 values.
+/// This deserializer accepts both `"100"` (string) and `100` (number) forms.
+fn deserialize_uint_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        _ => Err(serde::de::Error::custom("expected a number or string for amount")),
+    }
+}
 
 // TEST VECTOR STRUCTURES
 // ================================================================================================
@@ -62,6 +83,7 @@ pub struct LeafValueVector {
     pub origin_token_address: String,
     pub destination_network: u32,
     pub destination_address: String,
+    #[serde(deserialize_with = "deserialize_uint_to_string")]
     pub amount: String,
     pub metadata_hash: String,
     #[allow(dead_code)]
@@ -78,7 +100,7 @@ impl LeafValueVector {
             destination_network: self.destination_network,
             destination_address: EthAddressFormat::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
-            amount: EthAmount::new(hex_to_bytes(&self.amount).expect("valid amount hex")),
+            amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
             metadata_hash: MetadataHash::new(
                 hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
             ),
@@ -189,4 +211,32 @@ pub async fn execute_program_with_default_host(
 
     let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
     processor.execute(&program, &mut host).await
+}
+
+/// Execute a MASM script with the default host
+pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    let agglayer_lib = agglayer_library();
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib)
+        .unwrap()
+        .assemble_program(script_code)
+        .unwrap();
+
+    execute_program_with_default_host(program, None).await
+}
+
+/// Helper to assert execution fails with a specific error message
+pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str) {
+    let result = execute_masm_script(script_code).await;
+    assert!(result.is_err(), "Expected execution to fail but it succeeded");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains(expected_error),
+        "Expected error containing '{}', got: {}",
+        expected_error,
+        error_msg
+    );
 }
