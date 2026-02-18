@@ -1,14 +1,22 @@
 use miden::core::math::u64
 use miden::core::word
+use miden::agglayer::utils
+use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================
 
 const MAX_SCALING_FACTOR=18
 
-# ERRORS
+# ERRORS
 # =================================================================================================
+
 const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT="maximum scaling factor is 18"
+const ERR_X_TOO_LARGE="x must fit into 128 bits (x4..x7 must be 0)"
+const ERR_UNDERFLOW="x < y*10^s (underflow detected)"
+const ERR_REMAINDER_TOO_LARGE="remainder z must be < 10^s"
+
+const ERR_Y_TOO_LARGE="y exceeds max fungible token amount"
 
 #! Calculate 10^scale where scale is a u8 exponent.
 #!
@@ -105,10 +113,241 @@ pub proc scale_native_amount_to_u256
     # => [RESULT_U256[0], RESULT_U256[1]]
 end
 
-#! TODO: implement scaling down
-#! 
-#! Inputs: [U256[0], U256[1]]
-#! Outputs: [amount]
-pub proc scale_u256_to_native_amount
+#! Reverse the limbs and change the byte endianness of the result.
+pub proc reverse_limbs_and_change_byte_endianness
+    # reverse the felts within each word
+    # [a, b, c, d, e, f, g, h] -> [h, g, f, e, d, c, b, a]
+    exec.word::reverse
+    swapw
+    exec.word::reverse
+
+    # change the byte endianness of each felt
+    repeat.8
+        exec.utils::swap_u32_bytes
+        movdn.7
+    end
+
+    # => [RESULT_U256[0], RESULT_U256[1]]
+end
+
+#! Subtract two 128-bit integers (little-endian u32 limbs) and assert no underflow.
+#!
+#! Computes:
+#!     z = x - y
+#! with the constraint:
+#!     y <= x
+#!
+#! Inputs:  [y0, y1, y2, y3, x0, x1, x2, x3]
+#! Outputs: [z0, z1, z2, z3]
+#!
+#! Panics if:
+#!   - y > x  (ERR_UNDERFLOW)
+proc u128_sub_no_underflow
+    # Put x-word on top for easier access.
+    swapw
+    # => [x0, x1, x2, x3, y0, y1, y2, y3]
+
+    # ---------------------------------------------------------------------------------------------
+    # Low 64 bits: (x1,x0) - (y1,y0)
+    # Arrange args for u64::overflowing_sub as:
+    #   [y1, y0, x1, x0]
+    # ---------------------------------------------------------------------------------------------
+    swap
+    # => [x1, x0, x2, x3, y0, y1, y2, y3]
+
+    movup.5
+    movup.5
+    swap
+    # => [y1, y0, x1, x0, x2, x3, y2, y3]
+
+    exec.u64::overflowing_sub
+    # => [borrow_low, z1, z0, x2, x3, y2, y3]
+
+    # ---------------------------------------------------------------------------------------------
+    # High 64 bits (raw): (x3,x2) - (y3,y2)
+    # Arrange args as:
+    #   [y3, y2, x3, x2]
+    # ---------------------------------------------------------------------------------------------
+    movup.3
+    movup.4
+    # => [x3, x2, borrow_low, z1, z0, y2, y3]
+
+    movup.6
+    movup.6
+    swap
+    # => [y3, y2, x3, x2, borrow_low, z1, z0]
+
+    exec.u64::overflowing_sub
+    # => [underflow_high_raw, t_hi, t_lo, borrow_low, z1, z0]
+
+    # ---------------------------------------------------------------------------------------------
+    # Apply propagated borrow from low 64-bit subtraction:
+    #   (t_hi,t_lo) - borrow_low
+    # ---------------------------------------------------------------------------------------------
+    swap.3
+    push.0
+    exec.u64::overflowing_sub
+    # => [underflow_high_borrow, z3, z2, underflow_high_raw, z1, z0]
+
+    # Underflow iff either high-half step underflowed.
+    movup.3 or
+    assertz.err=ERR_UNDERFLOW
+    # => [z3, z2, z1, z0]
+
+    # Return little-endian limbs.
+    exec.word::reverse
+    # => [z0, z1, z2, z3]
+end
+
+#! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
+#!
+#! Specification:
+#!     Verify that a provided y is the quotient of dividing x by 10^scale_exp:
+#!         y = floor(x / 10^scale_exp)
+#!
+#! This procedure does NOT perform division. It proves the quotient is correct by checking:
+#!   1) y is within the allowed fungible token amount range
+#!   2) y_scaled = y * 10^scale_exp          (computed via scale_native_amount_to_u256)
+#!   3) z        = x - y_scaled              (must not underflow, i.e. y_scaled <= x)
+#!   4) z fits in 64 bits                    (upper 192 bits are zero)
+#!   5) (z1, z0) < 10^scale_exp              (remainder bound)
+#!
+#! These conditions prove:
+#!     x = y_scaled + z, with 0 <= z < 10^scale_exp
+#! which uniquely implies:
+#!     y = floor(x / 10^scale_exp)
+#!
+#! Example (ETH -> Miden base 1e8):
+#!   - EVM amount:   100 ETH = 100 * 10^18
+#!   - Miden amount: 100 ETH = 100 * 10^8
+#!   - Therefore the scale-down factor is:
+#!         scale = 10^(18 - 8) = 10^10
+#!         scale_exp = 10
+#!   - Inputs/expected values:
+#!         x        = 100 * 10^18
+#!         y        = floor(x / 10^10) = 100 * 10^8
+#!         y_scaled = y * 10^10 = 100 * 10^18
+#!         z        = x - y_scaled = 0
+#!
+#! NOTE: For efficiency, this verifier enforces x < 2^128 by requiring x4..x7 == 0.
+#!
+#! Inputs:  [x7, x6, x5, x4, x3, x2, x1, x0, scale_exp, y]
+#!          Where x is encoded as 8 u32 limbs in big-endian order.
+#!          (x7 is most significant limb and is at the top of the stack)
+#!          Each limb is expected to contain little-endian bytes.
+#! Outputs: [y]
+#!
+#! Where:
+#!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
+#!        It is provided on the operand stack as 8 big-endian u32 limbs:
+#!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
+#!   - x0..x7: 32-bit limbs of x in big-endian order (x0 is least significant).
+#!   - scale_exp: The base-10 exponent used for scaling down (an integer in [0, 18]).
+#!   - y: The provided quotient (Miden native amount) as a Felt interpreted as an unsigned u64.
+#!   - y_scaled: The 256-bit value y * 10^scale_exp represented as 8 u32 limbs (big-endian).
+#!   - z: The remainder-like difference z = x - y_scaled (essentially dust that is lost in the
+#!        conversion due to precision differences). This verifier requires z < 10^scale_exp.
+#!
+#! Panics if:
+#! - scale_exp > 18 (asserted in pow10 via scale_native_amount_to_u256)
+#! - y exceeds the max fungible token amount
+#! - x does not fit into 128 bits (x4..x7 are not all zero)
+#! - x < y * 10^scale_exp (underflow)
+#! - z does not fit in 64 bits
+#! - (z1, z0) >= 10^scale_exp (remainder too large)
+pub proc verify_u256_to_native_amount_conversion
+
+    # reverse limbs and byte endianness
+    exec.reverse_limbs_and_change_byte_endianness
+    # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
+
+    # =============================================================================================
+    # Step 0: Enforce x < 2^128
+    #   Constraint: x4 == x5 == x6 == x7 == 0
+    # =============================================================================================
+    swapw
+    exec.word::eqz
+    assert.err=ERR_X_TOO_LARGE
+    # => [x0, x1, x2, x3, scale_exp, y]
+
+    # =============================================================================================
+    # Step 1: Enforce y <= MAX_FUNGIBLE_TOKEN_AMOUNT
+    #   Constraint: y <= MAX_FUNGIBLE_TOKEN_AMOUNT
+    # =============================================================================================
+    dup.5
+    push.FUNGIBLE_ASSET_MAX_AMOUNT
+    lte
+    # => [is_lte, x0, x1, x2, x3, scale_exp, y]
+
+    assert.err=ERR_Y_TOO_LARGE
+    # => [x0, x1, x2, x3, scale_exp, y]
+
+    # =============================================================================================
+    # Step 2: Compute y_scaled = y * 10^scale_exp
+    #
+    # Call:
+    #   scale_native_amount_to_u256(amount=y, target_scale=scale_exp)
+    # =============================================================================================
+    movup.4
+    movup.5
+    # => [y, scale_exp, x0, x1, x2, x3]
+
+    dup.1 dup.1
+    # => [y, scale_exp, y, scale_exp, x0, x1, x2, x3]
+
+    exec.scale_native_amount_to_u256
+    # => [y_scaled0..y_scaled7, y, scale_exp, x0, x1, x2, x3]
+
+    # Drop the upper word as it's guaranteed to be zero since y_scaled will fit in 123 bits
+    # (amount: 63 bits, 10^target_scale: 60 bits).
+    swapw dropw
+    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, y, scale_exp, x0, x1, x2, x3]
+
+    # =============================================================================================
+    # Step 3: Compute z = x - y_scaled and prove no underflow
+    #   z := x - y_scaled
+    #   Constraint: y_scaled <= x
+    # =============================================================================================
+    movup.5 movup.5
+    # => [y, scale_exp, y_scaled0, y_scaled1, y_scaled2, y_scaled3, x0, x1, x2, x3]
+ 
+    movdn.9 movdn.9
+    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, x0, x1, x2, x3, y, scale_exp]
+
+    exec.u128_sub_no_underflow
+    # => [z0, z1, z2, z3, y, scale_exp]
+
+    # =============================================================================================
+    # Step 4: Enforce z < 10^scale_exp (remainder bound)
+    #
+    # We compare z against 10^scale_exp using a u64 comparison on (z1, z0).
+    # To make that comparison complete, we must first prove z fits into 64 bits, i.e. z2 == z3 == 0.
+    #
+    # This is justified because scale_exp <= 18, so 10^scale_exp <= 10^18 < 2^60.
+    # Therefore any valid remainder z < 10^scale_exp must be < 2^60 and thus must have z2 == z3 == 0.
+    # =============================================================================================
+    exec.word::reverse
+    # => [z3, z2, z1, z0, y, scale_exp]
+
+    assertz.err=ERR_REMAINDER_TOO_LARGE   # z3 == 0
+    assertz.err=ERR_REMAINDER_TOO_LARGE   # z2 == 0
+    # => [z1, z0, y, scale_exp]
+
+    movup.3
+    exec.pow10
+    # => [scale, z1, z0, y]
+
+    u32split
+    # => [scale_hi, scale_lo, z1, z0, y]
+
+    exec.u64::lt
+    # => [is_lt, y]
+
+    assert.err=ERR_REMAINDER_TOO_LARGE
+    # => [y]
+end
+
+# TODO: Rm & use verify_u256_to_native_amount_conversion
+pub proc verify_u256_to_native_amount_conversion_stubbed
     repeat.7 drop end
 end
