@@ -1,6 +1,8 @@
 use miden::protocol::active_account
 use miden::protocol::account_id
 use miden::protocol::active_note
+use miden::protocol::note
+use miden::protocol::output_note
 use miden::standards::wallets::basic->basic_wallet
 
 # ERRORS
@@ -51,4 +53,53 @@ pub proc main
 
     exec.basic_wallet::add_assets_to_account
     # => []
+end
+
+#! Creates a new P2ID output note from the given inputs.
+#!
+#! This procedure handles:
+#! - Writing note storage to memory in the expected layout ([suffix, prefix] to match
+#!   existing P2ID storage format)
+#! - Obtaining the note script root via procref
+#! - Building the recipient and creating the note
+#!
+#! Inputs:  [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - target_id_prefix is the prefix felt of the target account ID.
+#! - target_id_suffix is the suffix felt of the target account ID.
+#! - tag is the note tag to be included in the note.
+#! - note_type is the storage type of the note (1 = public, 2 = private).
+#! - SERIAL_NUM is the serial number of the note (4 elements).
+#! - note_idx is the index of the created note.
+#!
+#! Invocation: exec
+@locals(2)
+pub proc new
+    # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+
+    loc_store.1 loc_store.0
+    # => [tag, note_type, SERIAL_NUM]
+
+    movdn.5 movdn.5
+    # => [SERIAL_NUM, tag, note_type]
+
+    procref.main
+    # => [SCRIPT_ROOT, SERIAL_NUM, tag, note_type]
+
+    swapw
+    # => [SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
+
+    push.2 locaddr.0
+    # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT, tag, note_type]
+
+    exec.note::build_recipient
+    # => [RECIPIENT, tag, note_type]
+
+    movup.5 movup.5
+    # => [tag, note_type, RECIPIENT]
+
+    exec.output_note::create
+    # => [note_idx]
 end

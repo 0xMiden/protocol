@@ -95,12 +95,12 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
 
     let note = mock_note(40);
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .output_notes(vec![OutputNote::Full(note.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note.clone()])
             .build()?;
@@ -127,12 +127,12 @@ fn duplicate_unauthenticated_input_notes() -> anyhow::Result<()> {
 
     let note = mock_note(50);
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note.clone()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note.clone()])
             .build()?;
@@ -166,12 +166,12 @@ fn duplicate_authenticated_input_notes() -> anyhow::Result<()> {
     let block2 = chain.prove_next_block()?;
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .authenticated_notes(vec![note1.clone()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .authenticated_notes(vec![note1.clone()])
             .build()?;
@@ -205,12 +205,12 @@ fn duplicate_mixed_input_notes() -> anyhow::Result<()> {
     let block2 = chain.prove_next_block()?;
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note1.clone()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .authenticated_notes(vec![note1.clone()])
             .build()?;
@@ -244,12 +244,12 @@ fn duplicate_output_notes() -> anyhow::Result<()> {
 
     let note0 = mock_output_note(50);
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .output_notes(vec![note0.clone()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .output_notes(vec![note0.clone()])
             .build()?;
@@ -322,7 +322,7 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
 
     // Consume the authenticated note as an unauthenticated one in the transaction.
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block2.header().commitment())
             .unauthenticated_notes(vec![note2.clone()])
             .build()?;
@@ -431,12 +431,12 @@ fn authenticated_note_created_in_same_batch() -> anyhow::Result<()> {
 
     let note0 = mock_note(50);
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .output_notes(vec![OutputNote::Full(note0.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .authenticated_notes(vec![note1.clone()])
             .build()?;
@@ -467,7 +467,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     let tx1 = MockProvenTxBuilder::with_account(
         account1.id(),
         initial_state_commitment,
-        account1.commitment(),
+        account1.to_commitment(),
     )
     .ref_block_commitment(block1.commitment())
     .output_notes(vec![mock_output_note(0)])
@@ -477,7 +477,7 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
     let final_state_commitment = mock_note(10).commitment();
     let tx2 = MockProvenTxBuilder::with_account(
         account1.id(),
-        account1.commitment(),
+        account1.to_commitment(),
         final_state_commitment,
     )
     .ref_block_commitment(block1.commitment())
@@ -540,13 +540,13 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     let note5 = mock_note(100);
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note1.clone(), note5.clone()])
             .output_notes(vec![note0.clone()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note4.clone()])
             .output_notes(vec![
@@ -592,14 +592,14 @@ fn batch_expiration() -> anyhow::Result<()> {
     let block1 = chain.block_header(1);
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .expiration_block_num(BlockNumber::from(35))
             .build()?;
     // This transaction has the smallest valid expiration block num that allows it to still be
     // included in the batch.
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .expiration_block_num(block1.block_num() + 1)
             .build()?;
@@ -623,7 +623,7 @@ fn duplicate_transaction() -> anyhow::Result<()> {
     let block1 = chain.block_header(1);
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .expiration_block_num(BlockNumber::from(35))
             .build()?;
@@ -653,13 +653,13 @@ fn circular_note_dependency() -> anyhow::Result<()> {
     let note_y = mock_note(30);
 
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note_x.clone()])
             .output_notes(vec![OutputNote::Full(note_y.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note_y.clone()])
             .output_notes(vec![OutputNote::Full(note_x.clone()).to_proven_output_note().unwrap()])
@@ -686,12 +686,12 @@ fn expired_transaction() -> anyhow::Result<()> {
 
     // This transaction expired at the batch's reference block.
     let tx1 =
-        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.commitment())
+        MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .expiration_block_num(block1.block_num())
             .build()?;
     let tx2 =
-        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.commitment())
+        MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .expiration_block_num(block1.block_num() + 3)
             .build()?;
@@ -732,8 +732,8 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
     // consume a random note to make the transaction non-empty
     let noop_tx1 = MockProvenTxBuilder::with_account(
         account1.id(),
-        account1.commitment(),
-        account1.commitment(),
+        account1.to_commitment(),
+        account1.to_commitment(),
     )
     .ref_block_commitment(block1.commitment())
     .authenticated_notes(vec![note1])
@@ -748,7 +748,7 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
 
     let tx2 = MockProvenTxBuilder::with_account(
         account1.id(),
-        account1.commitment(),
+        account1.to_commitment(),
         random_final_state_commitment,
     )
     .ref_block_commitment(block1.commitment())
@@ -763,7 +763,7 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
     )?;
 
     let update = batch.account_updates().get(&account1.id()).unwrap();
-    assert_eq!(update.initial_state_commitment(), account1.commitment());
+    assert_eq!(update.initial_state_commitment(), account1.to_commitment());
     assert_eq!(update.final_state_commitment(), random_final_state_commitment);
 
     Ok(())
@@ -783,7 +783,7 @@ fn noop_tx_after_state_updating_tx_against_same_account() -> anyhow::Result<()> 
 
     let tx1 = MockProvenTxBuilder::with_account(
         account1.id(),
-        account1.commitment(),
+        account1.to_commitment(),
         random_final_state_commitment,
     )
     .ref_block_commitment(block1.commitment())
@@ -815,7 +815,7 @@ fn noop_tx_after_state_updating_tx_against_same_account() -> anyhow::Result<()> 
     )?;
 
     let update = batch.account_updates().get(&account1.id()).unwrap();
-    assert_eq!(update.initial_state_commitment(), account1.commitment());
+    assert_eq!(update.initial_state_commitment(), account1.to_commitment());
     assert_eq!(update.final_state_commitment(), random_final_state_commitment);
 
     Ok(())
