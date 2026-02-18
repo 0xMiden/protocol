@@ -5,6 +5,7 @@ use miden_core::{ONE, ZERO};
 
 use crate::Felt;
 use crate::errors::AccountError;
+use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -31,7 +32,7 @@ impl StorageSlotType {
     const MAP_TYPE: u8 = 1;
 
     pub fn as_felt(&self) -> Felt {
-        Felt::from(*self as u8)
+        Felt::from_num(*self as u8)
     }
 
     /// Returns `true` if the slot is a value slot, `false` otherwise.
@@ -114,10 +115,10 @@ impl Deserializable for StorageSlotType {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::utils::{Deserializable, Serializable};
-
+    use crate::Felt;
     use crate::account::StorageSlotType;
-    use crate::{Felt, FieldElement};
+    use crate::field::PrimeCharacteristicRing;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage_slot_type() {

@@ -5,6 +5,7 @@ use core::hash::Hash;
 use miden_core::utils::hash_string_to_word;
 
 use crate::Felt;
+use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -61,17 +62,17 @@ impl StorageSlotId {
     /// Returns the [`StorageSlotId`]'s felts encoded into a u128.
     fn as_u128(&self) -> u128 {
         let mut le_bytes = [0_u8; 16];
-        le_bytes[..8].copy_from_slice(&self.suffix().as_int().to_le_bytes());
-        le_bytes[8..].copy_from_slice(&self.prefix().as_int().to_le_bytes());
+        le_bytes[..8].copy_from_slice(&self.suffix().as_canonical_u64().to_le_bytes());
+        le_bytes[8..].copy_from_slice(&self.prefix().as_canonical_u64().to_le_bytes());
         u128::from_le_bytes(le_bytes)
     }
 }
 
 impl Ord for StorageSlotId {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.prefix.as_int().cmp(&other.prefix.as_int()) {
+        match self.prefix.as_canonical_u64().cmp(&other.prefix.as_canonical_u64()) {
             ord @ Ordering::Less | ord @ Ordering::Greater => ord,
-            Ordering::Equal => self.suffix.as_int().cmp(&other.suffix.as_int()),
+            Ordering::Equal => self.suffix.as_canonical_u64().cmp(&other.suffix.as_canonical_u64()),
         }
     }
 }
@@ -84,8 +85,8 @@ impl PartialOrd for StorageSlotId {
 
 impl Hash for StorageSlotId {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.suffix.inner().hash(state);
-        self.prefix.inner().hash(state);
+        self.suffix.as_canonical_u64().hash(state);
+        self.prefix.as_canonical_u64().hash(state);
     }
 }
 
@@ -119,12 +120,14 @@ impl Deserializable for StorageSlotId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::field::FromNum;
 
     #[test]
     fn test_slot_id_as_u128() {
         let suffix = 5;
         let prefix = 3;
-        let slot_id = StorageSlotId::new(Felt::from(suffix as u32), Felt::from(prefix as u32));
+        let slot_id =
+            StorageSlotId::new(Felt::from_num(suffix as u32), Felt::from_num(prefix as u32));
         assert_eq!(slot_id.as_u128(), (prefix << 64) + suffix);
         assert_eq!(format!("{slot_id}"), "0x00000000000000030000000000000005");
     }

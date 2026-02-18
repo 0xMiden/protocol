@@ -5,6 +5,7 @@ use crate::account::{AccountId, AccountType};
 use crate::block::BlockNumber;
 use crate::crypto::dsa::ecdsa_k256_keccak::PublicKey;
 use crate::errors::FeeError;
+use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -241,10 +242,15 @@ impl BlockHeader {
         elements.extend_from_slice(tx_commitment.as_elements());
         elements.extend_from_slice(tx_kernel_commitment.as_elements());
         elements.extend(validator_key.to_commitment());
-        elements.extend([block_num.into(), version.into(), timestamp.into(), ZERO]);
+        elements.extend([
+            block_num.into(),
+            Felt::from_num(version),
+            Felt::from_num(timestamp),
+            ZERO,
+        ]);
         elements.extend([
             ZERO,
-            fee_parameters.verification_base_fee().into(),
+            Felt::from_num(fee_parameters.verification_base_fee()),
             fee_parameters.native_asset_id().suffix(),
             fee_parameters.native_asset_id().prefix().as_felt(),
         ]);

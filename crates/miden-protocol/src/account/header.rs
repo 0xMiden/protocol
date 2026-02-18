@@ -240,13 +240,13 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
 
     use super::AccountHeader;
     use crate::Word;
     use crate::account::StorageSlotContent;
     use crate::account::tests::build_account;
     use crate::asset::FungibleAsset;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage() {

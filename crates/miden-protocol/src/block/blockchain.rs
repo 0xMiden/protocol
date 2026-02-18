@@ -145,13 +145,13 @@ impl Blockchain {
         let mut partial_mmr = PartialMmr::from_peaks(peaks);
         for block_num in blocks.iter() {
             let leaf = self.mmr.get(block_num.as_usize())?;
-            let path = self.open_at(*block_num, checkpoint)?.merkle_path;
+            let proof = self.open_at(*block_num, checkpoint)?;
 
             // SAFETY: We should be able to fill the partial MMR with data from the partial
             // blockchain without errors, otherwise it indicates the blockchain is
             // invalid.
             partial_mmr
-                .track(block_num.as_usize(), leaf, &path)
+                .track(block_num.as_usize(), leaf, proof.merkle_path())
                 .expect("filling partial mmr with data from mmr should succeed");
         }
 

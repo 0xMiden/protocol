@@ -4,6 +4,7 @@ use rand::{CryptoRng, Rng};
 
 use crate::crypto::dsa::{ecdsa_k256_keccak, falcon512_poseidon2};
 use crate::errors::AuthSchemeError;
+use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -393,8 +394,8 @@ fn prepare_falcon512_rpo_signature(sig: &falcon512_poseidon2::Signature) -> Vec<
     // Finally, we push the nonce needed for the hash-to-point algorithm.
 
     let mut polynomials: Vec<Felt> =
-        h.coefficients.iter().map(|a| Felt::from(a.value() as u32)).collect();
-    polynomials.extend(s2.coefficients.iter().map(|a| Felt::from(a.value() as u32)));
+        h.coefficients.iter().map(|a| Felt::from_num(a.value() as u32)).collect();
+    polynomials.extend(s2.coefficients.iter().map(|a| Felt::from_num(a.value() as u32)));
     polynomials.extend(pi.iter().map(|a| Felt::new(*a)));
 
     let digest_polynomials = Hasher::hash_elements(&polynomials);

@@ -6,6 +6,7 @@ use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV0;
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
+use crate::field::{PrimeField64, TryFromNum};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -57,7 +58,7 @@ impl AccountIdPrefix {
     pub fn new_unchecked(prefix: Felt) -> Self {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_int())
+        match v0::extract_version(prefix.as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
             AccountIdVersion::Version0 => Self::V0(AccountIdPrefixV0::new_unchecked(prefix)),
@@ -73,7 +74,7 @@ impl AccountIdPrefix {
     pub fn new(prefix: Felt) -> Result<Self, AccountIdError> {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(prefix.as_int())? {
+        match v0::extract_version(prefix.as_canonical_u64())? {
             AccountIdVersion::Version0 => AccountIdPrefixV0::new(prefix).map(Self::V0),
         }
     }
@@ -89,14 +90,14 @@ impl AccountIdPrefix {
     }
 
     /// Returns the prefix as a [`u64`].
-    pub const fn as_u64(&self) -> u64 {
+    pub fn as_u64(&self) -> u64 {
         match self {
             AccountIdPrefix::V0(id_prefix) => id_prefix.as_u64(),
         }
     }
 
     /// Returns the type of this account ID.
-    pub const fn account_type(&self) -> AccountType {
+    pub fn account_type(&self) -> AccountType {
         match self {
             AccountIdPrefix::V0(id_prefix) => id_prefix.account_type(),
         }
@@ -223,8 +224,11 @@ impl TryFrom<u64> for AccountIdPrefix {
     /// Returns an error if any of the ID constraints are not met. See the [constraints
     /// documentation](super::AccountId#constraints) for details.
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        let element = Felt::try_from(value.to_le_bytes().as_slice())
-            .map_err(AccountIdError::AccountIdInvalidPrefixFieldElement)?;
+        let element = Felt::try_from_num(value).map_err(|err| {
+            AccountIdError::AccountIdInvalidPrefixFieldElement(DeserializationError::InvalidValue(
+                err.to_string(),
+            ))
+        })?;
         Self::new(element)
     }
 }

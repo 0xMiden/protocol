@@ -209,7 +209,9 @@ impl Serializable for OutputNotes {
 impl Deserializable for OutputNotes {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_notes = source.read_u16()?;
-        let notes = source.read_many::<OutputNote>(num_notes.into())?;
+        let notes = source
+            .read_many_iter::<OutputNote>(num_notes.into())?
+            .collect::<Result<_, _>>()?;
         Self::new(notes).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }

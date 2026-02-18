@@ -10,7 +10,8 @@ use crate::asset::vault::AssetId;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
-use crate::{Felt, FieldElement, Word};
+use crate::field::PrimeCharacteristicRing;
+use crate::{Felt, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///

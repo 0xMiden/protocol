@@ -6,6 +6,7 @@ use super::super::{InitStorageData, StorageValueName};
 use super::FeltSchema;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
+use crate::field::PrimeCharacteristicRing;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -13,7 +14,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, FieldElement, Word};
+use crate::{Felt, Word};
 
 // WORD SCHEMA
 // ================================================================================================

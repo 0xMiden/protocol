@@ -20,6 +20,7 @@ use crate::account::account_id::storage_mode::{NETWORK, PRIVATE, PUBLIC};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
+use crate::field::{PrimeField64, TryFromNum};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -43,8 +44,8 @@ pub struct AccountIdV0 {
 
 impl Hash for AccountIdV0 {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.prefix.inner().hash(state);
-        self.suffix.inner().hash(state);
+        self.prefix.as_canonical_u64().hash(state);
+        self.suffix.as_canonical_u64().hash(state);
     }
 }
 
@@ -121,7 +122,7 @@ impl AccountIdV0 {
 
         let prefix_bytes =
             bytes[0..8].try_into().expect("we should have sliced off exactly 8 bytes");
-        let prefix = Felt::try_from(u64::from_be_bytes(prefix_bytes))
+        let prefix = Felt::try_from_num(u64::from_be_bytes(prefix_bytes))
             .expect("should be a valid felt due to the most significant bit being zero");
 
         let mut suffix_bytes = [0; 8];
@@ -133,7 +134,7 @@ impl AccountIdV0 {
         let mut suffix = Felt::new(u64::from_be_bytes(suffix_bytes));
 
         // Clear the most significant bit of the suffix.
-        suffix = Felt::try_from(suffix.as_int() & 0x7fff_ffff_ffff_ffff)
+        suffix = Felt::try_from_num(suffix.as_canonical_u64() & 0x7fff_ffff_ffff_ffff)
             .expect("no bits were set so felt should still be valid");
 
         suffix = shape_suffix(suffix);
@@ -170,8 +171,8 @@ impl AccountIdV0 {
     // --------------------------------------------------------------------------------------------
 
     /// See [`AccountId::account_type`](super::AccountId::account_type) for details.
-    pub const fn account_type(&self) -> AccountType {
-        extract_type(self.prefix.as_int())
+    pub fn account_type(&self) -> AccountType {
+        extract_type(self.prefix.as_canonical_u64())
     }
 
     /// See [`AccountId::is_faucet`](super::AccountId::is_faucet) for details.
@@ -214,7 +215,7 @@ impl AccountIdV0 {
         // big-endian hex string. Only then can we cut off the last zero byte by truncating. We
         // cannot use `:014x` padding.
         let mut hex_string =
-            format!("0x{:016x}{:016x}", self.prefix().as_u64(), self.suffix().as_int());
+            format!("0x{:016x}{:016x}", self.prefix().as_u64(), self.suffix().as_canonical_u64());
         hex_string.truncate(32);
         hex_string
     }
@@ -325,7 +326,7 @@ impl From<AccountIdV0> for [u8; 15] {
         let mut result = [0_u8; 15];
         result[..8].copy_from_slice(&id.prefix().as_u64().to_be_bytes());
         // The last byte of the suffix is always zero so we skip it here.
-        result[8..].copy_from_slice(&id.suffix().as_int().to_be_bytes()[..7]);
+        result[8..].copy_from_slice(&id.suffix().as_canonical_u64().to_be_bytes()[..7]);
         result
     }
 }
@@ -333,7 +334,7 @@ impl From<AccountIdV0> for [u8; 15] {
 impl From<AccountIdV0> for u128 {
     fn from(id: AccountIdV0) -> Self {
         let mut le_bytes = [0_u8; 16];
-        le_bytes[..8].copy_from_slice(&id.suffix().as_int().to_le_bytes());
+        le_bytes[..8].copy_from_slice(&id.suffix().as_canonical_u64().to_le_bytes());
         le_bytes[8..].copy_from_slice(&id.prefix().as_u64().to_le_bytes());
         u128::from_le_bytes(le_bytes)
     }
@@ -372,11 +373,20 @@ impl TryFrom<[u8; 15]> for AccountIdV0 {
         let mut suffix_bytes = [0; 8];
         suffix_bytes[1..8].copy_from_slice(suffix_slice);
 
-        let prefix = Felt::try_from(prefix_slice)
-            .map_err(AccountIdError::AccountIdInvalidPrefixFieldElement)?;
+        let prefix = Felt::try_from_num(u64::from_le_bytes(
+            prefix_slice.try_into().expect("prefix slice should be 8 bytes"),
+        ))
+        .map_err(|err| {
+            AccountIdError::AccountIdInvalidPrefixFieldElement(DeserializationError::InvalidValue(
+                err.to_string(),
+            ))
+        })?;
 
-        let suffix = Felt::try_from(suffix_bytes.as_slice())
-            .map_err(AccountIdError::AccountIdInvalidSuffixFieldElement)?;
+        let suffix = Felt::try_from_num(u64::from_le_bytes(suffix_bytes)).map_err(|err| {
+            AccountIdError::AccountIdInvalidSuffixFieldElement(DeserializationError::InvalidValue(
+                err.to_string(),
+            ))
+        })?;
 
         Self::try_from([prefix, suffix])
     }
@@ -438,7 +448,7 @@ fn account_id_from_felts(elements: [Felt; 2]) -> Result<AccountIdV0, AccountIdEr
 pub(crate) fn validate_prefix(
     prefix: Felt,
 ) -> Result<(AccountType, AccountStorageMode, AccountIdVersion), AccountIdError> {
-    let prefix = prefix.as_int();
+    let prefix = prefix.as_canonical_u64();
 
     // Validate storage bits.
     let storage_mode = extract_storage_mode(prefix)?;
@@ -454,8 +464,8 @@ pub(crate) fn validate_prefix(
 /// Checks that the suffix:
 /// - has its most significant bit set to zero.
 /// - has its lower 8 bits set to zero.
-const fn validate_suffix(suffix: Felt) -> Result<(), AccountIdError> {
-    let suffix = suffix.as_int();
+fn validate_suffix(suffix: Felt) -> Result<(), AccountIdError> {
+    let suffix = suffix.as_canonical_u64();
 
     // Validate most significant bit is zero.
     if suffix >> 63 != 0 {
@@ -506,13 +516,13 @@ pub(crate) const fn extract_type(prefix: u64) -> AccountType {
 /// Shapes the suffix so it meets the requirements of the account ID, by setting the lower 8 bits to
 /// zero.
 fn shape_suffix(suffix: Felt) -> Felt {
-    let mut suffix = suffix.as_int();
+    let mut suffix = suffix.as_canonical_u64();
 
     // Clear the lower 8 bits.
     suffix &= 0xffff_ffff_ffff_ff00;
 
     // SAFETY: Felt was previously valid and we only cleared bits, so it must still be valid.
-    Felt::try_from(suffix).expect("no bits were set so felt should still be valid")
+    Felt::try_from_num(suffix).expect("no bits were set so felt should still be valid")
 }
 
 // COMMON TRAIT IMPLS
@@ -565,8 +575,8 @@ mod tests {
 
     #[test]
     fn account_id_from_felts_with_max_pop_count() {
-        let valid_suffix = Felt::try_from(0x7fff_ffff_ffff_ff00u64).unwrap();
-        let valid_prefix = Felt::try_from(0x7fff_ffff_ffff_ff70u64).unwrap();
+        let valid_suffix = Felt::try_from_num(0x7fff_ffff_ffff_ff00u64).unwrap();
+        let valid_prefix = Felt::try_from_num(0x7fff_ffff_ffff_ff70u64).unwrap();
 
         let id1 = AccountIdV0::new_unchecked([valid_prefix, valid_suffix]);
         assert_eq!(id1.account_type(), AccountType::NonFungibleFaucet);

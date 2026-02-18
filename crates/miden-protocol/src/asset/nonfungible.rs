@@ -239,7 +239,9 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
+    use crate::Felt;
     use crate::account::AccountId;
+    use crate::field::FromNum;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -250,7 +252,7 @@ mod tests {
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new(
-            AssetId::new(1u32.into(), 2u32.into()),
+            AssetId::new(Felt::from_num(1u32), Felt::from_num(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
         );
         let err =

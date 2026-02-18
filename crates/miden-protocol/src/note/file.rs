@@ -141,8 +141,6 @@ impl Deserializable for NoteFile {
 mod tests {
     use alloc::vec::Vec;
 
-    use miden_core::utils::{Deserializable, Serializable};
-
     use crate::Word;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset};
@@ -163,6 +161,7 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     };
+    use crate::utils::serde::{Deserializable, Serializable};
 
     fn create_example_note() -> Note {
         let faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();

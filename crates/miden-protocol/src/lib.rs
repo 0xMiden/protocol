@@ -12,6 +12,7 @@ pub mod asset;
 pub mod batch;
 pub mod block;
 pub mod errors;
+mod from_num;
 pub mod note;
 mod protocol;
 pub mod transaction;
@@ -33,6 +34,12 @@ pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{LexicographicWord, Word, WordError};
 pub use protocol::ProtocolLib;
+
+pub mod field {
+    pub use miden_core::field::*;
+
+    pub use super::from_num::{FeltError, FromNum, TryFromNum};
+}
 
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
@@ -67,11 +74,13 @@ pub mod utils {
 
     pub mod serde {
         pub use miden_crypto::utils::{
+            BudgetedReader,
             ByteReader,
             ByteWriter,
             Deserializable,
             DeserializationError,
             Serializable,
+            SliceReader,
         };
     }
 }

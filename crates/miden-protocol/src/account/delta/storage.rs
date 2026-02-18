@@ -12,6 +12,7 @@ use super::{
     Word,
 };
 use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
+use crate::field::TryFromNum;
 use crate::{EMPTY_WORD, Felt, LexicographicWord, ZERO};
 
 // ACCOUNT STORAGE DELTA
@@ -194,9 +195,10 @@ impl AccountStorageDelta {
                         elements.extend_from_slice(value.as_elements());
                     }
 
-                    let num_changed_entries = Felt::try_from(map_delta.num_entries()).expect(
-                        "number of changed entries should not exceed max representable felt",
-                    );
+                    let num_changed_entries = Felt::try_from_num(map_delta.num_entries() as u64)
+                        .expect(
+                            "number of changed entries should not exceed max representable felt",
+                        );
 
                     elements.extend_from_slice(&[
                         DOMAIN_MAP,

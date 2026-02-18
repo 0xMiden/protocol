@@ -1,4 +1,5 @@
 use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use miden_crypto::merkle::SparseMerklePath;
 
@@ -173,8 +174,9 @@ impl Serializable for BlockNoteTree {
 impl Deserializable for BlockNoteTree {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let count = source.read_u32()?;
-        let leaves = source.read_many(count as usize)?;
+        let leaves = source.read_many_iter(count as usize)?.collect::<Result<Vec<_>, _>>()?;
 
+        // TODO: Check if we need untrusted deserialization here.
         SimpleSmt::with_leaves(leaves)
             .map(Self)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))

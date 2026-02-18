@@ -103,7 +103,6 @@ mod tests {
     use alloc::vec::Vec;
 
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
     use miden_crypto::merkle::SparseMerklePath;
 
     use crate::account::{Account, AccountCode, AccountId, AccountStorage, PartialAccount};
@@ -112,6 +111,7 @@ mod tests {
     use crate::crypto::merkle::smt::SMT_DEPTH;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::transaction::AccountInputs;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn serde_roundtrip() {

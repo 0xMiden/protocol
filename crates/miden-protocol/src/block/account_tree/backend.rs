@@ -7,6 +7,7 @@ use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
 use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
+use crate::field::TryFromNum;
 
 // ACCOUNT TREE BACKEND
 // ================================================================================================
@@ -129,9 +130,7 @@ where
     type Error = MerkleError;
 
     fn num_leaves(&self) -> usize {
-        // LargeSmt::num_leaves returns Result<usize, LargeSmtError>
-        // We'll unwrap or return 0 on error
-        LargeSmt::num_leaves(self).map_err(large_smt_error_to_merkle_error).unwrap_or(0)
+        LargeSmt::num_leaves(self)
     }
 
     fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
@@ -216,7 +215,7 @@ impl AccountTree<Smt> {
             // the leaf_idx is a valid Felt as well as a valid account ID prefix.
             AccountTreeError::DuplicateStateCommitments {
                 prefix: AccountIdPrefix::new_unchecked(
-                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
+                    crate::Felt::try_from_num(leaf_idx).expect("leaf index should be a valid felt"),
                 ),
             }
         })?;
@@ -234,6 +233,13 @@ fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
         LargeSmtError::Storage(storage_err) => {
             panic!("Storage error encountered: {:?}", storage_err)
         },
+        LargeSmtError::StorageNotEmpty => {
+            panic!("StorageNotEmpty error encountered: {:?}", err)
+        },
         LargeSmtError::Merkle(merkle_err) => merkle_err,
+        LargeSmtError::RootMismatch { expected, actual } => MerkleError::ConflictingRoots {
+            expected_root: expected,
+            actual_root: actual,
+        },
     }
 }

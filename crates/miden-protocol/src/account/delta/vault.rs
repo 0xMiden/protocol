@@ -13,6 +13,7 @@ use super::{
 };
 use crate::account::{AccountId, AccountType};
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
+use crate::field::TryFromNum;
 use crate::{Felt, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
@@ -332,7 +333,7 @@ impl FungibleAssetDelta {
             );
 
             let was_added = if *amount_delta > 0 { ONE } else { ZERO };
-            let amount_delta = Felt::try_from(amount_delta.unsigned_abs())
+            let amount_delta = Felt::try_from_num(amount_delta.unsigned_abs())
                 .expect("amount delta should be less than i64::MAX");
 
             elements.extend_from_slice(&[
@@ -367,10 +368,11 @@ impl Deserializable for FungibleAssetDelta {
         //   We should update this code (and serialization as well) once it support signeds
         // integers.
         let map = source
-            .read_many::<(AccountId, u64)>(num_fungible_assets)?
-            .into_iter()
-            .map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
-            .collect();
+            .read_many_iter::<(AccountId, u64)>(num_fungible_assets)?
+            .map(|result| {
+                result.map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
+            })
+            .collect::<Result<_, _>>()?;
 
         Self::new(map).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }

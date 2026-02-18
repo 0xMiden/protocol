@@ -5,6 +5,7 @@ use crate::block::BlockNumber;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
 use crate::errors::NullifierTreeError;
+use crate::field::{PrimeCharacteristicRing, PrimeField64};
 use crate::note::Nullifier;
 use crate::utils::serde::{
     ByteReader,
@@ -13,7 +14,7 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, FieldElement, Word};
+use crate::{Felt, Word};
 
 mod backend;
 pub use backend::NullifierTreeBackend;
@@ -279,7 +280,7 @@ impl NullifierBlock {
     /// - The 0th element in the word is not a valid [BlockNumber].
     /// - Any of the remaining elements is non-zero.
     pub fn new(word: Word) -> Result<Self, NullifierTreeError> {
-        let block_num = u32::try_from(word[0].as_int())
+        let block_num = u32::try_from(word[0].as_canonical_u64())
             .map(BlockNumber::from)
             .map_err(|_| NullifierTreeError::InvalidNullifierBlockNumber(word))?;
 

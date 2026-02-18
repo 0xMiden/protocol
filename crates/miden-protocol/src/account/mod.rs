@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use crate::asset::{Asset, AssetVault};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
+use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -344,7 +345,7 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
-        if new_nonce.as_int() < self.nonce.as_int() {
+        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
             return Err(AccountError::NonceOverflow {
                 current: self.nonce,
                 increment: nonce_delta,
@@ -551,7 +552,6 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::Assembler;
-    use miden_core::FieldElement;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
@@ -580,6 +580,7 @@ mod tests {
     };
     use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
+    use crate::field::PrimeCharacteristicRing;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,

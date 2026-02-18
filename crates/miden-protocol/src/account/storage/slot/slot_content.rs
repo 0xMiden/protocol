@@ -121,9 +121,8 @@ impl Deserializable for StorageSlotContent {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::utils::{Deserializable, Serializable};
-
     use crate::account::AccountStorage;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_storage_slot_content() {

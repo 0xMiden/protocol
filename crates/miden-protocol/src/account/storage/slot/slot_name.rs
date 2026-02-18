@@ -249,7 +249,7 @@ impl Deserializable for StorageSlotName {
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let len = source.read_u8()?;
-        let name = source.read_many(len as usize)?;
+        let name = source.read_many_iter(len as usize)?.collect::<Result<_, _>>()?;
         String::from_utf8(name)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             .and_then(|name| {

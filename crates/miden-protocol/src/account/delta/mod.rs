@@ -12,6 +12,7 @@ use crate::account::{
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
+use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -102,7 +103,7 @@ impl AccountDelta {
     pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
         let new_nonce_delta = self.nonce_delta + other.nonce_delta;
 
-        if new_nonce_delta.as_int() < self.nonce_delta.as_int() {
+        if new_nonce_delta.as_canonical_u64() < self.nonce_delta.as_canonical_u64() {
             return Err(AccountDeltaError::NonceIncrementOverflow {
                 current: self.nonce_delta,
                 increment: other.nonce_delta,
@@ -595,7 +596,7 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_core::{Felt, FieldElement};
+    use miden_core::Felt;
 
     use super::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
     use crate::account::delta::AccountUpdateDetails;
@@ -617,6 +618,7 @@ mod tests {
         NonFungibleAssetDetails,
     };
     use crate::errors::AccountDeltaError;
+    use crate::field::TryFromNum;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
@@ -653,7 +655,7 @@ mod tests {
         let vault_delta = AccountVaultDelta::default();
 
         let nonce_delta0 = ONE;
-        let nonce_delta1 = Felt::try_from(0xffff_ffff_0000_0000u64).unwrap();
+        let nonce_delta1 = Felt::try_from_num(0xffff_ffff_0000_0000u64).unwrap();
 
         let mut delta0 =
             AccountDelta::new(account_id, storage_delta.clone(), vault_delta.clone(), nonce_delta0)
@@ -741,13 +743,8 @@ mod tests {
         let account_code = AccountCode::mock();
         assert_eq!(account_code.to_bytes().len(), account_code.get_size_hint());
 
-        let account = Account::new_existing(
-            account_id,
-            asset_vault,
-            account_storage,
-            account_code,
-            Felt::ONE,
-        );
+        let account =
+            Account::new_existing(account_id, asset_vault, account_storage, account_code, ONE);
         assert_eq!(account.to_bytes().len(), account.get_size_hint());
 
         // AccountUpdateDetails

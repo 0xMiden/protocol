@@ -15,6 +15,7 @@ use crate::account::{
 };
 use crate::asset::AssetVault;
 use crate::errors::AccountError;
+use crate::field::PrimeCharacteristicRing;
 use crate::{Felt, Word};
 
 /// A convenient builder for an [`Account`] allowing for safe construction of an account by
@@ -292,12 +293,12 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
-    use miden_core::FieldElement;
     use miden_core::mast::MastNodeExt;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
+    use crate::field::PrimeCharacteristicRing;
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
     const CUSTOM_CODE1: &str = "

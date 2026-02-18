@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
+    PartialStorage,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;

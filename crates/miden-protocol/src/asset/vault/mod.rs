@@ -1,4 +1,5 @@
 use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use miden_crypto::merkle::InnerNodeInfo;
 

@@ -4,8 +4,10 @@ use alloc::string::{String, ToString};
 use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaTypeId};
 use super::super::{InitStorageData, StorageValueName, WordValue};
 use super::validate_description_ascii;
+use crate::Felt;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
+use crate::field::PrimeCharacteristicRing;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -13,7 +15,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, FieldElement};
 
 // FELT SCHEMA
 // ================================================================================================

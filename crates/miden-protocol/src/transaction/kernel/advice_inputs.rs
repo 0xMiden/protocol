@@ -6,6 +6,7 @@ use crate::account::{AccountHeader, AccountId, PartialAccount};
 use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
+use crate::field::{FromNum, PrimeCharacteristicRing};
 use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
@@ -15,7 +16,7 @@ use crate::transaction::{
     TransactionKernel,
 };
 use crate::vm::AdviceInputs;
-use crate::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use crate::{EMPTY_WORD, Felt, Word, ZERO};
 
 // TRANSACTION ADVICE INPUTS
 // ================================================================================================
@@ -178,13 +179,13 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.validator_key().to_commitment());
         self.extend_stack([
             header.block_num().into(),
-            header.version().into(),
-            header.timestamp().into(),
+            Felt::from_num(header.version()),
+            Felt::from_num(header.timestamp()),
             ZERO,
         ]);
         self.extend_stack([
             ZERO,
-            header.fee_parameters().verification_base_fee().into(),
+            Felt::from_num(header.fee_parameters().verification_base_fee()),
             header.fee_parameters().native_asset_id().suffix(),
             header.fee_parameters().native_asset_id().prefix().as_felt(),
         ]);
@@ -204,7 +205,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(account.code().commitment());
 
         // --- number of notes, script root and args --------------------------
-        self.extend_stack([Felt::from(tx_inputs.input_notes().num_notes())]);
+        self.extend_stack([Felt::from_num(tx_inputs.input_notes().num_notes())]);
         let tx_args = tx_inputs.tx_args();
         self.extend_stack(tx_args.tx_script().map_or(Word::empty(), |script| script.root()));
         self.extend_stack(tx_args.tx_script_args());
@@ -282,13 +283,20 @@ impl TransactionAdviceInputs {
 
         // populate Merkle store and advice map with nodes info needed to access storage map entries
         self.extend_merkle_store(account.storage().inner_nodes());
-        self.extend_map(account.storage().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account
+                .storage()
+                .leaves()
+                .map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
 
         // --- account vault ------------------------------------------------------
 
         // populate Merkle store and advice map with nodes info needed to access vault assets
         self.extend_merkle_store(account.vault().inner_nodes());
-        self.extend_map(account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
     }
 
     /// Adds an account witness to the advice inputs.
@@ -298,7 +306,7 @@ impl TransactionAdviceInputs {
     fn add_account_witness(&mut self, witness: &AccountWitness) {
         // populate advice map with the account's leaf
         let leaf = witness.leaf();
-        self.add_map_entry(leaf.hash(), leaf.to_elements());
+        self.add_map_entry(leaf.hash(), leaf.to_elements().collect());
 
         // extend the merkle store and map with account witnesses merkle path
         self.extend_merkle_store(witness.authenticated_nodes());
@@ -359,8 +367,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*note_arg);
             note_data.extend(note.metadata().to_header_word());
             note_data.extend(note.metadata().to_attachment_word());
-            note_data.push(recipient.storage().num_items().into());
-            note_data.push((assets.num_assets() as u32).into());
+            note_data.push(Felt::from_num(recipient.storage().num_items()));
+            note_data.push(Felt::from_num(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());
 
             // authentication vs unauthenticated
@@ -385,7 +393,7 @@ impl TransactionAdviceInputs {
                     note_data.push(block_num.into());
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
-                    note_data.push(proof.location().node_index_in_block().into());
+                    note_data.push(Felt::from_num(proof.location().node_index_in_block()));
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag

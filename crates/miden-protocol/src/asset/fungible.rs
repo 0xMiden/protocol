@@ -3,7 +3,9 @@ use core::fmt;
 
 use super::vault::AssetVaultKey;
 use super::{AccountType, Asset, AssetError, Word};
+use crate::Felt;
 use crate::account::AccountId;
+use crate::field::{PrimeCharacteristicRing, PrimeField64, TryFromNum};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -11,7 +13,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, FieldElement};
 
 // FUNGIBLE ASSET
 // ================================================================================================
@@ -80,7 +81,7 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        Self::new(key.faucet_id(), value[0].as_int())
+        Self::new(key.faucet_id(), value[0].as_canonical_u64())
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -128,7 +129,7 @@ impl FungibleAsset {
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
         Word::new([
-            Felt::try_from(self.amount)
+            Felt::try_from_num(self.amount)
                 .expect("fungible asset should only allow amounts that fit into a felt"),
             Felt::ZERO,
             Felt::ZERO,
@@ -250,6 +251,7 @@ mod tests {
     use super::*;
     use crate::account::AccountId;
     use crate::asset::AssetId;
+    use crate::field::FromNum;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -262,7 +264,7 @@ mod tests {
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new(
-            AssetId::new(1u32.into(), 2u32.into()),
+            AssetId::new(Felt::from_num(1u32), Felt::from_num(2u32)),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
         );
 
@@ -278,7 +280,7 @@ mod tests {
     fn fungible_asset_from_key_value_fails_on_invalid_value() -> anyhow::Result<()> {
         let asset = FungibleAsset::mock(42);
         let mut invalid_value = asset.to_value_word();
-        invalid_value[2] = Felt::from(5u32);
+        invalid_value[2] = Felt::from_num(5u32);
 
         let err = FungibleAsset::from_key_value(asset.vault_key(), invalid_value).unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
@@ -334,7 +336,7 @@ mod tests {
         let asset = FungibleAsset::mock(34);
 
         assert_eq!(asset.vault_key().faucet_id(), FungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_id().prefix().as_int(), 0);
-        assert_eq!(asset.vault_key().asset_id().suffix().as_int(), 0);
+        assert_eq!(asset.vault_key().asset_id().prefix().as_canonical_u64(), 0);
+        assert_eq!(asset.vault_key().asset_id().suffix().as_canonical_u64(), 0);
     }
 }
