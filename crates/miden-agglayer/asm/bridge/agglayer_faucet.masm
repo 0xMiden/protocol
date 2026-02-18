@@ -211,7 +211,7 @@ proc build_p2id_output_note
     # TODO: implement scale down logic; stubbed out for now
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
-    exec.asset_conversion::scale_u256_to_native_amount
+    exec.asset_conversion::verify_u256_to_native_amount_conversion_stubbed
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute

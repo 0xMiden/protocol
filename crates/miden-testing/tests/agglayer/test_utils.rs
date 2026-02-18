@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -13,6 +14,7 @@ use miden_agglayer::{
     MetadataHash,
     agglayer_library,
 };
+use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
@@ -273,4 +275,32 @@ pub async fn execute_program_with_default_host(
 
     let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
     processor.execute(&program, &mut host).await
+}
+
+/// Execute a MASM script with the default host
+pub async fn execute_masm_script(script_code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    let agglayer_lib = agglayer_library();
+
+    let program = Assembler::new(Arc::new(DefaultSourceManager::default()))
+        .with_dynamic_library(CoreLibrary::default())
+        .unwrap()
+        .with_dynamic_library(agglayer_lib)
+        .unwrap()
+        .assemble_program(script_code)
+        .unwrap();
+
+    execute_program_with_default_host(program, None).await
+}
+
+/// Helper to assert execution fails with a specific error message
+pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str) {
+    let result = execute_masm_script(script_code).await;
+    assert!(result.is_err(), "Expected execution to fail but it succeeded");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains(expected_error),
+        "Expected error containing '{}', got: {}",
+        expected_error,
+        error_msg
+    );
 }
