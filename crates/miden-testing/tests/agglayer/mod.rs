@@ -4,7 +4,7 @@ mod bridge_out;
 mod config_bridge;
 mod crypto_utils;
 mod global_index;
-pub mod mmr_frontier;
+mod mmr_frontier;
 mod solidity_miden_address_conversion;
 pub mod test_utils;
 mod update_ger;

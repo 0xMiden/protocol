@@ -124,7 +124,7 @@ contract ClaimAssetTestVectors is Test, DepositContractV2 {
             vm.serializeAddress(obj, "origin_token_address", originTokenAddress);
             vm.serializeUint(obj, "destination_network", destinationNetwork);
             vm.serializeAddress(obj, "destination_address", destinationAddress);
-            vm.serializeBytes32(obj, "amount", bytes32(amount));
+            vm.serializeUint(obj, "amount", amount);
             vm.serializeBytes32(obj, "metadata_hash", metadataHash);
             string memory json = vm.serializeBytes32(obj, "leaf_value", leafValue);
 

@@ -305,7 +305,7 @@ proc load_let_frontier_to_memory
     exec.active_account::get_item
     # => [num_leaves_word]
 
-    push.LET_FRONTIER_MEM_PTR mem_storew_le dropw
+    push.LET_FRONTIER_MEM_PTR mem_storew_be dropw
     # => []
 
     # 2. Load 32 frontier double-word entries from the map via double_word_array::get

@@ -44,7 +44,14 @@ pub use claim_note::{
     create_claim_note,
 };
 pub use config_note::ConfigAggBridgeNote;
-pub use eth_types::{EthAddressFormat, EthAmount, GlobalIndex, GlobalIndexError, MetadataHash};
+pub use eth_types::{
+    EthAddressFormat,
+    EthAmount,
+    EthAmountError,
+    GlobalIndex,
+    GlobalIndexError,
+    MetadataHash,
+};
 pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS
@@ -347,14 +354,16 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     // - The map slot stores the frontier as a double-word array (absent keys return zeros, which is
     //   the correct initial state for a frontier with no leaves).
     // - The root and num_leaves each get their own value slots.
-    let let_storage_slot_name = StorageSlotName::new("miden::agglayer::let").unwrap();
-    let let_root_lo_slot_name = StorageSlotName::new("miden::agglayer::let::root_lo").unwrap();
-    let let_root_hi_slot_name = StorageSlotName::new("miden::agglayer::let::root_hi").unwrap();
-    let let_num_leaves_slot_name =
-        StorageSlotName::new("miden::agglayer::let::num_leaves").unwrap();
-    let faucet_registry_slot_name =
-        StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
-            .expect("Faucet registry storage slot name should be valid");
+    let let_storage_slot_name = StorageSlotName::new("miden::agglayer::let")
+        .expect("LET storage slot name should be valid");
+    let let_root_lo_slot_name = StorageSlotName::new("miden::agglayer::let::root_lo")
+        .expect("LET root_lo storage slot name should be valid");
+    let let_root_hi_slot_name = StorageSlotName::new("miden::agglayer::let::root_hi")
+        .expect("LET root_hi storage slot name should be valid");
+    let let_num_leaves_slot_name = StorageSlotName::new("miden::agglayer::let::num_leaves")
+        .expect("LET num_leaves storage slot name should be valid");
+    let faucet_registry_slot_name = StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
+        .expect("Faucet registry storage slot name should be valid");
     let bridge_out_storage_slots = vec![
         StorageSlot::with_empty_map(let_storage_slot_name),
         StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),

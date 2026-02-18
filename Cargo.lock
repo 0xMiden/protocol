@@ -1392,7 +1392,9 @@ dependencies = [
  "miden-protocol",
  "miden-standards",
  "miden-utils-sync",
+ "primitive-types",
  "regex",
+ "thiserror",
  "walkdir",
 ]
 
