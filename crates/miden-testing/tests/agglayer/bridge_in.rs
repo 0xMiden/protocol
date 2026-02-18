@@ -3,6 +3,7 @@ extern crate alloc;
 use miden_agglayer::{
     ClaimNoteStorage,
     OutputNoteData,
+    UpdateGerNote,
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
@@ -56,7 +57,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     // GET REAL CLAIM DATA FROM JSON
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data) = real_claim_data();
+    let (proof_data, leaf_data, ger) = real_claim_data();
 
     // Get the destination account ID from the leaf data
     // This requires the destination_address to be in the embedded Miden AccountId format
@@ -95,9 +96,24 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
 
+    // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_note =
+        UpdateGerNote::create(ger, sender_account.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
     let mut mock_chain = builder.clone().build()?;
+
+    // EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
     mock_chain.prove_next_block()?;
 
     // EXECUTE CLAIM NOTE AGAINST AGGLAYER FAUCET (with FPI to Bridge)

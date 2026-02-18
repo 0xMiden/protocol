@@ -9,6 +9,7 @@ use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
 use miden_agglayer::{
     EthAddressFormat,
     EthAmount,
+    ExitRoot,
     GlobalIndex,
     LeafData,
     MetadataHash,
@@ -245,9 +246,12 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
 /// Returns real claim data from the claim_asset_vectors.json file.
 ///
 /// Returns a tuple of (ProofData, LeafData) parsed from the real on-chain claim transaction.
-pub fn real_claim_data() -> (ProofData, LeafData) {
+pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
     let vector = &*CLAIM_ASSET_VECTOR;
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data())
+    let ger = ExitRoot::new(
+        hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
+    );
+    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
 }
 
 /// Execute a program with a default host and optional advice inputs.

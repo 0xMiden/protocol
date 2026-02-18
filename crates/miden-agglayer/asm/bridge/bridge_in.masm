@@ -1,6 +1,7 @@
 use miden::agglayer::crypto_utils
 use miden::agglayer::utils
 use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::rpo256
 use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
@@ -9,6 +10,7 @@ use miden::protocol::native_account
 # =================================================================================================
 
 const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
+const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
@@ -23,34 +25,39 @@ const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
 const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
 const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
 
-const GER_UPPER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_upper")
-const GER_LOWER_STORAGE_SLOT=word("miden::agglayer::bridge::ger_lower")
+const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
+const GER_KNOWN_FLAG=1
 
 # PUBLIC INTERFACE
 # =================================================================================================
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
+#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
+#! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
+#!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc update_ger
-    push.GER_LOWER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_LOWER[4], GER_UPPER[4], pad(8)]
+    # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
+    # inputs: [B, A] => output: hash(A || B)
+    exec.rpo256::merge
+    # => [GER_HASH, pad(12)]
 
-    exec.native_account::set_item
-    # => [OLD_VALUE, GER_UPPER[4], pad(8)]
+    # prepare VALUE = [0, 0, 0, GER_KNOWN_FLAG]
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, GER_HASH, pad(12)]
 
-    dropw
-    # => [GER_UPPER[4], pad(12)]
+    swapw
+    # => [GER_HASH, VALUE, pad(12)]
 
-    push.GER_UPPER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_UPPER[4], pad(12)]
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH, VALUE, pad(12)]
 
-    exec.native_account::set_item
+    exec.native_account::set_map_item
     # => [OLD_VALUE, pad(12)]
-
     dropw
     # => [pad(16)]
 end
@@ -117,8 +124,22 @@ end
 #!
 #! Invocation: exec
 proc assert_valid_ger
-    # TODO verify that GER is in storage
-    dropw dropw
+    # compute hash(GER)
+    exec.rpo256::merge
+    # => [GER_HASH]
+
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    # assert the GER is known in storage (VALUE = [0, 0, 0, GER_KNOWN_FLAG])
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE]
+
+    assert_eqw.err=ERR_GER_NOT_FOUND
+    # => []
 end
 
 #! Assert the global index is valid for a mainnet deposit.

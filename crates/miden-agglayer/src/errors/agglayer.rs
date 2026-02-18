@@ -25,6 +25,9 @@ pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str
 /// Error Message: "combined u64 doesn't fit in field"
 pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combined u64 doesn't fit in field");
 
+/// Error Message: "GER not found in storage"
+pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not found in storage");
+
 /// Error Message: "invalid claim proof"
 pub const ERR_INVALID_CLAIM_PROOF: MasmError = MasmError::from_static_str("invalid claim proof");
 

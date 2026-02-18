@@ -12,6 +12,8 @@
 - Implemented verification of AggLayer deposits (claims) against GER ([#2295](https://github.com/0xMiden/miden-base/pull/2295), [#2288](https://github.com/0xMiden/miden-base/pull/2288)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
+- Changed GER storage to a map ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
+- Implemented `assert_valid_ger` procedure for verifying GER against storage ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
 - Introduced `TokenMetadata` type to encapsulate fungible faucet metadata ([#2344](https://github.com/0xMiden/miden-base/issues/2344)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
