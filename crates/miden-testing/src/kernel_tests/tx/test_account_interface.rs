@@ -503,7 +503,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         .build_tx_context(
             TxContextInput::Account(account),
             &[],
-            &vec![
+            &[
                 p2ide_wrong_inputs_number.clone(),
                 p2ide_invalid_target_id.clone(),
                 p2ide_invalid_reclaim.clone(),

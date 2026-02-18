@@ -78,12 +78,14 @@ pub const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_
 
 /// Error Message: "creation of a foreign context against the native account is forbidden"
 pub const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT: MasmError = MasmError::from_static_str("creation of a foreign context against the native account is forbidden");
-/// Error Message: "ID of the provided foreign account equals zero"
-pub const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO: MasmError = MasmError::from_static_str("ID of the provided foreign account equals zero");
+/// Error Message: "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
+pub const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO: MasmError = MasmError::from_static_str("ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called");
 /// Error Message: "commitment of the foreign account in the advice provider does not match the commitment in the account tree"
 pub const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT: MasmError = MasmError::from_static_str("commitment of the foreign account in the advice provider does not match the commitment in the account tree");
 /// Error Message: "maximum allowed number of foreign account to be loaded (64) was exceeded"
 pub const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED: MasmError = MasmError::from_static_str("maximum allowed number of foreign account to be loaded (64) was exceeded");
+/// Error Message: "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+pub const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO: MasmError = MasmError::from_static_str("root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called");
 
 /// Error Message: "the origin of the fungible asset is not this faucet"
 pub const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the fungible asset is not this faucet");

@@ -1,3 +1,4 @@
+use $kernel::account
 use $kernel::memory
 use $kernel::note
 
@@ -142,4 +143,91 @@ pub proc get_expiration_delta
         # Calculate the delta
         exec.get_block_number sub
     end
+end
+
+#! Starts a foreign account context.
+#!
+#! This allows calling procedures on an account different from the native account. It loads the
+#! foreign account into memory, unless already loaded. It pushes the foreign account onto the
+#! account stack, which makes the foreign account the active account.
+#!
+#! Inputs:
+#!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix]
+#!   Advice map: {
+#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
+#!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
+#!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+#! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
+#!   [0, 0, foreign_account_id_prefix, foreign_account_id_suffix]. Notice that the actual advice map
+#!   key is reversed: [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0]. That is the 
+#!   specificity of the `adv.push_mapval` instruction which takes the top stack word in the 
+#!   big-endian (reversed) order.
+#! - account_nonce is the nonce of the foreign account.
+#! - VAULT_ROOT is the commitment of the foreign account's vault.
+#! - STORAGE_ROOT is the commitment of the foreign account's storage.
+#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
+#!   [SLOT_VALUE, slot_type, 0, 0, 0].
+#! - CODE_COMMITMENT is the commitment of the foreign account's code.
+#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
+#!
+#! Panics if:
+#! - foreign context is created against the native account.
+#!
+#! Invocation: exec
+pub proc start_foreign_context
+    # get the memory address and a flag whether this account was already loaded.
+    exec.account::get_account_data_ptr
+    # OS => [was_loaded, ptr, foreign_account_id_prefix, foreign_account_id_suffix]    
+
+    if.true
+        exec.memory::push_ptr_to_account_stack drop drop
+        # OS => []
+    else
+        exec.memory::push_ptr_to_account_stack
+        # OS => [foreign_account_id_prefix, foreign_account_id_suffix]
+
+        # load the advice data into the active account memory section
+        exec.account::load_foreign_account
+        # => []
+
+        # make sure that the state of the loaded foreign account corresponds to its commitment in
+        # the account database
+        exec.account::validate_active_foreign_account
+        # => []
+    end
+    # => []
+end
+
+#! Ends a foreign account context.
+#!
+#! This pops the top of the account stack, making the previous account the active account, and 
+#! resets the foreign procedure info (foreign account ID and foreign procedure root) in the kernel
+#! memory.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the active account is the native account.
+#!
+#! Invocation: dynexec
+pub proc end_foreign_context
+    exec.memory::pop_ptr_from_account_stack
+    # => []
+
+    # set the upcoming foreign account ID to zero
+    push.0 push.0 exec.memory::set_fpi_account_id
+    # => []
+
+    # set the upcoming foreign procedure root to zero
+    padw exec.memory::set_fpi_procedure_root dropw
+    # => []
 end
