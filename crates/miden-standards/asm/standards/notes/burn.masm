@@ -18,6 +18,7 @@ use miden::standards::faucets
 #! Panics if:
 #! - account does not expose burn procedure.
 #! - any of the validations in the burn procedure fail.
+@note_script
 pub proc main
     dropw
     # => [pad(16)]

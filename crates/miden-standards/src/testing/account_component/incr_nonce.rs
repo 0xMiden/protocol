@@ -1,4 +1,5 @@
 use miden_protocol::account::AccountComponent;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::assembly::Library;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -27,8 +28,11 @@ pub struct IncrNonceAuthComponent;
 
 impl From<IncrNonceAuthComponent> for AccountComponent {
     fn from(_: IncrNonceAuthComponent) -> Self {
-        AccountComponent::new(INCR_NONCE_AUTH_LIBRARY.clone(), vec![])
+        let metadata = AccountComponentMetadata::new("miden::testing::incr_nonce_auth")
+            .with_description("Testing auth component that always increments nonce")
+            .with_supports_all_types();
+
+        AccountComponent::new(INCR_NONCE_AUTH_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")
-            .with_supports_all_types()
     }
 }

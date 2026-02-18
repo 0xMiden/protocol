@@ -26,7 +26,6 @@ use crate::errors::AccountError;
 /// # Guarantees
 ///
 /// - The metadata's storage schema does not contain duplicate slot names.
-/// - The schema cannot contain protocol-reserved slot names.
 /// - Each init-time value name uniquely identifies a single value. The expected init-time metadata
 ///   can be retrieved with [AccountComponentMetadata::schema_requirements()], which returns a map
 ///   from keys to [SchemaRequirement] (which indicates the expected value type and optional
@@ -35,7 +34,7 @@ use crate::errors::AccountError;
 /// # Example
 ///
 /// ```
-/// use std::collections::{BTreeMap, BTreeSet};
+/// use std::collections::BTreeMap;
 ///
 /// use miden_protocol::account::StorageSlotName;
 /// use miden_protocol::account::component::{
@@ -50,7 +49,6 @@ use crate::errors::AccountError;
 ///     WordSchema,
 ///     WordValue,
 /// };
-/// use semver::Version;
 ///
 /// let slot_name = StorageSlotName::new("demo::test_value")?;
 ///
@@ -58,7 +56,7 @@ use crate::errors::AccountError;
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
-///     FeltSchema::new_typed(SchemaTypeId::native_felt(), "foo"),
+///     FeltSchema::felt("foo"),
 /// ]);
 ///
 /// let storage_schema = StorageSchema::new([(
@@ -66,13 +64,9 @@ use crate::errors::AccountError;
 ///     StorageSlotSchema::Value(ValueSlotSchema::new(Some("demo slot".into()), word)),
 /// )])?;
 ///
-/// let metadata = AccountComponentMetadata::new(
-///     "test name".into(),
-///     "description of the component".into(),
-///     Version::parse("0.1.0")?,
-///     BTreeSet::new(),
-///     storage_schema,
-/// );
+/// let metadata = AccountComponentMetadata::new("test name")
+///     .with_description("description of the component")
+///     .with_storage_schema(storage_schema);
 ///
 /// // Init value keys are derived from slot name: `demo::test_value.foo`.
 /// let value_name = StorageValueName::from_slot_name_with_suffix(&slot_name, "foo")?;
@@ -106,21 +100,73 @@ pub struct AccountComponentMetadata {
 }
 
 impl AccountComponentMetadata {
-    /// Create a new [AccountComponentMetadata].
-    pub fn new(
-        name: String,
-        description: String,
-        version: Version,
-        targets: BTreeSet<AccountType>,
-        storage_schema: StorageSchema,
-    ) -> Self {
+    /// Create a new [AccountComponentMetadata] with the given name.
+    ///
+    /// Other fields are initialized to sensible defaults:
+    /// - `description`: empty string
+    /// - `version`: 1.0.0
+    /// - `supported_types`: empty set
+    /// - `storage_schema`: default (empty)
+    ///
+    /// Use the `with_*` mutator methods to customize these fields.
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
-            name,
-            description,
-            version,
-            supported_types: targets,
-            storage_schema,
+            name: name.into(),
+            description: String::new(),
+            version: Version::new(1, 0, 0),
+            supported_types: BTreeSet::new(),
+            storage_schema: StorageSchema::default(),
         }
+    }
+
+    /// Sets the description of the component.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    /// Sets the version of the component.
+    pub fn with_version(mut self, version: Version) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Adds a supported account type to the component.
+    pub fn with_supported_type(mut self, account_type: AccountType) -> Self {
+        self.supported_types.insert(account_type);
+        self
+    }
+
+    /// Sets the supported account types of the component.
+    pub fn with_supported_types(mut self, supported_types: BTreeSet<AccountType>) -> Self {
+        self.supported_types = supported_types;
+        self
+    }
+
+    /// Sets the component to support all account types.
+    pub fn with_supports_all_types(mut self) -> Self {
+        self.supported_types.extend([
+            AccountType::FungibleFaucet,
+            AccountType::NonFungibleFaucet,
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]);
+        self
+    }
+
+    /// Sets the component to support regular account types (immutable and updatable code).
+    pub fn with_supports_regular_types(mut self) -> Self {
+        self.supported_types.extend([
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]);
+        self
+    }
+
+    /// Sets the storage schema of the component.
+    pub fn with_storage_schema(mut self, schema: StorageSchema) -> Self {
+        self.storage_schema = schema;
+        self
     }
 
     /// Returns the init-time values requirements for this schema.

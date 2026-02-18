@@ -75,6 +75,18 @@ impl AssetVault {
         self.asset_tree.root()
     }
 
+    /// Returns the asset corresponding to the provided asset vault key, or `None` if the asset
+    /// doesn't exist.
+    pub fn get(&self, asset_vault_key: AssetVaultKey) -> Option<Asset> {
+        let word = self.asset_tree.get_value(asset_vault_key.as_word());
+
+        if word.is_empty() {
+            None
+        } else {
+            Some(Asset::try_from(word).expect("asset vault should only store valid assets"))
+        }
+    }
+
     /// Returns true if the specified non-fungible asset is stored in this vault.
     pub fn has_non_fungible_asset(&self, asset: NonFungibleAsset) -> Result<bool, AssetVaultError> {
         // check if the asset is stored in the vault

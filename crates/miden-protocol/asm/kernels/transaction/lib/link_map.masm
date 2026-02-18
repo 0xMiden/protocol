@@ -167,10 +167,10 @@ const GET_OPERATION_ABSENT_AT_HEAD=1
 # =================================================================================================
 
 # Event emitted when an entry is set.
-const LINK_MAP_SET_EVENT=event("miden::link_map::set")
+const LINK_MAP_SET_EVENT=event("miden::protocol::link_map::set")
 
 # Event emitted when an entry is fetched.
-const LINK_MAP_GET_EVENT=event("miden::link_map::get")
+const LINK_MAP_GET_EVENT=event("miden::protocol::link_map::get")
 
 # LINK MAP PROCEDURES
 # =================================================================================================

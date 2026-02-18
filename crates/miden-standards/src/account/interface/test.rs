@@ -1,5 +1,6 @@
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountBuilder, AccountComponent, AccountType};
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
@@ -37,7 +38,7 @@ use crate::account::interface::{
 };
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
-use crate::note::{create_p2id_note, create_p2ide_note, create_swap_note};
+use crate::note::{P2idNote, P2ideNote, SwapNote};
 use crate::testing::account_interface::get_public_keys_from_account;
 
 // DEFAULT NOTES
@@ -71,7 +72,7 @@ fn test_basic_wallet_default_notes() {
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);
 
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -81,7 +82,7 @@ fn test_basic_wallet_default_notes() {
     )
     .unwrap();
 
-    let p2ide_note = create_p2ide_note(
+    let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -96,7 +97,7 @@ fn test_basic_wallet_default_notes() {
     let offered_asset = NonFungibleAsset::mock(&[5, 6, 7, 8]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let (swap_note, _) = create_swap_note(
+    let (swap_note, _) = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,
@@ -153,8 +154,8 @@ fn test_custom_account_default_note() {
     let account_code = CodeBuilder::default()
         .compile_component_code("test::account_custom", account_custom_code_source)
         .unwrap();
-    let account_component =
-        AccountComponent::new(account_code, vec![]).unwrap().with_supports_all_types();
+    let metadata = AccountComponentMetadata::new("test::account_custom").with_supports_all_types();
+    let account_component = AccountComponent::new(account_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
@@ -164,7 +165,7 @@ fn test_custom_account_default_note() {
         .unwrap();
     let target_account_interface = AccountInterface::from_account(&target_account);
 
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -174,7 +175,7 @@ fn test_custom_account_default_note() {
     )
     .unwrap();
 
-    let p2ide_note = create_p2ide_note(
+    let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap(),
         vec![FungibleAsset::mock(10)],
@@ -189,7 +190,7 @@ fn test_custom_account_default_note() {
     let offered_asset = NonFungibleAsset::mock(&[5, 6, 7, 8]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let (swap_note, _) = create_swap_note(
+    let (swap_note, _) = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,
@@ -222,7 +223,7 @@ fn test_required_asset_same_as_offered() {
     let offered_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
-    let result = create_swap_note(
+    let result = SwapNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
         offered_asset,
         requested_asset,
@@ -253,7 +254,7 @@ fn test_basic_wallet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(wallet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -336,7 +337,7 @@ fn test_basic_fungible_faucet_custom_notes() {
     let sender_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into().unwrap();
     let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(faucet_account.id());
-    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_account_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -418,8 +419,9 @@ fn test_custom_account_custom_notes() {
     let account_code = CodeBuilder::default()
         .compile_component_code("test::account::component_1", account_custom_code_source)
         .unwrap();
-    let account_component =
-        AccountComponent::new(account_code, vec![]).unwrap().with_supports_all_types();
+    let metadata =
+        AccountComponentMetadata::new("test::account::component_1").with_supports_all_types();
+    let account_component = AccountComponent::new(account_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
@@ -439,7 +441,7 @@ fn test_custom_account_custom_notes() {
 
     let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "
@@ -521,8 +523,9 @@ fn test_custom_account_multiple_components_custom_notes() {
     let custom_code = CodeBuilder::default()
         .compile_component_code("test::account::component_1", account_custom_code_source)
         .unwrap();
-    let custom_component =
-        AccountComponent::new(custom_code, vec![]).unwrap().with_supports_all_types();
+    let metadata =
+        AccountComponentMetadata::new("test::account::component_1").with_supports_all_types();
+    let custom_component = AccountComponent::new(custom_code, vec![], metadata).unwrap();
 
     let mock_seed = Word::from([0, 1, 2, 3u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed)
@@ -543,7 +546,7 @@ fn test_custom_account_multiple_components_custom_notes() {
 
     let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
-    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![FungibleAsset::mock(100)]).unwrap();
 
     let compatible_source_code = "

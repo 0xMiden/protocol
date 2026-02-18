@@ -7,27 +7,19 @@ use miden_processor::{AdviceInputs, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
-    AccountId,
-    AccountIdVersion,
+    AccountHeader,
     AccountProcedureRoot,
-    AccountStorage,
     AccountStorageMode,
     AccountType,
-    StorageMap,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
-use miden_protocol::errors::tx_kernel::{
-    ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH,
-    ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_EMPTY,
-    ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_VALID_EMPTY_SMT,
-};
+use miden_protocol::asset::FungibleAsset;
+use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
     BLOCK_COMMITMENT_PTR,
@@ -35,6 +27,8 @@ use miden_protocol::transaction::memory::{
     BLOCK_NUMBER_IDX,
     CHAIN_COMMITMENT_PTR,
     FEE_PARAMETERS_PTR,
+    GLOBAL_ACCOUNT_ID_PREFIX_PTR,
+    GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
     INIT_ACCT_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_VAULT_ROOT_PTR,
@@ -56,7 +50,6 @@ use miden_protocol::transaction::memory::{
     KERNEL_PROCEDURES_PTR,
     NATIVE_ACCT_CODE_COMMITMENT_PTR,
     NATIVE_ACCT_ID_AND_NONCE_PTR,
-    NATIVE_ACCT_ID_PTR,
     NATIVE_ACCT_PROCEDURES_SECTION_PTR,
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
@@ -79,8 +72,13 @@ use miden_protocol::transaction::memory::{
     VALIDATOR_KEY_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
-use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
-use miden_protocol::{EMPTY_WORD, ONE, WORD_SIZE};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    TransactionAdviceInputs,
+    TransactionArgs,
+    TransactionKernel,
+};
+use miden_protocol::{EMPTY_WORD, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -98,7 +96,6 @@ use crate::{
     TransactionContext,
     TransactionContextBuilder,
     assert_execution_error,
-    assert_transaction_executor_error,
 };
 
 #[tokio::test]
@@ -171,19 +168,19 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[0],
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_SUFFIX_PTR),
         inputs.account().id().suffix(),
-        "The account ID prefix should be stored at the ACCT_ID_PTR[0]"
+        "The account ID prefix should be stored at the GLOBAL_ACCOUNT_ID_SUFFIX_PTR"
     );
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[1],
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_PREFIX_PTR),
         inputs.account().id().prefix().as_felt(),
-        "The account ID suffix should be stored at the ACCT_ID_PTR[1]"
+        "The account ID suffix should be stored at the GLOBAL_ACCOUNT_ID_PREFIX_PTR"
     );
 
     assert_eq!(
         exec_output.get_kernel_mem_word(INIT_ACCT_COMMITMENT_PTR),
-        inputs.account().commitment(),
+        inputs.account().to_commitment(),
         "The account commitment should be stored at the INIT_ACCT_COMMITMENT_PTR"
     );
 
@@ -370,15 +367,11 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
 }
 
 fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+    let header = AccountHeader::from(inputs.account());
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR),
-        Word::new([
-            inputs.account().id().suffix(),
-            inputs.account().id().prefix().as_felt(),
-            ZERO,
-            inputs.account().nonce()
-        ]),
-        "The account ID should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR[0]"
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
+        &header.to_elements()[0..4],
+        "The account ID and nonce should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR"
     );
 
     assert_eq!(
@@ -622,106 +615,6 @@ pub async fn create_accounts_with_all_storage_modes() -> anyhow::Result<()> {
     create_multiple_accounts_test(AccountStorageMode::Network).await
 }
 
-/// Takes an account with a placeholder ID and returns the same account but with its ID replaced
-/// with a newly generated one.
-fn compute_valid_account_id(account: Account) -> Account {
-    let init_seed: [u8; 32] = [5; 32];
-    let seed = AccountId::compute_account_seed(
-        init_seed,
-        account.account_type(),
-        AccountStorageMode::Public,
-        AccountIdVersion::Version0,
-        account.code().commitment(),
-        account.storage().to_commitment(),
-    )
-    .unwrap();
-
-    let account_id = AccountId::new(
-        seed,
-        AccountIdVersion::Version0,
-        account.code().commitment(),
-        account.storage().to_commitment(),
-    )
-    .unwrap();
-
-    // Overwrite old ID with generated ID.
-    let (_, vault, storage, code, _nonce, _seed) = account.into_parts();
-    // Set nonce to zero so this is considered a new account.
-    Account::new(account_id, vault, storage, code, ZERO, Some(seed)).unwrap()
-}
-
-/// Tests that creating a fungible faucet account with a non-empty initial balance in its reserved
-/// slot fails.
-#[tokio::test]
-pub async fn create_account_fungible_faucet_invalid_initial_balance() -> anyhow::Result<()> {
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoopAuthComponent)
-        .with_component(MockAccountComponent::with_empty_slots())
-        .build_existing()
-        .expect("account should be valid");
-    let (id, vault, mut storage, code, _nonce, _seed) = account.into_parts();
-
-    // Set the initial balance to a non-zero value manually, since the builder would not allow us to
-    // do that.
-    let faucet_data_slot = Word::from([0, 0, 0, 100u32]);
-    storage
-        .set_item(AccountStorage::faucet_sysdata_slot(), faucet_data_slot)
-        .unwrap();
-
-    // The compute account ID function will set the nonce to zero so this is considered a new
-    // account.
-    let account = Account::new(id, vault, storage, code, ONE, None)?;
-    let account = compute_valid_account_id(account);
-
-    let result = create_account_test(account).await;
-
-    assert_transaction_executor_error!(
-        result,
-        ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_EMPTY
-    );
-
-    Ok(())
-}
-
-/// Tests that creating a non fungible faucet account with a non-empty storage map in its reserved
-/// slot fails.
-#[tokio::test]
-pub async fn create_account_non_fungible_faucet_invalid_initial_reserved_slot() -> anyhow::Result<()>
-{
-    // Create a storage map with a mock asset to make it non-empty.
-    let asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
-    let non_fungible_storage_map =
-        StorageMap::with_entries([(asset.vault_key().into(), asset.into())]).unwrap();
-    let storage = AccountStorage::new(vec![StorageSlot::with_map(
-        AccountStorage::faucet_sysdata_slot().clone(),
-        non_fungible_storage_map,
-    )])
-    .unwrap();
-
-    let account = AccountBuilder::new([1; 32])
-        .account_type(AccountType::NonFungibleFaucet)
-        .with_auth_component(NoopAuthComponent)
-        .with_component(MockAccountComponent::with_empty_slots())
-        .build()
-        .expect("account should be valid");
-    let (id, vault, _storage, code, _nonce, _seed) = account.into_parts();
-
-    // The compute account ID function will set the nonce to zero so this is considered a new
-    // account.
-    let account = Account::new(id, vault, storage, code, ONE, None)?;
-    let account = compute_valid_account_id(account);
-
-    let result = create_account_test(account).await;
-
-    assert_transaction_executor_error!(
-        result,
-        ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_VALID_EMPTY_SMT
-    );
-
-    Ok(())
-}
-
 /// Tests that supplying an invalid seed causes account creation to fail.
 #[tokio::test]
 pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
@@ -739,9 +632,8 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
-    let account_seed_key = [account.id().suffix(), account.id().prefix().as_felt(), ZERO, ZERO];
-    let adv_inputs =
-        AdviceInputs::default().with_map([(Word::from(account_seed_key), vec![ZERO; WORD_SIZE])]);
+    let account_seed_key = TransactionAdviceInputs::account_id_map_key(account.id());
+    let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
     let tx_context = TransactionContextBuilder::new(account)
         .tx_inputs(tx_inputs)

@@ -3,6 +3,7 @@ use $kernel::memory
 use $kernel::note
 use $kernel::asset
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use $kernel::util::note::ATTACHMENT_KIND_NONE
 use $kernel::util::note::ATTACHMENT_KIND_WORD
 use $kernel::util::note::ATTACHMENT_KIND_ARRAY
@@ -52,17 +53,17 @@ const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 mos
 # =================================================================================================
 
 # Event emitted before a new note is created.
-const NOTE_BEFORE_CREATED_EVENT=event("miden::note::before_created")
+const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
-const NOTE_AFTER_CREATED_EVENT=event("miden::note::after_created")
+const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
 
 # Event emitted before an ASSET is added to a note
-const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::note::before_add_asset")
+const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
 # Event emitted after an ASSET is added to a note
-const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::note::after_add_asset")
+const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
 
 # Event emitted before an ATTACHMENT is added to a note
-const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::note::before_set_attachment")
+const NOTE_BEFORE_SET_ATTACHMENT_EVENT=event("miden::protocol::note::before_set_attachment")
 
 # OUTPUT NOTE PROCEDURES
 # =================================================================================================
@@ -213,7 +214,7 @@ pub proc add_asset
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
     # => [ASSET, note_ptr, num_of_assets, note_idx]
 
-    # Check if ASSET to add is fungible
+    # check if ASSET to add is fungible
     exec.asset::is_fungible_asset
     # => [is_fungible_asset?, ASSET, note_ptr, num_of_assets, note_idx]
 
@@ -507,7 +508,7 @@ proc add_fungible_asset
             #     num_of_assets, note_idx]
 
             # check that we don't overflow bc we use lte
-            dup exec.asset::get_fungible_asset_max_amount lte
+            dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
             assert.err=ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED
             # => [updated_amount, 0, 0, faucet_id, 0, 0, end_asset_ptr, asset_ptr, note_ptr,
             #     num_of_assets, note_idx]
@@ -542,7 +543,7 @@ proc add_fungible_asset
     movdn.4 dropw
     # => [asset_ptr, ASSET, end_asset_ptr, asset_ptr, note_ptr, num_of_assets, note_idx]
 
-    # Store the fungible asset, either the combined ASSET or the new ASSET
+    # store the fungible asset, either the combined ASSET or the new ASSET
     mem_storew_be dropw drop drop
     # => [note_ptr, num_of_assets, note_idx]
 

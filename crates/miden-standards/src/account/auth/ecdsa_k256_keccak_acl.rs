@@ -1,7 +1,13 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaTypeId,
+    StorageSchema,
+    StorageSlotSchema,
+};
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
@@ -11,8 +17,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::account::components::ecdsa_k256_keccak_acl_library;
+
+/// The schema type ID for ECDSA K256 Keccak public keys.
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::ecdsa_k256_keccak::pub_key";
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_acl::public_key")
@@ -118,10 +128,10 @@ impl Default for AuthEcdsaK256KeccakAclConfig {
 ///   allowing free note processing.
 ///
 /// ## Storage Layout
-/// - Slot 0(value): Public key (same as EcdsaK256Keccak)
-/// - Slot 1(value): [num_trigger_procs, allow_unauthorized_output_notes,
-///   allow_unauthorized_input_notes, 0]
-/// - Slot 2(map): A map with trigger procedure roots
+/// - [`Self::public_key_slot`]: Public key
+/// - [`Self::config_slot`]: `[num_trigger_procs, allow_unauthorized_output_notes,
+///   allow_unauthorized_input_notes, 0]`
+/// - [`Self::trigger_procedure_roots_slot`]: A map with trigger procedure roots
 ///
 /// ## Important Note on Procedure Detection
 /// The procedure-based authentication relies on the `was_procedure_called` kernel function,
@@ -138,6 +148,9 @@ pub struct AuthEcdsaK256KeccakAcl {
 }
 
 impl AuthEcdsaK256KeccakAcl {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::ecdsa_k256_keccak_acl";
+
     /// Creates a new [`AuthEcdsaK256KeccakAcl`] component with the given `public_key` and
     /// configuration.
     ///
@@ -170,6 +183,43 @@ impl AuthEcdsaK256KeccakAcl {
     /// Returns the [`StorageSlotName`] where the trigger procedure roots are stored.
     pub fn trigger_procedure_roots_slot() -> &'static StorageSlotName {
         &TRIGGER_PROCEDURE_ROOT_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for the public key slot.
+    pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        (
+            Self::public_key_slot().clone(),
+            StorageSlotSchema::value("Public key commitment", pub_key_type),
+        )
+    }
+
+    /// Returns the storage slot schema for the configuration slot.
+    pub fn config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::config_slot().clone(),
+            StorageSlotSchema::value(
+                "ACL configuration",
+                [
+                    FeltSchema::u32("num_trigger_procs").with_default(Felt::new(0)),
+                    FeltSchema::u32("allow_unauthorized_output_notes").with_default(Felt::new(0)),
+                    FeltSchema::u32("allow_unauthorized_input_notes").with_default(Felt::new(0)),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the trigger procedure roots slot.
+    pub fn trigger_procedure_roots_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::trigger_procedure_roots_slot().clone(),
+            StorageSlotSchema::map(
+                "Trigger procedure roots",
+                SchemaTypeId::u32(),
+                SchemaTypeId::native_word(),
+            ),
+        )
     }
 }
 
@@ -211,11 +261,23 @@ impl From<AuthEcdsaK256KeccakAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        AccountComponent::new(ecdsa_k256_keccak_acl_library(), storage_slots)
-            .expect(
-                "ACL auth component should satisfy the requirements of a valid account component",
+        let storage_schema = StorageSchema::new([
+            AuthEcdsaK256KeccakAcl::public_key_slot_schema(),
+            AuthEcdsaK256KeccakAcl::config_slot_schema(),
+            AuthEcdsaK256KeccakAcl::trigger_procedure_roots_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        let metadata = AccountComponentMetadata::new(AuthEcdsaK256KeccakAcl::NAME)
+            .with_description(
+                "ACL authentication component using ECDSA K256 Keccak signature scheme",
             )
             .with_supports_all_types()
+            .with_storage_schema(storage_schema);
+
+        AccountComponent::new(ecdsa_k256_keccak_acl_library(), storage_slots, metadata).expect(
+            "ACL auth component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

@@ -1,4 +1,5 @@
 use miden_protocol::account::AccountComponent;
+use miden_protocol::account::component::AccountComponentMetadata;
 
 use crate::account::components::no_auth_library;
 
@@ -19,6 +20,9 @@ use crate::account::components::no_auth_library;
 pub struct NoAuth;
 
 impl NoAuth {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::auth::no_auth";
+
     /// Creates a new [`NoAuth`] component.
     pub fn new() -> Self {
         Self
@@ -33,9 +37,12 @@ impl Default for NoAuth {
 
 impl From<NoAuth> for AccountComponent {
     fn from(_: NoAuth) -> Self {
-        AccountComponent::new(no_auth_library(), vec![])
+        let metadata = AccountComponentMetadata::new(NoAuth::NAME)
+            .with_description("No authentication component")
+            .with_supports_all_types();
+
+        AccountComponent::new(no_auth_library(), vec![], metadata)
             .expect("NoAuth component should satisfy the requirements of a valid account component")
-            .with_supports_all_types()
     }
 }
 

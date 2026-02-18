@@ -3,8 +3,7 @@ use std::path::Path;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::utils::Serializable;
-use miden_assembly::{Assembler, Library, Report};
+use miden_assembly::{Assembler, Library};
 use miden_protocol::transaction::TransactionKernel;
 
 // CONSTANTS
@@ -18,7 +17,6 @@ const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
-const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
@@ -31,8 +29,7 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 
 /// Read and parse the contents from `./asm`.
 /// - Compiles the contents of asm/standards directory into a Miden library file (.masl) under
-///   standards namespace.
-/// - Compiles the contents of asm/note_scripts directory into individual .masb files.
+///   standards namespace. Note scripts are included in this library.
 /// - Compiles the contents of asm/account_components directory into individual .masl files.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
@@ -52,19 +49,12 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
-    // compile standards library
+    // compile standards library (includes note scripts)
     let standards_lib =
         compile_standards_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
 
     let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(standards_lib)?;
-
-    // compile note scripts
-    compile_note_scripts(
-        &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
-        assembler.clone(),
-    )?;
 
     // compile account components
     compile_account_components(
@@ -97,38 +87,6 @@ fn compile_standards_lib(
     standards_lib.write_to_file(output_file).into_diagnostic()?;
 
     Ok(standards_lib)
-}
-
-// COMPILE EXECUTABLE MODULES
-// ================================================================================================
-
-/// Reads all MASM files from the "{source_dir}", complies each file individually into a MASB
-/// file, and stores the compiled files into the "{target_dir}".
-///
-/// The source files are expected to contain executable programs.
-fn compile_note_scripts(source_dir: &Path, target_dir: &Path, assembler: Assembler) -> Result<()> {
-    fs::create_dir_all(target_dir)
-        .into_diagnostic()
-        .wrap_err("failed to create note_scripts directory")?;
-
-    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
-        // read the MASM file, parse it, and serialize the parsed AST to bytes
-        let code = assembler.clone().assemble_program(masm_file_path.clone())?;
-
-        let bytes = code.to_bytes();
-
-        let masm_file_name = masm_file_path
-            .file_name()
-            .expect("file name should exist")
-            .to_str()
-            .ok_or_else(|| Report::msg("failed to convert file name to &str"))?;
-        let mut masb_file_path = target_dir.join(masm_file_name);
-
-        // write the binary MASB to the output dir
-        masb_file_path.set_extension("masb");
-        fs::write(masb_file_path, bytes).unwrap();
-    }
-    Ok(())
 }
 
 // COMPILE ACCOUNT COMPONENTS
@@ -469,9 +427,24 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        std::fs::write(module.file_name, output).into_diagnostic()?;
+        write_if_changed(module.file_name, output)?;
 
         Ok(())
+    }
+
+    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
+    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
+    /// cargo from treating the crate as dirty on the next build.
+    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
+        let path = path.as_ref();
+        let new_contents = contents.as_ref();
+        if path.exists() {
+            let existing = std::fs::read(path).into_diagnostic()?;
+            if existing == new_contents {
+                return Ok(());
+            }
+        }
+        std::fs::write(path, new_contents).into_diagnostic()
     }
 
     pub type ErrorName = String;

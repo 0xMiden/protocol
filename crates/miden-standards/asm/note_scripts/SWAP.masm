@@ -1,5 +1,0 @@
-use miden::standards::notes::swap
-
-begin
-    exec.swap::main
-end

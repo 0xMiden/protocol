@@ -2,6 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::asset::{Asset, AssetVault};
+use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::utils::serde::{
     ByteReader,
@@ -158,16 +159,6 @@ impl Account {
     /// [`AccountId`]. Finally, a new account can then be instantiated from those parts using
     /// [`Account::new`].
     ///
-    /// If the account type is faucet the reserved slot ([`AccountStorage::faucet_metadata_slot`])
-    /// will be initialized as follows:
-    /// - For [`AccountType::FungibleFaucet`] the value is set to
-    ///   [`StorageSlotContent::empty_value`].
-    /// - For [`AccountType::NonFungibleFaucet`] the value is set to
-    ///   [`StorageSlotContent::empty_map`].
-    ///
-    /// If the storage needs to be initialized with certain values in that slot, those must be added
-    /// after construction with the standard set methods for items and maps.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -186,7 +177,7 @@ impl Account {
         validate_components_support_account_type(&components, account_type)?;
 
         let code = AccountCode::from_components_unchecked(&components)?;
-        let storage = AccountStorage::from_components(components, account_type)?;
+        let storage = AccountStorage::from_components(components)?;
 
         Ok((code, storage))
     }
@@ -204,33 +195,25 @@ impl Account {
 
     /// Returns the commitment of this account.
     ///
-    /// The commitment of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-    /// code_commitment). Computing the account commitment requires 2 permutations of the hash
-    /// function.
-    pub fn commitment(&self) -> Word {
-        hash_account(
-            self.id,
-            self.nonce,
-            self.vault.root(),
-            self.storage.to_commitment(),
-            self.code.commitment(),
-        )
+    /// See [`AccountHeader::to_commitment`] for details on how it is computed.
+    pub fn to_commitment(&self) -> Word {
+        AccountHeader::from(self).to_commitment()
     }
 
     /// Returns the commitment of this account as used for the initial account state commitment in
     /// transaction proofs.
     ///
-    /// For existing accounts, this is exactly the same as [Account::commitment()], however, for new
-    /// accounts this value is set to [crate::EMPTY_WORD]. This is because when a transaction is
-    /// executed against a new account, public input for the initial account state is set to
-    /// [crate::EMPTY_WORD] to distinguish new accounts from existing accounts. The actual
-    /// commitment of the initial account state (and the initial state itself), are provided to
-    /// the VM via the advice provider.
+    /// For existing accounts, this is exactly the same as [Account::to_commitment], however, for
+    /// new accounts this value is set to [crate::EMPTY_WORD]. This is because when a
+    /// transaction is executed against a new account, public input for the initial account
+    /// state is set to [crate::EMPTY_WORD] to distinguish new accounts from existing accounts.
+    /// The actual commitment of the initial account state (and the initial state itself), are
+    /// provided to the VM via the advice provider.
     pub fn initial_commitment(&self) -> Word {
         if self.is_new() {
             Word::empty()
         } else {
-            self.commitment()
+            self.to_commitment()
         }
     }
 
@@ -457,6 +440,18 @@ impl TryFrom<Account> for AccountDelta {
     }
 }
 
+impl SequentialCommit for Account {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        AccountHeader::from(self).to_elements()
+    }
+
+    fn to_commitment(&self) -> Self::Commitment {
+        AccountHeader::from(self).to_commitment()
+    }
+}
+
 // SERIALIZATION
 // ================================================================================================
 
@@ -494,31 +489,6 @@ impl Deserializable for Account {
         Self::new(id, vault, storage, code, nonce, seed)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
-}
-
-// HELPERS
-// ================================================================================================
-
-/// Returns hash of an account with the specified ID, nonce, vault root, storage commitment, and
-/// code commitment.
-///
-/// Hash of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-/// code_commitment). Computing the account commitment requires 2 permutations of the hash function.
-pub fn hash_account(
-    id: AccountId,
-    nonce: Felt,
-    vault_root: Word,
-    storage_commitment: Word,
-    code_commitment: Word,
-) -> Word {
-    let mut elements = [ZERO; 16];
-    elements[0] = id.suffix();
-    elements[1] = id.prefix().as_felt();
-    elements[3] = nonce;
-    elements[4..8].copy_from_slice(&*vault_root);
-    elements[8..12].copy_from_slice(&*storage_commitment);
-    elements[12..].copy_from_slice(&*code_commitment);
-    Hasher::hash_elements(&elements)
 }
 
 // HELPER FUNCTIONS
@@ -594,6 +564,7 @@ mod tests {
         AccountVaultDelta,
     };
     use crate::account::AccountStorageMode::Network;
+    use crate::account::component::AccountComponentMetadata;
     use crate::account::{
         Account,
         AccountBuilder,
@@ -833,11 +804,11 @@ mod tests {
         let library1 = Assembler::default().assemble_library([code1]).unwrap();
 
         // This component support all account types except the regular account with updatable code.
-        let component1 = AccountComponent::new(library1, vec![])
-            .unwrap()
+        let metadata = AccountComponentMetadata::new("test::component1")
             .with_supported_type(AccountType::FungibleFaucet)
             .with_supported_type(AccountType::NonFungibleFaucet)
             .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
 
         let err = Account::initialize_from_components(
             AccountType::RegularAccountUpdatableCode,

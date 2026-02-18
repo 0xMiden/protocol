@@ -114,7 +114,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        miden_protocol::Hasher::merge(&[final_account.commitment(), account_delta_commitment]);
+        miden_protocol::Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
 
     let mut expected_stack = Vec::with_capacity(16);
     expected_stack.extend(output_notes.commitment().as_elements().iter().rev());

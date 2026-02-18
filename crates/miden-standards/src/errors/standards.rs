@@ -9,22 +9,30 @@ use miden_protocol::errors::MasmError;
 // STANDARDS ERRORS
 // ================================================================================================
 
-/// Error Message: "expected attachment kind to be Word for network account target"
-pub const ERR_ATTACHMENT_KIND_MISMATCH: MasmError = MasmError::from_static_str("expected attachment kind to be Word for network account target");
-/// Error Message: "expected network account target attachment scheme"
-pub const ERR_ATTACHMENT_SCHEME_MISMATCH: MasmError = MasmError::from_static_str("expected network account target attachment scheme");
-
 /// Error Message: "burn requires exactly 1 note asset"
 pub const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
-/// Error Message: "distribute would cause the maximum supply to be exceeded"
-pub const ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED: MasmError = MasmError::from_static_str("distribute would cause the maximum supply to be exceeded");
+/// Error Message: "asset amount to burn exceeds the existing token supply"
+pub const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY: MasmError = MasmError::from_static_str("asset amount to burn exceeds the existing token supply");
+
+/// Error Message: "token_supply plus the amount passed to distribute would exceed the maximum supply"
+pub const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token_supply plus the amount passed to distribute would exceed the maximum supply");
+/// Error Message: "max supply exceeds maximum representable fungible asset amount"
+pub const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT: MasmError = MasmError::from_static_str("max supply exceeds maximum representable fungible asset amount");
+/// Error Message: "token supply exceeds max supply"
+pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
 
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
 
 /// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
+
+/// Error Message: "note tag length can be at most 32"
+pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError::from_static_str("note tag length can be at most 32");
+
+/// Error Message: "attachment is not a valid network account target"
+pub const ERR_NOT_NETWORK_ACCOUNT_TARGET: MasmError = MasmError::from_static_str("attachment is not a valid network account target");
 
 /// Error Message: "failed to reclaim P2IDE note because the reclaiming account is not the sender"
 pub const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER: MasmError = MasmError::from_static_str("failed to reclaim P2IDE note because the reclaiming account is not the sender");

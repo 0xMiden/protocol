@@ -1,0 +1,134 @@
+# The MASM code for the Double-Word Array abstraction.
+#
+# It provides an abstraction layer over a storage map, treating it as an array
+# of double-words, with "set" and "get" for storing and retrieving values by
+# (slot_id, index).
+# The array can store up to 2^64 - 2^32 + 1 elements (indices 0 to 2^64 - 2^32).
+#
+# Using this Double-Word Array utility requires that the underlying storage map is already created and
+# initialized as part of an account component, under the given slot ID.
+
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# Local Memory Addresses
+const SLOT_ID_PREFIX_LOC=0
+const SLOT_ID_SUFFIX_LOC=1
+const INDEX_LOC=2
+
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type BeDoubleWord = struct @bigendian {
+    a: felt,
+    b: felt,
+    c: felt,
+    d: felt,
+    e: felt,
+    f: felt,
+    g: felt,
+    h: felt
+}
+
+# PROCEDURES
+# =================================================================================================
+
+#! Sets a double-word in the array at the specified index.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, index, VALUE_0, VALUE_1]
+#! Outputs: [OLD_VALUE_0, OLD_VALUE_1]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - index is the index at which to store the value (0 to 2^64 - 2^32).
+#! - VALUE_0 is the first word to store at the specified index.
+#! - VALUE_1 is the second word to store at the specified index.
+#!
+#! Internally, the words are stored under keys [index, 0, 0, 0] and [index, 1, 0, 0],
+#! for the first and second word, respectively.
+#!
+#! Invocation: exec
+@locals(3)
+pub proc set(
+    slot_id_prefix: felt,
+    slot_id_suffix: felt,
+    index: felt,
+    value: BeDoubleWord
+) -> BeDoubleWord
+    # save inputs to locals for reuse
+    loc_store.SLOT_ID_PREFIX_LOC
+    loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.INDEX_LOC
+    # => [VALUE_0, VALUE_1]
+
+    # Set the first word under key [index, 0, 0, 0].
+    push.0.0.0
+    loc_load.INDEX_LOC
+    # => [index, 0, 0, 0, VALUE_0, VALUE_1]
+
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
+    # => [slot_id_prefix, slot_id_suffix, KEY_0, VALUE_0, VALUE_1]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE_0, VALUE_1]
+    swapw
+
+    # Set the second word under key [index, 1, 0, 0].
+    push.0.0.1
+    loc_load.INDEX_LOC
+    # => [index, 1, 0, 0, VALUE_1, OLD_VALUE_0]
+
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
+    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_1, OLD_VALUE_0]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE_1, OLD_VALUE_0]
+    swapw
+end
+
+#! Gets a double-word from the array at the specified index.
+#!
+#! Inputs:  [slot_id_prefix, slot_id_suffix, index]
+#! Outputs: [VALUE_0, VALUE_1]
+#!
+#! Where:
+#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - index is the index of the element to retrieve (0 to 2^64 - 2^32).
+#! - VALUE_0 is the first word stored at the specified index (zero if not set).
+#! - VALUE_1 is the second word stored at the specified index (zero if not set).
+#!
+#! Invocation: exec
+@locals(3)
+pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubleWord
+    # Save inputs to locals for reuse.
+    loc_store.SLOT_ID_PREFIX_LOC
+    loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.INDEX_LOC
+    # => []
+
+    # Get the first word from key [index, 0, 0, 0].
+    push.0.0.0
+    loc_load.INDEX_LOC
+    # => [index, 0, 0, 0]
+
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
+    # => [slot_id_prefix, slot_id_suffix, KEY_0]
+
+    exec.active_account::get_map_item
+    # => [VALUE_0]
+
+    # Get the second word from key [index, 1, 0, 0].
+    push.0.0.1
+    loc_load.INDEX_LOC
+    # => [index, 1, 0, 0, VALUE_0]
+
+    loc_load.SLOT_ID_SUFFIX_LOC
+    loc_load.SLOT_ID_PREFIX_LOC
+    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_0]
+
+    exec.active_account::get_map_item
+    swapw
+    # => [VALUE_0, VALUE_1]
+end

@@ -1,9 +1,12 @@
 use miden_processor::{ExecutionError, Felt, ProcessState};
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
     ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_PREFIX_IDX,
+    ACCT_ID_SUFFIX_IDX,
     ACCT_STORAGE_SLOT_ID_PREFIX_OFFSET,
     ACCT_STORAGE_SLOT_ID_SUFFIX_OFFSET,
     ACCT_STORAGE_SLOT_TYPE_OFFSET,
@@ -12,7 +15,6 @@ use miden_protocol::transaction::memory::{
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
 };
-use miden_protocol::{Hasher, Word};
 
 use crate::errors::TransactionKernelError;
 
@@ -93,12 +95,15 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 TransactionKernelError::other("active account id should be initialized")
             })?;
 
-        AccountId::try_from([active_account_id_and_nonce[1], active_account_id_and_nonce[0]])
-            .map_err(|_| {
-                TransactionKernelError::other(
-                    "active account id ptr should point to a valid account ID",
-                )
-            })
+        AccountId::try_from([
+            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+            active_account_id_and_nonce[ACCT_ID_SUFFIX_IDX],
+        ])
+        .map_err(|_| {
+            TransactionKernelError::other(
+                "active account id ptr should point to a valid account ID",
+            )
+        })
     }
 
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError> {
@@ -275,24 +280,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         match inputs_data {
             None => Ok(NoteStorage::default()),
             Some(storage_items) => {
-                let storage_commitment_hash =
-                    Hasher::hash_elements(storage_commitment.as_elements());
-                let num_storage_items = self
-                    .advice_provider()
-                    .get_mapped_values(&storage_commitment_hash)
-                    .ok_or_else(|| {
-                        TransactionKernelError::other(
-                            "expected num_storage_items to be present in advice provider",
-                        )
-                    })?;
-                if num_storage_items.len() != 1 {
-                    return Err(TransactionKernelError::other(
-                        "expected num_storage_items advice entry to contain exactly one element",
-                    ));
-                }
-                let num_storage_items = num_storage_items[0].as_int() as usize;
-
-                let note_storage = NoteStorage::new(storage_items[0..num_storage_items].to_vec())
+                let note_storage = NoteStorage::new(storage_items.to_vec())
                     .map_err(TransactionKernelError::MalformedNoteStorage)?;
 
                 if &note_storage.commitment() == storage_commitment {

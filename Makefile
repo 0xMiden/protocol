@@ -75,16 +75,29 @@ serve-docs: ## Serves the docs
 
 # --- testing -------------------------------------------------------------------------------------
 
-.PHONY: test-build
-test-build: ## Build the test binary
-	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --features concurrent,testing,std --no-run
+.PHONY: test-release-build
+test-release-build: ## Build the test binary
+	$(BUILD_GENERATED_FILES_IN_SRC) cargo nextest run --cargo-profile test-dev --no-default-features --features concurrent,testing,std --no-run
 
 
+# Run all tests without debug mode. This is fast but produces worse error message.
+# Running `make test-release name=test_name` will only run the test `test_name`.
+.PHONY: test-release
+test-release:
+	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --no-default-features --features concurrent,testing,std $(name)
+
+# Shorthand for make test-release.
+.PHONY: test-release testr
+testr: test-release
+
+# Run all tests with debug mode. This is slower but produces better error message.
+# Running `make test name=test_name` will only run the test `test_name`.
 .PHONY: test
-test: ## Run all tests. Running `make test name=test_name` will only run the test `test_name`.
+test:
 	$(BUILD_GENERATED_FILES_IN_SRC) $(BACKTRACE) cargo nextest run --profile default --cargo-profile test-dev --features concurrent,testing,std $(name)
 
 
+# Run all tests except the proving tests (imperfectly filtered based on name) with debug mode.
 # This uses the std feature to be able to load the MASM source files back into the assembler
 # source manager (see `source_manager_ext::load_masm_source_files`).
 .PHONY: test-dev
@@ -128,6 +141,14 @@ build-no-std: ## Build without the standard library
 .PHONY: build-no-std-testing
 build-no-std-testing: ## Build without the standard library. Includes the `testing` feature
 	$(BUILD_GENERATED_FILES_IN_SRC) cargo build --no-default-features --target wasm32-unknown-unknown --workspace --exclude bench-transaction --features testing
+
+# --- test vectors --------------------------------------------------------------------------------
+
+.PHONY: generate-solidity-test-vectors
+generate-solidity-test-vectors: ## Regenerate Solidity MMR test vectors using Foundry
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVectors
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateCanonicalZeros
+	cd crates/miden-agglayer/solidity-compat && forge test -vv --match-test test_generateVerificationProofData
 
 # --- benchmarking --------------------------------------------------------------------------------
 
