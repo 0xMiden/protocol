@@ -197,8 +197,9 @@ pub struct CanonicalZerosFile {
 /// Deserialized MMR frontier vectors from Solidity DepositContractV2.
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
-/// (leafType=0, originNetwork=64, originTokenAddress=0, metadataHash=0), parametrised by
-/// `amounts[i]` and per-index `destination_networks[i]` / `destination_addresses[i]`.
+/// (leafType=0, originNetwork=64, metadataHash=0), parametrised by
+/// a shared `origin_token_address`, `amounts[i]`, and per-index
+/// `destination_networks[i]` / `destination_addresses[i]`.
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
@@ -208,6 +209,7 @@ pub struct MmrFrontierVectorsFile {
     pub counts: Vec<u32>,
     #[serde(deserialize_with = "deserialize_uint_vec_to_strings")]
     pub amounts: Vec<String>,
+    pub origin_token_address: String,
     pub destination_networks: Vec<u32>,
     pub destination_addresses: Vec<String>,
 }

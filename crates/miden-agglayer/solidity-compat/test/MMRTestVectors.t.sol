@@ -10,7 +10,7 @@ import "@agglayer/v2/lib/DepositContractV2.sol";
  *         between Solidity's DepositContractBase and Miden's MMR Frontier implementation.
  *
  *         Leaves are constructed via getLeafValue using the same hardcoded fields that
- *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=0,
+ *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=fixed random value,
  *         metadataHash=0), parametrised by amount (i+1) and deterministic per-leaf
  *         destination network/address values derived from a fixed seed.
  * 
@@ -24,7 +24,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
     // Constants matching bridge_out.masm hardcoded values
     uint8  constant LEAF_TYPE            = 0;
     uint32 constant ORIGIN_NETWORK       = 64;
-    address constant ORIGIN_TOKEN_ADDR   = address(0);
+    address constant ORIGIN_TOKEN_ADDR   = 0x7a6fC3e8b57c6D1924F1A9d0E2b3c4D5e6F70891;
     bytes32 constant METADATA_HASH       = bytes32(0);
 
     // Fixed seed for deterministic "random" destination vectors.
@@ -125,6 +125,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
         vm.serializeUint(obj, "counts", counts);
         vm.serializeUint(obj, "amounts", amounts);
         vm.serializeUint(obj, "destination_networks", destinationNetworks);
+        vm.serializeAddress(obj, "origin_token_address", ORIGIN_TOKEN_ADDR);
         string memory json = vm.serializeAddress(obj, "destination_addresses", destinationAddresses);
 
         // Save to file

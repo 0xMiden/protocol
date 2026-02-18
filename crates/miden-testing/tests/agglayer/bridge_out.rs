@@ -115,7 +115,8 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
     // --------------------------------------------------------------------------------------------
-    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let origin_token_address = EthAddressFormat::from_hex(&vectors.origin_token_address)
+        .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
     let faucet = create_existing_agglayer_faucet(
