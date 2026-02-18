@@ -1,15 +1,10 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    BaseHost,
-    EventError,
-    MastForest,
-    MastForestStore,
-    ProcessState,
-    SyncHost,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::EventError;
+use miden_processor::mast::MastForest;
+use miden_processor::{FutureMaybeSend, Host, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
@@ -67,7 +62,7 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE> BaseHost for TransactionProverHost<'_, STORE>
+impl<STORE> Host for TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
@@ -80,17 +75,29 @@ where
         // is only used to improve error message quality which we shouldn't run into here.
         (SourceSpan::UNKNOWN, None)
     }
+
+    fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
+        let result = self.base_host.get_mast_forest(node_digest);
+        async move { result }
+    }
+
+    fn on_event(
+        &mut self,
+        process: &ProcessorState,
+    ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
+        let result = self.on_event_sync(process);
+        async move { result }
+    }
 }
 
-impl<STORE> SyncHost for TransactionProverHost<'_, STORE>
+impl<STORE> TransactionProverHost<'_, STORE>
 where
     STORE: MastForestStore,
 {
-    fn get_mast_forest(&self, node_digest: &Word) -> Option<Arc<MastForest>> {
-        self.base_host.get_mast_forest(node_digest)
-    }
-
-    fn on_event(&mut self, process: &ProcessState) -> Result<Vec<AdviceMutation>, EventError> {
+    fn on_event_sync(
+        &mut self,
+        process: &ProcessorState,
+    ) -> Result<Vec<AdviceMutation>, EventError> {
         if let Some(advice_mutations) = self.base_host.handle_core_lib_events(process)? {
             return Ok(advice_mutations);
         }

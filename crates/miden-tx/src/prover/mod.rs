@@ -94,7 +94,7 @@ impl LocalTransactionProver {
         builder.build().map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
-    pub fn prove(
+    pub async fn prove(
         &self,
         tx_inputs: impl Into<TransactionInputs>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
@@ -133,6 +133,7 @@ impl LocalTransactionProver {
             &mut host,
             self.proof_options.clone(),
         )
+        .await
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         // Extract transaction outputs and process transaction data.

@@ -28,15 +28,11 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    EventError,
-    EventHandlerRegistry,
-    Felt,
-    MastForest,
-    MastForestStore,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::{EventError, EventHandlerRegistry};
+use miden_processor::mast::MastForest;
+use miden_processor::trace::RowIndex;
+use miden_processor::{Felt, MastForestStore, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{
     AccountCode,
@@ -50,6 +46,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
 use miden_protocol::transaction::{
     InputNote,
@@ -59,7 +56,6 @@ use miden_protocol::transaction::{
     TransactionMeasurements,
     TransactionSummary,
 };
-use miden_protocol::vm::RowIndex;
 pub(crate) use tx_event::{RecipientData, TransactionEvent, TransactionProgressEvent};
 pub use tx_progress::TransactionProgress;
 
@@ -269,7 +265,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// Returns `Some` if the event was handled, `None` otherwise.
     pub fn handle_core_lib_events(
         &self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> Result<Option<Vec<AdviceMutation>>, EventError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
         if let Some(mutations) = self.core_lib_handlers.handle_event(event_id, process)? {
@@ -324,7 +320,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_stack([Felt::from_num(proc_idx)])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.

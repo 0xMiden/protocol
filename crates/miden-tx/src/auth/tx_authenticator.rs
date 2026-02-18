@@ -11,7 +11,13 @@ use miden_protocol::transaction::TransactionSummary;
 use miden_protocol::{Felt, Hasher, Word};
 
 use crate::errors::AuthenticationError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // SIGNATURE DATA
 // ================================================================================================
@@ -284,7 +290,7 @@ impl TransactionAuthenticator for () {
 #[cfg(test)]
 mod test {
     use miden_protocol::account::auth::AuthSecretKey;
-    use miden_protocol::utils::{Deserializable, Serializable};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{Felt, Word};
 
     use super::SigningInputs;
