@@ -28,14 +28,13 @@ static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// An [`AccountComponent`] implementing the signature scheme for authentication
 /// of transactions.
 ///
-/// It reexports the procedures from `miden::standards::auth::signature`. When linking
-/// against this component, the `miden` library (i.e.
-/// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
-/// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `verify_signatures`, which can be used to verify a signature provided via the advice stack to
-///   authenticate a transaction.
-/// - `authenticate_transaction`, which can be used to authenticate a transaction using the ECDSA
-///   signature scheme.
+/// This component exports `auth_tx`, which loads the public key and signature scheme id from
+/// storage and delegates transaction authentication to
+/// `miden::standards::auth::signature::authenticate_transaction`.
+///
+/// When linking against this component, the `miden::standards` library must be available to the
+/// assembler (which also implies availability of `miden::protocol`). This is the case when using
+/// [`CodeBuilder`][builder].
 ///
 /// This component supports all account types.
 ///
