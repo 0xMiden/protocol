@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::slice;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -13,6 +13,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::field::{FromNum, PrimeField64};
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -109,7 +110,8 @@ pub fn verify_minted_output_note(
     faucet: &Account,
     params: &FaucetTestParams,
 ) -> anyhow::Result<()> {
-    let fungible_asset: Asset = FungibleAsset::new(faucet.id(), params.amount.into())?.into();
+    let fungible_asset: Asset =
+        FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?.into();
 
     let output_note = executed_transaction.output_notes().get_note(0).clone();
     let assets = NoteAssets::new(vec![fungible_asset])?;
@@ -264,11 +266,11 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(token_metadata.max_supply(), Felt::from(max_supply));
+    assert_eq!(token_metadata.max_supply(), Felt::from_num(max_supply));
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(token_metadata.token_supply(), Felt::from(token_supply));
+    assert_eq!(token_metadata.token_supply(), Felt::from_num(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -280,7 +282,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         .await?;
 
     // Prove, serialize/deserialize and verify the transaction
-    prove_and_verify_transaction(executed_transaction.clone())?;
+    prove_and_verify_transaction(executed_transaction.clone()).await?;
 
     assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
@@ -380,7 +382,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
@@ -439,7 +441,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     );
 
     // Create the trigger note that will call distribute
-    let mut rng = RpoRandomCoin::new([Felt::from(1u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(1u32); 4].into());
     let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -475,7 +477,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     assert_eq!(full_note.metadata().note_type(), NoteType::Public);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let expected_asset_obj = Asset::from(expected_asset);
     assert!(full_note.assets().iter().any(|asset| asset == &expected_asset_obj));
 
@@ -533,25 +535,29 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Check the Network Fungible Faucet's max supply.
     let actual_max_supply = TokenMetadata::try_from(faucet.storage())?.max_supply();
-    assert_eq!(actual_max_supply.as_int(), max_supply);
+    assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
 
     // Check that the creator account ID is stored in slot 2 (second storage slot of the component)
     // The owner_account_id is stored as Word [0, 0, suffix, prefix]
     let stored_owner_id =
         faucet.storage().get_item(NetworkFungibleFaucet::owner_config_slot()).unwrap();
     assert_eq!(stored_owner_id[3], faucet_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_id[2], Felt::new(faucet_owner_account_id.suffix().as_int()));
+    assert_eq!(
+        stored_owner_id[2],
+        Felt::new(faucet_owner_account_id.suffix().as_canonical_u64())
+    );
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
     let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
-    assert_eq!(initial_token_supply.as_int(), token_supply);
+    assert_eq!(initial_token_supply.as_canonical_u64(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -568,7 +574,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Create the MINT note using the helper function
     let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
@@ -591,7 +597,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
     let expected_note_id = NoteId::new(recipient, assets.commitment());
 
@@ -640,7 +646,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -654,7 +660,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         owner_account_id,
@@ -695,7 +701,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -710,7 +716,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     // Create mint note from NON-OWNER
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         non_owner_account_id,
@@ -749,7 +755,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
 
     // Storage format: [0, 0, suffix, prefix]
     assert_eq!(stored_owner[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(owner_account_id.suffix().as_int()));
+    assert_eq!(stored_owner[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
     assert_eq!(stored_owner[1], Felt::new(0));
     assert_eq!(stored_owner[0], Felt::new(0));
 
@@ -781,7 +787,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -796,7 +802,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Sanity Check: Prove that the initial owner can mint assets
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         initial_owner_account_id,
@@ -819,7 +825,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -827,7 +833,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         .compile_note_script(transfer_note_script_code.clone())?;
 
     // Create the transfer note and add it to the builder so it exists on-chain
-    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(200u32); 4].into());
     let transfer_note = NoteBuilder::new(initial_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -864,7 +870,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed_transaction.account_delta())?;
 
     // Validation 1: Try to mint using the old owner - should fail
-    let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(300u32); 4].into());
     let mint_note_old_owner = MintNote::create(
         updated_faucet.id(),
         initial_owner_account_id,
@@ -885,7 +891,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     assert_transaction_executor_error!(result, expected_error);
 
     // Validation 2: Try to mint using the new owner - should succeed
-    let mut rng = RpoRandomCoin::new([Felt::from(400u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(400u32); 4].into());
     let mint_note_new_owner = MintNote::create(
         updated_faucet.id(),
         new_owner_account_id,
@@ -948,7 +954,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -956,7 +962,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         .compile_note_script(transfer_note_script_code.clone())?;
 
     // Create a note from NON-OWNER that tries to transfer ownership
-    let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(100u32); 4].into());
     let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1003,7 +1009,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let stored_owner_before =
         faucet.storage().get_item(NetworkFungibleFaucet::owner_config_slot())?;
     assert_eq!(stored_owner_before[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_before[2], Felt::new(owner_account_id.suffix().as_int()));
+    assert_eq!(stored_owner_before[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
@@ -1034,13 +1040,13 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(transfer_note_script_code.clone())?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(200u32); 4].into());
     let renounce_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1048,7 +1054,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         .code(renounce_note_script_code)
         .build()?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(300u32); 4].into());
     let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1137,7 +1143,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
-    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(99u32); 4].into());
     let note = BurnNote::create(
         faucet_owner_account_id,
         faucet.id(),
@@ -1169,7 +1175,10 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     // Apply the delta to the faucet account and verify the token issuance decreased
     faucet.apply_delta(executed_transaction.account_delta())?;
     let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
-    assert_eq!(final_token_supply, Felt::new(initial_token_supply.as_int() - burn_amount));
+    assert_eq!(
+        final_token_supply,
+        Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
+    );
 
     Ok(())
 }
@@ -1198,7 +1207,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
@@ -1229,7 +1239,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
     };
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from_num(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
@@ -1277,7 +1287,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let balance = target_account_mut.vault().get_balance(faucet.id())?;
     assert_eq!(balance, expected_asset.amount());
 

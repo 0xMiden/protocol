@@ -128,7 +128,7 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
         executed_transaction.final_account().to_commitment(),
         target_account_after.to_commitment()
     );
-    prove_and_verify_transaction(executed_transaction)?;
+    prove_and_verify_transaction(executed_transaction).await?;
     Ok(())
 }
 
@@ -170,7 +170,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
         panic!("Resulting asset should be fungible");
     }
 
-    Ok(prove_and_verify_transaction(executed_transaction)?)
+    Ok(prove_and_verify_transaction(executed_transaction).await?)
 }
 
 /// Consumes two existing notes and creates two other notes in the same transaction

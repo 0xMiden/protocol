@@ -9,10 +9,11 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::field::PrimeCharacteristicRing;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthEcdsaK256KeccakAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -153,7 +154,7 @@ async fn test_ecdsa_acl() -> anyhow::Result<()> {
         .execute()
         .await
         .expect("trigger 1 with auth should succeed");
-    prove_and_verify_transaction(executed_tx_with_auth_1)?;
+    prove_and_verify_transaction(executed_tx_with_auth_1).await?;
 
     // Test 2: Transaction WITH authenticator calling trigger procedure 2 (should succeed)
     let tx_context_with_auth_2 = mock_chain

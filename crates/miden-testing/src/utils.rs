@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
@@ -18,7 +18,7 @@ use rand::rngs::SmallRng;
 macro_rules! assert_execution_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
-            Err($crate::ExecError(miden_processor::ExecutionError::FailedAssertion { label: _, source_file: _, clk: _, err_code, err_msg, err: _ })) => {
+            Err($crate::ExecError(miden_processor::ExecutionError::OperationError { label: _, source_file: _, err: miden_processor::operation::OperationError::FailedAssertion { err_code, err_msg } })) => {
                 if let Some(ref msg) = err_msg {
                   assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
                 }
@@ -40,13 +40,13 @@ macro_rules! assert_transaction_executor_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
             Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
-                miden_processor::ExecutionError::FailedAssertion {
+                miden_processor::ExecutionError::OperationError {
                     label: _,
                     source_file: _,
-                    clk: _,
-                    err_code,
-                    err_msg,
-                    err: _,
+                    err: miden_processor::operation::OperationError::FailedAssertion {
+                        err_code,
+                        err_msg,
+                    },
                 },
             )) => {
                 if let Some(ref msg) = err_msg {

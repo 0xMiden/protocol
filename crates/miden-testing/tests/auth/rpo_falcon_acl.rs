@@ -10,10 +10,11 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::field::PrimeCharacteristicRing;
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::AuthFalcon512RpoAcl;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;

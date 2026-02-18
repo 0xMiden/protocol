@@ -82,7 +82,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
 
     let swap_output_note = create_swap_note_tx.output_notes().iter().next().unwrap();
     assert_eq!(swap_output_note.assets().unwrap().iter().next().unwrap(), &offered_asset);
-    assert!(prove_and_verify_transaction(create_swap_note_tx).is_ok());
+    assert!(prove_and_verify_transaction(create_swap_note_tx).await.is_ok());
 
     Ok(())
 }
@@ -148,9 +148,11 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
 
     prove_and_verify_transaction(consume_swap_note_tx)
+        .await
         .context("failed to prove/verify consume_swap_note_tx")?;
 
     prove_and_verify_transaction(consume_payback_tx)
+        .await
         .context("failed to prove/verify consume_payback_tx")?;
 
     Ok(())

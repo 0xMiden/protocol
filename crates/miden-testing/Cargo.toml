@@ -43,14 +43,13 @@ rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
 
 [dev-dependencies]
-anyhow            = { features = ["backtrace", "std"], workspace = true }
-assert_matches    = { workspace = true }
-hex               = { version = "0.4" }
-miden-crypto      = { workspace = true }
-miden-protocol    = { features = ["std"], workspace = true }
-primitive-types   = { workspace = true }
-rstest            = { workspace = true }
-serde             = { features = ["derive"], workspace = true }
-serde_json        = { version = "1.0" }
-tokio             = { features = ["macros", "rt"], workspace = true }
-winter-rand-utils = { version = "0.13" }
+anyhow          = { features = ["backtrace", "std"], workspace = true }
+assert_matches  = { workspace = true }
+hex             = { version = "0.4" }
+miden-crypto    = { workspace = true }
+miden-protocol  = { features = ["std"], workspace = true }
+primitive-types = { workspace = true }
+rstest          = { workspace = true }
+serde           = { features = ["derive"], workspace = true }
+serde_json      = { version = "1.0" }
+tokio           = { features = ["macros", "rt"], workspace = true }

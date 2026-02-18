@@ -2,6 +2,7 @@
 
 use miden_protocol::Felt;
 use miden_protocol::account::AccountStorageMode;
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{NoteAttachment, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
@@ -66,7 +67,7 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 
     let attachment = NoteAttachment::from(NetworkAccountTarget::new(target_id, exec_hint)?);
     let attachment_word = attachment.content().to_word();
-    let expected_attachment_kind = Felt::from(attachment.attachment_kind().as_u8());
+    let expected_attachment_kind = Felt::from_num(attachment.attachment_kind().as_u8());
 
     let source = format!(
         r#"
@@ -94,10 +95,11 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
     assert_eq!(exec_output.stack[0], expected_attachment_kind);
     assert_eq!(
         exec_output.stack[1],
-        Felt::from(NetworkAccountTarget::ATTACHMENT_SCHEME.as_u32())
+        Felt::from_num(NetworkAccountTarget::ATTACHMENT_SCHEME.as_u32())
     );
 
-    assert_eq!(exec_output.stack.get_stack_word_be(2).unwrap(), attachment_word);
+    let word = exec_output.stack.get_word(2).unwrap();
+    assert_eq!(word, attachment_word);
 
     Ok(())
 }

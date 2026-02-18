@@ -1,8 +1,8 @@
 use anyhow::Context;
-use miden_processor::ContextId;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::{ContextId, ExecutionOutput};
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -53,12 +53,8 @@ pub trait ExecutionOutputExt {
     /// Reads an element from the stack.
     fn get_stack_element(&self, idx: usize) -> Felt;
 
-    /// Reads a [`Word`] from the stack in big-endian (reversed) order.
-    fn get_stack_word_be(&self, index: usize) -> Word;
-
-    /// Reads a [`Word`] from the stack in little-endian (memory) order.
-    #[allow(dead_code)]
-    fn get_stack_word_le(&self, index: usize) -> Word;
+    /// Reads a [`Word`] from the stack in little-endian order.
+    fn get_stack_word(&self, index: usize) -> Word;
 
     /// Reads the [`Word`] of the input note's memory identified by the index at the provided
     /// `offset`.
@@ -71,10 +67,9 @@ impl ExecutionOutputExt for ExecutionOutput {
     fn get_kernel_mem_word(&self, addr: u32) -> Word {
         let tx_kernel_context = ContextId::root();
         let clk = 0u32;
-        let err_ctx = ();
 
         self.memory
-            .read_word(tx_kernel_context, Felt::from(addr), clk.into(), &err_ctx)
+            .read_word(tx_kernel_context, Felt::from_num(addr), clk.into())
             .expect("expected address to be word-aligned")
     }
 
@@ -82,20 +77,15 @@ impl ExecutionOutputExt for ExecutionOutput {
         *self.stack.get(index).expect("index must be in bounds")
     }
 
-    fn get_stack_word_be(&self, index: usize) -> Word {
-        self.stack.get_stack_word_be(index).expect("index must be in bounds")
-    }
-
-    fn get_stack_word_le(&self, index: usize) -> Word {
-        self.stack.get_stack_word_le(index).expect("index must be in bounds")
+    fn get_stack_word(&self, index: usize) -> Word {
+        self.stack.get_word(index).expect("index must be in bounds")
     }
 
     fn get_kernel_mem_element(&self, addr: u32) -> Felt {
         let tx_kernel_context = ContextId::root();
-        let err_ctx = ();
 
         self.memory
-            .read_element(tx_kernel_context, Felt::from(addr), &err_ctx)
+            .read_element(tx_kernel_context, Felt::from_num(addr))
             .expect("address converted from u32 should be in bounds")
     }
 }

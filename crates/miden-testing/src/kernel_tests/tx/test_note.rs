@@ -2,14 +2,15 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use anyhow::Context;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::MasmError;
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -153,8 +154,8 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     tx_context.set_tx_args(tx_args);
     let exec_output = tx_context.execute_code(code).await.unwrap();
 
-    assert_eq!(exec_output.get_stack_word_be(0), note_args[0]);
-    assert_eq!(exec_output.get_stack_word_be(4), note_args[1]);
+    assert_eq!(exec_output.get_stack_word(0), note_args[0]);
+    assert_eq!(exec_output.get_stack_word(4), note_args[1]);
 
     Ok(())
 }
@@ -175,7 +176,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
     // assert that the correct pointer is stored in bookkeeping memory
     assert_eq!(
         exec_output.get_kernel_mem_word(ACTIVE_INPUT_NOTE_PTR)[0],
-        Felt::from(input_note_data_ptr(0))
+        Felt::from_num(input_note_data_ptr(0))
     );
 }
 
@@ -399,7 +400,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
 
         let exec_output = tx_context.execute_code(&code).await?;
 
-        let metadata_word = exec_output.get_stack_word_be(0);
+        let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
             test_metadata.to_header_word(),
@@ -450,7 +451,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     let lock_timestamp = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
     let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
-        .note_storage([Felt::from(lock_timestamp)])?
+        .note_storage([Felt::from_num(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())

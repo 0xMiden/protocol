@@ -3,10 +3,11 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -23,7 +24,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
-use miden_protocol::{Felt, StarkField, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::note::{
     NoteConsumptionStatus,
     P2idNote,
@@ -224,7 +225,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
                     } => {
                         assert_eq!(
                             note.id(),
@@ -238,7 +239,7 @@ async fn check_note_consumability_partial_success() -> anyhow::Result<()> {
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
                     } => {
                         assert_eq!(
                             note.id(),
@@ -386,7 +387,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::DivideByZero { .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::DivideByZero, .. })
                     } => {
                         assert_eq!(
                             note.id(),
@@ -400,7 +401,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
                     FailedNote {
                         note,
                         error: TransactionExecutorError::TransactionProgramExecutionFailed(
-                            ExecutionError::FailedAssertion { .. })
+                            ExecutionError::OperationError { err: miden_processor::operation::OperationError::FailedAssertion { .. }, .. })
                     } => {
                         assert_eq!(
                             note.id(),
@@ -478,15 +479,20 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
     let p2ide_invalid_target_id = create_p2ide_note_with_storage([1, 2, 3, 4], sender_account_id);
 
     let p2ide_wrong_target = create_p2ide_note_with_storage(
-        [wrong_target_id.suffix().as_int(), wrong_target_id.prefix().as_u64(), 3, 4],
+        [
+            wrong_target_id.suffix().as_canonical_u64(),
+            wrong_target_id.prefix().as_u64(),
+            3,
+            4,
+        ],
         sender_account_id,
     );
 
     let p2ide_invalid_reclaim = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
-            Felt::MODULUS - 1,
+            Felt::ORDER_U64 - 1,
             4,
         ],
         sender_account_id,
@@ -494,10 +500,10 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
 
     let p2ide_invalid_timelock = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             3,
-            Felt::MODULUS - 1,
+            Felt::ORDER_U64 - 1,
         ],
         sender_account_id,
     );
@@ -652,7 +658,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
 
     let p2ide = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,
@@ -742,7 +748,7 @@ async fn test_check_note_consumability_static_analysis_sender(
 
     let p2ide = create_p2ide_note_with_storage(
         [
-            target_account_id.suffix().as_int(),
+            target_account_id.suffix().as_canonical_u64(),
             target_account_id.prefix().as_u64(),
             reclaim_height,
             timelock_height,

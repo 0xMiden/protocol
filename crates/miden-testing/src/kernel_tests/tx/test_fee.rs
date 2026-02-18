@@ -6,8 +6,8 @@ use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
 use miden_protocol::{self, Felt, Word};
+use miden_crypto::rand::test_utils::rand_value;
 use miden_tx::TransactionExecutorError;
-use winter_rand_utils::rand_value;
 
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain};

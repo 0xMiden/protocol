@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, Word};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{ExecutionOutput, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -16,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
+use miden_protocol::field::{FromNum, PrimeField64};
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -274,13 +275,13 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[PROTOCOL_VERSION_IDX],
-        inputs.tx_inputs().block_header().version().into(),
+        Felt::from_num(inputs.tx_inputs().block_header().version()),
         "The protocol version should be stored at BLOCK_METADATA_PTR[PROTOCOL_VERSION_IDX]"
     );
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[TIMESTAMP_IDX],
-        inputs.tx_inputs().block_header().timestamp().into(),
+        Felt::from_num(inputs.tx_inputs().block_header().timestamp()),
         "The timestamp should be stored at BLOCK_METADATA_PTR[TIMESTAMP_IDX]"
     );
 
@@ -304,12 +305,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[VERIFICATION_BASE_FEE_IDX],
-        inputs
-            .tx_inputs()
-            .block_header()
-            .fee_parameters()
-            .verification_base_fee()
-            .into(),
+        Felt::from_num(inputs.tx_inputs().block_header().fee_parameters().verification_base_fee()),
         "The verification base fee should be stored at FEE_PARAMETERS_PTR[VERIFICATION_BASE_FEE_IDX]"
     );
 
@@ -352,7 +348,7 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     // check that the number of kernel procedures stored in the memory is equal to the number of
     // procedures in the `TransactionKernel::PROCEDURES` array
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_KERNEL_PROCEDURES_PTR)[0].as_int(),
+        exec_output.get_kernel_mem_word(NUM_KERNEL_PROCEDURES_PTR)[0].as_canonical_u64(),
         TransactionKernel::PROCEDURES.len() as u64,
         "Number of the kernel procedures should be stored at the NUM_KERNEL_PROCEDURES_PTR"
     );
@@ -685,7 +681,7 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        tx_context.tx_inputs().block_header().version().into()
+        Felt::from_num(tx_context.tx_inputs().block_header().version())
     );
 
     Ok(())
@@ -711,7 +707,7 @@ async fn test_get_blk_timestamp() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        tx_context.tx_inputs().block_header().timestamp().into()
+        Felt::from_num(tx_context.tx_inputs().block_header().timestamp())
     );
 
     Ok(())

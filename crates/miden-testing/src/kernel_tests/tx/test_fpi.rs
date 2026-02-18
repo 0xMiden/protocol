@@ -2,8 +2,8 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, EMPTY_WORD, Felt};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{EMPTY_WORD, ExecutionOutput, Felt};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -23,6 +23,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT,
     ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED,
 };
+use miden_protocol::field::PrimeCharacteristicRing;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -43,7 +44,7 @@ use miden_protocol::transaction::memory::{
     UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR,
     UPCOMING_FOREIGN_PROCEDURE_PTR,
 };
-use miden_protocol::{FieldElement, Word, ZERO};
+use miden_protocol::{Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
@@ -169,7 +170,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word(0),
         mock_value_slot0.content().value(),
         "Value at the top of the stack should be equal to [1, 2, 3, 4]",
     );
@@ -228,7 +229,7 @@ async fn test_fpi_memory_single_account() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word(0),
         STORAGE_LEAVES_2[0].1,
         "Value at the top of the stack should be equal [1, 2, 3, 4]",
     );
@@ -1346,7 +1347,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
         .await?;
 
     // Prove the executed transaction which uses FPI across two foreign accounts.
-    LocalTransactionProver::default().prove(executed_transaction)?;
+    LocalTransactionProver::default().prove(executed_transaction).await?;
 
     Ok(())
 }

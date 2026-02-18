@@ -1,3 +1,4 @@
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteTag;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::errors::standards::ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED;
@@ -34,7 +35,7 @@ async fn test_note_tag_account_target(#[case] tag_len: u8) -> anyhow::Result<()>
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&code).await?;
-    let actual_tag = exec_output.stack[0].as_int();
+    let actual_tag = exec_output.stack[0].as_canonical_u64();
 
     assert_eq!(
         actual_tag,

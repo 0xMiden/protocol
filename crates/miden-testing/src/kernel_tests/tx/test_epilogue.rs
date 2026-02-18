@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -13,6 +13,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME,
     ERR_TX_INVALID_EXPIRATION_DELTA,
 };
+use miden_protocol::field::{FromNum, PrimeField64};
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -127,8 +128,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     expected_stack.extend(account_update_commitment.as_elements().iter().rev());
     expected_stack.push(fee_asset.faucet_id().prefix().as_felt());
     expected_stack.push(fee_asset.faucet_id().suffix());
-    expected_stack.push(Felt::try_from(fee_asset.amount()).unwrap());
-    expected_stack.push(Felt::from(u32::MAX)); // Value for tx expiration block number
+    expected_stack.push(Felt::new(fee_asset.amount()));
+    expected_stack.push(Felt::from_num(u32::MAX)); // Value for tx expiration block number
     expected_stack.resize(16, ZERO);
 
     assert_eq!(
@@ -336,7 +337,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         assert_eq!(
             exec_output
                 .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-                .as_int(),
+                .as_canonical_u64(),
             expected_expiry
         );
     }
@@ -396,7 +397,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_int() as u32,
+            .as_canonical_u64() as u32,
         u32::MAX
     );
 

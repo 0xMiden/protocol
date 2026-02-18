@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
+use miden_protocol::LexicographicWord;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
@@ -37,6 +39,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
+use miden_protocol::field::{FromNum, PrimeCharacteristicRing, PrimeField64, TryFromNum};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -49,14 +52,12 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{OutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{LexicographicWord, StarkField};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use winter_rand_utils::rand_value;
 
 use super::{Felt, StackInputs, ZERO};
 use crate::executor::CodeExecutor;
@@ -193,12 +194,12 @@ async fn test_account_type() -> anyhow::Result<()> {
             );
 
             let exec_output = CodeExecutor::with_default_host()
-                .stack_inputs(StackInputs::new(vec![account_id.prefix().as_felt()])?)
+                .stack_inputs(StackInputs::new(&[account_id.prefix().as_felt()])?)
                 .run(&code)
                 .await?;
 
             let type_matches = account_id.account_type() == expected_type;
-            let expected_result = Felt::from(type_matches);
+            let expected_result = if type_matches { Felt::ONE } else { Felt::ZERO };
             has_type |= type_matches;
 
             assert_eq!(
@@ -250,8 +251,8 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64).unwrap();
-        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64).unwrap();
+        let prefix = Felt::try_from_num((account_id / (1u128 << 64)) as u64)?;
+        let suffix = Felt::try_from_num((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
             use $kernel::account_id
@@ -262,7 +263,7 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             ";
 
         let result = CodeExecutor::with_default_host()
-            .stack_inputs(StackInputs::new(vec![suffix, prefix]).unwrap())
+            .stack_inputs(StackInputs::new(&[suffix, prefix]).unwrap())
             .run(code)
             .await;
 
@@ -271,7 +272,17 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
             (Ok(_), Some(err)) => {
                 anyhow::bail!("expected error {err} but validation was successful")
             },
-            (Err(ExecutionError::FailedAssertion { err_code, err_msg, .. }), Some(err)) => {
+            (
+                Err(ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion {
+                            err_code,
+                            err_msg,
+                        },
+                    ..
+                }),
+                Some(err),
+            ) => {
                 if err_code != err.code() {
                     anyhow::bail!(
                         "actual error \"{}\" (code: {err_code}) did not match expected error {err}",
@@ -495,28 +506,16 @@ async fn test_get_storage_slot_type() -> anyhow::Result<()> {
         assert_eq!(
             slot.slot_type(),
             StorageSlotType::try_from(
-                u8::try_from(exec_output.get_stack_element(0).as_int()).unwrap()
+                u8::try_from(exec_output.get_stack_element(0).as_canonical_u64()).unwrap()
             )
             .unwrap()
         );
         assert_eq!(exec_output.get_stack_element(1), ZERO, "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_element(2), ZERO, "the rest of the stack is empty");
         assert_eq!(exec_output.get_stack_element(3), ZERO, "the rest of the stack is empty");
-        assert_eq!(
-            exec_output.get_stack_word_be(4),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
-        assert_eq!(
-            exec_output.get_stack_word_be(8),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
-        assert_eq!(
-            exec_output.get_stack_word_be(12),
-            Word::empty(),
-            "the rest of the stack is empty"
-        );
+        assert_eq!(exec_output.get_stack_word(4), Word::empty(), "the rest of the stack is empty");
+        assert_eq!(exec_output.get_stack_word(8), Word::empty(), "the rest of the stack is empty");
+        assert_eq!(exec_output.get_stack_word(12), Word::empty(), "the rest of the stack is empty");
     }
 
     Ok(())
@@ -581,22 +580,22 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     // Extend with special case where prefix matches and suffix determines the outcome.
-    let prefix = Felt::from(100u32);
+    let prefix = Felt::from_num(100u32);
     test_cases.extend([
         // prev_slot == curr_slot
         (
-            StorageSlotId::new(Felt::from(50u32), prefix),
-            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::from_num(50u32), prefix),
+            StorageSlotId::new(Felt::from_num(50u32), prefix),
         ),
         // prev_slot < curr_slot
         (
-            StorageSlotId::new(Felt::from(50u32), prefix),
-            StorageSlotId::new(Felt::from(51u32), prefix),
+            StorageSlotId::new(Felt::from_num(50u32), prefix),
+            StorageSlotId::new(Felt::from_num(51u32), prefix),
         ),
         // prev_slot > curr_slot
         (
-            StorageSlotId::new(Felt::from(51u32), prefix),
-            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::from_num(51u32), prefix),
+            StorageSlotId::new(Felt::from_num(50u32), prefix),
         ),
     ]);
 
@@ -737,7 +736,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
     assert_eq!(
         new_storage_map.root(),
-        exec_output.get_stack_word_be(0),
+        exec_output.get_stack_word(0),
         "get_item should return the updated root",
     );
 
@@ -747,7 +746,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     };
     assert_eq!(
         old_value_for_key,
-        exec_output.get_stack_word_be(4),
+        exec_output.get_stack_word(4),
         "set_map_item must return the old value for the key (empty word for new key)",
     );
 
@@ -944,7 +943,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert!(tx.account_delta().vault().is_empty());
     assert_eq!(tx.final_account().nonce(), Felt::new(1));
 
-    let proven_tx = LocalTransactionProver::default().prove(tx.clone())?;
+    let proven_tx = LocalTransactionProver::default().prove(tx.clone()).await?;
 
     // The delta should be present on the proven tx.
     let AccountUpdateDetails::Delta(delta) = proven_tx.account_update().details() else {
@@ -1799,7 +1798,7 @@ async fn incrementing_nonce_overflow_fails() -> anyhow::Result<()> {
         .context("failed to build account")?;
     // Increment the nonce to the maximum felt value. The nonce is already 1, so we increment by
     // modulus - 2.
-    account.increment_nonce(Felt::new(Felt::MODULUS - 2))?;
+    account.increment_nonce(Felt::new(Felt::ORDER_U64 - 2))?;
 
     let result = TransactionContextBuilder::new(account).build()?.execute().await;
 

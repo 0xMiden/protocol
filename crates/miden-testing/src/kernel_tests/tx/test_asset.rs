@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::errors::MasmError;
@@ -11,12 +10,14 @@ use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
     ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE,
 };
+use miden_protocol::field::FromNum;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
+use miden_protocol::{Felt, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -50,8 +51,8 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), expected_asset.to_key_word());
-    assert_eq!(exec_output.get_stack_word_be(4), expected_asset.to_value_word());
+    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
 
     Ok(())
 }
@@ -89,8 +90,8 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset.to_key_word());
-    assert_eq!(exec_output.get_stack_word_be(4), non_fungible_asset.to_value_word());
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
 
     Ok(())
 }
@@ -103,12 +104,12 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 )]
 #[case::asset_id_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(0u32.into(), 4u32.into()),
+    AssetId::new(Felt::from_num(0u32), Felt::from_num(4u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
 )]
 #[case::asset_id_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(5u32.into(), 0u32.into()),
+    AssetId::new(Felt::from_num(5u32), Felt::from_num(0u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
@@ -160,13 +161,13 @@ async fn test_validate_non_fungible_asset(
 )]
 #[case::asset_id_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(1u32.into(), 0u32.into()),
+    AssetId::new(Felt::from_num(1u32), Felt::from_num(0u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
 #[case::asset_id_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(0u32.into(), 1u32.into()),
+    AssetId::new(Felt::from_num(0u32), Felt::from_num(1u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
