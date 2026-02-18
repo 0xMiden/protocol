@@ -596,8 +596,8 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert!(reason.to_string().contains("invalid P2IDE note storage"));
-        });
+      assert!(reason.to_string().contains("invalid P2IDE note storage"));
+    });
 
     Ok(())
 }
