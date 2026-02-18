@@ -33,6 +33,10 @@ const DESTINATION_ADDRESS_3_LOC=7
 const DESTINATION_ADDRESS_4_LOC=8
 const DESTINATION_NETWORK_LOC=9
 
+# create_burn_note memory locals
+const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
+const NETWORK_FAUCET_TAG_LOC=5
+
 const LEAF_DATA_START_PTR=44
 
 # Memory pointer for loading the LET (Local Exit Tree) frontier into memory.
@@ -446,7 +450,7 @@ end
 #! Invocation: exec
 @locals(8)
 proc create_burn_note
-    loc_storew_be.0 dupw
+    loc_storew_be.CREATE_BURN_NOTE_BURN_ASSET_LOC dupw
     # => [ASSET, ASSET]
 
     movup.2 drop movup.2 drop
@@ -455,7 +459,7 @@ proc create_burn_note
     exec.note_tag::create_account_target
     # => [network_faucet_tag, ASSET]
 
-    loc_store.5
+    loc_store.NETWORK_FAUCET_TAG_LOC
     # => [ASSET]
 
     exec.compute_burn_note_serial_num
@@ -464,18 +468,20 @@ proc create_burn_note
     procref.::miden::standards::notes::burn::main swapw
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
+    # BURN note has no storage items, so we can set the pointer to 0
     push.BURN_NOTE_NUM_STORAGE_ITEMS push.0
+    # => [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
     exec.note::build_recipient
     # => [RECIPIENT]
 
     push.PUBLIC_NOTE
-    loc_load.5
+    loc_load.NETWORK_FAUCET_TAG_LOC
     # => [tag, note_type, RECIPIENT]
 
     call.output_note::create
     # => [note_idx]
 
-    movdn.4 loc_loadw_be.0
+    movdn.4 loc_loadw_be.CREATE_BURN_NOTE_BURN_ASSET_LOC
     # => [ASSET, note_idx]
 
     exec.output_note::add_asset
