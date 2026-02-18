@@ -5,17 +5,23 @@ use crate::note::{NetworkAccountTarget, NetworkAccountTargetError};
 
 /// A view over a [`Note`] that is guaranteed to target a network account via a
 /// [`NetworkAccountTarget`] attachment.
+///
+/// This represents a note that is specifically targeted at a network account. In the future,
+/// other types of network notes may exist (e.g., SWAP notes that can be consumed by network
+/// accounts but are not targeted).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NetworkNote<'a> {
     note: &'a Note,
-    target: NetworkAccountTarget,
 }
 
 impl<'a> NetworkNote<'a> {
     /// Attempts to construct a [`NetworkNote`] view over `note`.
-    pub fn new(note: &'a Note) -> Result<Self, NetworkNoteError> {
-        let target = NetworkAccountTarget::try_from(note.metadata().attachment())?;
-        Ok(Self { note, target })
+    ///
+    /// Returns an error if the note's attachment cannot be decoded as a [`NetworkAccountTarget`].
+    pub fn new(note: &'a Note) -> Result<Self, NetworkAccountTargetError> {
+        // Validate that the attachment is a valid NetworkAccountTarget
+        NetworkAccountTarget::try_from(note.metadata().attachment())?;
+        Ok(Self { note })
     }
 
     /// Returns the underlying [`Note`].
@@ -30,12 +36,13 @@ impl<'a> NetworkNote<'a> {
 
     /// Returns the target network [`AccountId`].
     pub fn target_account_id(&self) -> AccountId {
-        self.target.target_id()
+        self.target().target_id()
     }
 
     /// Returns the decoded [`NetworkAccountTarget`] attachment.
     pub fn target(&self) -> NetworkAccountTarget {
-        self.target
+        NetworkAccountTarget::try_from(self.note.metadata().attachment())
+            .expect("NetworkNote guarantees valid NetworkAccountTarget attachment")
     }
 
     /// Returns the raw [`NoteAttachment`] from the note metadata.
@@ -55,7 +62,7 @@ pub trait NetworkNoteExt {
     fn is_network_note(&self) -> bool;
 
     /// Returns a [`NetworkNote`] view, or an error if the attachment is not a valid target.
-    fn as_network_note(&self) -> Result<NetworkNote<'_>, NetworkNoteError>;
+    fn as_network_note(&self) -> Result<NetworkNote<'_>, NetworkAccountTargetError>;
 }
 
 impl NetworkNoteExt for Note {
@@ -63,21 +70,15 @@ impl NetworkNoteExt for Note {
         NetworkAccountTarget::try_from(self.metadata().attachment()).is_ok()
     }
 
-    fn as_network_note(&self) -> Result<NetworkNote<'_>, NetworkNoteError> {
+    fn as_network_note(&self) -> Result<NetworkNote<'_>, NetworkAccountTargetError> {
         NetworkNote::new(self)
     }
 }
 
 impl<'a> TryFrom<&'a Note> for NetworkNote<'a> {
-    type Error = NetworkNoteError;
+    type Error = NetworkAccountTargetError;
 
     fn try_from(note: &'a Note) -> Result<Self, Self::Error> {
         Self::new(note)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum NetworkNoteError {
-    #[error("failed to decode network account target attachment")]
-    NetworkTarget(#[from] NetworkAccountTargetError),
 }

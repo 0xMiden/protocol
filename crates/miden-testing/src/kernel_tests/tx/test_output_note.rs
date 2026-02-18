@@ -1208,7 +1208,7 @@ async fn test_network_note_unwrap() -> anyhow::Result<()> {
     let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
 
     let note = NoteBuilder::new(sender.id(), &mut rng)
-        .note_type(NoteType::Private)
+        .note_type(NoteType::Public)
         .attachment(attachment)
         .build()?;
 
