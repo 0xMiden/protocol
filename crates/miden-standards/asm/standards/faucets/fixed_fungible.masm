@@ -1,24 +1,23 @@
+# FIXED SUPPLY FUNGIBLE FAUCET CONTRACT
+#
+# A fungible faucet with fixed supply management using the supply::fixed_supply component.
+# This faucet enforces a maximum supply cap and tracks total minted tokens.
+# =================================================================================================
+
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
-use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::supply::fixed_supply
 
-# CONSTANTS
+# CONSTANTS
 # =================================================================================================
 
 const PRIVATE_NOTE=2
 
-# ERRORS
+# ERRORS
 # =================================================================================================
-
-# Retained for backward compatibility of error constants in Rust
-const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
-const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT="max supply exceeds maximum representable fungible asset amount"
-const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY="token_supply plus the amount passed to distribute would exceed the maximum supply"
-const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY="asset amount to burn exceeds the existing token supply"
 
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
@@ -30,6 +29,7 @@ const METADATA_SLOT_LOCAL=0
 
 # The standard slot where fungible faucet metadata like token symbol or decimals are stored.
 # Layout: [token_supply, max_supply, decimals, token_symbol]
+# Note: This is kept for backward compatibility with existing metadata structure
 const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 
 # PROCEDURES
@@ -42,11 +42,17 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
 #!
-#! ...
+#! Where:
+#! - amount is the amount to be minted and sent.
+#! - tag is the tag to be included in the note.
+#! - note_type is the type of the note that holds the asset.
+#! - RECIPIENT is the recipient of the asset, i.e.,
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
+#! - note_idx is the index of the created note.
 #!
 #! Panics if:
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
-#! - the supply limits are exceeded.
+#! - the supply constraints are violated (checked by fixed_supply component).
 #!
 #! Invocation: exec
 @locals(8)
@@ -65,6 +71,7 @@ pub proc distribute
     # => [RECIPIENT]
     
     # Store RECIPIENT at index 0 (aligned)
+    # loc_storew_be reads the word but does not pop it
     loc_storew_be.0
     # => [RECIPIENT]
     
@@ -86,7 +93,7 @@ pub proc distribute
     
     # The check passed, clean up the stack
     drop drop drop
-    repeat.12
+    repeat.11
         drop
     end
     # => []
@@ -94,7 +101,6 @@ pub proc distribute
     # Mint the asset
     # ---------------------------------------------------------------------------------------------
     
-    loc_load.4
     exec.faucet::create_fungible_asset
     # => [ASSET]
     
@@ -103,8 +109,8 @@ pub proc distribute
     
     # Update supply using fixed_supply component
     # ---------------------------------------------------------------------------------------------
-    # Extract amount from ASSET for the update
-    # ASSET layout: [id_prefix, id_suffix, 0, amount] on stack
+    
+    # Extract amount from ASSET for the update (ASSET = [faucet_id_prefix, faucet_id_suffix, 0, amount])
     dup.3
     # => [amount, ASSET]
     
@@ -115,7 +121,6 @@ pub proc distribute
     exec.fixed_supply::update_supply_after_mint
     # => [pad(16), ASSET]
     
-    # Supply module now returns pad(16), so we drop it
     dropw dropw dropw dropw
     # => [ASSET]
     
@@ -148,7 +153,18 @@ end
 
 #! Burns the fungible asset from the active note.
 #!
-#! ...
+#! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
+#! This procedure uses the fixed_supply component to update supply tracking.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the procedure is not called from a note context.
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#! - the amount about to be burned is greater than the token_supply of the faucet.
 #!
 #! Invocation: call
 pub proc burn
@@ -170,7 +186,6 @@ pub proc burn
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
     
-    # ASSET layout: [id_prefix, id_suffix, 0, amount] on stack
     dup.3 movdn.4
     # => [ASSET, amount, pad(16)]
     
@@ -182,16 +197,11 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
     
     # Prepare stack for update_supply_after_burn: [amount, pad(15)]
-    # Current stack is [amount, pad(16)].
-    
-    # Move one zero to top to drop it and get pad(15)
-    movup.16 drop
+    # Stack is currently [amount, pad(16)]
+    # We need to drop one pad element to get pad(15)
+    movup.15 drop
     # => [amount, pad(15)]
     
     exec.fixed_supply::update_supply_after_burn
     # => [pad(16)]
-    
-    # Clean the stack
-    dropw dropw dropw dropw
-    # => []
 end

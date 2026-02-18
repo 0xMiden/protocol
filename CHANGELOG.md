@@ -18,6 +18,7 @@
 - Increased `TokenSymbol` max allowed length from 6 to 12 uppercase characters ([#2420](https://github.com/0xMiden/miden-base/pull/2420)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
+- Added `UnlimitedFungibleFaucet` and `TimedFungibleFaucet` components, implementing flexible supply management strategies ([#2386](https://github.com/0xMiden/miden-base/pull/2386)).
 
 ### Changes
 

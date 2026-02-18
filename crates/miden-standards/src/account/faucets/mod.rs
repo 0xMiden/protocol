@@ -7,10 +7,14 @@ use thiserror::Error;
 mod basic_fungible;
 mod network_fungible;
 mod token_metadata;
+mod timed_fungible;
+mod unlimited_fungible;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use token_metadata::TokenMetadata;
+pub use timed_fungible::{TimedFungibleFaucet, create_timed_fungible_faucet};
+pub use unlimited_fungible::{UnlimitedFungibleFaucet, create_unlimited_fungible_faucet};
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================

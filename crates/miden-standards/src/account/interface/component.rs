@@ -29,6 +29,12 @@ pub enum AccountComponentInterface {
     /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
     BasicFungibleFaucet,
     /// Exposes procedures from the
+    /// [`UnlimitedFungibleFaucet`][crate::account::faucets::UnlimitedFungibleFaucet] module.
+    UnlimitedFungibleFaucet,
+    /// Exposes procedures from the
+    /// [`TimedFungibleFaucet`][crate::account::faucets::TimedFungibleFaucet] module.
+    TimedFungibleFaucet,
+    /// Exposes procedures from the
     /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
     NetworkFungibleFaucet,
     /// Exposes procedures from the
@@ -71,6 +77,10 @@ impl AccountComponentInterface {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
             AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
+            AccountComponentInterface::UnlimitedFungibleFaucet => {
+                "Unlimited Fungible Faucet".to_string()
+            },
+            AccountComponentInterface::TimedFungibleFaucet => "Timed Fungible Faucet".to_string(),
             AccountComponentInterface::NetworkFungibleFaucet => {
                 "Network Fungible Faucet".to_string()
             },
@@ -257,6 +267,56 @@ impl AccountComponentInterface {
                         "
                         push.{amount}
                         call.::miden::standards::faucets::basic_fungible::distribute
+                        # => [note_idx, pad(25)]
+                        swapdw dropw dropw swap drop
+                        # => [note_idx, pad(16)]\n
+                        ",
+                        amount = asset.unwrap_fungible().amount()
+                    ));
+                },
+                AccountComponentInterface::UnlimitedFungibleFaucet => {
+                    if partial_note.assets().num_assets() != 1 {
+                        return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
+                    }
+
+                    let asset =
+                        partial_note.assets().iter().next().expect("note should contain an asset");
+
+                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                        return Err(AccountInterfaceError::IssuanceFaucetMismatch(
+                            asset.faucet_id_prefix(),
+                        ));
+                    }
+
+                    body.push_str(&format!(
+                        "
+                        push.{amount}
+                        call.::miden::standards::faucets::unlimited_fungible::distribute
+                        # => [note_idx, pad(25)]
+                        swapdw dropw dropw swap drop
+                        # => [note_idx, pad(16)]\n
+                        ",
+                        amount = asset.unwrap_fungible().amount()
+                    ));
+                },
+                AccountComponentInterface::TimedFungibleFaucet => {
+                    if partial_note.assets().num_assets() != 1 {
+                        return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
+                    }
+
+                    let asset =
+                        partial_note.assets().iter().next().expect("note should contain an asset");
+
+                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                        return Err(AccountInterfaceError::IssuanceFaucetMismatch(
+                            asset.faucet_id_prefix(),
+                        ));
+                    }
+
+                    body.push_str(&format!(
+                        "
+                        push.{amount}
+                        call.::miden::standards::faucets::timed_fungible::distribute
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n

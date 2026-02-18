@@ -1,0 +1,194 @@
+# miden::standards::supply::fixed_supply
+#
+# Provides fixed supply management functionality for faucets.
+# This component enforces a maximum supply cap and tracks total minted tokens.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the supply configuration is stored.
+# Layout: [token_supply, max_supply, decimals, token_symbol]
+const SUPPLY_CONFIG_SLOT = word("miden::standards::fungible_faucets::metadata")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SUPPLY_EXCEEDED = "token supply exceeds max supply"
+const ERR_SUPPLY_CAP_INVALID = "max supply exceeds maximum representable fungible asset amount"
+const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the current supply state and metadata from storage.
+#!
+#! Inputs:  []
+#! Outputs: [max_supply, token_supply, decimals, token_symbol]
+#!
+#! Where:
+#! - max_supply is the maximum allowed supply.
+#! - token_supply is the current total supply of tokens minted.
+#! - decimals is the number of decimals (preserved).
+#! - token_symbol is the token symbol (preserved).
+proc get_supply_state
+    push.SUPPLY_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [token_symbol, decimals, max_supply, token_supply]
+    
+    # We want: [max_supply, token_supply, decimals, token_symbol]
+    movdn.3 movdn.2 swap
+    # => [max_supply, token_supply, decimals, token_symbol]
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Checks if the given amount can be distributed without exceeding the max supply.
+#!
+#! Inputs:  [amount, pad(14)]
+#! Outputs: [max_mint_amount, token_supply, max_supply, pad(12)]
+#!
+#! Where:
+#! - amount is the amount to be minted.
+#! - max_mint_amount is the maximum amount that can be minted.
+#! - token_supply is the current total supply.
+#! - max_supply is the maximum allowed supply.
+pub proc check_supply_limit
+    # Get current supply state
+    exec.get_supply_state
+    # => [max, token, dec, sym, amount, pad(10)]
+    
+    # Assert token_supply <= max_supply
+    dup dup.2
+    # => [max, token, max, token, dec, sym, amount, pad(9)]
+    # lte [b, a] -> a <= b. 
+    lte assert.err=ERR_SUPPLY_EXCEEDED
+    # => [max, token, dec, sym, amount, pad(10)]
+    
+    # Calculate max_mint_amount = max_supply - token_supply
+    dup dup.2 sub
+    # => [max_mint, max, token, dec, sym, amount, pad(9)]
+    
+    # Assert amount <= max_mint_amount
+    dup.5 dup
+    # => [max_mint, amount, max_mint, max, token, dec, sym, amount, pad(8)]
+    swap
+    # => [amount, max_mint, max_mint, max, token, dec, sym, amount, pad(8)]
+    lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    # => [max_mint, max, token, dec, sym, amount, pad(9)]
+    
+    # Clean up and return [max_mint, token, max, pad(12)]
+    # Current indices: 0:max_mint, 1:max, 2:token, 3:dec, 4:sym, 5:amount
+    movup.5 drop # drop amount
+    movup.4 drop # drop sym
+    movup.3 drop # drop dec
+    # => [max_mint, max, token, pad(12)]
+    
+    # Rearrange to [max_mint, token, max]
+    movup.2 swap
+    # => [max_mint, token, max, pad(12)]
+end
+
+#! Updates the supply after minting tokens.
+#!
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [pad(16)]
+pub proc update_supply_after_mint
+    # Get current supply state
+    exec.get_supply_state
+    # => [max, token, dec, sym, amount, pad(11)]
+    
+    # Calculate new_token_supply = token_supply + amount
+    dup.1 dup.5 add
+    # => [new_token, max, token, dec, sym, amount, pad(11)]
+    
+    # Construct word for storage: [new_token, max, dec, sym]
+    # Storage order: [token_supply, max_supply, decimals, token_symbol]
+    # We want [sym, dec, max, new] on stack for set_item VALUE
+    
+    # Remove old token
+    movdn.2 swap drop
+    # => [max, new_token, dec, sym, amount, pad(11)]
+    
+    # Reorder to [sym, dec, max, new]
+    # Current: 0:max, 1:new, 2:dec, 3:sym
+    movup.3 # sym
+    movup.3 # dec
+    swap
+    # => [sym, dec, max, new, amount, pad(11)]
+    
+    push.SUPPLY_CONFIG_SLOT[0..2]
+    # => [slot_pre, slot_suf, sym, dec, max, new, amount, pad(9)]
+    
+    # Move slot id deep
+    movdn.5 movdn.5
+    # => [sym, dec, max, new, slot_pre, slot_suf, amount, pad(9)]
+    
+    exec.native_account::set_item
+    # => [OLD_WORD, amount, pad(9)]
+    
+    # Clean up and return pad(16)
+    dropw drop 
+    repeat.9 drop end
+    padw padw padw padw
+end
+
+#! Updates the supply after burning tokens.
+#!
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [pad(16)]
+pub proc update_supply_after_burn
+    # Get current supply state
+    exec.get_supply_state
+    # => [max, token, dec, sym, amount, pad(11)]
+    
+    # Assert amount <= token_supply
+    dup.1 dup.5
+    # => [amount, token, max, token, dec, sym, amount, pad(10)]
+    lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    # => [max, token, dec, sym, amount, pad(11)]
+    
+    # Calculate new_token_supply = token_supply - amount
+    dup.1 dup.5 sub
+    # => [new_token, max, token, dec, sym, amount, pad(11)]
+    
+    # Remove old token
+    movdn.2 swap drop
+    # => [max, new_token, dec, sym, amount, pad(11)]
+    
+    # Reorder to [sym, dec, max, new]
+    movup.3 # sym
+    movup.3 # dec
+    swap
+    # => [sym, dec, max, new, amount, pad(11)]
+    
+    push.SUPPLY_CONFIG_SLOT[0..2]
+    movdn.5 movdn.5
+    
+    exec.native_account::set_item
+    # => [OLD_WORD, amount, pad(9)]
+    
+    # Clean up and return pad(16)
+    dropw drop 
+    repeat.9 drop end
+    padw padw padw padw
+end
+
+#! Returns the current supply state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [token_supply, max_supply, pad(14)]
+pub proc get_supply
+    exec.get_supply_state
+    # => [max, token, dec, sym, pad(12)]
+    
+    # Drop metadata
+    movup.3 drop movup.2 drop
+    # => [max, token, pad(14)]
+    
+    # Output expected [token, max]
+    swap
+end

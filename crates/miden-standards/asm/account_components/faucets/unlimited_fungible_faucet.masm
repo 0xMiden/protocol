@@ -1,0 +1,6 @@
+# The MASM code of the Unlimited Fungible Faucet Account Component.
+#
+# See the `UnlimitedFungibleFaucet` Rust type's documentation for more details.
+
+pub use ::miden::standards::faucets::unlimited_fungible::distribute
+pub use ::miden::standards::faucets::unlimited_fungible::burn

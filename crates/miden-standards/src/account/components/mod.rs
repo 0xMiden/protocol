@@ -108,6 +108,24 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
+// Initialize the Unlimited Fungible Faucet library only once.
+static UNLIMITED_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/unlimited_fungible_faucet.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Unlimited Fungible Faucet library is well-formed")
+});
+
+// Initialize the Timed Fungible Faucet library only once.
+static TIMED_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/timed_fungible_faucet.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Timed Fungible Faucet library is well-formed")
+});
+
 // METADATA LIBRARIES
 // ================================================================================================
 
@@ -128,6 +146,16 @@ pub fn basic_wallet_library() -> Library {
 /// Returns the Basic Fungible Faucet Library.
 pub fn basic_fungible_faucet_library() -> Library {
     BASIC_FUNGIBLE_FAUCET_LIBRARY.clone()
+}
+
+/// Returns the Unlimited Fungible Faucet Library.
+pub fn unlimited_fungible_faucet_library() -> Library {
+    UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.clone()
+}
+
+/// Returns the Timed Fungible Faucet Library.
+pub fn timed_fungible_faucet_library() -> Library {
+    TIMED_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
 /// Returns the Network Fungible Faucet Library.
@@ -183,6 +211,8 @@ pub fn falcon_512_rpo_multisig_library() -> Library {
 pub enum StandardAccountComponent {
     BasicWallet,
     BasicFungibleFaucet,
+    UnlimitedFungibleFaucet,
+    TimedFungibleFaucet,
     NetworkFungibleFaucet,
     AuthEcdsaK256Keccak,
     AuthEcdsaK256KeccakAcl,
@@ -199,6 +229,8 @@ impl StandardAccountComponent {
         let library = match self {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::UnlimitedFungibleFaucet => UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::TimedFungibleFaucet => TIMED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthEcdsaK256Keccak => ECDSA_K256_KECCAK_LIBRARY.as_ref(),
             Self::AuthEcdsaK256KeccakAcl => ECDSA_K256_KECCAK_ACL_LIBRARY.as_ref(),
@@ -246,6 +278,12 @@ impl StandardAccountComponent {
                 Self::BasicFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::BasicFungibleFaucet)
                 },
+                Self::UnlimitedFungibleFaucet => {
+                    component_interface_vec.push(AccountComponentInterface::UnlimitedFungibleFaucet)
+                },
+                Self::TimedFungibleFaucet => {
+                    component_interface_vec.push(AccountComponentInterface::TimedFungibleFaucet)
+                },
                 Self::NetworkFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
                 },
@@ -280,6 +318,8 @@ impl StandardAccountComponent {
     ) {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::UnlimitedFungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        Self::TimedFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256Keccak.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256KeccakAcl.extract_component(procedures_set, component_interface_vec);

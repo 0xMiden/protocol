@@ -1,0 +1,6 @@
+# The MASM code of the Timed Fungible Faucet Account Component.
+#
+# See the `TimedFungibleFaucet` Rust type's documentation for more details.
+
+pub use ::miden::standards::faucets::timed_fungible::distribute
+pub use ::miden::standards::faucets::timed_fungible::burn

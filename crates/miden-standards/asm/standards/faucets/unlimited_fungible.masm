@@ -1,0 +1,109 @@
+# UNLIMITED SUPPLY FUNGIBLE FAUCET CONTRACT
+#
+# A fungible faucet with no supply restrictions.
+# This faucet allows unlimited minting and burning of tokens.
+# =================================================================================================
+
+use miden::protocol::active_note
+use miden::protocol::faucet
+use miden::protocol::output_note
+
+# CONSTANTS
+# =================================================================================================
+
+const PRIVATE_NOTE=2
+
+# ERRORS
+# =================================================================================================
+
+const ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Distributes freshly minted fungible assets to the provided recipient by creating a note.
+#!
+#! This procedure has no supply restrictions - it can mint unlimited amounts.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - amount is the amount to be minted and sent.
+#! - tag is the tag to be included in the note.
+#! - note_type is the type of the note that holds the asset.
+#! - RECIPIENT is the recipient of the asset, i.e.,
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - the transaction is being executed against an account that is not a fungible asset faucet.
+#!
+#! Invocation: exec
+pub proc distribute
+    # Mint the asset
+    # ---------------------------------------------------------------------------------------------
+    
+    # Stack: [amount, tag, note_type, RECIPIENT]
+    # Create the fungible asset
+    exec.faucet::create_fungible_asset
+    # => [ASSET, tag, note_type, RECIPIENT]
+    
+    # Mint the asset
+    exec.faucet::mint
+    # => [ASSET, tag, note_type, RECIPIENT]
+    
+    # Rearrange stack for note creation
+    movdn.9 movdn.9 movdn.9 movdn.9
+    # => [tag, note_type, RECIPIENT, ASSET]
+    
+    # Create a new note with the asset
+    # ---------------------------------------------------------------------------------------------
+    
+    exec.output_note::create
+    # => [note_idx, ASSET]
+    
+    # Add the asset to the note
+    dup movdn.5 movdn.5
+    # => [ASSET, note_idx, note_idx]
+    
+    exec.output_note::add_asset
+    # => [note_idx]
+end
+
+#! Burns the fungible asset from the active note.
+#!
+#! Burning the asset removes it from circulation. No supply tracking is performed.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the procedure is not called from a note context.
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#!
+#! Invocation: call
+pub proc burn
+    # Get the asset from the note.
+    # ---------------------------------------------------------------------------------------------
+    
+    # this will fail if not called from a note context.
+    push.0 exec.active_note::get_assets
+    # => [num_assets, dest_ptr, pad(16)]
+    
+    # Verify we have exactly one asset
+    assert.err=ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
+    # => [dest_ptr, pad(16)]
+    
+    mem_loadw_be
+    # => [ASSET, pad(16)]
+    
+    # Burn the asset from the transaction vault
+    # ---------------------------------------------------------------------------------------------
+    
+    # burn the asset (no supply tracking needed)
+    exec.faucet::burn dropw
+    # => [pad(16)]
+end
