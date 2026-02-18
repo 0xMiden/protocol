@@ -103,7 +103,7 @@ end
 #! - acct_id_prefix is the prefix of the account ID.
 #! - is_faucet is a boolean indicating whether the account is a faucet.
 pub proc is_faucet
-    u32split drop u32and.FAUCET_ACCOUNT neq.0
+    u32split swap drop u32and.FAUCET_ACCOUNT neq.0
     # => [is_faucet]
 end
 
@@ -164,7 +164,7 @@ pub proc validate
     # there are 3 valid and 1 invalid storage mode
     # instead of checking the presence of any of the valid modes, we check the absence of the
     # invalid mode
-    u32split drop
+    u32split swap drop
     # => [account_id_prefix_lo, account_id_suffix]
     u32and.ACCOUNT_ID_STORAGE_MODE_MASK_U32
     # => [id_storage_mode_masked, account_id_suffix]
@@ -176,7 +176,7 @@ pub proc validate
     # Validate most significant bit in suffix is zero.
     # ---------------------------------------------------------------------------------------------
 
-    u32split
+    u32split swap
     # => [account_id_suffix_hi, account_id_suffix_lo]
     u32shr.31 eq.0
     # => [is_most_significant_bit_zero, account_id_suffix_lo]
@@ -202,7 +202,7 @@ end
 #!   of an account ID.
 #! - account_id_suffix is the suffix of an account ID.
 pub proc shape_suffix
-    u32split swap
+    u32split
     # => [seed_digest_suffix_lo, seed_digest_suffix_hi]
 
     # clear lower 8 bits of the lo part
@@ -227,7 +227,7 @@ end
 #! - id_version is the version number of the ID.
 proc id_version
     # extract the lower 32 bits
-    u32split drop
+    u32split swap drop
     # => [account_id_prefix_lo]
 
     # mask out the version
@@ -250,6 +250,6 @@ end
 #! - acct_id_prefix is the prefix of the account ID.
 #! - acct_type is the account type.
 proc id_type
-    u32split drop u32and.ACCOUNT_ID_TYPE_MASK_U32
+    u32split swap drop u32and.ACCOUNT_ID_TYPE_MASK_U32
     # => [acct_type]
 end

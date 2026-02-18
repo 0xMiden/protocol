@@ -211,7 +211,7 @@ pub proc extract_attachment_info_from_metadata
 
     # deconstruct the attachment_kind_scheme to extract the attachment_scheme
     # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-    # u32split splits into [high, low] where low is attachment_scheme
-    u32split
+    # u32split splits into [lo, hi] where lo is attachment_scheme
+    u32split swap
     # => [attachment_kind, attachment_scheme]
 end
