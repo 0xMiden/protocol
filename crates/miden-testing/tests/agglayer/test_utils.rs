@@ -13,17 +13,14 @@ use miden_agglayer::{
     LeafData,
     MetadataHash,
     agglayer_library,
-    utils,
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
-use miden_protocol::Felt;
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
-use primitive_types::U256;
 use serde::Deserialize;
 
 // SERDE HELPERS
@@ -238,10 +235,4 @@ pub async fn assert_execution_fails_with(script_code: &str, expected_error: &str
         expected_error,
         error_msg
     );
-}
-
-/// Convert the top 8 u32 values from the execution stack to a U256
-pub fn stack_to_u256(exec_output: &ExecutionOutput) -> U256 {
-    let felts: Vec<Felt> = exec_output.stack[0..8].to_vec();
-    utils::felts_to_u256(felts)
 }
