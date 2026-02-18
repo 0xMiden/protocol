@@ -213,26 +213,23 @@ proc convert_asset
     dup.1 dup.1
     push.0.0
     movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount, ...]
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     push.FAUCET_REGISTRY_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [VALUE(4), faucet_id_prefix, faucet_id_suffix, 0, amount, ...]
+    # => [VALUE(4), faucet_id_prefix, faucet_id_suffix, 0, amount]
 
-    # Check sentinel: Word element 0 (deepest in VALUE word on stack) must be 1
+    # Check flag, the stored word must be [0, 0, 0, 1] for registered faucets
     drop drop drop
     assert.err=ERR_FAUCET_NOT_REGISTERED
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
 
-    # The faucet_id prefix/suffix are still on the stack from the ASSET word.
     # Drop the zero padding between faucet_id and amount.
     movup.2 drop
     # => [faucet_id_prefix, faucet_id_suffix, amount]
 
-    # execute_foreign_procedure expects:
-    #   [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), amount, ...]
     procref.agglayer_faucet::asset_to_origin_asset
     # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, amount]
 
@@ -433,10 +430,17 @@ end
 #! Inputs:  [ASSET]
 #! Outputs: [SERIAL_NUM]
 #!
+#! Where:
+#! - ASSET is the asset for which to compute the burn note serial number.
+#! - SERIAL_NUM is the computed serial number for the BURN note.
+#!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
+    # => [B2AGG_SERIAL_NUM, ASSET]
+
     exec.rpo256::merge
+    # => [SERIAL_NUM]
 end
 
 #! Creates a BURN note for the specified asset.
@@ -446,6 +450,9 @@ end
 #!
 #! Inputs:  [ASSET]
 #! Outputs: []
+#!
+#! Where:
+#! - ASSET is the asset to be burned.
 #!
 #! Invocation: exec
 @locals(8)
