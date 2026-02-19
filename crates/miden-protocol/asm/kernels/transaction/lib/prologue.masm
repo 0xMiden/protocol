@@ -210,12 +210,11 @@ proc process_block_data
     exec.poseidon2::squeeze_digest
     # => [SUB_COMMITMENT, block_data_ptr', block_num]
 
-    # store the note root in memory
-    padw adv_loadw
-    dupw exec.memory::set_note_root dropw
+    # load and store the note root
+    padw adv_loadw exec.memory::set_note_root
     # => [NOTE_ROOT, SUB_COMMITMENT, block_data_ptr', block_num]
 
-    # TODO(bele): Temporarily swapw.
+    # move the note root to the top of the stack for merging
     swapw
     # => [SUB_COMMITMENT, NOTE_ROOT, block_data_ptr', block_num]
 
@@ -508,7 +507,7 @@ proc authenticate_note
     # ---------------------------------------------------------------------------------------------
 
     # load the note root from memory
-    padw loc_loadw_be.4 swapw
+    padw loc_loadw_le.4 swapw
     # => [NOTE_COMMITMENT, NOTE_ROOT]
 
     # load the index of the note
@@ -579,24 +578,25 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [NOTE_ARGS, NOTE_METADATA_HEADER, NOTE_ATTACHMENT]
+#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
 #! Outputs:
-#!   Operand stack: [NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
+#!   Operand stack: [NOTE_METADATA_HEADER, NOTE_ATTACHMENT]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - NOTE_METADATA_HEADER is the note's metadata.
+#! - NOTE_METADATA_HEADER is the note's metadata header.
+#! - NOTE_ATTACHMENT is the note's attachment.
 proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
     # => [note_ptr]
 
-    padw adv_loadw dup.4 exec.memory::set_input_note_metadata_header
-    # => [NOTE_METADATA_HEADER, note_ptr]
+    padw adv_loadw dup.4 exec.memory::set_input_note_attachment
+    # => [NOTE_ATTACHMENT]
 
-    padw adv_loadw movup.8 exec.memory::set_input_note_attachment
-    # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
+    padw adv_loadw movup.8 exec.memory::set_input_note_metadata_header
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr]
 end
 
 #! Checks that the number of note storage is within limit and stores it to memory.
@@ -737,26 +737,38 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSET_COMMITMENT)`.
+#! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSETS_COMMITMENT)`.
 proc compute_input_note_id
+    # load all inputs on the stack
+    dup exec.memory::get_input_note_assets_commitment
+    dup.4 exec.memory::get_input_note_storage_commitment
+    dup.8 exec.memory::get_input_note_script_root
+    # => [SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
+    dup.12 padw
+    # => [EMPTY_WORD, note_ptr, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
+    movup.4 exec.memory::get_input_note_serial_num
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
     # compute SERIAL_COMMITMENT: hash(SERIAL_NUMBER || EMPTY_WORD)
-    dup padw exec.memory::get_input_note_serial_num exec.poseidon2::merge
-    # => [SERIAL_COMMITMENT, note_ptr]
+    exec.poseidon2::merge
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
 
     # compute SERIAL_SCRIPT_COMMITMENT: hash(SERIAL_COMMITMENT || SCRIPT_ROOT)
-    dup.4 exec.memory::get_input_note_script_root swapw exec.poseidon2::merge
-    # => [SERIAL_SCRIPT_COMMITMENT, note_ptr]
+    exec.poseidon2::merge
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
 
     # compute RECIPIENT: hash(SERIAL_SCRIPT_COMMITMENT || STORAGE_COMMITMENT)
-    dup.4 exec.memory::get_input_note_storage_commitment swapw exec.poseidon2::merge
-    # => [RECIPIENT, note_ptr]
+    exec.poseidon2::merge
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_ptr]
 
     # store the recipient in memory
-    dup.4 exec.memory::set_input_note_recipient
-    # => [RECIPIENT, note_ptr]
+    movup.8 exec.memory::set_input_note_recipient
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_ptr]
 
-    # compute NOTE_ID: hash(RECIPIENT || ASSET_COMMITMENT)
-    movup.4 exec.memory::get_input_note_assets_commitment swapw exec.poseidon2::merge
+    # compute NOTE_ID: hash(RECIPIENT || ASSETS_COMMITMENT)
+    exec.poseidon2::merge
     # => [NOTE_ID]
 end
 
@@ -775,8 +787,8 @@ end
 #!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
 #!      NOTE_ARGS,
-#!      NOTE_METADATA_HEADER,
 #!      NOTE_ATTACHMENT,
+#!      NOTE_METADATA_HEADER,
 #!      num_assets,
 #!      ASSET_0, ..., ASSET_N,
 #!      is_authenticated,
@@ -819,7 +831,7 @@ proc process_input_note
     # => [NULLIFIER, note_ptr, idx, HASHER_CAPACITY]
 
     # save NULLIFIER to memory
-    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_be
+    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_le
     # => [NULLIFIER, note_ptr, HASHER_CAPACITY]
 
     # note metadata & args
@@ -829,10 +841,7 @@ proc process_input_note
     # => [note_ptr, NULLIFIER, HASHER_CAPACITY]
 
     dup exec.process_note_args_and_metadata
-    # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER, note_ptr, NULLIFIER, HASHER_CAPACITY]
-
-    # TODO(bele): Temporarily swapw.
-    swapw
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr, NULLIFIER, HASHER_CAPACITY]
 
     # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
     exec.poseidon2::merge
@@ -885,10 +894,10 @@ proc process_input_note
     end
     # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
 
-    # TODO(bele): Temporarily swapw.
     swapw
+    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT, HASHER_CAPACITY]
 
-    # update the input note commitment
+    # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_COMMITMENT)
     exec.poseidon2::permute
     # => [PERM, PERM, PERM]
 end

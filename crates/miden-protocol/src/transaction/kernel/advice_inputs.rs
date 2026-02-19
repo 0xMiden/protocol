@@ -365,8 +365,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
-            note_data.extend(note.metadata().to_header_word());
             note_data.extend(note.metadata().to_attachment_word());
+            note_data.extend(note.metadata().to_header_word());
             note_data.push(Felt::from_num(recipient.storage().num_items()));
             note_data.push(Felt::from_num(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());
