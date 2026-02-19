@@ -13,8 +13,6 @@ const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds m
 
 const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT="max supply exceeds maximum representable fungible asset amount"
 
-const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY="token_supply plus the amount passed to distribute would exceed the maximum supply"
-
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
 # STORAGE LAYOUT
@@ -63,17 +61,12 @@ pub proc distribute
     # Assert that minting does not violate any supply constraints.
     #
     # To make sure we cannot mint more than intended, we need to check:
-    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
-    # 2) amount + token_supply does not exceed max_supply
-    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
+    # 1) token_supply <= max_supply, i.e. the subtraction would not wrap around
+    # 2) max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT (protocol limit)
+    # 3) token_supply + amount <= max_supply (delegated to supply_limits::check_supply)
     #
-    # This is done with the following concrete assertions:
-    # - assert token_supply <= max_supply which ensures 1)
-    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
-    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
-    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
-    #     max_supply and we already asserted that max_supply does not exceed
-    #     FUNGIBLE_ASSET_MAX_AMOUNT
+    # Check 3) also transitively ensures token_supply + amount <= FUNGIBLE_ASSET_MAX_AMOUNT
+    # because we already asserted max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT in check 2).
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
@@ -88,15 +81,12 @@ pub proc distribute
     assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
-    dup.2 swap dup.2
-    # => [token_supply, max_supply, amount, token_supply, amount, tag, note_type, RECIPIENT]
+    # assert token_supply + amount <= max_supply via supply_limits::check_supply
+    # Prepare args: [amount, token_supply, max_supply, ...] while keeping originals below
+    dup.2 dup.2 swap
+    # => [amount, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
-    # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
-    sub
-    # => [max_mint_amount, amount, token_supply, amount, tag, note_type, RECIPIENT]
-
-    # assert amount <= max_mint_amount
-    lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    exec.supply_limits::check_supply
     # => [token_supply, amount, tag, note_type, RECIPIENT]
 
     # Compute the new token_supply and update in storage.
