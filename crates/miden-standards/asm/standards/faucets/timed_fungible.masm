@@ -1,32 +1,39 @@
 # TIMED SUPPLY FUNGIBLE FAUCET CONTRACT
 #
-# A fungible faucet with time-based supply management using the supply::supply_limits component.
-# This faucet enforces supply limits during a distribution period and optionally allows
-# burn-only operations after the period ends.
+# A fungible faucet with time-based distribution controls.
+# This faucet enforces a distribution period for minting.
+# Burns are always allowed. Supply tracking is handled by faucets::distribute/burn.
 # =================================================================================================
 
-use miden::protocol::active_note
-use miden::protocol::faucet
-use miden::protocol::output_note
-use miden::standards::supply::supply_limits
+use miden::protocol::active_account
+use miden::protocol::tx
+use miden::standards::faucets
+use miden::standards::access::ownable
 
 # CONSTANTS
 # =================================================================================================
 
-const PRIVATE_NOTE=2
+const TIMED_CONFIG_SLOT = word("miden::standards::faucets::timed_fungible::config")
 
 # ERRORS
 # =================================================================================================
 
-const ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
+const ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED="distribution period has ended"
+
+# OWNER MANAGEMENT
+# =================================================================================================
+
+pub use ownable::get_owner
+pub use ownable::transfer_ownership
+pub use ownable::renounce_ownership
 
 # PROCEDURES
 # =================================================================================================
 
 #! Distributes freshly minted fungible assets to the provided recipient by creating a note.
 #!
-#! This procedure uses the supply_limits component to enforce time-based supply limits
-#! and update the supply counter in a single call.
+#! This procedure checks the distribution period before delegating to the shared distribute
+#! procedure which handles supply tracking in the metadata slot.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -41,81 +48,37 @@ const ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 no
 #!
 #! Panics if:
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
+#! - the note sender is not the owner of this faucet.
 #! - the distribution period has ended.
-#! - the supply constraints are violated.
 #!
 #! Invocation: exec
-@locals(8)
 pub proc distribute
-    # Store inputs to locals
-    # ---------------------------------------------------------------------------------------------
-    # Stack: [amount, tag, note_type, RECIPIENT]
+    exec.ownable::verify_owner
 
-    loc_store.4
-    # => [tag, note_type, RECIPIENT]
+    # Check distribution period hasn't ended
+    push.TIMED_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [distribution_end, 0, 0, 0, amount, tag, note_type, RECIPIENT]
 
-    loc_store.5
-    # => [note_type, RECIPIENT]
-
-    loc_store.6
-    # => [RECIPIENT]
-
-    loc_storew_be.0
-    # => [RECIPIENT]
+    dup
+    if.true
+        exec.tx::get_block_number
+        dup.1
+        # => [distribution_end, current_block, distribution_end, 0, 0, 0, ...]
+        lt assert.err=ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED
+        # => [distribution_end, 0, 0, 0, ...]
+    end
 
     dropw
-    # => []
+    # => [amount, tag, note_type, RECIPIENT]
 
-    # Check supply constraints and update counter
-    # ---------------------------------------------------------------------------------------------
-
-    padw padw padw push.0.0.0
-    loc_load.4
-    # => [amount, pad(15)]
-
-    exec.supply_limits::mint
-    # => [pad(16)]
-
-    dropw dropw dropw dropw
-    # => []
-
-    # Mint the asset
-    # ---------------------------------------------------------------------------------------------
-
-    loc_load.4
-    exec.faucet::create_fungible_asset
-    # => [ASSET]
-
-    exec.faucet::mint
-    # => [ASSET]
-
-    # Create the note with the asset
-    # ---------------------------------------------------------------------------------------------
-
-    padw loc_loadw_be.0
-    # => [RECIPIENT, ASSET]
-
-    loc_load.6
-    # => [note_type, RECIPIENT, ASSET]
-
-    loc_load.5
-    # => [tag, note_type, RECIPIENT, ASSET]
-
-    exec.output_note::create
-    # => [note_idx, ASSET]
-
-    dup movdn.5 movdn.5
-    # => [ASSET, note_idx, note_idx]
-
-    exec.output_note::add_asset
+    exec.faucets::distribute
     # => [note_idx]
 end
 
 #! Burns the fungible asset from the active note.
 #!
-#! Burning the asset removes it from circulation and reduces the token_supply.
-#! This procedure uses the supply_limits component which may enforce time-based
-#! restrictions (e.g., burn-only mode after distribution period).
+#! Burns are always allowed — no time or ownership restrictions.
+#! Delegates to the shared burn procedure which handles supply tracking.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
@@ -125,37 +88,7 @@ end
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
-#! - burn is not allowed in the current period (if burn-only mode is enabled).
+#! - the amount to burn exceeds the current token supply.
 #!
 #! Invocation: call
-pub proc burn
-    # Get the asset from the note
-    # ---------------------------------------------------------------------------------------------
-
-    push.0 exec.active_note::get_assets
-    # => [num_assets, dest_ptr, pad(16)]
-
-    assert.err=ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [dest_ptr, pad(16)]
-
-    mem_loadw_be
-    # => [ASSET, pad(16)]
-
-    # Save amount for supply update, then burn the asset
-    # ---------------------------------------------------------------------------------------------
-
-    dup.3 movdn.4
-    # => [ASSET, amount, pad(16)]
-
-    exec.faucet::burn dropw
-    # => [amount, pad(16)]
-
-    # Check burn constraints and update supply counter
-    # ---------------------------------------------------------------------------------------------
-
-    swap drop
-    # => [amount, pad(15)]
-
-    exec.supply_limits::burn
-    # => [pad(16)]
-end
+pub use faucets::burn

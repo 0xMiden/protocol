@@ -4,19 +4,15 @@
 # This faucet allows unlimited minting and burning of tokens.
 # =================================================================================================
 
-use miden::protocol::active_note
-use miden::protocol::faucet
-use miden::protocol::output_note
+use miden::standards::faucets
+use miden::standards::access::ownable
 
-# CONSTANTS
+# OWNER MANAGEMENT
 # =================================================================================================
 
-const PRIVATE_NOTE=2
-
-# ERRORS
-# =================================================================================================
-
-const ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
+pub use ownable::get_owner
+pub use ownable::transfer_ownership
+pub use ownable::renounce_ownership
 
 # PROCEDURES
 # =================================================================================================
@@ -38,36 +34,14 @@ const ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 
 #!
 #! Panics if:
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
+#! - the note sender is not the owner of this faucet.
 #!
 #! Invocation: exec
 pub proc distribute
-    # Mint the asset
-    # ---------------------------------------------------------------------------------------------
-    
-    # Stack: [amount, tag, note_type, RECIPIENT]
-    # Create the fungible asset
-    exec.faucet::create_fungible_asset
-    # => [ASSET, tag, note_type, RECIPIENT]
-    
-    # Mint the asset
-    exec.faucet::mint
-    # => [ASSET, tag, note_type, RECIPIENT]
-    
-    # Rearrange stack for note creation
-    movdn.9 movdn.9 movdn.9 movdn.9
-    # => [tag, note_type, RECIPIENT, ASSET]
-    
-    # Create a new note with the asset
-    # ---------------------------------------------------------------------------------------------
-    
-    exec.output_note::create
-    # => [note_idx, ASSET]
-    
-    # Add the asset to the note
-    dup movdn.5 movdn.5
-    # => [ASSET, note_idx, note_idx]
-    
-    exec.output_note::add_asset
+    exec.ownable::verify_owner
+    # => [amount, tag, note_type, RECIPIENT]
+
+    exec.faucets::distribute
     # => [note_idx]
 end
 
@@ -85,25 +59,4 @@ end
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
 #!
 #! Invocation: call
-pub proc burn
-    # Get the asset from the note.
-    # ---------------------------------------------------------------------------------------------
-    
-    # this will fail if not called from a note context.
-    push.0 exec.active_note::get_assets
-    # => [num_assets, dest_ptr, pad(16)]
-    
-    # Verify we have exactly one asset
-    assert.err=ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [dest_ptr, pad(16)]
-    
-    mem_loadw_be
-    # => [ASSET, pad(16)]
-    
-    # Burn the asset from the transaction vault
-    # ---------------------------------------------------------------------------------------------
-    
-    # burn the asset (no supply tracking needed)
-    exec.faucet::burn dropw
-    # => [pad(16)]
-end
+pub use faucets::burn

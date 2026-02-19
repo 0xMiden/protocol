@@ -9,6 +9,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountId,
     AccountStorage,
     AccountStorageMode,
     AccountType,
@@ -21,13 +22,7 @@ use miden_protocol::{Felt, FieldElement, Word};
 
 use super::token_metadata::TOKEN_SYMBOL_TYPE_ID;
 use super::{FungibleFaucetError, TokenMetadata};
-use crate::account::AuthScheme;
-use crate::account::auth::{
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakAclConfig,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoAclConfig,
-};
+use crate::account::auth::NoAuth;
 use crate::account::components::timed_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
@@ -35,8 +30,13 @@ use crate::procedure_digest;
 // SLOT NAMES
 // ================================================================================================
 
-static SUPPLY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::supply::supply_limits::config")
+static TIMED_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::faucets::timed_fungible::config")
+        .expect("storage slot name should be valid")
+});
+
+static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::ownable::owner_config")
         .expect("storage slot name should be valid")
 });
 
@@ -63,21 +63,20 @@ procedure_digest!(
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
 /// - `distribute`, which mints assets and creates a note for the provided recipient within the
 ///   allowed time window.
-/// - `burn`, which burns the provided asset (respects burn-only mode).
+/// - `burn`, which burns the provided asset. Burns are always allowed.
 ///
 /// This component supports accounts of type [`AccountType::FungibleFaucet`].
 ///
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
-/// - [`Self::supply_config_slot`]: Stores supply config `[token_supply, max_supply,
-///   distribution_end, burn_only]`.
+/// - [`Self::timed_config_slot`]: Stores timed config `[0, 0, 0, distribution_end]`.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct TimedFungibleFaucet {
     metadata: TokenMetadata,
     distribution_end: u32,
-    burn_only: bool,
+    owner_account_id: AccountId,
 }
 
 impl TimedFungibleFaucet {
@@ -110,15 +109,19 @@ impl TimedFungibleFaucet {
         decimals: u8,
         max_supply: Felt,
         distribution_end: u32,
-        burn_only: bool,
+        owner_account_id: AccountId,
     ) -> Result<Self, FungibleFaucetError> {
         let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
-        Ok(Self { metadata, distribution_end, burn_only })
+        Ok(Self { metadata, distribution_end, owner_account_id })
     }
 
     /// Creates a new [`TimedFungibleFaucet`] component from the given [`TokenMetadata`].
-    pub fn from_metadata(metadata: TokenMetadata, distribution_end: u32, burn_only: bool) -> Self {
-        Self { metadata, distribution_end, burn_only }
+    pub fn from_metadata(
+        metadata: TokenMetadata,
+        distribution_end: u32,
+        owner_account_id: AccountId,
+    ) -> Self {
+        Self { metadata, distribution_end, owner_account_id }
     }
 
     /// Attempts to create a new [`TimedFungibleFaucet`] component from the associated account
@@ -145,18 +148,29 @@ impl TimedFungibleFaucet {
 
         let metadata = TokenMetadata::try_from(storage)?;
 
-        // Read supply config: [token_supply, max_supply, distribution_end, burn_only]
+        // Read timed config: [0, 0, 0, distribution_end]
         let config_word: Word = storage
-            .get_item(TimedFungibleFaucet::supply_config_slot())
+            .get_item(TimedFungibleFaucet::timed_config_slot())
             .map_err(|err| FungibleFaucetError::StorageLookupFailed {
-                slot_name: TimedFungibleFaucet::supply_config_slot().clone(),
+                slot_name: TimedFungibleFaucet::timed_config_slot().clone(),
                 source: err,
             })?;
 
-        let distribution_end = config_word[2].as_int() as u32;
-        let burn_only = config_word[3].as_int() != 0;
+        let distribution_end = config_word[3].as_int() as u32;
 
-        Ok(Self { metadata, distribution_end, burn_only })
+        // Read owner account ID: [0, 0, suffix, prefix]
+        let owner_account_id_word: Word = storage
+            .get_item(TimedFungibleFaucet::owner_config_slot())
+            .map_err(|err| FungibleFaucetError::StorageLookupFailed {
+                slot_name: TimedFungibleFaucet::owner_config_slot().clone(),
+                source: err,
+            })?;
+
+        let prefix = owner_account_id_word[3];
+        let suffix = owner_account_id_word[2];
+        let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
+
+        Ok(Self { metadata, distribution_end, owner_account_id })
     }
 
     // PUBLIC ACCESSORS
@@ -167,9 +181,9 @@ impl TimedFungibleFaucet {
         TokenMetadata::metadata_slot()
     }
 
-    /// Returns the [`StorageSlotName`] where the supply configuration is stored.
-    pub fn supply_config_slot() -> &'static StorageSlotName {
-        &SUPPLY_CONFIG_SLOT
+    /// Returns the [`StorageSlotName`] where the timed configuration is stored.
+    pub fn timed_config_slot() -> &'static StorageSlotName {
+        &TIMED_CONFIG_SLOT
     }
 
     /// Returns the storage slot schema for the metadata slot.
@@ -189,20 +203,46 @@ impl TimedFungibleFaucet {
         )
     }
 
-    /// Returns the storage slot schema for the supply config slot.
-    pub fn supply_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    /// Returns the storage slot schema for the timed config slot.
+    pub fn timed_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::supply_config_slot().clone(),
+            Self::timed_config_slot().clone(),
             StorageSlotSchema::value(
-                "Supply Config",
+                "Timed Config",
                 [
-                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
-                    FeltSchema::felt("max_supply"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
                     FeltSchema::u32("distribution_end"),
-                    FeltSchema::felt("burn_only_flag").with_default(Felt::new(0)),
                 ],
             ),
         )
+    }
+
+    /// Returns the [`StorageSlotName`] where the owner configuration is stored.
+    pub fn owner_config_slot() -> &'static StorageSlotName {
+        &OWNER_CONFIG_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for the owner configuration slot.
+    pub fn owner_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::owner_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Owner account configuration",
+                [
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::felt("owner_suffix"),
+                    FeltSchema::felt("owner_prefix"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the owner account ID of the faucet.
+    pub fn owner_account_id(&self) -> AccountId {
+        self.owner_account_id
     }
 
     /// Returns the token metadata.
@@ -235,11 +275,6 @@ impl TimedFungibleFaucet {
         self.distribution_end
     }
 
-    /// Returns whether the faucet is in burn-only mode after the distribution period.
-    pub fn burn_only(&self) -> bool {
-        self.burn_only
-    }
-
     /// Returns the digest of the `distribute` account procedure.
     pub fn distribute_digest() -> Word {
         *TIMED_FUNGIBLE_FAUCET_DISTRIBUTE
@@ -270,20 +305,34 @@ impl From<TimedFungibleFaucet> for AccountComponent {
         let metadata_slot: StorageSlot = faucet.metadata.into();
 
         let config_val = [
-            Felt::ZERO, // token_supply starts at zero
-            faucet.metadata.max_supply(),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
             Felt::new(faucet.distribution_end as u64),
-            Felt::new(faucet.burn_only as u64),
         ];
 
         let config_slot = StorageSlot::with_value(
-            TimedFungibleFaucet::supply_config_slot().clone(),
+            TimedFungibleFaucet::timed_config_slot().clone(),
             Word::new(config_val),
+        );
+
+        let owner_account_id_word: Word = [
+            Felt::new(0),
+            Felt::new(0),
+            faucet.owner_account_id.suffix(),
+            faucet.owner_account_id.prefix().as_felt(),
+        ]
+        .into();
+
+        let owner_slot = StorageSlot::with_value(
+            TimedFungibleFaucet::owner_config_slot().clone(),
+            owner_account_id_word,
         );
 
         let storage_schema = StorageSchema::new([
             TimedFungibleFaucet::metadata_slot_schema(),
-            TimedFungibleFaucet::supply_config_slot_schema(),
+            TimedFungibleFaucet::timed_config_slot_schema(),
+            TimedFungibleFaucet::owner_config_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
@@ -296,7 +345,7 @@ impl From<TimedFungibleFaucet> for AccountComponent {
 
         AccountComponent::new(
             timed_fungible_faucet_library(),
-            vec![metadata_slot, config_slot],
+            vec![metadata_slot, config_slot, owner_slot],
             metadata,
         )
         .expect("timed fungible faucet component should satisfy the requirements of a valid account component")
@@ -324,72 +373,36 @@ impl TryFrom<&Account> for TimedFungibleFaucet {
 }
 
 /// Creates a new faucet account with timed fungible faucet interface,
-/// account storage type, specified authentication scheme, and provided metadata (token symbol,
+/// account storage type, owner account, and provided metadata (token symbol,
 /// decimals, max supply, distribution end block, burn-only flag).
 ///
-/// The timed faucet interface exposes two procedures:
+/// The timed faucet interface exposes procedures:
 /// - `distribute`, which mints assets and creates a note for the provided recipient within the
-///   distribution time window.
-/// - `burn`, which burns the provided asset (respects burn-only mode).
+///   distribution time window. Requires the caller to be the owner.
+/// - `burn`, which burns the provided asset. Burns are always allowed.
+/// - `transfer_ownership`, which transfers ownership to a new account.
+/// - `renounce_ownership`, which renounces ownership.
 ///
-/// The `distribute` procedure can be called from a transaction script and requires authentication
-/// via the specified authentication scheme. The `burn` procedure can only be called from a note
-/// script and requires the calling note to contain the asset to be burned.
+/// The `distribute` procedure can only be called by the owner of the faucet. The `burn` procedure
+/// can be called by anyone and requires the calling note to contain the asset to be burned.
 pub fn create_timed_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,
     decimals: u8,
     max_supply: Felt,
     distribution_end: u32,
-    burn_only: bool,
     storage_mode: AccountStorageMode,
-    auth_scheme: AuthScheme,
+    owner_account_id: AccountId,
 ) -> Result<Account, FungibleFaucetError> {
-    let distribute_proc_root = TimedFungibleFaucet::distribute_digest();
+    let auth_component: AccountComponent = NoAuth::new().into();
 
-    let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::Falcon512Rpo { pub_key } => AuthFalcon512RpoAcl::new(
-            pub_key,
-            AuthFalcon512RpoAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthScheme::EcdsaK256Keccak { pub_key } => AuthEcdsaK256KeccakAcl::new(
-            pub_key,
-            AuthEcdsaK256KeccakAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthScheme::NoAuth => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "timed fungible faucets cannot be created with NoAuth authentication scheme".into(),
-            ));
-        },
-        AuthScheme::Falcon512RpoMultisig { threshold: _, pub_keys: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "timed fungible faucets do not support multisig authentication".into(),
-            ));
-        },
-        AuthScheme::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "timed fungible faucets cannot be created with Unknown authentication scheme"
-                    .into(),
-            ));
-        },
-        AuthScheme::EcdsaK256KeccakMultisig { threshold: _, pub_keys: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "timed fungible faucets do not support EcdsaK256KeccakMultisig authentication"
-                    .into(),
-            ));
-        },
-    };
-
-    let faucet_component =
-        TimedFungibleFaucet::new(symbol, decimals, max_supply, distribution_end, burn_only)?;
+    let faucet_component = TimedFungibleFaucet::new(
+        symbol,
+        decimals,
+        max_supply,
+        distribution_end,
+        owner_account_id,
+    )?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -409,13 +422,14 @@ pub fn create_timed_fungible_faucet(
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::auth::PublicKeyCommitment;
-    use miden_protocol::{FieldElement, ONE, Word};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+    use miden_protocol::{FieldElement, Word};
 
     use super::{
         AccountBuilder,
+        AccountId,
         AccountStorageMode,
         AccountType,
-        AuthScheme,
         Felt,
         FungibleFaucetError,
         TimedFungibleFaucet,
@@ -425,10 +439,13 @@ mod tests {
     use crate::account::auth::AuthFalcon512Rpo;
     use crate::account::wallets::BasicWallet;
 
+    fn mock_owner_account_id() -> AccountId {
+        ACCOUNT_ID_SENDER.try_into().expect("valid account id")
+    }
+
     #[test]
     fn timed_faucet_contract_creation() {
-        let pub_key_word = Word::new([ONE; 4]);
-        let auth_scheme: AuthScheme = AuthScheme::Falcon512Rpo { pub_key: pub_key_word.into() };
+        let owner_account_id = mock_owner_account_id();
 
         let init_seed: [u8; 32] = [
             90, 110, 209, 94, 84, 105, 250, 242, 223, 203, 216, 124, 22, 159, 14, 132, 215, 85,
@@ -439,7 +456,6 @@ mod tests {
         let token_symbol = TokenSymbol::try_from("TMD").unwrap();
         let decimals = 6u8;
         let distribution_end = 10_000u32;
-        let burn_only = true;
         let storage_mode = AccountStorageMode::Private;
 
         let faucet_account = create_timed_fungible_faucet(
@@ -448,9 +464,8 @@ mod tests {
             decimals,
             max_supply,
             distribution_end,
-            burn_only,
             storage_mode,
-            auth_scheme,
+            owner_account_id,
         )
         .unwrap();
 
@@ -463,17 +478,32 @@ mod tests {
             [Felt::ZERO, max_supply, Felt::new(6), token_symbol.into()].into()
         );
 
-        // Check supply config slot
+        // Check timed config slot
         assert_eq!(
             faucet_account
                 .storage()
-                .get_item(TimedFungibleFaucet::supply_config_slot())
+                .get_item(TimedFungibleFaucet::timed_config_slot())
                 .unwrap(),
             [
                 Felt::ZERO,
-                max_supply,
+                Felt::ZERO,
+                Felt::ZERO,
                 Felt::new(distribution_end as u64),
-                Felt::new(burn_only as u64)
+            ]
+            .into()
+        );
+
+        // Check owner config slot
+        assert_eq!(
+            faucet_account
+                .storage()
+                .get_item(TimedFungibleFaucet::owner_config_slot())
+                .unwrap(),
+            [
+                Felt::new(0),
+                Felt::new(0),
+                owner_account_id.suffix(),
+                owner_account_id.prefix().as_felt(),
             ]
             .into()
         );
@@ -485,7 +515,7 @@ mod tests {
         assert_eq!(faucet_component.max_supply(), max_supply);
         assert_eq!(faucet_component.token_supply(), Felt::ZERO);
         assert_eq!(faucet_component.distribution_end(), distribution_end);
-        assert_eq!(faucet_component.burn_only(), burn_only);
+        assert_eq!(faucet_component.owner_account_id(), owner_account_id);
     }
 
     #[test]
@@ -493,13 +523,20 @@ mod tests {
         let mock_word = Word::from([0, 1, 2, 3u32]);
         let mock_public_key = PublicKeyCommitment::from(mock_word);
         let mock_seed = mock_word.as_bytes();
+        let owner_account_id = mock_owner_account_id();
 
         let token_symbol = TokenSymbol::new("TMD").expect("invalid token symbol");
         let faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
             .with_component(
-                TimedFungibleFaucet::new(token_symbol, 6, Felt::new(1_000_000), 10_000, true)
-                    .expect("failed to create a timed fungible faucet component"),
+                TimedFungibleFaucet::new(
+                    token_symbol,
+                    6,
+                    Felt::new(1_000_000),
+                    10_000,
+                    owner_account_id,
+                )
+                .expect("failed to create a timed fungible faucet component"),
             )
             .with_auth_component(AuthFalcon512Rpo::new(mock_public_key))
             .build_existing()
@@ -512,7 +549,7 @@ mod tests {
         assert_eq!(timed_ff.max_supply(), Felt::new(1_000_000));
         assert_eq!(timed_ff.token_supply(), Felt::ZERO);
         assert_eq!(timed_ff.distribution_end(), 10_000);
-        assert!(timed_ff.burn_only());
+        assert_eq!(timed_ff.owner_account_id(), owner_account_id);
 
         // invalid account: timed fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)

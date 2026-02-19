@@ -4,3 +4,5 @@
 
 pub use ::miden::standards::faucets::unlimited_fungible::distribute
 pub use ::miden::standards::faucets::unlimited_fungible::burn
+pub use ::miden::standards::faucets::unlimited_fungible::transfer_ownership
+pub use ::miden::standards::faucets::unlimited_fungible::renounce_ownership

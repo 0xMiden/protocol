@@ -9,6 +9,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountId,
     AccountStorage,
     AccountStorageMode,
     AccountType,
@@ -16,20 +17,23 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use super::token_metadata::TOKEN_SYMBOL_TYPE_ID;
 use super::{FungibleFaucetError, TokenMetadata};
-use crate::account::AuthScheme;
-use crate::account::auth::{
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakAclConfig,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoAclConfig,
-};
+use crate::account::auth::NoAuth;
 use crate::account::components::unlimited_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
+
+// SLOT NAMES
+// ================================================================================================
+
+static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::ownable::owner_config")
+        .expect("storage slot name should be valid")
+});
 
 // UNLIMITED FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
@@ -67,6 +71,7 @@ procedure_digest!(
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct UnlimitedFungibleFaucet {
     metadata: TokenMetadata,
+    owner_account_id: AccountId,
 }
 
 impl UnlimitedFungibleFaucet {
@@ -95,15 +100,19 @@ impl UnlimitedFungibleFaucet {
     ///
     /// Returns an error if:
     /// - the decimals parameter exceeds maximum value of [`Self::MAX_DECIMALS`].
-    pub fn new(symbol: TokenSymbol, decimals: u8) -> Result<Self, FungibleFaucetError> {
+    pub fn new(
+        symbol: TokenSymbol,
+        decimals: u8,
+        owner_account_id: AccountId,
+    ) -> Result<Self, FungibleFaucetError> {
         let max_supply = miden_protocol::asset::FungibleAsset::MAX_AMOUNT;
         let metadata = TokenMetadata::new(symbol, decimals, Felt::new(max_supply))?;
-        Ok(Self { metadata })
+        Ok(Self { metadata, owner_account_id })
     }
 
     /// Creates a new [`UnlimitedFungibleFaucet`] component from the given [`TokenMetadata`].
-    pub fn from_metadata(metadata: TokenMetadata) -> Self {
-        Self { metadata }
+    pub fn from_metadata(metadata: TokenMetadata, owner_account_id: AccountId) -> Self {
+        Self { metadata, owner_account_id }
     }
 
     /// Attempts to create a new [`UnlimitedFungibleFaucet`] component from the associated account
@@ -132,7 +141,20 @@ impl UnlimitedFungibleFaucet {
         }
 
         let metadata = TokenMetadata::try_from(storage)?;
-        Ok(Self { metadata })
+
+        // Read owner account ID: [0, 0, suffix, prefix]
+        let owner_account_id_word: Word = storage
+            .get_item(UnlimitedFungibleFaucet::owner_config_slot())
+            .map_err(|err| FungibleFaucetError::StorageLookupFailed {
+                slot_name: UnlimitedFungibleFaucet::owner_config_slot().clone(),
+                source: err,
+            })?;
+
+        let prefix = owner_account_id_word[3];
+        let suffix = owner_account_id_word[2];
+        let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
+
+        Ok(Self { metadata, owner_account_id })
     }
 
     // PUBLIC ACCESSORS
@@ -158,6 +180,32 @@ impl UnlimitedFungibleFaucet {
                 ],
             ),
         )
+    }
+
+    /// Returns the [`StorageSlotName`] where the owner configuration is stored.
+    pub fn owner_config_slot() -> &'static StorageSlotName {
+        &OWNER_CONFIG_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for the owner configuration slot.
+    pub fn owner_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::owner_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Owner account configuration",
+                [
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::felt("owner_suffix"),
+                    FeltSchema::felt("owner_prefix"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the owner account ID of the faucet.
+    pub fn owner_account_id(&self) -> AccountId {
+        self.owner_account_id
     }
 
     /// Returns the token metadata.
@@ -212,18 +260,38 @@ impl UnlimitedFungibleFaucet {
 
 impl From<UnlimitedFungibleFaucet> for AccountComponent {
     fn from(faucet: UnlimitedFungibleFaucet) -> Self {
-        let storage_slot: StorageSlot = faucet.metadata.into();
+        let metadata_slot: StorageSlot = faucet.metadata.into();
 
-        let storage_schema = StorageSchema::new([UnlimitedFungibleFaucet::metadata_slot_schema()])
-            .expect("storage schema should be valid");
+        let owner_account_id_word: Word = [
+            Felt::new(0),
+            Felt::new(0),
+            faucet.owner_account_id.suffix(),
+            faucet.owner_account_id.prefix().as_felt(),
+        ]
+        .into();
+
+        let owner_slot = StorageSlot::with_value(
+            UnlimitedFungibleFaucet::owner_config_slot().clone(),
+            owner_account_id_word,
+        );
+
+        let storage_schema = StorageSchema::new([
+            UnlimitedFungibleFaucet::metadata_slot_schema(),
+            UnlimitedFungibleFaucet::owner_config_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(UnlimitedFungibleFaucet::NAME)
             .with_description("Unlimited fungible faucet component for minting and burning tokens")
             .with_supported_type(AccountType::FungibleFaucet)
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(unlimited_fungible_faucet_library(), vec![storage_slot], metadata)
-            .expect("unlimited fungible faucet component should satisfy the requirements of a valid account component")
+        AccountComponent::new(
+            unlimited_fungible_faucet_library(),
+            vec![metadata_slot, owner_slot],
+            metadata,
+        )
+        .expect("unlimited fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 
@@ -248,12 +316,14 @@ impl TryFrom<&Account> for UnlimitedFungibleFaucet {
 }
 
 /// Creates a new faucet account with unlimited fungible faucet interface,
-/// account storage type, specified authentication scheme, and provided metadata (token symbol,
-/// decimals).
+/// account storage type, owner account, and provided metadata (token symbol, decimals).
 ///
-/// The unlimited faucet interface exposes two procedures:
+/// The unlimited faucet interface exposes procedures:
 /// - `distribute`, which mints assets and creates a note for the provided recipient.
-/// - `burn`, which burns the provided asset.
+///   Requires the caller to be the owner.
+/// - `burn`, which burns the provided asset. No ownership check.
+/// - `transfer_ownership`, which transfers ownership to a new account.
+/// - `renounce_ownership`, which renounces ownership.
 ///
 /// No supply checks are enforced at runtime.
 pub fn create_unlimited_fungible_faucet(
@@ -261,53 +331,11 @@ pub fn create_unlimited_fungible_faucet(
     symbol: TokenSymbol,
     decimals: u8,
     storage_mode: AccountStorageMode,
-    auth_scheme: AuthScheme,
+    owner_account_id: AccountId,
 ) -> Result<Account, FungibleFaucetError> {
-    let distribute_proc_root = UnlimitedFungibleFaucet::distribute_digest();
+    let auth_component: AccountComponent = NoAuth::new().into();
 
-    let auth_component: AccountComponent = match auth_scheme {
-        AuthScheme::Falcon512Rpo { pub_key } => AuthFalcon512RpoAcl::new(
-            pub_key,
-            AuthFalcon512RpoAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthScheme::EcdsaK256Keccak { pub_key } => AuthEcdsaK256KeccakAcl::new(
-            pub_key,
-            AuthEcdsaK256KeccakAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
-                .with_allow_unauthorized_input_notes(true),
-        )
-        .map_err(FungibleFaucetError::AccountError)?
-        .into(),
-        AuthScheme::NoAuth => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "unlimited fungible faucets cannot be created with NoAuth authentication scheme"
-                    .into(),
-            ));
-        },
-        AuthScheme::Falcon512RpoMultisig { threshold: _, pub_keys: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "unlimited fungible faucets do not support multisig authentication".into(),
-            ));
-        },
-        AuthScheme::Unknown => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "unlimited fungible faucets cannot be created with Unknown authentication scheme"
-                    .into(),
-            ));
-        },
-        AuthScheme::EcdsaK256KeccakMultisig { threshold: _, pub_keys: _ } => {
-            return Err(FungibleFaucetError::UnsupportedAuthScheme(
-                "unlimited fungible faucets do not support EcdsaK256KeccakMultisig authentication"
-                    .into(),
-            ));
-        },
-    };
-
-    let faucet_component = UnlimitedFungibleFaucet::new(symbol, decimals)?;
+    let faucet_component = UnlimitedFungibleFaucet::new(symbol, decimals, owner_account_id)?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -328,13 +356,14 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::auth::PublicKeyCommitment;
     use miden_protocol::asset::FungibleAsset;
-    use miden_protocol::{FieldElement, ONE, Word};
+    use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
+    use miden_protocol::{FieldElement, Word};
 
     use super::{
         AccountBuilder,
+        AccountId,
         AccountStorageMode,
         AccountType,
-        AuthScheme,
         Felt,
         FungibleFaucetError,
         TokenSymbol,
@@ -344,10 +373,13 @@ mod tests {
     use crate::account::auth::AuthFalcon512Rpo;
     use crate::account::wallets::BasicWallet;
 
+    fn mock_owner_account_id() -> AccountId {
+        ACCOUNT_ID_SENDER.try_into().expect("valid account id")
+    }
+
     #[test]
     fn unlimited_faucet_contract_creation() {
-        let pub_key_word = Word::new([ONE; 4]);
-        let auth_scheme: AuthScheme = AuthScheme::Falcon512Rpo { pub_key: pub_key_word.into() };
+        let owner_account_id = mock_owner_account_id();
 
         let init_seed: [u8; 32] = [
             90, 110, 209, 94, 84, 105, 250, 242, 223, 203, 216, 124, 22, 159, 14, 132, 215, 85,
@@ -363,7 +395,7 @@ mod tests {
             token_symbol,
             decimals,
             storage_mode,
-            auth_scheme,
+            owner_account_id,
         )
         .unwrap();
 
@@ -385,12 +417,28 @@ mod tests {
             .into()
         );
 
+        // Check owner config slot
+        assert_eq!(
+            faucet_account
+                .storage()
+                .get_item(UnlimitedFungibleFaucet::owner_config_slot())
+                .unwrap(),
+            [
+                Felt::new(0),
+                Felt::new(0),
+                owner_account_id.suffix(),
+                owner_account_id.prefix().as_felt(),
+            ]
+            .into()
+        );
+
         // Verify the faucet can be extracted via TryFrom
         let faucet_component = UnlimitedFungibleFaucet::try_from(faucet_account.clone()).unwrap();
         assert_eq!(faucet_component.symbol(), token_symbol);
         assert_eq!(faucet_component.decimals(), decimals);
         assert_eq!(faucet_component.max_supply(), Felt::new(FungibleAsset::MAX_AMOUNT));
         assert_eq!(faucet_component.token_supply(), Felt::ZERO);
+        assert_eq!(faucet_component.owner_account_id(), owner_account_id);
     }
 
     #[test]
@@ -398,12 +446,13 @@ mod tests {
         let mock_word = Word::from([0, 1, 2, 3u32]);
         let mock_public_key = PublicKeyCommitment::from(mock_word);
         let mock_seed = mock_word.as_bytes();
+        let owner_account_id = mock_owner_account_id();
 
         let token_symbol = TokenSymbol::new("UNL").expect("invalid token symbol");
         let faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
             .with_component(
-                UnlimitedFungibleFaucet::new(token_symbol, 8)
+                UnlimitedFungibleFaucet::new(token_symbol, 8, owner_account_id)
                     .expect("failed to create an unlimited fungible faucet component"),
             )
             .with_auth_component(AuthFalcon512Rpo::new(mock_public_key))
@@ -415,6 +464,7 @@ mod tests {
         assert_eq!(unlimited_ff.symbol(), token_symbol);
         assert_eq!(unlimited_ff.decimals(), 8);
         assert_eq!(unlimited_ff.token_supply(), Felt::ZERO);
+        assert_eq!(unlimited_ff.owner_account_id(), owner_account_id);
 
         // invalid account: unlimited fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)

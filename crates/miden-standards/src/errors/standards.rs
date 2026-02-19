@@ -13,17 +13,6 @@ use miden_protocol::errors::MasmError;
 pub const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
 /// Error Message: "asset amount to burn exceeds the existing token supply"
-pub const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY: MasmError = MasmError::from_static_str("asset amount to burn exceeds the existing token supply");
-/// Error Message: "burn operations are not allowed during distribution period"
-pub const ERR_BURN_NOT_ALLOWED: MasmError = MasmError::from_static_str("burn operations are not allowed during distribution period");
-
-/// Error Message: "token_supply plus the amount passed to distribute would exceed the maximum supply"
-pub const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token_supply plus the amount passed to distribute would exceed the maximum supply");
-
-/// Error Message: "distribution period has ended"
-pub const ERR_DISTRIBUTION_PERIOD_ENDED: MasmError = MasmError::from_static_str("distribution period has ended");
-
-/// Error Message: "asset amount to burn exceeds the existing token supply"
 pub const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY: MasmError = MasmError::from_static_str("asset amount to burn exceeds the existing token supply");
 
 /// Error Message: "token_supply plus the amount passed to distribute would exceed the maximum supply"
@@ -64,22 +53,18 @@ pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::fr
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
 
-/// Error Message: "token supply exceeds max supply"
-pub const ERR_SUPPLY_EXCEEDED: MasmError = MasmError::from_static_str("token supply exceeds max supply");
-
 /// Error Message: "SWAP script expects exactly 16 note storage items"
 pub const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("SWAP script expects exactly 16 note storage items");
 /// Error Message: "SWAP script requires exactly 1 note asset"
 pub const ERR_SWAP_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("SWAP script requires exactly 1 note asset");
 
-/// Error Message: "burn requires exactly 1 note asset"
-pub const ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
+/// Error Message: "burn operations are not allowed during distribution period"
+pub const ERR_TIMED_FUNGIBLE_BURN_NOT_ALLOWED: MasmError = MasmError::from_static_str("burn operations are not allowed during distribution period");
+/// Error Message: "distribution period has ended"
+pub const ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED: MasmError = MasmError::from_static_str("distribution period has ended");
 
 /// Error Message: "failed to approve multisig transaction as it was already executed"
 pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("failed to approve multisig transaction as it was already executed");
-
-/// Error Message: "burn requires exactly 1 note asset"
-pub const ERR_UNLIMITED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
 /// Error Message: "number of approvers or threshold must not be zero"
 pub const ERR_ZERO_IN_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers or threshold must not be zero");

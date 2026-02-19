@@ -4,3 +4,5 @@
 
 pub use ::miden::standards::faucets::timed_fungible::distribute
 pub use ::miden::standards::faucets::timed_fungible::burn
+pub use ::miden::standards::faucets::timed_fungible::transfer_ownership
+pub use ::miden::standards::faucets::timed_fungible::renounce_ownership
