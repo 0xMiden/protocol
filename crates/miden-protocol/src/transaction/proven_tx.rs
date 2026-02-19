@@ -508,10 +508,10 @@ impl TxAccountUpdate {
                         });
                     }
 
-                    if account.commitment() != account_update.final_state_commitment {
+                    if account.to_commitment() != account_update.final_state_commitment {
                         return Err(ProvenTransactionError::AccountFinalCommitmentMismatch {
                             tx_final_commitment: account_update.final_state_commitment,
-                            details_commitment: account.commitment(),
+                            details_commitment: account.to_commitment(),
                         });
                     }
                 }
@@ -749,8 +749,8 @@ mod tests {
 
         TxAccountUpdate::new(
             account.id(),
-            account.commitment(),
-            account.commitment(),
+            account.to_commitment(),
+            account.to_commitment(),
             Word::empty(),
             details,
         )?;
