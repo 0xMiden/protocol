@@ -323,8 +323,6 @@ proc build_p2id_output_note
     push.OUTPUT_NOTE_STORAGE_MEM_ADDR
     # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    debug.mem.OUTPUT_NOTE_STORAGE_MEM_ADDR.P2ID_NOTE_NUM_STORAGE_ITEMS
-
     exec.note::build_recipient
     # => [RECIPIENT]
 
