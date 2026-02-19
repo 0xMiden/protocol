@@ -327,9 +327,20 @@ pub fn create_agglayer_faucet_component(
         .expect("Conversion info 2 storage slot name should be valid");
     let conversion_slot2 = StorageSlot::with_value(conversion_info_2_name, conversion_slot2_word);
 
+    // Create claim nullifier mapping slot to prevent double-spending
+    let claim_nullifier_slot_name =
+        StorageSlotName::new("miden::agglayer::faucet::claim_nullifier")
+            .expect("Claim nullifier storage slot name should be valid");
+    let claim_nullifier_slot = StorageSlot::with_empty_map(claim_nullifier_slot_name);
+
     // Combine all storage slots for the agglayer faucet component
-    let agglayer_storage_slots =
-        vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
+    let agglayer_storage_slots = vec![
+        metadata_slot,
+        bridge_slot,
+        conversion_slot1,
+        conversion_slot2,
+        claim_nullifier_slot,
+    ];
     agglayer_faucet_component(agglayer_storage_slots)
 }
 

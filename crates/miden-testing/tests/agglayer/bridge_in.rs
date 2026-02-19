@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use miden_agglayer::errors::ERR_CLAIM_NOTE_ALREADY_SPENT;
 use miden_agglayer::{
     ClaimNoteStorage,
     EthAddressFormat,
@@ -16,7 +17,7 @@ use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
-use miden_testing::{AccountState, Auth, MockChain};
+use miden_testing::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 use rand::Rng;
 
 use super::test_utils::real_claim_data;
@@ -157,6 +158,47 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // - Verification that the minted amount matches the expected scaled value
     // - Full note ID comparison with the expected P2ID note
     // - Asset content verification
+
+    // Add the executed transaction to the chain and prove the block
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    // TEST DOUBLE-SPEND PROTECTION: TRY TO CLAIM THE SAME PROOF AGAIN
+    // --------------------------------------------------------------------------------------------
+    // Create a second CLAIM note with the same proof_data and leaf_data but different RNG
+    // This should fail because the nullifier mapping should prevent double-spending
+
+    // Generate a different serial number for the second P2ID note
+    let serial_num_2 = builder.rng_mut().draw_word();
+
+    let output_note_data_2 = OutputNoteData {
+        output_p2id_serial_num: serial_num_2,
+        target_faucet_account_id: agglayer_faucet.id(),
+        output_note_tag: NoteTag::with_account_target(destination_account_id),
+    };
+
+    // Reuse the same proof_data and leaf_data from the first claim
+    let (proof_data_2, leaf_data_2, _) = real_claim_data();
+    let claim_inputs_2 = ClaimNoteStorage {
+        proof_data: proof_data_2,
+        leaf_data: leaf_data_2,
+        output_note_data: output_note_data_2,
+    };
+
+    let claim_note_2 = create_claim_note(claim_inputs_2, sender_account.id(), builder.rng_mut())?;
+
+    // Get updated foreign account inputs after the first transaction
+    let foreign_account_inputs_2 = mock_chain.get_foreign_account_inputs(bridge_account.id())?;
+
+    let tx_context_2 = mock_chain
+        .build_tx_context(agglayer_faucet.id(), &[], &[claim_note_2])?
+        .foreign_accounts(vec![foreign_account_inputs_2])
+        .build()?;
+
+    // Execute the second claim transaction - this should fail due to the nullifier check
+    let result = tx_context_2.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_CLAIM_NOTE_ALREADY_SPENT);
 
     Ok(())
 }

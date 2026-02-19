@@ -4,6 +4,7 @@ use miden::agglayer::utils
 use miden::agglayer::asset_conversion
 use miden::agglayer::eth_address
 use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::protocol::active_note
 use miden::standards::faucets
 use miden::protocol::note
@@ -23,6 +24,9 @@ const BRIDGE_ID_SLOT = word("miden::agglayer::faucet")
 const CONVERSION_INFO_1_SLOT = word("miden::agglayer::faucet::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
 const CONVERSION_INFO_2_SLOT = word("miden::agglayer::faucet::conversion_info_2")
+
+# Storage slot for claim nullifier mapping to prevent double-spending
+const CLAIM_NULLIFIER_SLOT = word("miden::agglayer::faucet::claim_nullifier")
 
 const PROOF_DATA_WORD_LEN = 134
 const LEAF_DATA_WORD_LEN = 8
@@ -73,11 +77,12 @@ const EXECUTION_HINT_ALWAYS = 1
 const OUTPUT_NOTE_AUX = 0
 
 const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
+
 # ERRORS
 # =================================================================================================
 
 const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
-
+const ERR_CLAIM_NOTE_ALREADY_SPENT = "CLAIM note already spent"
 # CONVERSION METADATA HELPERS
 # =================================================================================================
 
@@ -234,10 +239,40 @@ proc get_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
 end
 
-# Inputs: [U256[0], U256[1]]
-# Outputs: [amount]
-proc scale_down_amount
-    repeat.7 drop end
+# Inputs: [PROOF_DATA_KEY]
+# Outputs: []
+proc set_and_check_claimed
+    dupw
+    # => [PROOF_DATA_KEY, PROOF_DATA_KEY]
+
+    # Check if this claim has already been processed (nullifier already exists)
+    # Get the current value from the nullifier mapping
+    push.CLAIM_NULLIFIER_SLOT[0..2]
+    # => [claim_nullifier_slot_idx, PROOF_DATA_KEY, PROOF_DATA_KEY]
+    
+    exec.active_account::get_map_item
+    # => [VALUE, PROOF_DATA_KEY]
+
+    # Assert that the value is empty (all zeros), meaning this claim hasn't been processed yet
+    padw
+    # => [0, 0, 0, 0, VALUE, PROOF_DATA_KEY]
+    
+    assert_eqw.err=ERR_CLAIM_NOTE_ALREADY_SPENT
+    # => [PROOF_DATA_KEY]
+    
+    # Set the nullifier to mark this claim as processed
+    # We'll set it to a non-zero value (e.g., [0, 0, 0, 1])
+    push.1.0.0.0
+    # => [TRUE, PROOF_DATA_KEY]
+
+    swapw 
+    # => [PROOF_DATA_KEY, TRUE]
+    
+    push.CLAIM_NULLIFIER_SLOT[0..2]
+    # => [claim_nullifier_slot_idx, PROOF_DATA_KEY, TRUE]
+    
+    exec.native_account::set_map_item
+    # => []
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
@@ -393,6 +428,8 @@ pub proc claim
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
     exec.get_destination_account_id_data
+    # => [prefix, suffix]
+    
     loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
     # => [pad(16)]
 
@@ -403,19 +440,28 @@ pub proc claim
     # VALIDATE CLAIM 
     mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
     # => [PROOF_DATA_KEY, pad(12)]
-    swapw
-    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
+    
+    swapw mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
     # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Errors on invalid proof
     exec.validate_claim
     # => [pad(16)]
 
+    # add CLAIM note nullifier to mapping
+    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(12)]
+
+    exec.set_and_check_claimed
+    # => [pad(16)] 
+
     # Create P2ID output note
     loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], pad(8)]
+    
     loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
     # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
+    
     exec.build_p2id_output_note
     # => [pad(16)] 
 end

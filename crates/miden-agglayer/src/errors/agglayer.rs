@@ -19,6 +19,8 @@ pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_s
 /// Error Message: "bridge not mainnet"
 pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
 
+/// Error Message: "CLAIM note already spent"
+pub const ERR_CLAIM_NOTE_ALREADY_SPENT: MasmError = MasmError::from_static_str("CLAIM note already spent");
 /// Error Message: "CLAIM's target account address and transaction address do not match"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM's target account address and transaction address do not match");
 
