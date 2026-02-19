@@ -263,4 +263,11 @@ pub enum AccountInterfaceError {
         "account does not contain the basic fungible faucet or basic wallet interfaces which are needed to support the send_note script generation"
     )]
     UnsupportedAccountInterface,
+    #[error(
+        "failed to read public key {key_index} from multisig configuration at storage slot {slot_name}. Expected key pattern [index, 0, 0, 0]. This indicates corrupted multisig storage or incorrect storage layout"
+    )]
+    MultisigPublicKeyReadFailed {
+        key_index: u8,
+        slot_name: String,
+    },
 }

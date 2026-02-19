@@ -141,7 +141,8 @@ impl AccountComponentInterface {
                     storage,
                     AuthEcdsaK256KeccakMultisig::threshold_config_slot(),
                     AuthEcdsaK256KeccakMultisig::approver_public_keys_slot(),
-                )]
+                )
+                .expect("failed to extract ECDSA K256 Keccak multisig auth scheme")]
             },
             AccountComponentInterface::AuthFalcon512Rpo => {
                 vec![AuthScheme::Falcon512Rpo {
@@ -166,7 +167,8 @@ impl AccountComponentInterface {
                     storage,
                     AuthFalcon512RpoMultisig::threshold_config_slot(),
                     AuthFalcon512RpoMultisig::approver_public_keys_slot(),
-                )]
+                )
+                .expect("failed to extract Falcon512 RPO multisig auth scheme")]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthScheme::NoAuth],
             _ => vec![], // Non-auth components return empty vector
@@ -317,16 +319,23 @@ impl AccountComponentInterface {
 // ================================================================================================
 
 /// Extracts authentication scheme from a multisig component.
+///
+/// # Errors
+/// Returns an error if the multisig configuration cannot be read from storage or if any
+/// public key cannot be retrieved from the storage map.
 fn extract_multisig_auth_scheme(
     storage: &AccountStorage,
     config_slot: &StorageSlotName,
     approver_public_keys_slot: &StorageSlotName,
-) -> AuthScheme {
+) -> Result<AuthScheme, AccountInterfaceError> {
     // Read the multisig configuration from the config slot
     // Format: [threshold, num_approvers, 0, 0]
-    let config = storage
-        .get_item(config_slot)
-        .expect("invalid slot name of the multisig configuration");
+    let config = storage.get_item(config_slot).ok_or_else(|| {
+        AccountInterfaceError::MultisigPublicKeyReadFailed {
+            key_index: 0,
+            slot_name: config_slot.to_string(),
+        }
+    })?;
 
     let threshold = config[0].as_int() as u32;
     let num_approvers = config[1].as_int() as u8;
@@ -343,16 +352,13 @@ fn extract_multisig_auth_scheme(
                 pub_keys.push(PublicKeyCommitment::from(pub_key));
             },
             Err(_) => {
-                // If we can't read a public key, panic with a clear error message
-                panic!(
-                    "Failed to read public key {} from multisig configuration at storage slot {}. \
-                        Expected key pattern [index, 0, 0, 0]. \
-                        This indicates corrupted multisig storage or incorrect storage layout.",
-                    key_index, approver_public_keys_slot
-                );
+                return Err(AccountInterfaceError::MultisigPublicKeyReadFailed {
+                    key_index,
+                    slot_name: approver_public_keys_slot.to_string(),
+                });
             },
         }
     }
 
-    AuthScheme::Falcon512RpoMultisig { threshold, pub_keys }
+    Ok(AuthScheme::Falcon512RpoMultisig { threshold, pub_keys })
 }
