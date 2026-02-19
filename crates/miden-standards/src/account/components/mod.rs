@@ -127,6 +127,16 @@ static TIMED_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Timed Fungible Faucet library is well-formed")
 });
 
+// Initialize the Timed Unlimited Fungible Faucet library only once.
+static TIMED_UNLIMITED_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/timed_unlimited_fungible_faucet.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Timed Unlimited Fungible Faucet library is well-formed")
+});
+
 // METADATA LIBRARIES
 // ================================================================================================
 
@@ -157,6 +167,11 @@ pub fn unlimited_fungible_faucet_library() -> Library {
 /// Returns the Timed Fungible Faucet Library.
 pub fn timed_fungible_faucet_library() -> Library {
     TIMED_FUNGIBLE_FAUCET_LIBRARY.clone()
+}
+
+/// Returns the Timed Unlimited Fungible Faucet Library.
+pub fn timed_unlimited_fungible_faucet_library() -> Library {
+    TIMED_UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
 /// Returns the Network Fungible Faucet Library.
@@ -214,6 +229,7 @@ pub enum StandardAccountComponent {
     BasicFungibleFaucet,
     UnlimitedFungibleFaucet,
     TimedFungibleFaucet,
+    TimedUnlimitedFungibleFaucet,
     NetworkFungibleFaucet,
     AuthEcdsaK256Keccak,
     AuthEcdsaK256KeccakAcl,
@@ -232,6 +248,9 @@ impl StandardAccountComponent {
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::UnlimitedFungibleFaucet => UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::TimedFungibleFaucet => TIMED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
+            Self::TimedUnlimitedFungibleFaucet => {
+                TIMED_UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref()
+            },
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthEcdsaK256Keccak => ECDSA_K256_KECCAK_LIBRARY.as_ref(),
             Self::AuthEcdsaK256KeccakAcl => ECDSA_K256_KECCAK_ACL_LIBRARY.as_ref(),
@@ -285,6 +304,10 @@ impl StandardAccountComponent {
                 Self::TimedFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::TimedFungibleFaucet)
                 },
+                Self::TimedUnlimitedFungibleFaucet => {
+                    component_interface_vec
+                        .push(AccountComponentInterface::TimedUnlimitedFungibleFaucet)
+                },
                 Self::NetworkFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
                 },
@@ -321,6 +344,10 @@ impl StandardAccountComponent {
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::UnlimitedFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::TimedFungibleFaucet.extract_component(procedures_set, component_interface_vec);
+        // Note: TimedUnlimitedFungibleFaucet is intentionally not extracted here because its
+        // compiled MASM procedures are identical to TimedFungibleFaucet (the only difference
+        // is the Rust-level max_supply initialization). Auto-detection would always match
+        // TimedFungibleFaucet first due to extraction order.
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256Keccak.extract_component(procedures_set, component_interface_vec);
         Self::AuthEcdsaK256KeccakAcl.extract_component(procedures_set, component_interface_vec);

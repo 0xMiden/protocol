@@ -22,6 +22,7 @@ use crate::account::components::{
     network_fungible_faucet_library,
     no_auth_library,
     timed_fungible_faucet_library,
+    timed_unlimited_fungible_faucet_library,
     unlimited_fungible_faucet_library,
 };
 use crate::account::interface::{
@@ -108,6 +109,13 @@ impl AccountInterfaceExt for AccountInterface {
                 AccountComponentInterface::TimedFungibleFaucet => {
                     component_proc_digests
                         .extend(timed_fungible_faucet_library().mast_forest().procedure_digests());
+                },
+                AccountComponentInterface::TimedUnlimitedFungibleFaucet => {
+                    component_proc_digests.extend(
+                        timed_unlimited_fungible_faucet_library()
+                            .mast_forest()
+                            .procedure_digests(),
+                    );
                 },
                 AccountComponentInterface::NetworkFungibleFaucet => {
                     component_proc_digests.extend(

@@ -35,6 +35,10 @@ pub enum AccountComponentInterface {
     /// [`TimedFungibleFaucet`][crate::account::faucets::TimedFungibleFaucet] module.
     TimedFungibleFaucet,
     /// Exposes procedures from the
+    /// [`TimedUnlimitedFungibleFaucet`][crate::account::faucets::TimedUnlimitedFungibleFaucet]
+    /// module.
+    TimedUnlimitedFungibleFaucet,
+    /// Exposes procedures from the
     /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
     NetworkFungibleFaucet,
     /// Exposes procedures from the
@@ -81,6 +85,9 @@ impl AccountComponentInterface {
                 "Unlimited Fungible Faucet".to_string()
             },
             AccountComponentInterface::TimedFungibleFaucet => "Timed Fungible Faucet".to_string(),
+            AccountComponentInterface::TimedUnlimitedFungibleFaucet => {
+                "Timed Unlimited Fungible Faucet".to_string()
+            },
             AccountComponentInterface::NetworkFungibleFaucet => {
                 "Network Fungible Faucet".to_string()
             },
@@ -317,6 +324,31 @@ impl AccountComponentInterface {
                         "
                         push.{amount}
                         call.::miden::standards::faucets::timed_fungible::distribute
+                        # => [note_idx, pad(25)]
+                        swapdw dropw dropw swap drop
+                        # => [note_idx, pad(16)]\n
+                        ",
+                        amount = asset.unwrap_fungible().amount()
+                    ));
+                },
+                AccountComponentInterface::TimedUnlimitedFungibleFaucet => {
+                    if partial_note.assets().num_assets() != 1 {
+                        return Err(AccountInterfaceError::FaucetNoteWithoutAsset);
+                    }
+
+                    let asset =
+                        partial_note.assets().iter().next().expect("note should contain an asset");
+
+                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                        return Err(AccountInterfaceError::IssuanceFaucetMismatch(
+                            asset.faucet_id_prefix(),
+                        ));
+                    }
+
+                    body.push_str(&format!(
+                        "
+                        push.{amount}
+                        call.::miden::standards::faucets::timed_unlimited_fungible::distribute
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n

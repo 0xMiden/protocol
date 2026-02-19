@@ -1,0 +1,85 @@
+# TIMED UNLIMITED SUPPLY FUNGIBLE FAUCET CONTRACT
+#
+# A fungible faucet with time-based distribution controls but no supply cap.
+# This faucet enforces a distribution period for minting, with max_supply set
+# to FUNGIBLE_ASSET_MAX_AMOUNT (effectively unlimited).
+# Burns are always allowed. Supply tracking is handled by faucets::distribute/burn.
+# =================================================================================================
+
+use miden::protocol::active_account
+use miden::standards::faucets
+use miden::standards::access::ownable
+use miden::standards::supply::supply_limits
+
+# CONSTANTS
+# =================================================================================================
+
+const TIMED_CONFIG_SLOT = word("miden::standards::faucets::timed_fungible::config")
+
+# OWNER MANAGEMENT
+# =================================================================================================
+
+pub use ownable::get_owner
+pub use ownable::transfer_ownership
+pub use ownable::renounce_ownership
+
+# PROCEDURES
+# =================================================================================================
+
+#! Distributes freshly minted fungible assets to the provided recipient by creating a note.
+#!
+#! This procedure checks the distribution period before delegating to the shared distribute
+#! procedure which handles supply tracking in the metadata slot.
+#! No supply cap is enforced — max_supply is set to FUNGIBLE_ASSET_MAX_AMOUNT at creation.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT]
+#! Outputs: [note_idx]
+#!
+#! Where:
+#! - amount is the amount to be minted and sent.
+#! - tag is the tag to be included in the note.
+#! - note_type is the type of the note that holds the asset.
+#! - RECIPIENT is the recipient of the asset, i.e.,
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
+#! - note_idx is the index of the created note.
+#!
+#! Panics if:
+#! - the transaction is being executed against an account that is not a fungible asset faucet.
+#! - the note sender is not the owner of this faucet.
+#! - the distribution period has ended.
+#!
+#! Invocation: exec
+pub proc distribute
+    exec.ownable::verify_owner
+
+    # Check distribution period hasn't ended
+    push.TIMED_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [distribution_end, 0, 0, 0, amount, tag, note_type, RECIPIENT]
+
+    exec.supply_limits::check_distribution_period
+    # => [0, 0, 0, amount, tag, note_type, RECIPIENT]
+
+    drop drop drop
+    # => [amount, tag, note_type, RECIPIENT]
+
+    exec.faucets::distribute
+    # => [note_idx]
+end
+
+#! Burns the fungible asset from the active note.
+#!
+#! Burns are always allowed — no time or ownership restrictions.
+#! Delegates to the shared burn procedure which handles supply tracking.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the procedure is not called from a note context.
+#! - the note does not contain exactly one asset.
+#! - the transaction is executed against an account which is not a fungible asset faucet.
+#! - the transaction is executed against a faucet which is not the origin of the specified asset.
+#! - the amount to burn exceeds the current token supply.
+#!
+#! Invocation: call
+pub use faucets::burn

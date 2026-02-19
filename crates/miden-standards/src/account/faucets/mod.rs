@@ -7,12 +7,16 @@ use thiserror::Error;
 mod basic_fungible;
 mod network_fungible;
 mod timed_fungible;
+mod timed_unlimited_fungible;
 mod token_metadata;
 mod unlimited_fungible;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use timed_fungible::{TimedFungibleFaucet, create_timed_fungible_faucet};
+pub use timed_unlimited_fungible::{
+    TimedUnlimitedFungibleFaucet, create_timed_unlimited_fungible_faucet,
+};
 pub use token_metadata::TokenMetadata;
 pub use unlimited_fungible::{UnlimitedFungibleFaucet, create_unlimited_fungible_faucet};
 
@@ -44,6 +48,10 @@ pub enum FungibleFaucetError {
         "account interface does not have the procedures of the unlimited fungible faucet component"
     )]
     MissingUnlimitedFungibleFaucetInterface,
+    #[error(
+        "account interface does not have the procedures of the timed unlimited fungible faucet component"
+    )]
+    MissingTimedUnlimitedFungibleFaucetInterface,
     #[error("failed to retrieve storage slot with name {slot_name}")]
     StorageLookupFailed {
         slot_name: StorageSlotName,
