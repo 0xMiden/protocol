@@ -3,7 +3,6 @@
 # See the `AuthEcdsaK256KeccakMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
-use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
 
@@ -11,6 +10,8 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # =================================================================================================
+
+const AUTH_UNAUTHORIZED_EVENT = event("miden::protocol::auth::unauthorized")
 
 # Storage Layout Constants
 #

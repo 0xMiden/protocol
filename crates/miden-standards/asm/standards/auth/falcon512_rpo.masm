@@ -1,7 +1,6 @@
 use miden::core::crypto::dsa::falcon512rpo
 use miden::core::crypto::hashes::rpo256
 use miden::protocol::active_account
-use miden::protocol::auth::AUTH_REQUEST_EVENT
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth
@@ -10,6 +9,7 @@ use miden::standards::auth
 # =================================================================================================
 
 # Local Memory Addresses for multisig operations
+const AUTH_REQUEST_EVENT = event("miden::protocol::auth::request")
 const NUM_OF_APPROVERS_LOC=0
 const PUB_KEY_SLOT_SUFFIX_LOC=4
 const PUB_KEY_SLOT_PREFIX_LOC=5
