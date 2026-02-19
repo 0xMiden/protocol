@@ -6,8 +6,5 @@
 # available on faucet accounts.
 
 pub use ::miden::agglayer::faucet::claim
-pub use ::miden::agglayer::faucet::get_origin_token_address
-pub use ::miden::agglayer::faucet::get_origin_network
-pub use ::miden::agglayer::faucet::get_scale
 pub use ::miden::agglayer::faucet::asset_to_origin_asset
 pub use ::miden::agglayer::faucet::burn
