@@ -64,8 +64,6 @@ pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::fr
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
 
-/// Error Message: "max supply exceeds maximum representable fungible asset amount"
-pub const ERR_SUPPLY_CAP_INVALID: MasmError = MasmError::from_static_str("max supply exceeds maximum representable fungible asset amount");
 /// Error Message: "token supply exceeds max supply"
 pub const ERR_SUPPLY_EXCEEDED: MasmError = MasmError::from_static_str("token supply exceeds max supply");
 

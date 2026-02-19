@@ -18,6 +18,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
+use super::token_metadata::TOKEN_SYMBOL_TYPE_ID;
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthScheme;
 use crate::account::auth::{
@@ -29,9 +30,6 @@ use crate::account::auth::{
 use crate::account::components::unlimited_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
-
-/// The schema type ID for token symbols.
-const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 
 // UNLIMITED FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================

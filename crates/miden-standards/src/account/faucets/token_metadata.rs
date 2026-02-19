@@ -8,6 +8,9 @@ use super::FungibleFaucetError;
 // CONSTANTS
 // ================================================================================================
 
+/// Schema type ID for the token symbol field in token metadata storage schema.
+pub const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
+
 static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::fungible_faucets::metadata")
         .expect("storage slot name should be valid")

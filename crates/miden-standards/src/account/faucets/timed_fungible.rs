@@ -19,6 +19,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, FieldElement, Word};
 
+use super::token_metadata::TOKEN_SYMBOL_TYPE_ID;
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthScheme;
 use crate::account::auth::{
@@ -31,14 +32,11 @@ use crate::account::components::timed_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
-/// The schema type ID for token symbols.
-const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
-
 // SLOT NAMES
 // ================================================================================================
 
 static SUPPLY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::supply::flexible_supply::config")
+    StorageSlotName::new("miden::standards::supply::supply_limits::config")
         .expect("storage slot name should be valid")
 });
 

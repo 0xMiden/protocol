@@ -1,6 +1,6 @@
 # TIMED SUPPLY FUNGIBLE FAUCET CONTRACT
 #
-# A fungible faucet with time-based supply management using the supply::flexible_supply component.
+# A fungible faucet with time-based supply management using the supply::supply_limits component.
 # This faucet enforces supply limits during a distribution period and optionally allows
 # burn-only operations after the period ends.
 # =================================================================================================
@@ -8,7 +8,7 @@
 use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::output_note
-use miden::standards::supply::flexible_supply
+use miden::standards::supply::supply_limits
 
 # CONSTANTS
 # =================================================================================================
@@ -25,7 +25,8 @@ const ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 no
 
 #! Distributes freshly minted fungible assets to the provided recipient by creating a note.
 #!
-#! This procedure uses the flexible_supply component to enforce time-based supply limits.
+#! This procedure uses the supply_limits component to enforce time-based supply limits
+#! and update the supply counter in a single call.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -41,7 +42,7 @@ const ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 no
 #! Panics if:
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
 #! - the distribution period has ended.
-#! - the supply constraints are violated (checked by flexible_supply component).
+#! - the supply constraints are violated.
 #!
 #! Invocation: exec
 @locals(8)
@@ -49,95 +50,63 @@ pub proc distribute
     # Store inputs to locals
     # ---------------------------------------------------------------------------------------------
     # Stack: [amount, tag, note_type, RECIPIENT]
-    
+
     loc_store.4
     # => [tag, note_type, RECIPIENT]
-    
+
     loc_store.5
     # => [note_type, RECIPIENT]
-    
+
     loc_store.6
     # => [RECIPIENT]
-    
-    # Store RECIPIENT at index 0 (aligned)
-    # loc_storew_be reads the word but does not pop it
+
     loc_storew_be.0
     # => [RECIPIENT]
-    
+
     dropw
     # => []
-    
-    # Check if distribution is allowed (time + supply constraints)
+
+    # Check supply constraints and update counter
     # ---------------------------------------------------------------------------------------------
-    
+
+    padw padw padw push.0.0.0
     loc_load.4
-    # => [amount]
-    
-    # Prepare stack for check_can_distribute: [amount, pad(14)]
-    padw padw padw push.0.0
-    # => [amount, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    
-    exec.flexible_supply::check_can_distribute
-    # => [max_mint_amount, token_supply, max_supply, pad(11)]
-    
-    # The check passed, clean up the stack
-    drop drop drop
-    repeat.12
-        drop
-    end
+    # => [amount, pad(15)]
+
+    exec.supply_limits::mint
+    # => [pad(16)]
+
+    dropw dropw dropw dropw
     # => []
-    
+
     # Mint the asset
     # ---------------------------------------------------------------------------------------------
-    
+
     loc_load.4
     exec.faucet::create_fungible_asset
     # => [ASSET]
-    
+
     exec.faucet::mint
     # => [ASSET]
-    
-    # Update supply using flexible_supply component
-    # ---------------------------------------------------------------------------------------------
-    
-    # Extract amount from ASSET for the update
-    # ASSET layout: [id_prefix, id_suffix, 0, amount] on stack
-    dup.3
-    # => [amount, ASSET]
-    
-    # Prepare for update_supply_after_mint: [amount, pad(15)]
-    padw padw padw push.0 push.0 push.0
-    # => [amount, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ASSET]
-    
-    exec.flexible_supply::update_supply_after_mint
-    # => [pad(16), ASSET]
-    
-    dropw dropw dropw dropw
-    # => [ASSET]
-    
+
     # Create the note with the asset
     # ---------------------------------------------------------------------------------------------
-    
-    # Restore RECIPIENT
+
     padw loc_loadw_be.0
     # => [RECIPIENT, ASSET]
-    
-    # Restore note_type
+
     loc_load.6
     # => [note_type, RECIPIENT, ASSET]
-    
-    # Restore tag
+
     loc_load.5
     # => [tag, note_type, RECIPIENT, ASSET]
-    
-    # Create the note
+
     exec.output_note::create
     # => [note_idx, ASSET]
-    
-    # Add asset to the note
+
     dup movdn.5 movdn.5
     # => [ASSET, note_idx, note_idx]
-    
+
     exec.output_note::add_asset
     # => [note_idx]
 end
@@ -145,7 +114,7 @@ end
 #! Burns the fungible asset from the active note.
 #!
 #! Burning the asset removes it from circulation and reduces the token_supply.
-#! This procedure uses the flexible_supply component which may enforce time-based
+#! This procedure uses the supply_limits component which may enforce time-based
 #! restrictions (e.g., burn-only mode after distribution period).
 #!
 #! Inputs:  [pad(16)]
@@ -160,69 +129,33 @@ end
 #!
 #! Invocation: call
 pub proc burn
-    # Get the asset from the note.
+    # Get the asset from the note
     # ---------------------------------------------------------------------------------------------
-    
-    # this will fail if not called from a note context.
+
     push.0 exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
-    
-    # Verify we have exactly one asset
+
     assert.err=ERR_TIMED_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
-    
+
     mem_loadw_be
     # => [ASSET, pad(16)]
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], pad(16)]
-    
-    # Duplicate amount and ASSET for the check
-    dup.3 dup.3
-    # => [amount, amount, ASSET, pad(16)]
-    # Wait, dup.3 gets amount. dup.3 again gets amount? No, dup.3 of [amount, A, B, C] is B.
-    # Stack: [0, 1, 2, 3].
-    # dup.3 -> index 3.
-    # [faucet_id_prefix, faucet_id_suffix, 0, amount].
-    # dup.3 returns amount.
-    
-    # We need to preserve ASSET on stack bottom for later use.
-    # Stack after mem_loadw_be: [ASSET, pad(16)]
-    # ASSET = [prefix, suffix, 0, amount]
-    
-    dup.3
-    # => [amount, ASSET, pad(16)]
-    
-    # Check if burn is allowed (time constraints)
+
+    # Save amount for supply update, then burn the asset
     # ---------------------------------------------------------------------------------------------
-    
-    # Prepare stack for check_can_burn: [amount, pad(15)]
-    padw padw padw push.0 push.0 push.0
-    # => [amount, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ASSET, pad(16)]
-    
-    exec.flexible_supply::check_can_burn
-    # => [pad(16), ASSET, pad(16)]
-    
-    # Supply module returns pad(16)
-    dropw dropw dropw dropw
-    # => [ASSET, pad(16)]
-    
-    # Burn the asset from the transaction vault
-    # ---------------------------------------------------------------------------------------------
-    
-    # ASSET layout: [id_prefix, id_suffix, 0, amount] on stack
+
     dup.3 movdn.4
     # => [ASSET, amount, pad(16)]
-    
-    # burn the asset
+
     exec.faucet::burn dropw
     # => [amount, pad(16)]
-    
-    # Update supply using flexible_supply component
+
+    # Check burn constraints and update supply counter
     # ---------------------------------------------------------------------------------------------
-    
-    # Prepare stack for update_supply_after_burn: [amount, pad(15)]
+
     swap drop
     # => [amount, pad(15)]
-    
-    exec.flexible_supply::update_supply_after_burn
+
+    exec.supply_limits::burn
     # => [pad(16)]
 end

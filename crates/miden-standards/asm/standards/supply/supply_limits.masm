@@ -1,0 +1,188 @@
+# miden::standards::supply::supply_limits
+#
+# Unified supply management for faucets.
+# Enforces supply caps with optional time-based distribution windows
+# and burn restrictions.
+#
+# Storage layout: [token_supply, max_supply, distribution_end_block, burn_only_flag]
+#
+# For fixed-supply faucets: set distribution_end_block=0 and burn_only_flag=0.
+# For timed faucets: set distribution_end_block and burn_only_flag as needed.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+
+# CONSTANTS
+# ================================================================================================
+
+# The slot where the supply limits configuration is stored.
+# Layout: [token_supply, max_supply, distribution_end_block, burn_only_flag]
+const SUPPLY_LIMITS_SLOT = word("miden::standards::supply::supply_limits::config")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SUPPLY_EXCEEDED = "token supply exceeds max supply"
+const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "token_supply plus the amount passed to distribute would exceed the maximum supply"
+const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
+const ERR_DISTRIBUTION_PERIOD_ENDED = "distribution period has ended"
+const ERR_BURN_NOT_ALLOWED = "burn operations are not allowed during distribution period"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the current supply state from storage.
+#!
+#! Inputs:  []
+#! Outputs: [token_supply, max_supply, distribution_end_block, burn_only_flag]
+proc get_supply_state
+    push.SUPPLY_LIMITS_SLOT[0..2] exec.active_account::get_item
+    # => [burn_only_flag, distribution_end_block, max_supply, token_supply]
+
+    # Rearrange to [token_supply, max_supply, distribution_end_block, burn_only_flag]
+    movdn.3 movdn.2 swap
+end
+
+#! Gets the current block height.
+#!
+#! Inputs:  []
+#! Outputs: [block_height]
+proc get_current_block_height
+    exec.tx::get_block_number
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Checks supply constraints and updates the supply counter after minting.
+#!
+#! This merges the check and update into a single procedure to avoid
+#! double storage reads.
+#!
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the distribution period has ended (when distribution_end_block > 0).
+#! - token_supply exceeds max_supply (invariant check).
+#! - amount would exceed remaining mintable supply.
+pub proc mint
+    exec.get_supply_state
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Check if distribution period has ended (if end > 0)
+    dup.2
+    if.true
+        exec.get_current_block_height
+        dup.3 # end block
+        lt assert.err=ERR_DISTRIBUTION_PERIOD_ENDED
+    end
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Assert token <= max (invariant)
+    dup dup.2 lte assert.err=ERR_SUPPLY_EXCEEDED
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Calculate max_mint = max - token
+    dup.1 dup.1 sub
+    # => [max_mint, token, max, end, burn_only, amount, pad(15)]
+
+    # Assert amount <= max_mint
+    dup dup.6 swap lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    # => [max_mint, token, max, end, burn_only, amount, pad(15)]
+
+    # Drop max_mint, no longer needed
+    drop
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Calculate new_token = token + amount
+    dup dup.5 add
+    # => [new_token, token, max, end, burn_only, amount, pad(15)]
+
+    # Remove old token
+    swap drop
+    # => [new_token, max, end, burn_only, amount, pad(15)]
+
+    # Reorder to [burn_only, end, max, new_token] for storage write
+    movdn.3
+    # => [max, end, burn_only, new_token, amount, pad(15)]
+    movup.2 # burn_only
+    movup.2 # end
+    swap
+    # => [burn_only, end, max, new_token, amount, pad(15)]
+
+    push.SUPPLY_LIMITS_SLOT[0..2]
+    movdn.5 movdn.5
+    # => [burn_only, end, max, new_token, pre, suf, amount, pad(15)]
+
+    exec.native_account::set_item
+    # => [OLD(4), amount, pad(15)]
+
+    dropw drop repeat.15 drop end
+    padw padw padw padw
+end
+
+#! Checks burn constraints and updates the supply counter after burning.
+#!
+#! This merges the check and update into a single procedure to avoid
+#! double storage reads.
+#!
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - burn_only_flag is set and distribution period has not ended yet.
+#! - amount exceeds the current token_supply.
+pub proc burn
+    exec.get_supply_state
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # If burn_only_flag is 1, burns are only allowed AFTER the distribution period
+    dup.3
+    if.true
+        dup.2 # end
+        dup push.0 neq assert.err=ERR_BURN_NOT_ALLOWED # end block must be set
+        exec.get_current_block_height
+        swap gte assert.err=ERR_BURN_NOT_ALLOWED
+    end
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Assert amount <= token_supply
+    dup.4 dup.1 lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    # => [token, max, end, burn_only, amount, pad(15)]
+
+    # Calculate new_token = token - amount
+    dup dup.5 sub
+    # => [new_token, token, max, end, burn_only, amount, pad(15)]
+
+    # Remove old token
+    swap drop
+    # => [new_token, max, end, burn_only, amount, pad(15)]
+
+    # Reorder to [burn_only, end, max, new_token] for storage write
+    movdn.3
+    # => [max, end, burn_only, new_token, amount, pad(15)]
+    movup.2 # burn_only
+    movup.2 # end
+    swap
+    # => [burn_only, end, max, new_token, amount, pad(15)]
+
+    push.SUPPLY_LIMITS_SLOT[0..2]
+    movdn.5 movdn.5
+
+    exec.native_account::set_item
+    # => [OLD(4), amount, pad(15)]
+
+    dropw drop repeat.15 drop end
+    padw padw padw padw
+end
+
+#! Returns the current supply state.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [token_supply, max_supply, distribution_end_block, burn_only_flag, pad(12)]
+pub proc get_supply
+    exec.get_supply_state
+    # => [token, max, end, burn_only, pad(12)]
+end
