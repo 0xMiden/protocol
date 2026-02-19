@@ -5,15 +5,9 @@
 # Burns are always allowed. Supply tracking is handled by faucets::distribute/burn.
 # =================================================================================================
 
-use miden::protocol::active_account
 use miden::standards::faucets
 use miden::standards::access::ownable
 use miden::standards::supply::supply_limits
-
-# CONSTANTS
-# =================================================================================================
-
-const TIMED_CONFIG_SLOT = word("miden::standards::faucets::timed_fungible::config")
 
 # OWNER MANAGEMENT
 # =================================================================================================
@@ -50,14 +44,7 @@ pub use ownable::renounce_ownership
 pub proc distribute
     exec.ownable::verify_owner
 
-    # Check distribution period hasn't ended
-    push.TIMED_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [distribution_end, 0, 0, 0, amount, tag, note_type, RECIPIENT]
-
     exec.supply_limits::check_distribution_period
-    # => [0, 0, 0, amount, tag, note_type, RECIPIENT]
-
-    drop drop drop
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute

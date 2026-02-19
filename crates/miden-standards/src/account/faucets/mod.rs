@@ -15,7 +15,8 @@ pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use timed_fungible::{TimedFungibleFaucet, create_timed_fungible_faucet};
 pub use timed_unlimited_fungible::{
-    TimedUnlimitedFungibleFaucet, create_timed_unlimited_fungible_faucet,
+    TimedUnlimitedFungibleFaucet,
+    create_timed_unlimited_fungible_faucet,
 };
 pub use token_metadata::TokenMetadata;
 pub use unlimited_fungible::{UnlimitedFungibleFaucet, create_unlimited_fungible_faucet};

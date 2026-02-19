@@ -3,15 +3,10 @@ use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
-use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::supply::supply_limits
 
 # ERRORS
 # =================================================================================================
-
-const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
-
-const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT="max supply exceeds maximum representable fungible asset amount"
 
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
@@ -47,74 +42,44 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #! Invocation: exec
 @locals(4)
 pub proc distribute
-    # Get the configured max supply and the token supply (= current supply).
+    # Assert that minting does not violate any supply constraints.
+    # check_supply reads the metadata slot internally and validates:
+    #   1) token_supply <= max_supply
+    #   2) max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
+    #   3) token_supply + amount <= max_supply
+    # ---------------------------------------------------------------------------------------------
+
+    exec.supply_limits::check_supply
+    # => [amount, tag, note_type, RECIPIENT]
+
+    # Read metadata to compute and store the updated token_supply.
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
     # => [token_symbol, decimals, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
-    # store a copy of the current slot content for the token_supply update later
     loc_storew_be.METADATA_SLOT_LOCAL
-    drop drop
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
-
-    # Assert that minting does not violate any supply constraints.
-    #
-    # To make sure we cannot mint more than intended, we need to check:
-    # 1) token_supply <= max_supply, i.e. the subtraction would not wrap around
-    # 2) max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT (protocol limit)
-    # 3) token_supply + amount <= max_supply (delegated to supply_limits::check_supply)
-    #
-    # Check 3) also transitively ensures token_supply + amount <= FUNGIBLE_ASSET_MAX_AMOUNT
-    # because we already asserted max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT in check 2).
-    # ---------------------------------------------------------------------------------------------
-
-    dup.1 dup.1
-    # => [max_supply, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
-
-    # assert that token_supply <= max_supply
-    lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
-
-    # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
-    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
-    assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
-    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
-
-    # assert token_supply + amount <= max_supply via supply_limits::check_supply
-    # Prepare args: [amount, token_supply, max_supply, ...] while keeping originals below
-    dup.2 dup.2 swap
-    # => [amount, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
-
-    exec.supply_limits::check_supply
+    drop drop drop
     # => [token_supply, amount, tag, note_type, RECIPIENT]
-
-    # Compute the new token_supply and update in storage.
-    # ---------------------------------------------------------------------------------------------
 
     dup.1 add
     # => [new_token_supply, amount, tag, note_type, RECIPIENT]
 
     padw loc_loadw_be.METADATA_SLOT_LOCAL
-    # => [[token_symbol, decimals, max_supply, token_supply], new_token_supply, amount, tag, note_type, RECIPIENT]
+    # => [token_symbol, decimals, max_supply, old_token_supply, new_token_supply, amount, tag, note_type, RECIPIENT]
 
     movup.3 drop
-    # => [[token_symbol, decimals, max_supply, new_token_supply], amount, tag, note_type, RECIPIENT]
+    # => [token_symbol, decimals, max_supply, new_token_supply, amount, tag, note_type, RECIPIENT]
 
-    # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [amount, tag, note_type, RECIPIENT]
 
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
-    # creating the asset
     exec.faucet::create_fungible_asset
     # => [ASSET, tag, note_type, RECIPIENT]
 
-    # mint the asset; this is needed to satisfy asset preservation logic.
-    # this ensures that the asset's faucet ID matches the native account's ID.
-    # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
     # => [ASSET, tag, note_type, RECIPIENT]
 
@@ -124,11 +89,9 @@ pub proc distribute
     # Create a new note with the asset.
     # ---------------------------------------------------------------------------------------------
 
-    # create a note
     exec.output_note::create
     # => [note_idx, ASSET]
 
-    # load the ASSET and add it to the note
     dup movdn.5 movdn.5
     # => [ASSET, note_idx, note_idx]
 
@@ -182,17 +145,17 @@ pub proc burn
     exec.faucet::burn dropw
     # => [amount, pad(16)]
 
+    # Assert that the burn does not exceed the current token supply.
+    # check_burn reads the metadata slot internally.
+    # ---------------------------------------------------------------------------------------------
+
+    exec.supply_limits::check_burn
+    # => [amount, pad(16)]
+
     # Subtract burnt amount from current token_supply in storage.
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
-    # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
-
-    dup.4 dup.4
-    # => [token_supply, amount, token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
-
-    # assert that amount <= token_supply
-    exec.supply_limits::check_burn
     # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
 
     movup.3 movup.4
@@ -205,7 +168,6 @@ pub proc burn
     movdn.3
     # => [token_symbol, decimals, max_supply, new_token_supply, pad(16)]
 
-    # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

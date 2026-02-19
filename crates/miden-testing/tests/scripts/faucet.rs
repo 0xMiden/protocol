@@ -35,7 +35,7 @@ use miden_standards::account::faucets::{
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
-    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
@@ -193,7 +193,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
         .execute()
         .await;
 
-    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
+    assert_transaction_executor_error!(tx, ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
     Ok(())
 }
 

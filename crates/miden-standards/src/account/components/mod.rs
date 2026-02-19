@@ -248,9 +248,7 @@ impl StandardAccountComponent {
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::UnlimitedFungibleFaucet => UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::TimedFungibleFaucet => TIMED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
-            Self::TimedUnlimitedFungibleFaucet => {
-                TIMED_UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref()
-            },
+            Self::TimedUnlimitedFungibleFaucet => TIMED_UNLIMITED_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::AuthEcdsaK256Keccak => ECDSA_K256_KECCAK_LIBRARY.as_ref(),
             Self::AuthEcdsaK256KeccakAcl => ECDSA_K256_KECCAK_ACL_LIBRARY.as_ref(),
@@ -304,10 +302,8 @@ impl StandardAccountComponent {
                 Self::TimedFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::TimedFungibleFaucet)
                 },
-                Self::TimedUnlimitedFungibleFaucet => {
-                    component_interface_vec
-                        .push(AccountComponentInterface::TimedUnlimitedFungibleFaucet)
-                },
+                Self::TimedUnlimitedFungibleFaucet => component_interface_vec
+                    .push(AccountComponentInterface::TimedUnlimitedFungibleFaucet),
                 Self::NetworkFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
                 },

@@ -162,9 +162,7 @@ impl TimedUnlimitedFungibleFaucet {
         if !interface
             .components()
             .contains(&AccountComponentInterface::TimedUnlimitedFungibleFaucet)
-            && !interface
-                .components()
-                .contains(&AccountComponentInterface::TimedFungibleFaucet)
+            && !interface.components().contains(&AccountComponentInterface::TimedFungibleFaucet)
         {
             return Err(FungibleFaucetError::MissingTimedUnlimitedFungibleFaucetInterface);
         }
@@ -578,10 +576,7 @@ mod tests {
         let err = TimedUnlimitedFungibleFaucet::try_from(invalid_faucet_account)
             .err()
             .expect("timed unlimited fungible faucet creation should fail");
-        assert_matches!(
-            err,
-            FungibleFaucetError::MissingTimedUnlimitedFungibleFaucetInterface
-        );
+        assert_matches!(err, FungibleFaucetError::MissingTimedUnlimitedFungibleFaucetInterface);
     }
 
     #[test]

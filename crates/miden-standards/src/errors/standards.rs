@@ -21,15 +21,11 @@ pub const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_
 /// Error Message: "distribution period has ended"
 pub const ERR_DISTRIBUTION_PERIOD_ENDED: MasmError = MasmError::from_static_str("distribution period has ended");
 
-/// Error Message: "token_supply plus the amount passed to distribute would exceed the maximum supply"
-pub const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token_supply plus the amount passed to distribute would exceed the maximum supply");
-/// Error Message: "max supply exceeds maximum representable fungible asset amount"
-pub const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT: MasmError = MasmError::from_static_str("max supply exceeds maximum representable fungible asset amount");
-/// Error Message: "token supply exceeds max supply"
-pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
-
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
+
+/// Error Message: "max supply exceeds maximum representable fungible asset amount"
+pub const ERR_MAX_SUPPLY_EXCEEDS_MAX_AMOUNT: MasmError = MasmError::from_static_str("max supply exceeds maximum representable fungible asset amount");
 
 /// Error Message: "MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes");
@@ -63,6 +59,9 @@ pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sen
 pub const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("SWAP script expects exactly 16 note storage items");
 /// Error Message: "SWAP script requires exactly 1 note asset"
 pub const ERR_SWAP_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("SWAP script requires exactly 1 note asset");
+
+/// Error Message: "token supply exceeds max supply"
+pub const ERR_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
 
 /// Error Message: "failed to approve multisig transaction as it was already executed"
 pub const ERR_TX_ALREADY_EXECUTED: MasmError = MasmError::from_static_str("failed to approve multisig transaction as it was already executed");

@@ -112,9 +112,7 @@ impl AccountInterfaceExt for AccountInterface {
                 },
                 AccountComponentInterface::TimedUnlimitedFungibleFaucet => {
                     component_proc_digests.extend(
-                        timed_unlimited_fungible_faucet_library()
-                            .mast_forest()
-                            .procedure_digests(),
+                        timed_unlimited_fungible_faucet_library().mast_forest().procedure_digests(),
                     );
                 },
                 AccountComponentInterface::NetworkFungibleFaucet => {
