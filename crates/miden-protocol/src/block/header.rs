@@ -243,10 +243,10 @@ impl BlockHeader {
         elements.extend(validator_key.to_commitment());
         elements.extend([block_num.into(), version.into(), timestamp.into(), ZERO]);
         elements.extend([
+            ZERO,
+            fee_parameters.verification_base_fee().into(),
             fee_parameters.native_asset_id().suffix(),
             fee_parameters.native_asset_id().prefix().as_felt(),
-            fee_parameters.verification_base_fee().into(),
-            ZERO,
         ]);
         elements.extend([ZERO, ZERO, ZERO, ZERO]);
         Hasher::hash_elements(&elements)
