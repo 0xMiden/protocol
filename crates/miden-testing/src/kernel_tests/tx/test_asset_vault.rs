@@ -621,6 +621,85 @@ async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::R
     Ok(())
 }
 
+/// Tests that splitting a fungible asset returns the correct remaining amount.
+#[rstest::rstest]
+#[case::different_amounts(FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT), FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT - 1))]
+#[case::same_amounts(
+    FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT),
+    FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT)
+)]
+#[tokio::test]
+async fn test_split_fungible_asset_success(
+    #[case] asset0: Asset,
+    #[case] asset1: Asset,
+) -> anyhow::Result<()> {
+    let split_asset = asset0.unwrap_fungible().sub(asset1.unwrap_fungible())?;
+
+    let code = format!(
+        "
+        use $kernel::fungible_asset
+
+        begin
+            push.{ASSET0}
+            push.{ASSET1}
+            exec.fungible_asset::split
+            # => [NEW_ASSET_VALUE_0]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+        ASSET0 = asset0.to_value_word(),
+        ASSET1 = asset1.to_value_word(),
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    assert_eq!(exec_output.get_stack_word_be(0), split_asset.to_value_word());
+
+    Ok(())
+}
+
+/// Tests that splitting a fungible asset fails when the amount to withdraw exceeds the balance.
+#[tokio::test]
+async fn test_split_fungible_asset_fails_when_amount_exceeds_balance() -> anyhow::Result<()> {
+    let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
+    let asset1 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT + 1);
+
+    // Sanity check that the Rust implementation errors.
+    assert_matches!(
+        asset0.unwrap_fungible().sub(asset1.unwrap_fungible()).unwrap_err(),
+        AssetError::FungibleAssetAmountNotSufficient { .. }
+    );
+
+    let code = format!(
+        "
+        use $kernel::fungible_asset
+
+        begin
+            push.{ASSET0}
+            push.{ASSET1}
+            exec.fungible_asset::split
+            # => [SPLIT_ASSET]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+        ASSET0 = asset0.to_value_word(),
+        ASSET1 = asset1.to_value_word(),
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await;
+
+    assert_execution_error!(
+        exec_output,
+        ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    );
+
+    Ok(())
+}
+
 /// Tests that merging two different fungible assets fails.
 #[tokio::test]
 async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {

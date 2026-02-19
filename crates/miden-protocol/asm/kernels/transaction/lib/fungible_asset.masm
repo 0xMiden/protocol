@@ -24,15 +24,14 @@ const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO="fungible 
 
 const ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO="fungible asset key asset ID prefix and suffix must be zero"
 
+const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
+
 # PROCEDURES
 # =================================================================================================
 
 #! Merges two fungible assets.
 #!
 #! WARNING: This procedure assumes the assets have been validated.
-#!
-#! NOTE: we do not assert that faucet IDs match since this asset layout will soon no longer contain
-#! them anyway
 #!
 #! Inputs:  [ASSET_VALUE_0, ASSET_VALUE_1]
 #! Outputs: [MERGED_ASSET_VALUE]
@@ -44,25 +43,61 @@ const ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO="fungible asset key asset ID 
 #! Panics if:
 #! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
 pub proc merge
-    # extract amount from asset 1
-    dup.7
-    # => [amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+    # extract amounts from assets
+    exec.get_amount movdn.4 exec.get_amount
+    # => [amount_1, amount_0]
 
-    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - current_amount
-    # this is the amount that can at most be added to still have a valid asset
-    push.FUNGIBLE_ASSET_MAX_AMOUNT dup.5 sub
-    # => [max_add_amount, amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - amount_0
+    # this is the amount that can at most be added to amount_0 still have a valid asset
+    dup push.FUNGIBLE_ASSET_MAX_AMOUNT dup.3 sub
+    # => [max_add_amount, amount_1, amount_1, amount_0]
 
     # assert it is safe to add the amounts together, i.e. amount_1 <= max_add_amount
     lte assert.err=ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED
-    # => [ASSET_VALUE_0, ASSET_VALUE_1]
-
-    exec.get_amount
-    # => [current_amount, ASSET_VALUE_1]
+    # => [amount_1, amount_0]
 
     # add the amounts
-    movup.4 add movdn.3
+    add
+    # => [merged_amount]
+
+    # reconstruct the asset value
+    push.0.0.0
     # => [MERGED_ASSET_VALUE]
+end
+
+#! Computes ASSET_VALUE_0 - ASSET_VALUE_1 and returns the result.
+#!
+#! For instance, split(40, 100) returns 60. The operand order matches the `sub` instruction.
+#!
+#! WARNING: This procedure assumes the assets have been validated.
+#!
+#! Inputs:  [ASSET_VALUE_1, ASSET_VALUE_0]
+#! Outputs: [NEW_ASSET_VALUE_0]
+#!
+#! Where:
+#! - ASSET_VALUE_{0, 1} are the assets to split.
+#! - NEW_ASSET_VALUE_0 is the result of the split computation.
+#!
+#! Panics if:
+#! - ASSET_VALUE_0 does not contain at least the amount of ASSET_VALUE_1.
+pub proc split
+    # extract amounts from assets
+    exec.get_amount movdn.4 exec.get_amount swap
+    # => [amount_1, amount_0]
+
+    # assert amount_1 <= amount_0 so we can safely subtract
+    dup dup.2
+    # => [amount_0, amount_1, amount_1, amount_0]
+
+    lte assert.err=ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    # => [amount_1, amount_0]
+
+    sub
+    # => [new_amount]
+
+    # reconstruct the asset value
+    push.0.0.0
+    # => [NEW_ASSET_VALUE]
 end
 
 #! Extracts the amount of a fungible asset.
