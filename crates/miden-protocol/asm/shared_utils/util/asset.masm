@@ -26,7 +26,7 @@ pub const ASSET_VALUE_MEMORY_OFFSET = 4
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
 pub proc get_balance_from_fungible_asset
-    drop drop drop
+    swap.3 drop drop drop
     # => [balance]
 end
 
@@ -34,21 +34,24 @@ end
 #!
 #! WARNING: Does not validate its inputs.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
-#! - ASSET_KEY is the vault key of the created fungible asset.
+#! - ASSET_KEY is the vault key of the created fungible asset
 #! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Invocation: exec
 pub proc create_fungible_asset_unchecked
     # create the key and value
-    repeat.5 push.0 movdn.2 end
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, amount]]
+    repeat.3 push.0 movdn.3 end
+    # => [faucet_id_suffix, faucet_id_prefix, [amount, 0, 0, 0]]
+
+    push.0.0
+    # => [[0, 0, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE]
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
@@ -56,11 +59,11 @@ end
 #!
 #! WARNING: Does not validate its inputs.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, DATA_HASH]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - DATA_HASH is the data hash of the non-fungible asset to create.
 #! - ASSET_KEY is the vault key of the created non-fungible asset.
@@ -70,7 +73,7 @@ end
 pub proc create_non_fungible_asset_unchecked
     # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key
     # word
-    dup.5 movdn.2 dup.5 movdn.2
-    # => [[faucet_id_prefix, faucet_id_suffix, hash1, hash0], DATA_HASH]
+    dup.3 dup.3
+    # => [[hash0, hash1, faucet_id_suffix, faucet_id_prefix], DATA_HASH]
     # => [ASSET_KEY, ASSET_VALUE]
 end

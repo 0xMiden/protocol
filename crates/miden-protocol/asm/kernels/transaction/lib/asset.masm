@@ -28,11 +28,11 @@ pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
 #! - ASSET_VALUE is the 4-element word representing the asset value.
 pub proc load_asset_key_and_value
     # load asset value
-    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
     # => [ASSET_VALUE, ptr]
 
     # load asset key
-    padw movup.8 mem_loadw_be
+    padw movup.8 mem_loadw_le
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
@@ -45,9 +45,9 @@ end
 #! - ASSET_KEY is the vault key of the asset to check.
 #! - is_fungible_asset is a boolean indicating whether the asset is fungible.
 pub proc is_fungible_asset
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup exec.account_id::is_fungible_faucet
+    dup.3 exec.account_id::is_fungible_faucet
     # => [is_fungible_asset, ASSET_KEY]
 end
 
@@ -86,9 +86,9 @@ end
 #! - ASSET_KEY is the vault key of the asset to check.
 #! - is_non_fungible_asset is a boolean indicating whether the asset is non-fungible.
 pub proc is_non_fungible_asset
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup exec.account_id::is_non_fungible_faucet
+    dup.3 exec.account_id::is_non_fungible_faucet
     # => [is_non_fungible_asset, ASSET_KEY]
 end
 
@@ -126,29 +126,29 @@ end
 #! WARNING: The faucet ID is not validated.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 #!
 #! Where:
 #! - faucet_id is the account ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the faucet ID.
 proc get_vault_key_faucet_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+    dup.3 dup.3
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 end
 
 #! Returns the asset ID from an asset vault key.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+#! Outputs: [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 #!
 #! Where:
 #! - asset_id is the asset ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the asset ID.
 proc get_vault_key_asset_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup.3 dup.3
-    # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+    dup.1 dup.1
+    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 end

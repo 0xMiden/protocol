@@ -51,11 +51,11 @@ const ACCOUNT_ID_STORAGE_MODE_INVALID_U32=0xc0 # 0b1100_0000
 
 #! Returns a boolean indicating whether the account is a fungible faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_fungible_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_fungible_faucet is a boolean indicating whether the account is a fungible faucet.
 pub proc is_fungible_faucet
     exec.id_type eq.FUNGIBLE_FAUCET_ACCOUNT
@@ -64,11 +64,11 @@ end
 
 #! Returns a boolean indicating whether the account is a non-fungible faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_non_fungible_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_non_fungible_faucet is a boolean indicating whether the account is a non-fungible faucet.
 pub proc is_non_fungible_faucet
     exec.id_type eq.NON_FUNGIBLE_FAUCET_ACCOUNT
@@ -77,30 +77,30 @@ end
 
 #! Returns a boolean indicating whether the given account_ids are equal.
 #!
-#! Inputs:  [acct_id_prefix, acct_id_suffix, other_acct_id_prefix, other_acct_id_suffix]
+#! Inputs:  [account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]
 #! Outputs: [is_id_equal]
 #!
 #! Where:
-#! - acct_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
-#! - other_acct_id_{prefix,suffix} are the prefix and suffix felts of the other account ID to
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
+#! - other_account_id_{suffix,prefix} are the suffix and prefix felts of the other account ID to
 #!   compare against.
 #! - is_id_equal is a boolean indicating whether the account IDs are equal.
 pub proc is_equal
     movup.2 eq
-    # => [is_prefix_equal, acct_id_suffix, other_acct_id_suffix]
+    # => [is_suffix_equal, account_id_prefix, other_account_id_prefix]
     movdn.2 eq
-    # => [is_suffix_equal, is_prefix_equal]
+    # => [is_prefix_equal, is_suffix_equal]
     and
     # => [is_id_equal]
 end
 
 #! Returns a boolean indicating whether the account is a faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_faucet is a boolean indicating whether the account is a faucet.
 pub proc is_faucet
     u32split swap drop u32and.FAUCET_ACCOUNT neq.0
@@ -109,11 +109,11 @@ end
 
 #! Returns a boolean indicating whether the account is a regular updatable account.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_updatable_account]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_updatable_account is a boolean indicating whether the account is a regular updatable
 #!   account.
 pub proc is_updatable_account
@@ -123,11 +123,11 @@ end
 
 #! Returns a boolean indicating whether the account is a regular immutable account.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_immutable_account]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_immutable_account is a boolean indicating whether the account is a regular immutable
 #!   account.
 pub proc is_immutable_account
@@ -138,11 +138,11 @@ end
 #! Validates an account ID. Note that this does not validate anything about the account type,
 #! since any 2-bit pattern is a valid account type.
 #!
-#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Where:
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
 #! - account_id_prefix does not contain version zero.
@@ -153,7 +153,7 @@ pub proc validate
     # Validate version in prefix. For now only version 0 is supported.
     # ---------------------------------------------------------------------------------------------
 
-    dup exec.id_version
+    swap dup exec.id_version
     # => [id_version, account_id_prefix, account_id_suffix]
     assertz.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
     # => [account_id_prefix, account_id_suffix]
@@ -243,13 +243,13 @@ end
 #! - FUNGIBLE_FAUCET_ACCOUNT
 #! - NON_FUNGIBLE_FAUCET_ACCOUNT
 #!
-#! Inputs:  [acct_id_prefix]
-#! Outputs: [acct_type]
+#! Inputs:  [account_id_prefix]
+#! Outputs: [account_type]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
-#! - acct_type is the account type.
+#! - account_id_prefix is the prefix of the account ID.
+#! - account_type is the account type.
 proc id_type
     u32split swap drop u32and.ACCOUNT_ID_TYPE_MASK_U32
-    # => [acct_type]
+    # => [account_type]
 end
