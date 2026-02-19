@@ -1,6 +1,6 @@
 use miden::core::math::u64
 use miden::core::word
-use miden::agglayer::utils
+use miden::agglayer::bridge::utils
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS

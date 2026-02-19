@@ -23,7 +23,7 @@ fn assemble_process_global_index_program(global_index: GlobalIndex) -> Program {
     let script_code = format!(
         r#"
         use miden::core::sys
-        use miden::agglayer::bridge_in
+        use miden::agglayer::bridge::bridge_in
 
         begin
             push.{g7}.{g6}.{g5}.{g4}.{g3}.{g2}.{g1}.{g0}

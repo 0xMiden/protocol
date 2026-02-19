@@ -1,4 +1,4 @@
-use miden::agglayer::bridge_in
+use miden::agglayer::bridge::bridge_in
 use miden::protocol::active_note
 use miden::protocol::active_account
 use miden::protocol::account_id

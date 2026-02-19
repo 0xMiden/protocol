@@ -162,7 +162,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::crypto_utils
+                use miden::agglayer::bridge::crypto_utils
 
                 begin
                     # Initialize memory with exit roots
@@ -245,7 +245,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::crypto_utils
 
             begin
                 # Initialize memory with exit roots

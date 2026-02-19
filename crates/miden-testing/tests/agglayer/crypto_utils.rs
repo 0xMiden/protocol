@@ -69,7 +69,7 @@ fn merkle_proof_verification_code(
 
     format!(
         r#"
-        use miden::agglayer::crypto_utils
+        use miden::agglayer::bridge::crypto_utils
         use miden::core::word
 
         begin
@@ -176,7 +176,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::crypto_utils
 
             const LEAF_DATA_START_PTR = 0
             const LEAF_DATA_NUM_WORDS = 8
@@ -243,7 +243,7 @@ async fn get_leaf_value() -> anyhow::Result<()> {
         r#"
             use miden::core::mem
             use miden::core::sys
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::crypto_utils
 
             begin
                 push.{key}

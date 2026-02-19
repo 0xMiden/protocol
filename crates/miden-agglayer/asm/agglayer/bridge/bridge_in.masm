@@ -1,5 +1,5 @@
-use miden::agglayer::crypto_utils
-use miden::agglayer::utils
+use miden::agglayer::bridge::crypto_utils
+use miden::agglayer::bridge::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
 use miden::core::mem

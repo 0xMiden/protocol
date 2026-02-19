@@ -1,8 +1,8 @@
-use miden::agglayer::bridge_in
+use miden::agglayer::bridge::bridge_in
 use miden::core::sys
-use miden::agglayer::utils
-use miden::agglayer::asset_conversion
-use miden::agglayer::eth_address
+use miden::agglayer::bridge::utils
+use miden::agglayer::bridge::asset_conversion
+use miden::agglayer::bridge::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets

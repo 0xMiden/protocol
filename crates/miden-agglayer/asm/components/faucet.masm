@@ -1,0 +1,13 @@
+# The MASM code of the AggLayer Faucet Account Component.
+#
+# This is a thin wrapper that re-exports faucet-related procedures from the
+# agglayer library. Only procedures relevant to faucet accounts are exposed
+# here, so that bridge-specific procedures (like `bridge_out`) are not
+# available on faucet accounts.
+
+pub use ::miden::agglayer::faucet::claim
+pub use ::miden::agglayer::faucet::get_origin_token_address
+pub use ::miden::agglayer::faucet::get_origin_network
+pub use ::miden::agglayer::faucet::get_scale
+pub use ::miden::agglayer::faucet::asset_to_origin_asset
+pub use ::miden::agglayer::faucet::burn

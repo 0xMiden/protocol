@@ -2,7 +2,7 @@ use std::env;
 use std::path::Path;
 
 use fs_err as fs;
-use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr};
+use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::utils::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
@@ -19,7 +19,9 @@ const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
-const ASM_BRIDGE_DIR: &str = "bridge";
+const ASM_AGGLAYER_DIR: &str = "agglayer";
+const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
+const ASM_COMPONENTS_DIR: &str = "components";
 
 const AGGLAYER_ERRORS_FILE: &str = "src/errors/agglayer.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
@@ -28,8 +30,9 @@ const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
 // ================================================================================================
 
 /// Read and parse the contents from `./asm`.
+/// - Compiles the contents of asm/agglayer directory into a single agglayer.masl library.
+/// - Compiles the contents of asm/components directory into individual per-component .masl files.
 /// - Compiles the contents of asm/note_scripts directory into individual .masb files.
-/// - Compiles the contents of asm/account_components directory into individual .masl files.
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
@@ -40,8 +43,8 @@ fn main() -> Result<()> {
     let build_dir = env::var("OUT_DIR").unwrap();
     let src = Path::new(&crate_dir).join(ASM_DIR);
 
-    // generate canonical zeros in `asm/bridge/canonical_zeros.masm`
-    generate_canonical_zeros(&src.join(ASM_BRIDGE_DIR))?;
+    // generate canonical zeros in `asm/agglayer/bridge/canonical_zeros.masm`
+    generate_canonical_zeros(&src.join(ASM_AGGLAYER_BRIDGE_DIR))?;
 
     let dst = Path::new(&build_dir).to_path_buf();
     shared::copy_directory(src, &dst, ASM_DIR)?;
@@ -59,6 +62,13 @@ fn main() -> Result<()> {
     let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(agglayer_lib)?;
 
+    // compile account components (thin wrappers per component)
+    compile_account_components(
+        &source_dir.join(ASM_COMPONENTS_DIR),
+        &target_dir.join(ASM_COMPONENTS_DIR),
+        assembler.clone(),
+    )?;
+
     // compile note scripts
     compile_note_scripts(
         &source_dir.join(ASM_NOTE_SCRIPTS_DIR),
@@ -74,7 +84,7 @@ fn main() -> Result<()> {
 // COMPILE AGGLAYER LIB
 // ================================================================================================
 
-/// Reads the MASM files from "{source_dir}/bridge" directory, compiles them into a Miden
+/// Reads the MASM files from "{source_dir}/agglayer" directory, compiles them into a Miden
 /// assembly library, saves the library into "{target_dir}/agglayer.masl", and returns the compiled
 /// library.
 fn compile_agglayer_lib(
@@ -82,7 +92,7 @@ fn compile_agglayer_lib(
     target_dir: &Path,
     mut assembler: Assembler,
 ) -> Result<Library> {
-    let source_dir = source_dir.join(ASM_BRIDGE_DIR);
+    let source_dir = source_dir.join(ASM_AGGLAYER_DIR);
 
     // Add the miden-standards library to the assembler so agglayer components can use it
     let standards_lib = miden_standards::StandardsLib::default();
@@ -136,38 +146,28 @@ fn compile_note_scripts(
     Ok(())
 }
 
-// COMPILE ACCOUNT COMPONENTS (DEPRECATED)
+// COMPILE ACCOUNT COMPONENTS
 // ================================================================================================
 
-/// Compiles the agglayer library in `source_dir` into MASL libraries and stores the compiled
+/// Compiles the account components in `source_dir` into MASL libraries and stores the compiled
 /// files in `target_dir`.
 ///
-/// NOTE: This function is deprecated and replaced by compile_agglayer_lib
-fn _compile_bridge_components(
+/// Each `.masm` file in the components directory is a thin wrapper that re-exports specific
+/// procedures from the main agglayer library. This ensures each component (bridge, faucet)
+/// only exposes the procedures relevant to its role.
+///
+/// The assembler must already have the agglayer library linked so that `pub use` re-exports
+/// can resolve.
+fn compile_account_components(
     source_dir: &Path,
     target_dir: &Path,
-    mut assembler: Assembler,
-) -> Result<Library> {
+    assembler: Assembler,
+) -> Result<()> {
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).unwrap();
     }
 
-    // Add the miden-standards library to the assembler so agglayer components can use it
-    let standards_lib = miden_standards::StandardsLib::default();
-    assembler.link_static_library(standards_lib)?;
-
-    // Compile all components together as a single library under the "miden::agglayer" namespace
-    // This allows cross-references between components (e.g., bridge_out using
-    // miden::agglayer::local_exit_tree)
-    let agglayer_library = assembler.assemble_library_from_dir(source_dir, "miden::agglayer")?;
-
-    // Write the combined library
-    let library_path = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
-    agglayer_library.write_to_file(library_path).into_diagnostic()?;
-
-    // Also write individual component files for reference
-    let masm_files = shared::get_masm_files(source_dir).unwrap();
-    for masm_file_path in &masm_files {
+    for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
         let component_name = masm_file_path
             .file_stem()
             .expect("masm file should have a file stem")
@@ -175,14 +175,22 @@ fn _compile_bridge_components(
             .expect("file stem should be valid UTF-8")
             .to_owned();
 
-        let component_source_code = fs::read_to_string(masm_file_path)
+        let component_source_code = fs::read_to_string(&masm_file_path)
             .expect("reading the component's MASM source code should succeed");
 
-        let individual_file_path = target_dir.join(&component_name).with_extension("masm");
-        fs::write(individual_file_path, component_source_code).into_diagnostic()?;
+        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+
+        let component_library = assembler
+            .clone()
+            .assemble_library([named_source])
+            .expect("library assembly should succeed");
+
+        let component_file_path =
+            target_dir.join(component_name).with_extension(Library::LIBRARY_EXTENSION);
+        component_library.write_to_file(component_file_path).into_diagnostic()?;
     }
 
-    Ok(agglayer_library)
+    Ok(())
 }
 
 // ERROR CONSTANTS FILE GENERATION
@@ -287,7 +295,7 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use ::miden::agglayer::mmr_frontier32_keccak::mem_store_double_word
+use ::miden::agglayer::bridge::utils::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []

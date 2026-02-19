@@ -72,31 +72,47 @@ pub fn claim_script() -> NoteScript {
 // AGGLAYER ACCOUNT COMPONENTS
 // ================================================================================================
 
-// Initialize the unified AggLayer library only once
 static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masl"));
     Library::read_from_bytes(bytes).expect("Shipped AggLayer library is well-formed")
 });
 
+static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped bridge component library is well-formed")
+});
+
+static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped faucet component library is well-formed")
+});
+
 /// Returns the unified AggLayer Library containing all agglayer modules.
+///
+/// This library contains all procedures from both the bridge and faucet modules.
+/// For component-specific libraries that only expose relevant procedures, use
+/// [`bridge_library()`] or [`faucet_library()`] instead.
 pub fn agglayer_library() -> Library {
     AGGLAYER_LIBRARY.clone()
 }
 
-/// Returns the Bridge Out Library.
+/// Returns the Bridge component library.
 ///
-/// Note: This is now the same as agglayer_library() since all agglayer components
-/// are compiled into a single library.
-pub fn bridge_out_library() -> Library {
-    agglayer_library()
+/// This library only exposes bridge-related procedures (bridge_out, bridge_in,
+/// bridge_config, local_exit_tree). Faucet-specific procedures like `claim` are
+/// not included.
+pub fn bridge_library() -> Library {
+    BRIDGE_COMPONENT_LIBRARY.clone()
 }
 
-/// Returns the Local Exit Tree Library.
-///
-/// Note: This is now the same as agglayer_library() since all agglayer components
-/// are compiled into a single library.
+/// Returns the Bridge Out Library (alias for [`bridge_library()`]).
+pub fn bridge_out_library() -> Library {
+    bridge_library()
+}
+
+/// Returns the Local Exit Tree Library (alias for [`bridge_library()`]).
 pub fn local_exit_tree_library() -> Library {
-    agglayer_library()
+    bridge_library()
 }
 
 /// Creates a Local Exit Tree component with the specified storage slots.
@@ -128,12 +144,9 @@ pub fn bridge_out_component(storage_slots: Vec<StorageSlot>) -> AccountComponent
         .expect("bridge_out component should satisfy the requirements of a valid account component")
 }
 
-/// Returns the Bridge In Library.
-///
-/// Note: This is now the same as agglayer_library() since all agglayer components
-/// are compiled into a single library.
+/// Returns the Bridge In Library (alias for [`bridge_library()`]).
 pub fn bridge_in_library() -> Library {
-    agglayer_library()
+    bridge_library()
 }
 
 /// Creates a Bridge In component with the specified storage slots.
@@ -150,12 +163,17 @@ pub fn bridge_in_component(storage_slots: Vec<StorageSlot>) -> AccountComponent 
         .expect("bridge_in component should satisfy the requirements of a valid account component")
 }
 
-/// Returns the Agglayer Faucet Library.
+/// Returns the Faucet component library.
 ///
-/// Note: This is now the same as agglayer_library() since all agglayer components
-/// are compiled into a single library.
+/// This library only exposes faucet-related procedures (claim, get_origin_token_address,
+/// etc.). Bridge-specific procedures like `bridge_out` are not included.
+pub fn faucet_library() -> Library {
+    FAUCET_COMPONENT_LIBRARY.clone()
+}
+
+/// Returns the Agglayer Faucet Library (alias for [`faucet_library()`]).
 pub fn agglayer_faucet_library() -> Library {
-    agglayer_library()
+    faucet_library()
 }
 
 /// Creates an Agglayer Faucet component with the specified storage slots.
