@@ -10,12 +10,13 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::Account;
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
@@ -157,15 +158,37 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     assert_eq!(output_note.metadata().sender(), agglayer_faucet.id());
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
-    // Note: We intentionally do NOT verify the exact note ID or asset amount here because
-    // the scale_u256_to_native_amount function is currently a TODO stub that doesn't perform
-    // proper u256-to-native scaling. The test verifies that the bridge-in flow correctly
-    // validates the Merkle proof using real cryptographic proof data and creates an output note.
-    //
-    // TODO: Once scale_u256_to_native_amount is properly implemented, add:
-    // - Verification that the minted amount matches the expected scaled value
-    // - Full note ID comparison with the expected P2ID note
-    // - Asset content verification
+    // Extract and verify P2ID asset contents
+    let mut assets_iter = output_note.assets().unwrap().iter_fungible();
+    let p2id_asset = assets_iter.next().unwrap();
+
+    // Verify minted amount matches expected scaled value
+    assert_eq!(Felt::new(p2id_asset.amount()), miden_claim_amount,);
+
+    // Verify faucet ID matches agglayer_faucet (P2ID token issuer)
+    assert_eq!(
+        p2id_asset.faucet_id(),
+        agglayer_faucet.id(),
+        "P2ID asset faucet ID doesn't match agglayer_faucet: got {:?}, expected {:?}",
+        p2id_asset.faucet_id(),
+        agglayer_faucet.id()
+    );
+
+    // Verify full note ID construction
+    let expected_asset: Asset =
+        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_int())
+            .unwrap()
+            .into();
+    let expected_output_p2id_note = create_p2id_note_exact(
+        agglayer_faucet.id(),
+        destination_account_id,
+        vec![expected_asset],
+        NoteType::Public,
+        serial_num,
+    )
+    .unwrap();
+
+    assert_eq!(OutputNote::Full(expected_output_p2id_note), *output_note);
 
     Ok(())
 }

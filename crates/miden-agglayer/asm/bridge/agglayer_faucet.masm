@@ -58,8 +58,8 @@ const DESTINATION_ADDRESS_3 = 547
 const DESTINATION_ADDRESS_4 = 548
 
 # Memory locals in claim
-const CLAIM_PREFIX_MEM_LOC = 5
-const CLAIM_SUFFIX_MEM_LOC = 6
+const CLAIM_PREFIX_MEM_LOC = 8
+const CLAIM_SUFFIX_MEM_LOC = 9
 const CLAIM_AMOUNT_MEM_LOC_0 = 0
 const CLAIM_AMOUNT_MEM_LOC_1 = 4
 
@@ -95,6 +95,7 @@ pub proc get_origin_token_address
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
     # => [addr3, addr2, addr1, addr0]
+
     exec.word::reverse
     # => [addr0, addr1, addr2, addr3]
 
@@ -322,6 +323,8 @@ proc build_p2id_output_note
     push.OUTPUT_NOTE_STORAGE_MEM_ADDR
     # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
+    debug.mem.OUTPUT_NOTE_STORAGE_MEM_ADDR.P2ID_NOTE_NUM_STORAGE_ITEMS
+
     exec.note::build_recipient
     # => [RECIPIENT]
 
@@ -429,7 +432,7 @@ pub proc claim
     
     loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
     # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
-    
+
     exec.build_p2id_output_note
     # => [pad(16)] 
 end
