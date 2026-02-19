@@ -332,7 +332,6 @@ proc build_p2id_output_note
     mem_load.OUTPUT_NOTE_TAG_MEM_ADDR
     # => [tag, RECIPIENT]
 
-    # TODO: implement scale down logic; stubbed out for now
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
 

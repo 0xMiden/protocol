@@ -94,12 +94,10 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // Generate a serial number for the P2ID note
     let serial_num = builder.rng_mut().draw_word();
 
-    // Calculate the scaled-down Miden amount
-    // Using scale_exp = 10 for 8-decimal tokens (matching the faucet's decimals)
-    let scale_exp = 10u32;
+    // Calculate the scaled-down Miden amount using the faucet's scale factor
     let miden_claim_amount = leaf_data
         .amount
-        .scale_to_token_amount(scale_exp)
+        .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
     let output_note_data = OutputNoteData {
@@ -163,7 +161,11 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let p2id_asset = assets_iter.next().unwrap();
 
     // Verify minted amount matches expected scaled value
-    assert_eq!(Felt::new(p2id_asset.amount()), miden_claim_amount, "asset amount does not match");
+    assert_eq!(
+        Felt::new(p2id_asset.amount()),
+        miden_claim_amount,
+        "asset amount does not match"
+    );
 
     // Verify faucet ID matches agglayer_faucet (P2ID token issuer)
     assert_eq!(
