@@ -37,7 +37,11 @@ static MINT_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // MINT NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Token minting note structure.
+///
+/// MINT notes enable the creation of new tokens. When consumed, these notes mint the specified
+/// assets to the consuming account, allowing for controlled token issuance within the Miden
+/// protocol.
 pub struct MintNote;
 
 impl MintNote {

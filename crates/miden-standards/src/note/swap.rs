@@ -40,7 +40,11 @@ static SWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // SWAP NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Atomic swap note structure.
+///
+/// SWAP notes enable atomic asset exchanges between two accounts. When consumed, the consumer
+/// receives the offered asset and creates a new P2ID note containing the requested asset,
+/// ensuring the swap completes atomically or not at all.
 pub struct SwapNote;
 
 impl SwapNote {

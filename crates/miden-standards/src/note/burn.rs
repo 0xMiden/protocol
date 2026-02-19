@@ -36,7 +36,11 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // BURN NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Token burning note structure.
+///
+/// BURN notes enable the destruction of tokens. When consumed, these notes remove the specified
+/// assets from the consuming account, allowing for controlled token reduction within the Miden
+/// protocol.
 pub struct BurnNote;
 
 impl BurnNote {

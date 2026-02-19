@@ -38,7 +38,11 @@ static P2ID_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2ID NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Pay-to-ID (P2ID) note structure.
+///
+/// P2ID notes enable the transfer of assets from a sender account to a target account by
+/// specifying the target's account ID. These notes are consumable by the specified target
+/// account and provide a standard way to send assets to a known account identifier.
 pub struct P2idNote;
 
 impl P2idNote {
