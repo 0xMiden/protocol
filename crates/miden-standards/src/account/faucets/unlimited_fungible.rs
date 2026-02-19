@@ -319,8 +319,8 @@ impl TryFrom<&Account> for UnlimitedFungibleFaucet {
 /// account storage type, owner account, and provided metadata (token symbol, decimals).
 ///
 /// The unlimited faucet interface exposes procedures:
-/// - `distribute`, which mints assets and creates a note for the provided recipient.
-///   Requires the caller to be the owner.
+/// - `distribute`, which mints assets and creates a note for the provided recipient. Requires the
+///   caller to be the owner.
 /// - `burn`, which burns the provided asset. No ownership check.
 /// - `transfer_ownership`, which transfers ownership to a new account.
 /// - `renounce_ownership`, which renounces ownership.

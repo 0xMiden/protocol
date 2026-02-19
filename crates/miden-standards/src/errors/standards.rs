@@ -12,6 +12,15 @@ use miden_protocol::errors::MasmError;
 /// Error Message: "burn requires exactly 1 note asset"
 pub const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
+/// Error Message: "burn amount exceeds the existing token supply"
+pub const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY: MasmError = MasmError::from_static_str("burn amount exceeds the existing token supply");
+
+/// Error Message: "amount would exceed the maximum supply"
+pub const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("amount would exceed the maximum supply");
+
+/// Error Message: "distribution period has ended"
+pub const ERR_DISTRIBUTION_PERIOD_ENDED: MasmError = MasmError::from_static_str("distribution period has ended");
+
 /// Error Message: "asset amount to burn exceeds the existing token supply"
 pub const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY: MasmError = MasmError::from_static_str("asset amount to burn exceeds the existing token supply");
 
@@ -58,8 +67,6 @@ pub const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::fr
 /// Error Message: "SWAP script requires exactly 1 note asset"
 pub const ERR_SWAP_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("SWAP script requires exactly 1 note asset");
 
-/// Error Message: "burn operations are not allowed during distribution period"
-pub const ERR_TIMED_FUNGIBLE_BURN_NOT_ALLOWED: MasmError = MasmError::from_static_str("burn operations are not allowed during distribution period");
 /// Error Message: "distribution period has ended"
 pub const ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED: MasmError = MasmError::from_static_str("distribution period has ended");
 

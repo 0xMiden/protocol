@@ -112,7 +112,11 @@ impl TimedFungibleFaucet {
         owner_account_id: AccountId,
     ) -> Result<Self, FungibleFaucetError> {
         let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
-        Ok(Self { metadata, distribution_end, owner_account_id })
+        Ok(Self {
+            metadata,
+            distribution_end,
+            owner_account_id,
+        })
     }
 
     /// Creates a new [`TimedFungibleFaucet`] component from the given [`TokenMetadata`].
@@ -121,7 +125,11 @@ impl TimedFungibleFaucet {
         distribution_end: u32,
         owner_account_id: AccountId,
     ) -> Self {
-        Self { metadata, distribution_end, owner_account_id }
+        Self {
+            metadata,
+            distribution_end,
+            owner_account_id,
+        }
     }
 
     /// Attempts to create a new [`TimedFungibleFaucet`] component from the associated account
@@ -170,7 +178,11 @@ impl TimedFungibleFaucet {
         let suffix = owner_account_id_word[2];
         let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
 
-        Ok(Self { metadata, distribution_end, owner_account_id })
+        Ok(Self {
+            metadata,
+            distribution_end,
+            owner_account_id,
+        })
     }
 
     // PUBLIC ACCESSORS
@@ -304,12 +316,8 @@ impl From<TimedFungibleFaucet> for AccountComponent {
     fn from(faucet: TimedFungibleFaucet) -> Self {
         let metadata_slot: StorageSlot = faucet.metadata.into();
 
-        let config_val = [
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::new(faucet.distribution_end as u64),
-        ];
+        let config_val =
+            [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(faucet.distribution_end as u64)];
 
         let config_slot = StorageSlot::with_value(
             TimedFungibleFaucet::timed_config_slot().clone(),
@@ -396,13 +404,8 @@ pub fn create_timed_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let faucet_component = TimedFungibleFaucet::new(
-        symbol,
-        decimals,
-        max_supply,
-        distribution_end,
-        owner_account_id,
-    )?;
+    let faucet_component =
+        TimedFungibleFaucet::new(symbol, decimals, max_supply, distribution_end, owner_account_id)?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -484,13 +487,7 @@ mod tests {
                 .storage()
                 .get_item(TimedFungibleFaucet::timed_config_slot())
                 .unwrap(),
-            [
-                Felt::ZERO,
-                Felt::ZERO,
-                Felt::ZERO,
-                Felt::new(distribution_end as u64),
-            ]
-            .into()
+            [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(distribution_end as u64),].into()
         );
 
         // Check owner config slot
