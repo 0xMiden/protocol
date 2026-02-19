@@ -52,7 +52,7 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #!   BLOCK_COMMITMENT,
 #!   INITIAL_ACCOUNT_COMMITMENT,
 #!   INPUT_NOTES_COMMITMENT,
-#!   account_id_prefix, account_id_suffix, block_num, pad(1)
+#!   account_id_suffix, account_id_prefix, block_num, pad(1)
 #! ]
 #! Outputs: [
 #!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,

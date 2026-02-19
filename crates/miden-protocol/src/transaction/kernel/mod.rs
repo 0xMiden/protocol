@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -182,19 +181,14 @@ impl TransactionKernel {
     ) -> StackInputs {
         // Note: Must be kept in sync with the transaction's kernel prepare_transaction procedure
         let mut inputs: Vec<Felt> = Vec::with_capacity(14);
-        inputs.push(Felt::from(block_num));
+        inputs.extend_from_slice(block_commitment.as_elements());
+        inputs.extend_from_slice(initial_account_commitment.as_elements());
+        inputs.extend(input_notes_commitment);
         inputs.push(account_id.suffix());
         inputs.push(account_id.prefix().as_felt());
-        inputs.extend(input_notes_commitment);
-        inputs.extend_from_slice(initial_account_commitment.as_elements());
-        inputs.extend_from_slice(block_commitment.as_elements());
+        inputs.push(Felt::from(block_num));
 
-        // TODO(bele): Construct the above stack in reverse order instead.
-        inputs.reverse();
-
-        StackInputs::new(&inputs)
-            .map_err(|e| e.to_string())
-            .expect("Invalid stack input")
+        StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
 
     /// Builds the stack for expected transaction execution outputs.
@@ -226,19 +220,14 @@ impl TransactionKernel {
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
         let mut outputs: Vec<Felt> = Vec::with_capacity(12);
-        outputs.push(Felt::from(expiration_block_num));
-        outputs.push(Felt::try_from_num(fee.amount()).expect("amount should fit into felt"));
+        outputs.extend(output_notes_commitment);
+        outputs.extend(account_update_commitment);
         outputs.push(fee.faucet_id().suffix());
         outputs.push(fee.faucet_id().prefix().as_felt());
-        outputs.extend(account_update_commitment);
-        outputs.extend(output_notes_commitment);
+        outputs.push(Felt::try_from_num(fee.amount()).expect("amount should fit into felt"));
+        outputs.push(Felt::from(expiration_block_num));
 
-        // TODO(bele): Construct the above stack in reverse order instead.
-        outputs.reverse();
-
-        StackOutputs::new(&outputs)
-            .map_err(|e| e.to_string())
-            .expect("Invalid stack output")
+        StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
     }
 
     /// Extracts transaction output data from the provided stack outputs.
@@ -272,11 +261,11 @@ impl TransactionKernel {
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
     ) -> Result<(Word, Word, FungibleAsset, BlockNumber), TransactionOutputError> {
         let output_notes_commitment = stack
-            .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX * 4)
+            .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
 
         let account_update_commitment = stack
-            .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX * 4)
+            .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
 
         let native_asset_id_prefix = stack

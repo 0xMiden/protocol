@@ -24,7 +24,7 @@ const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING="the transaction script is missing"
 #!   BLOCK_COMMITMENT,
 #!   INITIAL_ACCOUNT_COMMITMENT,
 #!   INPUT_NOTES_COMMITMENT,
-#!   account_id_prefix, account_id_suffix, block_num,
+#!   account_id_suffix, account_id_prefix, block_num,
 #! ]
 #! Outputs: [<values returned from the provided script>]
 #!
