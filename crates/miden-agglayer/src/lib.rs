@@ -91,7 +91,7 @@ static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 ///
 /// This library contains all procedures from both the bridge and faucet modules.
 /// For component-specific libraries that only expose relevant procedures, use
-/// [`bridge_library()`] or [`faucet_library()`] instead.
+/// [`agglayer_bridge_library()`] or [`agglayer_faucet_library()`] instead.
 pub fn agglayer_library() -> Library {
     AGGLAYER_LIBRARY.clone()
 }
@@ -101,79 +101,31 @@ pub fn agglayer_library() -> Library {
 /// This library only exposes bridge-related procedures (bridge_out, bridge_in,
 /// bridge_config, local_exit_tree). Faucet-specific procedures like `claim` are
 /// not included.
-pub fn bridge_library() -> Library {
+pub fn agglayer_bridge_library() -> Library {
     BRIDGE_COMPONENT_LIBRARY.clone()
-}
-
-/// Returns the Bridge Out Library (alias for [`bridge_library()`]).
-pub fn bridge_out_library() -> Library {
-    bridge_library()
-}
-
-/// Returns the Local Exit Tree Library (alias for [`bridge_library()`]).
-pub fn local_exit_tree_library() -> Library {
-    bridge_library()
-}
-
-/// Creates a Local Exit Tree component with the specified storage slots.
-///
-/// This component uses the local_exit_tree library and can be added to accounts
-/// that need to manage local exit tree functionality.
-pub fn local_exit_tree_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = local_exit_tree_library();
-    let metadata = AccountComponentMetadata::new("agglayer::local_exit_tree")
-        .with_description("Local exit tree component for AggLayer")
-        .with_supports_all_types();
-
-    AccountComponent::new(library, storage_slots, metadata).expect(
-        "local_exit_tree component should satisfy the requirements of a valid account component",
-    )
-}
-
-/// Creates a Bridge Out component with the specified storage slots.
-///
-/// This component uses the bridge_out library and can be added to accounts
-/// that need to bridge assets out to the AggLayer.
-pub fn bridge_out_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = bridge_out_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge_out")
-        .with_description("Bridge out component for AggLayer")
-        .with_supports_all_types();
-
-    AccountComponent::new(library, storage_slots, metadata)
-        .expect("bridge_out component should satisfy the requirements of a valid account component")
-}
-
-/// Returns the Bridge In Library (alias for [`bridge_library()`]).
-pub fn bridge_in_library() -> Library {
-    bridge_library()
-}
-
-/// Creates a Bridge In component with the specified storage slots.
-///
-/// This component uses the agglayer library and can be added to accounts
-/// that need to bridge assets in from the AggLayer.
-pub fn bridge_in_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = bridge_in_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge_in")
-        .with_description("Bridge in component for AggLayer")
-        .with_supports_all_types();
-
-    AccountComponent::new(library, storage_slots, metadata)
-        .expect("bridge_in component should satisfy the requirements of a valid account component")
 }
 
 /// Returns the Faucet component library.
 ///
 /// This library only exposes faucet-related procedures (claim, get_origin_token_address,
 /// etc.). Bridge-specific procedures like `bridge_out` are not included.
-pub fn faucet_library() -> Library {
+pub fn agglayer_faucet_library() -> Library {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
 
-/// Returns the Agglayer Faucet Library (alias for [`faucet_library()`]).
-pub fn agglayer_faucet_library() -> Library {
-    faucet_library()
+/// Creates a Bridge component with the specified storage slots.
+///
+/// This component uses the bridge library and can be added to accounts
+/// that need bridge functionality (bridge_out, bridge_in, bridge_config,
+/// local_exit_tree).
+pub fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
+    let library = agglayer_bridge_library();
+    let metadata = AccountComponentMetadata::new("agglayer::bridge")
+        .with_description("Bridge component for AggLayer")
+        .with_supports_all_types();
+
+    AccountComponent::new(library, storage_slots, metadata)
+        .expect("bridge component should satisfy the requirements of a valid account component")
 }
 
 /// Creates an Agglayer Faucet component with the specified storage slots.
@@ -190,21 +142,6 @@ pub fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComp
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
     )
-}
-
-/// Creates a combined Bridge Out component that includes both bridge_out and local_exit_tree
-/// modules.
-///
-/// This is a convenience function that creates a component with multiple modules.
-/// For more fine-grained control, use the individual component functions and combine them
-/// using the AccountBuilder pattern.
-pub fn bridge_out_with_local_exit_tree_component(
-    storage_slots: Vec<StorageSlot>,
-) -> Vec<AccountComponent> {
-    vec![
-        bridge_out_component(storage_slots.clone()),
-        local_exit_tree_component(vec![]), // local_exit_tree typically doesn't need storage slots
-    ]
 }
 
 /// Creates an Asset Conversion component with the specified storage slots.
@@ -271,7 +208,7 @@ pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
 /// Creates a bridge account component with the standard bridge storage slot.
 ///
 /// This is a convenience function that creates the bridge storage slot with the standard
-/// name "miden::agglayer::bridge" and returns the bridge_out component.
+/// name "miden::agglayer::bridge" and returns the bridge component.
 ///
 /// # Returns
 /// Returns an [`AccountComponent`] configured for bridge operations with MMR validation.
@@ -279,7 +216,7 @@ pub fn create_bridge_account_component() -> AccountComponent {
     let bridge_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge")
         .expect("Bridge storage slot name should be valid");
     let bridge_storage_slots = vec![StorageSlot::with_empty_map(bridge_storage_slot_name)];
-    bridge_out_component(bridge_storage_slots)
+    bridge_component(bridge_storage_slots)
 }
 
 /// Creates an agglayer faucet account component with the specified configuration.
@@ -358,14 +295,6 @@ pub fn create_agglayer_faucet_component(
 pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let ger_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger")
         .expect("Bridge storage slot name should be valid");
-    let bridge_in_storage_slots = vec![StorageSlot::with_empty_map(ger_storage_slot_name)];
-
-    let bridge_in_component = bridge_in_component(bridge_in_storage_slots);
-
-    // Create the "bridge_out" component.
-    // - The map slot stores the frontier as a double-word array (absent keys return zeros, which is
-    //   the correct initial state for a frontier with no leaves).
-    // - The root and num_leaves each get their own value slots.
     let let_storage_slot_name = StorageSlotName::new("miden::agglayer::let")
         .expect("LET storage slot name should be valid");
     let let_root_lo_slot_name = StorageSlotName::new("miden::agglayer::let::root_lo")
@@ -377,22 +306,19 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let faucet_registry_slot_name =
         StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
             .expect("Faucet registry storage slot name should be valid");
-    let bridge_out_storage_slots = vec![
+
+    let bridge_storage_slots = vec![
+        StorageSlot::with_empty_map(ger_storage_slot_name),
         StorageSlot::with_empty_map(let_storage_slot_name),
         StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),
         StorageSlot::with_value(let_root_hi_slot_name, Word::empty()),
         StorageSlot::with_value(let_num_leaves_slot_name, Word::empty()),
         StorageSlot::with_empty_map(faucet_registry_slot_name),
     ];
-    let bridge_out_component = bridge_out_component(bridge_out_storage_slots);
 
-    // Combine the components into a single account(builder).
-    // Note: bridge_config::register_faucet is also exposed via the agglayer library
-    // included in bridge_out_component, using the faucet_registry storage slot above.
     Account::builder(seed.into())
         .storage_mode(AccountStorageMode::Network)
-        .with_component(bridge_out_component)
-        .with_component(bridge_in_component)
+        .with_component(bridge_component(bridge_storage_slots))
 }
 
 /// Creates a new bridge account with the standard configuration.
