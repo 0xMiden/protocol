@@ -163,7 +163,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     let p2id_asset = assets_iter.next().unwrap();
 
     // Verify minted amount matches expected scaled value
-    assert_eq!(Felt::new(p2id_asset.amount()), miden_claim_amount,);
+    assert_eq!(Felt::new(p2id_asset.amount()), miden_claim_amount, "asset amount does not match");
 
     // Verify faucet ID matches agglayer_faucet (P2ID token issuer)
     assert_eq!(
