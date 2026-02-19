@@ -295,7 +295,7 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use ::miden::agglayer::bridge::utils::mem_store_double_word
+use ::miden::agglayer::common::utils::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []

@@ -9,7 +9,7 @@ use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
 use miden::core::word
-use miden::agglayer::bridge::utils
+use miden::agglayer::common::utils
 use miden::agglayer::faucet -> agglayer_faucet
 use miden::agglayer::bridge::crypto_utils
 use miden::agglayer::bridge::mmr_frontier32_keccak

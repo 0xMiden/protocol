@@ -1,6 +1,6 @@
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
-use miden::agglayer::bridge::utils
+use miden::agglayer::common::utils
 use miden::core::mem
 
 # TYPE ALIASES
