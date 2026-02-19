@@ -166,38 +166,34 @@ end
 #! Outputs: [RATE0, RATE1, CAPACITY]
 proc update_value_slot_delta
     exec.account::get_item_delta
-    # => [INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE0, RATE1, CAPACITY]
+    # => [INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
     exec.word::test_eq not
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE0, RATE1, CAPACITY]
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
     # set was_changed to true if the account is new
     # generally, the delta for a new account must include all its storage slots, regardless of the
     # initial value and even if it is an empty word, because the initial delta for an account must
     # represent its full state
     exec.memory::is_new_account or
-    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE0, RATE1, CAPACITY]
+    # => [was_changed, INIT_VALUE, CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
     # only include in delta if the slot's value has changed or the account is new
     if.true
         # drop init value
         dropw
-        # => [CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE0, RATE1, CAPACITY]
+        # => [CURRENT_VALUE, slot_id_suffix, slot_id_prefix, RATE0, RATE1, CAPACITY]
 
         # build value slot metadata
-        push.DOMAIN_VALUE push.0
-        # => [0, domain, CURRENT_VALUE, slot_id_prefix, slot_id_suffix, RATE0, RATE1, CAPACITY]
+        movup.5 movup.5
+        # => [slot_id_suffix, slot_id_prefix, CURRENT_VALUE, RATE0, RATE1, CAPACITY]
 
-        movup.7 movup.7
-        # => [slot_id_prefix, slot_id_suffix, 0, domain, CURRENT_VALUE, RATE0, RATE1, CAPACITY]
+        push.0.DOMAIN_VALUE
+        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, RATE0, RATE1, CAPACITY]
 
         # clear rate elements
         swapdw dropw dropw
-        # => [slot_id_prefix, slot_id_suffix, 0, domain, CURRENT_VALUE, CAPACITY]
-
-        # TODO(bele): Temporarily reversew.
-        reversew
-        # => [domain, 0, slot_id_suffix, slot_id_prefix, CURRENT_VALUE, CAPACITY]
+        # => [[domain, 0, slot_id_suffix, slot_id_prefix], CURRENT_VALUE, CAPACITY]
 
         exec.poseidon2::permute
         # => [RATE0, RATE1, CAPACITY]
@@ -229,9 +225,9 @@ proc update_map_slot_delta
     # => [slot_idx, RATE0, RATE1, CAPACITY]
 
     dup exec.account::get_slot_id
-    # => [slot_id_prefix, slot_id_suffix, slot_idx, RATE0, RATE1, CAPACITY]
+    # => [slot_id_suffix, slot_id_prefix, slot_idx, RATE0, RATE1, CAPACITY]
 
-    loc_store.1 loc_store.0
+    loc_store.0 loc_store.1
     # => [slot_idx, RATE0, RATE1, CAPACITY]
 
     exec.memory::get_account_delta_storage_map_ptr
@@ -262,19 +258,15 @@ proc update_map_slot_delta
         # if the key-value pair has actually changed, update the hasher
         if.true
             # drop the initial value
-            swapw dropw
-            # => [NEW_VALUE, KEY, RATE0, RATE1, CAPACITY]
+            swapw dropw swapw
+            # => [KEY, NEW_VALUE, RATE0, RATE1, CAPACITY]
 
             # increment number of changed entries in local
             loc_load.4 add.1 loc_store.4
-            # => [NEW_VALUE, KEY, RATE0, RATE1, CAPACITY]
+            # => [KEY, NEW_VALUE, RATE0, RATE1, CAPACITY]
 
             # drop previous RATE elements
             swapdw dropw dropw
-            # => [NEW_VALUE, KEY, CAPACITY]
-
-            # TODO(bele): Temporarily swapw.
-            swapw
             # => [KEY, NEW_VALUE, CAPACITY]
 
             exec.poseidon2::permute
@@ -313,11 +305,7 @@ proc update_map_slot_delta
         dropw dropw
         # => [CAPACITY]
 
-        push.DOMAIN_MAP loc_load.4 loc_load.0 loc_load.1 padw
-        # => [EMPTY_WORD, [slot_id_prefix, slot_id_suffix, num_changed_entries, domain], CAPACITY]
-
-        # TODO(bele): Temporarily reversew and swapw.
-        swapw reversew
+        padw loc_load.1 loc_load.0 loc_load.4 push.DOMAIN_MAP
         # => [[domain, num_changed_entries, slot_id_suffix, slot_id_prefix], EMPTY_WORD, CAPACITY]
 
         exec.poseidon2::permute
@@ -351,37 +339,34 @@ proc update_fungible_asset_delta
         movup.8 loc_store.1
         # => [KEY, VALUE0, ...]
         # this stack state is equivalent to:
-        # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [delta_amount, 0, 0, 0], ...]
+        # => [[0, 0, faucet_id_suffix, faucet_id_prefix], [delta_amount, 0, 0, 0], ...]
 
         swapw
-        # => [[delta_amount, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, 0, 0], ...]
+        # => [[delta_amount, 0, 0, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
 
         # compute the absolute value of delta amount with a flag indicating whether it's positive
         exec.delta_amount_absolute
-        # => [is_delta_amount_positive, [delta_amount_abs, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, 0, 0], ...]
+        # => [is_delta_amount_positive, [delta_amount_abs, 0, 0, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
 
         # define the was_added value as equivalent to is_delta_amount_positive
         # this value is 1 if the amount was added and 0 if the amount was removed
-        swap.7 drop
-        # => [[delta_amount_abs, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, was_added, 0], ...]
+        swap.6 drop
+        # => [[delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix, faucet_id_prefix], ...]
 
         dup neq.0
-        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, was_added, 0], ...]
+        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix, faucet_id_prefix], ...]
 
         # if delta amount is non-zero, update the hasher
         if.true
-            push.DOMAIN_ASSET swap.8 drop
-            # => [[delta_amount_abs, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, was_added, domain], ...]
+            push.DOMAIN_ASSET swap.5 drop
+            # => [[delta_amount_abs, 0, 0, 0], [domain, was_added, faucet_id_suffix, faucet_id_prefix], ...]
 
-            swap.3
-            # => [[0, 0, 0, delta_amount_abs], [faucet_id_prefix, faucet_id_suffix, was_added, domain], RATE0, RATE1, CAPACITY]
+            # swap value and metadata words
+            swapw
+            # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], RATE0, RATE1, CAPACITY]
 
             # drop previous RATE elements
             swapdw dropw dropw
-            # => [[0, 0, 0, delta_amount_abs], [faucet_id_prefix, faucet_id_suffix, was_added, domain], CAPACITY]
-
-            # TODO(bele): Temporarily reversew and swapw.
-            reversew swapw reversew
             # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], CAPACITY]
 
             exec.poseidon2::permute
@@ -444,25 +429,18 @@ proc update_non_fungible_asset_delta
             # convert was_added to a boolean
             # was_added is 1 if the asset was added and 0 - 1 if it was removed
             eq.1
-            # => [[was_added, 0, 0, 0], [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix], ASSET_VALUE, ...]
+            # => [[was_added, 0, 0, 0], [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE, ...]
 
             # replace asset_id_prefix with was_added and drop the remaining word
-            swap.6 dropw
-            # => [[faucet_id_prefix, faucet_id_suffix, was_added, asset_id_suffix], ASSET_VALUE, ...]
+            swap.5 dropw
+            # => [[asset_id_suffix, was_added, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE, ...]
 
             # replace asset_id_suffix with domain
-            push.DOMAIN_ASSET swap.4 drop
-            # => [[faucet_id_prefix, faucet_id_suffix, was_added, domain], ASSET_VALUE, ...]
-
-            swapw
-            # => [ASSET_VALUE, [faucet_id_prefix, faucet_id_suffix, was_added, domain], RATE0, RATE1, CAPACITY]
+            drop push.DOMAIN_ASSET
+            # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE, ...]
 
             # drop previous RATE elements
             swapdw dropw dropw
-            # => [ASSET_VALUE, [faucet_id_prefix, faucet_id_suffix, was_added, domain], CAPACITY]
-
-            # TODO(bele): Temporarily reversew and swapw.
-            swapw reversew
             # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE, CAPACITY]
 
             exec.poseidon2::permute
@@ -787,7 +765,7 @@ pub proc set_map_item
     # => [KEY, PREV_VALUE, NEW_VALUE]
 
     # store KEY in local
-    loc_storew_be.4
+    loc_storew_le.4
     # => [KEY, PREV_VALUE, NEW_VALUE]
 
     loc_load.0
@@ -818,7 +796,7 @@ pub proc set_map_item
     # => [INITIAL_VALUE, NEW_VALUE]
 
     # load key and index from locals
-    padw loc_loadw_be.4 loc_load.0
+    padw loc_loadw_le.4 loc_load.0
     # => [account_delta_storage_map_ptr, KEY, INITIAL_VALUE, NEW_VALUE]
 
     exec.link_map::set drop

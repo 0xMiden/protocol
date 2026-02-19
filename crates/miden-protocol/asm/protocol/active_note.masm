@@ -311,17 +311,17 @@ proc write_storage_to_memory
     # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
-    push.0.0.0
-    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [0, 0, 0, num_storage_items_mod_8]
+    push.0.0.0 movup.3
+    # OS => [CAPACITY = [num_storage_items_mod_8, 0, 0, 0], write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     padw padw
-    # OS => [PAD, PAD, A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # write the inputs from the advice stack into memory
     exec.mem::pipe_double_words_to_memory
-    # OS => [PERM, PERM, PERM, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => []
 
     # extract the computed commitment from the hasher state
