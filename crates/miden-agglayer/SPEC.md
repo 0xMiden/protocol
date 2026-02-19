@@ -37,8 +37,137 @@ implementation are isolated in section 9.
 |-----------|----------------------|-----------------------------------|
 | B2AGG (bridge-out) | Any user — not restricted | Bridge account — **enforced** via `NetworkAccountTarget` attachment. |
 | B2AGG (reclaim) | Any user — not restricted | Original sender only — **enforced**: script checks `sender == consuming account` |
-| CONFIG_AGG_BRIDGE | Anyone — **not enforced** (TODO #2450) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
-| UPDATE_GER | Anyone — **not enforced** (TODO #2467) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
-| CLAIM | Anyone — not restricted | Target faucet only — **enforced**: script checks `consuming account == target_faucet_account_id` from note storage (TODO #2468) |
+| CONFIG_AGG_BRIDGE | Anyone — **not enforced** ([TODO #2450](https://github.com/0xMiden/miden-base/issues/2450)) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
+| UPDATE_GER | Anyone — **not enforced** ([TODO #2467](https://github.com/0xMiden/miden-base/issues/2467)) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
+| CLAIM | Anyone — not restricted | Target faucet only — **enforced**: script checks `consuming account == target_faucet_account_id` from note storage ([TODO #2468](https://github.com/0xMiden/miden-base/issues/2468)) |
+
+---
+
+## 2. Contracts and Public Interfaces
+
+### 2.1 Bridge Account Components
+
+The bridge account is composed of two components:
+([TODO #2294](https://github.com/0xMiden/miden-base/issues/2294): consolidate into single component)
+
+1. **`bridge_out` component** — includes `bridge_out.masm`, `bridge_config.masm`,
+   `local_exit_tree.masm`, and supporting modules
+2. **`bridge_in` component** — includes `bridge_in.masm`
+
+#### `bridge_out::bridge_out`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[ASSET, dest_network_id, dest_addr₀, dest_addr₁, dest_addr₂, dest_addr₃, dest_addr₄, pad(4)]` |
+| **Outputs** | `[]` |
+| **Context** | Consuming a `B2AGG` note on the bridge account |
+| **Panics** | Faucet not in registry; FPI to faucet fails |
+
+Bridges an asset out of Miden into the AggLayer:
+
+1. Validates the asset's faucet is registered in the faucet registry.
+2. FPIs to `agglayer_faucet::asset_to_origin_asset` on the faucet account to obtain the scaled U256 amount, origin token address, and origin network.
+3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash).
+4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (MMR frontier).
+5. Creates a public `BURN` note targeting the faucet, tagged with `NoteTag::with_account_target(faucet_id)` ([TODO #2470](https://github.com/0xMiden/miden-base/issues/2470): should be a network note).
+
+#### `bridge_config::register_faucet`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[faucet_id_prefix, faucet_id_suffix, pad(14)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
+| **Panics** | None (no authorization check) |
+
+Writes `[0, 0, faucet_suffix, faucet_prefix] → [1, 0, 0, 0]` into the
+`faucet_registry` map slot.
+
+> **TODO (Future):** No sender validation — anyone can register. See [#2450](https://github.com/0xMiden/miden-base/issues/2450).
+
+#### `bridge_in::update_ger`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Consuming an `UPDATE_GER` note on the bridge account |
+| **Panics** | None |
+
+Computes `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
+`KEY → [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
+
+#### `bridge_in::verify_leaf_bridge`
+
+| | |
+|-|-|
+| **Invocation** | `call` (invoked via FPI from the faucet) |
+| **Inputs** | `[LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]` on the operand stack; proof data and leaf data in the advice map |
+| **Outputs** | `[pad(16)]` |
+| **Context** | FPI target — called by the faucet during `CLAIM` consumption |
+| **Panics** | GER not known; global index not mainnet; rollup index non-zero; Merkle proof verification failed |
+
+Verifies a bridge-in claim:
+
+1. Retrieves leaf data from the advice map, computes the Keccak-256 leaf value.
+2. Retrieves proof data from the advice map: SMT proofs, global index, exit roots.
+3. Computes the GER from `mainnet_exit_root` and `rollup_exit_root`, asserts it is in
+   the known GER set.
+4. Extracts the leaf index from the global index (must be mainnet, rollup index = 0). (TODO: rollup indices are not processed yet [#2394](https://github.com/0xMiden/miden-base/issues/2394)).
+5. Verifies the Merkle proof: leaf value at `leaf_index` against `mainnet_exit_root`.
+
+### 2.2 Faucet Account Component
+
+The faucet account has the `agglayer_faucet` component, which bundles the `agglayer_faucet.masm`,
+`asset_conversion.masm`, and `eth_address.masm` modules.
+
+#### `agglayer_faucet::claim`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY, pad(4)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Consuming a `CLAIM` note on the faucet account |
+| **Panics** | Invalid proof; bridge ID not set; FPI to bridge fails; faucet distribution fails |
+
+Processes a bridge-in claim:
+
+1. Loads and verifies three advice map entries (proof data, leaf data, output note data).
+2. Extracts the destination account ID from the leaf data's destination address (via `eth_address::to_account_id`).
+3. Extracts the raw U256 claim amount from the leaf data.
+4. FPI to `bridge_in::verify_leaf_bridge` on the bridge account to validate the proof.
+5. Scales the amount down (TODO PR WIP [#2460](https://github.com/0xMiden/miden-base/pull/2460)).
+6. Mints the asset via `faucets::distribute` and creates a public P2ID output note for the recipient.
+
+#### `agglayer_faucet::asset_to_origin_asset`
+
+| | |
+|-|-|
+| **Invocation** | `call` (invoked via FPI from the bridge) |
+| **Inputs** | `[amount, pad(15)]` |
+| **Outputs** | `[AMOUNT_U256₀(4), AMOUNT_U256₁(4), addr₀..addr₄, origin_network, pad(2)]` |
+| **Context** | FPI target — called by the bridge during bridge-out |
+| **Panics** | Scale exceeds 18 |
+
+Converts a Miden-native asset amount to the origin chain's U256 representation:
+
+1. Reads the scale from storage, calls `asset_conversion::scale_native_amount_to_u256`.
+2. Returns the origin token address and origin network from storage.
+
+#### `agglayer_faucet::burn`
+
+This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It burns the fungible asset from the active note, decreasing the faucet's token supply.
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[pad(16)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Consuming a `BURN` note on the faucet account |
+| **Panics** | Note context invalid; asset count wrong; faucet/supply checks fail |
 
 ---
