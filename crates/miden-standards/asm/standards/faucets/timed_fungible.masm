@@ -6,19 +6,14 @@
 # =================================================================================================
 
 use miden::protocol::active_account
-use miden::protocol::tx
 use miden::standards::faucets
 use miden::standards::access::ownable
+use miden::standards::supply::supply_limits
 
 # CONSTANTS
 # =================================================================================================
 
 const TIMED_CONFIG_SLOT = word("miden::standards::faucets::timed_fungible::config")
-
-# ERRORS
-# =================================================================================================
-
-const ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED="distribution period has ended"
 
 # OWNER MANAGEMENT
 # =================================================================================================
@@ -59,16 +54,10 @@ pub proc distribute
     push.TIMED_CONFIG_SLOT[0..2] exec.active_account::get_item
     # => [distribution_end, 0, 0, 0, amount, tag, note_type, RECIPIENT]
 
-    dup
-    if.true
-        exec.tx::get_block_number
-        dup.1
-        # => [distribution_end, current_block, distribution_end, 0, 0, 0, ...]
-        lt assert.err=ERR_TIMED_FUNGIBLE_DISTRIBUTION_PERIOD_ENDED
-        # => [distribution_end, 0, 0, 0, ...]
-    end
+    exec.supply_limits::check_distribution_period
+    # => [0, 0, 0, amount, tag, note_type, RECIPIENT]
 
-    dropw
+    drop drop drop
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute

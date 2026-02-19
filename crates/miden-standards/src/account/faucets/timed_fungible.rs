@@ -71,6 +71,7 @@ procedure_digest!(
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
 /// - [`Self::timed_config_slot`]: Stores timed config `[0, 0, 0, distribution_end]`.
+/// - [`Self::owner_config_slot`]: Stores the owner account ID `[0, 0, suffix, prefix]`.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct TimedFungibleFaucet {
@@ -382,7 +383,7 @@ impl TryFrom<&Account> for TimedFungibleFaucet {
 
 /// Creates a new faucet account with timed fungible faucet interface,
 /// account storage type, owner account, and provided metadata (token symbol,
-/// decimals, max supply, distribution end block, burn-only flag).
+/// decimals, max supply, distribution end block).
 ///
 /// The timed faucet interface exposes procedures:
 /// - `distribute`, which mints assets and creates a note for the provided recipient within the

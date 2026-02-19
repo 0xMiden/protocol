@@ -67,6 +67,7 @@ procedure_digest!(
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
+/// - [`Self::owner_config_slot`]: Stores the owner account ID `[0, 0, suffix, prefix]`.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct UnlimitedFungibleFaucet {

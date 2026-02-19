@@ -10,7 +10,7 @@ use miden::protocol::tx
 
 const ERR_DISTRIBUTION_PERIOD_ENDED = "distribution period has ended"
 const ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY = "amount would exceed the maximum supply"
-const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "burn amount exceeds the existing token supply"
+const ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY = "asset amount to burn exceeds the existing token supply"
 
 # PROCEDURES
 # =================================================================================================
@@ -49,16 +49,20 @@ end
 pub proc check_supply
     # new_supply = token_supply + amount
     swap add
-    # => [token_supply + amount, max_supply, ...]
+    # => [new_supply, max_supply, ...]
+
+    swap
+    # => [max_supply, new_supply, ...]
 
     # assert new_supply <= max_supply
+    # (b = max_supply, a = new_supply; lte checks a <= b)
     lte assert.err=ERR_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
     # => [...]
 end
 
 #! Asserts that burning `amount` would not reduce supply below zero.
 #!
-#! Inputs:  [amount, token_supply, ...]
+#! Inputs:  [token_supply, amount, ...]
 #! Outputs: [...]
 #!
 #! Panics if: amount > token_supply.
@@ -66,6 +70,7 @@ end
 #! Invocation: exec
 pub proc check_burn
     # assert amount <= token_supply
+    # (b = token_supply, a = amount; lte checks a <= b)
     lte assert.err=ERR_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
     # => [...]
 end

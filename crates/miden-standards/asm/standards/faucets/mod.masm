@@ -4,13 +4,9 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::standards::supply::supply_limits
 
-# CONSTANTS
-# =================================================================================================
-
-const PRIVATE_NOTE=2
-
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
@@ -19,11 +15,9 @@ const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT="max suppl
 
 const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY="token_supply plus the amount passed to distribute would exceed the maximum supply"
 
-const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY="asset amount to burn exceeds the existing token supply"
-
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
-# CONSTANTS
+# STORAGE LAYOUT
 # =================================================================================================
 
 # The local memory address at which the metadata slot content is stored.
@@ -208,7 +202,7 @@ pub proc burn
     # => [token_supply, amount, token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
 
     # assert that amount <= token_supply
-    lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    exec.supply_limits::check_burn
     # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
 
     movup.3 movup.4

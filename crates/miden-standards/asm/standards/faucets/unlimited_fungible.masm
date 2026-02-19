@@ -47,7 +47,8 @@ end
 
 #! Burns the fungible asset from the active note.
 #!
-#! Burning the asset removes it from circulation. No supply tracking is performed.
+#! Burning the asset removes it from circulation and updates the token supply.
+#! Delegates to the shared burn procedure which handles supply tracking.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]

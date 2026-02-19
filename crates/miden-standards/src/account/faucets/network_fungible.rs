@@ -20,12 +20,10 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::token_metadata::TOKEN_SYMBOL_TYPE_ID;
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
-
-/// The schema type ID for token symbols.
-const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
