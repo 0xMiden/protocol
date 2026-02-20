@@ -184,13 +184,10 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
-/// TODO: Remove all but target_faucet_account_id
 #[derive(Clone)]
 pub struct OutputNoteData {
     /// P2ID note serial number (4 felts as Word)
     pub output_p2id_serial_num: Word,
-    /// Target agg faucet account ID (2 felts: prefix and suffix)
-    pub target_faucet_account_id: AccountId,
     /// P2ID output note tag
     pub output_note_tag: NoteTag,
 }
@@ -198,21 +195,17 @@ pub struct OutputNoteData {
 impl OutputNoteData {
     /// Converts the output note data to a vector of field elements for note storage
     pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + padding)
+        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 1 + 3 (serial_num + tag + padding)
         let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
 
         // P2ID note serial number (4 felts as Word)
         elements.extend(self.output_p2id_serial_num);
 
-        // Target faucet account ID (2 felts: prefix and suffix)
-        elements.push(self.target_faucet_account_id.prefix().as_felt());
-        elements.push(self.target_faucet_account_id.suffix());
-
         // Output note tag
         elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
 
         // Padding
-        elements.extend(vec![Felt::ZERO; 1]);
+        elements.extend(vec![Felt::ZERO; 3]);
 
         elements
     }
@@ -256,6 +249,7 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note
 /// - `sender_account_id`: The account ID of the CLAIM note creator
+/// - `target_faucet_account_id`: The account ID of the target agglayer faucet that will consume this note
 /// - `rng`: Random number generator for creating the CLAIM note serial number
 ///
 /// # Errors
@@ -263,12 +257,13 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 pub fn create_claim_note<R: FeltRng>(
     storage: ClaimNoteStorage,
     sender_account_id: AccountId,
+    target_faucet_account_id: AccountId,
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
     let attachment = NetworkAccountTarget::new(
-        storage.output_note_data.target_faucet_account_id,
+        target_faucet_account_id,
         NoteExecutionHint::Always,
     )
     .map_err(|e| NoteError::other(e.to_string()))?

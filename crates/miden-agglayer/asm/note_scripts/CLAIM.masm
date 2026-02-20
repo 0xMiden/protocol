@@ -1,8 +1,8 @@
 use miden::agglayer::agglayer_faucet -> agg_faucet
-use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::note
+use miden::standards::attachments::network_account_target
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
 use miden::core::mem
@@ -18,9 +18,6 @@ const PROOF_DATA_START_PTR = 0
 const LEAF_DATA_START_PTR = 536
 const OUTPUT_NOTE_DATA_START_PTR = 568
 
-const TARGET_FAUCET_PREFIX_MEM_ADDR = 572
-const TARGET_FAUCET_SUFFIX_MEM_ADDR = 573
-
 # ERRORS
 # =================================================================================================
 
@@ -29,24 +26,17 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM's target account address and trans
 #! Asserts that the consuming account matches the target agglayer faucet account.
 #!
 #! This procedure ensures that only the specified agglayer faucet account can consume
-#! this CLAIM note. It assumes that the note storage has already been loaded into memory
-#! via active_note::get_storage.
+#! this CLAIM note. It uses the NetworkAccountTarget attachment to verify the match.
 #!
 #! Inputs: []
 #! Output: []
 #!
 #! Panics if:
-#! - The consuming account ID does not match the target faucet account ID stored in memory
+#! - The consuming account ID does not match the target faucet account ID in the note attachment
 proc assert_aggfaucet_is_consumer
-    # Load target faucet ID (assumes active_note::get_storage has been called)
-    mem_load.TARGET_FAUCET_SUFFIX_MEM_ADDR mem_load.TARGET_FAUCET_PREFIX_MEM_ADDR
-    # => [target_faucet_prefix, target_faucet_suffix]
-
-    exec.active_account::get_id
-    # => [account_id_prefix, account_id_suffix, target_faucet_prefix, target_faucet_suffix]
-
-    # ensure only the specified target faucet can consume this CLAIM note, not any other account
-    exec.account_id::is_equal assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
+    # Ensure note attachment targets the consuming bridge account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
     # => []
 end
 
@@ -81,9 +71,8 @@ end
 #! TODO: Will be removed in future PR
 #! OUTPUT_NOTE_DATA_KEY => [
 #!   output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
-#!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
-#!   output_note_tag[1],              // P2ID output note tag
-#!   padding[1],                      // padding (1 felt)
+#!   output_note_tag[1],               // P2ID output note tag
+#!   padding[3],                      // padding (3 felts)
 #! ]
 #!
 #! Invocation: exec
@@ -139,7 +128,7 @@ end
 #! Agglayer Faucet CLAIM script: claims assets by calling the agglayer faucet's claim function.
 #!
 #! This note can only be consumed by the specific agglayer faucet account whose ID is provided
-#! in the note storage (target_faucet_account_id). Upon consumption, it will create a P2ID note.
+#! in the note attachment (NetworkAccountTarget). Upon consumption, it will create a P2ID note.
 #!
 #! Requires that the account exposes:
 #! - agglayer::agglayer_faucet::claim procedure.
@@ -162,9 +151,8 @@ end
 #! - amount                     [552..559]: 8 felts
 #! - metadata                   [560..567]: 8 felts
 #! - output_p2id_serial_num     [568..571]: 4 felts
-#! - target_faucet_account_id   [572..573]: 2 felts
-#! - output_note_tag            [574]     : 1 felt
-#! - padding                    [575]     : 1 felt
+#! - output_note_tag            [572]     : 1 felt
+#! - padding                    [573..575]: 3 felts
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -185,10 +173,12 @@ end
 #! - metadata: ABI encoded metadata (fixed size)
 #! - padding (3 felts)
 #! - output_p2id_serial_num: P2ID note serial number (Word)
-#! - target_faucet_account_id: Target agglayer faucet account ID (prefix and suffix). Only this specific
-#!   account can consume the note - any other account will cause a panic.
 #! - output_note_tag: P2ID output note tag
-#! - padding (1 felt)
+#! - padding (3 felts)
+#!
+#! Note attachment (NetworkAccountTarget):
+#! - target_faucet_account_id: Target agglayer faucet account ID encoded in the attachment.
+#!   Only this specific account can consume the note - any other account will cause a panic.
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
@@ -197,12 +187,12 @@ begin
     dropw
     # => [pad(16)]
 
-    # Load CLAIM note storage into memory, starting at address 0
-    push.0 exec.active_note::get_storage drop drop
+    # Check consuming account == aggfaucet (using NetworkAccountTarget attachment)
+    exec.assert_aggfaucet_is_consumer
     # => [pad(16)]
 
-    # Check consuming account == aggfaucet
-    exec.assert_aggfaucet_is_consumer
+    # Load CLAIM note storage into memory, starting at address 0
+    push.0 exec.active_note::get_storage drop drop
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key

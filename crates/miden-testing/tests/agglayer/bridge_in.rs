@@ -134,13 +134,17 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     let output_note_data = OutputNoteData {
         output_p2id_serial_num: serial_num,
-        target_faucet_account_id: agglayer_faucet.id(),
         output_note_tag: NoteTag::with_account_target(user_account.id()),
     };
 
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
 
-    let claim_note = create_claim_note(claim_inputs, user_account.id(), builder.rng_mut())?;
+    let claim_note = create_claim_note(
+        claim_inputs,
+        user_account.id(),
+        agglayer_faucet.id(),
+        builder.rng_mut(),
+    )?;
 
     // Create P2ID note for the user account (similar to network faucet test)
     let p2id_script = StandardNote::P2ID.script();
