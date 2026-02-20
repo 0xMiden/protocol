@@ -477,17 +477,17 @@ pub proc is_signer(pub_key: BeWord) -> felt
         sub.1
         # => [i-1, PUB_KEY]
 
-        dup exec.create_approver_map_key
-        # => [APPROVER_MAP_KEY, i-1, PUB_KEY]
+        # store i-1 for this loop iteration before map lookup
+        dup loc_store.CURRENT_SIGNER_INDEX_LOC
+        # => [i-1, PUB_KEY]
+
+        exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, PUB_KEY]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, i-1, PUB_KEY]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY]
 
         exec.active_account::get_initial_map_item
-        # => [CURRENT_PUB_KEY, i-1, PUB_KEY]
-
-        # move i-1 to the top and store it in local memory for this loop iteration
-        movup.4 loc_store.CURRENT_SIGNER_INDEX_LOC
         # => [CURRENT_PUB_KEY, PUB_KEY]
 
         dupw.1 exec.word::eq
