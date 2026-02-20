@@ -172,11 +172,8 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
-/// TODO: Remove all but target_faucet_account_id
 #[derive(Clone)]
 pub struct OutputNoteData {
-    /// P2ID note serial number (4 felts as Word)
-    pub output_p2id_serial_num: Word,
     /// Target agg faucet account ID (2 felts: prefix and suffix)
     pub target_faucet_account_id: AccountId,
     /// P2ID output note tag
@@ -188,11 +185,8 @@ pub struct OutputNoteData {
 impl OutputNoteData {
     /// Converts the output note data to a vector of field elements for note storage
     pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + miden_claim_amount)
+        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 4; // 2 + 1 + 1 (account_id + tag + miden_claim_amount)
         let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
-
-        // P2ID note serial number (4 felts as Word)
-        elements.extend(self.output_p2id_serial_num);
 
         // Target faucet account ID (2 felts: prefix and suffix)
         elements.push(self.target_faucet_account_id.prefix().as_felt());
@@ -226,9 +220,9 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
     type Error = NoteError;
 
     fn try_from(storage: ClaimNoteStorage) -> Result<Self, Self::Error> {
-        // proof_data + leaf_data + empty_word + output_note_data
-        // 536 + 32 + 8
-        let mut claim_storage = Vec::with_capacity(576);
+        // proof_data + leaf_data + output_note_data
+        // 536 + 32 + 4
+        let mut claim_storage = Vec::with_capacity(572);
 
         claim_storage.extend(storage.proof_data.to_elements());
         claim_storage.extend(storage.leaf_data.to_elements());

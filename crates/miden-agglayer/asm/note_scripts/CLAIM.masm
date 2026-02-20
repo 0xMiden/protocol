@@ -18,8 +18,8 @@ const PROOF_DATA_START_PTR = 0
 const LEAF_DATA_START_PTR = 536
 const OUTPUT_NOTE_DATA_START_PTR = 568
 
-const TARGET_FAUCET_PREFIX_MEM_ADDR = 572
-const TARGET_FAUCET_SUFFIX_MEM_ADDR = 573
+const TARGET_FAUCET_PREFIX_MEM_ADDR = 568
+const TARGET_FAUCET_SUFFIX_MEM_ADDR = 569
 
 # ERRORS
 # =================================================================================================
@@ -78,13 +78,13 @@ end
 #!   padding[3],                      // padding (3 felts)
 #! ]
 #!
-#! TODO: Will be removed in future PR
 #! OUTPUT_NOTE_DATA_KEY => [
-#!   output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
 #!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
 #!   output_note_tag[1],              // P2ID output note tag
 #!   miden_claim_amount[1],           // Miden claim amount (1 felt)
 #! ]
+#!
+#! Note: PROOF_DATA_KEY is also used as the P2ID output note serial number.
 #!
 #! Invocation: exec
 proc write_claim_data_into_advice_map_by_key
@@ -147,7 +147,7 @@ end
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (576 felts total):
+#! NoteStorage layout (572 felts total):
 #! - smtProofLocalExitRoot      [0..255]  : 256 felts
 #! - smtProofRollupExitRoot     [256..511]: 256 felts
 #! - globalIndex                [512..519]: 8 felts
@@ -161,10 +161,9 @@ end
 #! - amount                     [549..556]: 8 felts
 #! - metadata                   [557..564]: 8 felts
 #! - padding                    [565..567]: 3 felts
-#! - output_p2id_serial_num     [568..571]: 4 felts
-#! - target_faucet_account_id   [572..573]: 2 felts
-#! - output_note_tag            [574]     : 1 felt
-#! - miden_claim_amount         [575]     : 1 felt
+#! - target_faucet_account_id   [568..569]: 2 felts
+#! - output_note_tag            [570]     : 1 felt
+#! - miden_claim_amount         [571]     : 1 felt
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -184,12 +183,14 @@ end
 #! - amount: Amount of tokens (uint256 as 8 u32 felts)
 #! - metadata: ABI encoded metadata (fixed size)
 #! - padding (3 felts)
-#! - output_p2id_serial_num: P2ID note serial number (Word)
 #! - target_faucet_account_id: Target agglayer faucet account ID (prefix and suffix). Only this specific
 #!   account can consume the note - any other account will cause a panic.
 #! - output_note_tag: P2ID output note tag
 #! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
 #!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
+#!
+#! Note: The P2ID output note serial number is derived from PROOF_DATA_KEY (the RPO hash of the
+#! proof data elements), rather than being stored explicitly in the note storage.
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
