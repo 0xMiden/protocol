@@ -401,3 +401,141 @@ async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Tests the bridge-in flow using simulated L1 bridgeAsset data: CLAIM note -> Aggfaucet (FPI to
+/// Bridge) -> P2ID note created.
+///
+/// This test uses simulated ProofData and LeafData from bridge_asset_vectors.json,
+/// which represents a locally simulated L1 bridgeAsset() transaction.
+/// The claim note is processed against the agglayer faucet, which validates the Merkle proof
+/// and creates a P2ID note for the destination address.
+///
+/// This test verifies that the Solidity-generated test vectors can be used in Miden's bridge flow.
+#[tokio::test]
+async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ACCOUNT (with bridge_out component for MMR validation)
+    // --------------------------------------------------------------------------------------------
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account = create_existing_bridge_account(bridge_seed);
+    builder.add_account(bridge_account.clone())?;
+
+    // GET SIMULATED CLAIM DATA FROM JSON FIRST (to get origin token address)
+    // --------------------------------------------------------------------------------------------
+    let (proof_data, leaf_data, ger) = simulated_claim_data();
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
+    // Use the origin token address from the test vectors
+    // --------------------------------------------------------------------------------------------
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+
+    // Origin token address and network from the test vectors
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let scale = 0u8;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    // Get the destination account ID from the leaf data
+    // destination_account_id = ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE
+    let destination_account_id = leaf_data
+        .destination_address
+        .to_account_id()
+        .expect("destination address is not an embedded Miden AccountId");
+
+    // CREATE SENDER ACCOUNT (for creating the claim note)
+    // --------------------------------------------------------------------------------------------
+    let sender_account_builder =
+        Account::builder(builder.rng_mut().random()).with_component(BasicWallet);
+    let sender_account = builder.add_account_from_builder(
+        Auth::IncrNonce,
+        sender_account_builder,
+        AccountState::Exists,
+    )?;
+
+    // CREATE CLAIM NOTE WITH SIMULATED PROOF DATA AND LEAF DATA
+    // --------------------------------------------------------------------------------------------
+
+    // Generate a serial number for the P2ID note
+    let serial_num = builder.rng_mut().draw_word();
+
+    let output_note_data = OutputNoteData {
+        output_p2id_serial_num: serial_num,
+        target_faucet_account_id: agglayer_faucet.id(),
+        output_note_tag: NoteTag::with_account_target(destination_account_id),
+    };
+
+    let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
+
+    let claim_note = create_claim_note(claim_inputs, sender_account.id(), builder.rng_mut())?;
+
+    // Add the claim note to the builder before building the mock chain
+    builder.add_output_note(OutputNote::Full(claim_note.clone()));
+
+    // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_note =
+        UpdateGerNote::create(ger, sender_account.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+
+    // BUILD MOCK CHAIN WITH ALL ACCOUNTS
+    // --------------------------------------------------------------------------------------------
+    let mut mock_chain = builder.clone().build()?;
+
+    // EXECUTE UPDATE_GER NOTE TO STORE GER IN BRIDGE ACCOUNT
+    // --------------------------------------------------------------------------------------------
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // EXECUTE CLAIM NOTE AGAINST AGGLAYER FAUCET (with FPI to Bridge)
+    // --------------------------------------------------------------------------------------------
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(bridge_account.id())?;
+
+    let tx_context = mock_chain
+        .build_tx_context(agglayer_faucet.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![foreign_account_inputs])
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // VERIFY P2ID NOTE WAS CREATED
+    // --------------------------------------------------------------------------------------------
+
+    // Check that exactly one P2ID note was created by the faucet
+    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+    let output_note = executed_transaction.output_notes().get_note(0);
+
+    // Verify note metadata properties
+    assert_eq!(output_note.metadata().sender(), agglayer_faucet.id());
+    assert_eq!(output_note.metadata().note_type(), NoteType::Public);
+
+    // Note: We intentionally do NOT verify the exact note ID or asset amount here because
+    // the scale_u256_to_native_amount function is currently a TODO stub that doesn't perform
+    // proper u256-to-native scaling. The test verifies that the bridge-in flow correctly
+    // validates the Merkle proof using simulated L1 bridgeAsset data and creates an output note.
+    //
+    // This test demonstrates that Solidity-generated test vectors can be successfully used
+    // in Miden's bridge implementation.
+
+    Ok(())
+}
