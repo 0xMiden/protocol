@@ -11,7 +11,7 @@ use miden_protocol::utils::sync::LazyLock;
 use crate::account::components::falcon_512_rpo_library;
 
 /// The schema type ID for Falcon512Rpo public keys.
-const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::falcon512_rpo::pub_key";
+const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::falcon512_poseidon2::pub_key";
 
 static FALCON_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::falcon512_rpo::public_key")
