@@ -1,5 +1,5 @@
 use miden::agglayer::bridge::bridge_config
-use miden::agglayer::bridge::crypto_utils
+use miden::agglayer::bridge::leaf_utils
 use miden::agglayer::common::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::mem
@@ -220,7 +220,7 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
 
     # compute the leaf value for elements in memory starting at LEAF_DATA_START_PTR
     push.LEAF_DATA_START_PTR
-    exec.crypto_utils::compute_leaf_value
+    exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE[8]]
 end
 

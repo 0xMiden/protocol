@@ -176,7 +176,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::agglayer::bridge::crypto_utils
+            use miden::agglayer::bridge::leaf_utils
 
             const LEAF_DATA_START_PTR = 0
             const LEAF_DATA_NUM_WORDS = 8
@@ -188,7 +188,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
                 push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
                 exec.mem::pipe_preimage_to_memory drop
 
-                exec.crypto_utils::pack_leaf_data
+                exec.leaf_utils::pack_leaf_data
             end
         "#
     );

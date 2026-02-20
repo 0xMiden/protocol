@@ -12,7 +12,7 @@ use miden::core::word
 use miden::agglayer::common::utils
 use miden::agglayer::faucet -> agglayer_faucet
 use miden::agglayer::bridge::bridge_config
-use miden::agglayer::bridge::crypto_utils
+use miden::agglayer::bridge::leaf_utils
 use miden::agglayer::bridge::mmr_frontier32_keccak
 
 
@@ -147,7 +147,7 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
 
     # Explicitly zero the 3 padding felts after METADATA_HASH for
-    # crypto_utils::pack_leaf_data
+    # leaf_utils::pack_leaf_data
     push.0
     push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
     mem_store
@@ -245,7 +245,7 @@ end
 #!
 #! Invocation: exec
 proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
-    exec.crypto_utils::compute_leaf_value
+    exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
     # Load the LET frontier from storage into memory at LET_FRONTIER_MEM_PTR
