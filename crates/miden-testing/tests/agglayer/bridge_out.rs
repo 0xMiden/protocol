@@ -104,13 +104,16 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     let mut builder = MockChain::builder();
 
-    // CREATE SENDER ACCOUNT (also the bridge admin)
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        sender_account.id(),
-        sender_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -140,10 +143,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
     builder.add_account(faucet.clone())?;
 
-    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by admin)
+    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
-        sender_account.id(),
+        bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -302,15 +305,18 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE SENDER (ADMIN) ACCOUNT
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        sender_account.id(),
-        sender_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -396,13 +402,16 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a bridge admin account
-    let admin_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     // Create a bridge account (includes a `bridge_out` component)
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        admin_account.id(),
-        admin_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -501,13 +510,16 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a bridge admin account
-    let admin_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     // Create a bridge account as the designated TARGET for the B2AGG note
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        admin_account.id(),
-        admin_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -517,8 +529,8 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        admin_account.id(),
-        admin_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(malicious_account.clone())?;
 

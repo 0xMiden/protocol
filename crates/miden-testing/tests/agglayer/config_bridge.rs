@@ -25,14 +25,17 @@ use miden_testing::{Auth, MockChain};
 async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE SENDER (ADMIN) ACCOUNT
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    // CREATE BRIDGE ADMIN ACCOUNT (note sender)
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
 
-    // CREATE BRIDGE ACCOUNT (starts with empty faucet registry, admin = sender)
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
-        sender_account.id(),
-        sender_account.id(),
+        bridge_admin.id(),
+        ger_manager.id(),
     );
     builder.add_account(bridge_account.clone())?;
 
@@ -57,7 +60,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
         faucet_to_register,
-        sender_account.id(),
+        bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
