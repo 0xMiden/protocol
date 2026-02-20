@@ -99,8 +99,7 @@ pub fn agglayer_library() -> Library {
 /// Returns the Bridge component library.
 ///
 /// This library only exposes bridge-related procedures (bridge_out, bridge_in,
-/// bridge_config, local_exit_tree). Faucet-specific procedures like `claim` are
-/// not included.
+/// bridge_config, local_exit_tree).
 pub fn agglayer_bridge_library() -> Library {
     BRIDGE_COMPONENT_LIBRARY.clone()
 }
@@ -108,7 +107,7 @@ pub fn agglayer_bridge_library() -> Library {
 /// Returns the Faucet component library.
 ///
 /// This library only exposes faucet-related procedures (claim, get_origin_token_address,
-/// etc.). Bridge-specific procedures like `bridge_out` are not included.
+/// etc.).
 pub fn agglayer_faucet_library() -> Library {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
