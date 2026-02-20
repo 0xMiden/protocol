@@ -172,17 +172,10 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
-///
-/// The `target_faucet_account_id` is used to build the `NetworkAccountTarget` attachment
-/// on the note but is NOT serialized into `NoteStorage` (it is enforced via the attachment).
 #[derive(Clone)]
 pub struct OutputNoteData {
     /// P2ID note serial number (4 felts as Word)
     pub output_p2id_serial_num: Word,
-    /// Target agg faucet account ID.
-    ///
-    /// Used to build the `NetworkAccountTarget` attachment; not serialized into note storage.
-    pub target_faucet_account_id: AccountId,
     /// P2ID output note tag
     pub output_note_tag: NoteTag,
     /// Miden claim amount (scaled-down token amount as Felt)
@@ -251,6 +244,8 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 ///
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note
+/// - `target_faucet_id`: The account ID of the agglayer faucet that should consume this note.
+///   Encoded as a `NetworkAccountTarget` attachment on the note metadata.
 /// - `sender_account_id`: The account ID of the CLAIM note creator
 /// - `rng`: Random number generator for creating the CLAIM note serial number
 ///
@@ -258,17 +253,16 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 /// Returns an error if note creation fails.
 pub fn create_claim_note<R: FeltRng>(
     storage: ClaimNoteStorage,
+    target_faucet_id: AccountId,
     sender_account_id: AccountId,
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
-    let attachment = NetworkAccountTarget::new(
-        storage.output_note_data.target_faucet_account_id,
-        NoteExecutionHint::Always,
-    )
-    .map_err(|e| NoteError::other(e.to_string()))?
-    .into();
+    let attachment =
+        NetworkAccountTarget::new(target_faucet_id, NoteExecutionHint::Always)
+            .map_err(|e| NoteError::other(e.to_string()))?
+            .into();
 
     let metadata =
         NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
