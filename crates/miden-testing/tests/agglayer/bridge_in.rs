@@ -1,5 +1,7 @@
 extern crate alloc;
 
+use core::slice;
+
 use miden_agglayer::{
     ClaimNoteStorage,
     EthAddressFormat,
@@ -13,6 +15,7 @@ use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::testing::account;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
@@ -70,13 +73,23 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger) = real_claim_data();
 
-    // Get the destination account ID from the leaf data
-    // This requires the destination_address to be in the embedded Miden AccountId format
-    // (first 4 bytes must be zero).
-    let destination_account_id = leaf_data
-        .destination_address
-        .to_account_id()
-        .expect("destination address is not an embedded Miden AccountId");
+    // CREATE DESTINATION ACCOUNT (to consume the P2ID note)
+    // --------------------------------------------------------------------------------------------
+    // We create a wallet account that will receive and consume the P2ID note.
+    // Note: The destination_account_id from leaf_data is embedded in the P2ID note,
+    // but we create our own wallet here since we can't control the AccountId from test data.
+
+    let destination_account_id = leaf_data.destination_address.to_account_id().unwrap();
+    let setup_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let vault = setup_account.vault().clone();
+    let storage = setup_account.storage().clone();
+    let nonce = setup_account.nonce();
+    let seed = setup_account.seed();
+    let code = setup_account.code().clone();
+
+    let destination_account =
+        Account::new_unchecked(destination_account_id, vault, storage, code, nonce, seed);
 
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
@@ -101,7 +114,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
         .expect("amount should scale successfully");
 
     let output_note_data = OutputNoteData {
-        output_p2id_serial_num: serial_num,
+        output_p2id_serial_num: serial_num, // TODO: will be proof data key
         target_faucet_account_id: agglayer_faucet.id(),
         output_note_tag: NoteTag::with_account_target(destination_account_id),
         miden_claim_amount,
@@ -192,5 +205,17 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     assert_eq!(OutputNote::Full(expected_output_p2id_note), *output_note);
 
+    // CONSUME P2ID NOTE BY DESTINATION ACCOUNT
+    // --------------------------------------------------------------------------------------------
+
+    let consume_tx_context = mock_chain
+        .build_tx_context(destination_account.id(), &[output_note.id()], &[])?
+        .build()?;
+
+    let consume_tx = consume_tx_context.execute().await?;
+
+    let account_delta = consume_tx.account_delta();
+
+    println!("account delta: {:?}", account_delta);
     Ok(())
 }
