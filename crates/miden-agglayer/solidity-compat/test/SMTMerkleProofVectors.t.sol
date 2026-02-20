@@ -7,17 +7,16 @@ import "@agglayer/v2/lib/DepositContractBase.sol";
 /**
  * @title SMTMerkleProofVectors
  * @notice Test contract that generates test vectors for Merkle proofs verification.
- * 
+ *
  * Run with: forge test -vv --match-contract SMTMerkleProofVectors
- * 
+ *
  * The output can be used during the bridge-in tests in
  * crates/miden-testing/tests/agglayer/bridge_in.rs
  */
 contract SMTMerkleProofVectors is Test, DepositContractBase {
-
     /**
      * @notice Generates vectors of leaves, roots and merkle paths and saves them to the JSON.
-     *         Notice that each value in the leaves/roots array corresponds to 32 values in the 
+     *         Notice that each value in the leaves/roots array corresponds to 32 values in the
      *         merkle paths array.
      */
     function test_generateVerificationProofData() public {
@@ -30,7 +29,7 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
         // This is a work around which allows to provide the merkle path to the verifyMerkleProof
         // function, since the merkle_paths array cannot be sliced.
         bytes32[32] memory current_path;
-        
+
         // generate canonical zeros array
         bytes32 z = bytes32(0);
         for (uint256 i = 0; i < 32; i++) {
@@ -49,8 +48,8 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
             // first update the merkle_paths array and only after that actually add a leaf and
             // recompute the _branch.
             //
-            // Merkle paths in the _branch array contain plain zeros for the nodes which were not 
-            // updated during the leaf insertion. To get the proper Merkle path we should use 
+            // Merkle paths in the _branch array contain plain zeros for the nodes which were not
+            // updated during the leaf insertion. To get the proper Merkle path we should use
             // canonical zeros instead.
             for (uint256 j = 0; j < 32; j++) {
                 if (i >> j & 1 == 1) {
