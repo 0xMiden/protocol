@@ -40,7 +40,7 @@ contract BridgeAssetTestVectors is Test, DepositContractV2 {
         address originTokenAddress = 0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF;
         uint32 destinationNetwork = 20;
         address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
-        uint256 amount = 1000000000000000;
+        uint256 amount = 100000000000000000000;
 
         bytes memory metadata = abi.encode("Test Token", "TEST", uint8(18));
         bytes32 metadataHash = keccak256(metadata);

@@ -15,10 +15,12 @@ use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
-use miden_protocol::testing::account;
+use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::testing::account_component::IncrNonceAuthComponent;
+use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
@@ -73,24 +75,6 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger) = real_claim_data();
 
-    // CREATE DESTINATION ACCOUNT (to consume the P2ID note)
-    // --------------------------------------------------------------------------------------------
-    // We create a wallet account that will receive and consume the P2ID note.
-    // Note: The destination_account_id from leaf_data is embedded in the P2ID note,
-    // but we create our own wallet here since we can't control the AccountId from test data.
-
-    let destination_account_id = leaf_data.destination_address.to_account_id().unwrap();
-    let setup_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let vault = setup_account.vault().clone();
-    let storage = setup_account.storage().clone();
-    let nonce = setup_account.nonce();
-    let seed = setup_account.seed();
-    let code = setup_account.code().clone();
-
-    let destination_account =
-        Account::new_unchecked(destination_account_id, vault, storage, code, nonce, seed);
-
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
     let sender_account_builder =
@@ -103,6 +87,7 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     // CREATE CLAIM NOTE WITH REAL PROOF DATA AND LEAF DATA
     // --------------------------------------------------------------------------------------------
+    let destination_account_id = leaf_data.destination_address.to_account_id().unwrap();
 
     // Generate a serial number for the P2ID note
     let serial_num = builder.rng_mut().draw_word();
@@ -205,18 +190,6 @@ async fn test_bridge_in_claim_to_p2id() -> anyhow::Result<()> {
 
     assert_eq!(OutputNote::Full(expected_output_p2id_note), *output_note);
 
-    // CONSUME P2ID NOTE BY DESTINATION ACCOUNT
-    // --------------------------------------------------------------------------------------------
-
-    let consume_tx_context = mock_chain
-        .build_tx_context(destination_account.id(), &[output_note.id()], &[])?
-        .build()?;
-
-    let consume_tx = consume_tx_context.execute().await?;
-
-    let account_delta = consume_tx.account_delta();
-
-    println!("account delta: {:?}", account_delta);
     Ok(())
 }
 
@@ -254,7 +227,7 @@ async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
     // Origin token address and network from the test vectors
     let origin_token_address = leaf_data.origin_token_address;
     let origin_network = leaf_data.origin_network;
-    let scale = 0u8;
+    let scale = 10u8;
 
     let agglayer_faucet = create_existing_agglayer_faucet(
         agglayer_faucet_seed,
@@ -276,6 +249,13 @@ async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
         .to_account_id()
         .expect("destination address is not an embedded Miden AccountId");
 
+    // Create the destination account using the well-known test account ID
+    let destination_account =
+        Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
+
+    // Add the destination account to the mock chain so it can consume the P2ID note
+    builder.add_account(destination_account.clone())?;
+
     // CREATE SENDER ACCOUNT (for creating the claim note)
     // --------------------------------------------------------------------------------------------
     let sender_account_builder =
@@ -292,10 +272,17 @@ async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
     // Generate a serial number for the P2ID note
     let serial_num = builder.rng_mut().draw_word();
 
+    // Calculate the scaled-down Miden amount using the faucet's scale factor
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
     let output_note_data = OutputNoteData {
         output_p2id_serial_num: serial_num,
         target_faucet_account_id: agglayer_faucet.id(),
         output_note_tag: NoteTag::with_account_target(destination_account_id),
+        miden_claim_amount,
     };
 
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
@@ -347,13 +334,70 @@ async fn test_bridge_in_simulated_l1_transaction() -> anyhow::Result<()> {
     assert_eq!(output_note.metadata().sender(), agglayer_faucet.id());
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
-    // Note: We intentionally do NOT verify the exact note ID or asset amount here because
-    // the scale_u256_to_native_amount function is currently a TODO stub that doesn't perform
-    // proper u256-to-native scaling. The test verifies that the bridge-in flow correctly
-    // validates the Merkle proof using simulated L1 bridgeAsset data and creates an output note.
-    //
-    // This test demonstrates that Solidity-generated test vectors can be successfully used
-    // in Miden's bridge implementation.
+    // Extract and verify P2ID asset contents
+    let mut assets_iter = output_note.assets().unwrap().iter_fungible();
+    let p2id_asset = assets_iter.next().unwrap();
+
+    // Verify minted amount matches expected scaled value
+    assert_eq!(
+        Felt::new(p2id_asset.amount()),
+        miden_claim_amount,
+        "asset amount does not match"
+    );
+
+    // Verify faucet ID matches agglayer_faucet (P2ID token issuer)
+    assert_eq!(
+        p2id_asset.faucet_id(),
+        agglayer_faucet.id(),
+        "P2ID asset faucet ID doesn't match agglayer_faucet: got {:?}, expected {:?}",
+        p2id_asset.faucet_id(),
+        agglayer_faucet.id()
+    );
+
+    // Verify full note ID construction
+    let expected_asset: Asset =
+        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_int())
+            .unwrap()
+            .into();
+    let expected_output_p2id_note = create_p2id_note_exact(
+        agglayer_faucet.id(),
+        destination_account_id,
+        vec![expected_asset],
+        NoteType::Public,
+        serial_num,
+    )
+    .unwrap();
+
+    assert_eq!(OutputNote::Full(expected_output_p2id_note.clone()), *output_note);
+
+    // CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT
+    // --------------------------------------------------------------------------------------------
+
+    // Add the faucet transaction to the chain and prove the next block so the P2ID note is
+    // committed and can be consumed.
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    // Execute the consume transaction for the destination account
+    let consume_tx_context = mock_chain
+        .build_tx_context(
+            destination_account.id(),
+            &[],
+            slice::from_ref(&expected_output_p2id_note),
+        )?
+        .build()?;
+    let consume_executed_transaction = consume_tx_context.execute().await?;
+
+    // Verify the destination account received the minted asset
+    let mut destination_account = destination_account.clone();
+    destination_account.apply_delta(consume_executed_transaction.account_delta())?;
+
+    let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
+    assert_eq!(
+        balance,
+        miden_claim_amount.as_int(),
+        "destination account balance does not match"
+    );
 
     Ok(())
 }
