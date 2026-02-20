@@ -39,11 +39,15 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2IDE NOTE
 // ================================================================================================
 
-/// Pay-to-ID Extended (P2IDE) note structure.
+/// Pay-to-ID Extended (P2IDE) note abstraction.
 ///
-/// P2IDE notes are an extended version of P2ID notes that provide additional storage capacity
-/// for more complex use cases. They enable the transfer of assets to a target account with
-/// extended metadata and storage capabilities beyond the standard P2ID note format.
+/// A P2IDE note enables transferring assets to a target account specified in the note storage.
+/// The note may optionally include:
+///
+/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
+/// - A timelock height preventing consumption before a given block
+///
+/// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
 pub struct P2ideNote;
 
 impl P2ideNote {
