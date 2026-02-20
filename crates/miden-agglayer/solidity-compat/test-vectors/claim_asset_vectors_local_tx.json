@@ -1,12 +1,10 @@
 {
   "amount": 100000000000000000000,
-  "bridge_contract": "0x2a3DD3EB832aF982ec71669E178424b10Dca2EDe",
   "deposit_count": 1,
   "description": "L1 bridgeAsset transaction test vectors with valid Merkle proofs",
   "destination_address": "0x00000000AA0000000000bb000000cc000000Dd00",
   "destination_network": 20,
   "global_exit_root": "0xc84f1e3744c151b345a8899034b3677c0fdbaf45aa3aaf18a3f97dbcf70836cb",
-  "global_exit_root_manager": "0x580bda1e7A0CFAe92Fa7F6c20A3794F169CE3CFb",
   "global_index": "0x0000000000000000000000000000000000000000000000010000000000000000",
   "leaf_type": 0,
   "leaf_value": "0x9d85d7c56264697df18f458b4b12a457b87b7e7f7a9b16dcb368514729ef680d",
@@ -17,7 +15,6 @@
   "origin_network": 0,
   "origin_token_address": "0x2DC70fb75b88d2eB4715bc06E1595E6D97c34DFF",
   "rollup_exit_root": "0xd18cc25ae65a4e3d95587ffea9411747238567d6e5d3744240554713edefc197",
-  "rollup_manager": "0x5132A183E9F3CB7C848b0AAC5Ae0c4f0491B7aB2",
   "smt_proof_local_exit_root": [
     "0x0000000000000000000000000000000000000000000000000000000000000000",
     "0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5",

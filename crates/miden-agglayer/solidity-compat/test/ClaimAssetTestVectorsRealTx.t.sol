@@ -6,17 +6,17 @@ import "@agglayer/v2/lib/DepositContractV2.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
 
 /**
- * @title ClaimAssetTestVectors
+ * @title ClaimAssetTestVectorsRealTx
  * @notice Test contract that generates comprehensive test vectors for verifying
  *         compatibility between Solidity's claimAsset and Miden's implementation.
  *
  *         Generates vectors for both LeafData and ProofData from a real transaction.
  *
- * Run with: forge test -vv --match-contract ClaimAssetTestVectors
+ * Run with: forge test -vv --match-contract ClaimAssetTestVectorsRealTx
  *
  * The output can be compared against the Rust ClaimNoteStorage implementation.
  */
-contract ClaimAssetTestVectors is Test, DepositContractV2 {
+contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
     /**
      * @notice Generates claim asset test vectors from real Katana transaction and saves to JSON.
      *         Uses real transaction data from Katana explorer:
@@ -130,7 +130,7 @@ contract ClaimAssetTestVectors is Test, DepositContractV2 {
             string memory json = vm.serializeBytes32(obj, "leaf_value", leafValue);
 
             // Save to file
-            string memory outputPath = "test-vectors/claim_asset_vectors.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_real_tx.json";
             vm.writeJson(json, outputPath);
         }
     }

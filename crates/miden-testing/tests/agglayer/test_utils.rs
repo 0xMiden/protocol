@@ -29,12 +29,14 @@ use serde::Deserialize;
 
 /// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
 /// transaction.
-const CLAIM_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+const CLAIM_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_real_tx.json"
+);
 
 /// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
-const BRIDGE_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/bridge_asset_vectors.json");
+const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
+);
 
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =
@@ -271,7 +273,7 @@ pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
 ///
 /// Returns a tuple of (ProofData, LeafData, ExitRoot) from a locally simulated L1 bridgeAsset
 /// transaction. This data represents what would be generated when a user calls bridgeAsset() on L1.
-pub fn simulated_claim_data() -> (ProofData, LeafData, ExitRoot) {
+pub fn local_claim_data() -> (ProofData, LeafData, ExitRoot) {
     let vector = &*CLAIM_ASSET_VECTOR_LOCAL;
     let ger = ExitRoot::new(
         hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
