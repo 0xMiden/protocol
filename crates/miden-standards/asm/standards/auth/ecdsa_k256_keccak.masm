@@ -35,9 +35,10 @@ pub proc authenticate_transaction
     # Increment the account's nonce.
     # ---------------------------------------------------------------------------------------------
     # This has to happen before computing the delta commitment, otherwise that procedure will abort
-    push.0.0 exec.tx::get_block_number
     exec.native_account::incr_nonce
-    # => [[final_nonce, ref_block_num, 0, 0], PUB_KEY]
+    exec.tx::get_block_number
+    push.0.0
+    # => [[0, 0, ref_block_num, final_nonce], PUB_KEY]
 
     # Compute the message that is signed.
     # ---------------------------------------------------------------------------------------------
@@ -78,12 +79,12 @@ end
 #! the owner public key mapping - the previous signers must authorize the change to the new signers,
 #! not the new signers authorizing themselves.
 #!
-#! Inputs:  [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, MSG]
+#! Inputs:  [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, MSG]
 #! Outputs: [num_verified_signatures, MSG]
 @locals(16)
 pub proc verify_signatures
-    loc_store.PUB_KEY_SLOT_PREFIX_LOC
     loc_store.PUB_KEY_SLOT_SUFFIX_LOC
+    loc_store.PUB_KEY_SLOT_PREFIX_LOC
     # => [num_of_approvers, MSG]
 
     # Initializing SUCCESSFUL_VERIFICATIONS local memory address to 0
@@ -104,14 +105,14 @@ pub proc verify_signatures
         # -----------------------------------------------------------------------------------------
 
         sub.1 dup push.0.0.0
-        loc_load.PUB_KEY_SLOT_SUFFIX_LOC loc_load.PUB_KEY_SLOT_PREFIX_LOC
-        # => [owner_key_slot_prefix, owner_key_slot_suffix, [0, 0, 0, i-1], i-1, MSG]
+        loc_load.PUB_KEY_SLOT_PREFIX_LOC loc_load.PUB_KEY_SLOT_SUFFIX_LOC
+        # => [owner_key_slot_suffix, owner_key_slot_prefix, [0, 0, 0, i-1], i-1, MSG]
 
         # Get public key from initial storage state
         exec.active_account::get_initial_map_item
         # => [OWNER_PUB_KEY, i-1, MSG]
 
-        loc_storew_be.CURRENT_PK_LOC
+        loc_storew_le.CURRENT_PK_LOC
         # => [OWNER_PUB_KEY, i-1, MSG]
 
         # Check if signature exists for this signer.
@@ -145,7 +146,7 @@ pub proc verify_signatures
             # Verify the signature against the public key and message.
             # -----------------------------------------------------------------------------------------
 
-            loc_loadw_be.CURRENT_PK_LOC
+            loc_loadw_le.CURRENT_PK_LOC
             # => [PK, MSG, MSG, i-1]
 
             swapw

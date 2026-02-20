@@ -6,13 +6,15 @@ use miden::core::crypto::hashes::poseidon2
 #! Outputs: [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 @locals(16)
 pub proc adv_insert_hqword
-    loc_storew_be.0
+    # TODO(bele): Replace entire procedure with adv.insert_hqword and reverse tx summary word order.
+
+    loc_storew_le.0
     movdnw.3
-    loc_storew_be.4
+    loc_storew_le.4
     movdnw.3
-    loc_storew_be.8
+    loc_storew_le.8
     movdnw.3
-    loc_storew_be.12
+    loc_storew_le.12
     movdnw.3
     # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 
@@ -30,10 +32,10 @@ pub proc adv_insert_hqword
     drop drop
     # => [<4 stack elements>]
 
-    loc_loadw_be.12
-    padw loc_loadw_be.8
-    padw loc_loadw_be.4
-    padw loc_loadw_be.0
+    loc_loadw_le.12
+    padw loc_loadw_le.8
+    padw loc_loadw_le.4
+    padw loc_loadw_le.0
     # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 end
 
@@ -48,6 +50,9 @@ end
 #! - INPUT_NOTES_COMMITMENT is the commitment to the transaction's inputs notes.
 #! - ACCOUNT_DELTA_COMMITMENT is the commitment to the transaction's account delta.
 pub proc create_tx_summary
+    # TODO(bele): Reverse the order of the words, i.e. delta, input_notes, output_notes, salt.
+    # Helps with hashing and is consistent with order in TransactionSummary.
+
     exec.native_account::compute_delta_commitment
     # => [ACCOUNT_DELTA_COMMITMENT, SALT]
 
