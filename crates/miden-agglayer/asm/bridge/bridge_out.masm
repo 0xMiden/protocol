@@ -1,6 +1,6 @@
 use miden::protocol::active_note
 use miden::protocol::note
-use miden::standards::note_tag
+use miden::standards::attachments::network_account_target
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
@@ -39,7 +39,7 @@ end
 #! Creates a BURN note for the specified asset.
 #!
 #! This procedure creates an output note that represents a burn operation for the given asset.
-#! The note is configured with the appropriate recipient, tag, and execution hint.
+#! The note is configured with the appropriate recipient, attachment, and execution hint.
 #!
 #! Inputs:  [ASSET]
 #! Outputs: []
@@ -56,10 +56,13 @@ proc create_burn_note
     movup.2 drop movup.2 drop
     # => [faucet_id_prefix, faucet_id_suffix, ASSET]
 
-    exec.note_tag::create_account_target
-    # => [network_faucet_tag, ASSET]
+    push.0
+    # => [exec_hint, faucet_id_prefix, faucet_id_suffix, ASSET]
 
-    loc_store.5
+    exec.network_account_target::new
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, ASSET]
+
+    loc_storew_be.1
     # => [ASSET]
 
     exec.compute_burn_note_serial_num
@@ -74,14 +77,25 @@ proc create_burn_note
     exec.note::build_recipient
     # => [RECIPIENT]
 
-    push.PUBLIC_NOTE
-    loc_load.5
+    push.PUBLIC_NOTE push.0
     # => [tag, note_type, RECIPIENT]
 
     call.output_note::create
     # => [note_idx]
 
-    movdn.4 loc_loadw_be.0
+    dup
+    # => [note_idx, note_idx]
+
+    loc_loadw_be.1
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx]
+
+    movdn.4
+    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT]
+
+    exec.output_note::set_attachment
+    # => [note_idx]
+
+    loc_loadw_be.0
     # => [ASSET, note_idx]
 
     exec.output_note::add_asset
