@@ -87,38 +87,24 @@ static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped faucet component library is well-formed")
 });
 
-/// Returns the unified AggLayer Library containing all agglayer modules.
-///
-/// This library contains all procedures from both the bridge and faucet modules.
-/// For component-specific libraries that only expose relevant procedures, use
-/// [`agglayer_bridge_library()`] or [`agglayer_faucet_library()`] instead.
+/// Returns the AggLayer Library containing all agglayer modules.
 pub fn agglayer_library() -> Library {
     AGGLAYER_LIBRARY.clone()
 }
 
 /// Returns the Bridge component library.
-///
-/// This library only exposes bridge-related procedures (bridge_out, bridge_in,
-/// bridge_config, local_exit_tree).
-fn agglayer_bridge_library() -> Library {
+fn agglayer_bridge_component_library() -> Library {
     BRIDGE_COMPONENT_LIBRARY.clone()
 }
 
 /// Returns the Faucet component library.
-///
-/// This library only exposes faucet-related procedures (claim, get_origin_token_address,
-/// etc.).
-fn agglayer_faucet_library() -> Library {
+fn agglayer_faucet_component_library() -> Library {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
 
-/// Creates a Bridge component with the specified storage slots.
-///
-/// This component uses the bridge library and can be added to accounts
-/// that need bridge functionality (bridge_out, bridge_in, bridge_config,
-/// local_exit_tree).
+/// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_bridge_library();
+    let library = agglayer_bridge_component_library();
     let metadata = AccountComponentMetadata::new("agglayer::bridge")
         .with_description("Bridge component for AggLayer")
         .with_supports_all_types();
@@ -130,11 +116,11 @@ fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
 // AGGLAYER BRIDGE STRUCT
 // ================================================================================================
 
-static GER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
         .expect("Bridge storage slot name should be valid")
 });
-static LET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static LET_FRONTIER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
 });
 static LET_ROOT_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -154,11 +140,27 @@ static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
         .expect("Faucet registry storage slot name should be valid")
 });
 
-/// AggLayer Bridge component for accounts that need bridge functionality.
+/// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
-/// This component provides bridge_out, bridge_in, bridge_config, and local_exit_tree
-/// procedures. The bridge starts with an empty faucet registry; faucets are registered
-/// at runtime via CONFIG_AGG_BRIDGE notes.
+/// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
+/// component, the `agglayer` library must be available to the assembler.
+/// The procedures of this component are:
+/// - `bridge_out`, which bridges an asset from the AggLayer to the destination network.
+/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
+/// - `update_ger`, which injects a new GER into the storage map.
+/// - `register_faucet`, which registers a faucet in the bridge.
+///
+/// ## Storage Layout
+///
+/// - [`Self::ger_map_slot_name`]: Stores the GERs.
+/// - [`Self::let_frontier_slot_name`]: Stores the Local Exit Tree (LET) frontier.
+/// - [`Self::ler_lo_slot_name`]: Stores the lower 32 bits of the LET root.
+/// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
+/// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
+/// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
+///
+/// The bridge starts with an empty faucet registry; faucets are registered at runtime via
+/// CONFIG_AGG_BRIDGE notes.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AggLayerBridge;
 
@@ -167,13 +169,43 @@ impl AggLayerBridge {
     pub fn new() -> Self {
         Self
     }
+
+    /// Storage slot name for the GERs map.
+    pub fn ger_map_slot_name() -> &'static StorageSlotName {
+        &GER_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the Local Exit Tree (LET) frontier.
+    pub fn let_frontier_slot_name() -> &'static StorageSlotName {
+        &LET_FRONTIER_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 32 bits of the LET root.
+    pub fn ler_lo_slot_name() -> &'static StorageSlotName {
+        &LET_ROOT_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the upper 32 bits of the LET root.
+    pub fn ler_hi_slot_name() -> &'static StorageSlotName {
+        &LET_ROOT_HI_SLOT_NAME
+    }
+
+    /// Storage slot name for the number of leaves in the LET frontier.
+    pub fn let_num_leaves_slot_name() -> &'static StorageSlotName {
+        &LET_NUM_LEAVES_SLOT_NAME
+    }
+
+    /// Storage slot name for the faucet registry map.
+    pub fn faucet_registry_slot_name() -> &'static StorageSlotName {
+        &FAUCET_REGISTRY_SLOT_NAME
+    }
 }
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(_: AggLayerBridge) -> Self {
         let bridge_storage_slots = vec![
-            StorageSlot::with_empty_map(GER_SLOT_NAME.clone()),
-            StorageSlot::with_empty_map(LET_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
             StorageSlot::with_value(LET_ROOT_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
@@ -189,7 +221,7 @@ impl From<AggLayerBridge> for AccountComponent {
 /// via Foreign Procedure Invocation (FPI). It provides a "claim" procedure that
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_faucet_library();
+    let library = agglayer_faucet_component_library();
     let metadata = AccountComponentMetadata::new("agglayer::faucet")
         .with_description("AggLayer faucet component with bridge validation")
         .with_supported_type(AccountType::FungibleFaucet);
@@ -248,11 +280,23 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
         .expect("Conversion info 2 storage slot name should be valid")
 });
 
-/// AggLayer faucet component with bridge validation.
+/// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
-/// This component combines network faucet functionality with bridge validation
-/// via Foreign Procedure Invocation (FPI). It provides a "claim" procedure that
-/// validates CLAIM notes against a bridge MMR account before minting assets.
+/// It reexports the procedures from `miden::agglayer::faucet`. When linking against this
+/// component, the `agglayer` library must be available to the assembler.
+/// The procedures of this component are:
+/// - `claim`, which validates a CLAIM note against one of the stored GERs in the bridge.
+/// - `asset_to_origin_asset`, which converts an asset to the origin asset (used in FPI from
+///   bridge).
+/// - `burn`, which burns an asset.
+///
+/// ## Storage Layout
+///
+/// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
+/// - [`Self::bridge_account_id_slot`]: Stores the AggLayer bridge account ID.
+/// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
+/// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
+///   origin network + scale.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
@@ -297,6 +341,26 @@ impl AggLayerFaucet {
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
         self.metadata = self.metadata.with_token_supply(token_supply)?;
         Ok(self)
+    }
+
+    /// Storage slot name for [`TokenMetadata`].
+    pub fn metadata_slot() -> &'static StorageSlotName {
+        TokenMetadata::metadata_slot()
+    }
+
+    /// Storage slot name for the AggLayer bridge account ID.
+    pub fn bridge_account_id_slot() -> &'static StorageSlotName {
+        &AGGLAYER_FAUCET_SLOT_NAME
+    }
+
+    /// Storage slot name for the first 4 felts of the origin token address.
+    pub fn conversion_info_1_slot() -> &'static StorageSlotName {
+        &CONVERSION_INFO_1_SLOT_NAME
+    }
+
+    /// Storage slot name for the 5th felt of the origin token address, origin network, and scale.
+    pub fn conversion_info_2_slot() -> &'static StorageSlotName {
+        &CONVERSION_INFO_2_SLOT_NAME
     }
 }
 
