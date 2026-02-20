@@ -49,16 +49,16 @@ static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
 async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ACCOUNT
-    // --------------------------------------------------------------------------------------------
-    let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(bridge_seed);
-    builder.add_account(bridge_account.clone())?;
-
-    // CREATE USER ACCOUNT (NOTE SENDER)
+    // CREATE USER ACCOUNT (NOTE SENDER / ADMIN)
     // --------------------------------------------------------------------------------------------
     let user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    builder.add_account(user_account.clone())?;
+
+    // CREATE BRIDGE ACCOUNT (admin = user_account)
+    // --------------------------------------------------------------------------------------------
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, user_account.id(), user_account.id());
+    builder.add_account(bridge_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
     // --------------------------------------------------------------------------------------------

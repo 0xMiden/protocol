@@ -16,21 +16,25 @@ use miden_testing::{Auth, MockChain};
 /// Tests that a CONFIG_AGG_BRIDGE note registers a faucet in the bridge's faucet registry.
 ///
 /// Flow:
-/// 1. Create a bridge account (empty faucet registry)
-/// 2. Create a sender account
-/// 3. Create a CONFIG_AGG_BRIDGE note carrying a faucet ID
+/// 1. Create an admin (sender) account
+/// 2. Create a bridge account with the admin as authorized operator
+/// 3. Create a CONFIG_AGG_BRIDGE note carrying a faucet ID, sent by the admin
 /// 4. Consume the note with the bridge account
 /// 5. Verify the faucet is now in the bridge's faucet_registry map
 #[tokio::test]
 async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
-    builder.add_account(bridge_account.clone())?;
-
-    // CREATE SENDER ACCOUNT
+    // CREATE SENDER (ADMIN) ACCOUNT
     let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE BRIDGE ACCOUNT (starts with empty faucet registry, admin = sender)
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        sender_account.id(),
+        sender_account.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
 
     // Use a dummy faucet ID to register (any valid AccountId will do)
     let faucet_to_register = AccountId::dummy(

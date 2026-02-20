@@ -1,9 +1,20 @@
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
 use miden::protocol::native_account
+
+# ERRORS
+# =================================================================================================
+
+const ERR_SENDER_NOT_BRIDGE_ADMIN="note sender is not the bridge admin"
+const ERR_SENDER_NOT_GER_MANAGER="note sender is not the global exit root manager"
 
 # CONSTANTS
 # =================================================================================================
 
 const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+const BRIDGE_ADMIN_SLOT=word("miden::agglayer::bridge::admin")
+const GER_MANAGER_SLOT=word("miden::agglayer::bridge::ger_manager")
 const IS_REGISTERED_FLAG=1
 
 # PUBLIC INTERFACE
@@ -16,9 +27,6 @@ const IS_REGISTERED_FLAG=1
 #!
 #! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
 #! non-existent entries (SMTs return EMPTY_WORD for missing keys).
-#!
-#! TODO: Currently, no sender validation is performed — anyone can register a faucet.
-#! Tracked in https://github.com/0xMiden/miden-base/issues/2450
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
 #! Outputs: [pad(16)]
@@ -42,4 +50,64 @@ pub proc register_faucet
     # => [OLD_VALUE(4), pad(9)]
 
     dropw
+end
+
+#! Asserts that the note sender matches the bridge admin stored in account storage.
+#!
+#! Reads the bridge admin account ID from BRIDGE_ADMIN_SLOT and compares it against
+#! the sender of the currently executing note. Panics if they do not match.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not match the bridge admin account ID.
+#!
+#! Invocation: call
+pub proc assert_sender_is_bridge_admin
+    # => [pad(16)]
+
+    push.BRIDGE_ADMIN_SLOT[0..2]
+    exec.active_account::get_item
+    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [admin_prefix, admin_suffix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_prefix, sender_suffix, admin_prefix, admin_suffix, pad(16)]
+
+    exec.account_id::is_equal
+    assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
+    # => [pad(16)]
+end
+
+#! Asserts that the note sender matches the global exit root manager stored in account storage.
+#!
+#! Reads the GER manager account ID from GER_MANAGER_SLOT and compares it against
+#! the sender of the currently executing note. Panics if they do not match.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not match the GER manager account ID.
+#!
+#! Invocation: call
+pub proc assert_sender_is_ger_manager
+    # => [pad(16)]
+
+    push.GER_MANAGER_SLOT[0..2]
+    exec.active_account::get_item
+    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [mgr_prefix, mgr_suffix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_prefix, sender_suffix, mgr_prefix, mgr_suffix, pad(16)]
+
+    exec.account_id::is_equal
+    assert.err=ERR_SENDER_NOT_GER_MANAGER
+    # => [pad(16)]
 end

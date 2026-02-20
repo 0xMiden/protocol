@@ -99,6 +99,12 @@ pub fn local_exit_tree_library() -> Library {
     agglayer_library()
 }
 
+/// Storage slot name for the bridge admin account ID.
+pub const BRIDGE_ADMIN_SLOT_NAME: &str = "miden::agglayer::bridge::admin";
+
+/// Storage slot name for the global exit root manager account ID.
+pub const GER_MANAGER_SLOT_NAME: &str = "miden::agglayer::bridge::ger_manager";
+
 /// Creates a Local Exit Tree component with the specified storage slots.
 ///
 /// This component uses the local_exit_tree library and can be added to accounts
@@ -337,7 +343,18 @@ pub fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
-pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
+///
+/// # Parameters
+/// - `seed`: The seed used to derive the account ID.
+/// - `bridge_admin_id`: The account ID of the bridge admin. Only notes sent by this account
+///   are allowed to update bridge configuration (e.g. register faucets).
+/// - `ger_manager_id`: The account ID of the global exit root manager. Only notes sent by
+///   this account are allowed to update the GER.
+pub fn create_bridge_account_builder(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> AccountBuilder {
     let ger_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge::ger")
         .expect("Bridge storage slot name should be valid");
     let bridge_in_storage_slots = vec![StorageSlot::with_empty_map(ger_storage_slot_name)];
@@ -359,12 +376,33 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
     let faucet_registry_slot_name =
         StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
             .expect("Faucet registry storage slot name should be valid");
+
+    let bridge_admin_slot_name = StorageSlotName::new(BRIDGE_ADMIN_SLOT_NAME)
+        .expect("Bridge admin storage slot name should be valid");
+    let bridge_admin_word = Word::new([
+        Felt::ZERO,
+        Felt::ZERO,
+        bridge_admin_id.suffix(),
+        bridge_admin_id.prefix().as_felt(),
+    ]);
+
+    let ger_manager_slot_name = StorageSlotName::new(GER_MANAGER_SLOT_NAME)
+        .expect("GER manager storage slot name should be valid");
+    let ger_manager_word = Word::new([
+        Felt::ZERO,
+        Felt::ZERO,
+        ger_manager_id.suffix(),
+        ger_manager_id.prefix().as_felt(),
+    ]);
+
     let bridge_out_storage_slots = vec![
         StorageSlot::with_empty_map(let_storage_slot_name),
         StorageSlot::with_value(let_root_lo_slot_name, Word::empty()),
         StorageSlot::with_value(let_root_hi_slot_name, Word::empty()),
         StorageSlot::with_value(let_num_leaves_slot_name, Word::empty()),
         StorageSlot::with_empty_map(faucet_registry_slot_name),
+        StorageSlot::with_value(bridge_admin_slot_name, bridge_admin_word),
+        StorageSlot::with_value(ger_manager_slot_name, ger_manager_word),
     ];
     let bridge_out_component = bridge_out_component(bridge_out_storage_slots);
 
@@ -380,8 +418,12 @@ pub fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
 /// Creates a new bridge account with the standard configuration.
 ///
 /// This creates a new account suitable for production use.
-pub fn create_bridge_account(seed: Word) -> Account {
-    create_bridge_account_builder(seed)
+pub fn create_bridge_account(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> Account {
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build()
         .expect("Bridge account should be valid")
@@ -391,8 +433,12 @@ pub fn create_bridge_account(seed: Word) -> Account {
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(seed: Word) -> Account {
-    create_bridge_account_builder(seed)
+pub fn create_existing_bridge_account(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> Account {
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build_existing()
         .expect("Bridge account should be valid")

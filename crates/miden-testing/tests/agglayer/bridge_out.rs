@@ -103,7 +103,15 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
 
     let mut builder = MockChain::builder();
-    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+
+    // CREATE SENDER ACCOUNT (also the bridge admin)
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        sender_account.id(),
+        sender_account.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     let expected_amounts = vectors
@@ -132,11 +140,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
     builder.add_account(faucet.clone())?;
 
-    // CREATE SENDER ACCOUNT
-    // --------------------------------------------------------------------------------------------
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-
-    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge
+    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
         sender_account.id(),
@@ -298,9 +302,16 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE SENDER (ADMIN) ACCOUNT
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        sender_account.id(),
+        sender_account.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
@@ -384,8 +395,15 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let admin_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // Create a bridge account (includes a `bridge_out` component)
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        admin_account.id(),
+        admin_account.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account that will create and consume the B2AGG note
@@ -482,15 +500,26 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let admin_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // Create a bridge account as the designated TARGET for the B2AGG note
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        admin_account.id(),
+        admin_account.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
     let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     // Create a "malicious" account with a bridge interface
-    let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let malicious_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        admin_account.id(),
+        admin_account.id(),
+    );
     builder.add_account(malicious_account.clone())?;
 
     // CREATE B2AGG NOTE
