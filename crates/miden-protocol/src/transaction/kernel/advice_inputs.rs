@@ -36,7 +36,8 @@ impl TransactionAdviceInputs {
 
         inputs.build_stack(tx_inputs);
         inputs.add_kernel_commitment();
-        inputs.add_partial_blockchain(tx_inputs.blockchain());
+        inputs
+            .add_partial_blockchain(tx_inputs.blockchain(), tx_inputs.block_header().commitment());
         inputs.add_input_notes(tx_inputs);
 
         // Add the script's MAST forest's advice inputs.
@@ -230,10 +231,24 @@ impl TransactionAdviceInputs {
     /// - MMR_ROOT, is the sequential hash of the padded MMR peaks
     /// - num_blocks, is the number of blocks in the MMR.
     /// - PEAK_1 .. PEAK_N, are the MMR peaks.
-    fn add_partial_blockchain(&mut self, mmr: &PartialBlockchain) {
+    fn add_partial_blockchain(&mut self, mmr: &PartialBlockchain, ref_block_commitment: Word) {
         // NOTE: keep this code in sync with the `process_chain_data` kernel procedure
         // add authentication paths from the MMR to the Merkle store
         self.extend_merkle_store(mmr.inner_nodes());
+
+        // TODO(bele): This seems to be a workaround for a more fundamental issue
+        // https://github.com/0xMiden/miden-vm/issues/2728.
+        // After the kernel unpacks the MMR, it appends the reference block commitment via
+        // `mmr::add`. This can introduce a new authentication node for the latest tracked leaf.
+        // Extend the Merkle store with the updated paths so `mmr::get` can succeed post-add.
+        let mut mmr_with_ref = mmr.mmr().clone();
+        mmr_with_ref.add(ref_block_commitment, false);
+        self.extend_merkle_store(
+            mmr_with_ref.inner_nodes(
+                mmr.block_headers()
+                    .map(|block| (block.block_num().as_usize(), block.commitment())),
+            ),
+        );
 
         // insert MMR peaks info into the advice map
         let peaks = mmr.peaks();
