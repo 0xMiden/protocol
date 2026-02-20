@@ -124,13 +124,13 @@ async fn test_validate_non_fungible_asset(
 
         begin
             # a random asset value
-            push.5 push.4 push.3 push.2
-            # => [2, 3, hash1 = 4, hash0 = 5]
+            push.[5,4,3,2]
+            # => [hash0 = 5, hash1 = 4, 3, 2]
 
-            push.{asset_id_suffix}
-            push.{asset_id_prefix}
-            push.{account_id_suffix}
             push.{account_id_prefix}
+            push.{account_id_suffix}
+            push.{asset_id_prefix}
+            push.{asset_id_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.non_fungible_asset::validate
@@ -196,10 +196,10 @@ async fn test_validate_fungible_asset(
 
         begin
             push.{ASSET_VALUE}
-            push.{asset_id_suffix}
-            push.{asset_id_prefix}
-            push.{account_id_suffix}
             push.{account_id_prefix}
+            push.{account_id_suffix}
+            push.{asset_id_prefix}
+            push.{asset_id_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.fungible_asset::validate

@@ -105,10 +105,10 @@ pub fn create_p2any_note(
                 dup push.ASSET_SIZE mul.{asset_idx}
                 # => [current_asset_ptr, dest_ptr]
 
-                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
                 # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
-                padw movup.8 mem_loadw_be
+                padw movup.8 mem_loadw_le
                 # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw padw swapdw
@@ -209,10 +209,10 @@ fn note_script_that_creates_notes<'note>(
         // Make sure that the transaction's native account matches the note sender.
         out.push_str(&format!(
             r#"exec.::miden::protocol::native_account::get_id
-             # => [native_account_id_prefix, native_account_id_suffix]
-             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
-             # => [native_account_id_suffix]
+             # => [native_account_id_suffix, native_account_id_prefix]
              push.{sender_suffix} assert_eq.err="sender ID suffix does not match native account ID's suffix"
+             # => [native_account_id_prefix]
+             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
              # => []
         "#,
           sender_prefix = sender_id.prefix().as_felt(),

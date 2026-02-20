@@ -818,8 +818,8 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end
@@ -947,8 +947,8 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end
@@ -1033,8 +1033,8 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end

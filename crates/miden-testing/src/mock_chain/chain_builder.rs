@@ -41,6 +41,7 @@ use miden_protocol::block::{
 };
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
+use miden_protocol::field::TryFromNum;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
@@ -307,7 +308,7 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let max_supply_felt = Felt::new(max_supply);
+        let max_supply_felt = Felt::try_from_num(max_supply)?;
         let basic_faucet =
             BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply_felt)
                 .context("failed to create BasicFungibleFaucet")?;
@@ -331,8 +332,8 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::new(max_supply);
-        let token_supply = Felt::new(token_supply.unwrap_or(0));
+        let max_supply = Felt::try_from_num(max_supply)?;
+        let token_supply = Felt::try_from_num(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -359,8 +360,8 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::new(max_supply);
-        let token_supply = Felt::new(token_supply.unwrap_or(0));
+        let max_supply = Felt::try_from_num(max_supply)?;
+        let token_supply = Felt::try_from_num(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 

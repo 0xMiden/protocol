@@ -334,11 +334,11 @@ async fn generate_conditional_tx(
     modify_storage: bool,
 ) -> ExecutedTransaction {
     let auth_args = [
+        Felt::new(97),
+        Felt::new(98),
+        Felt::new(99),
         // increment nonce if modify_storage is true
         if modify_storage { Felt::ONE } else { Felt::ZERO },
-        Felt::new(99),
-        Felt::new(98),
-        Felt::new(97),
     ];
 
     let tx_context = chain

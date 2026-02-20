@@ -210,14 +210,14 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           push.{value0}
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           # Insert a non-existent key.
           push.{value1}
           push.{non_existent_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           exec.::miden::core::sys::truncate_stack
@@ -278,7 +278,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY]
+          # => [slot_id_suffix, slot_id_prefix, KEY]
           call.account::get_map_item
 
           push.{existing_value}
@@ -287,7 +287,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Fetch a non-existent key.
           push.{non_existent_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY]
+          # => [slot_id_suffix, slot_id_prefix, KEY]
           call.account::get_map_item
 
           padw assert_eqw.err="non-existent value should be the empty word"

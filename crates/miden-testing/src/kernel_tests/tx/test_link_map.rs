@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ONE, ZERO};
 use miden_protocol::field::FromNum;
 use miden_protocol::{EMPTY_WORD, Felt, LexicographicWord, Word};
-use miden_crypto::rand::test_utils::rand_value;
 use miden_tx::{LinkMap, MemoryViewer};
 use rand::seq::IteratorRandom;
 

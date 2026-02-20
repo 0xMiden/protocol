@@ -311,13 +311,12 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
 
         begin
             # Push inputs for p2id::new
-            # Inputs: [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
             push.{serial_num}
             push.{note_type}
             push.{tag}
-            push.{target_suffix}
             push.{target_prefix}
-            # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+            push.{target_suffix}
+            # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
             exec.p2id::new
             # => [note_idx]

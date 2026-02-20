@@ -169,16 +169,16 @@ async fn test_get_sender() -> anyhow::Result<()> {
             # get the sender from the input note
             push.0
             exec.input_note::get_sender
-            # => [sender_id_prefix, sender_id_suffix]
-
-            # assert the correctness of the prefix
-            push.{sender_prefix}
-            assert_eq.err="sender id prefix of the note 0 is incorrect"
-            # => [sender_id_suffix]
+            # => [sender_id_suffix, sender_id_prefix]
 
             # assert the correctness of the suffix
             push.{sender_suffix}
             assert_eq.err="sender id suffix of the note 0 is incorrect"
+            # => [sender_id_prefix]
+
+            # assert the correctness of the prefix
+            push.{sender_prefix}
+            assert_eq.err="sender id prefix of the note 0 is incorrect"
             # => []
         end
     "#,
@@ -236,7 +236,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
             check_assets_code.push_str(&format!(
                 r#"
                     # load the asset key stored in memory
-                    padw dup.4 mem_loadw_be
+                    padw dup.4 mem_loadw_le
                     # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
                     # assert the asset key matches
@@ -246,7 +246,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
                     # => [dest_ptr, note_index]
 
                     # load the asset value stored in memory
-                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
                     # => [STORED_ASSET_VALUE, dest_ptr, note_index]
 
                     # assert the asset value matches

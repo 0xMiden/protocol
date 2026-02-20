@@ -116,7 +116,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
             push.{value}
             push.{key}
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE, pad(7)]
+            # => [slot_id_suffix, slot_id_prefix, KEY, VALUE, pad(7)]
             call.mock_account::set_map_item
             dropw dropw dropw dropw
             # => [STORAGE_COMMITMENT0]
@@ -399,7 +399,7 @@ async fn test_get_item() -> anyhow::Result<()> {
 
                 # push the account storage item index
                 push.SLOT_NAME[0..2]
-                # => [slot_id_prefix, slot_id_suffix]
+                # => [slot_id_suffix, slot_id_prefix]
 
                 # assert the item value is correct
                 exec.account::get_item
@@ -605,8 +605,8 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
             use $kernel::account
 
             begin
-                push.{curr_suffix}.{curr_prefix}.{prev_suffix}.{prev_prefix}
-                # => [prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_prefix, curr_slot_id_suffix]
+                push.{curr_prefix}.{curr_suffix}.{prev_prefix}.{prev_suffix}
+                # => [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 
                 exec.account::is_slot_id_lt
                 # => [is_slot_id_lt]
@@ -650,7 +650,7 @@ async fn test_set_item() -> anyhow::Result<()> {
             # set the storage item
             push.{new_value}
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix, NEW_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, NEW_VALUE]
 
             exec.account::set_item
 
@@ -660,7 +660,7 @@ async fn test_set_item() -> anyhow::Result<()> {
 
             # assert new value has been correctly set
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix]
+            # => [slot_id_suffix, slot_id_prefix]
 
             exec.account::get_item
             push.{new_value}
@@ -708,11 +708,11 @@ async fn test_set_map_item() -> anyhow::Result<()> {
 
             # double check that the storage slot is indeed the new map
             push.SLOT_NAME[0..2]
-            # => [slot_id_prefix, slot_id_suffix, OLD_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, OLD_VALUE]
 
             # pad the stack
             repeat.14 push.0 movdn.2 end
-            # => [slot_id_prefix, slot_id_suffix, pad(14), OLD_VALUE]
+            # => [slot_id_suffix, slot_id_prefix, pad(14), OLD_VALUE]
 
             call.mock_account::get_item
             # => [MAP_ROOT, pad(12), OLD_VALUE]
@@ -813,16 +813,16 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     let init_storage_commitment = account_storage.to_commitment();
 
     let mock_value_slot0 = &*MOCK_VALUE_SLOT0;
-    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let value_slot0 = Word::from([9, 10, 11, 12u32]);
 
-    account_storage.set_item(mock_value_slot0, [9, 10, 11, 12].map(Felt::new).into())?;
+    let mock_map_slot = &*MOCK_MAP_SLOT;
+    let map_key = Word::from([101, 102, 103, 104u32]);
+    let map_value = Word::from([5, 6, 7, 8u32]);
+
+    account_storage.set_item(mock_value_slot0, value_slot0)?;
     let storage_commitment_value = account_storage.to_commitment();
 
-    account_storage.set_map_item(
-        mock_map_slot,
-        [101, 102, 103, 104].map(Felt::new).into(),
-        [5, 6, 7, 8].map(Felt::new).into(),
-    )?;
+    account_storage.set_map_item(mock_map_slot, map_key, map_value)?;
     let storage_commitment_map = account_storage.to_commitment();
 
     let code = format!(
@@ -842,7 +842,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment at the beginning of the transaction is not equal to the expected one"
 
             # update the value storage slot
-            push.9.10.11.12
+            push.{value_slot0}
             push.MOCK_VALUE_SLOT0[0..2]
             call.mock_account::set_item dropw drop
             # => []
@@ -859,9 +859,10 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
             assert_eqw.err="storage commitment should remain the same"
 
             # update the map storage slot
-            push.5.6.7.8.101.102.103.104
+            push.{map_value}
+            push.{map_key}
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+            # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
             call.mock_account::set_map_item dropw dropw
             # => []
@@ -1086,17 +1087,17 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
         begin
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1140,17 +1141,17 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
 
         begin
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1228,17 +1229,17 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             # => []
 
             # push faucet ID prefix and suffix
-            push.{suffix}.{prefix}
-            # => [faucet_id_prefix, faucet_id_suffix]
+            push.{prefix}.{suffix}
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the current asset balance
             dup.1 dup.1 exec.active_account::get_balance
-            # => [final_balance, faucet_id_prefix, faucet_id_suffix]
+            # => [final_balance, faucet_id_suffix, faucet_id_prefix]
 
             # assert final balance is correct
             push.{final_balance}
             assert_eq.err="final balance is incorrect"
-            # => [faucet_id_prefix, faucet_id_suffix]
+            # => [faucet_id_suffix, faucet_id_prefix]
 
             # get the initial asset balance
             exec.active_account::get_initial_balance
@@ -1486,6 +1487,7 @@ async fn test_was_procedure_called() -> anyhow::Result<()> {
 /// `tx script -> account code -> external library`
 #[tokio::test]
 async fn transaction_executor_account_code_using_custom_library() -> anyhow::Result<()> {
+    let slot_value = Word::from([2, 3, 4, 5u32]);
     let external_library_code = format!(
         r#"
       use miden::protocol::native_account
@@ -1493,7 +1495,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
       const MOCK_VALUE_SLOT0 = word("{mock_value_slot0}")
 
       pub proc external_setter
-        push.2.3.4.5
+        push.{slot_value}
         push.MOCK_VALUE_SLOT0[0..2]
         exec.native_account::set_item
         dropw dropw
@@ -1567,7 +1569,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     assert_eq!(executed_tx.account_delta().storage().values().count(), 1);
     assert_eq!(
         executed_tx.account_delta().storage().get(&MOCK_VALUE_SLOT0).unwrap(),
-        &StorageSlotDelta::Value(Word::from([2, 3, 4, 5u32])),
+        &StorageSlotDelta::Value(slot_value),
     );
     Ok(())
 }
@@ -1854,7 +1856,7 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
               end
 
               pub proc set_slot_content
-                  push.5.6.7.8
+                  push.[5,6,7,8]
                   push.TEST_SLOT_NAME[0..2]
                   exec.native_account::set_item
                   swapw dropw
@@ -1897,7 +1899,8 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         }
     }
 
-    let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), Word::from([1, 2, 3, 4u32]));
+    let slot_content1 = Word::from([1, 2, 3, 4u32]);
+    let slot = StorageSlot::with_value(TEST_SLOT_NAME.clone(), slot_content1);
 
     let account = AccountBuilder::new([42; 32])
         .with_auth_component(Auth::IncrNonce)
@@ -1906,22 +1909,24 @@ async fn merging_components_with_same_mast_root_succeeds() -> anyhow::Result<()>
         .build()
         .context("failed to build account")?;
 
-    let tx_script = r#"
+    let tx_script = format!(
+        r#"
       use component1::interface->comp1_interface
       use component2::interface->comp2_interface
 
       begin
           call.comp1_interface::get_slot_content
-          push.1.2.3.4
+          push.{slot_content1}
           assert_eqw.err="failed to get slot content1"
 
           call.comp2_interface::set_slot_content
 
           call.comp2_interface::get_slot_content
-          push.5.6.7.8
+          push.[5,6,7,8]
           assert_eqw.err="failed to get slot content2"
       end
-    "#;
+    "#
+    );
 
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(COMPONENT_1_LIBRARY.clone())?
