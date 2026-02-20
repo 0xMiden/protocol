@@ -3,7 +3,12 @@ use core::slice;
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountStorage, AccountStorageMode, AccountType,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountStorage,
+    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
