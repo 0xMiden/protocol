@@ -2,6 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::errors::{ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED};
 use miden_agglayer::{
+    AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
     EthAddressFormat,
@@ -17,7 +18,6 @@ use miden_protocol::account::{
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
-    StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
@@ -32,26 +32,24 @@ use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
 /// Reads the Local Exit Root (double-word) from the bridge account's storage.
 ///
 /// The Local Exit Root is stored in two dedicated value slots:
-/// - `"miden::agglayer::let::root_lo"` — low word of the root
-/// - `"miden::agglayer::let::root_hi"` — high word of the root
+/// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
+/// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
 ///
 /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
 /// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
 /// reverse of their storage order). For an empty/uninitialized tree, all elements are
 /// zeros.
 fn read_local_exit_root(account: &Account) -> Vec<Felt> {
-    let root_lo_slot =
-        StorageSlotName::new("miden::agglayer::let::root_lo").expect("slot name should be valid");
-    let root_hi_slot =
-        StorageSlotName::new("miden::agglayer::let::root_hi").expect("slot name should be valid");
+    let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
+    let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
 
     let root_lo = account
         .storage()
-        .get_item(&root_lo_slot)
+        .get_item(root_lo_slot)
         .expect("should be able to read LET root lo");
     let root_hi = account
         .storage()
-        .get_item(&root_hi_slot)
+        .get_item(root_hi_slot)
         .expect("should be able to read LET root hi");
 
     let mut root = Vec::with_capacity(8);
@@ -61,11 +59,10 @@ fn read_local_exit_root(account: &Account) -> Vec<Felt> {
 }
 
 fn read_let_num_leaves(account: &Account) -> u64 {
-    let num_leaves_slot = StorageSlotName::new("miden::agglayer::let::num_leaves")
-        .expect("slot name should be valid");
+    let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
     let value = account
         .storage()
-        .get_item(&num_leaves_slot)
+        .get_item(num_leaves_slot)
         .expect("should be able to read LET num leaves");
     value.to_vec()[0].as_int()
 }
