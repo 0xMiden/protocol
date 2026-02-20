@@ -177,26 +177,22 @@ end
 #! Extracts the sender ID from the provided metadata header.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [sender_id_prefix, sender_id_suffix]
+#! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata of a note.
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender ID of the note which
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc extract_sender_from_metadata
-    # => [attachment_kind_scheme, tag, sender_id_prefix, sender_id_suffix_and_note_type]
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
 
-    # drop attachment kind, attachment scheme and tag
-    drop drop swap
+    # drop tag and attachment_kind_scheme
+    movup.3 drop movup.2 drop
     # => [sender_id_suffix_and_note_type, sender_id_prefix]
 
     # extract suffix of sender from merged layout, which means clearing the least significant byte
     exec.account_id::shape_suffix
     # => [sender_id_suffix, sender_id_prefix]
-
-    # rearrange suffix and prefix
-    swap
-    # => [sender_id_prefix, sender_id_suffix]
 end
 
 #! Extracts the attachment kind and scheme from the provided metadata header.
@@ -211,8 +207,8 @@ end
 #!
 #! Invocation: exec
 pub proc extract_attachment_info_from_metadata
-    # => [attachment_kind_scheme, METADATA_HEADER[1..4]]
-    movdn.3 drop drop drop
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+    drop drop drop
     # => [attachment_kind_scheme]
 
     # deconstruct the attachment_kind_scheme to extract the attachment_scheme

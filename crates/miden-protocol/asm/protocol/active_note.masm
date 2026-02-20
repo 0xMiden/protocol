@@ -169,10 +169,10 @@ end
 #! Returns the sender of the active note.
 #!
 #! Inputs:  []
-#! Outputs: [sender_id_prefix, sender_id_suffix]
+#! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender of the active note.
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the sender of the active note.
 #!
 #! Panics if:
 #! - no note is currently active.
@@ -185,7 +185,7 @@ pub proc get_sender
 
     # extract the sender ID from the metadata header
     exec.note::extract_sender_from_metadata
-    # => [sender_id_prefix, sender_id_suffix]
+    # => [sender_id_suffix, sender_id_prefix]
 end
 
 #! Returns the serial number of the active note.
