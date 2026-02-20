@@ -21,10 +21,6 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::components::singlesig_acl_library;
 
-// The schema type ID for Public Key Commitments used in the ACL singlesig component.
-const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
-const AUTH_SCHEME_TYPE_ID: &str = "miden::standards::auth::signature::auth_scheme";
-
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig_acl::public_key")
         .expect("storage slot name should be valid")
@@ -199,10 +195,9 @@ impl AuthSingleSigAcl {
 
     /// Returns the storage slot schema for the public key slot.
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
             Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", pub_key_type),
+            StorageSlotSchema::value("Public key commitment", SchemaTypeId::pub_key()),
         )
     }
 
@@ -226,10 +221,7 @@ impl AuthSingleSigAcl {
     pub fn scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value(
-                "Scheme ID",
-                SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
-            ),
+            StorageSlotSchema::value("Scheme ID", SchemaTypeId::auth_scheme()),
         )
     }
 

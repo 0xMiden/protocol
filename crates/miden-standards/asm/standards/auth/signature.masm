@@ -76,7 +76,7 @@ pub proc authenticate_transaction
     # OS => [scheme_id, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
-    dup.0 exec.validate_scheme_id
+    dup.0 exec.assert_supported_scheme
     # OS => [scheme_id, PUB_KEY, MESSAGE]
     # AS => [SIGNATURE]
 
@@ -126,22 +126,22 @@ end
 #! Returns 1 if scheme_id is supported, else 0.
 #! Inputs:  [scheme_id]
 #! Outputs: [is_supported]
-pub proc is_scheme_id
+pub proc is_supported_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
 
     swap eq.RPO_FALCON_512_SCHEME_ID
     # => [is_2, is_1]
 
-    add neq.0
+    or
     # => [is_supported]
 end
 
 #! Reverts if scheme_id is not supported.
 #! Inputs:  [scheme_id]
 #! Outputs: []
-pub proc validate_scheme_id
-    exec.is_scheme_id
+pub proc assert_supported_scheme
+    exec.is_supported_scheme
     # => [is_supported]
 
     eq.0 assertz.err=ERR_INVALID_SCHEME_ID
@@ -152,7 +152,7 @@ end
 #! Validates scheme id word shape: [0, 0, 0, scheme_id]
 #! Inputs:  [SCHEME_ID_WORD]
 #! Outputs: [SCHEME_ID_WORD]
-pub proc validate_scheme_id_word
+pub proc assert_supported_scheme_word
     dup.0 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
     dup.1 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
     dup.2 neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
@@ -160,7 +160,7 @@ pub proc validate_scheme_id_word
     dup.3
     # => [scheme_id, SCHEME_ID_WORD]
 
-    exec.validate_scheme_id
+    exec.assert_supported_scheme
     # => [SCHEME_ID_WORD]
 end
 

@@ -850,11 +850,13 @@ fn test_public_key_extraction_multisig_account() {
     let pub_key_1 = PublicKeyCommitment::from(Word::from([1u32, 0, 0, 0]));
     let pub_key_2 = PublicKeyCommitment::from(Word::from([2u32, 0, 0, 0]));
     let pub_key_3 = PublicKeyCommitment::from(Word::from([3u32, 0, 0, 0]));
+
     let approvers = vec![
         (pub_key_1, auth::AuthScheme::Falcon512Rpo),
         (pub_key_2, auth::AuthScheme::Falcon512Rpo),
         (pub_key_3, auth::AuthScheme::EcdsaK256Keccak),
     ];
+
     let threshold = 2u32;
 
     // Create multisig component

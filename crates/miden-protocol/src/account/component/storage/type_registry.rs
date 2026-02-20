@@ -157,6 +157,24 @@ impl SchemaTypeId {
         SchemaTypeId::new("u32").expect("type is well formed")
     }
 
+    /// Returns the schema type identifier for auth scheme identifiers.
+    pub fn auth_scheme() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
+            .expect("type is well formed")
+    }
+
+    /// Returns the schema type identifier for public key commitments.
+    pub fn pub_key() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::auth::signature::pub_key")
+            .expect("type is well formed")
+    }
+
+    /// Returns the schema type identifier for fungible faucet token symbols.
+    pub fn token_symbol() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
+            .expect("type is well formed")
+    }
+
     /// Returns a reference to the inner string.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -315,8 +333,7 @@ impl FeltType for u8 {
 
 impl FeltType for AuthScheme {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
-            .expect("type is well formed")
+        SchemaTypeId::auth_scheme()
     }
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
@@ -398,7 +415,7 @@ impl FeltType for u32 {
 
 impl FeltType for Felt {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("felt").expect("type is well formed")
+        SchemaTypeId::native_felt()
     }
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
@@ -420,8 +437,7 @@ impl FeltType for Felt {
 
 impl FeltType for TokenSymbol {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
-            .expect("type is well formed")
+        SchemaTypeId::token_symbol()
     }
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
         let token = TokenSymbol::new(input).map_err(|err| {
@@ -489,8 +505,7 @@ impl WordType for Word {
 
 impl WordType for PublicKey {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::signature::pub_key")
-            .expect("type is well formed")
+        SchemaTypeId::pub_key()
     }
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
         let padded_input = pad_hex_string(input);
@@ -730,8 +745,7 @@ mod tests {
 
     #[test]
     fn auth_scheme_type_supports_named_and_numeric_values() {
-        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
-            .expect("type is well formed");
+        let auth_scheme_type = SchemaTypeId::auth_scheme();
 
         let numeric_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "2")
@@ -752,8 +766,7 @@ mod tests {
 
     #[test]
     fn auth_scheme_type_rejects_invalid_values() {
-        let auth_scheme_type = SchemaTypeId::new("miden::standards::auth::signature::auth_scheme")
-            .expect("type is well formed");
+        let auth_scheme_type = SchemaTypeId::auth_scheme();
 
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "invalid").is_err());

@@ -16,10 +16,6 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::multisig_library;
 
-/// The schema type ID for Public Key Commitments used in the multisig component.
-const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::signature::pub_key";
-const AUTH_SCHEME_TYPE_ID: &str = "miden::standards::auth::signature::auth_scheme";
-
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
@@ -192,10 +188,13 @@ impl AuthMultisig {
 
     /// Returns the storage slot schema for the approver public keys slot.
     pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
         (
             Self::approver_public_keys_slot().clone(),
-            StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+            StorageSlotSchema::map(
+                "Approver public keys",
+                SchemaTypeId::u32(),
+                SchemaTypeId::pub_key(),
+            ),
         )
     }
 
@@ -206,7 +205,7 @@ impl AuthMultisig {
             StorageSlotSchema::map(
                 "Approver scheme IDs",
                 SchemaTypeId::u32(),
-                SchemaTypeId::new(AUTH_SCHEME_TYPE_ID).expect("valid type id"),
+                SchemaTypeId::auth_scheme(),
             ),
         )
     }
@@ -327,24 +326,19 @@ mod tests {
     /// Test multisig component setup with various configurations
     #[test]
     fn test_multisig_component_setup() {
-        // Create test public keys
-        let pub_key_1 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
-        let pub_key_2 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
-        let pub_key_3 = AuthSecretKey::new_falcon512_rpo().public_key().to_commitment();
+        // Create test secret keys
+        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_3 = AuthSecretKey::new_falcon512_rpo();
 
-        let auth_scheme_1 = auth::AuthScheme::Falcon512Rpo;
-        let auth_scheme_2 = auth::AuthScheme::Falcon512Rpo;
-        let auth_scheme_3 = auth::AuthScheme::Falcon512Rpo;
-
+        // Create approvers list for multisig config
         let approvers = vec![
-            (pub_key_1, auth_scheme_1),
-            (pub_key_2, auth_scheme_2),
-            (pub_key_3, auth_scheme_3),
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+            (sec_key_3.public_key().to_commitment(), sec_key_3.auth_scheme()),
         ];
 
         let threshold = 2u32;
-
-        // How de we know the corresponding scheme IDs for the approvers? 0 for falcon, 1 for ecdsa
 
         // Create multisig component
         let multisig_component = AuthMultisig::new(
@@ -455,14 +449,15 @@ mod tests {
     /// Test multisig component with duplicate approvers (should fail)
     #[test]
     fn test_multisig_component_duplicate_approvers() {
-        let pub_key_1 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let pub_key_2 = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
+        // Create secret keys for approvers
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
 
-        // Test with duplicate approvers (should fail)
+        // Create approvers list with duplicate public keys
         let approvers = vec![
-            (pub_key_1, auth::AuthScheme::EcdsaK256Keccak),
-            (pub_key_1, auth::AuthScheme::EcdsaK256Keccak),
-            (pub_key_2, auth::AuthScheme::EcdsaK256Keccak),
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
         ];
 
         let result = AuthMultisigConfig::new(approvers, 2);

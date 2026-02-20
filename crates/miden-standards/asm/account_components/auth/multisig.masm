@@ -258,37 +258,28 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         padw adv_loadw
         # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
 
-        dupw
-        # => [PUB_KEY, PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
-
-        movupw.2
-        # => [APPROVER_MAP_KEY, PUB_KEY, PUB_KEY, i-1, pad(12)]
+        swapw
+        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY, PUB_KEY, i-1, pad(12)]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
 
         exec.native_account::set_map_item
-        # => [OLD_VALUE, PUB_KEY, i-1, pad(12)]
+        # => [OLD_VALUE, i-1, pad(12)]
 
         # override OLD_VALUE with SCHEME_ID_WORD
         adv_loadw
-        # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
 
         # validate the scheme id word is in a correct form
-        exec.auth::signature::validate_scheme_id_word
-        # => [SCHEME_ID_WORD, PUB_KEY, i-1, pad(12)]
-
-        swapw
-        # => [PUB_KEY, SCHEME_ID_WORD, i-1, pad(12)]
-
-        dropw
+        exec.auth::signature::assert_supported_scheme_word
         # => [SCHEME_ID_WORD, i-1, pad(12)]
 
         dup.4 exec.create_approver_map_key
         # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, SCHEME_WORD, i-1, pad(12)]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -518,7 +509,7 @@ pub proc is_signer(pub_key: BeWord) -> felt
             drop drop drop
             # => [scheme_id, PUB_KEY]
 
-            exec.auth::signature::is_scheme_id
+            exec.auth::signature::is_supported_scheme
             # => [is_supported_scheme, PUB_KEY]
 
             loc_store.IS_SIGNER_FOUND_LOC
