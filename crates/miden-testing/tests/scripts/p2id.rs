@@ -14,7 +14,7 @@ use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
-use miden_standards::note::P2idNote;
+use miden_standards::note::{P2idNote, P2idNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction;
@@ -304,7 +304,7 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     let serial_num = Word::from([1u32, 2u32, 3u32, 4u32]);
 
     // Build the expected recipient using the Rust implementation
-    let expected_recipient = P2idNote::build_recipient(target_account.id(), serial_num)?;
+    let expected_recipient = P2idNoteStorage::new(target_account.id()).into_recipient(serial_num);
 
     // Create a note tag for the target account
     let tag = NoteTag::with_account_target(target_account.id());
