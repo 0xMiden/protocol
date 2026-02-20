@@ -131,19 +131,23 @@ fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
 // ================================================================================================
 
 static GER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::ger").expect("Bridge storage slot name should be valid")
+    StorageSlotName::new("miden::agglayer::bridge::ger")
+        .expect("Bridge storage slot name should be valid")
 });
 static LET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
 });
 static LET_ROOT_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_lo").expect("LET root_lo storage slot name should be valid")
+    StorageSlotName::new("miden::agglayer::let::root_lo")
+        .expect("LET root_lo storage slot name should be valid")
 });
 static LET_ROOT_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_hi").expect("LET root_hi storage slot name should be valid")
+    StorageSlotName::new("miden::agglayer::let::root_hi")
+        .expect("LET root_hi storage slot name should be valid")
 });
 static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::num_leaves").expect("LET num_leaves storage slot name should be valid")
+    StorageSlotName::new("miden::agglayer::let::num_leaves")
+        .expect("LET num_leaves storage slot name should be valid")
 });
 static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
