@@ -180,7 +180,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.id(),
             tx.account_id(),
             tx.initial_account().initial_commitment(),
-            tx.final_account().commitment(),
+            tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
             tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
             tx.fee(),

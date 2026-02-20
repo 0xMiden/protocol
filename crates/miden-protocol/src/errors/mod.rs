@@ -475,7 +475,7 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
-    #[error("token symbol should have length between 1 and 6 characters, but {0} was provided")]
+    #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
     InvalidCharacter,
@@ -571,6 +571,8 @@ pub enum NoteError {
     TooManyAssets(usize),
     #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
     TooManyStorageItems(usize),
+    #[error("invalid note storage length: expected {expected} items, got {actual}")]
+    InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(
