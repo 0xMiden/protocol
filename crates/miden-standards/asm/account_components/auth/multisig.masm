@@ -448,7 +448,7 @@ pub proc get_signer_at
 end
 
 
-#! Returns 1 if PUB_KEY is a current signer (auth_scheme is supported), else 0.
+#! Returns 1 if PUB_KEY is a current signer, else 0.
 #! Inputs: [PUB_KEY]
 #! Outputs: [is_signer]
 #! Locals:
@@ -493,28 +493,8 @@ pub proc is_signer(pub_key: BeWord) -> felt
         dupw.1 exec.word::eq
         # => [is_pub_key_match, PUB_KEY]
 
-        if.true
-            loc_load.CURRENT_SIGNER_INDEX_LOC
-            # => [i-1, PUB_KEY]
-
-            exec.create_approver_map_key
-            # => [APPROVER_MAP_KEY, PUB_KEY]
-
-            push.APPROVER_SCHEME_ID_SLOT[0..2]
-            # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, PUB_KEY]
-
-            exec.active_account::get_initial_map_item
-            # => [SCHEME_ID_WORD, PUB_KEY]
-
-            drop drop drop
-            # => [scheme_id, PUB_KEY]
-
-            exec.auth::signature::is_supported_scheme
-            # => [is_supported_scheme, PUB_KEY]
-
-            loc_store.IS_SIGNER_FOUND_LOC
-            # => [PUB_KEY]
-        end
+        loc_store.IS_SIGNER_FOUND_LOC
+        # => [PUB_KEY]
 
         loc_load.CURRENT_SIGNER_INDEX_LOC
         # => [i-1, PUB_KEY]
