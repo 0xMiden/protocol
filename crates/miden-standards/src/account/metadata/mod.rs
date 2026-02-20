@@ -238,8 +238,9 @@ mod tests {
             .build_with_schema_commitment()
             .unwrap();
 
-        // The auth component has 1 slot (public key) and the schema commitment adds 1 more.
-        assert_eq!(account.storage().num_slots(), 2);
+        // The auth component has 2 slots (public key and scheme ID) and the schema commitment adds
+        // 1 more.
+        assert_eq!(account.storage().num_slots(), 3);
 
         // The auth component's public key slot should be accessible.
         assert!(account.storage().get_item(AuthSingleSig::public_key_slot()).is_ok());
