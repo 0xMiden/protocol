@@ -62,11 +62,11 @@ pub proc distribute
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
-    # => [token_symbol, decimals, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
-    loc_storew_be.METADATA_SLOT_LOCAL
-    drop drop
+    loc_storew_le.METADATA_SLOT_LOCAL
+    swap movup.2 drop movup.2 drop
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
@@ -114,11 +114,11 @@ pub proc distribute
     dup.1 add
     # => [new_token_supply, amount, tag, note_type, RECIPIENT]
 
-    padw loc_loadw_be.METADATA_SLOT_LOCAL
-    # => [[token_symbol, decimals, max_supply, token_supply], new_token_supply, amount, tag, note_type, RECIPIENT]
+    padw loc_loadw_le.METADATA_SLOT_LOCAL
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, amount, tag, note_type, RECIPIENT]
 
-    movup.3 drop
-    # => [[token_symbol, decimals, max_supply, new_token_supply], amount, tag, note_type, RECIPIENT]
+    drop movup.3
+    # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
 
     # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
@@ -192,17 +192,17 @@ pub proc burn
     # => [EMPTY_WORD, pad(16)]
 
     # load asset value
-    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
     # => [ASSET_VALUE, pad(16)]
 
     # load asset key
-    padw push.ASSET_PTR mem_loadw_be
+    padw push.ASSET_PTR mem_loadw_le
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    dup.7 movdn.8
+    dup.4 movdn.8
     # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
@@ -215,24 +215,21 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
-    # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
-    dup.4 dup.4
-    # => [token_supply, amount, token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    dup.4 dup.1
+    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
     # assert that amount <= token_supply
     lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
-    # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
-    movup.3 movup.4
-    # => [amount, token_supply, token_symbol, decimals, max_supply, pad(16)]
+    movup.4
+    # => [amount, token_supply, max_supply, decimals, token_symbol, pad(16)]
 
     # compute new_token_supply = token_supply - amount
     sub
-    # => [new_token_supply, token_symbol, decimals, max_supply, pad(16)]
-
-    movdn.3
-    # => [token_symbol, decimals, max_supply, new_token_supply, pad(16)]
+    # => [new_token_supply, max_supply, decimals, token_symbol, pad(16)]
 
     # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
