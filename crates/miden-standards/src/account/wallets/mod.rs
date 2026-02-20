@@ -94,7 +94,7 @@ impl From<BasicWallet> for AccountComponent {
 /// Basic wallet related errors.
 #[derive(Debug, Error)]
 pub enum BasicWalletError {
-    #[error("unsupported authentication scheme: {0}")]
+    #[error("unsupported authentication method: {0}")]
     UnsupportedAuthScheme(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
