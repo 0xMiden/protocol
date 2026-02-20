@@ -18,10 +18,9 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, FieldElement, Word};
 
 use crate::StandardsLib;
-
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -39,7 +38,15 @@ static P2IDE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // P2IDE NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Pay-to-ID Extended (P2IDE) note abstraction.
+///
+/// A P2IDE note enables transferring assets to a target account specified in the note storage.
+/// The note may optionally include:
+///
+/// - A reclaim height allowing the sender to recover assets if the note remains unconsumed
+/// - A timelock height preventing consumption before a given block
+///
+/// These constraints are encoded in `P2ideNoteStorage` and enforced by the associated note script.
 pub struct P2ideNote;
 
 impl P2ideNote {
@@ -47,7 +54,7 @@ impl P2ideNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the P2IDE note.
-    pub const NUM_STORAGE_ITEMS: usize = 4;
+    pub const NUM_STORAGE_ITEMS: usize = P2ideNoteStorage::NUM_ITEMS;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -65,32 +72,25 @@ impl P2ideNote {
     // BUILDERS
     // --------------------------------------------------------------------------------------------
 
-    /// Generates a P2IDE note - Pay-to-ID note with optional reclaim after a certain block height
-    /// and optional timelock.
+    /// Generates a P2IDE note using the provided storage configuration.
     ///
-    /// This script enables the transfer of assets from the `sender` account to the `target`
-    /// account by specifying the target's account ID. It adds the optional possibility for the
-    /// sender to reclaiming the assets if the note has not been consumed by the target within the
-    /// specified timeframe and the optional possibility to add a timelock to the asset transfer.
-    ///
-    /// The passed-in `rng` is used to generate a serial number for the note. The returned note's
-    /// tag is set to the target's account ID.
+    /// The note recipient and execution constraints are derived from
+    /// `P2ideNoteStorage`. A random serial number is generated using `rng`,
+    /// and the note tag is set to the storage target account.
     ///
     /// # Errors
-    /// Returns an error if deserialization or compilation of the `P2ID` script fails.
+    /// Returns an error if construction of the note recipient or asset vault fails.
     pub fn create<R: FeltRng>(
         sender: AccountId,
-        target: AccountId,
+        storage: P2ideNoteStorage,
         assets: Vec<Asset>,
-        reclaim_height: Option<BlockNumber>,
-        timelock_height: Option<BlockNumber>,
         note_type: NoteType,
         attachment: NoteAttachment,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
-        let recipient = Self::build_recipient(target, reclaim_height, timelock_height, serial_num)?;
-        let tag = NoteTag::with_account_target(target);
+        let recipient = storage.into_recipient(serial_num)?;
+        let tag = NoteTag::with_account_target(storage.target());
 
         let metadata =
             NoteMetadata::new(sender, note_type).with_tag(tag).with_attachment(attachment);
@@ -98,29 +98,220 @@ impl P2ideNote {
 
         Ok(Note::new(vault, metadata, recipient))
     }
+}
 
-    /// Creates a [NoteRecipient] for the P2IDE note.
-    ///
-    /// Notes created with this recipient will be P2IDE notes consumable by the specified target
-    /// account.
-    pub fn build_recipient(
+// P2IDE NOTE STORAGE
+// ================================================================================================
+
+/// Canonical storage representation for a P2IDE note.
+///
+/// Stores the target account ID together with optional
+/// reclaim and timelock constraints controlling when
+/// the note can be spent or reclaimed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct P2ideNoteStorage {
+    pub target: AccountId,
+    pub reclaim_height: Option<BlockNumber>,
+    pub timelock_height: Option<BlockNumber>,
+}
+
+impl P2ideNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items of the P2IDE note.
+    pub const NUM_ITEMS: usize = 4;
+
+    /// Creates new P2IDE note storage.
+    pub fn new(
         target: AccountId,
-        reclaim_block_height: Option<BlockNumber>,
-        timelock_block_height: Option<BlockNumber>,
-        serial_num: Word,
-    ) -> Result<NoteRecipient, NoteError> {
-        let note_script = Self::script();
+        reclaim_height: Option<BlockNumber>,
+        timelock_height: Option<BlockNumber>,
+    ) -> Self {
+        Self { target, reclaim_height, timelock_height }
+    }
 
-        let reclaim_height_u32 = reclaim_block_height.map_or(0, |bn| bn.as_u32());
-        let timelock_height_u32 = timelock_block_height.map_or(0, |bn| bn.as_u32());
+    /// Consumes the storage and returns a P2IDE [`NoteRecipient`] with the provided serial number.
+    pub fn into_recipient(self, serial_num: Word) -> Result<NoteRecipient, NoteError> {
+        let note_script = P2ideNote::script();
+        Ok(NoteRecipient::new(serial_num, note_script, self.into()))
+    }
 
-        let note_storage = NoteStorage::new(vec![
+    /// Returns the target account ID.
+    pub fn target(&self) -> AccountId {
+        self.target
+    }
+
+    /// Returns the reclaim block height (if any).
+    pub fn reclaim_height(&self) -> Option<BlockNumber> {
+        self.reclaim_height
+    }
+
+    /// Returns the timelock block height (if any).
+    pub fn timelock_height(&self) -> Option<BlockNumber> {
+        self.timelock_height
+    }
+}
+
+impl From<P2ideNoteStorage> for NoteStorage {
+    fn from(storage: P2ideNoteStorage) -> Self {
+        let reclaim = storage.reclaim_height.map(Felt::from).unwrap_or(Felt::ZERO);
+        let timelock = storage.timelock_height.map(Felt::from).unwrap_or(Felt::ZERO);
+
+        NoteStorage::new(vec![
+            storage.target.suffix(),
+            storage.target.prefix().as_felt(),
+            reclaim,
+            timelock,
+        ])
+        .expect("number of storage items should not exceed max storage items")
+    }
+}
+
+impl TryFrom<&[Felt]> for P2ideNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
+        if note_storage.len() != P2ideNote::NUM_STORAGE_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: P2ideNote::NUM_STORAGE_ITEMS,
+                actual: note_storage.len(),
+            });
+        }
+
+        let target = AccountId::try_from([note_storage[1], note_storage[0]])
+            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
+
+        let reclaim_height = if note_storage[2] == Felt::ZERO {
+            None
+        } else {
+            let height: u32 = note_storage[2]
+                .as_int()
+                .try_into()
+                .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
+
+            Some(BlockNumber::from(height))
+        };
+
+        let timelock_height = if note_storage[3] == Felt::ZERO {
+            None
+        } else {
+            let height: u32 = note_storage[3]
+                .as_int()
+                .try_into()
+                .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
+
+            Some(BlockNumber::from(height))
+        };
+
+        Ok(Self { target, reclaim_height, timelock_height })
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::block::BlockNumber;
+    use miden_protocol::errors::NoteError;
+    use miden_protocol::{Felt, FieldElement};
+
+    use super::*;
+
+    fn dummy_account() -> AccountId {
+        AccountId::dummy(
+            [3u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::FungibleFaucet,
+            AccountStorageMode::Private,
+        )
+    }
+
+    #[test]
+    fn try_from_valid_storage_with_all_fields_succeeds() {
+        let target = dummy_account();
+
+        let storage = vec![
             target.suffix(),
-            target.prefix().into(),
-            Felt::new(reclaim_height_u32 as u64),
-            Felt::new(timelock_height_u32 as u64),
-        ])?;
+            target.prefix().as_felt(),
+            Felt::from(42u32),
+            Felt::from(100u32),
+        ];
 
-        Ok(NoteRecipient::new(serial_num, note_script, note_storage))
+        let decoded = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect("valid P2IDE storage should decode");
+
+        assert_eq!(decoded.target(), target);
+        assert_eq!(decoded.reclaim_height(), Some(BlockNumber::from(42u32)));
+        assert_eq!(decoded.timelock_height(), Some(BlockNumber::from(100u32)));
+    }
+
+    #[test]
+    fn try_from_zero_heights_map_to_none() {
+        let target = dummy_account();
+
+        let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, Felt::ZERO];
+
+        let decoded = P2ideNoteStorage::try_from(storage.as_slice()).unwrap();
+
+        assert_eq!(decoded.reclaim_height(), None);
+        assert_eq!(decoded.timelock_height(), None);
+    }
+
+    #[test]
+    fn try_from_invalid_length_fails() {
+        let storage = vec![Felt::ZERO; 3];
+
+        let err =
+            P2ideNoteStorage::try_from(storage.as_slice()).expect_err("wrong length must fail");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: P2ideNote::NUM_STORAGE_ITEMS,
+                actual: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_account_id_fails() {
+        let storage = vec![Felt::new(999u64), Felt::new(888u64), Felt::ZERO, Felt::ZERO];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("invalid account id encoding must fail");
+
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
+
+    #[test]
+    fn try_from_reclaim_height_overflow_fails() {
+        let target = dummy_account();
+
+        // > u32::MAX
+        let overflow = Felt::new(u64::from(u32::MAX) + 1);
+
+        let storage = vec![target.suffix(), target.prefix().as_felt(), overflow, Felt::ZERO];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("overflow reclaim height must fail");
+
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
+
+    #[test]
+    fn try_from_timelock_height_overflow_fails() {
+        let target = dummy_account();
+
+        let overflow = Felt::new(u64::from(u32::MAX) + 10);
+
+        let storage = vec![target.suffix(), target.prefix().as_felt(), Felt::ZERO, overflow];
+
+        let err = P2ideNoteStorage::try_from(storage.as_slice())
+            .expect_err("overflow timelock height must fail");
+
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 }
