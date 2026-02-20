@@ -11,7 +11,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNote;
+use miden_standards::note::P2idNoteStorage;
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;
@@ -344,7 +344,7 @@ pub fn create_p2id_note_exact(
     note_type: NoteType,
     serial_num: Word,
 ) -> Result<Note, NoteError> {
-    let recipient = P2idNote::build_recipient(target, serial_num)?;
+    let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
 
     let tag = NoteTag::with_account_target(target);
 
