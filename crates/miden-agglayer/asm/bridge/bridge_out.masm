@@ -5,6 +5,7 @@ use miden::protocol::note
 use miden::protocol::tx
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
+use miden::standards::note_tag::DEFAULT_TAG
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
@@ -58,7 +59,6 @@ const PADDING_OFFSET=29
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 const EXECUTION_HINT_ALWAYS=1
-const BURN_NOTE_TAG=0
 
 # Storage slot constants for the LET (Local Exit Tree).
 # The frontier is stored as a double-word array in a map slot.
@@ -492,7 +492,7 @@ proc create_burn_note
     # => [RECIPIENT]
 
     push.PUBLIC_NOTE
-    push.BURN_NOTE_TAG
+    push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
     call.output_note::create
