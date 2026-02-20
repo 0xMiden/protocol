@@ -96,7 +96,7 @@ end
 # Outputs: []
 proc verify_signature_by_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
-    # => [is_one, PUB_KEY, MESSAGE]
+    # => [is_one, scheme_id PUB_KEY, MESSAGE]
 
     if.true
         drop
@@ -107,7 +107,7 @@ proc verify_signature_by_scheme
         # AS => []
     else
         dup eq.RPO_FALCON_512_SCHEME_ID
-        # => [is_2, PUB_KEY, MESSAGE]
+        # => [is_2, scheme_id, PUB_KEY, MESSAGE]
 
         if.true
             drop
