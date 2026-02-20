@@ -231,8 +231,8 @@ pub fn create_agglayer_faucet_component(
 
     // Create agglayer-specific bridge storage slot
     let bridge_account_id_word = Word::new([
-        Felt::new(0),
-        Felt::new(0),
+        Felt::ZERO,
+        Felt::ZERO,
         bridge_account_id.suffix(),
         bridge_account_id.prefix().as_felt(),
     ]);
