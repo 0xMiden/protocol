@@ -44,7 +44,8 @@ async fn get_balance_returns_correct_amount() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            push.{suffix} push.{prefix}
+            push.{prefix}
+            push.{suffix}
             exec.active_account::get_balance
             # => [balance]
 
@@ -127,7 +128,7 @@ async fn test_get_balance_non_fungible_fails() -> anyhow::Result<()> {
 
         begin
             exec.prologue::prepare_transaction
-            push.{suffix} push.{prefix}
+            push.{prefix} push.{suffix}
             exec.active_account::get_balance
         end
         ",
