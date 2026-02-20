@@ -20,8 +20,8 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::P2idNote;
 use crate::StandardsLib;
+use crate::note::P2idNoteStorage;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -92,7 +92,7 @@ impl SwapNote {
         let note_script = Self::script();
 
         let payback_serial_num = rng.draw_word();
-        let payback_recipient = P2idNote::build_recipient(sender, payback_serial_num)?;
+        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
 
         let requested_asset_word: Word = requested_asset.into();
         let payback_tag = NoteTag::with_account_target(sender);
