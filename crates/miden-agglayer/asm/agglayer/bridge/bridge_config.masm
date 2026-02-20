@@ -2,20 +2,22 @@ use miden::core::crypto::hashes::rpo256
 use miden::protocol::active_account
 use miden::protocol::native_account
 
-# CONSTANTS
-# =================================================================================================
-
-const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
-const IS_REGISTERED_FLAG=1
-
-const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
-const GER_KNOWN_FLAG=1
-
 # ERRORS
 # =================================================================================================
 
 const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage slots
+const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
+const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+
+# Flags
+const GER_KNOWN_FLAG=1
+const IS_FAUCET_REGISTERED_FLAG=1
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -101,11 +103,11 @@ pub proc register_faucet
     # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
     # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
-    push.IS_REGISTERED_FLAG
-    # => [IS_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
+    push.IS_FAUCET_REGISTERED_FLAG
+    # => [IS_FAUCET_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
 
     movdn.7
-    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_REGISTERED_FLAG], pad(9)]
+    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
 
     # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]

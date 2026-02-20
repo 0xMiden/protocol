@@ -23,15 +23,12 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 # CONSTANTS
 # =================================================================================================
 
+# Memory pointers for proof data layout
 const PROOF_DATA_PTR = 0
-const PROOF_DATA_WORD_LEN = 134
 const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
 const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
 const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
 const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
-
-# the number of words (4 felts each) in the advice map leaf data
-const LEAF_DATA_NUM_WORDS = 8
 
 # the memory address where leaf data is stored for get_leaf_value
 const LEAF_DATA_START_PTR = 0
@@ -43,6 +40,11 @@ const CUR_HASH_LO_LOCAL = 0
 # The offset of the second half of the current Keccak256 hash value in the local memory of the
 # `calculate_root` procedure.
 const CUR_HASH_HI_LOCAL = 4
+
+# Data sizes
+const PROOF_DATA_WORD_LEN = 134
+# the number of words (4 felts each) in the advice map leaf data
+const LEAF_DATA_NUM_WORDS = 8
 
 # PUBLIC INTERFACE
 # =================================================================================================
