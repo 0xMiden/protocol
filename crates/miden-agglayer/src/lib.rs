@@ -117,7 +117,7 @@ pub fn agglayer_faucet_library() -> Library {
 /// This component uses the bridge library and can be added to accounts
 /// that need bridge functionality (bridge_out, bridge_in, bridge_config,
 /// local_exit_tree).
-pub fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
+fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_library();
     let metadata = AccountComponentMetadata::new("agglayer::bridge")
         .with_description("Bridge component for AggLayer")
@@ -132,7 +132,7 @@ pub fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
 /// This component combines network faucet functionality with bridge validation
 /// via Foreign Procedure Invocation (FPI). It provides a "claim" procedure that
 /// validates CLAIM notes against a bridge MMR account before minting assets.
-pub fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
+fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_library();
     let metadata = AccountComponentMetadata::new("agglayer::faucet")
         .with_description("AggLayer faucet component with bridge validation")
@@ -140,21 +140,6 @@ pub fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComp
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
-    )
-}
-
-/// Creates an Asset Conversion component with the specified storage slots.
-///
-/// This component uses the agglayer library (which includes asset_conversion) and can be added to
-/// accounts that need to convert assets between Miden and Ethereum formats.
-pub fn asset_conversion_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
-    let library = agglayer_library();
-    let metadata = AccountComponentMetadata::new("agglayer::asset_conversion")
-        .with_description("Asset conversion component for Miden/Ethereum formats")
-        .with_supports_all_types();
-
-    AccountComponent::new(library, storage_slots, metadata).expect(
-        "asset_conversion component should satisfy the requirements of a valid account component",
     )
 }
 
@@ -176,7 +161,7 @@ pub fn asset_conversion_component(storage_slots: Vec<StorageSlot>) -> AccountCom
 ///
 /// # Returns
 /// A tuple of two `Word` values representing the two storage slot contents.
-pub fn agglayer_faucet_conversion_slots(
+fn agglayer_faucet_conversion_slots(
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
@@ -203,20 +188,6 @@ pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
 
 // AGGLAYER ACCOUNT CREATION HELPERS
 // ================================================================================================
-
-/// Creates a bridge account component with the standard bridge storage slot.
-///
-/// This is a convenience function that creates the bridge storage slot with the standard
-/// name "miden::agglayer::bridge" and returns the bridge component.
-///
-/// # Returns
-/// Returns an [`AccountComponent`] configured for bridge operations with MMR validation.
-pub fn create_bridge_account_component() -> AccountComponent {
-    let bridge_storage_slot_name = StorageSlotName::new("miden::agglayer::bridge")
-        .expect("Bridge storage slot name should be valid");
-    let bridge_storage_slots = vec![StorageSlot::with_empty_map(bridge_storage_slot_name)];
-    bridge_component(bridge_storage_slots)
-}
 
 /// Creates an agglayer faucet account component with the specified configuration.
 ///
