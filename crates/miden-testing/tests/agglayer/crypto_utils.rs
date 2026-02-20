@@ -69,7 +69,7 @@ fn merkle_proof_verification_code(
 
     format!(
         r#"
-        use miden::agglayer::bridge::crypto_utils
+        use miden::agglayer::bridge::bridge_in
         use miden::core::word
 
         begin
@@ -94,7 +94,7 @@ fn merkle_proof_verification_code(
             exec.word::reverse
             # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
 
-            exec.crypto_utils::verify_merkle_proof
+            exec.bridge_in::verify_merkle_proof
             # => [verification_flag]
 
             assert.err="verification failed"
@@ -241,13 +241,12 @@ async fn get_leaf_value() -> anyhow::Result<()> {
 
     let source = format!(
         r#"
-            use miden::core::mem
             use miden::core::sys
-            use miden::agglayer::bridge::crypto_utils
+            use miden::agglayer::bridge::bridge_in
 
             begin
                 push.{key}
-                exec.crypto_utils::get_leaf_value
+                exec.bridge_in::get_leaf_value
                 exec.sys::truncate_stack
             end
         "#

@@ -162,7 +162,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::bridge::crypto_utils
+                use miden::agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -170,7 +170,7 @@ async fn compute_ger() -> anyhow::Result<()> {
 
                     # Call compute_ger with pointer to exit roots
                     push.0
-                    exec.crypto_utils::compute_ger
+                    exec.bridge_in::compute_ger
                     exec.sys::truncate_stack
                 end
             "#
@@ -245,7 +245,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::crypto_utils
+            use miden::agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots
@@ -253,7 +253,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
 
                 # Call compute_ger with pointer to exit roots
                 push.0
-                exec.crypto_utils::compute_ger
+                exec.bridge_in::compute_ger
                 exec.sys::truncate_stack
             end
         "#
