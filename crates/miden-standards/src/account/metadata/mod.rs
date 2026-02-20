@@ -228,7 +228,10 @@ mod tests {
 
     #[test]
     fn build_with_schema_commitment_adds_schema_commitment_component() {
-        let auth_component = AuthSingleSig::new(PublicKeyCommitment::from(Word::empty()), AuthScheme::EcdsaK256Keccak);
+        let auth_component = AuthSingleSig::new(
+            PublicKeyCommitment::from(Word::empty()),
+            AuthScheme::EcdsaK256Keccak,
+        );
 
         let account = AccountBuilder::new([1u8; 32])
             .with_auth_component(auth_component)
