@@ -55,8 +55,8 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
-const OUTPUT_NOTE_TAG_MEM_ADDR = 574
-const OUTPUT_NOTE_FAUCET_AMOUNT = 575
+const OUTPUT_NOTE_TAG_MEM_ADDR = 572
+const OUTPUT_NOTE_FAUCET_AMOUNT = 573
 const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
 const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
 
@@ -392,8 +392,9 @@ end
 #!   ],
 #!   OUTPUT_NOTE_DATA_KEY => [
 #!     output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
-#!     agglayer_faucet_account_id[2],   // Agglayer faucet account ID (2 felts, prefix and suffix)
 #!     output_note_tag[1],              // P2ID output note tag
+#!     miden_claim_amount[1],           // Miden claim amount (1 felt)
+#!     padding[2],                      // padding (2 felts)
 #!   ]
 #! }
 #!

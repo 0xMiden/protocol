@@ -172,12 +172,16 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
-/// TODO: Remove all but target_faucet_account_id
+///
+/// The `target_faucet_account_id` is used to build the `NetworkAccountTarget` attachment
+/// on the note but is NOT serialized into `NoteStorage` (it is enforced via the attachment).
 #[derive(Clone)]
 pub struct OutputNoteData {
     /// P2ID note serial number (4 felts as Word)
     pub output_p2id_serial_num: Word,
-    /// Target agg faucet account ID (2 felts: prefix and suffix)
+    /// Target agg faucet account ID.
+    ///
+    /// Used to build the `NetworkAccountTarget` attachment; not serialized into note storage.
     pub target_faucet_account_id: AccountId,
     /// P2ID output note tag
     pub output_note_tag: NoteTag,
@@ -186,23 +190,25 @@ pub struct OutputNoteData {
 }
 
 impl OutputNoteData {
-    /// Converts the output note data to a vector of field elements for note storage
+    /// Converts the output note data to a vector of field elements for note storage.
+    ///
+    /// Layout (8 felts = 2 words):
+    /// `[serial_num(4), tag(1), miden_claim_amount(1), padding(2)]`
     pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + miden_claim_amount)
+        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8;
         let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
 
         // P2ID note serial number (4 felts as Word)
         elements.extend(self.output_p2id_serial_num);
-
-        // Target faucet account ID (2 felts: prefix and suffix)
-        elements.push(self.target_faucet_account_id.prefix().as_felt());
-        elements.push(self.target_faucet_account_id.suffix());
 
         // Output note tag
         elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
 
         // Miden claim amount
         elements.push(self.miden_claim_amount);
+
+        // Padding to keep 8 felts (2 words) for pipe_double_words_preimage_to_memory
+        elements.extend([Felt::ZERO; 2]);
 
         elements
     }
