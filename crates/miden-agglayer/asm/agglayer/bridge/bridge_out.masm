@@ -11,6 +11,7 @@ use miden::core::crypto::hashes::rpo256
 use miden::core::word
 use miden::agglayer::common::utils
 use miden::agglayer::faucet -> agglayer_faucet
+use miden::agglayer::bridge::bridge_config
 use miden::agglayer::bridge::crypto_utils
 use miden::agglayer::bridge::mmr_frontier32_keccak
 
@@ -63,14 +64,7 @@ const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
 const LET_ROOT_LO_SLOT=word("miden::agglayer::let::root_lo")
 const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
 const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
-const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
-
 const LEAF_TYPE_ASSET=0
-
-# ERRORS
-# =================================================================================================
-
-const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -207,21 +201,8 @@ proc convert_asset
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # --- Step 1: Assert faucet is registered ---
-
-    # Build KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0] for the map lookup.
-    # Duplicate faucet ID onto top of stack, then add zero padding.
     dup.1 dup.1
-    push.0.0
-    movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-    push.FAUCET_REGISTRY_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [VALUE(4), faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-    # Check flag, the stored word must be [0, 0, 0, 1] for registered faucets
-    drop drop drop
-    assert.err=ERR_FAUCET_NOT_REGISTERED
+    exec.bridge_config::assert_faucet_registered
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---

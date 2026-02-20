@@ -1,10 +1,9 @@
+use miden::agglayer::bridge::bridge_config
 use miden::agglayer::bridge::crypto_utils
 use miden::agglayer::common::utils
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
 use miden::core::mem
 use miden::core::word
-use miden::protocol::active_account
 
 # TYPE ALIASES
 # =================================================================================================
@@ -17,7 +16,6 @@ type MemoryAddress = u32
 # =================================================================================================
 
 const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
-const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
@@ -31,9 +29,6 @@ const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
 const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
 const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
 const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
-
-const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
-const GER_KNOWN_FLAG=1
 
 # the number of words (4 felts each) in the advice map leaf data
 const LEAF_DATA_NUM_WORDS = 8
@@ -229,31 +224,6 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     # => [LEAF_VALUE[8]]
 end
 
-#! Asserts that the provided GER is valid (exists in storage).
-#!
-#! Inputs: [GER_ROOT[8]]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc assert_valid_ger
-    # compute hash(GER)
-    exec.rpo256::merge
-    # => [GER_HASH]
-
-    push.GER_STORAGE_SLOT[0..2]
-    # => [slot_id_prefix, slot_id_suffix, GER_HASH]
-
-    exec.active_account::get_map_item
-    # => [VALUE]
-
-    # assert the GER is known in storage (VALUE = [0, 0, 0, GER_KNOWN_FLAG])
-    push.GER_KNOWN_FLAG.0.0.0
-    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE]
-
-    assert_eqw.err=ERR_GER_NOT_FOUND
-    # => []
-end
-
 #! Verify leaf and checks that it has not been claimed.
 #!
 #! Inputs:
@@ -283,7 +253,7 @@ proc verify_leaf
     # => [GER[8], LEAF_VALUE[8]]
 
     # 2. assert the GER is valid
-    exec.assert_valid_ger
+    exec.bridge_config::assert_valid_ger
     # => [LEAF_VALUE[8]]
 
     # 3. load global index from memory
