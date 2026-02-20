@@ -69,16 +69,16 @@ pub proc assert_sender_is_bridge_admin
 
     push.BRIDGE_ADMIN_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [admin_prefix, admin_suffix, pad(16)]
+    # => [admin_prefix, admin_suffix, 0, 0, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, admin_prefix, admin_suffix, pad(16)]
+    # => [sender_prefix, sender_suffix, admin_prefix, admin_suffix, pad(18)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
+    # => [pad(18)]
+
+    drop drop
     # => [pad(16)]
 end
 
@@ -99,15 +99,15 @@ pub proc assert_sender_is_ger_manager
 
     push.GER_MANAGER_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
-
-    movup.2 drop movup.2 drop
-    # => [mgr_prefix, mgr_suffix, pad(16)]
+    # => [mgr_prefix, mgr_suffix, 0, 0, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, mgr_prefix, mgr_suffix, pad(16)]
+    # => [sender_prefix, sender_suffix, mgr_prefix, mgr_suffix, pad(18)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_GER_MANAGER
+    # => [pad(18)]
+
+    drop drop
     # => [pad(16)]
 end
