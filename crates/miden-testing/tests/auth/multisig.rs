@@ -31,6 +31,7 @@ use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use rstest::rstest;
 
 // ================================================================================================
 // HELPER FUNCTIONS
@@ -39,10 +40,11 @@ use rand_chacha::ChaCha20Rng;
 type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
-/// Sets up secret keys, public keys, and authenticators for multisig testing
-fn setup_keys_and_authenticators(
+/// Sets up secret keys, public keys, and authenticators for multisig testing for the given scheme.
+fn setup_keys_and_authenticators_with_scheme(
     num_approvers: usize,
     threshold: usize,
+    auth_scheme: AuthScheme,
 ) -> anyhow::Result<MultisigTestSetup> {
     let seed: [u8; 32] = rand::random();
     let mut rng = ChaCha20Rng::from_seed(seed);
@@ -53,11 +55,15 @@ fn setup_keys_and_authenticators(
     let mut authenticators = Vec::new();
 
     for _ in 0..num_approvers {
-        let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
+        let sec_key = match auth_scheme {
+            AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
+            AuthScheme::Falcon512Rpo => AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng),
+            _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
+        };
         let pub_key = sec_key.public_key();
 
         secret_keys.push(sec_key);
-        auth_schemes.push(AuthScheme::EcdsaK256Keccak);
+        auth_schemes.push(auth_scheme);
         public_keys.push(pub_key);
     }
 
@@ -106,11 +112,16 @@ fn create_multisig_account(
 /// **Roles:**
 /// - 2 Approvers (multisig signers)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
+async fn test_multisig_2_of_2_with_note_creation(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
-        setup_keys_and_authenticators(2, 2)?;
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
@@ -200,15 +211,20 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
 /// implementation correctly validates signatures from any valid subset.
 ///
 /// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
+async fn test_multisig_2_of_4_all_signer_combinations(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators (4 approvers, all 4 can sign)
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
@@ -285,15 +301,18 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
 /// **Roles:**
 /// - 3 Approvers (2 signers required)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_replay_protection() -> anyhow::Result<()> {
+async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
-        setup_keys_and_authenticators(3, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
@@ -370,14 +389,17 @@ async fn test_multisig_replay_protection() -> anyhow::Result<()> {
 /// - 4 New Approvers (updated multisig signers)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_update_signers() -> anyhow::Result<()> {
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
-        setup_keys_and_authenticators(2, 2)?;
+async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
@@ -405,13 +427,11 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Setup new signers
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, _new_signature_scheme_ids, new_public_keys, _new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
-
-    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -656,15 +676,20 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 /// - 2 Updated Approvers (after removing 3 owners)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
+async fn test_multisig_update_signers_remove_owner(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup 5 original owners with threshold 4
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
-        setup_keys_and_authenticators(5, 5)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
@@ -678,7 +703,6 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     let new_public_keys = &public_keys[0..2];
     let threshold = 1u64;
     let num_of_approvers = 2u64;
-    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create multisig config vector
     let mut config_and_pubkeys_vector =
@@ -851,17 +875,22 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 /// 2. Prepare a signer update transaction with new approvers
 /// 3. Try to sign the transaction with the NEW approvers (should fail)
 /// 4. Verify that only the CURRENT approvers can sign the update transaction
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Result<()> {
+async fn test_multisig_new_approvers_cannot_sign_before_update(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // SECTION 1: Create a multisig account with 2 original approvers
     // ================================================================================
 
-    let (_secret_keys, signature_scheme_ids, public_keys, _authenticators) =
-        setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 
@@ -881,12 +910,11 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, _new_signature_scheme_ids, new_public_keys, new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
-    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     // Create vector with threshold config and public keys (4 field elements each)
     let mut config_and_pubkeys_vector = Vec::new();
@@ -995,17 +1023,22 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 /// threshold of 1 for note consumption, can:
 /// 1. Consume a note when only one approver signs the transaction
 /// 2. Send a note only when both approvers sign the transaction (default threshold)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
+async fn test_multisig_proc_threshold_overrides(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, signature_scheme_ids, public_keys, authenticators) =
-        setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
 
     let approvers = public_keys
         .iter()
-        .zip(signature_scheme_ids.iter())
+        .zip(auth_schemes.iter())
         .map(|(pk, scheme)| (pk.clone(), *scheme))
         .collect::<Vec<_>>();
 

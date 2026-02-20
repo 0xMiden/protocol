@@ -95,7 +95,7 @@ impl From<BasicWallet> for AccountComponent {
 #[derive(Debug, Error)]
 pub enum BasicWalletError {
     #[error("unsupported authentication method: {0}")]
-    UnsupportedAuthScheme(String),
+    UnsupportedAuthMethod(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
 }
@@ -136,13 +136,13 @@ pub fn create_basic_wallet(
             AuthMultisig::new(config).map_err(BasicWalletError::AccountError)?.into()
         },
         AuthMethod::NoAuth => {
-            return Err(BasicWalletError::UnsupportedAuthScheme(
-                "basic wallets cannot be created with NoAuth authentication scheme".into(),
+            return Err(BasicWalletError::UnsupportedAuthMethod(
+                "basic wallets cannot be created with NoAuth authentication method".into(),
             ));
         },
         AuthMethod::Unknown => {
-            return Err(BasicWalletError::UnsupportedAuthScheme(
-                "basic wallets cannot be created with Unknown authentication scheme".into(),
+            return Err(BasicWalletError::UnsupportedAuthMethod(
+                "basic wallets cannot be created with Unknown authentication method".into(),
             ));
         },
     };
