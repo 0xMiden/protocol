@@ -1,8 +1,11 @@
 [profile.default]
-libs = ["lib"]
-out  = "out"
-solc = "0.8.20"
-src  = "src"
+libs           = ["lib"]
+optimizer      = true
+optimizer_runs = 200
+out            = "out"
+solc           = "0.8.20"
+src            = "src"
+via_ir         = true
 
 remappings = [
   "@agglayer/=lib/agglayer-contracts/contracts/",
