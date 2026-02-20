@@ -1213,7 +1213,7 @@ async fn test_network_note_unwrap() -> anyhow::Result<()> {
         .build()?;
 
     assert!(note.is_network_note());
-    let network_note = note.as_network_note()?;
+    let network_note = note.as_account_target_network_note()?;
     assert_eq!(network_note.target_account_id(), target_id);
     assert_eq!(network_note.note_type(), note.metadata().note_type());
 

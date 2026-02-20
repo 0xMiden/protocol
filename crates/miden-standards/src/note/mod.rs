@@ -33,7 +33,7 @@ mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
 mod network_note;
-pub use network_note::{NetworkNote, NetworkNoteExt};
+pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
 
 mod standard_note_attachment;
 pub use standard_note_attachment::StandardNoteAttachment;
