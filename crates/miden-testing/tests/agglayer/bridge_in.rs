@@ -18,7 +18,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
-use super::test_utils::{real_claim_data, simulated_claim_data};
+use super::test_utils::{local_claim_data, real_claim_data};
 
 /// Identifies the source of claim data used in the bridge-in test.
 #[derive(Debug, Clone, Copy)]
@@ -32,16 +32,17 @@ enum ClaimDataSource {
 /// Tests the bridge-in flow: CLAIM note -> Aggfaucet (FPI to Bridge) -> P2ID note created.
 ///
 /// Parameterized over two claim data sources:
-/// - [`ClaimDataSource::Real`]: uses real ProofData and LeafData from claim_asset_vectors.json,
-///   representing an actual on-chain claimAsset transaction.
-/// - [`ClaimDataSource::Simulated`]: uses simulated ProofData and LeafData from
-///   bridge_asset_vectors.json, representing a locally simulated L1 bridgeAsset() transaction.
+/// - [`ClaimDataSource::Real`]: uses real [`ProofData`] and [`LeafData`] from
+///   `claim_asset_vectors_real_tx.json`, captured from an actual on-chain `claimAsset` transaction.
+/// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
+///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call in Foundry
+///   (see `ClaimAssetTestVectorsLocalTx.t.sol`).
 ///
 /// In both cases the claim note is processed against the agglayer faucet, which validates the
 /// Merkle proof and creates a P2ID note for the destination address.
 ///
 /// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
-/// as the proof was computed for the original leaf_data including the original destination.
+/// as the proof was computed for the original leaf data including the original destination.
 #[rstest::rstest]
 #[case::real(ClaimDataSource::Real)]
 #[case::simulated(ClaimDataSource::Simulated)]
@@ -59,7 +60,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
     let (proof_data, leaf_data, ger) = match data_source {
         ClaimDataSource::Real => real_claim_data(),
-        ClaimDataSource::Simulated => simulated_claim_data(),
+        ClaimDataSource::Simulated => local_claim_data(),
     };
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)

@@ -273,7 +273,7 @@ pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
 ///
 /// Returns a tuple of (ProofData, LeafData, ExitRoot) from a locally simulated L1 bridgeAsset
 /// transaction. This data represents what would be generated when a user calls bridgeAsset() on L1.
-pub fn simulated_claim_data() -> (ProofData, LeafData, ExitRoot) {
+pub fn local_claim_data() -> (ProofData, LeafData, ExitRoot) {
     let vector = &*CLAIM_ASSET_VECTOR_LOCAL;
     let ger = ExitRoot::new(
         hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
