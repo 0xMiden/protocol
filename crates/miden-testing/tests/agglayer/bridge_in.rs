@@ -23,9 +23,9 @@ use super::test_utils::{local_claim_data, real_claim_data};
 /// Identifies the source of claim data used in the bridge-in test.
 #[derive(Debug, Clone, Copy)]
 enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors.json.
+    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.json.
     Real,
-    /// Locally simulated bridgeAsset data from bridge_asset_vectors.json.
+    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
     Simulated,
 }
 
