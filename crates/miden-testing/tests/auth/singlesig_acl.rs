@@ -3,12 +3,7 @@ use core::slice;
 use assert_matches::assert_matches;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountStorage,
-    AccountStorageMode,
-    AccountType,
+    Account, AccountBuilder, AccountComponent, AccountStorage, AccountStorageMode, AccountType,
 };
 use miden_protocol::note::Note;
 use miden_protocol::testing::storage::MOCK_VALUE_SLOT0;
@@ -20,6 +15,7 @@ use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use miden_tx::TransactionExecutorError;
+use rstest::rstest;
 
 use crate::prove_and_verify_transaction;
 
@@ -37,11 +33,12 @@ const TX_SCRIPT_NO_TRIGGER: &str = r#"
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Sets up the basic components needed for ECDSA ACL tests.
+/// Sets up the basic components needed for ACL tests.
 /// Returns (account, mock_chain, note).
-fn setup_ecdsa_acl_test(
+fn setup_acl_test(
     allow_unauthorized_output_notes: bool,
     allow_unauthorized_input_notes: bool,
+    auth_scheme: AuthScheme,
 ) -> anyhow::Result<(Account, MockChain, Note)> {
     let component: AccountComponent =
         MockAccountComponent::with_slots(AccountStorage::mock_storage_slots()).into();
@@ -53,7 +50,6 @@ fn setup_ecdsa_acl_test(
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     let (auth_component, _authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
@@ -82,9 +78,12 @@ fn setup_ecdsa_acl_test(
     Ok((account, mock_chain, note))
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_ecdsa_acl() -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_ecdsa_acl_test(false, true)?;
+async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
 
     // We need to get the authenticator separately for this test
     let component: AccountComponent =
@@ -97,7 +96,6 @@ async fn test_ecdsa_acl() -> anyhow::Result<()> {
         .get_procedure_root_by_path("mock::account::set_item")
         .expect("set_item procedure should exist");
     let auth_trigger_procedures = vec![get_item_proc_root, set_item_proc_root];
-    let auth_scheme = AuthScheme::EcdsaK256Keccak;
 
     let (_, authenticator) = Auth::Acl {
         auth_trigger_procedures: auth_trigger_procedures.clone(),
@@ -203,9 +201,14 @@ async fn test_ecdsa_acl() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_ecdsa_acl_with_allow_unauthorized_output_notes() -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_ecdsa_acl_test(true, true)?;
+async fn test_acl_with_allow_unauthorized_output_notes(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(true, true, auth_scheme)?;
 
     // Verify the storage layout includes both authorization flags
     let config_slot = account
@@ -243,9 +246,14 @@ async fn test_ecdsa_acl_with_allow_unauthorized_output_notes() -> anyhow::Result
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
 #[tokio::test]
-async fn test_ecdsa_acl_with_disallow_unauthorized_input_notes() -> anyhow::Result<()> {
-    let (account, mock_chain, note) = setup_ecdsa_acl_test(true, false)?;
+async fn test_acl_with_disallow_unauthorized_input_notes(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (account, mock_chain, note) = setup_acl_test(true, false, auth_scheme)?;
 
     // Verify the storage layout includes both flags
     let config_slot = account
