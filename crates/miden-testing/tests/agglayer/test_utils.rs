@@ -29,12 +29,14 @@ use serde::Deserialize;
 
 /// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
 /// transaction.
-const CLAIM_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+const CLAIM_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_real_tx.json"
+);
 
 /// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
-const BRIDGE_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/bridge_asset_vectors.json");
+const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
+);
 
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =

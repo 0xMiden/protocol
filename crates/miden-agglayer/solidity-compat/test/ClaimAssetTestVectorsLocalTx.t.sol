@@ -6,31 +6,23 @@ import "@agglayer/v2/lib/DepositContractV2.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
 
 /**
- * @title BridgeAssetTestVectors
+ * @title ClaimAssetTestVectorsLocalTx
  * @notice Test contract that generates test vectors for an L1 bridgeAsset transaction.
  *         This simulates calling bridgeAsset() on the PolygonZkEVMBridgeV2 contract
  *         and captures all relevant data including VALID Merkle proofs.
  *
- * Run with: forge test -vv --match-contract BridgeAssetTestVectors
+ * Run with: forge test -vv --match-contract ClaimAssetTestVectorsLocalTx
  *
  * The output can be used to verify Miden's ability to process L1 bridge transactions.
  */
-contract BridgeAssetTestVectors is Test, DepositContractV2 {
-    // L1 Contract Addresses (Mainnet/Testnet)
-    address constant POLYGON_ROLLUP_MANAGER = 0x5132A183E9F3CB7C848b0AAC5Ae0c4f0491B7aB2;
-    address constant POLYGON_ZKEVM_BRIDGE_V2 = 0x2a3DD3EB832aF982ec71669E178424b10Dca2EDe;
-    address constant POLYGON_ZKEVM_GLOBAL_EXIT_ROOT_V2 = 0x580bda1e7A0CFAe92Fa7F6c20A3794F169CE3CFb;
-    address constant FFLONK_VERIFIER = 0x4F9A0e7FD2Bf6067db6994CF12E4495Df938E6e9;
-    address constant POLYGON_ZKEVM_DEPLOYER = 0xCB19eDdE626906eB1EE52357a27F62dd519608C2;
-    address constant POLYGON_ZKEVM_TIMELOCK = 0xEf1462451C30Ea7aD8555386226059Fe837CA4EF;
-
+contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2 {
     /**
      * @notice Generates bridge asset test vectors with VALID Merkle proofs.
      *         Simulates a user calling bridgeAsset() to bridge tokens from L1 to Miden.
      *
      *         Output file: test-vectors/bridge_asset_vectors.json
      */
-    function test_generateBridgeAssetVectors() public {
+    function test_generateClaimAssetVectorsLocalTx() public {
         string memory obj = "root";
 
         // ====== BRIDGE TRANSACTION PARAMETERS ======
@@ -127,18 +119,14 @@ contract BridgeAssetTestVectors is Test, DepositContractV2 {
             vm.serializeBytes32(obj, "rollup_exit_root", rollupExitRoot);
             vm.serializeBytes32(obj, "global_exit_root", globalExitRoot);
 
-            vm.serializeAddress(obj, "bridge_contract", POLYGON_ZKEVM_BRIDGE_V2);
-            vm.serializeAddress(obj, "global_exit_root_manager", POLYGON_ZKEVM_GLOBAL_EXIT_ROOT_V2);
-            vm.serializeAddress(obj, "rollup_manager", POLYGON_ROLLUP_MANAGER);
-
             string memory json = vm.serializeString(
                 obj, "description", "L1 bridgeAsset transaction test vectors with valid Merkle proofs"
             );
 
-            string memory outputPath = "test-vectors/bridge_asset_vectors.json";
+            string memory outputPath = "test-vectors/claim_asset_vectors_local_tx.json";
             vm.writeJson(json, outputPath);
 
-            console.log("Generated bridge asset test vectors with valid Merkle proofs");
+            console.log("Generated claim asset local tx test vectors with valid Merkle proofs");
             console.log("Output file:", outputPath);
             console.log("Leaf index:", leafIndex);
             console.log("Deposit count:", depositCountValue);
