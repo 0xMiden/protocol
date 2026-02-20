@@ -72,7 +72,7 @@ pub proc main
     drop
     # => []
 
-    padw mem_loadw_be.PAYBACK_RECIPIENT_ADDRESS
+    padw mem_loadw_le.PAYBACK_RECIPIENT_ADDRESS
     # => [PAYBACK_NOTE_RECIPIENT]
 
     # load payback P2ID details
@@ -87,10 +87,10 @@ pub proc main
     padw push.0.0.0 dup.7
     # => [note_idx, pad(7), note_idx]
 
-    padw mem_loadw_be.REQUESTED_ASSET_VALUE_ADDRESS
+    padw mem_loadw_le.REQUESTED_ASSET_VALUE_ADDRESS
     # => [REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
-    padw mem_loadw_be.REQUESTED_ASSET_KEY_ADDRESS
+    padw mem_loadw_le.REQUESTED_ASSET_KEY_ADDRESS
     # => [REQUESTED_ASSET_KEY, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
@@ -98,7 +98,7 @@ pub proc main
     # => [pad(16), note_idx]
 
     dropw
-    mem_loadw_be.ATTACHMENT_ADDRESS
+    mem_loadw_le.ATTACHMENT_ADDRESS
     # => [ATTACHMENT, pad(8), note_idx]
 
     mem_load.ATTACHMENT_KIND_ADDRESS
@@ -124,11 +124,11 @@ pub proc main
     # => [pad(12)]
 
     # load asset value
-    mem_loadw_be.ASSET_VALUE_ADDRESS
+    mem_loadw_le.ASSET_VALUE_ADDRESS
     # => [ASSET_VALUE, pad(8)]
 
     # load asset key
-    padw mem_loadw_be.ASSET_KEY_ADDRESS
+    padw mem_loadw_le.ASSET_KEY_ADDRESS
     # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # add the asset to the account
