@@ -346,10 +346,10 @@ pub fn create_agglayer_faucet_component(
 ///
 /// # Parameters
 /// - `seed`: The seed used to derive the account ID.
-/// - `bridge_admin_id`: The account ID of the bridge admin. Only notes sent by this account
-///   are allowed to update bridge configuration (e.g. register faucets).
-/// - `ger_manager_id`: The account ID of the global exit root manager. Only notes sent by
-///   this account are allowed to update the GER.
+/// - `bridge_admin_id`: The account ID of the bridge admin. Only notes sent by this account are
+///   allowed to update bridge configuration (e.g. register faucets).
+/// - `ger_manager_id`: The account ID of the global exit root manager. Only notes sent by this
+///   account are allowed to update the GER.
 pub fn create_bridge_account_builder(
     seed: Word,
     bridge_admin_id: AccountId,
