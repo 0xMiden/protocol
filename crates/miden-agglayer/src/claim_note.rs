@@ -259,10 +259,9 @@ pub fn create_claim_note<R: FeltRng>(
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
-    let attachment =
-        NetworkAccountTarget::new(target_faucet_id, NoteExecutionHint::Always)
-            .map_err(|e| NoteError::other(e.to_string()))?
-            .into();
+    let attachment = NetworkAccountTarget::new(target_faucet_id, NoteExecutionHint::Always)
+        .map_err(|e| NoteError::other(e.to_string()))?
+        .into();
 
     let metadata =
         NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);
