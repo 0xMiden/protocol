@@ -7,7 +7,7 @@ use miden::protocol::native_account
 use miden::protocol::tx
 use miden::core::word
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type Word = struct { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # ================================================================================================
@@ -36,7 +36,7 @@ const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::ecdsa_k256_kec
 #!
 #! Invocation: call
 @locals(2)
-pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: BeWord)
+pub proc auth_tx_ecdsa_k256_keccak_acl(auth_args: Word)
     dropw
     # => [pad(16)]
 

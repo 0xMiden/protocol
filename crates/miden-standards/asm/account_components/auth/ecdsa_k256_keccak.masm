@@ -5,7 +5,7 @@
 use miden::standards::auth::ecdsa_k256_keccak
 use miden::protocol::active_account
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type Word = struct { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # =================================================================================================
@@ -28,7 +28,7 @@ const PUBLIC_KEY_SLOT = word("miden::standards::auth::ecdsa_k256_keccak::public_
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
-pub proc auth_tx_ecdsa_k256_keccak(auth_args: BeWord)
+pub proc auth_tx_ecdsa_k256_keccak(auth_args: Word)
     dropw
     # => [pad(16)]
     

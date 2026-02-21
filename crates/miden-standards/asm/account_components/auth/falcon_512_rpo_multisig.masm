@@ -7,7 +7,7 @@ use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type Word = struct { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # =================================================================================================
@@ -58,7 +58,7 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 #!
 #! Panics if:
 #! - the same transaction has already been executed
-proc assert_new_tx(msg: BeWord)
+proc assert_new_tx(msg: Word)
     push.IS_EXECUTED_FLAG
     # => [[0, 0, 0, is_executed], MSG]
 
@@ -148,7 +148,7 @@ end
 #! 0: new_num_of_approvers
 #! 1: init_num_of_approvers
 @locals(2)
-pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
+pub proc update_signers_and_threshold(multisig_config_hash: Word)
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -352,7 +352,7 @@ end
 #!
 #! Invocation: call
 @locals(1)
-pub proc auth_tx_falcon512_rpo_multisig(salt: BeWord)
+pub proc auth_tx_falcon512_rpo_multisig(salt: Word)
     exec.native_account::incr_nonce drop
     # => [SALT]
 
