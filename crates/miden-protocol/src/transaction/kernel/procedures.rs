@@ -40,7 +40,7 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_get_vault_root
     word!("0x06d2ed6e186f5a6ed429393c125d3299b8b8c9d374d4a70c07223270a226e4ee"),
     // account_add_asset
-    word!("0xdcbf3b7645e8ceb5b65d6d2bd0f402687d251c0dae5823caf9665e662b280c24"),
+    word!("0x45f8873ee1e78b017d00bc71ae85c70109469622f14b5a7d650b87e9ebde4612"),
     // account_remove_asset
     word!("0xe82f74caa0703488e2d6d0e0e7f4769ec4a05d742185f079055051eb03d618bd"),
     // account_get_asset
@@ -58,7 +58,7 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_has_procedure
     word!("0xc6d3f1dcbe531f4aeb6b6a7b2cebd9fbc460f473ac3d25a9a6a6febfbb572777"),
     // faucet_mint_asset
-    word!("0xcc5dc8a811d1d2a4410e9bb77041f164786a51efa31a7c6849dcecb1ee20afe1"),
+    word!("0x7d4aa382335adc195a60cc28b606fecfa12cb4176423f9c5489d03382c051f2b"),
     // faucet_burn_asset
     word!("0x6a48451ff9d9c5a2fd7f7eca8522902ebe723746ee71cc9d157955cffd5c5b11"),
     // input_note_get_metadata

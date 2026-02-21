@@ -130,14 +130,8 @@ pub proc add_fungible_asset
 
     # since we have peeked the value, we need to later assert that the actual value matches this
     # one, so we'll keep a copy for later
+    # set the current asset value equal to the current vault value
     swapw dupw.1
-    # => [CUR_VAULT_VALUE, ASSET_KEY, CUR_VAULT_VALUE, ASSET_VALUE]
-
-    # the current vault value may be the empty word if it does not exist and so its faucet id would
-    # be zeros. We therefore overwrite the faucet id with the faucet id from ASSET_VALUE to account
-    # for this edge case
-    drop drop
-    dup.11 dup.11
     # => [CURRENT_ASSET_VALUE, ASSET_KEY, CUR_VAULT_VALUE, ASSET_VALUE]
 
     movupw.3
