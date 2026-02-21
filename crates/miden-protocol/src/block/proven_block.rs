@@ -21,7 +21,7 @@ pub struct ProvenBlock {
     /// The body of the proven block.
     body: BlockBody,
 
-    /// The validator's signature over the block header.
+    /// The Validator's signature over the block header.
     signature: Signature,
 
     /// The proof of the block.
@@ -33,8 +33,8 @@ impl ProvenBlock {
     ///
     /// # Warning
     ///
-    /// This constructor does not do any validation, so passing incorrect values may lead to later
-    /// panics.
+    /// This constructor does not do any validation as to whether the arguments correctly correspond
+    /// to each other, which could cause errors downstream.
     pub fn new_unchecked(
         header: BlockHeader,
         body: BlockBody,
@@ -54,19 +54,24 @@ impl ProvenBlock {
         &self.header
     }
 
-    /// Returns the validator's signature over the block header.
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
-
     /// Returns the body of the block.
     pub fn body(&self) -> &BlockBody {
         &self.body
     }
 
+    /// Returns the Validator's signature over the block header.
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
     /// Returns the proof of the block.
     pub fn proof(&self) -> &BlockProof {
         &self.proof
+    }
+
+    /// Destructures this proven block into individual parts.
+    pub fn into_parts(self) -> (BlockHeader, BlockBody, Signature, BlockProof) {
+        (self.header, self.body, self.signature, self.proof)
     }
 }
 

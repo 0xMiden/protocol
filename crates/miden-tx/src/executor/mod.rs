@@ -183,7 +183,16 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+        // instantiate the processor in debug mode only when debug mode is specified via execution
+        // options; this is important because in debug mode execution is almost 100x slower
+        // TODO: the processor does not yet respect other execution options (e.g., max cycles);
+        // this will be fixed in v0.21 release of the VM
+        let processor = if self.exec_options.enable_debugging() {
+            FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs)
+        } else {
+            FastProcessor::new_with_advice_inputs(stack_inputs.as_slice(), advice_inputs)
+        };
+
         let output = processor
             .execute(&TransactionKernel::main(), &mut host)
             .await
@@ -263,24 +272,34 @@ where
             .await
             .map_err(TransactionExecutorError::FetchTransactionInputsFailed)?;
 
-        // Add the vault key for the fee asset to the list of asset vault keys which will need to be
-        // accessed at the end of the transaction.
+        let native_account_vault_root = account.vault().root();
         let fee_asset_vault_key =
             AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
+
+        let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
+            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
+            .with_tx_args(tx_args);
+
+        // Add the vault key for the fee asset to the list of asset vault keys which will need to be
+        // accessed at the end of the transaction.
         asset_vault_keys.insert(fee_asset_vault_key);
 
-        // Fetch the witnesses for all asset vault keys.
-        let asset_witnesses = self
-            .data_store
-            .get_vault_asset_witnesses(account_id, account.vault().root(), asset_vault_keys)
-            .await
-            .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
+        // filter out any asset vault keys for which we already have witnesses in the advice inputs
+        asset_vault_keys.retain(|asset_key| {
+            !tx_inputs.has_vault_asset_witness(native_account_vault_root, asset_key)
+        });
 
-        let tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
-            .map_err(TransactionExecutorError::InvalidTransactionInputs)?
-            .with_tx_args(tx_args)
-            .with_asset_witnesses(asset_witnesses);
+        // if any of the witnesses are missing, fetch them from the data store and add to tx_inputs
+        if !asset_vault_keys.is_empty() {
+            let asset_witnesses = self
+                .data_store
+                .get_vault_asset_witnesses(account_id, native_account_vault_root, asset_vault_keys)
+                .await
+                .map_err(TransactionExecutorError::FetchAssetWitnessFailed)?;
+
+            tx_inputs = tx_inputs.with_asset_witnesses(asset_witnesses);
+        }
 
         Ok(tx_inputs)
     }
@@ -318,25 +337,23 @@ where
             AccountProcedureIndexMap::new([tx_inputs.account().code()]);
 
         let initial_fee_asset_balance = {
+            let vault_root = tx_inputs.account().vault().root();
             let native_asset_id = tx_inputs.block_header().fee_parameters().native_asset_id();
             let fee_asset_vault_key = AssetVaultKey::from_account_id(native_asset_id)
                 .expect("fee asset should be a fungible asset");
 
-            let fee_asset_witness = tx_inputs
-                .asset_witnesses()
-                .iter()
-                .find_map(|witness| witness.find(fee_asset_vault_key));
-
-            match fee_asset_witness {
+            let fee_asset = tx_inputs
+                .read_vault_asset(vault_root, fee_asset_vault_key)
+                .map_err(TransactionExecutorError::FeeAssetRetrievalFailed)?;
+            match fee_asset {
                 Some(Asset::Fungible(fee_asset)) => fee_asset.amount(),
                 Some(Asset::NonFungible(_)) => {
                     return Err(TransactionExecutorError::FeeAssetMustBeFungible);
                 },
-                // If the witness does not contain the asset, its balance is zero.
+                // If the asset was not found, its balance is zero.
                 None => 0,
             }
         };
-
         let host = TransactionExecutorHost::new(
             tx_inputs.account(),
             input_notes.clone(),

@@ -52,7 +52,7 @@ bech32       = { default-features = false, features = ["alloc"], version = "0.11
 rand         = { workspace = true }
 rand_xoshiro = { default-features = false, optional = true, version = "0.7" }
 semver       = { features = ["serde"], version = "1.0" }
-serde        = { features = ["derive"], optional = true, version = "1.0" }
+serde        = { features = ["derive"], optional = true, workspace = true }
 thiserror    = { workspace = true }
 toml         = { optional = true, version = "0.9" }
 # for SecretKey generation
@@ -75,7 +75,7 @@ color-eyre = { version = "0.5" }
 miden-air  = { features = ["std", "testing"], workspace = true }
 
 [build-dependencies]
-fs-err         = { version = "3" }
+fs-err         = { workspace = true }
 miden-assembly = { workspace = true }
 miden-core     = { workspace = true }
 miden-core-lib = { workspace = true }

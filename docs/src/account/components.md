@@ -138,7 +138,7 @@ Valid field element types are `void`, `u8`, `u16`, `u32`, `felt` (default) and `
 - `void` is a special type which always evaluates to `0` and does not produce an init requirement; it is intended for reserved or padding elements.
 - `u8`, `u16` and `u32` values can be parsed as decimal numbers and represent 8-bit, 16-bit and 32-bit unsigned integers.
 - `felt` values represent a field element, and can be parsed as decimal or hexadecimal numbers.
-- `miden::standards::fungible_faucets::metadata::token_symbol` values represent basic fungible token symbols, parsed as 1–6 uppercase ASCII characters.
+- `miden::standards::fungible_faucets::metadata::token_symbol` values represent basic fungible token symbols, parsed as 1–12 uppercase ASCII characters.
 
 ##### Value slots
 

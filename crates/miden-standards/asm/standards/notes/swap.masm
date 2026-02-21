@@ -5,7 +5,7 @@ use miden::standards::wallets::basic->wallet
 # CONSTANTS
 # =================================================================================================
 
-const SWAP_NOTE_INPUTS_NUMBER=16
+const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 
 const PAYBACK_NOTE_TYPE_ADDRESS=0
 const PAYBACK_NOTE_TAG_ADDRESS=1
@@ -18,7 +18,7 @@ const PAYBACK_RECIPIENT_ADDRESS=12
 # ERRORS
 # =================================================================================================
 
-const ERR_SWAP_WRONG_NUMBER_OF_INPUTS="SWAP script expects exactly 16 note inputs"
+const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="SWAP script expects exactly 16 note storage items"
 
 const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset"
 
@@ -32,7 +32,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! Inputs:  [ARGS]
 #! Outputs: []
 #!
-#! Note inputs are assumed to be as follows:
+#! Note storage is assumed to be as follows:
 #! - payback_note_type
 #! - payback_note_tag
 #! - attachment_kind
@@ -49,6 +49,7 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #!   greater than 2^63.
 #! - the attachment kind or scheme does not fit into a u32.
 #! - the attachment kind is an unknown variant.
+@note_script
 pub proc main
     # dropping note args
     dropw
@@ -56,12 +57,12 @@ pub proc main
 
     # --- create a payback note with the requested asset ----------------
 
-    # store note inputs into memory starting at address 0
-    push.0 exec.active_note::get_inputs
-    # => [num_inputs, inputs_ptr]
+    # store note storage into memory starting at address 0
+    push.0 exec.active_note::get_storage
+    # => [num_storage_items, storage_ptr]
 
-    # check number of inputs
-    eq.SWAP_NOTE_INPUTS_NUMBER assert.err=ERR_SWAP_WRONG_NUMBER_OF_INPUTS
+    # check number of storage items
+    eq.SWAP_NOTE_NUM_STORAGE_ITEMS assert.err=ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     drop
     # => []
 

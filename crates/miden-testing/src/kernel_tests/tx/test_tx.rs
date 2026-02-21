@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -26,9 +27,9 @@ use miden_protocol::note::{
     NoteAttachmentScheme,
     NoteHeader,
     NoteId,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -55,7 +56,7 @@ use miden_standards::AuthScheme;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_tx::auth::UnreachableAuth;
@@ -222,9 +223,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // Create the expected output note for Note 2 which is public
     let serial_num_2 = Word::from([1, 2, 3, 4u32]);
     let note_script_2 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
-    let inputs_2 = NoteInputs::new(vec![ONE])?;
-    let metadata_2 =
-        NoteMetadata::new(account_id, note_type2, tag2).with_attachment(attachment2.clone());
+    let inputs_2 = NoteStorage::new(vec![ONE])?;
+    let metadata_2 = NoteMetadata::new(account_id, note_type2)
+        .with_tag(tag2)
+        .with_attachment(attachment2.clone());
     let vault_2 = NoteAssets::new(vec![removed_asset_3, removed_asset_4])?;
     let recipient_2 = NoteRecipient::new(serial_num_2, note_script_2, inputs_2);
     let expected_output_note_2 = Note::new(vault_2, metadata_2, recipient_2);
@@ -232,9 +234,10 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     // Create the expected output note for Note 3 which is public
     let serial_num_3 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
     let note_script_3 = CodeBuilder::default().compile_note_script(DEFAULT_NOTE_CODE)?;
-    let inputs_3 = NoteInputs::new(vec![ONE, Felt::new(2)])?;
-    let metadata_3 =
-        NoteMetadata::new(account_id, note_type3, tag3).with_attachment(attachment3.clone());
+    let inputs_3 = NoteStorage::new(vec![ONE, Felt::new(2)])?;
+    let metadata_3 = NoteMetadata::new(account_id, note_type3)
+        .with_tag(tag3)
+        .with_attachment(attachment3.clone());
     let vault_3 = NoteAssets::new(vec![])?;
     let recipient_3 = NoteRecipient::new(serial_num_3, note_script_3, inputs_3);
     let expected_output_note_3 = Note::new(vault_3, metadata_3, recipient_3);
@@ -387,19 +390,19 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     assert_eq!(expected_output_note_3.id(), resulting_output_note_3.id());
     assert_eq!(expected_output_note_3.assets(), resulting_output_note_3.assets().unwrap());
 
-    // make sure that the number of note inputs remains the same
+    // make sure that the number of note storage items remains the same
     let resulting_note_2_recipient =
         resulting_output_note_2.recipient().expect("output note 2 is not full");
     assert_eq!(
-        resulting_note_2_recipient.inputs().num_values(),
-        expected_output_note_2.inputs().num_values()
+        resulting_note_2_recipient.storage().num_items(),
+        expected_output_note_2.storage().num_items()
     );
 
     let resulting_note_3_recipient =
         resulting_output_note_3.recipient().expect("output note 3 is not full");
     assert_eq!(
-        resulting_note_3_recipient.inputs().num_values(),
-        expected_output_note_3.inputs().num_values()
+        resulting_note_3_recipient.storage().num_items(),
+        expected_output_note_3.storage().num_items()
     );
 
     Ok(())
@@ -412,7 +415,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let source_code = r#"
       use miden::standards::auth
       use miden::protocol::tx
-      const AUTH_UNAUTHORIZED_EVENT=event("miden::auth::unauthorized")
+      const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
       pub proc auth_abort_tx
@@ -439,9 +442,12 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let auth_code = CodeBuilder::default()
         .compile_component_code("test::auth_component", source_code)
         .context("failed to parse auth component")?;
-    let auth_component = AccountComponent::new(auth_code, vec![])
-        .context("failed to parse auth component")?
-        .with_supports_all_types();
+    let auth_component = AccountComponent::new(
+        auth_code,
+        vec![],
+        AccountComponentMetadata::mock("test::auth_component"),
+    )
+    .context("failed to parse auth component")?;
 
     let account = AccountBuilder::new([42; 32])
         .storage_mode(AccountStorageMode::Private)
@@ -452,7 +458,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 
     // Consume and create a note so the input and outputs notes commitment is not the empty word.
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],
@@ -495,7 +501,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::BasicAuth)?;
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],
@@ -559,7 +565,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::EcdsaK256KeccakAuth)?;
     let mut rng = RpoRandomCoin::new(Word::empty());
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
         vec![],
@@ -767,8 +773,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
     let component = AccountComponent::new(
         component_code.clone(),
         vec![StorageSlot::with_value(StorageSlotName::mock(0), Word::default())],
-    )?
-    .with_supports_all_types();
+        AccountComponentMetadata::mock("test::adv_map_component"),
+    )?;
 
     let account_code = AccountCode::from_components(
         &[IncrNonceAuthComponent.into(), component.clone()],

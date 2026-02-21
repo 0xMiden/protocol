@@ -1,15 +1,13 @@
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 use miden::core::crypto::hashes::rpo256
 use miden::protocol::active_account
+use miden::protocol::auth::AUTH_REQUEST_EVENT
 use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::auth
 
 # CONSTANTS
 # =================================================================================================
-
-# The event to request an authentication signature.
-const AUTH_REQUEST_EVENT=event("miden::auth::request")
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0

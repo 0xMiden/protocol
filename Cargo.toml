@@ -21,7 +21,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/miden-base"
 rust-version = "1.90"
-version      = "0.13.0"
+version      = "0.14.0"
 
 [profile.release]
 codegen-units = 1
@@ -42,14 +42,14 @@ lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.13" }
-miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.13" }
-miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.13" }
-miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.13" }
-miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.13" }
-miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.13" }
-miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.13" }
-miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.13" }
+miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.14" }
+miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.14" }
+miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.14" }
+miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.14" }
+miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.14" }
+miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.14" }
+miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.14" }
+miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.14" }
 
 # Miden dependencies
 miden-air             = { default-features = false, version = "0.20" }
@@ -67,9 +67,11 @@ miden-verifier        = { default-features = false, version = "0.20" }
 # External dependencies
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
 assert_matches  = { default-features = false, version = "1.5" }
+fs-err          = { default-features = false, version = "3" }
 primitive-types = { default-features = false, version = "0.14" }
 rand            = { default-features = false, version = "0.9" }
 rand_chacha     = { default-features = false, version = "0.9" }
 rstest          = { version = "0.26" }
+serde           = { default-features = false, version = "1.0" }
 thiserror       = { default-features = false, version = "2.0" }
 tokio           = { default-features = false, features = ["sync"], version = "1" }

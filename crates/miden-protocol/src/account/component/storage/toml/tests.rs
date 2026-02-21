@@ -16,9 +16,9 @@ use crate::account::component::{
     WordSchema,
     WordValue,
 };
-use crate::account::{AccountStorage, StorageSlotContent, StorageSlotName};
+use crate::account::{StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
-use crate::errors::AccountComponentTemplateError;
+use crate::errors::ComponentMetadataError;
 
 #[test]
 fn from_toml_str_with_nested_table_and_flattened() {
@@ -271,7 +271,7 @@ fn metadata_from_toml_rejects_non_ascii_component_description() {
 
     assert_matches::assert_matches!(
         AccountComponentMetadata::from_toml(toml_str),
-        Err(AccountComponentTemplateError::InvalidSchema(_))
+        Err(ComponentMetadataError::InvalidSchema(_))
     );
 }
 
@@ -291,7 +291,7 @@ fn metadata_from_toml_rejects_non_ascii_slot_description() {
 
     assert_matches::assert_matches!(
         AccountComponentMetadata::from_toml(toml_str),
-        Err(AccountComponentTemplateError::InvalidSchema(_))
+        Err(ComponentMetadataError::InvalidSchema(_))
     );
 }
 
@@ -435,30 +435,7 @@ fn metadata_from_toml_rejects_typed_fields_in_static_map_values() {
 
     assert_matches::assert_matches!(
         AccountComponentMetadata::from_toml(toml_str),
-        Err(AccountComponentTemplateError::TomlDeserializationError(_))
-    );
-}
-
-#[test]
-fn metadata_from_toml_rejects_reserved_slot_names() {
-    let reserved_slot = AccountStorage::faucet_sysdata_slot().as_str();
-
-    let toml_str = format!(
-        r#"
-            name = "Test Component"
-            description = "Test description"
-            version = "0.1.0"
-            supported-types = []
-
-            [[storage.slots]]
-            name = "{reserved_slot}"
-            type = "word"
-        "#
-    );
-
-    assert_matches::assert_matches!(
-        AccountComponentMetadata::from_toml(&toml_str),
-        Err(AccountComponentTemplateError::ReservedSlotName(_))
+        Err(ComponentMetadataError::TomlDeserializationError(_))
     );
 }
 
@@ -917,7 +894,7 @@ fn typed_map_init_entries_are_validated() {
 
     assert_matches::assert_matches!(
         metadata.storage_schema().build_storage_slots(&init_data),
-        Err(AccountComponentTemplateError::InvalidInitStorageValue(name, msg))
+        Err(ComponentMetadataError::InvalidInitStorageValue(name, msg))
             if &name.to_string() == "demo::typed_map" && msg.contains("void")
     );
 }

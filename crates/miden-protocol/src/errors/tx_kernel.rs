@@ -73,31 +73,19 @@ pub const ERR_EPILOGUE_NONCE_CANNOT_BE_0: MasmError = MasmError::from_static_str
 /// Error Message: "total number of assets in the account and all involved notes must stay the same"
 pub const ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME: MasmError = MasmError::from_static_str("total number of assets in the account and all involved notes must stay the same");
 
-/// Error Message: "asset amount to burn can not exceed the existing total supply"
-pub const ERR_FAUCET_BURN_CANNOT_EXCEED_EXISTING_TOTAL_SUPPLY: MasmError = MasmError::from_static_str("asset amount to burn can not exceed the existing total supply");
 /// Error Message: "the burn_non_fungible_asset procedure can only be called on a non-fungible faucet"
 pub const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET: MasmError = MasmError::from_static_str("the burn_non_fungible_asset procedure can only be called on a non-fungible faucet");
-/// Error Message: "the faucet_is_non_fungible_asset_issued procedure can only be called on a non-fungible faucet"
-pub const ERR_FAUCET_IS_NF_ASSET_ISSUED_PROC_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET: MasmError = MasmError::from_static_str("the faucet_is_non_fungible_asset_issued procedure can only be called on a non-fungible faucet");
-/// Error Message: "asset mint operation would cause the new total supply to exceed the maximum allowed asset amount"
-pub const ERR_FAUCET_NEW_TOTAL_SUPPLY_WOULD_EXCEED_MAX_ASSET_AMOUNT: MasmError = MasmError::from_static_str("asset mint operation would cause the new total supply to exceed the maximum allowed asset amount");
-/// Error Message: "failed to mint new non-fungible asset because it was already issued"
-pub const ERR_FAUCET_NON_FUNGIBLE_ASSET_ALREADY_ISSUED: MasmError = MasmError::from_static_str("failed to mint new non-fungible asset because it was already issued");
-/// Error Message: "failed to burn non-existent non-fungible asset in the vault"
-pub const ERR_FAUCET_NON_FUNGIBLE_ASSET_TO_BURN_NOT_FOUND: MasmError = MasmError::from_static_str("failed to burn non-existent non-fungible asset in the vault");
-/// Error Message: "for faucets the FAUCET_STORAGE_DATA_SLOT storage slot is reserved and can not be used with set_account_item"
-pub const ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED: MasmError = MasmError::from_static_str("for faucets the FAUCET_STORAGE_DATA_SLOT storage slot is reserved and can not be used with set_account_item");
-/// Error Message: "the faucet_get_total_fungible_asset_issuance procedure can only be called on a fungible faucet"
-pub const ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET: MasmError = MasmError::from_static_str("the faucet_get_total_fungible_asset_issuance procedure can only be called on a fungible faucet");
 
 /// Error Message: "creation of a foreign context against the native account is forbidden"
 pub const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT: MasmError = MasmError::from_static_str("creation of a foreign context against the native account is forbidden");
-/// Error Message: "ID of the provided foreign account equals zero"
-pub const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO: MasmError = MasmError::from_static_str("ID of the provided foreign account equals zero");
+/// Error Message: "ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
+pub const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO: MasmError = MasmError::from_static_str("ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called");
 /// Error Message: "commitment of the foreign account in the advice provider does not match the commitment in the account tree"
 pub const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT: MasmError = MasmError::from_static_str("commitment of the foreign account in the advice provider does not match the commitment in the account tree");
 /// Error Message: "maximum allowed number of foreign account to be loaded (64) was exceeded"
 pub const ERR_FOREIGN_ACCOUNT_MAX_NUMBER_EXCEEDED: MasmError = MasmError::from_static_str("maximum allowed number of foreign account to be loaded (64) was exceeded");
+/// Error Message: "root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+pub const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO: MasmError = MasmError::from_static_str("root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called");
 
 /// Error Message: "the origin of the fungible asset is not this faucet"
 pub const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN: MasmError = MasmError::from_static_str("the origin of the fungible asset is not this faucet");
@@ -142,8 +130,6 @@ pub const ERR_NON_FUNGIBLE_ASSET_FORMAT_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO: MasmE
 
 /// Error Message: "failed to access note assets of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_ASSETS_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note assets of active note because no note is currently being processed");
-/// Error Message: "failed to access note inputs of active note because no note is currently being processed"
-pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note inputs of active note because no note is currently being processed");
 /// Error Message: "failed to access note metadata of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note metadata of active note because no note is currently being processed");
 /// Error Message: "failed to access note recipient of active note because no note is currently being processed"
@@ -152,6 +138,8 @@ pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSE
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note script root of active note because no note is currently being processed");
 /// Error Message: "failed to access note serial number of active note because no note is currently being processed"
 pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note serial number of active note because no note is currently being processed");
+/// Error Message: "failed to access note storage of active note because no note is currently being processed"
+pub const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED: MasmError = MasmError::from_static_str("failed to access note storage of active note because no note is currently being processed");
 /// Error Message: "adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
 pub const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807");
 /// Error Message: "failed to find note at the given index; index must be within [0, num_of_notes]"
@@ -194,22 +182,14 @@ pub const ERR_PROLOGUE_NATIVE_ASSET_ID_IS_NOT_FUNGIBLE: MasmError = MasmError::f
 pub const ERR_PROLOGUE_NEW_ACCOUNT_NONCE_MUST_BE_ZERO: MasmError = MasmError::from_static_str("new account must have a zero nonce");
 /// Error Message: "new account must have an empty vault"
 pub const ERR_PROLOGUE_NEW_ACCOUNT_VAULT_MUST_BE_EMPTY: MasmError = MasmError::from_static_str("new account must have an empty vault");
-/// Error Message: "reserved slot for new fungible faucet has an invalid type"
-pub const ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE: MasmError = MasmError::from_static_str("reserved slot for new fungible faucet has an invalid type");
-/// Error Message: "reserved slot for new fungible faucet is not empty"
-pub const ERR_PROLOGUE_NEW_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_EMPTY: MasmError = MasmError::from_static_str("reserved slot for new fungible faucet is not empty");
-/// Error Message: "reserved slot for new non-fungible faucet has an invalid type"
-pub const ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_INVALID_TYPE: MasmError = MasmError::from_static_str("reserved slot for new non-fungible faucet has an invalid type");
-/// Error Message: "reserved slot for non-fungible faucet is not a valid empty SMT"
-pub const ERR_PROLOGUE_NEW_NON_FUNGIBLE_FAUCET_RESERVED_SLOT_MUST_BE_VALID_EMPTY_SMT: MasmError = MasmError::from_static_str("reserved slot for non-fungible faucet is not a valid empty SMT");
 /// Error Message: "failed to authenticate note inclusion in block"
 pub const ERR_PROLOGUE_NOTE_AUTHENTICATION_FAILED: MasmError = MasmError::from_static_str("failed to authenticate note inclusion in block");
 /// Error Message: "number of input notes exceeds the kernel's maximum limit of 1024"
 pub const ERR_PROLOGUE_NUMBER_OF_INPUT_NOTES_EXCEEDS_LIMIT: MasmError = MasmError::from_static_str("number of input notes exceeds the kernel's maximum limit of 1024");
 /// Error Message: "number of note assets exceeds the maximum limit of 256"
 pub const ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT: MasmError = MasmError::from_static_str("number of note assets exceeds the maximum limit of 256");
-/// Error Message: "number of note inputs exceeded the maximum limit of 1024"
-pub const ERR_PROLOGUE_NUMBER_OF_NOTE_INPUTS_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("number of note inputs exceeded the maximum limit of 1024");
+/// Error Message: "number of note storage items exceeded the maximum limit of 1024"
+pub const ERR_PROLOGUE_NUMBER_OF_NOTE_STORAGE_ITEMS_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("number of note storage items exceeded the maximum limit of 1024");
 /// Error Message: "account data provided does not match the commitment recorded on-chain"
 pub const ERR_PROLOGUE_PROVIDED_ACCOUNT_DATA_DOES_NOT_MATCH_ON_CHAIN_COMMITMENT: MasmError = MasmError::from_static_str("account data provided does not match the commitment recorded on-chain");
 /// Error Message: "provided info about assets of an input does not match its commitment"
@@ -230,15 +210,9 @@ pub const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID: MasmError =
 pub const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW: MasmError = MasmError::from_static_str("failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove");
 /// Error Message: "adding the fungible asset to the vault would exceed the max amount of 9223372036854775807"
 pub const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED: MasmError = MasmError::from_static_str("adding the fungible asset to the vault would exceed the max amount of 9223372036854775807");
-/// Error Message: "get_balance can only be called on a fungible asset"
-pub const ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET: MasmError = MasmError::from_static_str("get_balance can only be called on a fungible asset");
-/// Error Message: "the has_non_fungible_asset procedure can only be called on a non-fungible faucet"
-pub const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET: MasmError = MasmError::from_static_str("the has_non_fungible_asset procedure can only be called on a non-fungible faucet");
 /// Error Message: "the non-fungible asset already exists in the asset vault"
 pub const ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS: MasmError = MasmError::from_static_str("the non-fungible asset already exists in the asset vault");
 /// Error Message: "failed to remove non-existent non-fungible asset from the vault"
 pub const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND: MasmError = MasmError::from_static_str("failed to remove non-existent non-fungible asset from the vault");
-/// Error Message: "peek_balance can only be called on a fungible asset"
-pub const ERR_VAULT_PEEK_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET: MasmError = MasmError::from_static_str("peek_balance can only be called on a fungible asset");
 /// Error Message: "failed to remove fungible asset from the asset vault due to the initial value being invalid"
 pub const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID: MasmError = MasmError::from_static_str("failed to remove fungible asset from the asset vault due to the initial value being invalid");

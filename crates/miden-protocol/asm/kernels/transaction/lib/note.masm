@@ -166,7 +166,7 @@ end
 #!
 #! The note ID is computed as follows:
 #! - we define, recipient =
-#!       hash(hash(hash(serial_num, [0; 4]), script_root), input_commitment)
+#!       hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 #! - we then compute the output note ID as:
 #!       hash(recipient, assets_commitment)
 #!

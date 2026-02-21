@@ -24,7 +24,7 @@ impl LocalBlockProver {
     pub fn prove(
         &self,
         _tx_batches: OrderedBatches,
-        _block_header: BlockHeader,
+        _block_header: &BlockHeader,
         _block_inputs: BlockInputs,
     ) -> Result<BlockProof, BlockProverError> {
         Ok(BlockProof {})

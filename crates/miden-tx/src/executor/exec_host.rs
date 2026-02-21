@@ -26,7 +26,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteInputs, NoteMetadata, NoteRecipient};
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -36,6 +36,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -364,26 +365,48 @@ where
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
 
-    /// Handles a request for a [`NoteScript`] by querying the [`DataStore`].
+    /// Handles a request for a [`NoteScript`] during transaction execution when the script is not
+    /// already in the advice provider.
     ///
-    /// The script is fetched from the data store and used to build a [`NoteRecipient`], which is
-    /// then used to create an [`OutputNoteBuilder`]. This function is only called for public notes
-    /// where the script is not already available in the advice provider.
+    /// Standard note scripts (P2ID, etc.) are resolved directly from [`StandardNote`], avoiding a
+    /// data store round-trip. Non-standard scripts are fetched from the [`DataStore`].
+    ///
+    /// The resolved script is used to build a [`NoteRecipient`], which is then used to create
+    /// an [`OutputNoteBuilder`]. This function is only called for notes where the script is not
+    /// already in the advice provider.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The note is public and the script is not found in the data store.
+    /// - Constructing the recipient with the fetched script does not match the expected recipient
+    ///   digest.
+    /// - The data store returns an error when fetching the script.
     async fn on_note_script_requested(
         &mut self,
         note_idx: usize,
         recipient_digest: Word,
         script_root: Word,
         metadata: NoteMetadata,
-        note_inputs: NoteInputs,
+        note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let note_script_result = self.base_host.store().get_note_script(script_root).await;
+        // Resolve standard note scripts directly, avoiding a data store round-trip.
+        let note_script: Option<NoteScript> =
+            if let Some(standard_note) = StandardNote::from_script_root(script_root) {
+                Some(standard_note.script())
+            } else {
+                self.base_host.store().get_note_script(script_root).await.map_err(|err| {
+                    TransactionKernelError::other_with_source(
+                        "failed to retrieve note script from data store",
+                        err,
+                    )
+                })?
+            };
 
-        match note_script_result {
-            Ok(Some(note_script)) => {
+        match note_script {
+            Some(note_script) => {
                 let script_felts: Vec<Felt> = (&note_script).into();
-                let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+                let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
                 if recipient.digest() != recipient_digest {
                     return Err(TransactionKernelError::other(format!(
@@ -399,7 +422,7 @@ where
                     script_felts,
                 )]))])
             },
-            Ok(None) if metadata.is_private() => {
+            None if metadata.is_private() => {
                 self.base_host.output_note_from_recipient_digest(
                     note_idx,
                     metadata,
@@ -408,13 +431,9 @@ where
 
                 Ok(Vec::new())
             },
-            Ok(None) => Err(TransactionKernelError::other(format!(
+            None => Err(TransactionKernelError::other(format!(
                 "note script with root {script_root} not found in data store for public note"
             ))),
-            Err(err) => Err(TransactionKernelError::other_with_source(
-                "failed to retrieve note script from data store",
-                err,
-            )),
         }
     }
 
@@ -581,14 +600,14 @@ where
                             recipient_digest,
                             serial_num,
                             script_root,
-                            note_inputs,
+                            note_storage,
                         } => {
                             self.on_note_script_requested(
                                 note_idx,
                                 recipient_digest,
                                 script_root,
                                 metadata,
-                                note_inputs,
+                                note_storage,
                                 serial_num,
                             )
                             .await

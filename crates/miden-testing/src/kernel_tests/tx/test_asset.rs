@@ -1,11 +1,7 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::NonFungibleAsset;
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use miden_protocol::testing::constants::{
-    FUNGIBLE_ASSET_AMOUNT,
-    FUNGIBLE_FAUCET_INITIAL_BALANCE,
-    NON_FUNGIBLE_ASSET_DATA,
-};
+use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::{Felt, Hasher, Word};
 
 use crate::TransactionContextBuilder;
@@ -13,11 +9,9 @@ use crate::kernel_tests::tx::ExecutionOutputExt;
 
 #[tokio::test]
 async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
-    let tx_context = TransactionContextBuilder::with_fungible_faucet(
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        Felt::new(FUNGIBLE_FAUCET_INITIAL_BALANCE),
-    )
-    .build()?;
+    let tx_context =
+        TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
+            .build()?;
 
     let code = format!(
         "

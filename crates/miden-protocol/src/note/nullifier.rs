@@ -30,13 +30,13 @@ const NULLIFIER_PREFIX_SHIFT: u8 = 48;
 ///
 /// A note's nullifier is computed as:
 ///
-/// > hash(serial_num, script_root, input_commitment, asset_commitment).
+/// > hash(serial_num, script_root, storage_commitment, asset_commitment).
 ///
 /// This achieves the following properties:
 /// - Every note can be reduced to a single unique nullifier.
 /// - We cannot derive a note's commitment from its nullifier, or a note's nullifier from its hash.
 /// - To compute the nullifier we must know all components of the note: serial_num, script_root,
-///   input_commitment and asset_commitment.
+///   storage_commitment and asset_commitment.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct Nullifier(Word);
 
@@ -44,14 +44,14 @@ impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided digest.
     pub fn new(
         script_root: Word,
-        inputs_commitment: Word,
+        storage_commitment: Word,
         asset_commitment: Word,
         serial_num: Word,
     ) -> Self {
         let mut elements = [ZERO; 4 * WORD_SIZE];
         elements[..4].copy_from_slice(serial_num.as_elements());
         elements[4..8].copy_from_slice(script_root.as_elements());
-        elements[8..12].copy_from_slice(inputs_commitment.as_elements());
+        elements[8..12].copy_from_slice(storage_commitment.as_elements());
         elements[12..].copy_from_slice(asset_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
@@ -103,7 +103,7 @@ impl From<&NoteDetails> for Nullifier {
     fn from(note: &NoteDetails) -> Self {
         Self::new(
             note.script().root(),
-            note.inputs().commitment(),
+            note.storage().commitment(),
             note.assets().commitment(),
             note.serial_num(),
         )

@@ -30,6 +30,9 @@ impl BlockNumber {
     /// The block height of the genesis block.
     pub const GENESIS: Self = Self(0);
 
+    /// The maximum block number.
+    pub const MAX: Self = Self(u32::MAX);
+
     /// Returns the previous block number
     pub fn parent(self) -> Option<BlockNumber> {
         self.checked_sub(1)

@@ -11,14 +11,6 @@ use crate::utils::serde::{
     Serializable,
 };
 
-// CONSTANTS
-// ================================================================================================
-
-// Keep these masks in sync with `miden-lib/asm/miden/kernels/tx/tx.masm`
-const PUBLIC: u8 = 0b01;
-const PRIVATE: u8 = 0b10;
-const ENCRYPTED: u8 = 0b11;
-
 // NOTE TYPE
 // ================================================================================================
 
@@ -26,13 +18,16 @@ const ENCRYPTED: u8 = 0b11;
 #[repr(u8)]
 pub enum NoteType {
     /// Notes with this type have only their hash published to the network.
-    Private = PRIVATE,
-
-    /// Notes with this type are shared with the network encrypted.
-    Encrypted = ENCRYPTED,
+    Private = Self::PRIVATE,
 
     /// Notes with this type are fully shared with the network.
-    Public = PUBLIC,
+    Public = Self::PUBLIC,
+}
+
+impl NoteType {
+    // Keep these masks in sync with `miden-lib/asm/miden/kernels/tx/tx.masm`
+    pub const PUBLIC: u8 = 0b01;
+    pub const PRIVATE: u8 = 0b10;
 }
 
 // CONVERSIONS FROM NOTE TYPE
@@ -52,9 +47,8 @@ impl TryFrom<u8> for NoteType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            PRIVATE => Ok(NoteType::Private),
-            ENCRYPTED => Ok(NoteType::Encrypted),
-            PUBLIC => Ok(NoteType::Public),
+            Self::PRIVATE => Ok(NoteType::Private),
+            Self::PUBLIC => Ok(NoteType::Public),
             _ => Err(NoteError::UnknownNoteType(format!("0b{value:b}").into())),
         }
     }
@@ -101,7 +95,6 @@ impl FromStr for NoteType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "private" => Ok(NoteType::Private),
-            "encrypted" => Ok(NoteType::Encrypted),
             "public" => Ok(NoteType::Public),
             _ => Err(NoteError::UnknownNoteType(s.into())),
         }
@@ -122,9 +115,8 @@ impl Deserializable for NoteType {
         let discriminant = u8::read_from(source)?;
 
         let note_type = match discriminant {
-            PRIVATE => NoteType::Private,
-            ENCRYPTED => NoteType::Encrypted,
-            PUBLIC => NoteType::Public,
+            NoteType::PRIVATE => NoteType::Private,
+            NoteType::PUBLIC => NoteType::Public,
             discriminant => {
                 return Err(DeserializationError::InvalidValue(format!(
                     "discriminant {discriminant} is not a valid NoteType"
@@ -143,7 +135,6 @@ impl Display for NoteType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             NoteType::Private => write!(f, "private"),
-            NoteType::Encrypted => write!(f, "encrypted"),
             NoteType::Public => write!(f, "public"),
         }
     }
@@ -155,16 +146,13 @@ fn test_from_str_note_type() {
 
     use crate::alloc::string::ToString;
 
-    for string in ["private", "public", "encrypted"] {
+    for string in ["private", "public"] {
         let parsed_note_type = NoteType::from_str(string).unwrap();
         assert_eq!(parsed_note_type.to_string(), string);
     }
 
     let public_type_invalid_err = NoteType::from_str("puBlIc").unwrap_err();
     assert_matches!(public_type_invalid_err, NoteError::UnknownNoteType(_));
-
-    let encrypted_type_invalid = NoteType::from_str("eNcrYptEd").unwrap_err();
-    assert_matches!(encrypted_type_invalid, NoteError::UnknownNoteType(_));
 
     let invalid_type = NoteType::from_str("invalid").unwrap_err();
     assert_matches!(invalid_type, NoteError::UnknownNoteType(_));

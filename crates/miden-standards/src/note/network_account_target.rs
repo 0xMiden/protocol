@@ -6,10 +6,9 @@ use miden_protocol::note::{
     NoteAttachmentContent,
     NoteAttachmentKind,
     NoteAttachmentScheme,
-    NoteExecutionHint,
 };
 
-use crate::note::WellKnownNoteAttachment;
+use crate::note::{NoteExecutionHint, StandardNoteAttachment};
 
 // NETWORK ACCOUNT TARGET
 // ================================================================================================
@@ -36,7 +35,7 @@ impl NetworkAccountTarget {
 
     /// The standardized scheme of [`NetworkAccountTarget`] attachments.
     pub const ATTACHMENT_SCHEME: NoteAttachmentScheme =
-        WellKnownNoteAttachment::NetworkAccountTarget.attachment_scheme();
+        StandardNoteAttachment::NetworkAccountTarget.attachment_scheme();
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

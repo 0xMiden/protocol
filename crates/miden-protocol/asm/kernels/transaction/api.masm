@@ -8,6 +8,11 @@ use $kernel::note
 use $kernel::output_note
 use $kernel::tx
 
+use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
+use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+
+use miden::core::word
+
 # NOTE
 # =================================================================================================
 # `exec_kernel_proc` procedure is expected to be invoked using a `syscall` instruction. It makes  #
@@ -17,14 +22,14 @@ use $kernel::tx
 # the memory.                                                                                     #
 # =================================================================================================
 
-# ERRORS
+# TYPE ALIASES
 # =================================================================================================
 
-const ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED="for faucets the FAUCET_STORAGE_DATA_SLOT storage slot is reserved and can not be used with set_account_item"
+type AccountID = struct { prefix: felt, suffix: felt }
+type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
-const ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET="the faucet_get_total_fungible_asset_issuance procedure can only be called on a fungible faucet"
-
-const ERR_FAUCET_IS_NF_ASSET_ISSUED_PROC_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET="the faucet_is_non_fungible_asset_issued procedure can only be called on a non-fungible faucet"
+# ERRORS
+# =================================================================================================
 
 const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS="provided kernel procedure offset is out of bounds"
 
@@ -34,11 +39,15 @@ const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_RECIPIENT_WHILE_NO_NOTE_BEING_PROCESSED="f
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note metadata of active note because no note is currently being processed"
 
-const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note inputs of active note because no note is currently being processed"
+const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note storage of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SCRIPT_ROOT_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note script root of active note because no note is currently being processed"
 
 const ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_SERIAL_NUMBER_WHILE_NO_NOTE_BEING_PROCESSED="failed to access note serial number of active note because no note is currently being processed"
+
+const ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO="root of the provided foreign procedure equals zero indicating that tx_prepare_fpi was not called"
+
+const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO="ID of the provided foreign account equals zero indicating that tx_prepare_fpi was not called"
 
 # AUTHENTICATION
 # =================================================================================================
@@ -366,23 +375,11 @@ end
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the invocation of this procedure does not originate from the native account.
-#! - the native account is a faucet and the provided slot ID points to the reserved faucet storage slot.
 #!
 #! Invocation: dynexec
 pub proc account_set_item
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    # if the transaction is being executed against a faucet account then assert
-    # the slot that is being written to is not the reserved faucet slot.
-    dup.1 dup.1 exec.account::is_faucet_storage_data_slot
-    # => [is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    exec.account::get_id swap drop exec.account_id::is_faucet
-    # => [is_faucet_account, is_faucet_storage_data_slot, slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
-
-    and assertz.err=ERR_FAUCET_STORAGE_DATA_SLOT_IS_RESERVED
     # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
 
     # authenticate that the procedure invocation originates from the account context
@@ -615,63 +612,39 @@ pub proc account_remove_asset
     # => [ASSET, pad(12)]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active
-#! account's vault.
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
-#! Outputs: [balance, pad(15)]
+#! Inputs:  [ASSET_KEY, pad(12)]
+#! Outputs: [ASSET, pad(12)]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - balance is the vault balance of the fungible asset.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
-pub proc account_get_balance
-    exec.account::get_balance
-    # => [balance, pad(15)]
+pub proc account_get_asset
+    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
+
+    exec.account::get_asset
+    # => [ASSET, pad(12)]
 end
 
-#! Returns the balance of the fungible asset associated with the provided faucet_id in the active 
-#! account's vault at the beginning of the transaction.
+#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
-#! Outputs: [init_balance, pad(15)]
+#! Inputs:  [ASSET_KEY, pad(12)]
+#! Outputs: [ASSET, pad(12)]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet id of the fungible
-#!   asset of interest.
-#! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
-#!
-#! Panics if:
-#! - the provided faucet ID is not an ID of a fungible faucet.
+#! - ASSET_KEY is the asset vault key of the asset to fetch.
+#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
-pub proc account_get_initial_balance
-    exec.account::get_initial_balance
-    # => [init_balance, pad(15)]
-end
+pub proc account_get_initial_asset
+    # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
 
-#! Returns a boolean indicating whether the non-fungible asset is present in the active account's
-#! vault.
-#!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [has_asset, pad(15)]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset of interest.
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-#!
-#! Invocation: dynexec
-pub proc account_has_non_fungible_asset
-    exec.account::has_non_fungible_asset
-    # => [has_asset, pad(15)]
+    exec.account::get_initial_asset
+    # => [ASSET, pad(12)]
 end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
@@ -831,64 +804,6 @@ pub proc faucet_burn_asset
     # => [ASSET, pad(12)]
 end
 
-#! Returns the total issuance of the fungible faucet the transaction is being executed against.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [total_issuance, pad(15)]
-#!
-#! Where:
-#! - total_issuance is the total issuance of the fungible faucet the transaction is being executed
-#!   against.
-#!
-#! Panics if:
-#! - the transaction is not being executed against a fungible faucet.
-#!
-#! Invocation: dynexec
-pub proc faucet_get_total_fungible_asset_issuance
-    # assert that we are executing a transaction against a fungible faucet (access checks)
-    exec.account::get_id swap drop exec.account_id::is_fungible_faucet
-    assert.err=ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET
-    # => [pad(16)]
-
-    # get the total issuance
-    exec.faucet::get_total_issuance
-    # => [total_issuance, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [total_issuance, pad(15)]
-end
-
-#! Returns a boolean indicating whether the provided non-fungible asset has been already issued by
-#! this faucet.
-#!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [is_issued, pad(15)]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset that is being checked.
-#! - is_issued is a boolean indicating whether the non-fungible asset has been issued.
-#!
-#! Panics if:
-#! - the ASSET is a fungible asset.
-#! - the ASSET is not associated with the faucet the transaction is being executed against.
-#!
-#! Invocation: dynexec
-pub proc faucet_is_non_fungible_asset_issued
-    # assert that we are executing a transaction against a non-fungible faucet (access checks)
-    exec.account::get_id swap drop exec.account_id::is_non_fungible_faucet
-    assert.err=ERR_FAUCET_IS_NF_ASSET_ISSUED_PROC_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET
-    # => [ASSET, pad(12)]
-
-    # get the issuance flag
-    exec.faucet::is_non_fungible_asset_issued
-    # => [is_issued, pad(16)]
-
-    # truncate the stack
-    swap drop
-    # => [is_issued, pad(15)]
-end
-
 # INPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
@@ -907,7 +822,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -941,11 +856,11 @@ end
 #!   the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose assets info should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - RECIPIENT is the commitment to the input note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the input note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -984,7 +899,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1030,7 +945,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1056,26 +971,26 @@ pub proc input_note_get_serial_number
     # => [SERIAL_NUMBER, pad(12)]
 end
 
-#! Returns the inputs commitment and length of the specified input note.
+#! Returns the storage commitment and length of the specified input note.
 #!
 #! Inputs:  [is_active_note, note_index, pad(14)]
-#! Outputs: [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11)]
+#! Outputs: [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 #!
 #! Where:
-#! - is_active_note is the boolean flag indicating whether we should return the inputs commitment 
+#! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose data should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
-#! - NOTE_INPUTS_COMMITMENT is the inputs commitment of the specified input note.
-#! - num_inputs is the number of inputs of the specified input note.
+#! - NOTE_STORAGE_COMMITMENT is the storage commitment of the specified input note.
+#! - num_storage_items is the number of storage items of the specified input note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
-pub proc input_note_get_inputs_info
+pub proc input_note_get_storage_info
     # get the input note pointer depending on whether the requested note is current or it was 
     # requested by index.
     exec.get_requested_note_ptr
@@ -1083,22 +998,22 @@ pub proc input_note_get_inputs_info
 
     # assert the pointer is not zero - this would suggest the procedure has been called from an
     # incorrect context
-    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_INPUTS_WHILE_NO_NOTE_BEING_PROCESSED
+    dup neq.0 assert.err=ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_STORAGE_WHILE_NO_NOTE_BEING_PROCESSED
     # => [input_note_ptr, pad(15)]
 
-    # get the note inputs length
-    dup exec.memory::get_input_note_num_inputs swap
-    # => [input_note_ptr, num_inputs, pad(16)]
+    # get the note's number of storage items
+    dup exec.memory::get_input_note_num_storage_items swap
+    # => [input_note_ptr, num_storage_items, pad(16)]
 
-    # get the inputs commitment
-    exec.memory::get_input_note_inputs_commitment
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(16)]
+    # get the storage commitment
+    exec.memory::get_input_note_storage_commitment
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(16)]
 
     # truncate the stack
     repeat.5
         movup.5 drop
     end
-    # => [NOTE_INPUTS_COMMITMENT, num_inputs, pad(11)]
+    # => [NOTE_STORAGE_COMMITMENT, num_storage_items, pad(11)]
 end
 
 #! Returns the script root of the specified input note.
@@ -1107,7 +1022,7 @@ end
 #! Outputs: [SCRIPT_ROOT, pad(12)]
 #!
 #! Where:
-#! - is_active_note is the boolean flag indicating whether we should return the inputs commitment 
+#! - is_active_note is the boolean flag indicating whether we should return the storage commitment 
 #!   and length from the active note or from the note with the specified index.
 #! - note_index is the index of the input note whose data should be returned. Notice that if
 #!   is_active_note is 1, note_index is ignored.
@@ -1115,7 +1030,7 @@ end
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
-#! - is_active_note is 1 and no input note is not being processed (attempted to access note inputs
+#! - is_active_note is 1 and no input note is not being processed (attempted to access note storage
 #!   from incorrect context).
 #!
 #! Invocation: dynexec
@@ -1251,7 +1166,7 @@ end
 #!
 #! Where:
 #! - note_index is the index of the output note whose recipient should be returned.
-#! - RECIPIENT is the commitment to the output note's script, inputs, the serial number.
+#! - RECIPIENT is the commitment to the output note's script, storage, the serial number.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of output notes.
@@ -1454,76 +1369,108 @@ pub proc tx_get_block_timestamp
     # => [timestamp, pad(15)]
 end
 
-#! Starts a foreign account context.
+#! Saves the foreign account ID, foreign procedure root, and the 16th (last) element of the foreign
+#! procedure inputs to the memory.
 #!
-#! This allows calling procedures on an account different from the native account. It loads the
-#! foreign account into memory, unless already loaded. It pushes the foreign account onto the
-#! account stack, which makes the foreign account the active account.
+#! To work around the 15 value limitation of the `exec_kernel_proc` kernel procedure we store the 
+#! 16th value of the foreign procedure inputs to the kernel memory: this allows to FPI any account 
+#! procedure, even if it has 16 input values.
 #!
-#! Inputs:
-#!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
-#!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
-#!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
-#!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
-#!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
-#!   }
-#! Outputs:
-#!   Operand stack: [pad(16)]
+#! Inputs:  [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-#! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0].
-#! - account_nonce is the nonce of the foreign account.
-#! - VAULT_ROOT is the commitment of the foreign account's vault.
-#! - STORAGE_ROOT is the commitment of the foreign account's storage.
-#! - STORAGE_SLOT_DATA is the data contained in the storage slot which is constructed as follows:
-#!   [SLOT_VALUE, slot_type, 0, 0, 0].
-#! - CODE_COMMITMENT is the commitment of the foreign account's code.
-#! - ACCOUNT_PROCEDURE_DATA are the roots of the public procedures of the foreign account.
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+#! - foreign_proc_input_value_15 is the 16th (last) value of the foreign procedure inputs.
 #!
 #! Panics if:
-#! - foreign context is created against the native account.
+#! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_start_foreign_context
-    # get the memory address and a flag whether this account was already loaded.
-    exec.account::get_account_data_ptr
-    # OS => [was_loaded, ptr, foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
+pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: BeWord, foreign_procedure_input_15: felt)
+    # validate the provided foreign account ID
+    dup.1 dup.1 exec.account_id::validate
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]
 
-    if.true
-        exec.memory::push_ptr_to_account_stack drop drop
-        # OS => [pad(16)]
-    else
-        exec.memory::push_ptr_to_account_stack
-        # OS => [foreign_account_id_prefix, foreign_account_id_suffix, pad(14)]
+    # store the foreign account ID
+    exec.memory::set_fpi_account_id
+    # => [FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(11)]
 
-        # load the advice data into the active account memory section
-        exec.account::load_foreign_account
-    end
+    # store the foreign procedure root
+    exec.memory::set_fpi_procedure_root dropw
+    # => [foreign_proc_input_value_15, pad(15)]
 
-    # make sure that the state of the loaded foreign account corresponds to this commitment in the
-    # account database
-    exec.account::validate_active_foreign_account
+    # store the 16th value of the foreign procedure inputs
+    mem_store.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
     # => [pad(16)]
 end
 
-#! Ends a foreign account context.
+#! Executes the procedure against the foreign account.
 #!
-#! This pops the top of the account stack, making the previous account the active account.
+#! This procedure should be executed after the `tx_prepare_fpi`, so it is expected for the foreign
+#! account ID and foreign procedure root to be already loaded to the kernel memory.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [foreign_procedure_inputs(15), pad]
+#! Outputs: [foreign_procedure_outputs(16)]
+#!
+#! Where:
+#! - foreign_procedure_inputs are the inputs to the foreign procedure padded to 15 felts. Notice 
+#!   that the 16th (last) element of the inputs is not here and stored in the memory: it will be
+#!   loaded during the setup.
+#! - foreign_procedure_outputs are the outputs of the foreign procedure padded to 16 felts.
 #!
 #! Panics if:
-#! - the active account is the native account.
+#! - foreign context is created against the native account.
+#! - the ID of the foreign account loaded from the kernel memory is zero (ID was not set).
+#! - the root of the foreign procedure loaded from the kernel memory is zero (root was not set).
 #!
 #! Invocation: dynexec
-pub proc tx_end_foreign_context
-    exec.memory::pop_ptr_from_account_stack
-    # => [pad(16)]
+pub proc tx_exec_foreign_proc
+    # move up the pad value to the top of the stack so we could drop it later
+    movup.15
+    # => [pad, foreign_procedure_inputs(15)]
+
+    # load the 16th foreign procedure input value onto the stack
+    mem_load.UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
+    # => [foreign_proc_input_value_15, pad, foreign_procedure_inputs(15)]
+
+    # drop the excess pad and move the 16th inputs value to its 15th position
+    swap drop movdn.15
+    # => [foreign_procedure_inputs(16)]
+
+    # load the ID of the foreign account onto the stack
+    exec.memory::get_fpi_account_id
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+
+    # check that foreign account ID is not equal zero
+    dup.1 eq.0 dup.1 eq.0 and not assert.err=ERR_FOREIGN_ACCOUNT_ID_IS_ZERO
+    # => [foreign_account_id_prefix, foreign_account_id_suffix, foreign_procedure_inputs(16)]
+
+    # load the foreign account to the memory
+    exec.tx::start_foreign_context
+    # => [foreign_procedure_inputs(16)]
+
+    # get the pointer to the foreign procedure root to perform the dyncall
+    push.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    # check that the foreign procedure root is not zero
+    padw mem_loadw_be.UPCOMING_FOREIGN_PROCEDURE_PTR
+    # => [FOREIGN_PROC_ROOT, foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    exec.word::eqz assertz.err=ERR_FOREIGN_ACCOUNT_PROCEDURE_ROOT_IS_ZERO
+    # => [foreign_proc_root_ptr, foreign_procedure_inputs(16)]
+
+    # call the foreign procedure
+    dyncall
+    # => [foreign_procedure_outputs(16)]
+
+    # end the foreign context
+    exec.tx::end_foreign_context
+    # => [foreign_procedure_outputs(16)]
 end
 
 #! Updates the transaction expiration block delta.

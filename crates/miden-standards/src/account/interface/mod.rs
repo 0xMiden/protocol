@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::{AccountId, AccountIdPrefix, AccountType};
-use miden_protocol::note::PartialNote;
+use miden_protocol::note::{NoteAttachmentContent, PartialNote};
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
@@ -161,7 +161,17 @@ impl AccountInterface {
             note_creation_source,
         );
 
-        let tx_script = CodeBuilder::new()
+        // Add attachment array entries to the code builder's advice map.
+        // For NoteAttachmentContent::Array, the commitment (to_word) is used as key
+        // and the array elements as value.
+        let mut code_builder = CodeBuilder::new();
+        for note in output_notes {
+            if let NoteAttachmentContent::Array(array) = note.metadata().attachment().content() {
+                code_builder.add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+            }
+        }
+
+        let tx_script = code_builder
             .compile_tx_script(script)
             .map_err(AccountInterfaceError::InvalidTransactionScript)?;
 

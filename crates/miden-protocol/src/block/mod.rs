@@ -13,6 +13,9 @@ pub use block_proof::BlockProof;
 mod proposed_block;
 pub use proposed_block::ProposedBlock;
 
+mod signed_block;
+pub use signed_block::SignedBlock;
+
 mod proven_block;
 pub use proven_block::ProvenBlock;
 
@@ -33,9 +36,6 @@ pub use block_inputs::BlockInputs;
 
 mod note_tree;
 pub use note_tree::{BlockNoteIndex, BlockNoteTree};
-
-mod signer;
-pub use signer::BlockSigner;
 
 /// The set of notes created in a transaction batch with their index in the batch.
 ///

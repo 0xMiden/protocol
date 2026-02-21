@@ -178,7 +178,8 @@ impl PartialBlockchain {
     /// provided block header is for the next block in the chain.
     ///
     /// If `track` parameter is set to true, the authentication path for the provided block header
-    /// will be added to this partial blockchain.
+    /// will be added to this partial blockchain, and the block header will be stored for later
+    /// retrieval.
     ///
     /// # Panics
     /// Panics if the `block_header.block_num` is not equal to the current chain length (i.e., the
@@ -186,6 +187,9 @@ impl PartialBlockchain {
     pub fn add_block(&mut self, block_header: &BlockHeader, track: bool) {
         assert_eq!(block_header.block_num(), self.chain_length());
         self.mmr.add(block_header.commitment(), track);
+        if track {
+            self.blocks.insert(block_header.block_num(), block_header.clone());
+        }
     }
 
     /// Drop every block header whose number is strictly less than `to.end`.
@@ -490,6 +494,53 @@ mod tests {
         for block_num in 0u32..remove_before {
             assert!(!chain.contains_block(block_num.into()));
             assert!(!chain.mmr().is_tracked(block_num as usize));
+        }
+    }
+
+    #[test]
+    fn add_block_with_track_adds_to_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        let header = int_to_block_header(0);
+
+        blockchain.add_block(&header, true);
+
+        assert!(blockchain.contains_block(0.into()));
+        assert_eq!(blockchain.num_tracked_blocks(), 1);
+    }
+
+    #[test]
+    fn add_block_without_track_does_not_add_to_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        let header = int_to_block_header(0);
+
+        blockchain.add_block(&header, false);
+
+        assert!(!blockchain.contains_block(0.into()));
+        assert_eq!(blockchain.num_tracked_blocks(), 0);
+    }
+
+    #[test]
+    fn prune_to_removes_tracked_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        // Add 10 blocks with tracking
+        for i in 0..10u32 {
+            let header = int_to_block_header(i);
+            blockchain.add_block(&header, true);
+        }
+        assert_eq!(blockchain.num_tracked_blocks(), 10);
+
+        // Prune to keep only last 4
+        blockchain.prune_to(..6.into());
+
+        assert_eq!(blockchain.num_tracked_blocks(), 4);
+        for i in 0u32..6 {
+            assert!(!blockchain.contains_block(i.into()));
+            // Verify the underlying MMR also untracked the block
+            assert!(!blockchain.mmr().is_tracked(i as usize));
+        }
+        for i in 6u32..10 {
+            assert!(blockchain.contains_block(i.into()));
+            assert!(blockchain.mmr().is_tracked(i as usize));
         }
     }
 }

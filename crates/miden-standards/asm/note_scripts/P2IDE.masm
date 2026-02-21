@@ -1,5 +1,0 @@
-use miden::standards::notes::p2ide
-
-begin
-    exec.p2ide::main
-end

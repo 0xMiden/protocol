@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use miden_protocol::account::AccountComponentCode;
 use miden_protocol::assembly::{
@@ -12,6 +13,8 @@ use miden_protocol::assembly::{
 };
 use miden_protocol::note::NoteScript;
 use miden_protocol::transaction::{TransactionKernel, TransactionScript};
+use miden_protocol::vm::AdviceMap;
+use miden_protocol::{Felt, Word};
 
 use crate::errors::CodeBuilderError;
 use crate::standards_lib::StandardsLib;
@@ -81,6 +84,7 @@ use crate::standards_lib::StandardsLib;
 pub struct CodeBuilder {
     assembler: Assembler,
     source_manager: Arc<dyn SourceManagerSync>,
+    advice_map: AdviceMap,
 }
 
 impl CodeBuilder {
@@ -100,7 +104,11 @@ impl CodeBuilder {
         let assembler = TransactionKernel::assembler_with_source_manager(source_manager.clone())
             .with_dynamic_library(StandardsLib::default())
             .expect("linking std lib should work");
-        Self { assembler, source_manager }
+        Self {
+            assembler,
+            source_manager,
+            advice_map: AdviceMap::default(),
+        }
     }
 
     // LIBRARY MANAGEMENT
@@ -228,6 +236,76 @@ impl CodeBuilder {
         Ok(self)
     }
 
+    // ADVICE MAP MANAGEMENT
+    // --------------------------------------------------------------------------------------------
+
+    /// Adds an entry to the advice map that will be included in compiled scripts.
+    ///
+    /// The advice map allows passing non-deterministic inputs to the VM that can be
+    /// accessed using `adv.push_mapval` instruction.
+    ///
+    /// # Arguments
+    /// * `key` - The key for the advice map entry (a Word)
+    /// * `value` - The values to associate with this key
+    pub fn add_advice_map_entry(&mut self, key: Word, value: impl Into<Vec<Felt>>) {
+        self.advice_map.insert(key, value.into());
+    }
+
+    /// Builder-style method to add an advice map entry.
+    ///
+    /// # Arguments
+    /// * `key` - The key for the advice map entry (a Word)
+    /// * `value` - The values to associate with this key
+    pub fn with_advice_map_entry(mut self, key: Word, value: impl Into<Vec<Felt>>) -> Self {
+        self.add_advice_map_entry(key, value);
+        self
+    }
+
+    /// Extends the advice map with entries from another advice map.
+    ///
+    /// # Arguments
+    /// * `advice_map` - The advice map to merge into this builder's advice map
+    pub fn extend_advice_map(&mut self, advice_map: AdviceMap) {
+        self.advice_map.extend(advice_map);
+    }
+
+    /// Builder-style method to extend the advice map.
+    ///
+    /// # Arguments
+    /// * `advice_map` - The advice map to merge into this builder's advice map
+    pub fn with_extended_advice_map(mut self, advice_map: AdviceMap) -> Self {
+        self.extend_advice_map(advice_map);
+        self
+    }
+
+    // PRIVATE HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Applies the advice map to a program if it's non-empty.
+    ///
+    /// This avoids cloning the MAST forest when there are no advice map entries.
+    fn apply_advice_map(
+        advice_map: AdviceMap,
+        program: miden_protocol::vm::Program,
+    ) -> miden_protocol::vm::Program {
+        if advice_map.is_empty() {
+            program
+        } else {
+            program.with_advice_map(advice_map)
+        }
+    }
+
+    /// Applies the advice map to a library if it's non-empty.
+    ///
+    /// This avoids cloning the MAST forest when there are no advice map entries.
+    fn apply_advice_map_to_library(advice_map: AdviceMap, library: Library) -> Library {
+        if advice_map.is_empty() {
+            library
+        } else {
+            library.with_advice_map(advice_map)
+        }
+    }
+
     // COMPILATION
     // --------------------------------------------------------------------------------------------
 
@@ -246,7 +324,7 @@ impl CodeBuilder {
         component_path: impl AsRef<str>,
         component_code: impl Parse,
     ) -> Result<AccountComponentCode, CodeBuilderError> {
-        let CodeBuilder { assembler, source_manager } = self;
+        let CodeBuilder { assembler, source_manager, advice_map } = self;
 
         let mut parse_options = ParseOptions::for_library();
         parse_options.path = Some(Path::new(component_path.as_ref()).into());
@@ -262,7 +340,9 @@ impl CodeBuilder {
             CodeBuilderError::build_error_with_report("failed to parse component code", err)
         })?;
 
-        Ok(AccountComponentCode::from(library))
+        Ok(AccountComponentCode::from(Self::apply_advice_map_to_library(
+            advice_map, library,
+        )))
     }
 
     /// Compiles the provided MASM code into a [`TransactionScript`].
@@ -279,12 +359,13 @@ impl CodeBuilder {
         self,
         tx_script: impl Parse,
     ) -> Result<TransactionScript, CodeBuilderError> {
-        let assembler = self.assembler;
+        let CodeBuilder { assembler, advice_map, .. } = self;
 
         let program = assembler.assemble_program(tx_script).map_err(|err| {
             CodeBuilderError::build_error_with_report("failed to parse transaction script", err)
         })?;
-        Ok(TransactionScript::new(program))
+
+        Ok(TransactionScript::new(Self::apply_advice_map(advice_map, program)))
     }
 
     /// Compiles the provided MASM code into a [`NoteScript`].
@@ -297,13 +378,14 @@ impl CodeBuilder {
     /// # Errors
     /// Returns an error if:
     /// - The note script compiling fails
-    pub fn compile_note_script(self, program: impl Parse) -> Result<NoteScript, CodeBuilderError> {
-        let assembler = self.assembler;
+    pub fn compile_note_script(self, source: impl Parse) -> Result<NoteScript, CodeBuilderError> {
+        let CodeBuilder { assembler, advice_map, .. } = self;
 
-        let program = assembler.assemble_program(program).map_err(|err| {
+        let program = assembler.assemble_program(source).map_err(|err| {
             CodeBuilderError::build_error_with_report("failed to parse note script", err)
         })?;
-        Ok(NoteScript::new(program))
+
+        Ok(NoteScript::new(Self::apply_advice_map(advice_map, program)))
     }
 
     // ACCESSORS
@@ -609,6 +691,84 @@ mod tests {
         builder
             .compile_tx_script(script_code)
             .context("failed to parse tx script with static and dynamic libraries")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_builder_with_advice_map_entry() -> anyhow::Result<()> {
+        let key = Word::from([1u32, 2, 3, 4]);
+        let value = vec![Felt::new(42), Felt::new(43)];
+
+        let script = CodeBuilder::default()
+            .with_advice_map_entry(key, value.clone())
+            .compile_tx_script("begin nop end")
+            .context("failed to compile tx script with advice map")?;
+
+        let mast = script.mast();
+        let stored_value = mast.advice_map().get(&key).expect("advice map entry should be present");
+        assert_eq!(stored_value.as_ref(), value.as_slice());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_builder_extend_advice_map() -> anyhow::Result<()> {
+        let key1 = Word::from([1u32, 0, 0, 0]);
+        let key2 = Word::from([2u32, 0, 0, 0]);
+
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(key1, vec![Felt::new(1)]);
+        advice_map.insert(key2, vec![Felt::new(2)]);
+
+        let script = CodeBuilder::default()
+            .with_extended_advice_map(advice_map)
+            .compile_tx_script("begin nop end")
+            .context("failed to compile tx script")?;
+
+        let mast = script.mast();
+        assert!(mast.advice_map().get(&key1).is_some(), "key1 should be present");
+        assert!(mast.advice_map().get(&key2).is_some(), "key2 should be present");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_builder_advice_map_in_note_script() -> anyhow::Result<()> {
+        let key = Word::from([5u32, 6, 7, 8]);
+        let value = vec![Felt::new(100)];
+
+        let script = CodeBuilder::default()
+            .with_advice_map_entry(key, value.clone())
+            .compile_note_script("begin nop end")
+            .context("failed to compile note script with advice map")?;
+
+        let mast = script.mast();
+        let stored_value = mast
+            .advice_map()
+            .get(&key)
+            .expect("advice map entry should be present in note script");
+        assert_eq!(stored_value.as_ref(), value.as_slice());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_builder_advice_map_in_component_code() -> anyhow::Result<()> {
+        let key = Word::from([11u32, 22, 33, 44]);
+        let value = vec![Felt::new(500)];
+
+        let component_code = CodeBuilder::default()
+            .with_advice_map_entry(key, value.clone())
+            .compile_component_code("test::component", "pub proc test nop end")
+            .context("failed to compile component code with advice map")?;
+
+        let mast = component_code.mast_forest();
+        let stored_value = mast
+            .advice_map()
+            .get(&key)
+            .expect("advice map entry should be present in component code");
+        assert_eq!(stored_value.as_ref(), value.as_slice());
 
         Ok(())
     }

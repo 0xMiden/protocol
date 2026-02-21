@@ -76,6 +76,9 @@ pub trait DataStore: MastForestStore {
     /// If the script is not found, it returns `Ok(None)` rather than an error, as "not found"
     /// is a valid, expected outcome.
     ///
+    /// **Note:** Data store implementers do not need to handle standard note scripts (e.g. P2ID).
+    /// These are resolved directly by the transaction executor and will not trigger this method.
+    ///
     /// # Errors
     /// Returns an error if the data store encountered an internal error while attempting to
     /// retrieve the script.

@@ -175,11 +175,12 @@ pub fn falcon_512_rpo_multisig_library() -> Library {
     FALCON_512_RPO_MULTISIG_LIBRARY.clone()
 }
 
-// WELL KNOWN COMPONENTS
+// STANDARD ACCOUNT COMPONENTS
 // ================================================================================================
 
-/// The enum holding the types of basic well-known account components provided by the `miden-lib`.
-pub enum WellKnownComponent {
+/// The enum holding the types of standard account components defined in the `miden-standards`
+/// crate.
+pub enum StandardAccountComponent {
     BasicWallet,
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
@@ -192,7 +193,7 @@ pub enum WellKnownComponent {
     AuthNoAuth,
 }
 
-impl WellKnownComponent {
+impl StandardAccountComponent {
     /// Returns the iterator over digests of all procedures exported from the component.
     pub fn procedure_digests(&self) -> impl Iterator<Item = Word> {
         let library = match self {
@@ -271,9 +272,9 @@ impl WellKnownComponent {
         }
     }
 
-    /// Gets all well known components which could be constructed from the provided procedures map
+    /// Gets all standard components which could be constructed from the provided procedures map
     /// and pushes them to the `component_interface_vec`.
-    pub fn extract_well_known_components(
+    pub fn extract_standard_components(
         procedures_set: &mut BTreeSet<AccountProcedureRoot>,
         component_interface_vec: &mut Vec<AccountComponentInterface>,
     ) {

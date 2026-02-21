@@ -14,10 +14,9 @@ use miden_protocol::note::{
     NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteExecutionHint,
-    NoteInputs,
     NoteMetadata,
     NoteRecipient,
+    NoteStorage,
     NoteTag,
     NoteType,
 };
@@ -45,7 +44,7 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
+use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -89,8 +88,8 @@ async fn test_create_note() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -100,7 +99,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let metadata = NoteMetadata::new(account_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
     let expected_metadata_header = metadata.to_header_word();
     let expected_note_attachment = metadata.to_attachment_word();
 
@@ -250,9 +249,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let output_serial_no_1 = Word::from([8u32; 4]);
     let output_tag_1 = NoteTag::with_account_target(network_account);
     let assets = NoteAssets::new(vec![input_asset_1])?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public, output_tag_1);
-    let inputs = NoteInputs::new(vec![])?;
+    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
+        .with_tag(output_tag_1);
+    let inputs = NoteStorage::new(vec![])?;
     let recipient = NoteRecipient::new(output_serial_no_1, input_note_1.script().clone(), inputs);
     let output_note_1 = Note::new(assets, metadata, recipient);
 
@@ -264,10 +263,10 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         NoteAttachmentScheme::new(5),
         [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
     )?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public, output_tag_2)
-            .with_attachment(attachment);
-    let inputs = NoteInputs::new(vec![])?;
+    let metadata = NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public)
+        .with_tag(output_tag_2)
+        .with_attachment(attachment);
+    let inputs = NoteStorage::new(vec![])?;
     let recipient = NoteRecipient::new(output_serial_no_2, input_note_2.script().clone(), inputs);
     let output_note_2 = Note::new(assets, metadata, recipient);
 
@@ -347,8 +346,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([2u32, 0, 0, 0]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(2u32),
         "The test creates two notes",
     );
     assert_eq!(
@@ -616,10 +615,10 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let output_serial_no = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(42 << 16 | 42);
     let single_input = 2;
-    let inputs = NoteInputs::new(vec![Felt::new(single_input)]).unwrap();
-    let input_commitment = inputs.commitment();
+    let storage = NoteStorage::new(vec![Felt::new(single_input)]).unwrap();
+    let storage_commitment = storage.commitment();
 
-    let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), inputs);
+    let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
     let code = format!(
         "
         use $kernel::prologue
@@ -630,13 +629,13 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            # input
-            push.{input_commitment}
+            # storage
+            push.{storage_commitment}
             # SCRIPT_ROOT
             push.{script_root}
             # SERIAL_NUM
             push.{output_serial_no}
-            # => [SERIAL_NUM, SCRIPT_ROOT, INPUT_COMMITMENT]
+            # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
             exec.note::build_recipient_hash
             # => [RECIPIENT, pad(12)]
@@ -661,8 +660,8 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -711,7 +710,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note_0 = create_p2id_note(
+    let output_note_0 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0],
@@ -720,7 +719,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
-    let output_note_1 = create_p2id_note(
+    let output_note_1 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0, fungible_asset_1],
@@ -833,7 +832,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![FungibleAsset::mock(5)],

@@ -4,8 +4,8 @@
 # The number of elements in a Word
 pub const WORD_SIZE = 4
 
-# The maximum number of input values associated with a single note.
-pub const MAX_INPUTS_PER_NOTE = 1024
+# The maximum number of storage items associated with a single note.
+pub const MAX_NOTE_STORAGE_ITEMS = 1024
 
 # The maximum number of assets that can be stored in a single note.
 pub const MAX_ASSETS_PER_NOTE = 256

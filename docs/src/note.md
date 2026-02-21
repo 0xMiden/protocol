@@ -22,7 +22,7 @@ These components are:
 
 1. [Assets](#assets)
 2. [Script](#script)
-3. [Inputs](#inputs)
+3. [Storage](#storage)
 4. [Serial number](#serial-number)
 5. [Metadata](#metadata)
 
@@ -42,13 +42,13 @@ The code executed when the `Note` is consumed.
 
 Each `Note` has a script that defines the conditions under which it can be consumed. When accounts consume notes in transactions, `Note` scripts call the account’s interface functions. This enables all sorts of operations beyond simple asset transfers. The Miden VM’s Turing completeness allows for arbitrary logic, making `Note` scripts highly versatile. There is no limit to the amount of code a `Note` can hold.
 
-### Inputs
+### Storage
 
 :::note
-Arguments passed to the `Note` script during execution.
+The storage of the `Note` that it can access during execution.
 :::
 
-A `Note` can have up to 128 input values, which adds up to a maximum of 1 KB of data. The `Note` script can access these inputs. They can convey arbitrary parameters for `Note` consumption.
+A `Note` can store up to 1024 items in its storage, which adds up to a maximum of 8 KB of data. The `Note` script can access storage during execution and it is used to parameterize a note's script. For instance, a P2ID note stores the ID of the target account that can consume the note. This makes the P2ID note script reusable by changing the target account ID.
 
 ### Serial number
 
@@ -82,7 +82,7 @@ Example use cases for attachments are:
 - Communicate the note details of a private note in encrypted form. This means the encrypted note is attached publicly to the otherwise private note.
 - For [network transactions](./transaction.md#network-transaction), encode the ID of the network account that should
   consume the note. This is a standardized attachment scheme in miden-standards called `NetworkAccountTarget`.
-- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note inputs are the account ID of the receiver. The receiver only needs to now the exact amount that was filled to derive the full note for consumption. This amount can be encoded in the public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
+- Communicate the details of a _private_ note to the receiver so they can derive the note. For example, the payback note of a partially fillable swap note can be private and the receiver already knows a few details: It is a P2ID note, the serial number is derived from the SWAP note's serial number and the note storage is the account ID of the receiver. The receiver only needs to now the exact amount that was filled to derive the full note for consumption. This amount can be encoded in the public attachment of the payback note, which allows this use case to work with private notes and still not require a side-channel.
 
 ## Note Lifecycle
 
@@ -139,7 +139,7 @@ Using `Note` tags strikes a balance between privacy and efficiency. Without tags
 
 ### Note consumption
 
-To consume a `Note`, the consumer must know its data, including the inputs needed to compute the nullifier. Consumption occurs as part of a transaction. Upon successful consumption a nullifier is generated for the consumed notes.
+To consume a `Note`, the consumer must know its data, including the note's storage which is needed to compute the nullifier. Consumption occurs as part of a transaction. Upon successful consumption a nullifier is generated for the consumed notes.
 
 Upon successful verification of the transaction:
 
@@ -151,7 +151,7 @@ Upon successful verification of the transaction:
 Consumption of a `Note` can be restricted to certain accounts or entities. For instance, the P2ID and P2IDE `Note` scripts target a specific account ID. Alternatively, Miden defines a RECIPIENT (represented as 32 bytes) computed as:
 
 ```arduino
-hash(hash(hash(serial_num, [0; 4]), script_root), input_commitment)
+hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 ```
 
 Only those who know the RECIPIENT’s pre-image can consume the `Note`. For private notes, this ensures an additional layer of control and privacy, as only parties with the correct data can claim the `Note`.
@@ -165,14 +165,14 @@ For a practical example, refer to the [SWAP note script](https://github.com/0xMi
 The `Note` nullifier, computed as:
 
 ```arduino
-hash(serial_num, script_root, input_commitment, vault_hash)
+hash(serial_num, script_root, storage_commitment, vault_hash)
 ```
 
 This achieves the following properties:
 
 - Every `Note` can be reduced to a single unique nullifier.
 - One cannot derive a note's hash from its nullifier.
-- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, input_commitment, and vault_hash.
+- To compute the nullifier, one must know all components of the `Note`: serial_num, script_root, storage_commitment, and vault_hash.
 
 That means if a `Note` is private and the operator stores only the note's hash, only those with the `Note` details know if this `Note` has been consumed already. Zcash first [introduced](https://zcash.github.io/orchard/design/nullifiers.html#nullifiers) this approach.
 
@@ -191,7 +191,7 @@ The P2ID note script implements a simple pay-to-account-ID pattern. It adds all 
 **Key characteristics:**
 
 - **Purpose:** Direct asset transfer to a specific account ID
-- **Inputs:** Requires exactly 2 note inputs containing the target account ID
+- **Storage:** Requires exactly 2 storage items containing the target account ID
 - **Validation:** Ensures the consuming account's ID matches the target account ID specified in the note
 - **Requirements:** Target account must expose the `miden::standards::wallets::basic::receive_asset` procedure
 
@@ -204,7 +204,7 @@ The P2IDE note script extends P2ID with additional features including time-locki
 **Key characteristics:**
 
 - **Purpose:** Advanced asset transfer with time-lock and reclaim capabilities
-- **Inputs:** Requires exactly 4 note inputs:
+- **Storage:** Requires exactly 4 storage items:
   - Target account ID
   - Reclaim block height (when sender can reclaim)
   - Time-lock block height (when target can consume)
@@ -226,7 +226,7 @@ The SWAP note script implements atomic asset swapping functionality.
 **Key characteristics:**
 
 - **Purpose:** Atomic asset exchange between two parties
-- **Inputs:** Requires exactly 16 note inputs specifying:
+- **Storage:** Requires exactly 16 storage items specifying:
   - Requested asset details
   - Payback note recipient information
   - Note creation parameters (type, tag, attachment)
