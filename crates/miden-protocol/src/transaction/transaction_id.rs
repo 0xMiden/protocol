@@ -4,6 +4,7 @@ use core::fmt::{Debug, Display};
 use miden_protocol_macros::WordWrapper;
 
 use super::{Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
+use crate::asset::FungibleAsset;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -40,14 +41,15 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
-        fee_asset: Word,
+        fee_asset: FungibleAsset,
     ) -> Self {
+        let fee_asset_word: Word = fee_asset.into();
         let mut elements = [ZERO; 5 * WORD_SIZE];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
         elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
-        elements[16..].copy_from_slice(fee_asset.as_elements());
+        elements[16..].copy_from_slice(fee_asset_word.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
 }
@@ -69,13 +71,12 @@ impl Display for TransactionId {
 
 impl From<&ProvenTransaction> for TransactionId {
     fn from(tx: &ProvenTransaction) -> Self {
-        let fee_asset = Word::from(tx.fee());
         Self::new(
             tx.account_update().initial_state_commitment(),
             tx.account_update().final_state_commitment(),
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
-            fee_asset,
+            tx.fee(),
         )
     }
 }
