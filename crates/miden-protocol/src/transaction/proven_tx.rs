@@ -217,14 +217,12 @@ impl Deserializable for ProvenTransaction {
         let expiration_block_num = BlockNumber::read_from(source)?;
         let proof = ExecutionProof::read_from(source)?;
 
-        let fee_asset: Word = fee.into();
-
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
-            fee_asset,
+            fee,
         );
 
         let proven_transaction = Self {
@@ -380,13 +378,12 @@ impl ProvenTransactionBuilder {
             InputNotes::new(self.input_notes).map_err(ProvenTransactionError::InputNotesError)?;
         let output_notes = OutputNotes::new(self.output_notes)
             .map_err(ProvenTransactionError::OutputNotesError)?;
-        let fee_asset: Word = self.fee.into();
         let id = TransactionId::new(
             self.initial_account_commitment,
             self.final_account_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
-            fee_asset,
+            self.fee,
         );
         let account_update = TxAccountUpdate::new(
             self.account_id,
