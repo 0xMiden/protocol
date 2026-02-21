@@ -28,7 +28,7 @@ pub const KERNEL_PROCEDURES: [Word; 53] = [
     // account_get_initial_item
     word!("0x1853416c007dc75de04c25aaf2376fa7e98d6c010a46bb90e504491f5634ee12"),
     // account_set_item
-    word!("0x08c188dcfede42e62a43914fbeece62a606c856324f427f7e0f4513939447301"),
+    word!("0xea6399e82bded79f07e78745a9a741097b7adb1c90b13fbf6edcdd5b8223f99"),
     // account_get_map_item
     word!("0x41e4f17b24281fbb05279fbba5ece3a5181055217be0d1d33cc44b71b6d19a23"),
     // account_get_initial_map_item
@@ -62,7 +62,7 @@ pub const KERNEL_PROCEDURES: [Word; 53] = [
     // faucet_mint_asset
     word!("0x4ddd13ca544ad49c5cb180aca52de16a4587cc984b522a40f29824dbacdf446a"),
     // faucet_burn_asset
-    word!("0x9bdce962575a39e9a52c09cee5c64d5fb2eafe8d74838fe2c12399f497842ae1"),
+    word!("0xf6fbe441831ce43dfcd75e7295db2c10b9b6a6dc56b2b3828b2681d5005374bc"),
     // faucet_get_total_fungible_asset_issuance
     word!("0x0953a2f2ec88ad0b7008c3d71aca46ebfcbb58a8ffdf59390616497c6693e8ab"),
     // faucet_is_non_fungible_asset_issued
