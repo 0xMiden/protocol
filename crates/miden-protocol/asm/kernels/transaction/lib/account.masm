@@ -607,6 +607,9 @@ end
 
 #! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage slot.
 #!
+#! This procedure uses `get_native_account_active_storage_slots_ptr` to get the pointer to the native
+#! account's storage slots section.
+#!
 #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE]
 #! Outputs: [OLD_VALUE]
 #!
@@ -623,7 +626,7 @@ end
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
 pub proc set_map_item
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, slot_id_prefix, slot_id_suffix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
@@ -654,7 +657,7 @@ end
 #! Where:
 #! - index is the location in memory of the storage slot.
 #! - slot_type is the type of the storage slot.
-pub proc get_storage_slot_type
+pub proc get_native_storage_slot_type
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -1311,7 +1314,7 @@ pub proc insert_new_storage
         sub.1
         # => [slot_idx]
 
-        dup exec.get_storage_slot_type
+        dup exec.get_native_storage_slot_type
         # => [slot_type, slot_idx]
 
         push.STORAGE_SLOT_TYPE_MAP eq
