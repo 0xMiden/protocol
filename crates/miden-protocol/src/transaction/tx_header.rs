@@ -60,14 +60,13 @@ impl TransactionHeader {
     ) -> Self {
         let input_notes_commitment = input_notes.commitment();
         let output_notes_commitment = OutputNotes::compute_commitment(output_notes.iter());
-        let fee_asset: Word = fee.into();
 
         let id = TransactionId::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes_commitment,
             output_notes_commitment,
-            fee_asset,
+            fee,
         );
 
         Self {
