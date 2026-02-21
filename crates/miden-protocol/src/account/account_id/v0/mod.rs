@@ -67,6 +67,11 @@ impl AccountIdV0 {
     pub(crate) const STORAGE_MODE_MASK: u8 = 0b11 << Self::STORAGE_MODE_SHIFT;
     pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
 
+    /// The element index in the seed digest that becomes the account ID suffix.
+    pub(crate) const SEED_DIGEST_SUFFIX_ELEMENT_IDX: usize = 0;
+    /// The element index in the seed digest that becomes the account ID prefix.
+    pub(crate) const SEED_DIGEST_PREFIX_ELEMENT_IDX: usize = 1;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -78,13 +83,14 @@ impl AccountIdV0 {
     ) -> Result<Self, AccountIdError> {
         let seed_digest = compute_digest(seed, code_commitment, storage_commitment);
 
-        let mut felts: [Felt; 2] = seed_digest.as_elements()[0..2]
-            .try_into()
-            .expect("we should have sliced off 2 elements");
+        // Use the two most significant elements of the seed digest as the account ID, where the
+        // prefix is the most significant one.
+        let mut suffix = seed_digest[Self::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
+        let prefix = seed_digest[Self::SEED_DIGEST_PREFIX_ELEMENT_IDX];
 
-        felts[1] = shape_suffix(felts[1]);
+        suffix = shape_suffix(suffix);
 
-        account_id_from_felts(felts)
+        account_id_from_felts([prefix, suffix])
     }
 
     /// See [`AccountId::new_unchecked`](super::AccountId::new_unchecked) for details.

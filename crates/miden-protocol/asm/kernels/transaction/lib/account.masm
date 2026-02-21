@@ -894,11 +894,10 @@ pub proc validate_seed
     # Shape suffix to set the lower 8 bits to zero and compare the computed and provided ID.
     # ---------------------------------------------------------------------------------------------
 
-    # extract account ID from digest, where suffix = digest1 and prefix = digest0
-    # TODO(bele): Use suffix = digest0 and prefix = digest1 instead.
+    # extract account ID from digest where suffix = digest0 and prefix = digest1.
     # => [digest0, digest1, digest2, digest3]
 
-    swap.2 drop movup.2 drop
+    movup.2 drop movup.2 drop
     # => [hashed_account_id_suffix, hashed_account_id_prefix]
 
     exec.memory::get_account_id movdn.3 movdn.3
