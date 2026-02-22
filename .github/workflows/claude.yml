@@ -25,12 +25,36 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
+      - name: Check actor is a maintainer
+        id: check-permission
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const actor = '${{ github.actor }}';
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: actor,
+              });
+              const allowed = ['write', 'maintain', 'admin'].includes(data.permission);
+              if (!allowed) {
+                core.notice(`Skipping: ${actor} does not have write access (permission: ${data.permission})`);
+              }
+              return allowed;
+            } catch (e) {
+              core.notice(`Skipping: could not verify permissions for ${actor}: ${e.message}`);
+              return false;
+            }
+
       - name: Checkout repository
+        if: steps.check-permission.outputs.result == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
+        if: steps.check-permission.outputs.result == 'true'
         id: claude
         uses: anthropics/claude-code-action@v1
         with:

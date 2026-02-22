@@ -35,9 +35,10 @@ jobs:
             2. Run `gh pr view ${{ github.event.pull_request.number }} --json title,body,files` to inspect the PR.
             3. Apply the most relevant labels using `gh pr edit ${{ github.event.pull_request.number }} --add-label <label>`.
 
-            Label selection guidance for miden-base (a Rust ZK-rollup library):
+            Label selection guidance for miden-base:
             - Type: bug, enhancement, refactor, documentation, chore, breaking-change
             - Area: based on changed files (accounts, notes, transactions, block-kernel, crypto, etc.)
-            - Size: judge by number of changed lines (small <50, medium <250, large otherwise)
+            - Maintainer: add "pr-from-maintainers" if the PR author's association is OWNER,
+              MEMBER, or COLLABORATOR. The author's association is: ${{ github.event.pull_request.author_association }}
 
             Only add labels that exist in the repo. Do not post any comments.
