@@ -18,6 +18,10 @@
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
 
+### Fixes
+
+- Added `account_id::validate` check in `ownable::transfer_ownership` to reject invalid new owner account IDs before storing them ([#2488](https://github.com/0xMiden/miden-base/pull/2488)).
+
 ### Changes
 
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
