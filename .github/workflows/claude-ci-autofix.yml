@@ -14,10 +14,13 @@ permissions:
 
 jobs:
   auto-fix:
-    # Only run on PR branches that failed, skip branches created by this workflow
+    # Only run on PR branches that failed, skip branches created by this workflow.
+    # head_repository check prevents checkout of untrusted code from forks in this
+    # privileged workflow_run context (pwn request mitigation).
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.pull_requests[0] &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-')
     runs-on: ubuntu-latest
     steps:
