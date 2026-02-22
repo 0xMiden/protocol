@@ -1,0 +1,43 @@
+name: Claude PR Triage
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  triage-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude PR Triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_non_write_users: "*"
+          prompt: |
+            Triage the following pull request in the miden-base repository by adding appropriate labels.
+
+            Repository: ${{ github.repository }}
+            PR number: ${{ github.event.pull_request.number }}
+
+            Steps:
+            1. Run `gh label list` to see all available labels.
+            2. Run `gh pr view ${{ github.event.pull_request.number }} --json title,body,files` to inspect the PR.
+            3. Apply the most relevant labels using `gh pr edit ${{ github.event.pull_request.number }} --add-label <label>`.
+
+            Label selection guidance for miden-base (a Rust ZK-rollup library):
+            - Type: bug, enhancement, refactor, documentation, chore, breaking-change
+            - Area: based on changed files (accounts, notes, transactions, block-kernel, crypto, etc.)
+            - Size: judge by number of changed lines (small <50, medium <250, large otherwise)
+
+            Only add labels that exist in the repo. Do not post any comments.
