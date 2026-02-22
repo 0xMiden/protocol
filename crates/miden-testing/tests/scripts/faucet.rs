@@ -905,79 +905,6 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that only the owner can transfer ownership.
-#[tokio::test]
-async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let non_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let new_owner_account_id = AccountId::dummy(
-        [3; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
-    let mock_chain = builder.build()?;
-
-    // Create transfer ownership note script
-    let transfer_note_script_code = format!(
-        r#"
-        use miden::standards::faucets::network_fungible->network_faucet
-
-        begin
-            repeat.14 push.0 end
-            push.{new_owner_suffix}
-            push.{new_owner_prefix}
-            call.network_faucet::transfer_ownership
-            dropw dropw dropw dropw
-        end
-        "#,
-        new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(transfer_note_script_code.clone())?;
-
-    // Create a note from NON-OWNER that tries to transfer ownership
-    let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
-    let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .tag(NoteTag::default().into())
-        .serial_number(Word::from([10, 20, 30, 40u32]))
-        .code(transfer_note_script_code.clone())
-        .build()?;
-
-    let tx_context = mock_chain
-        .build_tx_context(faucet.id(), &[], &[transfer_note])?
-        .add_note_script(transfer_note_script.clone())
-        .with_source_manager(source_manager.clone())
-        .build()?;
-    let result = tx_context.execute().await;
-
-    // Verify that the transaction failed with ERR_ONLY_OWNER
-    let expected_error = ERR_SENDER_NOT_OWNER;
-    assert_transaction_executor_error!(result, expected_error);
-
-    Ok(())
-}
-
 /// Tests that renounce_ownership clears the owner correctly.
 #[tokio::test]
 async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
@@ -1097,6 +1024,216 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     let expected_error = ERR_SENDER_NOT_OWNER;
     assert_transaction_executor_error!(result, expected_error);
+
+    Ok(())
+}
+
+// TESTS FOR TRANSFER OWNERSHIP ACCOUNT ID VALIDATION
+// ================================================================================================
+
+/// Tests that transfer_ownership fails when called by a non-owner.
+#[tokio::test]
+async fn test_transfer_ownership_fails_when_not_owner() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let non_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let new_owner_account_id = AccountId::dummy(
+        [3; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let mock_chain = builder.build()?;
+
+    // Non-owner tries to transfer ownership
+    let transfer_note_script_code = format!(
+        r#"
+        use miden::standards::faucets::network_fungible->network_faucet
+
+        begin
+            repeat.14 push.0 end
+            push.{new_owner_suffix}
+            push.{new_owner_prefix}
+            call.network_faucet::transfer_ownership
+            dropw dropw dropw dropw
+        end
+        "#,
+        new_owner_prefix = new_owner_account_id.prefix().as_felt(),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(transfer_note_script_code.clone())?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
+    let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([10, 20, 30, 40u32]))
+        .code(transfer_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[transfer_note])?
+        .add_note_script(transfer_note_script)
+        .with_source_manager(source_manager)
+        .build()?;
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// Tests that transfer_ownership fails when the new owner account ID is invalid.
+/// An invalid account ID has its suffix's lower 8 bits set to a non-zero value.
+#[tokio::test]
+async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let mock_chain = builder.build()?;
+
+    // Create a transfer note from the owner with an INVALID new owner account ID.
+    // We use raw felt values: suffix = 1 is invalid because the lower 8 bits must be zero.
+    let invalid_prefix = owner_account_id.prefix().as_felt(); // valid-looking prefix
+    let invalid_suffix = Felt::new(1); // invalid: lower 8 bits are non-zero
+
+    let transfer_note_script_code = format!(
+        r#"
+        use miden::standards::faucets::network_fungible->network_faucet
+
+        begin
+            repeat.14 push.0 end
+            push.{invalid_suffix}
+            push.{invalid_prefix}
+            call.network_faucet::transfer_ownership
+            dropw dropw dropw dropw
+        end
+        "#,
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(transfer_note_script_code.clone())?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
+    let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([11, 22, 33, 44u32]))
+        .code(transfer_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[transfer_note])?
+        .add_note_script(transfer_note_script)
+        .with_source_manager(source_manager)
+        .build()?;
+    let result = tx_context.execute().await;
+
+    use miden_protocol::errors::protocol::ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO;
+    assert_transaction_executor_error!(
+        result,
+        ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+    );
+
+    Ok(())
+}
+
+/// Tests that transfer_ownership succeeds when the owner transfers to a valid account ID.
+#[tokio::test]
+async fn test_transfer_ownership_succeeds_with_valid_account_id() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let new_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+
+    let transfer_note_script_code = format!(
+        r#"
+        use miden::standards::faucets::network_fungible->network_faucet
+
+        begin
+            repeat.14 push.0 end
+            push.{new_owner_suffix}
+            push.{new_owner_prefix}
+            call.network_faucet::transfer_ownership
+            dropw dropw dropw dropw
+        end
+        "#,
+        new_owner_prefix = new_owner_account_id.prefix().as_felt(),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(transfer_note_script_code.clone())?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
+    let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([11, 22, 33, 44u32]))
+        .code(transfer_note_script_code)
+        .build()?;
+
+    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[transfer_note])?
+        .add_note_script(transfer_note_script)
+        .with_source_manager(source_manager)
+        .build()?;
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify the transaction succeeded
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
+
+    // Verify the new owner is stored correctly
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_delta(executed_transaction.account_delta())?;
+
+    let stored_owner =
+        updated_faucet.storage().get_item(NetworkFungibleFaucet::owner_config_slot())?;
+    assert_eq!(stored_owner[3], new_owner_account_id.prefix().as_felt());
+    assert_eq!(stored_owner[2], Felt::new(new_owner_account_id.suffix().as_int()));
 
     Ok(())
 }

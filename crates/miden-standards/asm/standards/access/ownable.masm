@@ -117,11 +117,16 @@ end
 #!
 #! Panics if:
 #! - the note sender is not the owner.
+#! - the new owner account ID is not a valid account ID.
 #!
 #! Invocation: call
 pub proc transfer_ownership
     # Check that the caller is the owner
     exec.verify_owner
+    # => [new_owner_prefix, new_owner_suffix, pad(14)]
+
+    # Validate the new owner account ID
+    dup.1 dup.1 exec.account_id::validate
     # => [new_owner_prefix, new_owner_suffix, pad(14)]
 
     push.0 movdn.2 push.0 movdn.2
