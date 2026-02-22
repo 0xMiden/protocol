@@ -26,22 +26,21 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const actor = '${{ github.event.workflow_run.actor.login }}';
-            try {
-              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                username: actor,
-              });
-              const allowed = ['write', 'maintain', 'admin'].includes(data.permission);
-              if (!allowed) {
-                core.notice(`Skipping auto-fix: ${actor} does not have write access (permission: ${data.permission})`);
-              }
-              return allowed;
-            } catch (e) {
-              core.notice(`Skipping auto-fix: could not verify permissions for ${actor}: ${e.message}`);
+            const prNumber = context.payload.workflow_run.pull_requests[0]?.number;
+            if (!prNumber) {
+              core.notice('Skipping auto-fix: no associated PR found');
               return false;
             }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association);
+            if (!allowed) {
+              core.notice(`Skipping auto-fix: PR author association is ${pr.author_association}`);
+            }
+            return allowed;
 
       - name: Checkout code
         if: steps.check-permission.outputs.result == 'true'
