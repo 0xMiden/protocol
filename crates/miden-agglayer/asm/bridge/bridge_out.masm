@@ -193,7 +193,7 @@ pub proc bridge_out
     # => [ROOT[1], ROOT[0]]
 
     dropw
-    # => [ROOT[0]] (lower word of Local Exit Root, used for serial number uniqueness)
+    # => [ROOT[0]] (first word of the Local Exit Root double-word, used for serial number uniqueness)
 
     mem_storew_be.LOCAL_EXIT_ROOT_MEM_PTR
     # => [ROOT[0]]
