@@ -300,6 +300,13 @@ end
 #! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
 #!
+#! WARNING: This procedure currently assumes the claim amount fits within 128 bits (i.e. AMOUNT[1]
+#! is all zeros). This assumption holds for all practical token amounts but is not explicitly
+#! enforced here. See the TODO below.
+#!
+#! TODO: Reverse both AMOUNT[0] and AMOUNT[1] to support amounts >= 2^128, or add an explicit
+#! assertion that AMOUNT[1] is zero.
+#!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 @locals(8)
 proc build_p2id_output_note
@@ -334,6 +341,7 @@ proc build_p2id_output_note
 
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
+    # AMOUNT[8] is in little-endian felt ordering and little-endian byte ordering.
 
     mem_load.OUTPUT_NOTE_FAUCET_AMOUNT movdn.8
     # => [AMOUNT[0], AMOUNT[1], native_amount, tag, note_type, RECIPIENT]
@@ -341,9 +349,12 @@ proc build_p2id_output_note
     exec.get_scale movdn.8
     # => [AMOUNT[0], AMOUNT[1], scale, native_amount, tag, note_type, RECIPIENT]
 
-    # TODO: why do we need to reverse and swap here?
+    # Convert AMOUNT[8] from little-endian felt ordering + little-endian byte ordering
+    # to big-endian felt ordering + little-endian byte ordering, as required by
+    # verify_u256_to_native_amount_conversion. Since the amount is < 2^128, AMOUNT[1]
+    # is all zeros and only AMOUNT[0] needs to be reversed.
     exec.word::reverse swapw
-    # => []
+    # => [AMOUNT[1], AMOUNT[0]_reversed, scale, native_amount, tag, note_type, RECIPIENT]
 
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [amount, tag, note_type, RECIPIENT]
@@ -356,6 +367,9 @@ end
 #!
 #! This procedure validates the rollup exit root Merkle Proof via FPI against the agglayer bridge,
 #! and if validation passes, mints the asset and creates an output note for the recipient.
+#!
+#! WARNING: The EVM claim asset amount is currently assumed to fit within 128 bits. See the WARNING in
+#! build_p2id_output_note for details.
 #!
 #! TODO: Expand this description to cover the double-spend protection mechanism in detail.
 #! Double-spend can be prevented in two ways:
