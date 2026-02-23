@@ -39,17 +39,16 @@ use miden_protocol::block::{
     OutputNoteBatch,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
-use miden_protocol::testing::random_signer::RandomBlockSigner;
+use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -181,7 +180,7 @@ impl MockChainBuilder {
             .into_values()
             .map(|account| {
                 let account_id = account.id();
-                let account_commitment = account.commitment();
+                let account_commitment = account.to_commitment();
                 let account_delta = AccountDelta::try_from(account)
                     .expect("chain builder should only store existing accounts without seeds");
                 let update_details = AccountUpdateDetails::Delta(account_delta);
@@ -221,7 +220,7 @@ impl MockChainBuilder {
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.native_asset_id, self.verification_base_fee)
             .context("failed to construct fee parameters")?;
-        let validator_secret_key = SecretKey::random();
+        let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
         let header = BlockHeader::new(
@@ -557,12 +556,12 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
+        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
+
         let note = P2ideNote::create(
             sender_account_id,
-            target_account_id,
+            storage,
             asset.to_vec(),
-            reclaim_height,
-            timelock_height,
             note_type,
             Default::default(),
             &mut self.rng,

@@ -26,22 +26,13 @@ use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
-use super::test_utils::{local_claim_data, real_claim_data};
-
-/// Identifies the source of claim data used in the bridge-in test.
-#[derive(Debug, Clone, Copy)]
-enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.json.
-    Real,
-    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
-    Simulated,
-}
+use super::test_utils::ClaimDataSource;
 
 /// Tests the bridge-in flow: CLAIM note -> Aggfaucet (FPI to Bridge) -> P2ID note created.
 ///
 /// Parameterized over two claim data sources:
 /// - [`ClaimDataSource::Real`]: uses real [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors.json`, captured from an actual on-chain `claimAsset` transaction.
+///   `claim_asset_vectors_real_tx.json`, captured from an actual on-chain `claimAsset` transaction.
 /// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
 ///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call.
 ///
@@ -68,10 +59,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data, ger) = match data_source {
-        ClaimDataSource::Real => real_claim_data(),
-        ClaimDataSource::Simulated => local_claim_data(),
-    };
+    let (proof_data, leaf_data, ger) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -110,6 +98,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
+        // Ensure the mock account ID matches the destination embedded in the JSON test vector,
+        // since the claim note targets this account ID.
+        assert_eq!(
+            dest.id(),
+            destination_account_id,
+            "mock destination account ID must match the destination_account_id from the claim data"
+        );
         builder.add_account(dest.clone())?;
         Some(dest)
     } else {
