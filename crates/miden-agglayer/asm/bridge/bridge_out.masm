@@ -6,6 +6,7 @@ use miden::protocol::tx
 use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use miden::standards::note_tag::DEFAULT_TAG
+use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
@@ -58,7 +59,6 @@ const PADDING_OFFSET=29
 
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
-const EXECUTION_HINT_ALWAYS=1
 
 # Storage slot constants for the LET (Local Exit Tree).
 # The frontier is stored as a double-word array in a map slot.
@@ -469,7 +469,7 @@ proc create_burn_note
 
     # Create NetworkAccountTarget attachment for the faucet
     # new expects [account_id_prefix, account_id_suffix, exec_hint]
-    push.EXECUTION_HINT_ALWAYS movdn.2
+    push.ALWAYS movdn.2
     # => [faucet_id_prefix, faucet_id_suffix, exec_hint, ASSET]
     
     exec.network_account_target::new
