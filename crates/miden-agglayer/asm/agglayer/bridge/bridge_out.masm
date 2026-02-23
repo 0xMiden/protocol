@@ -9,10 +9,11 @@ use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
 use miden::core::word
-use miden::agglayer::utils
-use miden::agglayer::agglayer_faucet
-use miden::agglayer::crypto_utils
-use miden::agglayer::mmr_frontier32_keccak
+use miden::agglayer::common::utils
+use miden::agglayer::faucet -> agglayer_faucet
+use miden::agglayer::bridge::bridge_config
+use miden::agglayer::bridge::leaf_utils
+use miden::agglayer::bridge::mmr_frontier32_keccak
 
 
 # TYPE ALIASES
@@ -23,6 +24,31 @@ type MemoryAddress = u32
 
 # CONSTANTS
 # =================================================================================================
+
+# Storage slot constants for the LET (Local Exit Tree).
+# The frontier is stored as a double-word array in a map slot.
+# The root and num_leaves are stored in separate value slots.
+const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
+const LET_ROOT_LO_SLOT=word("miden::agglayer::let::root_lo")
+const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
+const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
+
+# Memory pointers
+const LEAF_DATA_START_PTR=44
+# Memory pointer for loading the LET (Local Exit Tree) frontier into memory.
+# The memory layout at this address matches what append_and_update_frontier expects:
+# [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
+const LET_FRONTIER_MEM_PTR=100
+
+# Leaf data field offsets (relative to LEAF_DATA_START_PTR)
+const LEAF_TYPE_OFFSET=0
+const ORIGIN_NETWORK_OFFSET=1
+const ORIGIN_TOKEN_ADDRESS_OFFSET=2
+const DESTINATION_NETWORK_OFFSET=7
+const DESTINATION_ADDRESS_OFFSET=8
+const AMOUNT_OFFSET=13
+const METADATA_HASH_OFFSET=21
+const PADDING_OFFSET=29
 
 # bridge_out memory locals
 const BRIDGE_OUT_BURN_ASSET_LOC=0
@@ -37,40 +63,10 @@ const DESTINATION_NETWORK_LOC=9
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const NETWORK_FAUCET_TAG_LOC=5
 
-const LEAF_DATA_START_PTR=44
-
-# Memory pointer for loading the LET (Local Exit Tree) frontier into memory.
-# The memory layout at this address matches what append_and_update_frontier expects:
-# [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
-const LET_FRONTIER_MEM_PTR=100
-
-const LEAF_TYPE_OFFSET=0
-const ORIGIN_NETWORK_OFFSET=1
-const ORIGIN_TOKEN_ADDRESS_OFFSET=2
-const DESTINATION_NETWORK_OFFSET=7
-const DESTINATION_ADDRESS_OFFSET=8
-const AMOUNT_OFFSET=13
-const METADATA_HASH_OFFSET=21
-const PADDING_OFFSET=29
-
+# Other constants
+const LEAF_TYPE_ASSET=0
 const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
-
-# Storage slot constants for the LET (Local Exit Tree).
-# The frontier is stored as a double-word array in a map slot.
-# The root and num_leaves are stored in separate value slots.
-const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
-const LET_ROOT_LO_SLOT=word("miden::agglayer::let::root_lo")
-const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
-const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
-const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
-
-const LEAF_TYPE_ASSET=0
-
-# ERRORS
-# =================================================================================================
-
-const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -153,7 +149,7 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
 
     # Explicitly zero the 3 padding felts after METADATA_HASH for
-    # crypto_utils::pack_leaf_data
+    # leaf_utils::pack_leaf_data
     push.0
     push.LEAF_DATA_START_PTR push.PADDING_OFFSET add
     mem_store
@@ -207,21 +203,8 @@ proc convert_asset
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # --- Step 1: Assert faucet is registered ---
-
-    # Build KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0] for the map lookup.
-    # Duplicate faucet ID onto top of stack, then add zero padding.
     dup.1 dup.1
-    push.0.0
-    movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-    push.FAUCET_REGISTRY_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [VALUE(4), faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-    # Check flag, the stored word must be [0, 0, 0, 1] for registered faucets
-    drop drop drop
-    assert.err=ERR_FAUCET_NOT_REGISTERED
+    exec.bridge_config::assert_faucet_registered
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
@@ -264,7 +247,7 @@ end
 #!
 #! Invocation: exec
 proc add_leaf_bridge(leaf_data_start_ptr: MemoryAddress)
-    exec.crypto_utils::compute_leaf_value
+    exec.leaf_utils::compute_leaf_value
     # => [LEAF_VALUE_LO, LEAF_VALUE_HI]
 
     # Load the LET frontier from storage into memory at LET_FRONTIER_MEM_PTR
