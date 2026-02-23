@@ -16,6 +16,7 @@ const PUBLIC_NOTE=1
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 const BURN_ASSET_KEY_MEM_PTR=32
 const BURN_ASSET_VALUE_MEM_PTR=36
+const LOCAL_EXIT_ROOT_MEM_PTR=44
 
 const CREATE_BURN_NOTE_ASSET_KEY_LOC=0
 const CREATE_BURN_NOTE_ASSET_VALUE_LOC=4
@@ -23,7 +24,10 @@ const CREATE_BURN_NOTE_TAG_LOC=8
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET_KEY).
+#! The serial number is computed as hash(hash(B2AGG_SERIAL_NUM, ASSET_KEY), LOCAL_EXIT_ROOT).
+#! Including the Local Exit Root ensures that two B2AGG notes with the same serial number
+#! and the same asset cannot produce the same BURN note serial number, since the Local Exit
+#! Root changes with each bridge-out operation.
 #!
 #! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
@@ -31,11 +35,19 @@ const CREATE_BURN_NOTE_TAG_LOC=8
 #! Where:
 #! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
+#! - The Local Exit Root is read from LOCAL_EXIT_ROOT_MEM_PTR (written by bridge_out before
+#!   create_burn_note is called).
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_KEY]
+
+    exec.rpo256::merge
+    # => [PARTIAL_SERIAL_NUM]
+
+    mem_loadw_be.LOCAL_EXIT_ROOT_MEM_PTR
+    # => [LOCAL_EXIT_ROOT, PARTIAL_SERIAL_NUM]
 
     exec.rpo256::merge
     # => [SERIAL_NUM]
@@ -171,6 +183,22 @@ pub proc bridge_out
 
     # adding DIGEST_U32 double word leaf to mmr frontier
     exec.local_exit_tree::add_asset_message
+    # => []
+
+    # Get the updated Local Exit Root and store it for burn note serial number uniqueness.
+    # This ensures that two B2AGG notes with the same serial number and same asset cannot
+    # produce the same BURN note serial number.
+    push.MMR_PTR
+    exec.local_exit_tree::mmr_frontier_keccak_get_root
+    # => [ROOT[1], ROOT[0]]
+
+    dropw
+    # => [ROOT[0]] (lower word of Local Exit Root, used for serial number uniqueness)
+
+    mem_storew_be.LOCAL_EXIT_ROOT_MEM_PTR
+    # => [ROOT[0]]
+
+    dropw
     # => []
 
     # creating BURN output note for the asset
