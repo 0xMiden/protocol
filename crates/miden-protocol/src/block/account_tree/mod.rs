@@ -19,38 +19,12 @@ pub use witness::AccountWitness;
 mod backend;
 pub use backend::AccountTreeBackend;
 
-// FREE HELPER FUNCTIONS
-// ================================================================================================
-// These module-level functions provide conversions between AccountIds and SMT keys.
-// They avoid the need for awkward syntax like account_id_to_smt_key().
-
-const KEY_SUFFIX_IDX: usize = 2;
-const KEY_PREFIX_IDX: usize = 3;
-
-/// Converts an [`AccountId`] to an SMT key for use in account trees.
-///
-/// The key is constructed with the account ID suffix at index 2 and prefix at index 3.
-pub fn account_id_to_smt_key(account_id: AccountId) -> Word {
-    let mut key = Word::empty();
-    key[KEY_SUFFIX_IDX] = account_id.suffix();
-    key[KEY_PREFIX_IDX] = account_id.prefix().as_felt();
-    key
-}
-
-/// Recovers an [`AccountId`] from an SMT key.
-///
-/// # Panics
-///
-/// Panics if the key does not represent a valid account ID. This should never happen when used
-/// with keys from account trees, as the tree only stores valid IDs.
-pub fn smt_key_to_account_id(key: Word) -> AccountId {
-    AccountId::try_from([key[KEY_PREFIX_IDX], key[KEY_SUFFIX_IDX]])
-        .expect("account tree should only contain valid IDs")
-}
+pub mod account_id_key;
+pub use account_id_key::AccountIdKey;
 
 /// Converts an AccountId to an SMT leaf index for use with MerkleStore operations.
 pub fn account_id_to_smt_index(account_id: AccountId) -> LeafIndex<SMT_DEPTH> {
-    account_id_to_smt_key(account_id).into()
+    AccountIdKey::from(account_id).as_word().into()
 }
 
 // ACCOUNT TREE
@@ -114,13 +88,13 @@ where
                 },
                 SmtLeaf::Single((key, _)) => {
                     // Single entry is good - verify it's a valid account ID
-                    smt_key_to_account_id(key);
+                    let _ = AccountIdKey::from_word(key);
                 },
                 SmtLeaf::Multiple(entries) => {
                     // Multiple entries means duplicate prefixes
                     // Extract one of the keys to identify the duplicate prefix
                     if let Some((key, _)) = entries.first() {
-                        let account_id = smt_key_to_account_id(*key);
+                        let account_id = AccountIdKey::from_word(*key);
                         return Err(AccountTreeError::DuplicateIdPrefix {
                             duplicate_prefix: account_id.prefix(),
                         });
@@ -158,7 +132,7 @@ where
     ///
     /// Panics if the SMT backend fails to open the leaf (only possible with `LargeSmt` backend).
     pub fn open(&self, account_id: AccountId) -> AccountWitness {
-        let key = account_id_to_smt_key(account_id);
+        let key = AccountIdKey::from(account_id).as_word();
         let proof = self.smt.open(&key);
 
         AccountWitness::from_smt_proof(account_id, proof)
@@ -166,7 +140,7 @@ where
 
     /// Returns the current state commitment of the given account ID.
     pub fn get(&self, account_id: AccountId) -> Word {
-        let key = account_id_to_smt_key(account_id);
+        let key = AccountIdKey::from(account_id).as_word();
         self.smt.get_value(&key)
     }
 
@@ -234,7 +208,7 @@ where
             .compute_mutations(Vec::from_iter(
                 account_commitments
                     .into_iter()
-                    .map(|(id, commitment)| (account_id_to_smt_key(id), commitment)),
+                    .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
             ))
             .map_err(AccountTreeError::ComputeMutations)?;
 
@@ -248,7 +222,7 @@ where
                     // valid. If it does not match, then we would insert a duplicate.
                     if existing_key != *id_key {
                         return Err(AccountTreeError::DuplicateIdPrefix {
-                            duplicate_prefix: smt_key_to_account_id(*id_key).prefix(),
+                            duplicate_prefix: AccountIdKey::from_word(*id_key).prefix(),
                         });
                     }
                 },
@@ -281,7 +255,7 @@ where
         account_id: AccountId,
         state_commitment: Word,
     ) -> Result<Word, AccountTreeError> {
-        let key = account_id_to_smt_key(account_id);
+        let key = AccountIdKey::from(account_id).as_word();
         // SAFETY: account tree should not contain multi-entry leaves and so the maximum number
         // of entries per leaf should never be exceeded.
         let prev_value = self.smt.insert(key, state_commitment)
@@ -372,9 +346,10 @@ impl Deserializable for AccountTree {
         }
 
         // Create the SMT with validated entries
-        let smt =
-            Smt::with_entries(entries.into_iter().map(|(k, v)| (account_id_to_smt_key(k), v)))
-                .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
+        let smt = Smt::with_entries(
+            entries.into_iter().map(|(k, v)| (AccountIdKey::from(k).as_word(), v)),
+        )
+        .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
         Ok(Self::new_unchecked(smt))
     }
 }
@@ -556,7 +531,7 @@ pub(super) mod tests {
         assert_eq!(tree.num_accounts(), 2);
 
         for id in [id0, id1] {
-            let proof = tree.smt.open(&account_id_to_smt_key(id));
+            let proof = tree.smt.open(&AccountIdKey::from(id).as_word());
             let (control_path, control_leaf) = proof.into_parts();
             let witness = tree.open(id);
 
@@ -600,7 +575,10 @@ pub(super) mod tests {
         // Create AccountTree with LargeSmt backend
         let tree = LargeSmt::<MemoryStorage>::with_entries(
             MemoryStorage::default(),
-            [(account_id_to_smt_key(id0), digest0), (account_id_to_smt_key(id1), digest1)],
+            [
+                (AccountIdKey::from(id0).as_word(), digest0),
+                (AccountIdKey::from(id1).as_word(), digest1),
+            ],
         )
         .map(AccountTree::new_unchecked)
         .unwrap();
@@ -617,7 +595,10 @@ pub(super) mod tests {
         // Test mutations
         let mut tree_mut = LargeSmt::<MemoryStorage>::with_entries(
             MemoryStorage::default(),
-            [(account_id_to_smt_key(id0), digest0), (account_id_to_smt_key(id1), digest1)],
+            [
+                (AccountIdKey::from(id0).as_word(), digest0),
+                (AccountIdKey::from(id1).as_word(), digest1),
+            ],
         )
         .map(AccountTree::new_unchecked)
         .unwrap();
@@ -666,7 +647,10 @@ pub(super) mod tests {
 
         let mut tree = LargeSmt::with_entries(
             MemoryStorage::default(),
-            [(account_id_to_smt_key(id0), digest0), (account_id_to_smt_key(id1), digest1)],
+            [
+                (AccountIdKey::from(id0).as_word(), digest0),
+                (AccountIdKey::from(id1).as_word(), digest1),
+            ],
         )
         .map(AccountTree::new_unchecked)
         .unwrap();
@@ -697,7 +681,10 @@ pub(super) mod tests {
         // Create tree with LargeSmt backend
         let large_tree = LargeSmt::with_entries(
             MemoryStorage::default(),
-            [(account_id_to_smt_key(id0), digest0), (account_id_to_smt_key(id1), digest1)],
+            [
+                (AccountIdKey::from(id0).as_word(), digest0),
+                (AccountIdKey::from(id1).as_word(), digest1),
+            ],
         )
         .map(AccountTree::new_unchecked)
         .unwrap();
