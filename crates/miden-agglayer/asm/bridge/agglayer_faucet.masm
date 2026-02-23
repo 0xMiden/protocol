@@ -226,14 +226,14 @@ end
 # Inputs: []
 # Outputs: [U256[0], U256[1]]
 proc get_raw_claim_amount
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
 end
 
 # Inputs: [U256[0], U256[1]]
@@ -304,8 +304,7 @@ end
 #! is all zeros). This assumption holds for all practical token amounts but is not explicitly
 #! enforced here. See the TODO below.
 #!
-#! TODO: Reverse both AMOUNT[0] and AMOUNT[1] to support amounts >= 2^128, or add an explicit
-#! assertion that AMOUNT[1] is zero.
+#! TODO: Add an explicit assertion that AMOUNT[1] is zero.
 #!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 @locals(8)
@@ -341,20 +340,12 @@ proc build_p2id_output_note
 
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
-    # AMOUNT[8] is in little-endian felt ordering and little-endian byte ordering.
 
     mem_load.OUTPUT_NOTE_FAUCET_AMOUNT movdn.8
     # => [AMOUNT[0], AMOUNT[1], native_amount, tag, note_type, RECIPIENT]
 
     exec.get_scale movdn.8
     # => [AMOUNT[0], AMOUNT[1], scale, native_amount, tag, note_type, RECIPIENT]
-
-    # Convert AMOUNT[8] from little-endian felt ordering + little-endian byte ordering
-    # to big-endian felt ordering + little-endian byte ordering, as required by
-    # verify_u256_to_native_amount_conversion. Since the amount is < 2^128, AMOUNT[1]
-    # is all zeros and only AMOUNT[0] needs to be reversed.
-    exec.word::reverse swapw
-    # => [AMOUNT[1], AMOUNT[0]_reversed, scale, native_amount, tag, note_type, RECIPIENT]
 
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [amount, tag, note_type, RECIPIENT]
