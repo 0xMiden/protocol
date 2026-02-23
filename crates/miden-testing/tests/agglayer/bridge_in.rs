@@ -1,10 +1,7 @@
 extern crate alloc;
 
-use miden_agglayer::claim_note::ProofData;
 use miden_agglayer::{
     ClaimNoteStorage,
-    ExitRoot,
-    LeafData,
     OutputNoteData,
     UpdateGerNote,
     create_claim_note,
@@ -21,25 +18,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_testing::{AccountState, Auth, MockChain};
 use rand::Rng;
 
-use super::test_utils::{local_claim_data, real_claim_data};
-
-/// Identifies the source of claim data used in the bridge-in test.
-#[derive(Debug, Clone, Copy)]
-enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
-    Real,
-    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
-    Simulated,
-}
-
-impl ClaimDataSource {
-    fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
-        match self {
-            ClaimDataSource::Real => real_claim_data(),
-            ClaimDataSource::Simulated => local_claim_data(),
-        }
-    }
-}
+use super::test_utils::ClaimDataSource;
 
 /// Tests the bridge-in flow: CLAIM note -> Aggfaucet (FPI to Bridge) -> P2ID note created.
 ///
