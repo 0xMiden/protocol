@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use core::error::Error;
 
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteScript};
-use miden_protocol::{Felt, Word};
 
 use crate::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
@@ -21,10 +21,10 @@ mod mint;
 pub use mint::{MintNote, MintNoteStorage};
 
 mod p2id;
-pub use p2id::P2idNote;
+pub use p2id::{P2idNote, P2idNoteStorage};
 
 mod p2ide;
-pub use p2ide::P2ideNote;
+pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod swap;
 pub use swap::SwapNote;
@@ -33,8 +33,8 @@ mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
 mod standard_note_attachment;
+use miden_protocol::errors::NoteError;
 pub use standard_note_attachment::StandardNoteAttachment;
-
 // STANDARD NOTE
 // ================================================================================================
 
@@ -204,22 +204,29 @@ impl StandardNote {
         note: &Note,
         target_account_id: AccountId,
         block_ref: BlockNumber,
-    ) -> Result<Option<NoteConsumptionStatus>, StaticAnalysisError> {
+    ) -> Result<Option<NoteConsumptionStatus>, NoteError> {
         match self {
             StandardNote::P2ID => {
-                let input_account_id = parse_p2id_storage(note.storage().items())?;
+                let input_account_id = P2idNoteStorage::try_from(note.storage().items())
+                    .map_err(|e| NoteError::other_with_source("invalid P2ID note storage", e))?;
 
-                if input_account_id == target_account_id {
+                if input_account_id.target() == target_account_id {
                     Ok(Some(NoteConsumptionStatus::ConsumableWithAuthorization))
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable("account ID provided to the P2ID note storage doesn't match the target account ID".into())))
                 }
             },
             StandardNote::P2IDE => {
-                let (receiver_account_id, reclaim_height, timelock_height) =
-                    parse_p2ide_storage(note.storage().items())?;
+                let P2ideNoteStorage {
+                    target: receiver_account_id,
+                    reclaim_height,
+                    timelock_height,
+                } = P2ideNoteStorage::try_from(note.storage().items())
+                    .map_err(|e| NoteError::other_with_source("invalid P2IDE note storage", e))?;
 
                 let current_block_height = block_ref.as_u32();
+                let reclaim_height = reclaim_height.unwrap_or_default().as_u32();
+                let timelock_height = timelock_height.unwrap_or_default().as_u32();
 
                 // block height after which sender account can consume the note
                 let consumable_after = reclaim_height.max(timelock_height);
@@ -251,8 +258,8 @@ impl StandardNote {
                 // storage), then this account cannot consume the note
                 } else {
                     Ok(Some(NoteConsumptionStatus::NeverConsumable(
-                        "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
-                    )))
+            "target account of the transaction does not match neither the receiver account specified by the P2IDE storage, nor the sender account".into()
+        )))
                 }
             },
 
@@ -265,80 +272,6 @@ impl StandardNote {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// Returns the receiver account ID parsed from the provided P2ID note storage.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - the length of the provided note storage array is not equal to the expected number of storage
-///   items of the P2ID note.
-/// - first two elements of the note storage array does not form the valid account ID.
-fn parse_p2id_storage(note_storage: &[Felt]) -> Result<AccountId, StaticAnalysisError> {
-    if note_storage.len() != StandardNote::P2ID.expected_num_storage_items() {
-        return Err(StaticAnalysisError::new(format!(
-            "P2ID note should have {} storage items, but {} was provided",
-            StandardNote::P2ID.expected_num_storage_items(),
-            note_storage.len()
-        )));
-    }
-
-    try_read_account_id_from_storage(note_storage)
-}
-
-/// Returns the receiver account ID, reclaim height and timelock height parsed from the provided
-/// P2IDE note storage.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - the length of the provided note storage array is not equal to the expected number of storage
-///   items of the P2IDE note.
-/// - first two elements of the note storage array does not form the valid account ID.
-/// - third note storage array element (reclaim height) is not a valid u32 value.
-/// - fourth note storage array element (timelock height) is not a valid u32 value.
-fn parse_p2ide_storage(
-    note_storage: &[Felt],
-) -> Result<(AccountId, u32, u32), StaticAnalysisError> {
-    if note_storage.len() != StandardNote::P2IDE.expected_num_storage_items() {
-        return Err(StaticAnalysisError::new(format!(
-            "P2IDE note should have {} storage items, but {} was provided",
-            StandardNote::P2IDE.expected_num_storage_items(),
-            note_storage.len()
-        )));
-    }
-
-    let receiver_account_id = try_read_account_id_from_storage(note_storage)?;
-
-    let reclaim_height = u32::try_from(note_storage[2])
-        .map_err(|_err| StaticAnalysisError::new("reclaim block height should be a u32"))?;
-
-    let timelock_height = u32::try_from(note_storage[3])
-        .map_err(|_err| StaticAnalysisError::new("timelock block height should be a u32"))?;
-
-    Ok((receiver_account_id, reclaim_height, timelock_height))
-}
-
-/// Reads the account ID from the first two note storage values.
-///
-/// Returns None if the note storage values used to construct the account ID are invalid.
-fn try_read_account_id_from_storage(
-    note_storage: &[Felt],
-) -> Result<AccountId, StaticAnalysisError> {
-    if note_storage.len() < 2 {
-        return Err(StaticAnalysisError::new(format!(
-            "P2ID and P2IDE notes should have at least 2 note storage items, but {} was provided",
-            note_storage.len()
-        )));
-    }
-
-    AccountId::try_from([note_storage[1], note_storage[0]]).map_err(|source| {
-        StaticAnalysisError::with_source(
-            "failed to create an account ID from the first two note storage items",
-            source,
-        )
-    })
-}
 
 // HELPER STRUCTURES
 // ================================================================================================
@@ -380,35 +313,6 @@ impl Clone for NoteConsumptionStatus {
                 let err = error.to_string();
                 NoteConsumptionStatus::NeverConsumable(err.into())
             },
-        }
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("{message}")]
-struct StaticAnalysisError {
-    /// Stack size of `Box<str>` is smaller than String.
-    message: Box<str>,
-    /// thiserror will return this when calling Error::source on StaticAnalysisError.
-    source: Option<Box<dyn Error + Send + Sync + 'static>>,
-}
-
-impl StaticAnalysisError {
-    /// Creates a new static analysis error from an error message.
-    pub fn new(message: impl Into<String>) -> Self {
-        let message: String = message.into();
-        Self { message: message.into(), source: None }
-    }
-
-    /// Creates a new static analysis error from an error message and a source error.
-    pub fn with_source(
-        message: impl Into<String>,
-        source: impl Error + Send + Sync + 'static,
-    ) -> Self {
-        let message: String = message.into();
-        Self {
-            message: message.into(),
-            source: Some(Box::new(source)),
         }
     }
 }

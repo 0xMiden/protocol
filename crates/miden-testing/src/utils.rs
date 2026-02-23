@@ -10,7 +10,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
 use miden_protocol::testing::storage::prepare_assets;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNote;
+use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -275,7 +275,7 @@ pub fn create_p2id_note_exact(
     note_type: NoteType,
     serial_num: Word,
 ) -> Result<Note, NoteError> {
-    let recipient = P2idNote::build_recipient(target, serial_num)?;
+    let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
 
     let tag = NoteTag::with_account_target(target);
 
