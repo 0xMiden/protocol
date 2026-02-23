@@ -40,9 +40,9 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use crate::scripts::swap::create_p2id_note_exact;
 use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
 
 // Shared test utilities for faucet tests

@@ -83,7 +83,7 @@ end
 #!   output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
 #!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
 #!   output_note_tag[1],              // P2ID output note tag
-#!   padding[1],                      // padding (1 felt)
+#!   miden_claim_amount[1],           // Miden claim amount (1 felt)
 #! ]
 #!
 #! Invocation: exec
@@ -164,7 +164,7 @@ end
 #! - output_p2id_serial_num     [568..571]: 4 felts
 #! - target_faucet_account_id   [572..573]: 2 felts
 #! - output_note_tag            [574]     : 1 felt
-#! - padding                    [575]     : 1 felt
+#! - miden_claim_amount         [575]     : 1 felt
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -188,7 +188,8 @@ end
 #! - target_faucet_account_id: Target agglayer faucet account ID (prefix and suffix). Only this specific
 #!   account can consume the note - any other account will cause a panic.
 #! - output_note_tag: P2ID output note tag
-#! - padding (1 felt)
+#! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
+#!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
