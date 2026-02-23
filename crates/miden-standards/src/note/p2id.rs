@@ -150,8 +150,8 @@ impl TryFrom<&[Felt]> for P2idNoteStorage {
             });
         }
 
-        let target = AccountId::try_from([note_storage[1], note_storage[0]])
-            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
+        let target = AccountId::try_from_elements(note_storage[0], note_storage[1])
+            .map_err(|err| NoteError::other_with_source("failed to create account id", err))?;
 
         Ok(Self { target })
     }

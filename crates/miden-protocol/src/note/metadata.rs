@@ -249,9 +249,13 @@ impl TryFrom<Word> for NoteMetadataHeader {
         })?;
         let (attachment_kind, attachment_scheme) = unmerge_attachment_kind_scheme(word[3])?;
 
-        let sender = AccountId::try_from([sender_prefix, sender_suffix]).map_err(|source| {
-            NoteError::other_with_source("failed to decode account ID from metadata header", source)
-        })?;
+        let sender =
+            AccountId::try_from_elements(sender_suffix, sender_prefix).map_err(|source| {
+                NoteError::other_with_source(
+                    "failed to decode account ID from metadata header",
+                    source,
+                )
+            })?;
 
         Ok(Self {
             sender,

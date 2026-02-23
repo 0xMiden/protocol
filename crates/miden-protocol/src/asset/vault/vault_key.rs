@@ -115,7 +115,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id_prefix = key[3];
 
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
-        let faucet_id = AccountId::try_from([faucet_id_prefix, faucet_id_suffix])
+        let faucet_id = AccountId::try_from_elements(faucet_id_suffix, faucet_id_prefix)
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
         Ok(Self::new(asset_id, faucet_id))

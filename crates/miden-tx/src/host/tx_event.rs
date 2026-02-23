@@ -184,7 +184,7 @@ impl TransactionEvent {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
                 let account_id_suffix = process.get_stack_item(1);
                 let account_id_prefix = process.get_stack_item(2);
-                let account_id = AccountId::try_from([account_id_prefix, account_id_suffix])
+                let account_id = AccountId::try_from_elements(account_id_suffix, account_id_prefix)
                     .map_err(|err| {
                         TransactionKernelError::other_with_source(
                             "failed to convert account ID word into account ID",

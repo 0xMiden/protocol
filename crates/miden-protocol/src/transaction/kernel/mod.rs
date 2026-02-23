@@ -299,8 +299,9 @@ impl TransactionKernel {
             ));
         }
 
-        let native_asset_id = AccountId::try_from([native_asset_id_prefix, native_asset_id_suffix])
-            .expect("native asset ID should be validated by the tx kernel");
+        let native_asset_id =
+            AccountId::try_from_elements(native_asset_id_suffix, native_asset_id_prefix)
+                .expect("native asset ID should be validated by the tx kernel");
         let fee = FungibleAsset::new(native_asset_id, fee_amount.as_canonical_u64())
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
