@@ -39,15 +39,12 @@ enum ClaimDataSource {
 ///
 /// Parameterized over two claim data sources:
 /// - [`ClaimDataSource::Real`]: uses real [`ProofData`] and [`LeafData`] from
-///   `claim_asset_vectors.json`, captured from an actual on-chain `claimAsset` transaction.
+///   `claim_asset_vectors_real_tx.json`, captured from an actual on-chain `claimAsset` transaction.
 /// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
 ///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call.
 ///
 /// In both cases the claim note is processed against the agglayer faucet, which validates the
 /// Merkle proof and creates a P2ID note for the destination address.
-///
-/// The simulated case additionally creates a destination account and consumes the P2ID note,
-/// verifying the full end-to-end bridge-in flow including balance updates.
 ///
 /// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
 /// as the proof was computed for the original leaf data including the original destination.
