@@ -14,6 +14,10 @@ const MAX_ACCOUNT_TARGET_TAG_LENGTH = 32
 # The default account target tag length.
 const DEFAULT_ACCOUNT_TARGET_TAG_LENGTH = 14
 
+#! The default note tag value (zero). Used for notes that rely on attachments
+#! rather than tags for targeting.
+pub const DEFAULT_TAG = 0
+
 # PROCEDURES
 # =================================================================================================
 
