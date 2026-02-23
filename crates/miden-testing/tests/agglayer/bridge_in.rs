@@ -93,6 +93,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
+        // Ensure the mock account ID matches the destination embedded in the JSON test vector,
+        // since the claim note targets this account ID.
+        assert_eq!(
+            dest.id(),
+            destination_account_id,
+            "mock destination account ID must match the destination_account_id from the claim data"
+        );
         builder.add_account(dest.clone())?;
         Some(dest)
     } else {
