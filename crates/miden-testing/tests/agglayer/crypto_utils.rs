@@ -111,7 +111,7 @@ fn merkle_proof_verification_code(
 #[tokio::test]
 async fn pack_leaf_data() -> anyhow::Result<()> {
     let vector: LeafValueVector =
-        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("Failed to parse leaf value vector");
+        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("failed to parse leaf value vector");
 
     let leaf_data = vector.to_leaf_data();
 
@@ -233,7 +233,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_leaf_value() -> anyhow::Result<()> {
     let vector: LeafValueVector =
-        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("Failed to parse leaf value vector");
+        serde_json::from_str(LEAF_VALUE_VECTORS_JSON).expect("failed to parse leaf value vector");
 
     let leaf_data = vector.to_leaf_data();
     let key: Word = leaf_data.to_commitment();
