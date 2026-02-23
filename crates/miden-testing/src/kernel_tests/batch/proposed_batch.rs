@@ -527,16 +527,30 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     let block1 = chain.block_header(1);
 
     // Randomize the note IDs and nullifiers on each test run to make sure the sorting property
-    // is tested with various inputs.
+    // is tested with various inputs. All seeds must be distinct: if two notes share a seed they
+    // are identical, and an (input, output) pair with the same NoteId would be silently erased
+    // by the tracker, producing wrong counts without returning an error (~8% chance with 7
+    // random u8 draws due to the birthday paradox).
     let mut rng = rand::rng();
+    let seeds: [u8; 7] = {
+        let mut used = [false; 256];
+        std::array::from_fn(|_| loop {
+            let v: u8 = rng.random();
+            if !used[v as usize] {
+                used[v as usize] = true;
+                break v;
+            }
+        })
+    };
+    let [s0, s1, s2, s3, s4, s5, s6] = seeds;
 
-    let note0 = mock_output_note(rng.random());
-    let note1 = mock_note(rng.random());
-    let note2 = mock_output_note(rng.random());
-    let note3 = mock_output_note(rng.random());
-    let note4 = mock_note(rng.random());
-    let note5 = mock_note(rng.random());
-    let note6 = mock_note(rng.random());
+    let note0 = mock_output_note(s0);
+    let note1 = mock_note(s1);
+    let note2 = mock_output_note(s2);
+    let note3 = mock_output_note(s3);
+    let note4 = mock_note(s4);
+    let note5 = mock_note(s5);
+    let note6 = mock_note(s6);
 
     let tx1 =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
