@@ -103,7 +103,18 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
 
     let mut builder = MockChain::builder();
-    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     let expected_amounts = vectors
@@ -132,14 +143,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
     builder.add_account(faucet.clone())?;
 
-    // CREATE SENDER ACCOUNT
-    // --------------------------------------------------------------------------------------------
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-
-    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge
+    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
-        sender_account.id(),
+        bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -298,9 +305,19 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
@@ -384,8 +401,18 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // Create a bridge account (includes a `bridge_out` component)
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account that will create and consume the B2AGG note
@@ -482,15 +509,29 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // Create a bridge account as the designated TARGET for the B2AGG note
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
     let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
 
     // Create a "malicious" account with a bridge interface
-    let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let malicious_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(malicious_account.clone())?;
 
     // CREATE B2AGG NOTE

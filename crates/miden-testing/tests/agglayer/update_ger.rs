@@ -49,16 +49,20 @@ static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
 async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (note sender)
+    // --------------------------------------------------------------------------------------------
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(bridge_seed);
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
     builder.add_account(bridge_account.clone())?;
-
-    // CREATE USER ACCOUNT (NOTE SENDER)
-    // --------------------------------------------------------------------------------------------
-    let user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    builder.add_account(user_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
     // --------------------------------------------------------------------------------------------
@@ -70,7 +74,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     ];
     let ger = ExitRoot::from(ger_bytes);
     let update_ger_note =
-        UpdateGerNote::create(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
