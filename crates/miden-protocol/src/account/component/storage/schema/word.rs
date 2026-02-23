@@ -4,7 +4,7 @@ use alloc::string::{String, ToString};
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_processor::DeserializationError;
 
-use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaTypeId};
+use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaType};
 use super::super::{InitStorageData, StorageValueName};
 use super::FeltSchema;
 use crate::account::StorageSlotName;
@@ -23,7 +23,7 @@ use crate::{Felt, FieldElement, Word};
 pub enum WordSchema {
     /// A whole-word typed value supplied at instantiation time.
     Simple {
-        r#type: SchemaTypeId,
+        r#type: SchemaType,
         default_value: Option<Word>,
     },
     /// A composed word that may mix defaults and typed fields.
@@ -31,11 +31,11 @@ pub enum WordSchema {
 }
 
 impl WordSchema {
-    pub fn new_simple(r#type: SchemaTypeId) -> Self {
+    pub fn new_simple(r#type: SchemaType) -> Self {
         WordSchema::Simple { r#type, default_value: None }
     }
 
-    pub fn new_simple_with_default(r#type: SchemaTypeId, default_value: Word) -> Self {
+    pub fn new_simple_with_default(r#type: SchemaType, default_value: Word) -> Self {
         WordSchema::Simple {
             r#type,
             default_value: Some(default_value),
@@ -53,11 +53,11 @@ impl WordSchema {
         }
     }
 
-    /// Returns the schema type identifier associated with whole-word init-supplied values.
-    pub fn word_type(&self) -> SchemaTypeId {
+    /// Returns the schema type associated with whole-word init-supplied values.
+    pub fn word_type(&self) -> SchemaType {
         match self {
             WordSchema::Simple { r#type, .. } => r#type.clone(),
-            WordSchema::Composite { .. } => SchemaTypeId::native_word(),
+            WordSchema::Composite { .. } => SchemaType::native_word(),
         }
     }
 
@@ -69,7 +69,7 @@ impl WordSchema {
     ) -> Result<(), ComponentMetadataError> {
         match self {
             WordSchema::Simple { r#type, default_value } => {
-                if *r#type == SchemaTypeId::void() {
+                if *r#type == SchemaType::void() {
                     return Ok(());
                 }
 
@@ -165,7 +165,7 @@ impl WordSchema {
                         super::parse_storage_value_with_schema(self, value, &slot_prefix)
                     },
                     None => {
-                        if *r#type == SchemaTypeId::void() {
+                        if *r#type == SchemaType::void() {
                             Ok(Word::empty())
                         } else {
                             default_value.as_ref().copied().ok_or_else(|| {
@@ -261,7 +261,7 @@ impl Deserializable for WordSchema {
         let tag = source.read_u8()?;
         match tag {
             0 => {
-                let r#type = SchemaTypeId::read_from(source)?;
+                let r#type = SchemaType::read_from(source)?;
                 let default_value = Option::<Word>::read_from(source)?;
                 Ok(WordSchema::Simple { r#type, default_value })
             },
@@ -276,8 +276,8 @@ impl Deserializable for WordSchema {
     }
 }
 
-impl From<SchemaTypeId> for WordSchema {
-    fn from(r#type: SchemaTypeId) -> Self {
+impl From<SchemaType> for WordSchema {
+    fn from(r#type: SchemaType) -> Self {
         WordSchema::new_simple(r#type)
     }
 }
@@ -290,6 +290,6 @@ impl From<[FeltSchema; 4]> for WordSchema {
 
 impl From<[Felt; 4]> for WordSchema {
     fn from(value: [Felt; 4]) -> Self {
-        WordSchema::new_simple_with_default(SchemaTypeId::native_word(), Word::from(value))
+        WordSchema::new_simple_with_default(SchemaType::native_word(), Word::from(value))
     }
 }

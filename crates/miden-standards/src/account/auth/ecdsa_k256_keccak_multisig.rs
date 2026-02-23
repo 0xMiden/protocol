@@ -6,7 +6,7 @@ use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -16,8 +16,8 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::ecdsa_k256_keccak_multisig_library;
 
-/// The schema type ID for ECDSA K256 Keccak public keys.
-const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::ecdsa_k256_keccak::pub_key";
+/// The schema type for ECDSA K256 Keccak public keys.
+const PUB_KEY_TYPE: &str = "miden::standards::auth::ecdsa_k256_keccak::pub_key";
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::ecdsa_k256_keccak_multisig::threshold_config")
@@ -180,10 +180,10 @@ impl AuthEcdsaK256KeccakMultisig {
 
     /// Returns the storage slot schema for the approver public keys slot.
     pub fn approver_public_keys_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        let pub_key_type = SchemaType::new(PUB_KEY_TYPE).expect("valid type");
         (
             Self::approver_public_keys_slot().clone(),
-            StorageSlotSchema::map("Approver public keys", SchemaTypeId::u32(), pub_key_type),
+            StorageSlotSchema::map("Approver public keys", SchemaType::u32(), pub_key_type),
         )
     }
 
@@ -193,8 +193,8 @@ impl AuthEcdsaK256KeccakMultisig {
             Self::executed_transactions_slot().clone(),
             StorageSlotSchema::map(
                 "Executed transactions",
-                SchemaTypeId::native_word(),
-                SchemaTypeId::native_word(),
+                SchemaType::native_word(),
+                SchemaType::native_word(),
             ),
         )
     }
@@ -205,8 +205,8 @@ impl AuthEcdsaK256KeccakMultisig {
             Self::procedure_thresholds_slot().clone(),
             StorageSlotSchema::map(
                 "Procedure thresholds",
-                SchemaTypeId::native_word(),
-                SchemaTypeId::u32(),
+                SchemaType::native_word(),
+                SchemaType::u32(),
             ),
         )
     }

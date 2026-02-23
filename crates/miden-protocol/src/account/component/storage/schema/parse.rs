@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaTypeId};
+use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaType};
 use super::super::{StorageValueName, WordValue};
 use super::{FeltSchema, WordSchema};
 use crate::errors::ComponentMetadataError;
@@ -24,7 +24,7 @@ pub(crate) fn parse_storage_value_with_schema(
             parse_composite_elements(value, elements, slot_prefix)?
         },
         (WordSchema::Composite { .. }, WordValue::Atomic(value)) => SCHEMA_TYPE_REGISTRY
-            .try_parse_word(&SchemaTypeId::native_word(), value)
+            .try_parse_word(&SchemaType::native_word(), value)
             .map_err(|err| {
                 ComponentMetadataError::InvalidInitStorageValue(
                     slot_prefix.clone(),
@@ -38,7 +38,7 @@ pub(crate) fn parse_storage_value_with_schema(
 }
 
 fn parse_simple_word_value(
-    schema_type: &SchemaTypeId,
+    schema_type: &SchemaType,
     raw_value: &WordValue,
     slot_prefix: &StorageValueName,
 ) -> Result<Word, ComponentMetadataError> {
@@ -55,7 +55,7 @@ fn parse_simple_word_value(
             let felts: Vec<Felt> = elements
                 .iter()
                 .map(|element| {
-                    SCHEMA_TYPE_REGISTRY.try_parse_felt(&SchemaTypeId::native_felt(), element)
+                    SCHEMA_TYPE_REGISTRY.try_parse_felt(&SchemaType::native_felt(), element)
                 })
                 .collect::<Result<_, _>>()
                 .map_err(|err| {

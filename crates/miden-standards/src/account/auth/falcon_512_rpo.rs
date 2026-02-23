@@ -1,7 +1,7 @@
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -10,8 +10,8 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::falcon_512_rpo_library;
 
-/// The schema type ID for Falcon512Rpo public keys.
-const PUB_KEY_TYPE_ID: &str = "miden::standards::auth::falcon512_rpo::pub_key";
+/// The schema type for Falcon512Rpo public keys.
+const PUB_KEY_TYPE: &str = "miden::standards::auth::falcon512_rpo::pub_key";
 
 static FALCON_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::falcon512_rpo::public_key")
@@ -57,7 +57,7 @@ impl AuthFalcon512Rpo {
 
     /// Returns the storage slot schema for the public key slot.
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let pub_key_type = SchemaTypeId::new(PUB_KEY_TYPE_ID).expect("valid type id");
+        let pub_key_type = SchemaType::new(PUB_KEY_TYPE).expect("valid type");
         (
             Self::public_key_slot().clone(),
             StorageSlotSchema::value("Public key commitment", pub_key_type),
