@@ -1,7 +1,10 @@
 extern crate alloc;
 
+use miden_agglayer::claim_note::ProofData;
 use miden_agglayer::{
     ClaimNoteStorage,
+    ExitRoot,
+    LeafData,
     OutputNoteData,
     UpdateGerNote,
     create_claim_note,
@@ -23,10 +26,19 @@ use super::test_utils::{local_claim_data, real_claim_data};
 /// Identifies the source of claim data used in the bridge-in test.
 #[derive(Debug, Clone, Copy)]
 enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.json.
+    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
     Real,
     /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
     Simulated,
+}
+
+impl ClaimDataSource {
+    fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+        match self {
+            ClaimDataSource::Real => real_claim_data(),
+            ClaimDataSource::Simulated => local_claim_data(),
+        }
+    }
 }
 
 /// Tests the bridge-in flow: CLAIM note -> Aggfaucet (FPI to Bridge) -> P2ID note created.
@@ -57,10 +69,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data, ger) = match data_source {
-        ClaimDataSource::Real => real_claim_data(),
-        ClaimDataSource::Simulated => local_claim_data(),
-    };
+    let (proof_data, leaf_data, ger) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.

@@ -23,19 +23,13 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
         bytes32[] memory leaves = new bytes32[](32);
         bytes32[] memory roots = new bytes32[](32);
         bytes32[] memory merkle_paths = new bytes32[](1024);
-        bytes32[] memory canonical_zeros = new bytes32[](32);
 
-        // This array represent a merkle path during each iteration.
-        // This is a work around which allows to provide the merkle path to the verifyMerkleProof
-        // function, since the merkle_paths array cannot be sliced.
+        // This array represents a merkle path during each iteration.
+        // This is a workaround which allows to provide the merkle path to verifyMerkleProof
+        // since the merkle_paths array cannot be sliced.
         bytes32[32] memory current_path;
 
-        // generate canonical zeros array
-        bytes32 z = bytes32(0);
-        for (uint256 i = 0; i < 32; i++) {
-            canonical_zeros[i] = z;
-            z = keccak256(abi.encodePacked(z, z));
-        }
+        bytes32[32] memory canonicalZeros = _computeCanonicalZeros();
 
         // generate leaves, roots, and merkle_paths arrays
         for (uint256 i = 0; i < 32; i++) {
@@ -47,18 +41,9 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
             // the overall number of leaves in the SMT instead of the index of the last leaf), so we
             // first update the merkle_paths array and only after that actually add a leaf and
             // recompute the _branch.
-            //
-            // Merkle paths in the _branch array contain plain zeros for the nodes which were not
-            // updated during the leaf insertion. To get the proper Merkle path we should use
-            // canonical zeros instead.
+            current_path = _generateLocalProof(i, canonicalZeros);
             for (uint256 j = 0; j < 32; j++) {
-                if (i >> j & 1 == 1) {
-                    merkle_paths[i * 32 + j] = _branch[j];
-                    current_path[j] = _branch[j];
-                } else {
-                    merkle_paths[i * 32 + j] = canonical_zeros[j];
-                    current_path[j] = canonical_zeros[j];
-                }
+                merkle_paths[i * 32 + j] = current_path[j];
             }
 
             _addLeaf(leaf);
@@ -80,5 +65,41 @@ contract SMTMerkleProofVectors is Test, DepositContractBase {
         string memory outputPath = "test-vectors/merkle_proof_vectors.json";
         vm.writeJson(json, outputPath);
         console.log("Saved Merkle path vectors to:", outputPath);
+    }
+
+    /**
+     * @notice Computes the canonical zero hashes for the Sparse Merkle Tree.
+     * @dev Each level i has zero hash: keccak256(zero[i-1], zero[i-1])
+     * @return canonicalZeros Array of 32 zero hashes, one per tree level
+     */
+    function _computeCanonicalZeros() internal pure returns (bytes32[32] memory canonicalZeros) {
+        bytes32 current = bytes32(0);
+        for (uint256 i = 0; i < 32; i++) {
+            canonicalZeros[i] = current;
+            current = keccak256(abi.encodePacked(current, current));
+        }
+    }
+
+    /**
+     * @notice Generates the SMT proof for a given leaf index using the current _branch state.
+     * @dev For each level i:
+     *      - If bit i of leafIndex is 1: use _branch[i] (sibling on left)
+     *      - If bit i of leafIndex is 0: use canonicalZeros[i] (sibling on right)
+     * @param leafIndex The 0-indexed position of the leaf in the tree
+     * @param canonicalZeros The precomputed canonical zero hashes
+     * @return smtProof The 32-element Merkle proof array
+     */
+    function _generateLocalProof(uint256 leafIndex, bytes32[32] memory canonicalZeros)
+        internal
+        view
+        returns (bytes32[32] memory smtProof)
+    {
+        for (uint256 i = 0; i < 32; i++) {
+            if ((leafIndex >> i) & 1 == 1) {
+                smtProof[i] = _branch[i];
+            } else {
+                smtProof[i] = canonicalZeros[i];
+            }
+        }
     }
 }

@@ -257,28 +257,28 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns real claim data from the claim_asset_vectors.json file.
-///
-/// Returns a tuple of (ProofData, LeafData, ExitRoot) parsed from the real on-chain claim
-/// transaction.
-pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
-    let vector = &*CLAIM_ASSET_VECTOR;
+/// Converts a [`ClaimAssetVector`] into its constituent `(ProofData, LeafData, ExitRoot)` tuple.
+fn claim_data_from_vector(vector: &ClaimAssetVector) -> (ProofData, LeafData, ExitRoot) {
     let ger = ExitRoot::new(
         hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
     );
     (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
 }
 
-/// Returns simulated bridge asset data from the bridge_asset_vectors.json file.
+/// Returns real claim data from the claim_asset_vectors_real_tx.json file.
+///
+/// Returns a tuple of (ProofData, LeafData, ExitRoot) parsed from the real on-chain claim
+/// transaction.
+pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
+    claim_data_from_vector(&CLAIM_ASSET_VECTOR)
+}
+
+/// Returns simulated bridge asset data from the claim_asset_vectors_local_tx.json file.
 ///
 /// Returns a tuple of (ProofData, LeafData, ExitRoot) from a locally simulated L1 bridgeAsset
 /// transaction. This data represents what would be generated when a user calls bridgeAsset() on L1.
 pub fn local_claim_data() -> (ProofData, LeafData, ExitRoot) {
-    let vector = &*CLAIM_ASSET_VECTOR_LOCAL;
-    let ger = ExitRoot::new(
-        hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
-    );
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+    claim_data_from_vector(&CLAIM_ASSET_VECTOR_LOCAL)
 }
 
 /// Execute a program with a default host and optional advice inputs.
