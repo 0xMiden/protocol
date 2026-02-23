@@ -257,28 +257,27 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns real claim data from the claim_asset_vectors.json file.
-///
-/// Returns a tuple of (ProofData, LeafData, ExitRoot) parsed from the real on-chain claim
-/// transaction.
-pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
-    let vector = &*CLAIM_ASSET_VECTOR;
-    let ger = ExitRoot::new(
-        hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
-    );
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+/// Identifies the source of claim data used in bridge-in tests.
+#[derive(Debug, Clone, Copy)]
+pub enum ClaimDataSource {
+    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
+    Real,
+    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
+    Simulated,
 }
 
-/// Returns simulated bridge asset data from the bridge_asset_vectors.json file.
-///
-/// Returns a tuple of (ProofData, LeafData, ExitRoot) from a locally simulated L1 bridgeAsset
-/// transaction. This data represents what would be generated when a user calls bridgeAsset() on L1.
-pub fn local_claim_data() -> (ProofData, LeafData, ExitRoot) {
-    let vector = &*CLAIM_ASSET_VECTOR_LOCAL;
-    let ger = ExitRoot::new(
-        hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
-    );
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+impl ClaimDataSource {
+    /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+        let vector = match self {
+            ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
+            ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
+        };
+        let ger = ExitRoot::new(
+            hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
+        );
+        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+    }
 }
 
 /// Execute a program with a default host and optional advice inputs.
