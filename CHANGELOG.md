@@ -19,6 +19,7 @@
 - Increased `TokenSymbol` max allowed length from 6 to 12 uppercase characters ([#2420](https://github.com/0xMiden/miden-base/pull/2420)).
 - Added `StandardNote::from_script_root()` and `StandardNote::name()` methods, and exposed `NoteType` `PUBLIC`/`PRIVATE` masks as public constants ([#2411](https://github.com/0xMiden/miden-base/pull/2411)).
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
+- Added `DEFAULT_TAG` constant to `miden::standards::note_tag` MASM module ([#2482](https://github.com/0xMiden/miden-base/pull/2482)).
 
 
 ### Changes
