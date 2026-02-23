@@ -32,7 +32,7 @@ use crate::EthAddressFormat;
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped B2AGG script is well-formed");
+    let program = Program::read_from_bytes(bytes).expect("shipped B2AGG script is well-formed");
     NoteScript::new(program)
 });
 

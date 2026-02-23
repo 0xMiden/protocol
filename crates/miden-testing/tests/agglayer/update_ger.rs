@@ -42,7 +42,7 @@ struct ExitRootsFile {
 
 /// Lazily parsed exit root vectors from the JSON file.
 static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
-    serde_json::from_str(EXIT_ROOTS_JSON).expect("Failed to parse exit roots JSON")
+    serde_json::from_str(EXIT_ROOTS_JSON).expect("failed to parse exit roots JSON")
 });
 
 #[tokio::test]
@@ -128,11 +128,11 @@ async fn compute_ger() -> anyhow::Result<()> {
 
     for i in 0..vectors.mainnet_exit_roots.len() {
         let mainnet_exit_root_bytes =
-            hex_to_bytes(vectors.mainnet_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.mainnet_exit_roots[i].as_str()).expect("invalid hex string");
         let rollup_exit_root_bytes =
-            hex_to_bytes(vectors.rollup_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.rollup_exit_roots[i].as_str()).expect("invalid hex string");
         let expected_ger_bytes =
-            hex_to_bytes(vectors.global_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.global_exit_roots[i].as_str()).expect("invalid hex string");
 
         // Convert expected GER to felts for comparison
         let expected_ger_exit_root = ExitRoot::from(expected_ger_bytes);
