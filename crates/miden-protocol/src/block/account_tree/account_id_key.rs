@@ -8,7 +8,7 @@ use crate::crypto::merkle::smt::SMT_DEPTH;
 const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
 
-/// The account ID encoded as a key for use in [`AccountTree`] and
+/// The account ID encoded as a key for use in AccountTree and
 /// advice maps in `TransactionAdviceInputs`.
 ///
 /// Canonical word layout:

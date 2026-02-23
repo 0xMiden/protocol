@@ -233,9 +233,7 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 
     // Add account header to advice map.
     let account_id_key = AccountIdKey::from(foreign_account_id).as_word();
-    advice_inputs
-        .map
-        .insert(account_id_key, foreign_header.to_elements().to_vec());
+    advice_inputs.map.insert(account_id_key, foreign_header.to_elements().to_vec());
     // Add storage header to advice map.
     advice_inputs
         .map
