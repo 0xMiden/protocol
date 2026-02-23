@@ -41,7 +41,7 @@ use crate::errors::AccountError;
 ///     AccountComponentMetadata,
 ///     FeltSchema,
 ///     InitStorageData,
-///     SchemaTypeId,
+///     SchemaType,
 ///     StorageSchema,
 ///     StorageSlotSchema,
 ///     StorageValueName,
