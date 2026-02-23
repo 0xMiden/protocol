@@ -20,7 +20,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
@@ -226,10 +226,13 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
+        let attachment = burn_note.metadata().attachment();
+        let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
+            .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
-            burn_note.metadata().tag(),
-            NoteTag::with_account_target(faucet.id()),
-            "BURN note should have the correct tag"
+            network_target.target_id(),
+            faucet.id(),
+            "BURN note attachment should target the faucet"
         );
         assert_eq!(
             burn_note.recipient().script().root(),
