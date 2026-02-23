@@ -495,7 +495,7 @@ impl ProposedBlock {
         let fee_parameters = prev_block_header.fee_parameters().clone();
 
         // Currently undefined and reserved for future use.
-        // See miden-base/1155.
+        // See https://github.com/0xMiden/protocol/issues/1155.
         let version = 0;
         let tx_kernel_commitment = TransactionKernel.to_commitment();
         let header = BlockHeader::new(
