@@ -471,6 +471,7 @@ proc create_burn_note
     # new expects [account_id_prefix, account_id_suffix, exec_hint]
     push.EXECUTION_HINT_ALWAYS movdn.2
     # => [faucet_id_prefix, faucet_id_suffix, exec_hint, ASSET]
+    
     exec.network_account_target::new
     # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, ASSET]
 
