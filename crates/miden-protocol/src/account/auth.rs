@@ -127,7 +127,7 @@ impl AuthSecretKey {
     /// random number generator.
     ///
     /// Returns an error if the specified authentication scheme is not supported.
-    pub fn with_scheme_id_and_rng<R: Rng + CryptoRng>(
+    pub fn with_scheme_and_rng<R: Rng + CryptoRng>(
         scheme: AuthScheme,
         rng: &mut R,
     ) -> Result<Self, AuthSchemeError> {
@@ -142,7 +142,7 @@ impl AuthSecretKey {
     ///
     /// Returns an error if the specified authentication scheme is not supported.
     #[cfg(feature = "std")]
-    pub fn with_scheme_id(scheme: AuthScheme) -> Result<Self, AuthSchemeError> {
+    pub fn with_scheme(scheme: AuthScheme) -> Result<Self, AuthSchemeError> {
         match scheme {
             AuthScheme::Falcon512Rpo => Ok(Self::new_falcon512_rpo()),
             AuthScheme::EcdsaK256Keccak => Ok(Self::new_ecdsa_k256_keccak()),

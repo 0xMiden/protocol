@@ -517,7 +517,12 @@ pub proc is_signer(pub_key: BeWord) -> felt
 end
 
 
-#! Authenticate a transaction using the ECDSA signature scheme with multi-signature support.
+#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! with multi-signature support
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_rpo
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed

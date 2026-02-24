@@ -67,7 +67,7 @@ impl Auth {
         match self {
             Auth::BasicAuth { auth_scheme } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_id_and_rng(*auth_scheme, &mut rng)
+                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 
@@ -99,7 +99,7 @@ impl Auth {
                 auth_scheme,
             } => {
                 let mut rng = ChaCha20Rng::from_seed(Default::default());
-                let sec_key = AuthSecretKey::with_scheme_id_and_rng(*auth_scheme, &mut rng)
+                let sec_key = AuthSecretKey::with_scheme_and_rng(*auth_scheme, &mut rng)
                     .expect("failed to create secret key");
                 let pub_key = sec_key.public_key().to_commitment();
 

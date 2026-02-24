@@ -25,7 +25,12 @@ const AUTH_CONFIG_SLOT = word("miden::standards::auth::singlesig_acl::config")
 # The slot where the map of auth trigger procedure roots is stored.
 const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::singlesig_acl::trigger_procedure_roots")
 
-#! Authenticate a transaction using the ECDSA signature scheme based on procedure calls and note usage.
+#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! based on procedure calls and note usage.
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_rpo
 #!
 #! This authentication procedure checks:
 #! 1. If any of the trigger procedures were called during the transaction

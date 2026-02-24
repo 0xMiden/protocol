@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 
-/// Defines authentication methods available to standard and faucet accounts.
+/// Defines standard authentication methods supported by account auth components.
 pub enum AuthMethod {
     /// A minimal authentication method that provides no cryptographic authentication.
     ///
@@ -10,12 +10,12 @@ pub enum AuthMethod {
     /// execution, avoiding unnecessary nonce increments for transactions that don't modify the
     /// account state.
     NoAuth,
-    /// A single-key authentication method which relies on either RpoFalcon512 or ECDSA signatures.
+    /// A single-key authentication method which relies on either ECDSA or Falcon512Rpo signatures.
     SingleSig {
         pub_key: PublicKeyCommitment,
         auth_scheme: AuthScheme,
     },
-    /// A multi-signature authentication method using either RpoFalcon512 or ECDSA signatures.
+    /// A multi-signature authentication method using either ECDSA or Falcon512Rpo signatures.
     ///
     /// Requires a threshold number of signatures from the provided public keys.
     Multisig {
