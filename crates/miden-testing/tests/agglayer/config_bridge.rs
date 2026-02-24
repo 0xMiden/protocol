@@ -1,13 +1,12 @@
 extern crate alloc;
 
-use miden_agglayer::{ConfigAggBridgeNote, create_existing_bridge_account, faucet_registry_key};
-use miden_protocol::account::{
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-    StorageSlotName,
+use miden_agglayer::{
+    AggLayerBridge,
+    ConfigAggBridgeNote,
+    create_existing_bridge_account,
+    faucet_registry_key,
 };
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
@@ -48,9 +47,9 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // Verify the faucet is NOT in the registry before registration
-    let registry_slot_name = StorageSlotName::new("miden::agglayer::bridge::faucet_registry")?;
+    let registry_slot_name = AggLayerBridge::faucet_registry_slot_name();
     let key = faucet_registry_key(faucet_to_register);
-    let value_before = bridge_account.storage().get_map_item(&registry_slot_name, key)?;
+    let value_before = bridge_account.storage().get_map_item(registry_slot_name, key)?;
     assert_eq!(
         value_before,
         [Felt::ZERO; 4].into(),
@@ -78,7 +77,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mut updated_bridge = bridge_account.clone();
     updated_bridge.apply_delta(executed_transaction.account_delta())?;
 
-    let value_after = updated_bridge.storage().get_map_item(&registry_slot_name, key)?;
+    let value_after = updated_bridge.storage().get_map_item(registry_slot_name, key)?;
     let expected_value = [Felt::new(1), Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
     assert_eq!(
         value_after, expected_value,

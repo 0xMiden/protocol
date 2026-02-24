@@ -1,3 +1,4 @@
+use miden::core::crypto::hashes::rpo256
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -6,19 +7,88 @@ use miden::protocol::native_account
 # ERRORS
 # =================================================================================================
 
+const ERR_GER_NOT_FOUND = "GER not found in storage"
+const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN="note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER="note sender is not the global exit root manager"
 
 # CONSTANTS
 # =================================================================================================
 
-const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+# Storage slots
 const BRIDGE_ADMIN_SLOT=word("miden::agglayer::bridge::admin")
 const GER_MANAGER_SLOT=word("miden::agglayer::bridge::ger_manager")
-const IS_REGISTERED_FLAG=1
+const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
+const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+
+# Flags
+const GER_KNOWN_FLAG=1
+const IS_FAUCET_REGISTERED_FLAG=1
 
 # PUBLIC INTERFACE
 # =================================================================================================
+
+#! Updates the Global Exit Root (GER) in the bridge account storage.
+#!
+#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
+#! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
+#!
+#! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc update_ger
+    # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
+    # inputs: [B, A] => output: hash(A || B)
+    exec.rpo256::merge
+    # => [GER_HASH, pad(12)]
+
+    # prepare VALUE = [0, 0, 0, GER_KNOWN_FLAG]
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, GER_HASH, pad(12)]
+
+    swapw
+    # => [GER_HASH, VALUE, pad(12)]
+
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH, VALUE, pad(12)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+    dropw
+    # => [pad(16)]
+end
+
+#! Asserts that the provided GER is valid (exists in storage).
+#!
+#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and looks up the hash in
+#! the GER storage map. Panics if the GER has never been stored.
+#!
+#! Inputs: [GER_ROOT[8]]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the GER is not found in storage.
+#!
+#! Invocation: exec
+pub proc assert_valid_ger
+    # compute hash(GER)
+    exec.rpo256::merge
+    # => [GER_HASH]
+
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    # assert the GER is known in storage (VALUE = [0, 0, 0, GER_KNOWN_FLAG])
+    push.GER_KNOWN_FLAG.0.0.0
+    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE]
+
+    assert_eqw.err=ERR_GER_NOT_FOUND
+    # => []
+end
 
 #! Registers a faucet in the bridge's faucet registry.
 #!
@@ -36,11 +106,11 @@ pub proc register_faucet
     # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
     # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
-    push.IS_REGISTERED_FLAG
-    # => [IS_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
+    push.IS_FAUCET_REGISTERED_FLAG
+    # => [IS_FAUCET_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
 
     movdn.7
-    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_REGISTERED_FLAG], pad(9)]
+    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
 
     # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]
@@ -50,6 +120,34 @@ pub proc register_faucet
     # => [OLD_VALUE(4), pad(9)]
 
     dropw
+end
+
+#! Asserts that a faucet is registered in the bridge's faucet registry.
+#!
+#! Looks up the faucet ID in the faucet registry map and asserts the registration
+#! flag is set.
+#!
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the faucet is not registered in the faucet registry.
+#!
+#! Invocation: exec
+pub proc assert_faucet_registered
+    # Build KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    push.0.0
+    movup.3 movup.3
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
+
+    push.FAUCET_REGISTRY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [VALUE(4)]
+
+    # the stored word must be [0, 0, 0, 1] for registered faucets
+    drop drop drop
+    assert.err=ERR_FAUCET_NOT_REGISTERED
+    # => []
 end
 
 #! Asserts that the note sender matches the bridge admin stored in account storage.

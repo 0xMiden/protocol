@@ -1,12 +1,7 @@
 use miden::core::math::u64
 use miden::core::word
-use miden::agglayer::utils
+use miden::agglayer::common::utils
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-
-# CONSTANTS
-# =================================================================================================
-
-const MAX_SCALING_FACTOR=18
 
 # ERRORS
 # =================================================================================================
@@ -15,8 +10,12 @@ const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT="maximum scaling factor is 18"
 const ERR_X_TOO_LARGE="the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
 const ERR_UNDERFLOW="x < y*10^s (underflow detected)"
 const ERR_REMAINDER_TOO_LARGE="remainder z must be < 10^s"
-
 const ERR_Y_TOO_LARGE="y exceeds max fungible token amount"
+
+# CONSTANTS
+# =================================================================================================
+
+const MAX_SCALING_FACTOR=18
 
 #! Calculate 10^scale where scale is a u8 exponent.
 #!
