@@ -10,13 +10,15 @@ use miden_agglayer::{
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
+use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -36,6 +38,9 @@ use super::test_utils::ClaimDataSource;
 ///
 /// In both cases the claim note is processed against the agglayer faucet, which validates the
 /// Merkle proof and creates a P2ID note for the destination address.
+///
+/// The simulated case additionally creates a destination account and consumes the P2ID note,
+/// verifying the full end-to-end bridge-in flow including balance updates.
 ///
 /// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
 /// as the proof was computed for the original leaf data including the original destination.
@@ -128,8 +133,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE CLAIM NOTE
     // --------------------------------------------------------------------------------------------
 
-    // Generate a serial number for the P2ID note
-    let serial_num = builder.rng_mut().draw_word();
+    // Compute the P2ID serial number as the RPO hash of the proof data elements.
+    // This matches the MASM: `push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
+    // exec.rpo256::hash_elements` which produces the PROOF_DATA_KEY used as the serial number
+    // for the P2ID output note.
+    let proof_data_elements = proof_data.to_elements();
+    let serial_num: Word = Hasher::hash_elements(&proof_data_elements);
 
     // Calculate the scaled-down Miden amount using the faucet's scale factor
     let miden_claim_amount = leaf_data
@@ -138,7 +147,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("amount should scale successfully");
 
     let output_note_data = OutputNoteData {
-        output_p2id_serial_num: serial_num,
         target_faucet_account_id: agglayer_faucet.id(),
         output_note_tag: NoteTag::with_account_target(destination_account_id),
         miden_claim_amount,

@@ -39,9 +39,8 @@ const OUTPUT_NOTE_DATA_MEM_ADDR = 708
 const CLAIM_NOTE_DATA_MEM_ADDR = 712
 
 const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
-const OUTPUT_NOTE_TAG_MEM_ADDR = 574
-const OUTPUT_NOTE_FAUCET_AMOUNT = 575
-const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
+const OUTPUT_NOTE_TAG_MEM_ADDR = 570
+const OUTPUT_NOTE_FAUCET_AMOUNT = 571
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
@@ -294,7 +293,7 @@ end
 #!
 #! This procedure expects the claim data to be already written to memory via batch_pipe_double_words.
 #! It reads the destination account ID, amount, and other note parameters from memory to construct
-#! the output note.
+#! the output note. The P2ID serial number is the PROOF_DATA_KEY (RPO hash of proof data).
 #!
 #! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
@@ -319,7 +318,8 @@ proc build_p2id_output_note
     procref.::miden::standards::notes::p2id::main
     # => [SCRIPT_ROOT]
 
-    swapw mem_loadw_be.OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR
+    # Use PROOF_DATA_KEY as the P2ID serial number
+    swapw mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
@@ -389,11 +389,13 @@ end
 #!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
 #!   ],
 #!   OUTPUT_NOTE_DATA_KEY => [
-#!     output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
 #!     agglayer_faucet_account_id[2],   // Agglayer faucet account ID (2 felts, prefix and suffix)
 #!     output_note_tag[1],              // P2ID output note tag
+#!     miden_claim_amount[1],           // Miden claim amount (1 felt)
 #!   ]
 #! }
+#!
+#! Note: PROOF_DATA_KEY is used as the P2ID output note serial number.
 #!
 #! Panics if:
 #! - the rollup exit root Merkle Proof validation via FPI fails.
