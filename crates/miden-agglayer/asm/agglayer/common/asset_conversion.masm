@@ -7,7 +7,7 @@ use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 # =================================================================================================
 
 const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT="maximum scaling factor is 18"
-const ERR_X_TOO_LARGE="x must fit into 128 bits (x4..x7 must be 0)"
+const ERR_X_TOO_LARGE="the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
 const ERR_UNDERFLOW="x < y*10^s (underflow detected)"
 const ERR_REMAINDER_TOO_LARGE="remainder z must be < 10^s"
 const ERR_Y_TOO_LARGE="y exceeds max fungible token amount"
@@ -198,7 +198,7 @@ proc u128_sub_no_underflow
     # => [z0, z1, z2, z3]
 end
 
-#! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
+#! Verify conversion from a U128 amount to a Miden native amount (Felt)
 #!
 #! Specification:
 #!     Verify that a provided y is the quotient of dividing x by 10^scale_exp:
@@ -228,19 +228,16 @@ end
 #!         y_scaled = y * 10^10 = 100 * 10^18
 #!         z        = x - y_scaled = 0
 #!
-#! NOTE: For efficiency, this verifier enforces x < 2^128 by requiring x4..x7 == 0.
-#!
-#! Inputs:  [x7, x6, x5, x4, x3, x2, x1, x0, scale_exp, y]
-#!          Where x is encoded as 8 u32 limbs in big-endian order.
-#!          (x7 is most significant limb and is at the top of the stack)
-#!          Each limb is expected to contain little-endian bytes.
+#! Inputs:  [x0, x1, x2, x3, scale_exp, y]
+#!          Where x is encoded as 4 u32 limbs in little-endian order.
+#!          (x0 is least significant limb)
 #! Outputs: [y]
 #!
 #! Where:
-#!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
-#!        It is provided on the operand stack as 8 big-endian u32 limbs:
-#!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
-#!   - x0..x7: 32-bit limbs of x in big-endian order (x0 is least significant).
+#!   - x: The original amount as an unsigned 128-bit integer (U128).
+#!        It is provided on the operand stack as 4 little-endian u32 limbs:
+#!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96
+#!   - x0..x3: 32-bit limbs of x in little-endian order (x0 is least significant).
 #!   - scale_exp: The base-10 exponent used for scaling down (an integer in [0, 18]).
 #!   - y: The provided quotient (Miden native amount) as a Felt interpreted as an unsigned u64.
 #!   - y_scaled: The 256-bit value y * 10^scale_exp represented as 8 u32 limbs (big-endian).
@@ -250,23 +247,10 @@ end
 #! Panics if:
 #! - scale_exp > 18 (asserted in pow10 via scale_native_amount_to_u256)
 #! - y exceeds the max fungible token amount
-#! - x does not fit into 128 bits (x4..x7 are not all zero)
 #! - x < y * 10^scale_exp (underflow)
 #! - z does not fit in 64 bits
 #! - (z1, z0) >= 10^scale_exp (remainder too large)
-pub proc verify_u256_to_native_amount_conversion
-
-    # reverse limbs and byte endianness
-    exec.reverse_limbs_and_change_byte_endianness
-    # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
-
-    # =============================================================================================
-    # Step 0: Enforce x < 2^128
-    #   Constraint: x4 == x5 == x6 == x7 == 0
-    # =============================================================================================
-    swapw
-    exec.word::eqz
-    assert.err=ERR_X_TOO_LARGE
+pub proc verify_u128_to_native_amount_conversion
     # => [x0, x1, x2, x3, scale_exp, y]
 
     # =============================================================================================
@@ -343,5 +327,65 @@ pub proc verify_u256_to_native_amount_conversion
     # => [is_lt, y]
 
     assert.err=ERR_REMAINDER_TOO_LARGE
+    # => [y]
+end
+
+#! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
+#!
+#! This procedure first checks that the U256 value fits in 128 bits (x4..x7 == 0),
+#! then delegates to verify_u128_to_native_amount_conversion for the actual verification.
+#!
+#! Specification:
+#!     Verify that a provided y is the quotient of dividing x by 10^scale_exp:
+#!         y = floor(x / 10^scale_exp)
+#!
+#! Example (ETH -> Miden base 1e8):
+#!   - EVM amount:   100 ETH = 100 * 10^18
+#!   - Miden amount: 100 ETH = 100 * 10^8
+#!   - Therefore the scale-down factor is:
+#!         scale = 10^(18 - 8) = 10^10
+#!         scale_exp = 10
+#!   - Inputs/expected values:
+#!         x        = 100 * 10^18
+#!         y        = floor(x / 10^10) = 100 * 10^8
+#!         y_scaled = y * 10^10 = 100 * 10^18
+#!         z        = x - y_scaled = 0
+#!
+#! Inputs:  [x7, x6, x5, x4, x3, x2, x1, x0, scale_exp, y]
+#!          Where x is encoded as 8 u32 limbs in big-endian order.
+#!          (x7 is most significant limb and is at the top of the stack)
+#!          Each limb is expected to contain little-endian bytes.
+#! Outputs: [y]
+#!
+#! Where:
+#!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
+#!        It is provided on the operand stack as 8 big-endian u32 limbs:
+#!          x = x0 + x1·2^32 + x2·2^64 + x3·2^96 + x4·2^128 + x5·2^160 + x6·2^192 + x7·2^224
+#!   - x0..x7: 32-bit limbs of x in big-endian order (x0 is least significant).
+#!   - scale_exp: The base-10 exponent used for scaling down (an integer in [0, 18]).
+#!   - y: The provided quotient (Miden native amount) as a Felt interpreted as an unsigned u64.
+#!
+#! Panics if:
+#! - x does not fit into 128 bits (x4..x7 are not all zero)
+#! - scale_exp > 18 (asserted in pow10 via scale_native_amount_to_u256)
+#! - y exceeds the max fungible token amount
+#! - x < y * 10^scale_exp (underflow)
+#! - z does not fit in 64 bits
+#! - (z1, z0) >= 10^scale_exp (remainder too large)
+pub proc verify_u256_to_native_amount_conversion
+
+    # reverse limbs and byte endianness
+    exec.reverse_limbs_and_change_byte_endianness
+    # => [x0, x1, x2, x3, x4, x5, x6, x7, scale_exp, y]
+
+    # Enforce x < 2^128
+    #   Constraint: x4 == x5 == x6 == x7 == 0
+    swapw
+    exec.word::eqz
+    assert.err=ERR_X_TOO_LARGE
+    # => [x0, x1, x2, x3, scale_exp, y]
+
+    # Delegate to verify_u128_to_native_amount_conversion for the remaining verification
+    exec.verify_u128_to_native_amount_conversion
     # => [y]
 end
