@@ -346,8 +346,3 @@ pub proc verify_u256_to_native_amount_conversion
     assert.err=ERR_REMAINDER_TOO_LARGE
     # => [y]
 end
-
-# TODO: Rm & use verify_u256_to_native_amount_conversion
-pub proc verify_u256_to_native_amount_conversion_stubbed
-    repeat.7 drop end
-end

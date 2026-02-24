@@ -40,6 +40,7 @@ const CLAIM_NOTE_DATA_MEM_ADDR = 712
 
 const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
 const OUTPUT_NOTE_TAG_MEM_ADDR = 574
+const OUTPUT_NOTE_FAUCET_AMOUNT = 575
 const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
@@ -57,8 +58,8 @@ const DESTINATION_ADDRESS_3 = 547
 const DESTINATION_ADDRESS_4 = 548
 
 # Memory locals in claim
-const CLAIM_PREFIX_MEM_LOC = 5
-const CLAIM_SUFFIX_MEM_LOC = 6
+const CLAIM_PREFIX_MEM_LOC = 8
+const CLAIM_SUFFIX_MEM_LOC = 9
 const CLAIM_AMOUNT_MEM_LOC_0 = 0
 const CLAIM_AMOUNT_MEM_LOC_1 = 4
 
@@ -93,6 +94,7 @@ pub proc get_origin_token_address
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
     # => [addr3, addr2, addr1, addr0]
+
     exec.word::reverse
     # => [addr0, addr1, addr2, addr3]
 
@@ -223,14 +225,14 @@ end
 # Inputs: []
 # Outputs: [U256[0], U256[1]]
 proc get_raw_claim_amount
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
 end
 
 # Inputs: [U256[0], U256[1]]
@@ -297,6 +299,12 @@ end
 #! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
 #!
+#! WARNING: This procedure currently assumes the claim amount fits within 128 bits (i.e. AMOUNT[1]
+#! is all zeros). This assumption holds for all practical token amounts but is not explicitly
+#! enforced here. See the TODO below.
+#!
+#! TODO: Add an explicit assertion that AMOUNT[1] is zero.
+#!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 @locals(8)
 proc build_p2id_output_note
@@ -329,10 +337,16 @@ proc build_p2id_output_note
     mem_load.OUTPUT_NOTE_TAG_MEM_ADDR
     # => [tag, RECIPIENT]
 
-    # TODO: implement scale down logic; stubbed out for now
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
-    exec.asset_conversion::verify_u256_to_native_amount_conversion_stubbed
+
+    mem_load.OUTPUT_NOTE_FAUCET_AMOUNT movdn.8
+    # => [AMOUNT[0], AMOUNT[1], native_amount, tag, note_type, RECIPIENT]
+
+    exec.get_scale movdn.8
+    # => [AMOUNT[0], AMOUNT[1], scale, native_amount, tag, note_type, RECIPIENT]
+
+    exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute
@@ -343,6 +357,9 @@ end
 #!
 #! This procedure validates the rollup exit root Merkle Proof via FPI against the agglayer bridge,
 #! and if validation passes, mints the asset and creates an output note for the recipient.
+#!
+#! WARNING: The EVM claim asset amount is currently assumed to fit within 128 bits. See the WARNING in
+#! build_p2id_output_note for details.
 #!
 #! TODO: Expand this description to cover the double-spend protection mechanism in detail.
 #! Double-spend can be prevented in two ways:
@@ -402,8 +419,8 @@ pub proc claim
     # VALIDATE CLAIM 
     mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
     # => [PROOF_DATA_KEY, pad(12)]
-    swapw
-    mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
+    
+    swapw mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
     # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     # Errors on invalid proof
@@ -413,8 +430,10 @@ pub proc claim
     # Create P2ID output note
     loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], pad(8)]
+    
     loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
     # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
+
     exec.build_p2id_output_note
     # => [pad(16)] 
 end
