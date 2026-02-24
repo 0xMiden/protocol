@@ -15,6 +15,25 @@ pub const ASSET_VALUE_MEMORY_OFFSET = 4
 # PROCEDURES
 # =================================================================================================
 
+#! Loads an asset key and value from memory given a pointer to the asset.
+#!
+#! Inputs: [ptr]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ptr is the memory address of the asset.
+#! - ASSET_KEY is the 4-element word representing the asset key.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc mem_load
+    # load asset value
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    # => [ASSET_VALUE, ptr]
+
+    # load asset key
+    padw movup.8 mem_loadw_be
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
 #! Returns the balance of the given fungible asset.
 #!
 #! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
