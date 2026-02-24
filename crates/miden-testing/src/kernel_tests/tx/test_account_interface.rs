@@ -24,7 +24,13 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, StarkField, Word};
-use miden_standards::note::{NoteConsumptionStatus, P2idNote, P2ideNote, StandardNote};
+use miden_standards::note::{
+    NoteConsumptionStatus,
+    P2idNote,
+    P2ideNote,
+    P2ideNoteStorage,
+    StandardNote,
+};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::auth::UnreachableAuth;
@@ -54,10 +60,12 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
 
     let p2ide_note = P2ideNote::create(
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into().unwrap(),
-        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        P2ideNoteStorage::new(
+            ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+            None,
+            None,
+        ),
         vec![FungibleAsset::mock(10)],
-        None,
-        None,
         NoteType::Public,
         Default::default(),
         &mut RpoRandomCoin::new(Word::from([2u32; 4])),
@@ -503,7 +511,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         .build_tx_context(
             TxContextInput::Account(account),
             &[],
-            &vec![
+            &[
                 p2ide_wrong_inputs_number.clone(),
                 p2ide_invalid_target_id.clone(),
                 p2ide_invalid_reclaim.clone(),
@@ -528,13 +536,12 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
             tx_args.clone(),
         )
         .await?;
-    assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), format!(
-                        "P2IDE note should have {} storage items, but {} was provided",
-                        StandardNote::P2IDE.expected_num_storage_items(),
-                        p2ide_wrong_inputs_number.recipient().storage().num_items()
-                    ));
-    });
+    assert_matches!(
+        consumability_info,
+        NoteConsumptionStatus::NeverConsumable(reason) => {
+            assert!(reason.to_string().contains("invalid P2IDE note storage"));
+        }
+    );
 
     // check the note with invalid target account ID
     // --------------------------------------------------------------------------------------------
@@ -547,7 +554,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "failed to create an account ID from the first two note storage items");
+        assert!(reason.to_string().contains("invalid P2IDE note storage"));
     });
 
     // check the note with a wrong target account ID (target is neither the sender nor the receiver)
@@ -575,7 +582,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "reclaim block height should be a u32");
+        assert!(reason.to_string().contains("invalid P2IDE note storage"));
     });
 
     // check the note with an invalid timelock height
@@ -589,7 +596,7 @@ async fn test_check_note_consumability_static_analysis_invalid_inputs() -> anyho
         )
         .await?;
     assert_matches!(consumability_info, NoteConsumptionStatus::NeverConsumable(reason) => {
-        assert_eq!(reason.to_string(), "timelock block height should be a u32");
+      assert!(reason.to_string().contains("invalid P2IDE note storage"));
     });
 
     Ok(())

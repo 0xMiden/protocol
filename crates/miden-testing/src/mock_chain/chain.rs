@@ -721,7 +721,7 @@ impl MockChain {
         let account = self.committed_account(account_id)?.clone();
 
         let account_witness = self.account_tree().open(account_id);
-        assert_eq!(account_witness.state_commitment(), account.commitment());
+        assert_eq!(account_witness.state_commitment(), account.to_commitment());
 
         Ok((account, account_witness))
     }
@@ -1214,7 +1214,7 @@ mod tests {
 
         assert!(tx.final_account().nonce().as_int() > 0);
         assert_eq!(
-            tx.final_account().commitment(),
+            tx.final_account().to_commitment(),
             mock_chain.account_tree.open(account_id).state_commitment()
         );
 

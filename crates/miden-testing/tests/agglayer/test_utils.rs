@@ -29,8 +29,14 @@ use serde::Deserialize;
 
 /// Claim asset test vectors JSON — contains both LeafData and ProofData from a real claimAsset
 /// transaction.
-const CLAIM_ASSET_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors.json");
+const CLAIM_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_real_tx.json"
+);
+
+/// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
+const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
+);
 
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =
@@ -224,6 +230,12 @@ pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
         .expect("failed to parse claim asset vectors JSON")
 });
 
+/// Lazily parsed bridge asset test vector from the JSON file (locally simulated L1 transaction).
+pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
+        .expect("failed to parse bridge asset vectors JSON")
+});
+
 /// Lazily parsed Merkle proof vectors from the JSON file.
 pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
     LazyLock::new(|| {
@@ -245,15 +257,27 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Returns real claim data from the claim_asset_vectors.json file.
-///
-/// Returns a tuple of (ProofData, LeafData) parsed from the real on-chain claim transaction.
-pub fn real_claim_data() -> (ProofData, LeafData, ExitRoot) {
-    let vector = &*CLAIM_ASSET_VECTOR;
-    let ger = ExitRoot::new(
-        hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
-    );
-    (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+/// Identifies the source of claim data used in bridge-in tests.
+#[derive(Debug, Clone, Copy)]
+pub enum ClaimDataSource {
+    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
+    Real,
+    /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
+    Simulated,
+}
+
+impl ClaimDataSource {
+    /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+        let vector = match self {
+            ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
+            ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
+        };
+        let ger = ExitRoot::new(
+            hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
+        );
+        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+    }
 }
 
 /// Execute a program with a default host and optional advice inputs.

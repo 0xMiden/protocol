@@ -228,14 +228,14 @@ end
 # Inputs: []
 # Outputs: [U256[0], U256[1]]
 proc get_raw_claim_amount
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
 end
 
 # Inputs: [U256[0], U256[1]]
@@ -302,6 +302,12 @@ end
 #! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
 #!
+#! WARNING: This procedure currently assumes the claim amount fits within 128 bits (i.e. AMOUNT[1]
+#! is all zeros). This assumption holds for all practical token amounts but is not explicitly
+#! enforced here. See the TODO below.
+#!
+#! TODO: Add an explicit assertion that AMOUNT[1] is zero.
+#!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
 @locals(8)
 proc build_p2id_output_note
@@ -343,10 +349,6 @@ proc build_p2id_output_note
     exec.get_scale movdn.8
     # => [AMOUNT[0], AMOUNT[1], scale, native_amount, tag, note_type, RECIPIENT]
 
-    # TODO: why do we need to reverse and swap here?
-    exec.word::reverse swapw
-    # => []
-
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [amount, tag, note_type, RECIPIENT]
 
@@ -358,6 +360,9 @@ end
 #!
 #! This procedure validates the rollup exit root Merkle Proof via FPI against the agglayer bridge,
 #! and if validation passes, mints the asset and creates an output note for the recipient.
+#!
+#! WARNING: The EVM claim asset amount is currently assumed to fit within 128 bits. See the WARNING in
+#! build_p2id_output_note for details.
 #!
 #! TODO: Expand this description to cover the double-spend protection mechanism in detail.
 #! Double-spend can be prevented in two ways:

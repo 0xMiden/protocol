@@ -13,19 +13,18 @@ import "@agglayer/v2/lib/DepositContractV2.sol";
  *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=fixed random value,
  *         metadataHash=0), parametrised by amount (i+1) and deterministic per-leaf
  *         destination network/address values derived from a fixed seed.
- * 
+ *
  * Run with: forge test -vv --match-contract MMRTestVectors
- * 
+ *
  * The output can be compared against the Rust KeccakMmrFrontier32 implementation
  * in crates/miden-testing/tests/agglayer/mmr_frontier.rs
  */
 contract MMRTestVectors is Test, DepositContractV2 {
-
     // Constants matching bridge_out.masm hardcoded values
-    uint8  constant LEAF_TYPE            = 0;
-    uint32 constant ORIGIN_NETWORK       = 64;
-    address constant ORIGIN_TOKEN_ADDR   = 0x7a6fC3e8b57c6D1924F1A9d0E2b3c4D5e6F70891;
-    bytes32 constant METADATA_HASH       = bytes32(0);
+    uint8 constant LEAF_TYPE = 0;
+    uint32 constant ORIGIN_NETWORK = 64;
+    address constant ORIGIN_TOKEN_ADDR = 0x7a6fC3e8b57c6D1924F1A9d0E2b3c4D5e6F70891;
+    bytes32 constant METADATA_HASH = bytes32(0);
 
     // Fixed seed for deterministic "random" destination vectors.
     // Keeping this constant ensures everyone regenerates the exact same JSON vectors.
@@ -35,19 +34,13 @@ contract MMRTestVectors is Test, DepositContractV2 {
      * @notice Builds a leaf hash identical to what bridge_out.masm would produce for the
      *         given amount.
      */
-    function _createLeaf(
-        uint256 amount,
-        uint32 destinationNetwork,
-        address destinationAddress
-    ) internal pure returns (bytes32) {
+    function _createLeaf(uint256 amount, uint32 destinationNetwork, address destinationAddress)
+        internal
+        pure
+        returns (bytes32)
+    {
         return getLeafValue(
-            LEAF_TYPE,
-            ORIGIN_NETWORK,
-            ORIGIN_TOKEN_ADDR,
-            destinationNetwork,
-            destinationAddress,
-            amount,
-            METADATA_HASH
+            LEAF_TYPE, ORIGIN_NETWORK, ORIGIN_TOKEN_ADDR, destinationNetwork, destinationAddress, amount, METADATA_HASH
         );
     }
 
@@ -68,7 +61,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
      */
     function test_generateCanonicalZeros() public {
         bytes32[] memory zeros = new bytes32[](32);
-        
+
         bytes32 z = bytes32(0);
         for (uint256 i = 0; i < 32; i++) {
             zeros[i] = z;
@@ -77,13 +70,13 @@ contract MMRTestVectors is Test, DepositContractV2 {
 
         // Foundry serializes bytes32[] to a JSON array automatically
         string memory json = vm.serializeBytes32("root", "canonical_zeros", zeros);
-        
+
         // Save to file
         string memory outputPath = "test-vectors/canonical_zeros.json";
         vm.writeJson(json, outputPath);
         console.log("Saved canonical zeros to:", outputPath);
     }
-    
+
     /**
      * @notice Generates MMR frontier vectors (leaf-root pairs) and saves to JSON file.
      *         Each leaf is created via _createLeaf(i+1, network[i], address[i]) so that:
