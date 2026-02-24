@@ -24,8 +24,8 @@ pub use backend::AccountTreeBackend;
 // These module-level functions provide conversions between AccountIds and SMT keys.
 // They avoid the need for awkward syntax like account_id_to_smt_key().
 
-const KEY_PREFIX_IDX: usize = 3;
 const KEY_SUFFIX_IDX: usize = 2;
+const KEY_PREFIX_IDX: usize = 3;
 
 /// Converts an [`AccountId`] to an SMT key for use in account trees.
 ///
@@ -59,8 +59,8 @@ pub fn account_id_to_smt_index(account_id: AccountId) -> LeafIndex<SMT_DEPTH> {
 /// The sparse merkle tree of all accounts in the blockchain.
 ///
 /// The key is the [`AccountId`] while the value is the current state commitment of the account,
-/// i.e. [`Account::commitment`](crate::account::Account::commitment). If the account is new, then
-/// the commitment is the [`EMPTY_WORD`](crate::EMPTY_WORD).
+/// i.e. [`Account::to_commitment`](crate::account::Account::to_commitment). If the account is new,
+/// then the commitment is the [`EMPTY_WORD`](crate::EMPTY_WORD).
 ///
 /// Each account ID occupies exactly one leaf in the tree, which is identified by its
 /// [`AccountId::prefix`]. In other words, account ID prefixes are unique in the blockchain.

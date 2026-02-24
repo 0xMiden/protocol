@@ -30,7 +30,7 @@ async fn test_scale_up_helper(
     let script_code = format!(
         "
         use miden::core::sys
-        use miden::agglayer::asset_conversion
+        use miden::agglayer::common::asset_conversion
         
         begin
             push.{}.{}
@@ -102,7 +102,7 @@ async fn test_scale_up_exceeds_max_scale() {
     // scale_exp = 19 should fail
     let script_code = "
         use miden::core::sys
-        use miden::agglayer::asset_conversion
+        use miden::agglayer::common::asset_conversion
         
         begin
             push.19.1
@@ -124,7 +124,7 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
     format!(
         r#"
         use miden::core::sys
-        use miden::agglayer::asset_conversion
+        use miden::agglayer::common::asset_conversion
         
         begin
             push.{}.{}.{}.{}.{}.{}.{}.{}.{}.{}
@@ -314,7 +314,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     let script_code = format!(
         r#"
         use miden::core::sys
-        use miden::agglayer::asset_conversion
+        use miden::agglayer::common::asset_conversion
         
         begin
             # Push y (expected quotient)

@@ -2,6 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::errors::{ERR_B2AGG_TARGET_ACCOUNT_MISMATCH, ERR_FAUCET_NOT_REGISTERED};
 use miden_agglayer::{
+    AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
     EthAddressFormat,
@@ -11,16 +12,16 @@ use miden_agglayer::{
 };
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
-    StorageSlotName,
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::note::{NoteAssets, NoteScript, NoteTag, NoteType};
+use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::OutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
@@ -32,26 +33,24 @@ use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
 /// Reads the Local Exit Root (double-word) from the bridge account's storage.
 ///
 /// The Local Exit Root is stored in two dedicated value slots:
-/// - `"miden::agglayer::let::root_lo"` — low word of the root
-/// - `"miden::agglayer::let::root_hi"` — high word of the root
+/// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
+/// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
 ///
 /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
 /// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
 /// reverse of their storage order). For an empty/uninitialized tree, all elements are
 /// zeros.
 fn read_local_exit_root(account: &Account) -> Vec<Felt> {
-    let root_lo_slot =
-        StorageSlotName::new("miden::agglayer::let::root_lo").expect("slot name should be valid");
-    let root_hi_slot =
-        StorageSlotName::new("miden::agglayer::let::root_hi").expect("slot name should be valid");
+    let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
+    let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
 
     let root_lo = account
         .storage()
-        .get_item(&root_lo_slot)
+        .get_item(root_lo_slot)
         .expect("should be able to read LET root lo");
     let root_hi = account
         .storage()
-        .get_item(&root_hi_slot)
+        .get_item(root_hi_slot)
         .expect("should be able to read LET root hi");
 
     let mut root = Vec::with_capacity(8);
@@ -61,11 +60,10 @@ fn read_local_exit_root(account: &Account) -> Vec<Felt> {
 }
 
 fn read_let_num_leaves(account: &Account) -> u64 {
-    let num_leaves_slot = StorageSlotName::new("miden::agglayer::let::num_leaves")
-        .expect("slot name should be valid");
+    let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
     let value = account
         .storage()
-        .get_item(&num_leaves_slot)
+        .get_item(num_leaves_slot)
         .expect("should be able to read LET num leaves");
     value.to_vec()[0].as_int()
 }
@@ -103,7 +101,20 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
 
     let mut builder = MockChain::builder();
-    let mut bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    let mut bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     let expected_amounts = vectors
@@ -132,14 +143,10 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     );
     builder.add_account(faucet.clone())?;
 
-    // CREATE SENDER ACCOUNT
-    // --------------------------------------------------------------------------------------------
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-
-    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge
+    // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
-        sender_account.id(),
+        bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
     )?;
@@ -219,10 +226,13 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             NoteType::Public,
             "BURN note should be public"
         );
+        let attachment = burn_note.metadata().attachment();
+        let network_target = miden_standards::note::NetworkAccountTarget::try_from(attachment)
+            .expect("BURN note attachment should be a valid NetworkAccountTarget");
         assert_eq!(
-            burn_note.metadata().tag(),
-            NoteTag::with_account_target(faucet.id()),
-            "BURN note should have the correct tag"
+            network_target.target_id(),
+            faucet.id(),
+            "BURN note attachment should target the faucet"
         );
         assert_eq!(
             burn_note.recipient().script().root(),
@@ -298,9 +308,21 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
@@ -326,7 +348,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
+        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
 
     let b2agg_note = B2AggNote::create(
         1u32, // destination_network
@@ -384,12 +406,25 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
     // Create a bridge account (includes a `bridge_out` component)
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account that will create and consume the B2AGG note
-    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let mut user_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
@@ -399,7 +434,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
+        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
 
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
@@ -482,15 +517,32 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let faucet =
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
+    // Create a bridge admin account
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // Create a GER manager account (not used in this test, but distinct from admin)
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
     // Create a bridge account as the designated TARGET for the B2AGG note
-    let bridge_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // Create a "malicious" account with a bridge interface
-    let malicious_account = create_existing_bridge_account(builder.rng_mut().draw_word());
+    let malicious_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
     builder.add_account(malicious_account.clone())?;
 
     // CREATE B2AGG NOTE
@@ -501,7 +553,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("Valid Ethereum address");
+        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
 
     let assets = NoteAssets::new(vec![bridge_asset])?;
 

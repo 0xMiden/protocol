@@ -65,7 +65,7 @@ impl LocalTransactionProver {
         let builder = ProvenTransactionBuilder::new(
             account.id(),
             account.initial_commitment(),
-            tx_outputs.account.commitment(),
+            tx_outputs.account.to_commitment(),
             pre_fee_delta_commitment,
             ref_block_num,
             ref_block_commitment,

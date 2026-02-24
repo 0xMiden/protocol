@@ -82,8 +82,8 @@ pub const TX_GET_BLOCK_NUMBER_OFFSET=44
 pub const TX_GET_BLOCK_TIMESTAMP_OFFSET=45
 
 # foreign context
-pub const TX_START_FOREIGN_CONTEXT_OFFSET=46
-pub const TX_END_FOREIGN_CONTEXT_OFFSET=47
+pub const TX_PREPARE_FPI_OFFSET = 46
+pub const TX_EXEC_FOREIGN_PROC_OFFSET = 47
 
 # expiration data
 pub const TX_GET_EXPIRATION_DELTA_OFFSET=48               # accessor

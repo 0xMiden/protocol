@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
@@ -88,8 +89,8 @@ async fn test_create_note() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -346,8 +347,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([2u32, 0, 0, 0]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(2u32),
         "The test creates two notes",
     );
     assert_eq!(
@@ -660,8 +661,8 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -705,8 +706,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .expect("asset is invalid"),
     );
 
-    let account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth, [fungible_asset_0, fungible_asset_1])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [fungible_asset_0, fungible_asset_1],
+    )?;
 
     let mock_chain = builder.build()?;
 
@@ -827,8 +830,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(2000)])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [FungibleAsset::mock(2000)],
+    )?;
 
     let mock_chain = builder.build()?;
 

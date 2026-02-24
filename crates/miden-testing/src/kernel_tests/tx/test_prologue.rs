@@ -7,6 +7,7 @@ use miden_processor::{AdviceInputs, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountHeader,
     AccountProcedureRoot,
     AccountStorageMode,
     AccountType,
@@ -26,6 +27,8 @@ use miden_protocol::transaction::memory::{
     BLOCK_NUMBER_IDX,
     CHAIN_COMMITMENT_PTR,
     FEE_PARAMETERS_PTR,
+    GLOBAL_ACCOUNT_ID_PREFIX_PTR,
+    GLOBAL_ACCOUNT_ID_SUFFIX_PTR,
     INIT_ACCT_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     INIT_NATIVE_ACCT_VAULT_ROOT_PTR,
@@ -47,7 +50,6 @@ use miden_protocol::transaction::memory::{
     KERNEL_PROCEDURES_PTR,
     NATIVE_ACCT_CODE_COMMITMENT_PTR,
     NATIVE_ACCT_ID_AND_NONCE_PTR,
-    NATIVE_ACCT_ID_PTR,
     NATIVE_ACCT_PROCEDURES_SECTION_PTR,
     NATIVE_ACCT_STORAGE_COMMITMENT_PTR,
     NATIVE_ACCT_STORAGE_SLOTS_SECTION_PTR,
@@ -70,7 +72,12 @@ use miden_protocol::transaction::memory::{
     VALIDATOR_KEY_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
-use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
+use miden_protocol::transaction::{
+    ExecutedTransaction,
+    TransactionAdviceInputs,
+    TransactionArgs,
+    TransactionKernel,
+};
 use miden_protocol::{EMPTY_WORD, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -161,19 +168,19 @@ fn global_input_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[0],
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_SUFFIX_PTR),
         inputs.account().id().suffix(),
-        "The account ID prefix should be stored at the ACCT_ID_PTR[0]"
+        "The account ID prefix should be stored at the GLOBAL_ACCOUNT_ID_SUFFIX_PTR"
     );
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_PTR)[1],
+        exec_output.get_kernel_mem_element(GLOBAL_ACCOUNT_ID_PREFIX_PTR),
         inputs.account().id().prefix().as_felt(),
-        "The account ID suffix should be stored at the ACCT_ID_PTR[1]"
+        "The account ID suffix should be stored at the GLOBAL_ACCOUNT_ID_PREFIX_PTR"
     );
 
     assert_eq!(
         exec_output.get_kernel_mem_word(INIT_ACCT_COMMITMENT_PTR),
-        inputs.account().commitment(),
+        inputs.account().to_commitment(),
         "The account commitment should be stored at the INIT_ACCT_COMMITMENT_PTR"
     );
 
@@ -360,15 +367,11 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
 }
 
 fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
+    let header = AccountHeader::from(inputs.account());
     assert_eq!(
-        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR),
-        Word::new([
-            inputs.account().id().suffix(),
-            inputs.account().id().prefix().as_felt(),
-            ZERO,
-            inputs.account().nonce()
-        ]),
-        "The account ID should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR[0]"
+        exec_output.get_kernel_mem_word(NATIVE_ACCT_ID_AND_NONCE_PTR).as_elements(),
+        &header.to_elements()[0..4],
+        "The account ID and nonce should be stored at NATIVE_ACCT_ID_AND_NONCE_PTR"
     );
 
     assert_eq!(
@@ -629,9 +632,8 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
-    let account_seed_key = [account.id().suffix(), account.id().prefix().as_felt(), ZERO, ZERO];
-    let adv_inputs =
-        AdviceInputs::default().with_map([(Word::from(account_seed_key), vec![ZERO; WORD_SIZE])]);
+    let account_seed_key = TransactionAdviceInputs::account_id_map_key(account.id());
+    let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
     let tx_context = TransactionContextBuilder::new(account)
         .tx_inputs(tx_inputs)

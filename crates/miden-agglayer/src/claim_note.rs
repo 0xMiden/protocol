@@ -181,12 +181,14 @@ pub struct OutputNoteData {
     pub target_faucet_account_id: AccountId,
     /// P2ID output note tag
     pub output_note_tag: NoteTag,
+    /// Miden claim amount (scaled-down token amount as Felt)
+    pub miden_claim_amount: Felt,
 }
 
 impl OutputNoteData {
     /// Converts the output note data to a vector of field elements for note storage
     pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + padding)
+        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8; // 4 + 2 + 1 + 1 (serial_num + account_id + tag + miden_claim_amount)
         let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
 
         // P2ID note serial number (4 felts as Word)
@@ -199,8 +201,8 @@ impl OutputNoteData {
         // Output note tag
         elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
 
-        // Padding
-        elements.extend(vec![Felt::ZERO; 1]);
+        // Miden claim amount
+        elements.push(self.miden_claim_amount);
 
         elements
     }
