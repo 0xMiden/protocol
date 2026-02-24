@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "@agglayer/v2/lib/DepositContractV2.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
+import "./DepositContractTestHelpers.sol";
 
 /**
  * @title ClaimAssetTestVectorsLocalTx
@@ -15,7 +16,7 @@ import "@agglayer/lib/GlobalExitRootLib.sol";
  *
  * The output can be used to verify Miden's ability to process L1 bridge transactions.
  */
-contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2 {
+contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2, DepositContractTestHelpers {
     /**
      * @notice Generates bridge asset test vectors with VALID Merkle proofs.
      *         Simulates a user calling bridgeAsset() to bridge tokens from L1 to Miden.
@@ -130,45 +131,6 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2 {
             console.log("Output file:", outputPath);
             console.log("Leaf index:", leafIndex);
             console.log("Deposit count:", depositCountValue);
-        }
-    }
-
-    /**
-     * @notice Computes the canonical zero hashes for the Sparse Merkle Tree.
-     * @dev Each level i has zero hash: keccak256(zero[i-1], zero[i-1])
-     * @return canonicalZeros Array of 32 zero hashes, one per tree level
-     */
-    function _computeCanonicalZeros() internal pure returns (bytes32[32] memory canonicalZeros) {
-        bytes32 current = bytes32(0);
-        for (uint256 i = 0; i < 32; i++) {
-            canonicalZeros[i] = current;
-            current = keccak256(abi.encodePacked(current, current));
-        }
-    }
-
-    /**
-     * @notice Generates the SMT proof for the local exit root.
-     * @dev For each level i:
-     *      - If bit i of leafIndex is 1: use _branch[i] (sibling on left)
-     *      - If bit i of leafIndex is 0: use canonicalZeros[i] (sibling on right)
-     * @param leafIndex The 0-indexed position of the leaf in the tree
-     * @param canonicalZeros The precomputed canonical zero hashes
-     * @return smtProofLocal The 32-element Merkle proof array
-     */
-    function _generateLocalProof(uint256 leafIndex, bytes32[32] memory canonicalZeros)
-        internal
-        view
-        returns (bytes32[32] memory smtProofLocal)
-    {
-        for (uint256 i = 0; i < 32; i++) {
-            // Check if bit i of leafIndex is set
-            if ((leafIndex >> i) & 1 == 1) {
-                // Bit is 1: sibling is on the left, use _branch[i]
-                smtProofLocal[i] = _branch[i];
-            } else {
-                // Bit is 0: sibling is on the right (or doesn't exist), use zero hash
-                smtProofLocal[i] = canonicalZeros[i];
-            }
         }
     }
 
