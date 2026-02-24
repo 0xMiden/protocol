@@ -257,7 +257,7 @@ async fn test_multisig_2_of_4_all_signer_combinations(
 
         let tx_summary = match tx_context_init.execute().await.unwrap_err() {
             TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => panic!("expected abort with tx effects: {error:?}"),
+            error => anyhow::bail!("expected abort with tx effects: {error}"),
         };
 
         // Get signatures from the specific combination of signers

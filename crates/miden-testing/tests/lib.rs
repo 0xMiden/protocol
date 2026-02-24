@@ -2,8 +2,7 @@ extern crate alloc;
 
 // TODO(bele): Deactivated - to be upgraded later.
 // mod agglayer;
-// TODO(bele): Deactivated - to be upgraded after PR 2390 is merged.
-// mod auth;
+mod auth;
 mod scripts;
 mod wallet;
 

@@ -224,7 +224,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: Word)
     # => [MULTISIG_CONFIG, pad(12)]
 
     # store new_num_of_approvers for later
-    dup.2 loc_store.NEW_NUM_OF_APPROVERS_LOC
+    dup.1 loc_store.NEW_NUM_OF_APPROVERS_LOC
     # => [MULTISIG_CONFIG, pad(12)]
 
     dup dup.2
@@ -250,7 +250,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: Word)
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
     # store init_num_of_approvers for later
-    drop drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop
+    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
     # => [pad(12)]
 
     loc_load.NEW_NUM_OF_APPROVERS_LOC
@@ -368,7 +368,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
             exec.active_account::get_initial_map_item
             # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
 
-            swap.3 drop drop drop dup
+            swap.3 drop drop drop dup dup.3
             # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
 
             u32assert2.err="transaction threshold or procedure threshold are not u32"
