@@ -54,6 +54,11 @@ pub const CANONICAL_ZEROS_JSON: &str =
 pub const MMR_FRONTIER_VECTORS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
 
+/// Claimed global index hash chain JSON from the Foundry-generated file.
+pub const CLAIMED_GLOBAL_INDEX_HASH_CHAIN_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claimed_global_index_hash_chain.json"
+);
+
 // SERDE HELPERS
 // ================================================================================================
 
@@ -185,6 +190,14 @@ pub struct ClaimAssetVector {
     pub leaf: LeafValueVector,
 }
 
+/// Deserialized claimed global index hash chain data from Solidity-generated JSON.
+#[derive(Debug, Deserialize)]
+pub struct CGIChainHashTestData {
+    pub global_index: String,
+    pub leaf: String,
+    pub cgi_chain_hash: String,
+}
+
 /// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol.
 /// Uses parallel arrays for leaves and roots. For each element from leaves/roots there are 32
 /// elements from merkle_paths, which represent the merkle path for that leaf + root.
@@ -235,6 +248,13 @@ pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(
     serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
         .expect("failed to parse bridge asset vectors JSON")
 });
+
+/// Lazily parsed claimed global index hash chain data from the JSON file.
+pub static CLAIMED_GLOBAL_INDEX_HASH_CHAIN: LazyLock<CGIChainHashTestData> =
+    LazyLock::new(|| {
+        serde_json::from_str(CLAIMED_GLOBAL_INDEX_HASH_CHAIN_JSON)
+            .expect("failed to parse claimed global index hash chain vector JSON")
+    });
 
 /// Lazily parsed Merkle proof vectors from the JSON file.
 pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
