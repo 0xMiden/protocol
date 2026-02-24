@@ -282,7 +282,7 @@ pub fn create_basic_fungible_faucet(
     let distribute_proc_root = BasicFungibleFaucet::distribute_digest();
 
     let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => AuthSingleSigAcl::new(
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
             pub_key,
             auth_scheme,
             AuthSingleSigAclConfig::new()
@@ -302,11 +302,7 @@ pub fn create_basic_fungible_faucet(
                     .into(),
             ));
         },
-        AuthMethod::Multisig {
-            threshold: _,
-            pub_keys: _,
-            auth_schemes: _,
-        } => {
+        AuthMethod::Multisig { .. } => {
             return Err(FungibleFaucetError::UnsupportedAuthMethod(
                 "basic fungible faucets do not support Multisig authentication".into(),
             ));
@@ -351,8 +347,7 @@ mod tests {
     fn faucet_contract_creation() {
         let pub_key_word = Word::new([ONE; 4]);
         let auth_method: AuthMethod = AuthMethod::SingleSig {
-            pub_key: pub_key_word.into(),
-            auth_scheme: AuthScheme::Falcon512Rpo,
+            approver: (pub_key_word.into(), AuthScheme::Falcon512Rpo),
         };
 
         // we need to use an initial seed to create the wallet account

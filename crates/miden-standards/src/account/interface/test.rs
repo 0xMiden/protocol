@@ -666,7 +666,7 @@ fn test_get_auth_scheme_ecdsa_k256_keccak() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*auth_scheme, auth::AuthScheme::EcdsaK256Keccak);
         },
@@ -697,7 +697,7 @@ fn test_get_auth_scheme_falcon512_rpo() {
     assert_eq!(auth_methods.len(), 1);
     let auth_method = &auth_methods[0];
     match auth_method {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
         },
@@ -764,7 +764,7 @@ fn test_account_interface_from_account_uses_get_auth_scheme() {
     assert_eq!(wallet_account_interface.auth().len(), 1);
 
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             let expected_pub_key = PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32]));
             assert_eq!(*pub_key, expected_pub_key);
             assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
@@ -805,7 +805,7 @@ fn test_account_interface_get_auth_scheme() {
     // Test that auth() method provides the authentication schemes
     assert_eq!(wallet_account_interface.auth().len(), 1);
     match &wallet_account_interface.auth()[0] {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             assert_eq!(*pub_key, PublicKeyCommitment::from(Word::from([0, 1, 2, 3u32])));
             assert_eq!(*auth_scheme, auth::AuthScheme::Falcon512Rpo);
         },

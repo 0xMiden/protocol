@@ -123,11 +123,10 @@ pub fn create_basic_wallet(
     }
 
     let auth_component: AccountComponent = match auth_method {
-        AuthMethod::SingleSig { pub_key, auth_scheme } => {
+        AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => {
             AuthSingleSig::new(pub_key, auth_scheme).into()
         },
-        AuthMethod::Multisig { threshold, pub_keys, auth_schemes } => {
-            let approvers = pub_keys.into_iter().zip(auth_schemes).collect();
+        AuthMethod::Multisig { threshold, approvers } => {
             let config = AuthMultisigConfig::new(approvers, threshold)
                 .and_then(|cfg| {
                     cfg.with_proc_thresholds(vec![(BasicWallet::receive_asset_digest(), 1)])
@@ -176,7 +175,7 @@ mod tests {
         let auth_scheme = auth::AuthScheme::Falcon512Rpo;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { pub_key, auth_scheme },
+            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         );
@@ -192,7 +191,7 @@ mod tests {
         let auth_scheme = auth::AuthScheme::EcdsaK256Keccak;
         let wallet = create_basic_wallet(
             [1; 32],
-            AuthMethod::SingleSig { pub_key, auth_scheme },
+            AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Public,
         )

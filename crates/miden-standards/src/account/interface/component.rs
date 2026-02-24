@@ -275,7 +275,7 @@ fn extract_singlesig_auth_method(
     let auth_scheme =
         AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
 
-    AuthMethod::SingleSig { pub_key, auth_scheme }
+    AuthMethod::SingleSig { approver: (pub_key, auth_scheme) }
 }
 
 /// Extracts authentication method from a multisig component.
@@ -294,8 +294,7 @@ fn extract_multisig_auth_method(
     let threshold = config[0].as_int() as u32;
     let num_approvers = config[1].as_int() as u8;
 
-    let mut pub_keys = Vec::new();
-    let mut auth_schemes: Vec<AuthScheme> = Vec::new();
+    let mut approvers = Vec::new();
 
     // Read each public key from the map
     for key_index in 0..num_approvers {
@@ -312,7 +311,6 @@ fn extract_multisig_auth_method(
             });
 
         let pub_key = PublicKeyCommitment::from(pub_key_word);
-        pub_keys.push(pub_key);
 
         let scheme_word = storage
             .get_map_item(approver_scheme_ids_slot, map_key)
@@ -327,8 +325,8 @@ fn extract_multisig_auth_method(
         let scheme_id = scheme_word[0].as_int() as u8;
         let auth_scheme =
             AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
-        auth_schemes.push(auth_scheme);
+        approvers.push((pub_key, auth_scheme));
     }
 
-    AuthMethod::Multisig { threshold, pub_keys, auth_schemes }
+    AuthMethod::Multisig { threshold, approvers }
 }

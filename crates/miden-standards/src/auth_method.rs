@@ -12,16 +12,14 @@ pub enum AuthMethod {
     NoAuth,
     /// A single-key authentication method which relies on either ECDSA or Falcon512Rpo signatures.
     SingleSig {
-        pub_key: PublicKeyCommitment,
-        auth_scheme: AuthScheme,
+        approver: (PublicKeyCommitment, AuthScheme),
     },
     /// A multi-signature authentication method using either ECDSA or Falcon512Rpo signatures.
     ///
     /// Requires a threshold number of signatures from the provided public keys.
     Multisig {
         threshold: u32,
-        pub_keys: Vec<PublicKeyCommitment>,
-        auth_schemes: Vec<AuthScheme>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     },
     /// A non-standard authentication method.
     Unknown,
@@ -34,8 +32,10 @@ impl AuthMethod {
     pub fn get_public_key_commitments(&self) -> Vec<PublicKeyCommitment> {
         match self {
             AuthMethod::NoAuth => Vec::new(),
-            AuthMethod::SingleSig { pub_key, .. } => vec![*pub_key],
-            AuthMethod::Multisig { pub_keys, .. } => pub_keys.clone(),
+            AuthMethod::SingleSig { approver: (pub_key, _) } => vec![*pub_key],
+            AuthMethod::Multisig { approvers, .. } => {
+                approvers.iter().map(|(pub_key, _)| *pub_key).collect()
+            },
             AuthMethod::Unknown => Vec::new(),
         }
     }

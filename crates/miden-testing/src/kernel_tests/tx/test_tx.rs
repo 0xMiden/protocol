@@ -541,7 +541,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { pub_key, .. } => pub_key,
+        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Falcon512RpoMultisig")
@@ -600,7 +600,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthMethod::SingleSig { pub_key, .. } => pub_key,
+        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
             panic!("Expected SingleSig auth scheme, got Multisig")
