@@ -187,16 +187,7 @@ pub proc burn
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    # pad stack to empty word (use dest_ptr as padding)
-    push.0 push.0 push.0
-    # => [EMPTY_WORD, pad(16)]
-
-    # load asset value
-    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-    # => [ASSET_VALUE, pad(16)]
-
-    # load asset key
-    padw push.ASSET_PTR mem_loadw_be
+    exec.asset::mem_load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
