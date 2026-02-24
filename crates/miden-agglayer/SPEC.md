@@ -6,7 +6,7 @@ Miden, covering contracts, note flows, storage, and encoding semantics.
 **Baseline:** Commit `be765b035`. All statements in sections 1–8 describe current
 implementation behaviour and are cross-checked against the test suite in
 `crates/miden-testing/tests/agglayer/`. Planned changes that diverge from the current
-implementation are isolated in section 9.
+implementation are isolated in section 8.
 
 **Conventions:**
 
@@ -17,7 +17,7 @@ implementation are isolated in section 9.
   which reverses the order: stack `[a, b, c, d]` = Word `[d, c, b, a]`.
 - Procedure input/output signatures use **stack notation** (top-first), matching the
   MASM doc comments.
-- `TODO (Future)` marks non-implemented design points; see section 9 for the full list.
+- `TODO (Future)` marks non-implemented design points; see section 8 for the full list.
 
 ---
 
@@ -119,6 +119,19 @@ Verifies a bridge-in claim:
 4. Extracts the leaf index from the global index (must be mainnet, rollup index = 0). (TODO: rollup indices are not processed yet [#2394](https://github.com/0xMiden/miden-base/issues/2394)).
 5. Verifies the Merkle proof: leaf value at `leaf_index` against `mainnet_exit_root`.
 
+#### Bridge Account Storage
+
+| Slot name | Slot type | Key encoding | Value encoding | Purpose |
+|-----------|-----------|-------------|----------------|---------|
+| `miden::agglayer::bridge::faucet_registry` | Map | `[0, 0, faucet_suffix, faucet_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
+| `miden::agglayer::bridge::ger` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
+| `miden::agglayer::let` | Map | `[h, 0, 0, 0]` → first word; `[h, 1, 0, 0]` → second word (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
+| `miden::agglayer::let::root_lo` | Value | — | `[root₀, root₁, root₂, root₃]` | LET root low word (Keccak-256 lower 16 bytes) |
+| `miden::agglayer::let::root_hi` | Value | — | `[root₄, root₅, root₆, root₇]` | LET root high word (Keccak-256 upper 16 bytes) |
+| `miden::agglayer::let::num_leaves` | Value | — | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
+
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`.
+
 ### 2.2 Faucet Account Component
 
 The faucet account has the `agglayer_faucet` component, which bundles the `agglayer_faucet.masm`,
@@ -169,5 +182,14 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `BURN` note on the faucet account |
 | **Panics** | Note context invalid; asset count wrong; faucet/supply checks fail |
+
+#### Faucet Account Storage
+
+| Slot name | Slot type | Value encoding | Purpose |
+|-----------|-----------|----------------|---------|
+| Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
+| `miden::agglayer::faucet` (TODO change name in [#2356](https://github.com/0xMiden/miden-base/issues/2356)) | Value | `[0, 0, bridge_suffix, bridge_prefix]` | Bridge account ID this faucet is paired with |
+| `miden::agglayer::faucet::conversion_info_1` | Value | `[addr₀, addr₁, addr₂, addr₃]` | Origin token address, first 4 u32 limbs |
+| `miden::agglayer::faucet::conversion_info_2` | Value | `[addr₄, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
 
 ---
