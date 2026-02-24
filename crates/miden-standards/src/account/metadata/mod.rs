@@ -158,11 +158,11 @@ fn compute_schema_commitment<'a>(
 mod tests {
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
-    use miden_protocol::account::auth::PublicKeyCommitment;
+    use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
     use miden_protocol::account::component::AccountComponentMetadata;
 
     use super::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
-    use crate::account::auth::{AuthEcdsaK256Keccak, NoAuth};
+    use crate::account::auth::{AuthSingleSig, NoAuth};
 
     #[test]
     fn storage_schema_commitment_is_order_independent() {
@@ -228,18 +228,22 @@ mod tests {
 
     #[test]
     fn build_with_schema_commitment_adds_schema_commitment_component() {
-        let auth_component = AuthEcdsaK256Keccak::new(PublicKeyCommitment::from(Word::empty()));
+        let auth_component = AuthSingleSig::new(
+            PublicKeyCommitment::from(Word::empty()),
+            AuthScheme::EcdsaK256Keccak,
+        );
 
         let account = AccountBuilder::new([1u8; 32])
             .with_auth_component(auth_component)
             .build_with_schema_commitment()
             .unwrap();
 
-        // The auth component has 1 slot (public key) and the schema commitment adds 1 more.
-        assert_eq!(account.storage().num_slots(), 2);
+        // The auth component has 2 slots (public key and scheme ID) and the schema commitment adds
+        // 1 more.
+        assert_eq!(account.storage().num_slots(), 3);
 
         // The auth component's public key slot should be accessible.
-        assert!(account.storage().get_item(AuthEcdsaK256Keccak::public_key_slot()).is_ok());
+        assert!(account.storage().get_item(AuthSingleSig::public_key_slot()).is_ok());
 
         // The schema commitment slot should be non-empty since we have a component with a schema.
         let slot_name = AccountSchemaCommitment::schema_commitment_slot();
