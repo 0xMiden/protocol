@@ -1,43 +1,69 @@
-# The MASM code of the Multi-Signature Falcon 512 RPO Authentication Component.
+# The MASM code of the Multi-Signature Authentication Component.
 #
-# See the `AuthFalcon512RpoMultisig` Rust type's documentation for more details.
+# See the `AuthMultisig` Rust type's documentation for more details.
 
 use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
+use miden::core::word
+
+# Local Memory Addresses
+const IS_SIGNER_FOUND_LOC=0
+const CURRENT_SIGNER_INDEX_LOC=1
+
+const NEW_NUM_OF_APPROVERS_LOC=0
+const INIT_NUM_OF_APPROVERS_LOC=1
+
+const DEFAULT_THRESHOLD_LOC=0
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # CONSTANTS
 # =================================================================================================
 
-# Storage Layout Constants
+# Storage Slots
 #
-# ┌───────────────────────────────┬──────────┬──────────────┬───────────────────┐
-# │ THRESHOLD & APPROVERS CONFIG  │ PUB KEYS │ EXECUTED TXS │  PROC THRESHOLDS  │
-# │           (slot)              │   (map)  │    (map)     │       (map)       │
-# ├───────────────────────────────┼──────────┼──────────────┼───────────────────┤
-# │              0                │    1     │      2       │         3         │
-# └───────────────────────────────┴──────────┴──────────────┴───────────────────┘
+# This authentication component uses named storage slots.
+# - THRESHOLD_CONFIG_SLOT:
+#   [default_threshold, num_approvers, 0, 0]
+#
+# - APPROVER_PUBLIC_KEYS_SLOT (map):
+#   APPROVER_MAP_KEY => APPROVER_PUBLIC_KEY
+#   where APPROVER_MAP_KEY = [key_index, 0, 0, 0]
+#
+# - APPROVER_SCHEME_ID_SLOT (map):
+#   APPROVER_MAP_KEY => [scheme_id, 0, 0, 0]
+#   where APPROVER_MAP_KEY = [key_index, 0, 0, 0]
+#
+# - EXECUTED_TXS_SLOT (map):
+#   TRANSACTION_MESSAGE => [is_executed, 0, 0, 0]
+#
+# - PROC_THRESHOLD_ROOTS_SLOT (map):
+#   PROC_ROOT => [proc_threshold, 0, 0, 0]
+
 
 # The slot in this component's storage layout where the default signature threshold and
 # number of approvers are stored as:
 # [default_threshold, num_approvers, 0, 0].
 # The threshold is guaranteed to be less than or equal to num_approvers.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::falcon512_rpo_multisig::threshold_config")
+const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
 
 # The slot in this component's storage layout where the public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
-const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::falcon512_rpo_multisig::approver_public_keys")
+const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
+
+# The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
 # The slot in this component's storage layout where executed transactions are stored.
 # Map entries: transaction_message => [is_executed, 0, 0, 0]
-const EXECUTED_TXS_SLOT = word("miden::standards::auth::falcon512_rpo_multisig::executed_transactions")
+const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
 
 # The slot in this component's storage layout where procedure thresholds are stored.
 # Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
-const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::falcon512_rpo_multisig::procedure_thresholds")
+const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]
@@ -50,6 +76,10 @@ const ERR_TX_ALREADY_EXECUTED = "failed to approve multisig transaction as it wa
 const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
+
+const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be u32"
+
+const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 
 #! Check if transaction has already been executed and add it to executed transactions for replay protection.
 #!
@@ -79,11 +109,11 @@ proc assert_new_tx(msg: BeWord)
     # => []
 end
 
-#! Remove old approver public keys from the approver public key mapping.
+#! Remove old approver public keys and the corresponding scheme ids 
+#! from the approver public key and scheme id mappings.
 #!
-#! This procedure cleans up the storage by removing public keys of approvers that are no longer
-#! part of the multisig configuration. This procedure assumes that init_num_of_approvers and
-#! new_num_of_approvers are u32 values.
+#! This procedure cleans up the storage by removing public keys and signature scheme ids of approvers 
+#! that are no longer part of the multisig configuration.
 #!
 #! Inputs: [init_num_of_approvers, new_num_of_approvers]
 #! Outputs: []
@@ -91,9 +121,14 @@ end
 #! Where:
 #! - init_num_of_approvers is the original number of approvers before the update
 #! - new_num_of_approvers is the new number of approvers after the update
-proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+#!
+#! Panics if:
+#! - init_num_of_approvers is not a u32 value.
+#! - new_num_of_approvers is not a u32 value.
+proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
     dup.1 dup.1
-    u32assert2 u32lt
+    u32assert2.err=ERR_APPROVER_COUNTS_NOT_U32
+    u32lt
     # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
 
     while.true
@@ -102,17 +137,31 @@ proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u3
         sub.1
         # => [i-1, new_num_of_approvers]
 
-        dup
-        # => [i-1, i-1, new_num_of_approvers]
-
-        push.0.0.0
-        # => [[0, 0, 0, i-1], i-1, new_num_of_approvers]
+        # clear scheme id at APPROVER_MAP_KEY(i-1)
+        dup exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
 
         padw swapw
-        # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
+        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_of_approvers]
+
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        # clear public key at APPROVER_MAP_KEY(i-1)
+        dup exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, new_num_of_approvers]
+
+        padw swapw
+        # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
@@ -126,27 +175,45 @@ proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u3
     end
 
     drop drop
-    # => []
 end
 
-#! Update threshold config and add / remove approvers
+#! Builds the storage map key for a signer index.
 #!
+#! Inputs: [key_index]
+#! Outputs: [APPROVER_MAP_KEY]
+proc create_approver_map_key(key_index: felt) -> BeWord
+    push.0.0.0
+    # => [APPROVER_MAP_KEY]
+end
+
+#! Update threshold config, add / remove approvers,
+#! and update the approver scheme ids
+#! 
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
 #!   Advice map: {
-#!     MULTISIG_CONFIG_HASH => [CONFIG, PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0]
+#!     MULTISIG_CONFIG_HASH => 
+#!     [ 
+#!       CONFIG, 
+#!       PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0, 
+#!       SCHEME_ID_N, SCHEME_ID_N-1, ..., SCHEME_ID_0 
+#!     ]
 #!   }
 #! Outputs:
 #!   Operand stack: []
 #!
 #! Where:
-#! - MULTISIG_CONFIG_HASH is the hash of the threshold and new public key vector
+#! - MULTISIG_CONFIG_HASH is the hash of the threshold, 
+#!   new public key vector, and the corresponding scheme identifiers
 #! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
 #! - PUB_KEY_i is the public key of the i-th signer
+#! - SCHEME_ID_i is the signature scheme id of the i-th signer
 #!
 #! Locals:
 #! 0: new_num_of_approvers
 #! 1: init_num_of_approvers
+#!
+#! Invocation: call
 @locals(2)
 pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     adv.push_mapval
@@ -156,7 +223,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # => [MULTISIG_CONFIG, pad(12)]
 
     # store new_num_of_approvers for later
-    dup.2 loc_store.0
+    dup.2 loc_store.NEW_NUM_OF_APPROVERS_LOC
     # => [MULTISIG_CONFIG, pad(12)]
 
     dup.3 dup.3
@@ -182,10 +249,10 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
     # store init_num_of_approvers for later
-    drop drop loc_store.1 drop
+    drop drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop
     # => [pad(12)]
 
-    loc_load.0
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers]
 
     dup neq.0
@@ -193,17 +260,34 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         sub.1
         # => [i-1, pad(12)]
 
-        dup push.0.0.0
-        # => [[0, 0, 0, i-1], i-1, pad(12)]
+        dup exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, pad(12)]
 
         padw adv_loadw
-        # => [PUB_KEY, [0, 0, 0, i-1], i-1, pad(12)]
+        # => [PUB_KEY, APPROVER_MAP_KEY, i-1, pad(12)]
 
         swapw
-        # => [[0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+        # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        # override OLD_VALUE with SCHEME_ID_WORD
+        adv_loadw
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        # validate the scheme id word is in a correct form
+        exec.auth::signature::assert_supported_scheme_word
+        # => [SCHEME_ID_WORD, i-1, pad(12)]
+
+        dup.4 exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -222,10 +306,10 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # compare initial vs current multisig config
 
     # load init_num_of_approvers & new_num_of_approvers
-    loc_load.0 loc_load.1
+    loc_load.NEW_NUM_OF_APPROVERS_LOC loc_load.INIT_NUM_OF_APPROVERS_LOC
     # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
 
-    exec.cleanup_pubkey_mapping
+    exec.cleanup_pubkey_and_scheme_id_mapping
     # => [pad(12)]
 end
 
@@ -245,7 +329,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
 
     # store default_threshold for later
-    loc_store.0
+    loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
     # 1. initialize transaction_threshold = 0
@@ -309,7 +393,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     drop
     # => [transaction_threshold]
 
-    loc_load.0
+    loc_load.DEFAULT_THRESHOLD_LOC
     # => [default_threshold, transaction_threshold]
 
     # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
@@ -320,7 +404,124 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
     # => [effective_transaction_threshold]
 end
 
-#! Authenticate a transaction using the Falcon signature scheme with multi-signature support.
+#! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
+#! Inputs: []
+#! Outputs: [threshold, num_approvers]
+#!
+#! Invocation: call
+pub proc get_threshold_and_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    # => [THRESHOLD_CONFIG_SLOT]
+
+    exec.active_account::get_initial_item
+    # => [0, 0, num_approvers, threshold]
+
+    drop drop
+    # => [num_approvers, threshold]
+
+    swap
+    # => [threshold, num_approvers]
+end
+
+#! Returns signer public key at index i
+#!
+#! Inputs: [index]
+#! Outputs: [PUB_KEY]
+#!
+#! Panics if:
+#! - index is not a u32 value.
+#!
+#! Invocation: call
+pub proc get_signer_at
+    u32assert.err=ERR_SIGNER_INDEX_NOT_U32
+    # => [index]
+
+    exec.create_approver_map_key
+    # => [APPROVER_MAP_KEY]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [APPROVER_PUBLIC_KEYS_SLOT, APPROVER_MAP_KEY]
+
+    exec.active_account::get_initial_map_item
+    # => [PUB_KEY]
+end
+
+
+#! Returns 1 if PUB_KEY is a current signer, else 0.
+#! Inputs: [PUB_KEY]
+#! Outputs: [is_signer]
+#! Locals:
+#! 0: is_signer_found
+#! 1: current_signer_index
+#!
+#! Invocation: call
+@locals(2)
+pub proc is_signer(pub_key: BeWord) -> felt
+    # initialize is_signer_found = false
+    push.0 loc_store.IS_SIGNER_FOUND_LOC
+    # => [PUB_KEY]
+
+    exec.get_threshold_and_num_approvers
+    # => [threshold, num_approvers, PUB_KEY]
+
+    drop
+    # => [num_approvers, PUB_KEY]
+
+    dup neq.0
+    # => [has_remaining_signers, num_approvers, PUB_KEY]
+
+    while.true
+        # => [i, PUB_KEY]
+
+        sub.1
+        # => [i-1, PUB_KEY]
+
+        # store i-1 for this loop iteration before map lookup
+        dup loc_store.CURRENT_SIGNER_INDEX_LOC
+        # => [i-1, PUB_KEY]
+
+        exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, PUB_KEY]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY]
+
+        exec.active_account::get_initial_map_item
+        # => [CURRENT_PUB_KEY, PUB_KEY]
+
+        dupw.1 exec.word::eq
+        # => [is_pub_key_match, PUB_KEY]
+
+        loc_store.IS_SIGNER_FOUND_LOC
+        # => [PUB_KEY]
+
+        loc_load.CURRENT_SIGNER_INDEX_LOC
+        # => [i-1, PUB_KEY]
+
+        dup neq.0
+        # => [has_remaining_signers, i-1, PUB_KEY]
+
+        loc_load.IS_SIGNER_FOUND_LOC not
+        # => [!is_signer_found, has_remaining_signers, i-1, PUB_KEY]
+
+        and
+        # => [should_loop, i-1, PUB_KEY]
+    end
+
+    drop dropw
+    # => []
+
+    loc_load.IS_SIGNER_FOUND_LOC
+    # => [is_signer]
+end
+
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id 
+#! with multi-signature support
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_rpo
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed
@@ -352,7 +553,7 @@ end
 #!
 #! Invocation: call
 @locals(1)
-pub proc auth_tx_falcon512_rpo_multisig(salt: BeWord)
+pub proc auth_tx_multisig(salt: BeWord)
     exec.native_account::incr_nonce drop
     # => [SALT]
 
@@ -386,7 +587,10 @@ pub proc auth_tx_falcon512_rpo_multisig(salt: BeWord)
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
     # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    exec.::miden::standards::auth::falcon512_rpo::verify_signatures
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [approver_scheme_id_slot_prefix, approver_scheme_id_slot_suffix, pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     # ------ Checking threshold is >= num_verified_signatures ------
