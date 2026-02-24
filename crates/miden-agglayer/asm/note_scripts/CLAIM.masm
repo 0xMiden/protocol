@@ -78,6 +78,7 @@ end
 #!   padding[3],                      // padding (3 felts)
 #! ]
 #!
+#! TODO: Will be removed in future PR
 #! OUTPUT_NOTE_DATA_KEY => [
 #!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
 #!   output_note_tag[1],              // P2ID output note tag
