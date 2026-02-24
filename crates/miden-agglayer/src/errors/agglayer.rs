@@ -60,6 +60,11 @@ pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rol
 /// Error Message: "maximum scaling factor is 18"
 pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("maximum scaling factor is 18");
 
+/// Error Message: "note sender is not the bridge admin"
+pub const ERR_SENDER_NOT_BRIDGE_ADMIN: MasmError = MasmError::from_static_str("note sender is not the bridge admin");
+/// Error Message: "note sender is not the global exit root manager"
+pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("note sender is not the global exit root manager");
+
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
 

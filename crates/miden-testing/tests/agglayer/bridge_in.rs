@@ -51,10 +51,19 @@ use super::test_utils::ClaimDataSource;
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+
+    // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
+    // --------------------------------------------------------------------------------------------
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+
     // CREATE BRIDGE ACCOUNT (with bridge_out component for MMR validation)
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(bridge_seed);
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
     builder.add_account(bridge_account.clone())?;
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
@@ -153,7 +162,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
     let update_ger_note =
-        UpdateGerNote::create(ger, sender_account.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
