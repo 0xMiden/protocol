@@ -12,7 +12,7 @@ use miden::standards::auth
 
 # Auth Scheme ID Structure
 const ECDSA_K256_KECCAK_SCHEME_ID=1
-const RPO_FALCON_512_SCHEME_ID=2
+const FALCON_512_RPO_SCHEME_ID=2
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0
@@ -90,7 +90,7 @@ end
 
 # Verify signature using scheme_id:
 #   1 => ECDSA (ecdsa_k256_keccak)
-#   2 => Falcon (rpo_falcon512)
+#   2 => Falcon (falcon512_rpo)
 #
 # Inputs:  [scheme_id, PUB_KEY, MSG]
 # Outputs: []
@@ -106,7 +106,7 @@ proc verify_signature_by_scheme
         # OS => []
         # AS => []
     else
-        dup eq.RPO_FALCON_512_SCHEME_ID
+        dup eq.FALCON_512_RPO_SCHEME_ID
         # => [is_2, scheme_id, PUB_KEY, MESSAGE]
 
         if.true
@@ -130,7 +130,7 @@ pub proc is_supported_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
 
-    swap eq.RPO_FALCON_512_SCHEME_ID
+    swap eq.FALCON_512_RPO_SCHEME_ID
     # => [is_2, is_1]
 
     or
