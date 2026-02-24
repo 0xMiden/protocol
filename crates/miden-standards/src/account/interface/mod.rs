@@ -6,7 +6,7 @@ use miden_protocol::note::{NoteAttachmentContent, PartialNote};
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
-use crate::AuthScheme;
+use crate::AuthMethod;
 use crate::code_builder::CodeBuilder;
 use crate::errors::CodeBuilderError;
 
@@ -28,7 +28,7 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// result in a successful execution against this account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AuthScheme>,
+    auth: Vec<AuthMethod>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -42,7 +42,7 @@ impl AccountInterface {
     /// schemes and account component interfaces.
     pub fn new(
         account_id: AccountId,
-        auth: Vec<AuthScheme>,
+        auth: Vec<AuthMethod>,
         components: Vec<AccountComponentInterface>,
     ) -> Self {
         Self { account_id, auth, components }
@@ -94,8 +94,8 @@ impl AccountInterface {
         self.account_id.is_network()
     }
 
-    /// Returns a reference to the vector of used authentication schemes.
-    pub fn auth(&self) -> &Vec<AuthScheme> {
+    /// Returns a reference to the vector of used authentication methods.
+    pub fn auth(&self) -> &Vec<AuthMethod> {
         &self.auth
     }
 
