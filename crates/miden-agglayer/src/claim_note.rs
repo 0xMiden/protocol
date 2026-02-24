@@ -172,6 +172,7 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
+/// TODO: Refactor to remove output_note_tag
 #[derive(Clone)]
 pub struct OutputNoteData {
     /// Target agg faucet account ID (2 felts: prefix and suffix)
