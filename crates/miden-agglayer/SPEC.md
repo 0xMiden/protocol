@@ -200,13 +200,28 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 
 **Purpose:** User bridges an asset from Miden to the AggLayer.
 
-| Property | Value |
-|----------|-------|
-| Script | `B2AGG.masb` |
-| Note type | Public |
-| Assets | Exactly 1 fungible asset |
-| Attachment | `NetworkAccountTarget` — target is the bridge account |
-| Note tag | `NoteTag::default()` |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Any account (not validated) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* Exactly 1 fungible asset.
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `B2AGG.masb` |
+| `storage` | 6 felts — see layout below |
 
 **Storage layout (6 felts):**
 
@@ -227,13 +242,28 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 **Purpose:** Claim assets, which were deposited on any AggLayer-connected rollup, on Miden. Consumed by
 the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protocol/issues/2506)), which mints the asset and sends it to the recipient.
 
-| Property | Value |
-|----------|-------|
-| Script | `CLAIM.masb` |
-| Note type | Public |
-| Assets | None |
-| Attachment | `NetworkAccountTarget` — target is the faucet account |
-| Note tag | `NoteTag::default()` |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Any account (not validated) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` — target is the faucet account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `CLAIM.masb` |
+| `storage` | 576 felts — see layout below |
 
 **Storage layout (576 felts):**
 
@@ -270,13 +300,28 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 
 **Purpose:** Registers a faucet in the bridge's faucet registry.
 
-| Property | Value |
-|----------|-------|
-| Script | `CONFIG_AGG_BRIDGE.masb` |
-| Note type | Public |
-| Assets | None |
-| Attachment | `NetworkAccountTarget` — target is the bridge account |
-| Note tag | `NoteTag::default()` |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Bridge operator (TODO: not validated — [#2450](https://github.com/0xMiden/miden-base/issues/2450)) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `CONFIG_AGG_BRIDGE.masb` |
+| `storage` | 2 felts — see layout below |
 
 **Storage layout (2 felts):**
 
@@ -293,13 +338,28 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 **Purpose:** Stores a new Global Exit Root (GER) in the bridge account so that subsequent
 CLAIM notes can be verified against it.
 
-| Property | Value |
-|----------|-------|
-| Script | `UPDATE_GER.masb` |
-| Note type | Public |
-| Assets | None |
-| Attachment | `NetworkAccountTarget` — target is the bridge account |
-| Note tag | `NoteTag::default()` |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Integration service (TODO: not validated — [#2467](https://github.com/0xMiden/miden-base/issues/2467)) |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* None (empty).
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Random (`rng.draw_word()`) |
+| `script` | `UPDATE_GER.masb` |
+| `storage` | 8 felts — see layout below |
 
 **Storage layout (8 felts):**
 
@@ -316,13 +376,28 @@ stores the result in the GER map.
 
 **Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
 
-| Property | Value |
-|----------|-------|
-| Script | `StandardNote::BURN` (standard Miden burn script) |
-| Note type | Public |
-| Assets | The single asset from the originating B2AGG note |
-| Attachment | None (TODO `BURN` note should have an attachment [#2470](https://github.com/0xMiden/miden-base/issues/2470)) |
-| Note tag | `NoteTag::with_account_target(faucet_id)` (TODO same as above) |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Bridge account |
+| `note_type` | `NoteType::Public` |
+| `tag` | `NoteTag::with_account_target(faucet_id)` (TODO [#2470](https://github.com/0xMiden/miden-base/issues/2470): should use `NetworkAccountTarget`) |
+| `attachment` | None (TODO [#2470](https://github.com/0xMiden/miden-base/issues/2470): should be `NetworkAccountTarget`) |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* The single fungible asset from the originating B2AGG note.
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | Derived by bridge at creation time |
+| `script` | Standard BURN script |
+| `storage` | None (0 felts) — see layout below |
 
 **Storage layout (0 felts):**
 
@@ -338,13 +413,28 @@ decreases the faucet's total token supply by the burned amount.
 
 **Purpose:** Created by `agglayer_faucet::claim` to deliver minted assets to the recipient.
 
-| Property | Value |
-|----------|-------|
-| Script | Standard P2ID script |
-| Note type | Public |
-| Assets | Minted fungible asset for the claim amount |
-| Attachment | None |
-| Note tag | From CLAIM note storage (`output_note_tag` in output note data) |
+**`NoteHeader`**
+
+*`NoteMetadata`:*
+
+| Field | Value |
+|-------|-------|
+| `sender` | Faucet account |
+| `note_type` | `NoteType::Public` |
+| `tag` | From CLAIM note storage field `output_note_tag` |
+| `attachment` | None |
+
+**`NoteDetails`**
+
+*`NoteAssets`:* The minted fungible asset for the claim amount.
+
+*`NoteRecipient`:*
+
+| Field | Value |
+|-------|-------|
+| `serial_num` | From CLAIM note storage field `output_p2id_serial_num` |
+| `script` | Standard P2ID script |
+| `storage` | 2 felts — see layout below |
 
 **Storage layout (2 felts):**
 
