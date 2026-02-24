@@ -159,14 +159,12 @@ impl SchemaTypeId {
 
     /// Returns the schema type identifier for auth scheme identifiers.
     pub fn auth_scheme() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::scheme")
-            .expect("type is well formed")
+        SchemaTypeId::new("miden::standards::auth::scheme").expect("type is well formed")
     }
 
     /// Returns the schema type identifier for public key commitments.
     pub fn pub_key() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::pub_key")
-            .expect("type is well formed")
+        SchemaTypeId::new("miden::standards::auth::pub_key").expect("type is well formed")
     }
 
     /// Returns the schema type identifier for fungible faucet token symbols.
