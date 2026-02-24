@@ -5,7 +5,13 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::utils::felts_to_bytes;
-use miden_agglayer::{ExitRoot, UpdateGerNote, agglayer_library, create_existing_bridge_account};
+use miden_agglayer::{
+    AggLayerBridge,
+    ExitRoot,
+    UpdateGerNote,
+    agglayer_library,
+    create_existing_bridge_account,
+};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
@@ -13,7 +19,6 @@ use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_crypto::{Felt, FieldElement};
 use miden_protocol::Word;
-use miden_protocol::account::StorageSlotName;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -105,10 +110,10 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     let ger_hash = Hasher::merge(&[ger_upper.into(), ger_lower.into()]);
     // Look up the GER hash in the map storage
-    let ger_storage_slot = StorageSlotName::new("miden::agglayer::bridge::ger")?;
+    let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
     let stored_value = updated_bridge_account
         .storage()
-        .get_map_item(&ger_storage_slot, ger_hash)
+        .get_map_item(ger_storage_slot, ger_hash)
         .expect("GER hash should be stored in the map");
 
     // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
@@ -166,7 +171,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::crypto_utils
+                use miden::agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -174,7 +179,7 @@ async fn compute_ger() -> anyhow::Result<()> {
 
                     # Call compute_ger with pointer to exit roots
                     push.0
-                    exec.crypto_utils::compute_ger
+                    exec.bridge_in::compute_ger
                     exec.sys::truncate_stack
                 end
             "#
@@ -249,7 +254,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots
@@ -257,7 +262,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
 
                 # Call compute_ger with pointer to exit roots
                 push.0
-                exec.crypto_utils::compute_ger
+                exec.bridge_in::compute_ger
                 exec.sys::truncate_stack
             end
         "#

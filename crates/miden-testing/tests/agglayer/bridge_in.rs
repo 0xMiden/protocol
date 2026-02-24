@@ -1,11 +1,17 @@
 extern crate alloc;
 
-use core::slice;
+use alloc::slice;
+use alloc::string::String;
 
+use anyhow::Context;
+use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::{
     ClaimNoteStorage,
+    ExitRoot,
     OutputNoteData,
+    SmtNode,
     UpdateGerNote,
+    agglayer_library,
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
@@ -18,13 +24,72 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUT
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
+use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
-use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::utils::create_p2id_note_exact;
-use miden_testing::{AccountState, Auth, MockChain};
+use miden_testing::{AccountState, Auth, MockChain, TransactionContextBuilder};
+use miden_tx::utils::hex_to_bytes;
 use rand::Rng;
 
-use super::test_utils::ClaimDataSource;
+use super::test_utils::{
+    ClaimDataSource,
+    MerkleProofVerificationFile,
+    SOLIDITY_MERKLE_PROOF_VECTORS,
+};
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
+fn merkle_proof_verification_code(
+    index: usize,
+    merkle_paths: &MerkleProofVerificationFile,
+) -> String {
+    let mut store_path_source = String::new();
+    for height in 0..32 {
+        let path_node = merkle_paths.merkle_paths[index * 32 + height].as_str();
+        let smt_node = SmtNode::from(hex_to_bytes(path_node).unwrap());
+        let [node_lo, node_hi] = smt_node.to_words();
+        store_path_source.push_str(&format!(
+            "
+            \tpush.{node_lo} mem_storew_be.{} dropw
+            \tpush.{node_hi} mem_storew_be.{} dropw
+    ",
+            height * 8,
+            height * 8 + 4
+        ));
+    }
+
+    let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
+    let [root_lo, root_hi] = root.to_words();
+
+    let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
+    let [leaf_lo, leaf_hi] = leaf.to_words();
+
+    format!(
+        r#"
+        use miden::agglayer::bridge::bridge_in
+        use miden::core::word
+
+        begin
+            {store_path_source}
+
+            push.{root_lo} mem_storew_be.256 dropw
+            push.{root_hi} mem_storew_be.260 dropw
+
+            push.256
+            push.{index}
+            push.0
+            push.{leaf_hi}
+            exec.word::reverse
+            push.{leaf_lo}
+            exec.word::reverse
+
+            exec.bridge_in::verify_merkle_proof
+            assert.err="verification failed"
+        end
+    "#
+    )
+}
 
 /// Tests the bridge-in flow: CLAIM note -> Aggfaucet (FPI to Bridge) -> P2ID note created.
 ///
@@ -100,6 +165,8 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // For the simulated case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
+        use miden_standards::testing::mock_account::MockAccountExt;
+
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
         // Ensure the mock account ID matches the destination embedded in the JSON test vector,
@@ -260,6 +327,29 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             "destination account balance does not match"
         );
     }
+    Ok(())
+}
 
+#[tokio::test]
+async fn solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
+    let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;
+
+    assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
+    assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
+
+    for leaf_index in 0..32 {
+        let source = merkle_proof_verification_code(leaf_index, merkle_paths);
+
+        let tx_script = CodeBuilder::new()
+            .with_statically_linked_library(&agglayer_library())?
+            .compile_tx_script(source)?;
+
+        TransactionContextBuilder::with_existing_mock_account()
+            .tx_script(tx_script.clone())
+            .build()?
+            .execute()
+            .await
+            .context(format!("failed to execute transaction with leaf index {leaf_index}"))?;
+    }
     Ok(())
 }

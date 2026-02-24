@@ -1,27 +1,21 @@
 extern crate alloc;
 
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use anyhow::Context;
+use miden_agglayer::agglayer_library;
 use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::utils::felts_to_bytes;
-use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
 use miden_processor::AdviceInputs;
 use miden_protocol::{Felt, Word};
-use miden_standards::code_builder::CodeBuilder;
-use miden_testing::TransactionContextBuilder;
 use miden_tx::utils::hex_to_bytes;
 
 use super::test_utils::{
     LEAF_VALUE_VECTORS_JSON,
     LeafValueVector,
-    MerkleProofVerificationFile,
-    SOLIDITY_MERKLE_PROOF_VECTORS,
     execute_program_with_default_host,
 };
 
@@ -35,73 +29,6 @@ fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
         bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
     bytes
-}
-
-fn merkle_proof_verification_code(
-    index: usize,
-    merkle_paths: &MerkleProofVerificationFile,
-) -> String {
-    // generate the code which stores the merkle path to the memory
-    let mut store_path_source = String::new();
-    for height in 0..32 {
-        let path_node = merkle_paths.merkle_paths[index * 32 + height].as_str();
-        let smt_node = SmtNode::from(hex_to_bytes(path_node).unwrap());
-        let [node_lo, node_hi] = smt_node.to_words();
-        // each iteration (each index in leaf/root vector) we rewrite the merkle path nodes, so the
-        // memory pointers for the merkle path and the expected root never change
-        store_path_source.push_str(&format!(
-            "
-            \tpush.{node_lo} mem_storew_be.{} dropw
-            \tpush.{node_hi} mem_storew_be.{} dropw
-    ",
-            height * 8,
-            height * 8 + 4
-        ));
-    }
-
-    // prepare the root for the provided index
-    let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
-    let [root_lo, root_hi] = root.to_words();
-
-    // prepare the leaf for the provided index
-    let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
-    let [leaf_lo, leaf_hi] = leaf.to_words();
-
-    format!(
-        r#"
-        use miden::agglayer::crypto_utils
-        use miden::core::word
-
-        begin
-            # store the merkle path to the memory (double word slots from 0 to 248)
-            {store_path_source}
-            # => []
-
-            # store the root to the memory (double word slot 256)
-            push.{root_lo} mem_storew_be.256 dropw
-            push.{root_hi} mem_storew_be.260 dropw
-            # => []
-
-            # prepare the stack for the `verify_merkle_proof` procedure
-            push.256                          # expected root memory pointer
-            push.{index}                      # provided leaf index
-            push.0                            # Merkle path memory pointer
-            # in practice this is never "pushed" to the stack, but rather an output of `get_leaf_value`
-            # which returns the leaf value in LE-felt order
-            push.{leaf_hi}
-            exec.word::reverse
-            push.{leaf_lo}
-            exec.word::reverse
-            # => [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx, expected_root_ptr]
-
-            exec.crypto_utils::verify_merkle_proof
-            # => [verification_flag]
-
-            assert.err="verification failed"
-            # => []
-        end
-    "#
-    )
 }
 
 // TESTS
@@ -176,7 +103,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::leaf_utils
 
             const LEAF_DATA_START_PTR = 0
             const LEAF_DATA_NUM_WORDS = 8
@@ -188,7 +115,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
                 push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
                 exec.mem::pipe_preimage_to_memory drop
 
-                exec.crypto_utils::pack_leaf_data
+                exec.leaf_utils::pack_leaf_data
             end
         "#
     );
@@ -241,13 +168,12 @@ async fn get_leaf_value() -> anyhow::Result<()> {
 
     let source = format!(
         r#"
-            use miden::core::mem
             use miden::core::sys
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::bridge_in
 
             begin
                 push.{key}
-                exec.crypto_utils::get_leaf_value
+                exec.bridge_in::get_leaf_value
                 exec.sys::truncate_stack
             end
         "#
@@ -270,32 +196,5 @@ async fn get_leaf_value() -> anyhow::Result<()> {
         Keccak256Output::from(expected_leaf_value_bytes).to_elements();
 
     assert_eq!(computed_leaf_value, expected_leaf_value);
-    Ok(())
-}
-#[tokio::test]
-async fn test_solidity_verify_merkle_proof_compatibility() -> anyhow::Result<()> {
-    let merkle_paths = &*SOLIDITY_MERKLE_PROOF_VECTORS;
-
-    // Validate array lengths
-    assert_eq!(merkle_paths.leaves.len(), merkle_paths.roots.len());
-    // paths have 32 nodes for each leaf/root, so the overall paths length should be 32 times longer
-    // than leaves/roots length
-    assert_eq!(merkle_paths.leaves.len() * 32, merkle_paths.merkle_paths.len());
-
-    for leaf_index in 0..32 {
-        let source = merkle_proof_verification_code(leaf_index, merkle_paths);
-
-        let tx_script = CodeBuilder::new()
-            .with_statically_linked_library(&agglayer_library())?
-            .compile_tx_script(source)?;
-
-        TransactionContextBuilder::with_existing_mock_account()
-            .tx_script(tx_script.clone())
-            .build()?
-            .execute()
-            .await
-            .context(format!("failed to execute transaction with leaf index {leaf_index}"))?;
-    }
-
     Ok(())
 }

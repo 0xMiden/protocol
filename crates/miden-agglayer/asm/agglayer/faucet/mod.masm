@@ -1,8 +1,8 @@
-use miden::agglayer::bridge_in
+use miden::agglayer::bridge::bridge_in
 use miden::core::sys
-use miden::agglayer::utils
-use miden::agglayer::asset_conversion
-use miden::agglayer::eth_address
+use miden::agglayer::common::utils
+use miden::agglayer::common::asset_conversion
+use miden::agglayer::common::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
@@ -12,36 +12,40 @@ use miden::core::mem
 use miden::core::word
 
 
+# ERRORS
+# =================================================================================================
+
+const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
+
 # CONSTANTS
 # =================================================================================================
 
+# Storage slots
 # The slot in this component's storage layout where the bridge account ID is stored.
 const BRIDGE_ID_SLOT = word("miden::agglayer::faucet")
-
 # Storage slots for conversion metadata.
 # Slot 1: [addr_felt0, addr_felt1, addr_felt2, addr_felt3] — first 4 felts of origin token address
 const CONVERSION_INFO_1_SLOT = word("miden::agglayer::faucet::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
 const CONVERSION_INFO_2_SLOT = word("miden::agglayer::faucet::conversion_info_2")
 
-const PROOF_DATA_WORD_LEN = 134
-const LEAF_DATA_WORD_LEN = 8
-const OUTPUT_NOTE_DATA_WORD_LEN = 2
-
+# Memory pointers for piped advice map data
 const PROOF_DATA_START_PTR = 0
 const LEAF_DATA_START_PTR = 536
 const OUTPUT_NOTE_DATA_START_PTR = 568
 
-# Memory Addresses
+# Memory addresses for stored keys
 const PROOF_DATA_KEY_MEM_ADDR = 700
 const LEAF_DATA_KEY_MEM_ADDR = 704
 const OUTPUT_NOTE_DATA_MEM_ADDR = 708
 const CLAIM_NOTE_DATA_MEM_ADDR = 712
 
-const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
-const OUTPUT_NOTE_TAG_MEM_ADDR = 574
-const OUTPUT_NOTE_FAUCET_AMOUNT = 575
-const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
+# Memory addresses for output note fields (derived from leaf data layout)
+const DESTINATION_ADDRESS_0 = 544
+const DESTINATION_ADDRESS_1 = 545
+const DESTINATION_ADDRESS_2 = 546
+const DESTINATION_ADDRESS_3 = 547
+const DESTINATION_ADDRESS_4 = 548
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
@@ -50,12 +54,11 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
-
-const DESTINATION_ADDRESS_0 = 544
-const DESTINATION_ADDRESS_1 = 545
-const DESTINATION_ADDRESS_2 = 546
-const DESTINATION_ADDRESS_3 = 547
-const DESTINATION_ADDRESS_4 = 548
+const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
+const OUTPUT_NOTE_TAG_MEM_ADDR = 574
+const OUTPUT_NOTE_FAUCET_AMOUNT = 575
+const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
+const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
 
 # Memory locals in claim
 const CLAIM_PREFIX_MEM_LOC = 8
@@ -67,18 +70,17 @@ const CLAIM_AMOUNT_MEM_LOC_1 = 4
 const BUILD_P2ID_AMOUNT_MEM_LOC_0 = 0
 const BUILD_P2ID_AMOUNT_MEM_LOC_1 = 4
 
+# Data sizes
+const PROOF_DATA_WORD_LEN = 134
+const LEAF_DATA_WORD_LEN = 8
+const OUTPUT_NOTE_DATA_WORD_LEN = 2
+
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 const OUTPUT_NOTE_AUX = 0
 
-const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
-# ERRORS
-# =================================================================================================
-
-const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
-
-# CONVERSION METADATA HELPERS
+# PUBLIC INTERFACE
 # =================================================================================================
 
 #! Returns the origin token address (5 felts) from faucet conversion storage.
