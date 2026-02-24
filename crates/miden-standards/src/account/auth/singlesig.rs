@@ -12,12 +12,12 @@ use miden_protocol::utils::sync::LazyLock;
 use crate::account::components::singlesig_library;
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::singlesig::public_key")
+    StorageSlotName::new("miden::standards::auth::singlesig::pub_key")
         .expect("storage slot name should be valid")
 });
 
 static SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::singlesig::scheme_id")
+    StorageSlotName::new("miden::standards::auth::singlesig::scheme")
         .expect("storage slot name should be valid")
 });
 
@@ -67,7 +67,7 @@ impl AuthSingleSig {
         )
     }
     /// Returns the storage slot schema for the scheme ID slot.
-    pub fn scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
             StorageSlotSchema::value("Scheme ID", SchemaTypeId::auth_scheme()),
@@ -79,7 +79,7 @@ impl From<AuthSingleSig> for AccountComponent {
     fn from(basic_signature: AuthSingleSig) -> Self {
         let storage_schema = StorageSchema::new(vec![
             AuthSingleSig::public_key_slot_schema(),
-            AuthSingleSig::scheme_id_slot_schema(),
+            AuthSingleSig::auth_scheme_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

@@ -27,7 +27,7 @@ static APPROVER_PUBKEYS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 });
 
 static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::approver_scheme_id")
+    StorageSlotName::new("miden::standards::auth::multisig::approver_schemes")
         .expect("storage slot name should be valid")
 });
 
@@ -199,7 +199,7 @@ impl AuthMultisig {
     }
 
     // Returns the storage slot schema for the approver scheme IDs slot.
-    pub fn approver_scheme_id_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn approver_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::approver_scheme_ids_slot().clone(),
             StorageSlotSchema::map(
@@ -295,7 +295,7 @@ impl From<AuthMultisig> for AccountComponent {
         let storage_schema = StorageSchema::new([
             AuthMultisig::threshold_config_slot_schema(),
             AuthMultisig::approver_public_keys_slot_schema(),
-            AuthMultisig::approver_scheme_id_slot_schema(),
+            AuthMultisig::approver_auth_scheme_slot_schema(),
             AuthMultisig::executed_transactions_slot_schema(),
             AuthMultisig::procedure_thresholds_slot_schema(),
         ])

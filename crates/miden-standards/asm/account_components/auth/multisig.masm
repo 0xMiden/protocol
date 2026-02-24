@@ -55,7 +55,7 @@ const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approv
 
 # The slot in this component's storage layout where the scheme id for the corresponding public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
-const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_scheme_id")
+const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
 # The slot in this component's storage layout where executed transactions are stored.
 # Map entries: transaction_message => [is_executed, 0, 0, 0]
@@ -177,6 +177,14 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
     drop drop
 end
 
+#! Builds the storage map key for a signer index.
+#!
+#! Inputs: [key_index]
+#! Outputs: [APPROVER_MAP_KEY]
+proc create_approver_map_key(key_index: felt) -> BeWord
+    push.0.0.0
+    # => [APPROVER_MAP_KEY]
+end
 
 #! Update threshold config, add / remove approvers,
 #! and update the approver scheme ids
@@ -394,15 +402,6 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
 
     cdrop
     # => [effective_transaction_threshold]
-end
-
-#! Builds the storage map key for a signer index.
-#!
-#! Inputs: [key_index]
-#! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key(key_index: felt) -> BeWord
-    push.0.0.0
-    # => [APPROVER_MAP_KEY]
 end
 
 #! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
