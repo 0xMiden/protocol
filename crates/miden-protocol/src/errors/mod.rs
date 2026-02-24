@@ -807,7 +807,7 @@ pub enum ProvenTransactionError {
     )]
     ExistingPublicStateAccountRequiresDeltaDetails(AccountId),
     #[error("failed to construct output notes for proven transaction")]
-    OutputNotesError(TransactionOutputError),
+    OutputNotesError(#[source] TransactionOutputError),
     #[error(
         "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
     )]
