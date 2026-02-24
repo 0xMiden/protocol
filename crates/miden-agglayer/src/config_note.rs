@@ -34,7 +34,7 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/CONFIG_AGG_BRIDGE.masb"));
     let program =
-        Program::read_from_bytes(bytes).expect("Shipped CONFIG_AGG_BRIDGE script is well-formed");
+        Program::read_from_bytes(bytes).expect("shipped CONFIG_AGG_BRIDGE script is well-formed");
     NoteScript::new(program)
 });
 

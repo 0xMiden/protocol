@@ -60,7 +60,7 @@ pub use update_ger_note::UpdateGerNote;
 // Initialize the CLAIM note script only once
 static CLAIM_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/CLAIM.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped CLAIM script is well-formed");
+    let program = Program::read_from_bytes(bytes).expect("shipped CLAIM script is well-formed");
     NoteScript::new(program)
 });
 
@@ -74,17 +74,17 @@ pub fn claim_script() -> NoteScript {
 
 static AGGLAYER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/agglayer.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped AggLayer library is well-formed")
+    Library::read_from_bytes(bytes).expect("shipped AggLayer library is well-formed")
 });
 
 static BRIDGE_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/bridge.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped bridge component library is well-formed")
+    Library::read_from_bytes(bytes).expect("shipped bridge component library is well-formed")
 });
 
 static FAUCET_COMPONENT_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/components/faucet.masl"));
-    Library::read_from_bytes(bytes).expect("Shipped faucet component library is well-formed")
+    Library::read_from_bytes(bytes).expect("shipped faucet component library is well-formed")
 });
 
 /// Returns the AggLayer Library containing all agglayer modules.
@@ -118,7 +118,7 @@ fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
 
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
-        .expect("Bridge storage slot name should be valid")
+        .expect("bridge storage slot name should be valid")
 });
 static LET_FRONTIER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
@@ -137,7 +137,15 @@ static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 });
 static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
-        .expect("Faucet registry storage slot name should be valid")
+        .expect("faucet registry storage slot name should be valid")
+});
+static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::admin")
+        .expect("bridge admin storage slot name should be valid")
+});
+static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::ger_manager")
+        .expect("GER manager storage slot name should be valid")
 });
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
@@ -161,13 +169,16 @@ static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct AggLayerBridge;
+#[derive(Debug, Clone)]
+pub struct AggLayerBridge {
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+}
 
 impl AggLayerBridge {
     /// Creates a new AggLayer bridge component with the standard configuration.
-    pub fn new() -> Self {
-        Self
+    pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId) -> Self {
+        Self { bridge_admin_id, ger_manager_id }
     }
 
     /// Storage slot name for the GERs map.
@@ -199,10 +210,33 @@ impl AggLayerBridge {
     pub fn faucet_registry_slot_name() -> &'static StorageSlotName {
         &FAUCET_REGISTRY_SLOT_NAME
     }
+
+    /// Storage slot name for the bridge admin account ID.
+    pub fn bridge_admin_slot_name() -> &'static StorageSlotName {
+        &BRIDGE_ADMIN_SLOT_NAME
+    }
+
+    /// Storage slot name for the GER manager account ID.
+    pub fn ger_manager_slot_name() -> &'static StorageSlotName {
+        &GER_MANAGER_SLOT_NAME
+    }
 }
 
 impl From<AggLayerBridge> for AccountComponent {
-    fn from(_: AggLayerBridge) -> Self {
+    fn from(bridge: AggLayerBridge) -> Self {
+        let bridge_admin_word = Word::new([
+            Felt::ZERO,
+            Felt::ZERO,
+            bridge.bridge_admin_id.suffix(),
+            bridge.bridge_admin_id.prefix().as_felt(),
+        ]);
+        let ger_manager_word = Word::new([
+            Felt::ZERO,
+            Felt::ZERO,
+            bridge.ger_manager_id.suffix(),
+            bridge.ger_manager_id.prefix().as_felt(),
+        ]);
+
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
             StorageSlot::with_empty_map(LET_FRONTIER_SLOT_NAME.clone()),
@@ -210,6 +244,8 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(FAUCET_REGISTRY_SLOT_NAME.clone()),
+            StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
+            StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
         ];
         bridge_component(bridge_storage_slots)
     }
@@ -269,15 +305,15 @@ fn agglayer_faucet_conversion_slots(
 
 static AGGLAYER_FAUCET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet")
-        .expect("Agglayer faucet storage slot name should be valid")
+        .expect("agglayer faucet storage slot name should be valid")
 });
 static CONVERSION_INFO_1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
-        .expect("Conversion info 1 storage slot name should be valid")
+        .expect("conversion info 1 storage slot name should be valid")
 });
 static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
-        .expect("Conversion info 2 storage slot name should be valid")
+        .expect("conversion info 2 storage slot name should be valid")
 });
 
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
@@ -450,7 +486,7 @@ fn create_agglayer_faucet_component(
         origin_network,
         scale,
     )
-    .expect("AggLayer faucet metadata should be valid")
+    .expect("agglayer faucet metadata should be valid")
     .into()
 }
 
@@ -458,31 +494,43 @@ fn create_agglayer_faucet_component(
 ///
 /// The bridge starts with an empty faucet registry. Faucets are registered at runtime
 /// via CONFIG_AGG_BRIDGE notes that call `bridge_config::register_faucet`.
-fn create_bridge_account_builder(seed: Word) -> AccountBuilder {
+fn create_bridge_account_builder(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> AccountBuilder {
     Account::builder(seed.into())
         .storage_mode(AccountStorageMode::Network)
-        .with_component(AggLayerBridge::new())
+        .with_component(AggLayerBridge::new(bridge_admin_id, ger_manager_id))
 }
 
 /// Creates a new bridge account with the standard configuration.
 ///
 /// This creates a new account suitable for production use.
-pub fn create_bridge_account(seed: Word) -> Account {
-    create_bridge_account_builder(seed)
+pub fn create_bridge_account(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> Account {
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build()
-        .expect("Bridge account should be valid")
+        .expect("bridge account should be valid")
 }
 
 /// Creates an existing bridge account with the standard configuration.
 ///
 /// This creates an existing account suitable for testing scenarios.
 #[cfg(any(feature = "testing", test))]
-pub fn create_existing_bridge_account(seed: Word) -> Account {
-    create_bridge_account_builder(seed)
+pub fn create_existing_bridge_account(
+    seed: Word,
+    bridge_admin_id: AccountId,
+    ger_manager_id: AccountId,
+) -> Account {
+    create_bridge_account_builder(seed, bridge_admin_id, ger_manager_id)
         .with_auth_component(AccountComponent::from(NoAuth))
         .build_existing()
-        .expect("Bridge account should be valid")
+        .expect("bridge account should be valid")
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
@@ -541,7 +589,7 @@ pub fn create_agglayer_faucet(
     )
     .with_auth_component(AccountComponent::from(NoAuth))
     .build()
-    .expect("Agglayer faucet account should be valid")
+    .expect("agglayer faucet account should be valid")
 }
 
 /// Creates an existing agglayer faucet account with the specified configuration.
@@ -573,5 +621,5 @@ pub fn create_existing_agglayer_faucet(
     )
     .with_auth_component(AccountComponent::from(NoAuth))
     .build_existing()
-    .expect("Agglayer faucet account should be valid")
+    .expect("agglayer faucet account should be valid")
 }
