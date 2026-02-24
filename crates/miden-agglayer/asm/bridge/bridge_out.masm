@@ -92,10 +92,10 @@ proc create_burn_note
     call.output_note::create
     # => [note_idx]
 
-    movdn.8 loc_loadw_be.CREATE_BURN_NOTE_ASSET_VALUE_LOC
-    # => [ASSET_VALUE, pad(4), note_idx]
+    padw loc_loadw_be.CREATE_BURN_NOTE_ASSET_VALUE_LOC
+    # => [ASSET_VALUE, note_idx]
 
-    swapw loc_loadw_be.CREATE_BURN_NOTE_ASSET_KEY_LOC
+    padw loc_loadw_be.CREATE_BURN_NOTE_ASSET_KEY_LOC
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -180,5 +180,10 @@ pub proc bridge_out
     # => [ASSET_KEY, ASSET_VALUE]
 
     exec.create_burn_note
+    # => []
+
+    # TODO: Check where the extra elements are coming from by adding pad comments throughout the
+    # procedure.
+    drop drop
     # => []
 end

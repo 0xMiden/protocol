@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use miden_agglayer::agglayer_library;
 use miden_core_lib::CoreLibrary;
 use miden_crypto::hash::keccak::Keccak256Digest;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
+use miden_processor::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Felt, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
 

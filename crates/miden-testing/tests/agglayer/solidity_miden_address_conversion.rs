@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use miden_agglayer::{EthAddressFormat, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
+use miden_processor::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;

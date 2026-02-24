@@ -8,7 +8,7 @@ use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::asset::ASSET_SIZE
 use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
-use $kernel::asset::load_asset_key_and_value
+use $kernel::asset
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::MAX_INPUT_NOTES_PER_TX
@@ -710,7 +710,7 @@ proc add_input_note_assets_to_vault
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # load asset key and value
-        dup.1 exec.load_asset_key_and_value
+        dup.1 exec.asset::mem_load
         # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so

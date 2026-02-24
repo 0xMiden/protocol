@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use miden_agglayer::{agglayer_library, utils};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::Felt;
 use primitive_types::U256;
 
