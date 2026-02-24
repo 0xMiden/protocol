@@ -193,3 +193,168 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | `miden::agglayer::faucet::conversion_info_2` | Value | `[addr₄, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
 
 ---
+
+## 3. Note Types and Storage Layouts
+
+### 3.1 B2AGG (Bridge-to-AggLayer)
+
+**Purpose:** User bridges an asset from Miden to the AggLayer.
+
+| Property | Value |
+|----------|-------|
+| Script | `B2AGG.masb` |
+| Note type | Public |
+| Assets | Exactly 1 fungible asset |
+| Attachment | `NetworkAccountTarget` — target is the bridge account |
+| Note tag | `NoteTag::default()` |
+
+**Storage layout (6 felts):**
+
+| Index | Field | Encoding |
+|-------|-------|----------|
+| 0 | `destination_network` | u32 |
+| 1–5 | `destination_address` | 5 × u32 felts (20-byte Ethereum address) |
+
+**Consumption:**
+
+- **Bridge-out:** Consuming account is the bridge → note validates attachment target,
+  loads storage and asset, calls `bridge_out::bridge_out`.
+- **Reclaim:** Consuming account is the original sender → assets are added back to the
+  account via `basic_wallet::add_assets_to_account`. No output notes.
+
+### 3.2 CLAIM
+
+**Purpose:** Claim assets, which were deposited on any AggLayer-connected rollup, on Miden. Consumed by
+the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protocol/issues/2506)), which mints the asset and sends it to the recipient.
+
+| Property | Value |
+|----------|-------|
+| Script | `CLAIM.masb` |
+| Note type | Public |
+| Assets | None |
+| Attachment | `NetworkAccountTarget` — target is the faucet account |
+| Note tag | `NoteTag::default()` |
+
+**Storage layout (576 felts):**
+
+| Range | Field | Size (felts) | Encoding |
+|-------|-------|-------------|----------|
+| 0–255 | `smt_proof_local_exit_root` | 256 | 32 × Keccak-256 nodes (8 felts each) |
+| 256–511 | `smt_proof_rollup_exit_root` | 256 | 32 × Keccak-256 nodes (8 felts each) |
+| 512–519 | `global_index` | 8 | U256 as 8 × u32 felts |
+| 520–527 | `mainnet_exit_root` | 8 | Keccak-256 hash as 8 × u32 felts |
+| 528–535 | `rollup_exit_root` | 8 | Keccak-256 hash as 8 × u32 felts |
+| 536 | `leaf_type` | 1 | u32 (0 = asset) |
+| 537 | `origin_network` | 1 | u32 |
+| 538–542 | `origin_token_address` | 5 | 5 × u32 felts |
+| 543 | `destination_network` | 1 | u32 |
+| 544–548 | `destination_address` | 5 | 5 × u32 felts |
+| 549–556 | `amount` | 8 | U256 as 8 × u32 felts |
+| 557–564 | `metadata_hash` | 8 | Keccak-256 hash as 8 × u32 felts |
+| 565–567 | padding | 3 | zeros |
+| 568–571 | `output_p2id_serial_num` | 4 | Word — serial number for the P2ID output note |
+| 572–573 | `target_faucet_account_id` | 2 | `[prefix, suffix]` of the target faucet |
+| 574 | `output_note_tag` | 1 | NoteTag for the P2ID output note |
+| 575 | padding | 1 | zero |
+
+**Consumption:**
+
+1. All 576 felts are loaded into memory.
+2. Script asserts consuming account == target faucet (TODO unify how we enforce the consumer of CLAIM note [#2468](https://github.com/0xMiden/miden-base/issues/2468)).
+3. Storage regions are hashed and inserted into the advice map as three keyed entries
+   (proof data, leaf data, output note data).
+4. `agglayer_faucet::claim` is called, which validates the proof via FPI to the bridge,
+   then mints and creates a P2ID output note.
+
+### 3.3 CONFIG_AGG_BRIDGE
+
+**Purpose:** Registers a faucet in the bridge's faucet registry.
+
+| Property | Value |
+|----------|-------|
+| Script | `CONFIG_AGG_BRIDGE.masb` |
+| Note type | Public |
+| Assets | None |
+| Attachment | `NetworkAccountTarget` — target is the bridge account |
+| Note tag | `NoteTag::default()` |
+
+**Storage layout (2 felts):**
+
+| Index | Field | Encoding |
+|-------|-------|----------|
+| 0 | `faucet_id_prefix` | Felt (AccountId prefix) |
+| 1 | `faucet_id_suffix` | Felt (AccountId suffix) |
+
+**Consumption:** Script validates attachment target, loads storage, calls
+`bridge_config::register_faucet`.
+
+### 3.4 UPDATE_GER
+
+**Purpose:** Stores a new Global Exit Root (GER) in the bridge account so that subsequent
+CLAIM notes can be verified against it.
+
+| Property | Value |
+|----------|-------|
+| Script | `UPDATE_GER.masb` |
+| Note type | Public |
+| Assets | None |
+| Attachment | `NetworkAccountTarget` — target is the bridge account |
+| Note tag | `NoteTag::default()` |
+
+**Storage layout (8 felts):**
+
+| Range | Field | Encoding |
+|-------|-------|----------|
+| 0–3 | `GER_LOWER` | First 16 bytes as 4 × u32 felts |
+| 4–7 | `GER_UPPER` | Last 16 bytes as 4 × u32 felts |
+
+**Consumption:** Script validates attachment target, loads storage, calls
+`bridge_in::update_ger`, which computes `rpo256::merge(GER_UPPER, GER_LOWER)` and
+stores the result in the GER map.
+
+### 3.5 BURN (generated)
+
+**Purpose:** Created by `bridge_out::bridge_out` to burn the bridged asset on the faucet.
+
+| Property | Value |
+|----------|-------|
+| Script | `StandardNote::BURN` (standard Miden burn script) |
+| Note type | Public |
+| Assets | The single asset from the originating B2AGG note |
+| Attachment | None (TODO `BURN` note should have an attachment [#2470](https://github.com/0xMiden/miden-base/issues/2470)) |
+| Note tag | `NoteTag::with_account_target(faucet_id)` (TODO same as above) |
+
+**Storage layout (0 felts):**
+
+No fields — this is a standard burn note with no custom data.
+
+**Consumption:**
+
+The standard BURN script calls `faucets::burn` on the consuming faucet account. This
+validates that the note contains exactly one fungible asset issued by that faucet and
+decreases the faucet's total token supply by the burned amount.
+
+### 3.6 P2ID (generated)
+
+**Purpose:** Created by `agglayer_faucet::claim` to deliver minted assets to the recipient.
+
+| Property | Value |
+|----------|-------|
+| Script | Standard P2ID script |
+| Note type | Public |
+| Assets | Minted fungible asset for the claim amount |
+| Attachment | None |
+| Note tag | From CLAIM note storage (`output_note_tag` in output note data) |
+
+**Storage layout (2 felts):**
+
+| Index | Field | Encoding |
+|-------|-------|----------|
+| 0 | `target_account_id_prefix` | Felt (AccountId prefix) |
+| 1 | `target_account_id_suffix` | Felt (AccountId suffix) |
+
+**Consumption:**
+
+Consuming account must match `target_account_id` from note storage (enforced by the P2ID
+script). All note assets are added to the consuming account via
+`basic_wallet::add_assets_to_account`.
