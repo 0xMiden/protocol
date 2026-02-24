@@ -71,8 +71,8 @@ pub const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_st
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"
 pub const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("UPDATE_GER script expects exactly 8 note storage items");
 
-/// Error Message: "x must fit into 128 bits (x4..x7 must be 0)"
-pub const ERR_X_TOO_LARGE: MasmError = MasmError::from_static_str("x must fit into 128 bits (x4..x7 must be 0)");
+/// Error Message: "the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
+pub const ERR_X_TOO_LARGE: MasmError = MasmError::from_static_str("the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64");
 
 /// Error Message: "y exceeds max fungible token amount"
 pub const ERR_Y_TOO_LARGE: MasmError = MasmError::from_static_str("y exceeds max fungible token amount");
