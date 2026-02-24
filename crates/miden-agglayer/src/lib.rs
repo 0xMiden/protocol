@@ -439,7 +439,7 @@ fn create_agglayer_faucet_component(
     origin_network: u32,
     scale: u8,
 ) -> AccountComponent {
-    let symbol = TokenSymbol::new(token_symbol).expect("Token symbol should be valid");
+    let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
     AggLayerFaucet::new(
         symbol,
         decimals,
