@@ -217,7 +217,6 @@ mod tests {
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
-    use miden_protocol::field::FromNum;
 
     use super::*;
 
@@ -237,8 +236,8 @@ mod tests {
         let storage = vec![
             target.suffix(),
             target.prefix().as_felt(),
-            Felt::from_num(42u32),
-            Felt::from_num(100u32),
+            Felt::from(42u32),
+            Felt::from(100u32),
         ];
 
         let decoded = P2ideNoteStorage::try_from(storage.as_slice())

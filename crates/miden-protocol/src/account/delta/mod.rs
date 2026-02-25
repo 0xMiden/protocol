@@ -617,7 +617,6 @@ mod tests {
         NonFungibleAssetDetails,
     };
     use crate::errors::AccountDeltaError;
-    use crate::field::TryFromNum;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
@@ -654,7 +653,7 @@ mod tests {
         let vault_delta = AccountVaultDelta::default();
 
         let nonce_delta0 = ONE;
-        let nonce_delta1 = Felt::try_from_num(0xffff_ffff_0000_0000u64).unwrap();
+        let nonce_delta1 = Felt::try_from(0xffff_ffff_0000_0000u64).unwrap();
 
         let mut delta0 =
             AccountDelta::new(account_id, storage_delta.clone(), vault_delta.clone(), nonce_delta0)

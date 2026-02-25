@@ -8,7 +8,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAttachment,
@@ -91,7 +90,7 @@ async fn test_create_note() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
-        Felt::from_num(1u32),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -225,7 +224,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         .add_assets([asset_2])
         .attachment(NoteAttachment::new_array(
             NoteAttachmentScheme::new(5),
-            [42, 43, 44, 45, 46u32].map(Felt::from_num).to_vec(),
+            [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
         )?)
         .build()?;
 
@@ -315,7 +314,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
-        Felt::from_num(2u32),
+        Felt::from(2u32),
         "The test creates two notes",
     );
     assert_eq!(
@@ -688,7 +687,7 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
-        Felt::from_num(1u32),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -1163,7 +1162,7 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
 async fn test_set_array_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
     let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
-    let elements = [3, 4, 5, 6, 7, 8, 9u32].map(Felt::from_num).to_vec();
+    let elements = [3, 4, 5, 6, 7, 8, 9u32].map(Felt::from).to_vec();
     let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
     let output_note =
         OutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);

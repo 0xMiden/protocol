@@ -40,7 +40,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
-use miden_protocol::field::{FromNum, PrimeField64, TryFromNum};
+use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -252,8 +252,8 @@ async fn test_account_validate_id() -> anyhow::Result<()> {
     for (account_id, expected_error) in test_cases.iter() {
         // Manually split the account ID into prefix and suffix since we can't use AccountId methods
         // on invalid ids.
-        let prefix = Felt::try_from_num((account_id / (1u128 << 64)) as u64)?;
-        let suffix = Felt::try_from_num((account_id % (1u128 << 64)) as u64)?;
+        let prefix = Felt::try_from((account_id / (1u128 << 64)) as u64)?;
+        let suffix = Felt::try_from((account_id % (1u128 << 64)) as u64)?;
 
         let code = "
             use $kernel::account_id
@@ -582,22 +582,22 @@ async fn test_is_slot_id_lt() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     // Extend with special case where prefix matches and suffix determines the outcome.
-    let prefix = Felt::from_num(100u32);
+    let prefix = Felt::from(100u32);
     test_cases.extend([
         // prev_slot == curr_slot
         (
-            StorageSlotId::new(Felt::from_num(50u32), prefix),
-            StorageSlotId::new(Felt::from_num(50u32), prefix),
+            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::from(50u32), prefix),
         ),
         // prev_slot < curr_slot
         (
-            StorageSlotId::new(Felt::from_num(50u32), prefix),
-            StorageSlotId::new(Felt::from_num(51u32), prefix),
+            StorageSlotId::new(Felt::from(50u32), prefix),
+            StorageSlotId::new(Felt::from(51u32), prefix),
         ),
         // prev_slot > curr_slot
         (
-            StorageSlotId::new(Felt::from_num(51u32), prefix),
-            StorageSlotId::new(Felt::from_num(50u32), prefix),
+            StorageSlotId::new(Felt::from(51u32), prefix),
+            StorageSlotId::new(Felt::from(50u32), prefix),
         ),
     ]);
 

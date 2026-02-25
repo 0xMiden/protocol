@@ -5,7 +5,6 @@ use super::vault::AssetVaultKey;
 use super::{AccountType, Asset, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
-use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -129,7 +128,7 @@ impl FungibleAsset {
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
         Word::new([
-            Felt::try_from_num(self.amount)
+            Felt::try_from(self.amount)
                 .expect("fungible asset should only allow amounts that fit into a felt"),
             Felt::ZERO,
             Felt::ZERO,
@@ -251,7 +250,6 @@ mod tests {
     use super::*;
     use crate::account::AccountId;
     use crate::asset::AssetId;
-    use crate::field::FromNum;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -264,7 +262,7 @@ mod tests {
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new(
-            AssetId::new(Felt::from_num(1u32), Felt::from_num(2u32)),
+            AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
         );
 
@@ -280,7 +278,7 @@ mod tests {
     fn fungible_asset_from_key_value_fails_on_invalid_value() -> anyhow::Result<()> {
         let asset = FungibleAsset::mock(42);
         let mut invalid_value = asset.to_value_word();
-        invalid_value[2] = Felt::from_num(5u32);
+        invalid_value[2] = Felt::from(5u32);
 
         let err = FungibleAsset::from_key_value(asset.vault_key(), invalid_value).unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));

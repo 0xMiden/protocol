@@ -5,7 +5,6 @@ use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -98,8 +97,8 @@ impl SwapNote {
         let payback_tag = NoteTag::with_account_target(sender);
 
         let attachment_scheme =
-            Felt::from_num(payback_note_attachment.attachment_scheme().as_u32());
-        let attachment_kind = Felt::from_num(payback_note_attachment.attachment_kind().as_u8());
+            Felt::from(payback_note_attachment.attachment_scheme().as_u32());
+        let attachment_kind = Felt::from(payback_note_attachment.attachment_kind().as_u8());
         let attachment = payback_note_attachment.content().to_word();
 
         let mut storage = Vec::with_capacity(SwapNote::NUM_STORAGE_ITEMS);

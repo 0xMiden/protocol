@@ -12,7 +12,6 @@ pub mod asset;
 pub mod batch;
 pub mod block;
 pub mod errors;
-mod from_num;
 pub mod note;
 mod protocol;
 pub mod transaction;
@@ -35,11 +34,7 @@ pub use miden_crypto::word;
 pub use miden_crypto::word::{LexicographicWord, Word, WordError};
 pub use protocol::ProtocolLib;
 
-pub mod field {
-    pub use miden_core::field::*;
-
-    pub use super::from_num::{FeltError, FromNum, TryFromNum};
-}
+pub use miden_core::field;
 
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};

@@ -1,7 +1,6 @@
 use miden_processor::{ExecutionError, Felt, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
@@ -307,7 +306,7 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
         leaf_index: Felt,
     ) -> Result<bool, TransactionKernelError> {
         self.advice_provider()
-            .has_merkle_path(root, Felt::from_num(TREE_DEPTH), leaf_index)
+            .has_merkle_path(root, Felt::from(TREE_DEPTH), leaf_index)
             .map_err(|err| {
                 TransactionKernelError::other_with_source(
                     "failed to check for merkle path presence in advice provider",

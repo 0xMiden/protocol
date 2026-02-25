@@ -46,7 +46,6 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::Asset;
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
 use miden_protocol::transaction::{
     InputNote,
@@ -320,7 +319,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let proc_idx =
             self.acct_procedure_index_map.get_proc_index(code_commitment, procedure_root)?;
-        Ok(vec![AdviceMutation::extend_stack([Felt::from_num(proc_idx)])])
+        Ok(vec![AdviceMutation::extend_stack([Felt::from(proc_idx)])])
     }
 
     /// Handles the increment nonce event by incrementing the nonce delta by one.

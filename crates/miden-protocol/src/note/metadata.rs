@@ -12,7 +12,6 @@ use super::{
 };
 use crate::Hasher;
 use crate::errors::NoteError;
-use crate::field::TryFromNum;
 use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 
 // NOTE METADATA
@@ -288,7 +287,7 @@ fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType
 
     // SAFETY: The most significant bit of the suffix is zero by construction so the u64 will be a
     // valid felt.
-    Felt::try_from_num(merged).expect("encoded value should be a valid felt")
+    Felt::try_from(merged).expect("encoded value should be a valid felt")
 }
 
 /// Unmerges the sender ID suffix and note type.
@@ -303,7 +302,7 @@ fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType)
     })?;
 
     // No bits were set so felt should still be valid.
-    let sender_suffix = Felt::try_from_num(element.as_canonical_u64() & SENDER_SUFFIX_MASK)
+    let sender_suffix = Felt::try_from(element.as_canonical_u64() & SENDER_SUFFIX_MASK)
         .expect("felt should still be valid");
 
     Ok((sender_suffix, note_type))
@@ -325,7 +324,7 @@ fn merge_attachment_kind_scheme(
     let attachment_scheme = attachment_scheme.as_u32();
     merged |= attachment_scheme as u64;
 
-    Felt::try_from_num(merged).expect("the upper bit should be zero and the felt therefore valid")
+    Felt::try_from(merged).expect("the upper bit should be zero and the felt therefore valid")
 }
 
 /// Unmerges the attachment kind and attachment scheme.

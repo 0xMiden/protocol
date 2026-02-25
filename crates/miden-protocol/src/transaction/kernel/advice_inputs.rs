@@ -6,7 +6,6 @@ use crate::account::{AccountHeader, AccountId, PartialAccount};
 use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::field::FromNum;
 use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,
@@ -180,13 +179,13 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.validator_key().to_commitment());
         self.extend_stack([
             header.block_num().into(),
-            Felt::from_num(header.version()),
-            Felt::from_num(header.timestamp()),
+            Felt::from(header.version()),
+            Felt::from(header.timestamp()),
             ZERO,
         ]);
         self.extend_stack([
             ZERO,
-            Felt::from_num(header.fee_parameters().verification_base_fee()),
+            Felt::from(header.fee_parameters().verification_base_fee()),
             header.fee_parameters().native_asset_id().suffix(),
             header.fee_parameters().native_asset_id().prefix().as_felt(),
         ]);
@@ -206,7 +205,7 @@ impl TransactionAdviceInputs {
         self.extend_stack(account.code().commitment());
 
         // --- number of notes, script root and args --------------------------
-        self.extend_stack([Felt::from_num(tx_inputs.input_notes().num_notes())]);
+        self.extend_stack([Felt::from(tx_inputs.input_notes().num_notes())]);
         let tx_args = tx_inputs.tx_args();
         self.extend_stack(tx_args.tx_script().map_or(Word::empty(), |script| script.root()));
         self.extend_stack(tx_args.tx_script_args());
@@ -382,8 +381,8 @@ impl TransactionAdviceInputs {
             note_data.extend(*note_arg);
             note_data.extend(note.metadata().to_attachment_word());
             note_data.extend(note.metadata().to_header_word());
-            note_data.push(Felt::from_num(recipient.storage().num_items()));
-            note_data.push(Felt::from_num(assets.num_assets() as u32));
+            note_data.push(Felt::from(recipient.storage().num_items()));
+            note_data.push(Felt::from(assets.num_assets() as u32));
             note_data.extend(assets.to_elements());
 
             // authentication vs unauthenticated
@@ -408,7 +407,7 @@ impl TransactionAdviceInputs {
                     note_data.push(block_num.into());
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
-                    note_data.push(Felt::from_num(proof.location().node_index_in_block()));
+                    note_data.push(Felt::from(proof.location().node_index_in_block()));
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag

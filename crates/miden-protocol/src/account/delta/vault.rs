@@ -13,7 +13,6 @@ use super::{
 };
 use crate::account::{AccountId, AccountType};
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
-use crate::field::TryFromNum;
 use crate::{Felt, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
@@ -333,7 +332,7 @@ impl FungibleAssetDelta {
             );
 
             let was_added = if *amount_delta > 0 { ONE } else { ZERO };
-            let amount_delta = Felt::try_from_num(amount_delta.unsigned_abs())
+            let amount_delta = Felt::try_from(amount_delta.unsigned_abs())
                 .expect("amount delta should be less than i64::MAX");
 
             elements.extend_from_slice(&[

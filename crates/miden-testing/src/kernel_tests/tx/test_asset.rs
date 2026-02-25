@@ -10,7 +10,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0,
     ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE,
 };
-use miden_protocol::field::FromNum;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -104,12 +103,12 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 )]
 #[case::asset_id_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from_num(0u32), Felt::from_num(4u32)),
+    AssetId::new(Felt::from(0u32), Felt::from(4u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
 )]
 #[case::asset_id_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from_num(5u32), Felt::from_num(0u32)),
+    AssetId::new(Felt::from(5u32), Felt::from(0u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
@@ -161,13 +160,13 @@ async fn test_validate_non_fungible_asset(
 )]
 #[case::asset_id_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from_num(1u32), Felt::from_num(0u32)),
+    AssetId::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
 #[case::asset_id_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from_num(0u32), Felt::from_num(1u32)),
+    AssetId::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]

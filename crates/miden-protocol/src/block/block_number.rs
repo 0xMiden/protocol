@@ -2,7 +2,6 @@ use core::fmt;
 use core::ops::Add;
 
 use crate::Felt;
-use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -101,7 +100,7 @@ impl Deserializable for BlockNumber {
 
 impl From<BlockNumber> for Felt {
     fn from(block_num: BlockNumber) -> Self {
-        Felt::from_num(block_num.as_u32())
+        Felt::from(block_num.as_u32())
     }
 }
 

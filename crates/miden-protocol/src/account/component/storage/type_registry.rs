@@ -9,7 +9,6 @@ use thiserror::Error;
 
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
-use crate::field::{FromNum, TryFromNum};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -324,7 +323,7 @@ impl FeltType for u8 {
         let native: u8 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from_num(native))
+        Ok(Felt::from(native))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
@@ -358,7 +357,7 @@ impl FeltType for AuthScheme {
             }
         };
 
-        Ok(Felt::from_num(auth_scheme.as_u8()))
+        Ok(Felt::from(auth_scheme.as_u8()))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
@@ -386,7 +385,7 @@ impl FeltType for u16 {
         let native: u16 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from_num(native))
+        Ok(Felt::from(native))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
@@ -406,7 +405,7 @@ impl FeltType for u32 {
         let native: u32 = input.parse().map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Ok(Felt::from_num(native))
+        Ok(Felt::from(native))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
@@ -431,7 +430,7 @@ impl FeltType for Felt {
         .map_err(|err| {
             SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
         })?;
-        Felt::try_from_num(n).map_err(|_| SchemaTypeError::ConversionError(input.to_string()))
+        Felt::try_from(n).map_err(|_| SchemaTypeError::ConversionError(input.to_string()))
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
@@ -756,7 +755,7 @@ mod tests {
             .expect("numeric auth scheme id should parse");
         assert_eq!(
             numeric_word,
-            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from_num(2u8)])
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(2u8)])
         );
 
         let named_word = SCHEMA_TYPE_REGISTRY
@@ -764,7 +763,7 @@ mod tests {
             .expect("named auth scheme should parse");
         assert_eq!(
             named_word,
-            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from_num(1u8)])
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(1u8)])
         );
 
         let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
@@ -781,7 +780,7 @@ mod tests {
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "invalid").is_err());
 
-        let invalid_word = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from_num(9u8)]);
+        let invalid_word = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(9u8)]);
         assert!(
             SCHEMA_TYPE_REGISTRY
                 .validate_word_value(&auth_scheme_type, invalid_word)

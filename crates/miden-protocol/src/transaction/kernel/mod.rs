@@ -12,7 +12,6 @@ use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
-use crate::field::TryFromNum;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{OutputNote, OutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::serde::Deserializable;
@@ -224,7 +223,7 @@ impl TransactionKernel {
         outputs.extend(account_update_commitment);
         outputs.push(fee.faucet_id().suffix());
         outputs.push(fee.faucet_id().prefix().as_felt());
-        outputs.push(Felt::try_from_num(fee.amount()).expect("amount should fit into felt"));
+        outputs.push(Felt::try_from(fee.amount()).expect("amount should fit into felt"));
         outputs.push(Felt::from(expiration_block_num));
 
         StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")

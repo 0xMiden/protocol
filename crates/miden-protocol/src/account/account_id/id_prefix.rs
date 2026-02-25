@@ -6,7 +6,6 @@ use crate::Felt;
 use crate::account::account_id::AccountIdPrefixV0;
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
-use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -224,7 +223,7 @@ impl TryFrom<u64> for AccountIdPrefix {
     /// Returns an error if any of the ID constraints are not met. See the [constraints
     /// documentation](super::AccountId#constraints) for details.
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        let element = Felt::try_from_num(value).map_err(|err| {
+        let element = Felt::try_from(value).map_err(|err| {
             AccountIdError::AccountIdInvalidPrefixFieldElement(DeserializationError::InvalidValue(
                 err.to_string(),
             ))

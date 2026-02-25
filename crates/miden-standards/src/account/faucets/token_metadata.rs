@@ -1,6 +1,5 @@
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
-use miden_protocol::field::FromNum;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -184,7 +183,7 @@ impl From<TokenMetadata> for Word {
         Word::new([
             metadata.token_supply,
             metadata.max_supply,
-            Felt::from_num(metadata.decimals),
+            Felt::from(metadata.decimals),
             metadata.symbol.into(),
         ])
     }
@@ -307,7 +306,7 @@ mod tests {
         // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(word[0], Felt::ZERO); // token_supply
         assert_eq!(word[1], max_supply);
-        assert_eq!(word[2], Felt::from_num(decimals));
+        assert_eq!(word[2], Felt::from(decimals));
         assert_eq!(word[3], Felt::from(symbol));
     }
 

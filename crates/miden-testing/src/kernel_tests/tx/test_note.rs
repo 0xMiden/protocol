@@ -10,7 +10,6 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::MasmError;
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -177,7 +176,7 @@ fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
     // assert that the correct pointer is stored in bookkeeping memory
     assert_eq!(
         exec_output.get_kernel_mem_word(ACTIVE_INPUT_NOTE_PTR)[0],
-        Felt::from_num(input_note_data_ptr(0))
+        Felt::from(input_note_data_ptr(0))
     );
 }
 
@@ -445,7 +444,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     let lock_timestamp = 2_000_000_000;
     let source_manager = Arc::new(DefaultSourceManager::default());
     let timelock_note = NoteBuilder::new(account.id(), &mut ChaCha20Rng::from_os_rng())
-        .note_storage([Felt::from_num(lock_timestamp)])?
+        .note_storage([Felt::from(lock_timestamp)])?
         .source_manager(source_manager.clone())
         .code(code.clone())
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())

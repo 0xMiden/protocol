@@ -11,7 +11,6 @@ use super::{
     NoteError,
     Serializable,
 };
-use crate::field::FromNum;
 // NOTE TAG
 // ================================================================================================
 
@@ -146,7 +145,7 @@ impl From<NoteTag> for u32 {
 
 impl From<NoteTag> for Felt {
     fn from(tag: NoteTag) -> Self {
-        Felt::from_num(tag.as_u32())
+        Felt::from(tag.as_u32())
     }
 }
 

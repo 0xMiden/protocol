@@ -5,7 +5,6 @@ use miden_core::{ONE, ZERO};
 
 use crate::Felt;
 use crate::errors::AccountError;
-use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -32,7 +31,7 @@ impl StorageSlotType {
     const MAP_TYPE: u8 = 1;
 
     pub fn as_felt(&self) -> Felt {
-        Felt::from_num(*self as u8)
+        Felt::from(*self as u8)
     }
 
     /// Returns `true` if the slot is a value slot, `false` otherwise.

@@ -7,7 +7,6 @@ use miden_core::Felt;
 use crate::account::account_id::v0::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
-use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -153,7 +152,7 @@ impl TryFrom<[u8; 8]> for AccountIdPrefixV0 {
         value.reverse();
 
         let num = u64::from_le_bytes(value);
-        Felt::try_from_num(num)
+        Felt::try_from(num)
             .map_err(|err| {
                 AccountIdError::AccountIdInvalidPrefixFieldElement(
                     DeserializationError::InvalidValue(err.to_string()),
@@ -170,7 +169,7 @@ impl TryFrom<u64> for AccountIdPrefixV0 {
     /// AccountIdPrefix`](crate::account::AccountIdPrefix#impl-TryFrom<u64>-for-AccountIdPrefix)
     /// for details.
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        let element = Felt::try_from_num(value).map_err(|err| {
+        let element = Felt::try_from(value).map_err(|err| {
             AccountIdError::AccountIdInvalidPrefixFieldElement(DeserializationError::InvalidValue(
                 err.to_string(),
             ))

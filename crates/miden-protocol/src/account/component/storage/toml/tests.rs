@@ -18,7 +18,6 @@ use crate::account::component::{
 use crate::account::{StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
 use crate::errors::ComponentMetadataError;
-use crate::field::FromNum;
 
 #[test]
 fn from_toml_str_with_nested_table_and_flattened() {
@@ -734,7 +733,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     let symbol_felt: Felt = TokenSymbol::new("TST").unwrap().into();
     let expected_token_metadata =
-        Word::from([Felt::from_num(1_000_000u32), symbol_felt, Felt::from_num(6u8), Felt::ZERO]);
+        Word::from([Felt::from(1_000_000u32), symbol_felt, Felt::from(6u8), Felt::ZERO]);
     assert_eq!(token_metadata_word, &expected_token_metadata);
 
     let owner_pub_key_name = StorageSlotName::new("demo::owner_pub_key").unwrap();
@@ -753,7 +752,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(
         protocol_version_word,
-        &Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from_num(7u8)])
+        &Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(7u8)])
     );
 
     let static_word_name = StorageSlotName::new("demo::static_word").unwrap();
@@ -840,7 +839,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     let symbol_felt: Felt = TokenSymbol::new("BTC").unwrap().into();
     let expected_token_metadata_overridden =
-        Word::from([Felt::from_num(1_000_000u32), symbol_felt, Felt::from_num(6u8), Felt::ZERO]);
+        Word::from([Felt::from(1_000_000u32), symbol_felt, Felt::from(6u8), Felt::ZERO]);
     assert_eq!(token_metadata_word, &expected_token_metadata_overridden);
 
     let legacy_word_slot = slots_with_maps.iter().find(|s| s.name() == &legacy_word_name).unwrap();

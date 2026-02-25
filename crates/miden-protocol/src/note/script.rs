@@ -10,7 +10,6 @@ use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
-use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -193,7 +192,7 @@ impl From<&NoteScript> for Vec<Felt> {
         let mut result = Vec::with_capacity(final_size);
 
         // Push the length, this is used to remove the padding later
-        result.push(Felt::from_num(u32::from(script.entrypoint)));
+        result.push(Felt::from(u32::from(script.entrypoint)));
         result.push(Felt::new(len as u64));
 
         // A Felt can not represent all u64 values, so the data is encoded using u32.

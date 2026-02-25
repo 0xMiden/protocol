@@ -3,7 +3,6 @@ use core::cmp::Ordering;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::{ContextId, ExecutionOutput, ProcessorState};
-use miden_protocol::field::FromNum;
 use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
 
 // LINK MAP
@@ -54,8 +53,8 @@ impl<'process> LinkMap<'process> {
         let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::from_num(entry_ptr),
-            Felt::from_num(set_op as u8),
+            Felt::from(entry_ptr),
+            Felt::from(set_op as u8),
         ])]
     }
 
@@ -72,8 +71,8 @@ impl<'process> LinkMap<'process> {
         let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
 
         vec![AdviceMutation::extend_stack([
-            Felt::from_num(entry_ptr),
-            Felt::from_num(get_op as u8),
+            Felt::from(entry_ptr),
+            Felt::from(get_op as u8),
         ])]
     }
 
@@ -349,7 +348,7 @@ impl<'mem> MemoryViewer<'mem> {
                 Some(
                     execution_output
                         .memory
-                        .read_word(tx_kernel_context, Felt::from_num(addr), clk.into())
+                        .read_word(tx_kernel_context, Felt::from(addr), clk.into())
                         .expect("expected address to be word-aligned"),
                 )
             },

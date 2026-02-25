@@ -20,7 +20,6 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -218,7 +217,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         NoteAttachment::new_word(NoteAttachmentScheme::new(28), Word::from([2, 3, 4, 5u32]));
     let attachment3 = NoteAttachment::new_array(
         NoteAttachmentScheme::new(29),
-        [6, 7, 8, 9u32].map(Felt::from_num).to_vec(),
+        [6, 7, 8, 9u32].map(Felt::from).to_vec(),
     )?;
 
     let note_type1 = NoteType::Private;

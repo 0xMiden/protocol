@@ -489,7 +489,6 @@ mod tests {
     use assert_matches::assert_matches;
 
     use super::*;
-    use crate::field::FromNum;
 
     #[rstest::rstest]
     #[case::attachment_none(NoteAttachment::default())]
@@ -507,7 +506,7 @@ mod tests {
     #[test]
     fn note_attachment_commitment_fails_on_too_many_elements() -> anyhow::Result<()> {
         let too_many_elements = (NoteAttachmentArray::MAX_NUM_ELEMENTS as usize) + 1;
-        let elements = vec![Felt::from_num(1u32); too_many_elements];
+        let elements = vec![Felt::from(1u32); too_many_elements];
         let err = NoteAttachmentArray::new(elements).unwrap_err();
 
         assert_matches!(err, NoteError::NoteAttachmentArraySizeExceeded(len) => {

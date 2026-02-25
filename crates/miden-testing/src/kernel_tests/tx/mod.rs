@@ -3,7 +3,6 @@ use miden_processor::{ContextId, ExecutionOutput};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
-use miden_protocol::field::FromNum;
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -70,7 +69,7 @@ impl ExecutionOutputExt for ExecutionOutput {
         let clk = 0u32;
 
         self.memory
-            .read_word(tx_kernel_context, Felt::from_num(addr), clk.into())
+            .read_word(tx_kernel_context, Felt::from(addr), clk.into())
             .expect("expected address to be word-aligned")
     }
 
@@ -86,7 +85,7 @@ impl ExecutionOutputExt for ExecutionOutput {
         let tx_kernel_context = ContextId::root();
 
         self.memory
-            .read_element(tx_kernel_context, Felt::from_num(addr))
+            .read_element(tx_kernel_context, Felt::from(addr))
             .expect("address converted from u32 should be in bounds")
     }
 }

@@ -7,7 +7,6 @@ use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
 use crate::crypto::merkle::smt::{LargeSmt, LargeSmtError, SmtStorage};
 use crate::crypto::merkle::smt::{LeafIndex, MutationSet, SMT_DEPTH, Smt, SmtLeaf, SmtProof};
-use crate::field::TryFromNum;
 
 // ACCOUNT TREE BACKEND
 // ================================================================================================
@@ -215,7 +214,7 @@ impl AccountTree<Smt> {
             // the leaf_idx is a valid Felt as well as a valid account ID prefix.
             AccountTreeError::DuplicateStateCommitments {
                 prefix: AccountIdPrefix::new_unchecked(
-                    crate::Felt::try_from_num(leaf_idx).expect("leaf index should be a valid felt"),
+                    crate::Felt::try_from(leaf_idx).expect("leaf index should be a valid felt"),
                 ),
             }
         })?;
