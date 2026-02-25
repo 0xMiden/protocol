@@ -39,7 +39,6 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
-#! - The note sender is not the bridge admin (enforced by register_faucet).
 #! - The note does not contain exactly 2 storage items.
 #! - The account does not expose the register_faucet procedure.
 #!
