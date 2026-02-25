@@ -53,7 +53,7 @@ rand_xoshiro = { default-features = false, optional = true, version = "0.7" }
 semver       = { features = ["serde"], version = "1.0" }
 serde        = { features = ["derive"], optional = true, workspace = true }
 thiserror    = { workspace = true }
-toml         = { optional = true, version = "0.9" }
+toml         = { optional = true, version = "1.0" }
 # for SecretKey generation
 rand_chacha = { optional = true, workspace = true }
 
