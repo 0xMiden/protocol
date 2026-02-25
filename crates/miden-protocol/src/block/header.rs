@@ -241,12 +241,7 @@ impl BlockHeader {
         elements.extend_from_slice(tx_commitment.as_elements());
         elements.extend_from_slice(tx_kernel_commitment.as_elements());
         elements.extend(validator_key.to_commitment());
-        elements.extend([
-            block_num.into(),
-            Felt::from(version),
-            Felt::from(timestamp),
-            ZERO,
-        ]);
+        elements.extend([block_num.into(), Felt::from(version), Felt::from(timestamp), ZERO]);
         elements.extend([
             ZERO,
             Felt::from(fee_parameters.verification_base_fee()),

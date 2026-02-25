@@ -124,8 +124,7 @@ mod tests {
     fn test_slot_id_as_u128() {
         let suffix = 5;
         let prefix = 3;
-        let slot_id =
-            StorageSlotId::new(Felt::from(suffix as u32), Felt::from(prefix as u32));
+        let slot_id = StorageSlotId::new(Felt::from(suffix as u32), Felt::from(prefix as u32));
         assert_eq!(slot_id.as_u128(), (prefix << 64) + suffix);
         assert_eq!(format!("{slot_id}"), "0x00000000000000030000000000000005");
     }

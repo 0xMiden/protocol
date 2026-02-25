@@ -753,18 +753,12 @@ mod tests {
         let numeric_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "2")
             .expect("numeric auth scheme id should parse");
-        assert_eq!(
-            numeric_word,
-            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(2u8)])
-        );
+        assert_eq!(numeric_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(2u8)]));
 
         let named_word = SCHEMA_TYPE_REGISTRY
             .try_parse_word(&auth_scheme_type, "EcdsaK256Keccak")
             .expect("named auth scheme should parse");
-        assert_eq!(
-            named_word,
-            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(1u8)])
-        );
+        assert_eq!(named_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(1u8)]));
 
         let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
         assert!(

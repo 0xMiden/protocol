@@ -196,7 +196,8 @@ impl AccountBuilder {
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given components.
+    /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
+    ///   components.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {

@@ -96,8 +96,7 @@ impl SwapNote {
 
         let payback_tag = NoteTag::with_account_target(sender);
 
-        let attachment_scheme =
-            Felt::from(payback_note_attachment.attachment_scheme().as_u32());
+        let attachment_scheme = Felt::from(payback_note_attachment.attachment_scheme().as_u32());
         let attachment_kind = Felt::from(payback_note_attachment.attachment_kind().as_u8());
         let attachment = payback_note_attachment.content().to_word();
 
