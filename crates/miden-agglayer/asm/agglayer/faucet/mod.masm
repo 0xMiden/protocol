@@ -146,8 +146,8 @@ end
 #! It reads the faucet's conversion metadata from storage, scales the native amount
 #! to U256 format, and returns the result along with origin token address and network.
 #!
-#! Inputs:  [amount]
-#! Outputs: [AMOUNT_U256[0], AMOUNT_U256[1], addr0, addr1, addr2, addr3, addr4, origin_network]
+#! Inputs:  [amount, pad(15)]
+#! Outputs: [AMOUNT_U256[0], AMOUNT_U256[1], addr0, addr1, addr2, addr3, addr4, origin_network, pad(2)]
 #!
 #! Where:
 #! - amount: The native Miden asset amount
@@ -157,35 +157,35 @@ end
 #!
 #! Invocation: call
 pub proc asset_to_origin_asset
-    # => [amount]
+    # => [amount, pad(15)]
 
     # Step 1: Get scale from storage
     exec.get_scale
-    # => [scale, amount]
+    # => [scale, amount, pad(15)]
     swap
-    # => [amount, scale]
+    # => [amount, scale, pad(15)]
 
     # Step 2: Scale amount to U256
     exec.asset_conversion::scale_native_amount_to_u256
     exec.asset_conversion::reverse_limbs_and_change_byte_endianness
-    # => [U256_LO(4), U256_HI(4)]
+    # => [U256_LO(4), U256_HI(4), pad(15)]
 
     # Step 3: Get origin token address
     exec.get_origin_token_address
-    # => [addr0, addr1, addr2, addr3, addr4, U256_LO(4), U256_HI(4)]
+    # => [addr0, addr1, addr2, addr3, addr4, U256_LO(4), U256_HI(4), pad(15)]
 
     # Move address below the U256 amount
     repeat.5 movdn.12 end
-    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4]
+    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, pad(15)]
 
     # Step 4: Get origin network
     exec.get_origin_network
     exec.utils::swap_u32_bytes
-    # => [origin_network, U256_LO(4), U256_HI(4), addr0..addr4]
+    # => [origin_network, U256_LO(4), U256_HI(4), addr0..addr4, pad(15)]
 
     # Move origin_network after the address fields
     movdn.13
-    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, origin_network]
+    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, origin_network, pad(15)]
 
     exec.sys::truncate_stack
 end
@@ -308,7 +308,7 @@ proc build_p2id_output_note
 
     # store amount in memory locals for use in faucets::distribute
     loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
-    # => []
+    # => [pad(16)]
 
     # Build P2ID output note
     procref.::miden::standards::notes::p2id::main
@@ -350,7 +350,7 @@ proc build_p2id_output_note
     # => [amount, tag, note_type, RECIPIENT]
 
     exec.faucets::distribute
-    # => []
+    # => [pad(16)]
 end
 
 #! Validates a claim against the AggLayer bridge and mints the corresponding asset to the recipient.
@@ -368,8 +368,8 @@ end
 #! 2) We can have a mapping in the bridge or in the faucet that stores consumed claim proofs
 #!    as a hash -> bool value (similar to how it's done in the agglayer solidity contract).
 #!
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount]
-#! Outputs: []
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Advice map: {
 #!   PROOF_DATA_KEY => [
@@ -399,42 +399,42 @@ end
 pub proc claim
     # Write output note faucet amount to memory
     movup.8 mem_store.OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(7)]
 
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
-    # => []
+    # => [pad(7)]
 
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
     exec.get_destination_account_id_data
     loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
-    # => []
+    # => [pad(7)]
 
     exec.get_raw_claim_amount
     loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
-    # => []
+    # => [pad(7)]
 
     # VALIDATE CLAIM 
     mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
-    # => [PROOF_DATA_KEY]
+    # => [PROOF_DATA_KEY, pad(7)]
     
     swapw mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY]
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
 
     # Errors on invalid proof
     exec.validate_claim
-    # => []
+    # => [pad(16)]
 
     # Create P2ID output note
     loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
-    # => [AMOUNT[0], AMOUNT[1]]
+    # => [AMOUNT[0], AMOUNT[1], pad(8)]
     
     loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
-    # => [prefix, suffix, AMOUNT[0], AMOUNT[1]]
+    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
 
     exec.build_p2id_output_note
-    # => []
+    # => [pad(16)] 
 end
 
 #! Burns the fungible asset from the active note.
@@ -442,8 +442,8 @@ end
 #! This procedure retrieves the asset from the active note and burns it. The note must contain
 #! exactly one asset, which must be a fungible asset issued by this faucet.
 #!
-#! Inputs:  []
-#! Outputs: []
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
 #!
 #! Panics if:
 #! - the procedure is not called from a note context (active_note::get_assets will fail).
