@@ -130,7 +130,6 @@ end
 #! - metadata: ABI encoded metadata (fixed size)
 #! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
 #!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
-#! - padding (1 felt, word alignment)
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
