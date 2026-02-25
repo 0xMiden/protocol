@@ -4,7 +4,7 @@ use alloc::string::{String, ToString};
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_processor::DeserializationError;
 
-use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaTypeId};
+use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaRequirement, SchemaType};
 use super::super::{InitStorageData, StorageValueName, WordValue};
 use super::validate_description_ascii;
 use crate::account::StorageSlotName;
@@ -25,13 +25,13 @@ use crate::{Felt, FieldElement};
 pub struct FeltSchema {
     name: Option<String>,
     description: Option<String>,
-    r#type: SchemaTypeId,
+    r#type: SchemaType,
     default_value: Option<Felt>,
 }
 
 impl FeltSchema {
     /// Creates a new required typed felt field.
-    pub fn new_typed(r#type: SchemaTypeId, name: impl Into<String>) -> Self {
+    pub fn new_typed(r#type: SchemaType, name: impl Into<String>) -> Self {
         FeltSchema {
             name: Some(name.into()),
             description: None,
@@ -42,7 +42,7 @@ impl FeltSchema {
 
     /// Creates a new typed felt field with a default value.
     pub fn new_typed_with_default(
-        r#type: SchemaTypeId,
+        r#type: SchemaType,
         name: impl Into<String>,
         default_value: Felt,
     ) -> Self {
@@ -59,34 +59,34 @@ impl FeltSchema {
         FeltSchema {
             name: None,
             description: None,
-            r#type: SchemaTypeId::void(),
+            r#type: SchemaType::void(),
             default_value: None,
         }
     }
 
-    /// Creates a new required felt field typed as [`SchemaTypeId::native_felt()`].
+    /// Creates a new required felt field typed as [`SchemaType::native_felt()`].
     pub fn felt(name: impl Into<String>) -> Self {
-        Self::new_typed(SchemaTypeId::native_felt(), name)
+        Self::new_typed(SchemaType::native_felt(), name)
     }
 
-    /// Creates a new required felt field typed as [`SchemaTypeId::native_word()`].
+    /// Creates a new required felt field typed as [`SchemaType::native_word()`].
     pub fn word(name: impl Into<String>) -> Self {
-        Self::new_typed(SchemaTypeId::native_word(), name)
+        Self::new_typed(SchemaType::native_word(), name)
     }
 
-    /// Creates a new required felt field typed as [`SchemaTypeId::u8()`].
+    /// Creates a new required felt field typed as [`SchemaType::u8()`].
     pub fn u8(name: impl Into<String>) -> Self {
-        Self::new_typed(SchemaTypeId::u8(), name)
+        Self::new_typed(SchemaType::u8(), name)
     }
 
-    /// Creates a new required felt field typed as [`SchemaTypeId::u16()`].
+    /// Creates a new required felt field typed as [`SchemaType::u16()`].
     pub fn u16(name: impl Into<String>) -> Self {
-        Self::new_typed(SchemaTypeId::u16(), name)
+        Self::new_typed(SchemaType::u16(), name)
     }
 
-    /// Creates a new required felt field typed as [`SchemaTypeId::u32()`].
+    /// Creates a new required felt field typed as [`SchemaType::u32()`].
     pub fn u32(name: impl Into<String>) -> Self {
-        Self::new_typed(SchemaTypeId::u32(), name)
+        Self::new_typed(SchemaType::u32(), name)
     }
 
     /// Sets the default value of the [`FeltSchema`] and returns `self`.
@@ -106,7 +106,7 @@ impl FeltSchema {
     }
 
     /// Returns the felt type.
-    pub fn felt_type(&self) -> SchemaTypeId {
+    pub fn felt_type(&self) -> SchemaType {
         self.r#type.clone()
     }
 
@@ -127,7 +127,7 @@ impl FeltSchema {
         slot_prefix: StorageValueName,
         requirements: &mut BTreeMap<StorageValueName, SchemaRequirement>,
     ) -> Result<(), ComponentMetadataError> {
-        if self.r#type == SchemaTypeId::void() {
+        if self.r#type == SchemaType::void() {
             return Ok(());
         }
 
@@ -203,7 +203,7 @@ impl FeltSchema {
             }
         }
 
-        if self.r#type == SchemaTypeId::void() {
+        if self.r#type == SchemaType::void() {
             return Ok(Felt::ZERO);
         }
 
@@ -234,7 +234,7 @@ impl FeltSchema {
             ));
         }
 
-        if self.r#type == SchemaTypeId::void() {
+        if self.r#type == SchemaType::void() {
             if self.name.is_some() {
                 return Err(ComponentMetadataError::InvalidSchema(
                     "void felt elements must be unnamed".into(),
@@ -285,7 +285,7 @@ impl Deserializable for FeltSchema {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let name = Option::<String>::read_from(source)?;
         let description = Option::<String>::read_from(source)?;
-        let r#type = SchemaTypeId::read_from(source)?;
+        let r#type = SchemaType::read_from(source)?;
         let default_value = Option::<Felt>::read_from(source)?;
         Ok(FeltSchema { name, description, r#type, default_value })
     }
