@@ -156,10 +156,11 @@ begin
     movdn.8
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
 
-    # Call the Aggfaucet Claim procedure
+    # call the Aggfaucet Claim procedure
     call.agg_faucet::claim
     # => [pad(16), pad(9)]
 
-    dropw dropw dropw
+    # a call invocation consumes and returns 16 elements, but we had trailing padding
+    dropw dropw drop
     # => [pad(16)]
 end
