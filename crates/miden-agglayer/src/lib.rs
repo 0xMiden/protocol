@@ -145,10 +145,12 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
-/// - `bridge_out`, which bridges an asset from the AggLayer to the destination network.
-/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
-/// - `update_ger`, which injects a new GER into the storage map.
+/// - `assert_sender_is_bridge_admin`, which validates CONFIG note senders.
+/// - `assert_sender_is_ger_manager`, which validates UPDATE_GER note senders.
 /// - `register_faucet`, which registers a faucet in the bridge.
+/// - `update_ger`, which injects a new GER into the storage map.
+/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
+/// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 ///
 /// ## Storage Layout
 ///
@@ -158,6 +160,8 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 /// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
+/// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
+/// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -426,7 +430,7 @@ impl From<AggLayerFaucet> for AccountComponent {
 
 /// Creates a faucet registry map key from a faucet account ID.
 ///
-/// The key format is `[faucet_id_prefix, faucet_id_suffix, 0, 0]`.
+/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
     Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
 }
