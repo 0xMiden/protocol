@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anyhow::Context;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
@@ -705,8 +706,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .expect("asset is invalid"),
     );
 
-    let account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth, [fungible_asset_0, fungible_asset_1])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [fungible_asset_0, fungible_asset_1],
+    )?;
 
     let mock_chain = builder.build()?;
 
@@ -827,8 +830,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(2000)])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [FungibleAsset::mock(2000)],
+    )?;
 
     let mock_chain = builder.build()?;
 

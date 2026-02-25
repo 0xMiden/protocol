@@ -1,4 +1,5 @@
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
 use miden_protocol::note::{NoteAttachment, NoteTag, NoteType};
@@ -30,9 +31,12 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth)?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account =
+        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let malicious_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -92,8 +96,10 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let target_account = builder.create_new_wallet(Auth::BasicAuth)?;
+    let sender_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account =
+        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -140,7 +146,8 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
     let mut builder = MockChain::builder();
-    let mut account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let mut account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),
@@ -178,8 +185,10 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
 async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let mut account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(20)])?;
+    let mut account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [FungibleAsset::mock(20)],
+    )?;
 
     let input_note_faucet_id = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
     let input_note_asset_1: Asset = FungibleAsset::new(input_note_faucet_id, 11)?.into();
@@ -282,9 +291,12 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 async fn test_p2id_new_constructor() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let sender_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(100)])?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [FungibleAsset::mock(100)],
+    )?;
+    let target_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     let mock_chain = builder.build()?;
 
