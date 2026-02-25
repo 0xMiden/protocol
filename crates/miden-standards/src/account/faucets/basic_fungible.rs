@@ -328,7 +328,6 @@ mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::Word;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-    use miden_protocol::field::PrimeCharacteristicRing;
 
     use super::{
         AccountBuilder,

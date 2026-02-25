@@ -1,6 +1,6 @@
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
-use miden_protocol::field::{FromNum, PrimeCharacteristicRing, PrimeField64};
+use miden_protocol::field::FromNum;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(word[0], Felt::ZERO); // token_supply
         assert_eq!(word[1], max_supply);
         assert_eq!(word[2], Felt::from_num(decimals));
-        assert_eq!(word[3], symbol.into());
+        assert_eq!(word[3], Felt::from(symbol));
     }
 
     #[test]

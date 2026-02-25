@@ -6,7 +6,6 @@ use super::super::{InitStorageData, StorageValueName};
 use super::FeltSchema;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
-use crate::field::PrimeCharacteristicRing;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

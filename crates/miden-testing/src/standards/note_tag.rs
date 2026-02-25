@@ -1,4 +1,3 @@
-use miden_protocol::field::PrimeField64;
 use miden_protocol::note::NoteTag;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_standards::errors::standards::ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED;

@@ -7,7 +7,6 @@ use miden_protocol::assembly::debuginfo::{SourceLanguage, SourceManagerSync, Uri
 use miden_protocol::assembly::{DefaultSourceManager, Library};
 use miden_protocol::asset::Asset;
 use miden_protocol::errors::NoteError;
-use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     Note,
     NoteAssets,

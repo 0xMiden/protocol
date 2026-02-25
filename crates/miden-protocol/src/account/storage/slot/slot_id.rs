@@ -5,7 +5,6 @@ use core::hash::Hash;
 use miden_core::utils::hash_string_to_word;
 
 use crate::Felt;
-use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

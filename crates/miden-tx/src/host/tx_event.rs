@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use miden_processor::ProcessorState;
 use miden_processor::advice::{AdviceMutation, AdviceProvider};
-use miden_processor::field::PrimeField64;
 use miden_processor::trace::RowIndex;
 use miden_protocol::account::{AccountId, StorageMap, StorageSlotName, StorageSlotType};
 use miden_protocol::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};

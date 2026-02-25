@@ -17,7 +17,6 @@ use super::{
     Word,
     ZERO,
 };
-use crate::field::PrimeField64;
 
 // CONSTANTS
 // ================================================================================================
@@ -79,8 +78,6 @@ impl Nullifier {
 
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(n: u64) -> Self {
-        use crate::field::PrimeCharacteristicRing;
-
         Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]))
     }
 }

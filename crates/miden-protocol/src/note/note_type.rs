@@ -3,7 +3,6 @@ use core::str::FromStr;
 
 use crate::Felt;
 use crate::errors::NoteError;
-use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

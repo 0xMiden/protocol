@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
-use miden_protocol::field::PrimeField64;
 use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, Word};
 

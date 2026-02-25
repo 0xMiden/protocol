@@ -18,7 +18,7 @@ use crate::account::component::{
 use crate::account::{StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
 use crate::errors::ComponentMetadataError;
-use crate::field::{FromNum, PrimeCharacteristicRing};
+use crate::field::FromNum;
 
 #[test]
 fn from_toml_str_with_nested_table_and_flattened() {

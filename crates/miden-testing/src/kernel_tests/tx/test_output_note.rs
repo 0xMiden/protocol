@@ -8,7 +8,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
 };
-use miden_protocol::field::{FromNum, PrimeField64};
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAttachment,

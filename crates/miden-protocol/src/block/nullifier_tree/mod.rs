@@ -5,7 +5,6 @@ use crate::block::BlockNumber;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt};
 use crate::errors::NullifierTreeError;
-use crate::field::{PrimeCharacteristicRing, PrimeField64};
 use crate::note::Nullifier;
 use crate::utils::serde::{
     ByteReader,

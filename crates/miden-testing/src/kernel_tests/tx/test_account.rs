@@ -40,7 +40,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE,
     ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME,
 };
-use miden_protocol::field::{FromNum, PrimeCharacteristicRing, PrimeField64, TryFromNum};
+use miden_protocol::field::{FromNum, PrimeField64, TryFromNum};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,

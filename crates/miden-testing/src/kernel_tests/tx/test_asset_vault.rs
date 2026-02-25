@@ -16,7 +16,6 @@ use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::errors::{AssetError, AssetVaultError};
-use miden_protocol::field::PrimeField64;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,

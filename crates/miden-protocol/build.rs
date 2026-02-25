@@ -7,7 +7,6 @@ use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Assembler, DefaultSourceManager, KernelLibrary, Library};
 use miden_core::events::EventId;
-use miden_core::field::PrimeField64;
 use regex::Regex;
 use walkdir::WalkDir;
 

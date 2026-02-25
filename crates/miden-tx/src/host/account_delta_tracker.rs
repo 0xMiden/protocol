@@ -6,7 +6,6 @@ use miden_protocol::account::{
     AccountVaultDelta,
     PartialAccount,
 };
-use miden_protocol::field::PrimeCharacteristicRing;
 
 use crate::host::storage_delta_tracker::StorageDeltaTracker;
 

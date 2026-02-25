@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::{ContextId, ExecutionOutput, ProcessorState};
-use miden_protocol::field::{FromNum, PrimeField64};
+use miden_protocol::field::FromNum;
 use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
 
 // LINK MAP

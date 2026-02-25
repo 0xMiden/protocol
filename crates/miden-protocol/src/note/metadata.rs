@@ -12,7 +12,7 @@ use super::{
 };
 use crate::Hasher;
 use crate::errors::NoteError;
-use crate::field::{PrimeField64, TryFromNum};
+use crate::field::TryFromNum;
 use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 
 // NOTE METADATA

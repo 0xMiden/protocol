@@ -7,7 +7,7 @@ use miden_core::Felt;
 use crate::account::account_id::v0::{self, validate_prefix};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::errors::AccountIdError;
-use crate::field::{PrimeField64, TryFromNum};
+use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

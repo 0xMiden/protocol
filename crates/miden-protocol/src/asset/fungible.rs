@@ -5,7 +5,7 @@ use super::vault::AssetVaultKey;
 use super::{AccountType, Asset, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
-use crate::field::{PrimeCharacteristicRing, PrimeField64, TryFromNum};
+use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use miden_protocol::field::PrimeCharacteristicRing;
     use miden_protocol::{Felt, Word};
     use miden_protocol_macros::WordWrapper;
 

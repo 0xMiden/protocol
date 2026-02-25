@@ -117,7 +117,6 @@ impl Deserializable for StorageSlotType {
 mod tests {
     use crate::Felt;
     use crate::account::StorageSlotType;
-    use crate::field::PrimeCharacteristicRing;
     use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]

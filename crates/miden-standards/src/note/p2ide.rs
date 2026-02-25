@@ -6,7 +6,6 @@ use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::field::{PrimeCharacteristicRing, PrimeField64};
 use miden_protocol::note::{
     Note,
     NoteAssets,

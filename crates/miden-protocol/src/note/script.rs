@@ -10,7 +10,7 @@ use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
 use crate::assembly::{Library, Path};
 use crate::errors::NoteError;
-use crate::field::{FromNum, PrimeField64};
+use crate::field::FromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

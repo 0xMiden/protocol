@@ -24,7 +24,6 @@ use miden_crypto::utils::hex_to_bytes;
 use crate::Word;
 use crate::address::NetworkId;
 use crate::errors::{AccountError, AccountIdError};
-use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

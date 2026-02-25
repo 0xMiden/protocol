@@ -8,7 +8,6 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::field::PrimeCharacteristicRing;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use rand::{Rng, SeedableRng};

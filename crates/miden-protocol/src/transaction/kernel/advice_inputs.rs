@@ -6,7 +6,7 @@ use crate::account::{AccountHeader, AccountId, PartialAccount};
 use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
-use crate::field::{FromNum, PrimeCharacteristicRing};
+use crate::field::FromNum;
 use crate::note::NoteAttachmentContent;
 use crate::transaction::{
     AccountInputs,

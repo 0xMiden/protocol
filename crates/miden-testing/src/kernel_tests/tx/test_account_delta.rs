@@ -25,7 +25,6 @@ use miden_protocol::asset::{
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
-use miden_protocol::field::PrimeCharacteristicRing;
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,

@@ -20,7 +20,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
 use miden_protocol::block::BlockNumber;
-use miden_protocol::field::{FromNum, PrimeField64};
+use miden_protocol::field::FromNum;
 use miden_protocol::note::{
     Note,
     NoteAssets,

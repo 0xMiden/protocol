@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use crate::asset::{Asset, AssetVault};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -580,7 +579,6 @@ mod tests {
     };
     use crate::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
     use crate::errors::AccountError;
-    use crate::field::PrimeCharacteristicRing;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER,
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,

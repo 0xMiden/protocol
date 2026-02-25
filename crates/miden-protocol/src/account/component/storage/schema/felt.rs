@@ -7,7 +7,6 @@ use super::validate_description_ascii;
 use crate::Felt;
 use crate::account::StorageSlotName;
 use crate::errors::ComponentMetadataError;
-use crate::field::PrimeCharacteristicRing;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -1,7 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::errors::{AccountIdError, NoteError};
-use miden_protocol::field::PrimeField64;
 use miden_protocol::note::{
     NoteAttachment,
     NoteAttachmentContent,

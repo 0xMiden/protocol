@@ -5,7 +5,6 @@ use super::super::type_registry::{SCHEMA_TYPE_REGISTRY, SchemaTypeId};
 use super::super::{StorageValueName, WordValue};
 use super::{FeltSchema, WordSchema};
 use crate::errors::ComponentMetadataError;
-use crate::field::PrimeCharacteristicRing;
 use crate::{Felt, Word};
 
 // HELPER FUNCTIONS

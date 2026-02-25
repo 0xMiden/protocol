@@ -1,7 +1,6 @@
 use core::fmt;
 
 use crate::errors::TransactionEventError;
-use crate::field::PrimeField64;
 use crate::vm::EventId;
 
 // CONSTANTS

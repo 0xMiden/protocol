@@ -9,7 +9,6 @@ use crate::ZERO;
 use crate::account::{StorageSlot, StorageSlotId, StorageSlotName};
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::field::PrimeCharacteristicRing;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -1,4 +1,3 @@
-use miden_processor::field::PrimeField64;
 use miden_processor::{ExecutionError, Felt, ProcessorState};
 use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};

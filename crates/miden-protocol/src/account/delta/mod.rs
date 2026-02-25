@@ -12,7 +12,6 @@ use crate::account::{
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
-use crate::field::PrimeField64;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

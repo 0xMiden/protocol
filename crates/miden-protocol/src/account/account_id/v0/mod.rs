@@ -20,7 +20,7 @@ use crate::account::account_id::storage_mode::{NETWORK, PRIVATE, PUBLIC};
 use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
 use crate::address::AddressType;
 use crate::errors::{AccountError, AccountIdError, Bech32Error};
-use crate::field::{PrimeField64, TryFromNum};
+use crate::field::TryFromNum;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

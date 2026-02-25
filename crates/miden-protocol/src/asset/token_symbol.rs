@@ -1,7 +1,6 @@
 use alloc::string::String;
 
 use super::{Felt, TokenSymbolError};
-use crate::field::PrimeField64;
 
 /// Represents a string token symbol (e.g. "POL", "ETH") as a single [`Felt`] value.
 ///
@@ -213,7 +212,6 @@ mod test {
         decode_felt_to_symbol,
         encode_symbol_to_felt,
     };
-    use crate::field::PrimeField64;
 
     #[test]
     fn test_token_symbol_decoding_encoding() {

@@ -12,7 +12,7 @@ use crate::asset::FungibleAsset;
 use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
-use crate::field::{PrimeField64, TryFromNum};
+use crate::field::TryFromNum;
 use crate::protocol::ProtocolLib;
 use crate::transaction::{OutputNote, OutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::serde::Deserializable;

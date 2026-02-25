@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
-use miden_protocol::field::{FromNum, PrimeField64};
+use miden_protocol::field::FromNum;
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -269,7 +269,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[BLOCK_NUMBER_IDX],
-        inputs.tx_inputs().block_header().block_num().into(),
+        Felt::from(inputs.tx_inputs().block_header().block_num()),
         "The block number should be stored at BLOCK_METADATA_PTR[BLOCK_NUMBER_IDX]"
     );
 

@@ -1,7 +1,6 @@
 use core::fmt::Display;
 
 use crate::Felt;
-use crate::field::PrimeField64;
 
 /// The [`AssetId`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
 /// assets issued by the same faucet.

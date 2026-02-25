@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
-use crate::field::{FromNum, PrimeCharacteristicRing, PrimeField64, TryFromNum};
+use crate::field::{FromNum, TryFromNum};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

@@ -1169,7 +1169,6 @@ mod tests {
     use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountStorageMode};
     use miden_protocol::asset::{Asset, FungibleAsset};
-    use miden_protocol::field::PrimeField64;
     use miden_protocol::note::NoteType;
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
