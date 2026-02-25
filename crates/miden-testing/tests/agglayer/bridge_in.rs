@@ -8,7 +8,6 @@ use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::{
     ClaimNoteStorage,
     ExitRoot,
-    OutputNoteData,
     SmtNode,
     UpdateGerNote,
     agglayer_library,
@@ -209,9 +208,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
-    let output_note_data = OutputNoteData { miden_claim_amount };
-
-    let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
+    let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, miden_claim_amount };
 
     let claim_note = create_claim_note(
         claim_inputs,

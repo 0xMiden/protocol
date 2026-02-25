@@ -162,27 +162,6 @@ impl SequentialCommit for LeafData {
     }
 }
 
-/// Output note data for CLAIM note creation.
-/// Contains note-specific data and can use Miden types.
-#[derive(Clone)]
-pub struct OutputNoteData {
-    /// Miden claim amount (scaled-down token amount as Felt)
-    pub miden_claim_amount: Felt,
-}
-
-impl OutputNoteData {
-    /// Converts the output note data to a vector of field elements for note storage.
-    pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 1;
-        let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
-
-        // Miden claim amount
-        elements.push(self.miden_claim_amount);
-
-        elements
-    }
-}
-
 /// Data for creating a CLAIM note.
 ///
 /// This struct groups the core data needed to create a CLAIM note that exactly
@@ -193,21 +172,21 @@ pub struct ClaimNoteStorage {
     pub proof_data: ProofData,
     /// Leaf data containing network, address, amount, and metadata
     pub leaf_data: LeafData,
-    /// Output note data contains native miden asset amount
-    pub output_note_data: OutputNoteData,
+    /// Miden claim amount (scaled-down token amount as Felt)
+    pub miden_claim_amount: Felt,
 }
 
 impl TryFrom<ClaimNoteStorage> for NoteStorage {
     type Error = NoteError;
 
     fn try_from(storage: ClaimNoteStorage) -> Result<Self, Self::Error> {
-        // proof_data + leaf_data + output_note_data
+        // proof_data + leaf_data + miden_claim_amount
         // 536 + 32 + 1
         let mut claim_storage = Vec::with_capacity(569);
 
         claim_storage.extend(storage.proof_data.to_elements());
         claim_storage.extend(storage.leaf_data.to_elements());
-        claim_storage.extend(storage.output_note_data.to_elements());
+        claim_storage.push(storage.miden_claim_amount);
 
         NoteStorage::new(claim_storage)
     }

@@ -38,7 +38,6 @@ pub use claim_note::{
     ClaimNoteStorage,
     ExitRoot,
     LeafData,
-    OutputNoteData,
     ProofData,
     SmtNode,
     create_claim_note,
