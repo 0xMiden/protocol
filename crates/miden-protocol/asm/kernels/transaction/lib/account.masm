@@ -854,49 +854,40 @@ pub proc validate_seed
     # Compute the hash of (SEED, CODE_COMMITMENT, STORAGE_COMMITMENT, EMPTY_WORD).
     # ---------------------------------------------------------------------------------------------
 
-    # push an empty word as padding for account ID hashing
-    padw
-    # => [EMPTY_WORD]
+    # initialize capacity of the hasher and rate1 with the code commitment
+    padw exec.memory::get_account_code_commitment
+    # => [CODE_COMMITMENT, CAPACITY]
 
     # push the advice map key at which the seed is located
     exec.memory::get_native_account_id
     exec.create_id_key
-    # => [ACCOUNT_ID_KEY, EMPTY_WORD]
+    # => [ACCOUNT_ID_KEY, CODE_COMMITMENT, CAPACITY]
 
-    # populate first four elements of the rate with the account ID seed
+    # overwrite ACCOUNT_ID_KEY with the SEED
     adv.push_mapval adv_loadw
-    # => [SEED, EMPTY_WORD]
-
-    # pad capacity element of hasher
-    padw swapw
-    # => [SEED, CAPACITY, EMPTY_WORD]
-
-    # populate last four elements of the hasher rate with the code commitment
-    exec.memory::get_account_code_commitment
-    # => [CODE_COMMITMENT, SEED, CAPACITY, EMPTY_WORD]
+    # => [SEED, CODE_COMMITMENT, CAPACITY]
 
     # perform first permutation over (SEED, CODE_COMMITMENT)
-    swapw exec.poseidon2::permute
-    # => [RATE0, RATE1, CAPACITY, EMPTY_WORD]
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY]
 
     # clear rate elements
     dropw dropw
-    # => [CAPACITY, EMPTY_WORD]
+    # => [CAPACITY]
 
     # perform second permutation over (STORAGE_COMMITMENT, EMPTY_WORD)
-    swapw exec.memory::get_account_storage_commitment swapw
-    # => [EMPTY_WORD, STORAGE_COMMITMENT, CAPACITY]
+    padw exec.memory::get_account_storage_commitment
+    # => [STORAGE_COMMITMENT, EMPTY_WORD, CAPACITY]
 
-    swapw exec.poseidon2::permute
+    exec.poseidon2::permute
     exec.poseidon2::squeeze_digest
     # => [DIGEST]
+    # => [digest0, digest1, digest2, digest3]
 
     # Shape suffix to set the lower 8 bits to zero and compare the computed and provided ID.
     # ---------------------------------------------------------------------------------------------
 
-    # extract account ID from digest where suffix = digest0 and prefix = digest1.
-    # => [digest0, digest1, digest2, digest3]
-
+    # extract account ID from digest where suffix = digest0 and prefix = digest1
     movup.2 drop movup.2 drop
     # => [hashed_account_id_suffix, hashed_account_id_prefix]
 
