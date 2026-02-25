@@ -2,7 +2,7 @@ use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -63,14 +63,14 @@ impl AuthSingleSig {
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", SchemaTypeId::pub_key()),
+            StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
         )
     }
     /// Returns the storage slot schema for the scheme ID slot.
     pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaTypeId::auth_scheme()),
+            StorageSlotSchema::value("Scheme ID", SchemaType::auth_scheme()),
         )
     }
 }
