@@ -114,7 +114,7 @@ pub proc bridge_out
     # -> return scaling factor
 
     # @dev TODO: Convert ASSET amount to EVM amount using scaling factor
-    # -> return amount from here: https://github.com/0xMiden/miden-base/pull/2141
+    # -> return amount from here: https://github.com/0xMiden/protocol/pull/2141
 
     # Converting SCALED_ASSET, dest_network, dest_address(5) to u32 representation
     # in preparation for keccak256 hashing

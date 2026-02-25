@@ -492,7 +492,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 /// the target account, is also provided as an input to the input note.
 ///
 /// Previously this setup was leading to the values collision in the advice map, see the
-/// [issue #1267](https://github.com/0xMiden/miden-base/issues/1267) for more details.
+/// [issue #1267](https://github.com/0xMiden/protocol/issues/1267) for more details.
 #[tokio::test]
 async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     let mut rng = ChaCha20Rng::from_seed(Default::default());
