@@ -182,7 +182,7 @@ That means if a `Note` is private and the operator stores only the note's hash, 
 
 ## Standard Note Types
 
-The protocol repository provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
+The `miden::standards` library provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
 
 ### P2ID (Pay-to-ID)
 
