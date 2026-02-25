@@ -14,7 +14,7 @@ use miden_protocol::transaction::{InputNote, InputNotes, OutputNote};
 use crate::host::{RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent};
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
 
-/// The transaction prover host is responsible for handling [`SyncHost`] requests made by the
+/// The transaction prover host is responsible for handling [`Host`] requests made by the
 /// transaction kernel during proving.
 pub struct TransactionProverHost<'store, STORE>
 where

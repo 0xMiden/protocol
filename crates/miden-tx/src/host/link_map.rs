@@ -302,7 +302,7 @@ enum SetOperation {
 
 /// A abstraction over ways to view a process' memory.
 ///
-/// More specifically, it allows using a [`LinkMap`] both with a [`ProcessState`], i.e. a process
+/// More specifically, it allows using a [`LinkMap`] both with a [`ProcessorState`], i.e. a process
 /// that is actively executing and also an [`ExecutionOutput`], i.e. a process that has finished
 /// execution.
 ///
