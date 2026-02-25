@@ -34,14 +34,7 @@ pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
-pub use claim_note::{
-    ClaimNoteStorage,
-    ExitRoot,
-    LeafData,
-    ProofData,
-    SmtNode,
-    create_claim_note,
-};
+pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
 pub use config_note::ConfigAggBridgeNote;
 pub use eth_types::{
     EthAddressFormat,
