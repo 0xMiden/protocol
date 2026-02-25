@@ -40,7 +40,7 @@ const IS_FAUCET_REGISTERED_FLAG=1
 #!
 #! Invocation: call
 pub proc update_ger
-    # Assert the note sender is the global exit root manager.
+    # assert the note sender is the global exit root manager.
     exec.assert_sender_is_ger_manager
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
@@ -111,7 +111,7 @@ end
 #!
 #! Invocation: call
 pub proc register_faucet
-    # Assert the note sender is the bridge admin.
+    # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
     # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
