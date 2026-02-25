@@ -44,7 +44,7 @@ use crate::{MockChain, MockChainNote};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_testing::TransactionContextBuilder;
-/// # use miden_protocol::{account::AccountBuilder,Felt, FieldElement};
+/// # use miden_protocol::{account::AccountBuilder, Felt};
 /// # use miden_protocol::transaction::TransactionKernel;
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
@@ -63,7 +63,7 @@ use crate::{MockChain, MockChainNote};
 /// ";
 ///
 /// let exec_output = tx_context.execute_code(code).await?;
-/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::new(5));
+/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::from(5u32));
 /// # Ok(())
 /// # }
 /// ```
