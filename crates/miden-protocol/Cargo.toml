@@ -63,12 +63,12 @@ getrandom = { features = ["wasm_js"], version = "0.3" }
 [dev-dependencies]
 anyhow         = { features = ["backtrace", "std"], workspace = true }
 assert_matches = { workspace = true }
+color-eyre     = { version = "0.5" }
 criterion      = { default-features = false, features = ["html_reports"], version = "0.5" }
 miden-protocol = { features = ["testing"], path = "." }
 pprof          = { default-features = false, features = ["criterion", "flamegraph"], version = "0.15" }
 rstest         = { workspace = true }
 tempfile       = { version = "3.19" }
-color-eyre = { version = "0.5" }
 
 [build-dependencies]
 fs-err         = { workspace = true }
