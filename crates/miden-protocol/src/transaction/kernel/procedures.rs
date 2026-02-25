@@ -24,17 +24,17 @@ pub const KERNEL_PROCEDURES: [Word; 50] = [
     // account_compute_storage_commitment
     word!("0x7b959773840ad8261f1552084cc92ed62b486c21e41bae1a74b26d95d0b91d23"),
     // account_get_item
-    word!("0x2ebacd0853b005e81ea40cdb2219d7ed412803732f2e5fb9f69b0876fb7aeb5a"),
+    word!("0x9c922f062ce6fe0c3595c489dbce05694a3effb19e76054d23d140113cacca41"),
     // account_get_initial_item
-    word!("0xeacc4127e47a760471831ba2ec257d91b800f2a9220633a21bf3dbeec9f92d06"),
+    word!("0xbb30a53b864092a3753d9a2f9359a0e3793be5d2a87f6e3453074eb25a4aaabb"),
     // account_set_item
-    word!("0x18b77534584b6066990ea41dba6a376e20d6406d2a379e80588be93addc257d1"),
+    word!("0x5b1f2049db46c630df1b504fd073b426e8c5116fd3b07fedc77bfeb489eda023"),
     // account_get_map_item
-    word!("0x23748ca0df459331f63fd0f89308e4f11c249d16d3b2984e749d25ff0890db17"),
+    word!("0x983bbe3dba1ec84c004fe3d0947645e0fce494c2be84b3bec7c51e29d5586929"),
     // account_get_initial_map_item
-    word!("0xc631a45f770c996ca9ecd8dab009a9f57e941f936f273d03dd9245b2e911a7c2"),
+    word!("0xb071c1f7863cb1981d7773ae93ef80ecf8466cba73b176f5ed643f02c745a36f"),
     // account_set_map_item
-    word!("0xe00a317520a320d5f6a29ef270255bca1a0a35e0ea1b4e810156f69ffbeda2d6"),
+    word!("0xdbdf597ab76aa143e4553f4aa11106edecf6ddb00c55d233241dceefb0007fc9"),
     // account_get_initial_vault_root
     word!("0xab0e5605867a90d7f3c14d1c657ebc78d2b7009704fc660c377e5a5cc4bf0ed4"),
     // account_get_vault_root
