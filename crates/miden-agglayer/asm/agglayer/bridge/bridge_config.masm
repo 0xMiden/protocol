@@ -41,8 +41,6 @@ const IS_FAUCET_REGISTERED_FLAG=1
 #! Invocation: call
 pub proc update_ger
     # Assert the note sender is the global exit root manager.
-    # This has a net-zero stack effect: it pushes temporaries, compares, asserts,
-    # and drops them, leaving the original stack undisturbed.
     exec.assert_sender_is_ger_manager
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
@@ -114,8 +112,6 @@ end
 #! Invocation: call
 pub proc register_faucet
     # Assert the note sender is the bridge admin.
-    # This has a net-zero stack effect: it pushes temporaries, compares, asserts,
-    # and drops them, leaving the original stack undisturbed.
     exec.assert_sender_is_bridge_admin
     # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
