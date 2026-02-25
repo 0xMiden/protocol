@@ -14,8 +14,7 @@ const PAYBACK_NOTE_TAG_ADDRESS=1
 const ATTACHMENT_KIND_ADDRESS=2
 const ATTACHMENT_SCHEME_ADDRESS=3
 const ATTACHMENT_ADDRESS=4
-const REQUESTED_ASSET_KEY_ADDRESS=8
-const REQUESTED_ASSET_VALUE_ADDRESS=12
+const REQUESTED_ASSET_ADDRESS=8
 const PAYBACK_RECIPIENT_ADDRESS=16
 const ASSET_ADDRESS=20
 
@@ -86,10 +85,7 @@ pub proc main
     padw push.0.0.0 dup.7
     # => [note_idx, pad(7), note_idx]
 
-    padw mem_loadw_le.REQUESTED_ASSET_VALUE_ADDRESS
-    # => [REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
-
-    padw mem_loadw_le.REQUESTED_ASSET_KEY_ADDRESS
+    push.REQUESTED_ASSET_ADDRESS exec.asset::mem_load
     # => [REQUESTED_ASSET_KEY, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
