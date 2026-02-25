@@ -1,7 +1,7 @@
 pub mod asset_conversion;
 mod bridge_in;
 mod bridge_out;
-mod cgi_hash_chain;
+mod cgi_chain_hash;
 mod config_bridge;
 mod global_index;
 mod leaf_utils;

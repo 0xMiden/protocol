@@ -1,8 +1,9 @@
 use alloc::vec::Vec;
 
+#[cfg(any(test, feature = "testing"))]
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
-use miden_protocol::Felt;
 use miden_protocol::utils::{HexParseError, hex_to_bytes};
+use miden_protocol::{Felt, Word};
 
 // ================================================================================================
 // GLOBAL INDEX ERROR
@@ -98,6 +99,18 @@ impl GlobalIndex {
     /// Returns the raw 32-byte array (big-endian).
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    /// Converts the [`GlobalIndex`] to two [`Word`]s: `[lo, hi]`.
+    ///
+    /// - `lo` contains the first 4 u32-packed felts (bytes 0..16).
+    /// - `hi` contains the last  4 u32-packed felts (bytes 16..32).
+    #[cfg(any(test, feature = "testing"))]
+    pub fn to_words(&self) -> [Word; 2] {
+        let elements = self.to_elements();
+        let lo: [Felt; 4] = elements[0..4].try_into().expect("to_elements returns 8 felts");
+        let hi: [Felt; 4] = elements[4..8].try_into().expect("to_elements returns 8 felts");
+        [Word::new(lo), Word::new(hi)]
     }
 }
 

@@ -196,6 +196,7 @@ pub struct CGIChainHashTestData {
     pub global_index: String,
     pub leaf: String,
     pub cgi_chain_hash: String,
+    pub old_cgi_chain_hash: String,
 }
 
 /// Deserialized Merkle proof vectors from Solidity DepositContractBase.sol.
@@ -250,11 +251,10 @@ pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(
 });
 
 /// Lazily parsed claimed global index hash chain data from the JSON file.
-pub static CLAIMED_GLOBAL_INDEX_HASH_CHAIN: LazyLock<CGIChainHashTestData> =
-    LazyLock::new(|| {
-        serde_json::from_str(CLAIMED_GLOBAL_INDEX_HASH_CHAIN_JSON)
-            .expect("failed to parse claimed global index hash chain vector JSON")
-    });
+pub static CLAIMED_GLOBAL_INDEX_HASH_CHAIN: LazyLock<CGIChainHashTestData> = LazyLock::new(|| {
+    serde_json::from_str(CLAIMED_GLOBAL_INDEX_HASH_CHAIN_JSON)
+        .expect("failed to parse claimed global index hash chain vector JSON")
+});
 
 /// Lazily parsed Merkle proof vectors from the JSON file.
 pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =

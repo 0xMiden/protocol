@@ -9,10 +9,9 @@ via_ir         = true
 
 remappings = [
   "@agglayer/=lib/agglayer-contracts/contracts/",
-  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-  "@openzeppelin/contracts5/=lib/openzeppelin-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable4/=lib/openzeppelin-contracts-upgradeable/contracts/",
   "@openzeppelin/contracts-upgradeable5/=lib/openzeppelin-contracts-upgradeable5/contracts/",
+  "@openzeppelin/contracts5/=lib/openzeppelin-contracts/contracts/",
 ]
 
 # Emit extra output for test vector generation
