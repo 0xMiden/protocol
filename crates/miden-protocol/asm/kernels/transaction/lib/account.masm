@@ -972,29 +972,25 @@ end
 #! Inputs:  [prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_suffix, curr_slot_id_prefix]
 #! Outputs: [is_prev_lt_curr]
 pub proc is_slot_id_lt
-    # TODO(bele): Run suffix logic first for consistency?
-    swap movup.3
-    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
-
-    # compute prev == curr for prefix
-    dup dup.2 eq
-    # => [is_prefix_eq, curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix]
-
-    movdn.4
-    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
-
-    # compute prev < curr for prefix
-    lt
-    # => [is_prev_lt_curr_prefix, prev_slot_id_suffix, curr_slot_id_suffix, is_prefix_eq]
-
-    swap.2
-    # => [curr_slot_id_suffix, prev_slot_id_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+    movup.2
+    # => [curr_slot_id_suffix, prev_slot_id_suffix, prev_slot_id_prefix, curr_slot_id_prefix]
 
     # compute prev < curr for suffix
     lt
-    # => [is_prev_lt_curr_suffix, is_prev_lt_curr_prefix, is_prefix_eq]
+    # => [is_prev_lt_curr_suffix, prev_slot_id_prefix, curr_slot_id_prefix]
 
-    movup.2
+    movdn.2
+    # => [prev_slot_id_prefix, curr_slot_id_prefix, is_prev_lt_curr_suffix]
+
+    dup dup.2
+    # => [curr_slot_id_prefix, prev_slot_id_prefix, prev_slot_id_prefix, curr_slot_id_prefix, is_prev_lt_curr_suffix]
+
+    # compute prev < curr for prefix
+    lt
+    # => [is_prev_lt_curr_prefix, prev_slot_id_prefix, curr_slot_id_prefix, is_prev_lt_curr_suffix]
+
+    # compute prev == curr for prefix
+    movdn.3 eq
     # => [is_prefix_eq, is_prev_lt_curr_suffix, is_prev_lt_curr_prefix]
 
     # compute result as is_prefix_lt || (is_suffix_lt && is_prefix_eq)
