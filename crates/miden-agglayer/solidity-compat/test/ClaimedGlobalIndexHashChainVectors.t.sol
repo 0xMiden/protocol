@@ -78,7 +78,7 @@ contract ClaimedGlobalIndexHashChainVectors is Test, BridgeL2SovereignChain {
         uint256 globalIndex = (uint256(1) << 64) | uint256(leafIndex);
 
         // ====== COMPUTE CLAIMED GLOBAL INDEX HASH CHAIN ======
-        _verifyLeafBridge(
+        this.verifyLeafBridgeHarness(
             smtProofLocalExitRoot,
             smtProofRollupExitRoot,
             globalIndex,
@@ -106,6 +106,36 @@ contract ClaimedGlobalIndexHashChainVectors is Test, BridgeL2SovereignChain {
         );
 
         vm.writeJson(json, "test-vectors/claimed_global_index_hash_chain.json");
+    }
+
+    function verifyLeafBridgeHarness(
+        bytes32[32] calldata smtProofLocalExitRoot,
+        bytes32[32] calldata smtProofRollupExitRoot,
+        uint256 globalIndex,
+        bytes32 mainnetExitRoot,
+        bytes32 rollupExitRoot,
+        uint8 leafType,
+        uint32 originNetwork,
+        address originTokenAddress,
+        uint32 destinationNetwork,
+        address destinationAddress,
+        uint256 amount,
+        bytes32 metadataHash
+    ) external {
+        _verifyLeafBridge(
+            smtProofLocalExitRoot,
+            smtProofRollupExitRoot,
+            globalIndex,
+            mainnetExitRoot,
+            rollupExitRoot,
+            leafType,
+            originNetwork,
+            originTokenAddress,
+            destinationNetwork,
+            destinationAddress,
+            amount,
+            metadataHash
+        );
     }
 
     // ============================================================================================

@@ -1,5 +1,5 @@
 {
-  "amount": 100000000000000000000,
+  "amount": "100000000000000000000",
   "deposit_count": 1,
   "description": "L1 bridgeAsset transaction test vectors with valid Merkle proofs",
   "destination_address": "0x00000000AA0000000000bb000000cc000000Dd00",
