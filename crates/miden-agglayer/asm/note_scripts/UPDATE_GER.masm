@@ -37,7 +37,6 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! Panics if:
 #! - account does not expose update_ger procedure.
 #! - target account ID does not match the consuming account ID.
-#! - note sender is not the global exit root manager (enforced by update_ger).
 #! - number of note storage items is not exactly 8.
 begin
     dropw
