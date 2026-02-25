@@ -27,7 +27,6 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::update_ger procedure.
-#! - agglayer::bridge_config::assert_sender_is_ger_manager procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -38,7 +37,6 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! Panics if:
 #! - account does not expose update_ger procedure.
 #! - target account ID does not match the consuming account ID.
-#! - note sender is not the global exit root manager.
 #! - number of note storage items is not exactly 8.
 begin
     dropw
@@ -47,10 +45,6 @@ begin
     # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH
-    # => [pad(16)]
-
-    # Ensure the note sender is the global exit root manager.
-    call.bridge_config::assert_sender_is_ger_manager
     # => [pad(16)]
 
     # proceed with the GER update logic
