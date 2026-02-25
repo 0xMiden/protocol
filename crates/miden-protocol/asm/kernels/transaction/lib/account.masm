@@ -1645,13 +1645,10 @@ proc find_storage_slot
     dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
     # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
 
-    reversew
-    # => [slot_id_prefix, slot_id_suffix, storage_slots_start_ptr, storage_slots_end_ptr]
+    swap movup.3 movup.3
+    # => [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
 
-    # TODO: sorted_array::find_half_key_value still takes [prefix, suffix] and should be updated.
-    # Can be done once https://github.com/0xMiden/miden-vm/issues/2721 is propagated here.
-
-    # find the slot whose slot key matches [slot_id_prefix, slot_id_suffix, 0, 0]
+    # find the slot whose slot key matches [_, _, slot_id_suffix, slot_id_prefix]
     # if the slot key does not exist, this procedure will validate its absence
     exec.sorted_array::find_half_key_value
     # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
