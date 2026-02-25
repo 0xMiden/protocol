@@ -622,10 +622,11 @@ pub proc auth_tx_multisig(salt: BeWord)
         push.0 assert.err="insufficient number of signatures"
     end
 
-    # ------ Verifying private state manager signature ------
+    # ------ Verifying Private State Manager Signature ------
 
     exec.psm::is_psm_initialized
     # => [is_psm_initialized, TX_SUMMARY_COMMITMENT]
+    
     if.true
         exec.psm::verify_psm_signature
     end

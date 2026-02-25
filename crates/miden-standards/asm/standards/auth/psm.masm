@@ -1,3 +1,11 @@
+# Private State Manager (PSM) account component.
+# This component is composed into account auth flows especially for multisig and adds
+# an extra signature check by a dedicated private state manager signer.
+#
+# We provide private-state-manager implementation here: https://github.com/OpenZeppelin/private-state-manager
+#
+# Private State Manager (PSM) is a cloud backup and syncronization layer for Miden private accounts
+
 use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
@@ -5,67 +13,74 @@ use miden::standards::auth::signature
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
+# IMPORTANT SECURITY NOTES
+# --------------------------------------------------------------------------------
+# - The `is_psm_signature_required` selector in `PSM_CONFIG_SLOT` controls whether the extra PSM signature
+#   is enforced:
+#     * (is_psm_signature_required == 1) => exactly one valid PSM signature is required.
+#     * (is_psm_signature_required == 0) => PSM signature is skipped.
+#
+# - `verify_psm_signature` reads the `is_psm_signature_required` from initial storage state.
+#   This means changes made during the same transaction won't affect the check.
+#
+# - `enable_psm_signature_requirement` / `disable_psm_signature_requirement` procedures allow explicit control over PSM state.
+#
+# - `update_psm_public_key`:
+#     * Installs a new PSM public key in the map at `PSM_PUBLIC_KEY_MAP_SLOT`.
+#     * Does not itself perform any signature checks.
+#     * To update the key without requiring PSM signature, ensure selector is OFF.
+
 # CONSTANTS
 # =================================================================================================
 
-# Word slot: [is_psm_signature_required, is_psm_initialized, 0, 0]
-# is_psm_signature_required = 1 -> enforce PSM signature
-# is_psm_signature_required = 0 -> skip PSM verification for this auth call
-# is_psm_initialized = 1 -> account supports PSM (strict mode)
-# is_psm_initialized = 0 -> account does not support PSM
+# Storage Slots
+#
+# This authentication component uses named storage slots.
+# - PSM_CONFIG_SLOT:
+#   [is_psm_signature_required, is_psm_initialized, 0, 0]
+#
+# - PSM_PUBLIC_KEYS_SLOT (map):
+#   PSM_MAP_KEY => PSM_PUBLIC_KEY
+#   where: PSM_MAP_KEY = [0, 0, 0, 0]
+#
+# - PSM_SCHEME_ID_SLOT (map):
+#   PSM_MAP_KEY => [scheme_id, 0, 0, 0]
+#   where: PSM_MAP_KEY = [0, 0, 0, 0]
+
+# The slot in this component's storage layout where the PSM configuration is stored.
+# [is_psm_signature_required, is_psm_initialized, 0, 0]
 const PSM_CONFIG_SLOT = word("miden::standards::auth::multisig::private_state_manager_config")
 
-# Map slot: [0, 0, 0, 0] => PRIVATE_STATE_MANAGER_PUBLIC_KEY
+# The slot in this component's storage layout where the PSM public key map is stored.
+# Map entries: [PSM_MAP_KEY] => [PSM_PUBLIC_KEY]
 const PSM_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::psm_public_key")
 
-# Map slot: [0, 0, 0, 0] => [scheme_id, 0, 0, 0]
+# The slot in this component's storage layout where the scheme id for the corresponding PSM public key map is stored.
+# Map entries: [PSM_MAP_KEY] => [scheme_id, 0, 0, 0]
 const PSM_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::psm_scheme")
 
-# Storage map key where the private state manager signer is stored.
+# Single-entry storage map key where private state manager signer data is stored.
 const PSM_MAP_KEY = [0, 0, 0, 0]
 
-# Logical config states: [is_psm_signature_required, is_psm_initialized, 0, 0]
+# PSM logical configuration state constants
 const PSM_CONFIG_ENABLED_INITIALIZED = [1, 1, 0, 0]
 const PSM_CONFIG_ENABLED_UNINITIALIZED = [1, 0, 0, 0]
 const PSM_CONFIG_DISABLED_INITIALIZED = [0, 1, 0, 0]
 const PSM_CONFIG_DISABLED_UNINITIALIZED = [0, 0, 0, 0]
 
-# PSM PROCEDURES
-# =================================================================================================
+# ERRORS
+# -------------------------------------------------------------------------------------------------
+const ERR_PSM_NOT_INITIALIZED = "private state manager is not initialized for this account"
+const ERR_INVALID_PSM_SIGNATURE = "invalid private state manager signature"
 
-#! Returns 1 if this account is PSM-initialized, 0 otherwise.
-#!
-#! Inputs:  []
-#! Outputs: [is_psm_initialized]
-#!
-#! Invocation: exec
-pub proc is_psm_initialized
-    push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_initial_item
-    # => [0, 0, is_psm_initialized, is_psm_signature_required]
-
-    drop drop
-    # => [is_psm_initialized, is_psm_signature_required]
-
-    swap drop
-    # => [is_psm_initialized]
-end
-
-#! Asserts that this account is PSM-initialized.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-pub proc assert_psm_initialized
-    exec.is_psm_initialized
-    # => [is_psm_initialized]
-
-    push.1 eq
-    assert.err="private state manager updates are not enabled for this account"
-    # => []
-end
+# INTERNAL PROCEDURES
+# ================================================================================================
 
 #! Updates the PSM config's signature requirement bit while preserving initialization bit.
+#!
+#! Notes:
+#! - The initialization bit is read from initial account state.
+#! - Only the signature-requirement bit is changed.
 #!
 #! Inputs:  [is_psm_signature_required]
 #! Outputs: []
@@ -130,6 +145,41 @@ proc disable_psm_signature_requirement
     # => []
 end
 
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Returns 1 if this account is PSM-initialized, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [is_psm_initialized]
+#!
+#! Invocation: exec
+pub proc is_psm_initialized
+    push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_initial_item
+    # => [0, 0, is_psm_initialized, is_psm_signature_required]
+
+    drop drop
+    # => [is_psm_initialized, is_psm_signature_required]
+
+    swap drop
+    # => [is_psm_initialized]
+end
+
+#! Asserts that the account is initialized with Private State Manager (PSM).
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc assert_psm_initialized
+    exec.is_psm_initialized
+    # => [is_psm_initialized]
+
+    push.1 eq
+    assert.err=ERR_PSM_NOT_INITIALIZED
+    # => []
+end
+
 #! Updates the private state manager public key.
 #!
 #! Inputs:  []
@@ -171,7 +221,7 @@ end
 #! Outputs: [MSG]
 #!
 #! Panics if:
-#! - signature requirement is ON and a valid PSM signature is missing.
+#! - signature requirement is ON and a valid PSM signature is missing or invalid.
 #!
 #! Notes:
 #! - If account is not PSM-initialized, this procedure is a no-op.
@@ -185,6 +235,8 @@ pub proc verify_psm_signature(msg: BeWord)
     # => [is_psm_initialized, MSG]
 
     if.true
+        # Read current config (not initial config) so auth flow can honor temporary
+        # requirement toggles done earlier in the same transaction.
         push.PSM_CONFIG_SLOT[0..2]
         exec.active_account::get_item
         # => [0, 0, is_psm_initialized, is_psm_signature_required, MSG]
@@ -193,6 +245,7 @@ pub proc verify_psm_signature(msg: BeWord)
         # => [is_psm_signature_required, MSG]
 
         if.true
+            # Verify exactly one signature from the configured private state manager signer.
             push.1
             push.PSM_PUBLIC_KEYS_SLOT[0..2]
             push.PSM_SCHEME_ID_SLOT[0..2]
@@ -202,11 +255,12 @@ pub proc verify_psm_signature(msg: BeWord)
             push.1 neq
             if.true
                 emit.AUTH_UNAUTHORIZED_EVENT
-                push.0 assert.err="invalid private state manager signature"
+                push.0 assert.err=ERR_INVALID_PSM_SIGNATURE
             end
         end
         # => [MSG]
 
+        # Re-enable signature requirement for initialized accounts after authentication finalized.
         exec.enable_psm_signature_requirement
         # => [MSG]
     end
