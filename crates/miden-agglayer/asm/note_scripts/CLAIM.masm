@@ -153,7 +153,7 @@ begin
 
     mem_load.FAUCET_MINT_AMOUNT
     movdn.8
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(8)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
 
     # Call the Aggfaucet Claim procedure
     call.agg_faucet::claim
