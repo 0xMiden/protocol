@@ -179,12 +179,7 @@ impl SequentialCommit for NoteAssets {
 
 fn to_elements(assets: &[Asset]) -> Vec<Felt> {
     let mut elements = Vec::with_capacity(assets.len() * 2 * WORD_SIZE);
-
-    for asset in assets.iter() {
-        elements.extend(asset.to_key_word().as_elements());
-        elements.extend(asset.to_value_word().as_elements());
-    }
-
+    elements.extend(assets.iter().flat_map(Asset::as_elements));
     elements
 }
 
