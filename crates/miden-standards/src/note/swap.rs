@@ -108,8 +108,7 @@ impl SwapNote {
             attachment_kind,
         ]);
         storage.extend_from_slice(attachment.as_elements());
-        storage.extend_from_slice(requested_asset.to_key_word().as_elements());
-        storage.extend_from_slice(requested_asset.to_value_word().as_elements());
+        storage.extend_from_slice(&requested_asset.as_elements());
         storage.extend_from_slice(payback_recipient.digest().as_elements());
         let inputs = NoteStorage::new(storage)?;
 
