@@ -395,9 +395,8 @@ end
 #!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
 #!   ],
 #!   OUTPUT_NOTE_DATA_KEY => [
-#!     target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
-#!     miden_claim_amount[1],           // Miden claim amount (1 felt)
-#!     padding[5],                      // padding (5 felts)
+#!     output_note_tag[1],              // P2ID output note tag
+#!     padding[3],                      // padding (3 felts)
 #!   ]
 #! }
 #!

@@ -164,30 +164,58 @@ impl SequentialCommit for LeafData {
 
 /// Output note data for CLAIM note creation.
 /// Contains note-specific data and can use Miden types.
+<<<<<<< HEAD
 /// TODO: Remove target_faucet_account_id
 #[derive(Clone)]
 pub struct OutputNoteData {
     /// Target agg faucet account ID (2 felts: prefix and suffix)
     pub target_faucet_account_id: AccountId,
+=======
+#[derive(Clone)]
+pub struct OutputNoteData {
+    /// P2ID note serial number (4 felts as Word)
+    pub output_p2id_serial_num: Word,
+    /// P2ID output note tag
+    pub output_note_tag: NoteTag,
+>>>>>>> agglayer
     /// Miden claim amount (scaled-down token amount as Felt)
     pub miden_claim_amount: Felt,
 }
 
 impl OutputNoteData {
-    /// Converts the output note data to a vector of field elements for note storage
+    /// Converts the output note data to a vector of field elements for note storage.
+    ///
+    /// Layout (8 felts = 2 words):
+    /// `[serial_num(4), tag(1), miden_claim_amount(1), padding(2)]`
     pub fn to_elements(&self) -> Vec<Felt> {
+<<<<<<< HEAD
         const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 4; // 2 + 1 + 1 (account_id + miden_claim_amount + padding)
         let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
 
         // Target faucet account ID (2 felts: prefix and suffix)
         elements.push(self.target_faucet_account_id.prefix().as_felt());
         elements.push(self.target_faucet_account_id.suffix());
+=======
+        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8;
+        let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
+
+        // P2ID note serial number (4 felts as Word)
+        elements.extend(self.output_p2id_serial_num);
+
+        // Output note tag
+        elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
+>>>>>>> agglayer
 
         // Miden claim amount
         elements.push(self.miden_claim_amount);
 
+<<<<<<< HEAD
         // Padding (1 felt for word alignment)
         elements.push(Felt::ZERO);
+=======
+        // Padding to keep 8 felts (2 words) for pipe_double_words_preimage_to_memory
+        elements.extend([Felt::ZERO; 2]);
+>>>>>>> agglayer
 
         elements
     }
@@ -230,6 +258,8 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 ///
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note
+/// - `target_faucet_id`: The account ID of the agglayer faucet that should consume this note.
+///   Encoded as a `NetworkAccountTarget` attachment on the note metadata.
 /// - `sender_account_id`: The account ID of the CLAIM note creator
 /// - `rng`: Random number generator for creating the CLAIM note serial number
 ///
@@ -237,17 +267,15 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 /// Returns an error if note creation fails.
 pub fn create_claim_note<R: FeltRng>(
     storage: ClaimNoteStorage,
+    target_faucet_id: AccountId,
     sender_account_id: AccountId,
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
-    let attachment = NetworkAccountTarget::new(
-        storage.output_note_data.target_faucet_account_id,
-        NoteExecutionHint::Always,
-    )
-    .map_err(|e| NoteError::other(e.to_string()))?
-    .into();
+    let attachment = NetworkAccountTarget::new(target_faucet_id, NoteExecutionHint::Always)
+        .map_err(|e| NoteError::other(e.to_string()))?
+        .into();
 
     let metadata =
         NoteMetadata::new(sender_account_id, NoteType::Public).with_attachment(attachment);

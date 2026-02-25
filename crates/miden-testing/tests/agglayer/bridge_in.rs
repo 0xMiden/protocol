@@ -210,13 +210,23 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .expect("amount should scale successfully");
 
     let output_note_data = OutputNoteData {
+<<<<<<< HEAD
         target_faucet_account_id: agglayer_faucet.id(),
+=======
+        output_p2id_serial_num: serial_num,
+        output_note_tag: NoteTag::with_account_target(destination_account_id),
+>>>>>>> agglayer
         miden_claim_amount,
     };
 
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
 
-    let claim_note = create_claim_note(claim_inputs, sender_account.id(), builder.rng_mut())?;
+    let claim_note = create_claim_note(
+        claim_inputs,
+        agglayer_faucet.id(),
+        sender_account.id(),
+        builder.rng_mut(),
+    )?;
 
     // Add the claim note to the builder before building the mock chain
     builder.add_output_note(OutputNote::Full(claim_note.clone()));
