@@ -15,7 +15,7 @@ const OUTPUT_NOTE_SIZE = 8
 
 const PROOF_DATA_START_PTR = 0
 const LEAF_DATA_START_PTR = 536
-const OUTPUT_NOTE_DATA_START_PTR = 568
+const FAUCET_MINT_AMOUNT = 568
 
 # ERRORS
 # =================================================================================================
@@ -28,7 +28,7 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! into the advice map under separate keys for easier access.
 #!
 #! Inputs: []
-#! Outputs: [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+#! Outputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
 #!
 #! Advice map entries created:
 #! PROOF_DATA_KEY => [
@@ -50,59 +50,38 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #!   padding[3],                      // padding (3 felts)
 #! ]
 #!
-#! OUTPUT_NOTE_DATA_KEY => [
-#!   miden_claim_amount[1],           // Miden claim amount (1 felt)
-#!   padding[3],                      // padding (3 felts)
-#! ]
-#!
 #! Invocation: exec
 proc write_claim_data_into_advice_map_by_key
-    # 1) Get OUTPUT_NOTE_DATA_KEY
-    push.OUTPUT_NOTE_SIZE push.OUTPUT_NOTE_DATA_START_PTR
-    exec.rpo256::hash_elements
-    # => [OUTPUT_NOTE_DATA_KEY]
-
-    push.OUTPUT_NOTE_SIZE add.OUTPUT_NOTE_DATA_START_PTR push.OUTPUT_NOTE_DATA_START_PTR
-    movdn.5 movdn.5
-    # => [OUTPUT_NOTE_DATA_KEY, start_ptr, end_ptr]
-
-    adv.insert_mem
-    # OS => [OUTPUT_NOTE_DATA_KEY, start_ptr, end_ptr, pad(16)]
-    # AM => {OUTPUT_NOTE_DATA_KEY: mem[start_ptr..end_ptr] }
-
-    movup.4 drop movup.4 drop
-    # => [OUTPUT_NOTE_DATA_KEY]
-
-    # 2) Get LEAF_DATA_KEY
+    # 1) Get LEAF_DATA_KEY
     push.LEAF_DATA_SIZE push.LEAF_DATA_START_PTR
     exec.rpo256::hash_elements
-    # => [LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [LEAF_DATA_KEY]
 
     push.LEAF_DATA_SIZE add.LEAF_DATA_START_PTR push.LEAF_DATA_START_PTR
     movdn.5 movdn.5
-    # => [LEAF_DATA_KEY, start_ptr, end_ptr, OUTPUT_NOTE_DATA_KEY]
+    # => [LEAF_DATA_KEY, start_ptr, end_ptr]
 
     adv.insert_mem
     # OS => [LEAF_DATA_KEY, start_ptr, end_ptr]
     # AM => {LEAF_DATA_KEY: mem[start_ptr..end_ptr] }
     movup.4 drop movup.4 drop
-    # => [LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [LEAF_DATA_KEY]
 
-    # 3) Get PROOF_DATA_KEY
+    # 2) Get PROOF_DATA_KEY
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
     exec.rpo256::hash_elements
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
     movdn.5 movdn.5
-    # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
 
     adv.insert_mem
-    # OS => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # OS => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
     # AM => {PROOF_DATA_KEY: mem[start_ptr..end_ptr] }
 
     movup.4 drop movup.4 drop
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 end
 
 #! Agglayer Faucet CLAIM script: claims assets by calling the agglayer faucet's claim function.
@@ -170,7 +149,11 @@ begin
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY, pad(4)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+
+    mem_load.FAUCET_MINT_AMOUNT
+    movdn.8
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(8)]
 
     # Call the Aggfaucet Claim procedure
     call.agg_faucet::claim

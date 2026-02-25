@@ -209,15 +209,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
-    let output_note_data = OutputNoteData {
-<<<<<<< HEAD
-        target_faucet_account_id: agglayer_faucet.id(),
-=======
-        output_p2id_serial_num: serial_num,
-        output_note_tag: NoteTag::with_account_target(destination_account_id),
->>>>>>> agglayer
-        miden_claim_amount,
-    };
+    let output_note_data = OutputNoteData { miden_claim_amount };
 
     let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
 
