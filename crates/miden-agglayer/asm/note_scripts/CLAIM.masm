@@ -148,17 +148,17 @@ begin
     # => [pad(16)]
 
     exec.write_claim_data_into_advice_map_by_key
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
 
     mem_load.FAUCET_MINT_AMOUNT
-    # => [faucet_mint_amount, PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+    # => [faucet_mint_amount, PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
 
     movdn.8
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(8)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
 
     # Call the Aggfaucet Claim procedure
     call.agg_faucet::claim
-    # => [pad(16), pad(1)]
+    # => [pad(16), pad(9)]
 
     dropw dropw dropw
     # => [pad(16)]
