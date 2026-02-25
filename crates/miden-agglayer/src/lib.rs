@@ -438,7 +438,7 @@ impl From<AggLayerFaucet> for AccountComponent {
 
 /// Creates a faucet registry map key from a faucet account ID.
 ///
-/// The key format (element-index) is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
     Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
 }
