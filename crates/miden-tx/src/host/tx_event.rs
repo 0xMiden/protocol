@@ -672,16 +672,16 @@ fn extract_tx_summary<'store, STORE>(
         ));
     }
 
-    let salt = extract_word(commitments, 0);
-    let output_notes_commitment = extract_word(commitments, 4);
-    let input_notes_commitment = extract_word(commitments, 8);
-    let account_delta_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 0);
+    let input_notes_commitment = extract_word(commitments, 4);
+    let output_notes_commitment = extract_word(commitments, 8);
+    let salt = extract_word(commitments, 12);
 
     let tx_summary = base_host.build_tx_summary(
-        salt,
-        output_notes_commitment,
-        input_notes_commitment,
         account_delta_commitment,
+        input_notes_commitment,
+        output_notes_commitment,
+        salt,
     )?;
 
     if tx_summary.to_commitment() != message {

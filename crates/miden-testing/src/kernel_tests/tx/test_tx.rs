@@ -430,9 +430,11 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
           # => [SALT, pad(16)]
 
           exec.auth::create_tx_summary
-          # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
-          exec.auth::adv_insert_hqword
+          # insert tx summary into advice provider for extraction by the host
+          adv.insert_hqword
+          # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
           exec.auth::hash_tx_summary
           # => [MESSAGE, pad(16)]
