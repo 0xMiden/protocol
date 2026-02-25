@@ -95,7 +95,7 @@ end
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (572 felts total):
+#! NoteStorage layout (569 felts total):
 #! - smtProofLocalExitRoot      [0..255]  : 256 felts
 #! - smtProofRollupExitRoot     [256..511]: 256 felts
 #! - globalIndex                [512..519]: 8 felts
