@@ -193,7 +193,7 @@ pub struct ClaimNoteStorage {
     pub proof_data: ProofData,
     /// Leaf data containing network, address, amount, and metadata
     pub leaf_data: LeafData,
-    /// Output note data containing note-specific information
+    /// Output note data contains native miden asset amount
     pub output_note_data: OutputNoteData,
 }
 
@@ -202,8 +202,8 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 
     fn try_from(storage: ClaimNoteStorage) -> Result<Self, Self::Error> {
         // proof_data + leaf_data + output_note_data
-        // 536 + 32 + 4
-        let mut claim_storage = Vec::with_capacity(572);
+        // 536 + 32 + 1
+        let mut claim_storage = Vec::with_capacity(569);
 
         claim_storage.extend(storage.proof_data.to_elements());
         claim_storage.extend(storage.leaf_data.to_elements());
