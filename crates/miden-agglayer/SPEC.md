@@ -3,7 +3,7 @@
 **Scope:** Implementation-accurate specification of the AggLayer bridge integration on
 Miden, covering contracts, note flows, storage, and encoding semantics.
 
-**Baseline:** Branch `agglayer` (post-merge). All statements in sections 1-3 describe
+**Baseline:** Branch `agglayer` (to-be-tagged `v0.14-alpha`). All statements in sections 1-3 describe
 current implementation behaviour and are cross-checked against the test suite in
 `crates/miden-testing/tests/agglayer/`. Planned changes that diverge from the current
 implementation are called out inline with `TODO (Future)` markers.
@@ -197,7 +197,7 @@ Processes a bridge-in claim:
 2. Extracts the destination account ID from the leaf data's destination address (via `eth_address::to_account_id`).
 3. Extracts the raw U256 claim amount from the leaf data.
 4. FPI to `bridge_in::verify_leaf_bridge` on the bridge account to validate the proof.
-5. Verifies the pre-computed native claim amount (from note storage) against the U256 amount and scale factor using `asset_conversion::verify_u256_to_native_amount_conversion`.
+5. Verifies the pre-computed native claim amount (from note storage) against the U256 amount and scale factor using `asset_conversion::verify_u256_to_native_amount_conversion`. This ensures the amount conversion was performed correctly off-chain, without requiring expensive U256 division inside the VM.
 6. Mints the asset via `faucets::distribute` and creates a public P2ID output note for the recipient.
 
 #### `agglayer_faucet::asset_to_origin_asset`
@@ -206,7 +206,7 @@ Processes a bridge-in claim:
 |-|-|
 | **Invocation** | `call` (invoked via FPI from the bridge) |
 | **Inputs** | `[amount, pad(15)]` |
-| **Outputs** | `[AMOUNT_U256_0(4), AMOUNT_U256_1(4), addr_0..addr_4, origin_network, pad(2)]` |
+| **Outputs** | `[AMOUNT_U256_0(4), AMOUNT_U256_1(4), addr(5), origin_network, pad(2)]` |
 | **Context** | FPI target -- called by the bridge during bridge-out |
 | **Panics** | Scale exceeds 18 |
 
