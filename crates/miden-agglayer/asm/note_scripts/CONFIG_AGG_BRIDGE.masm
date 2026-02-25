@@ -1,4 +1,4 @@
-use miden::agglayer::bridge_config
+use miden::agglayer::bridge::bridge_config
 use miden::protocol::active_note
 use miden::protocol::active_account
 use miden::protocol::account_id
@@ -19,13 +19,13 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Registers a faucet in the bridge's faucet registry.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
-#! attachment. Upon consumption, it registers the faucet ID from note storage in the bridge's
+#! attachment, and only if the note was sent by the bridge admin.
+#! Upon consumption, it registers the faucet ID from note storage in the bridge's
 #! faucet registry.
-
-#! Note: Currently, there are no sender validation checks, so anyone can register a faucet.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::register_faucet procedure.
+#! - agglayer::bridge_config::assert_sender_is_bridge_admin procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -40,6 +40,7 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
+#! - The note sender is not the bridge admin.
 #! - The note does not contain exactly 2 storage items.
 #! - The account does not expose the register_faucet procedure.
 #!
@@ -50,6 +51,10 @@ begin
     # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH
+    # => [pad(16)]
+
+    # Ensure the note sender is the bridge admin.
+    call.bridge_config::assert_sender_is_bridge_admin
     # => [pad(16)]
 
     # Load note storage to memory

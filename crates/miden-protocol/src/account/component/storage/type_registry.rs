@@ -6,10 +6,10 @@ use core::fmt::{self, Display};
 
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_core::{Felt, FieldElement, Word};
-use miden_crypto::dsa::{ecdsa_k256_keccak, falcon512_rpo};
 use miden_processor::DeserializationError;
 use thiserror::Error;
 
+use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
 use crate::utils::sync::LazyLock;
 
@@ -25,9 +25,9 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<u32>();
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
+    registry.register_felt_type::<AuthScheme>();
     registry.register_word_type::<Word>();
-    registry.register_word_type::<falcon512_rpo::PublicKey>();
-    registry.register_word_type::<ecdsa_k256_keccak::PublicKey>();
+    registry.register_word_type::<PublicKey>();
     registry
 });
 
@@ -82,7 +82,8 @@ impl SchemaTypeError {
 /// Some examples:
 /// - `u32`
 /// - `felt`
-/// - `miden::standards::auth::falcon512_rpo::pub_key`
+/// - `miden::standards::auth::pub_key`
+/// - `miden::standards::auth::scheme`
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "std", derive(::serde::Deserialize, ::serde::Serialize))]
 #[cfg_attr(feature = "std", serde(transparent))]
@@ -154,6 +155,22 @@ impl SchemaTypeId {
     /// Returns the schema type identifier for the native `u32` type.
     pub fn u32() -> SchemaTypeId {
         SchemaTypeId::new("u32").expect("type is well formed")
+    }
+
+    /// Returns the schema type identifier for auth scheme identifiers.
+    pub fn auth_scheme() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::auth::scheme").expect("type is well formed")
+    }
+
+    /// Returns the schema type identifier for public key commitments.
+    pub fn pub_key() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::auth::pub_key").expect("type is well formed")
+    }
+
+    /// Returns the schema type identifier for fungible faucet token symbols.
+    pub fn token_symbol() -> SchemaTypeId {
+        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
+            .expect("type is well formed")
     }
 
     /// Returns a reference to the inner string.
@@ -312,6 +329,48 @@ impl FeltType for u8 {
     }
 }
 
+impl FeltType for AuthScheme {
+    fn type_name() -> SchemaTypeId {
+        SchemaTypeId::auth_scheme()
+    }
+
+    fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
+        let auth_scheme = if let Ok(scheme_id) = input.parse::<u8>() {
+            AuthScheme::try_from(scheme_id).map_err(|err| {
+                SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
+            })?
+        } else {
+            match input {
+                "Falcon512Rpo" => AuthScheme::Falcon512Rpo,
+                "EcdsaK256Keccak" => AuthScheme::EcdsaK256Keccak,
+                _ => {
+                    return Err(SchemaTypeError::ConversionError(format!(
+                        "invalid auth scheme `{input}`: expected one of `Falcon512Rpo`, \
+                         `EcdsaK256Keccak`, `1`, `2`"
+                    )));
+                },
+            }
+        };
+
+        Ok(Felt::from(auth_scheme.as_u8()))
+    }
+
+    fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
+        let scheme_id = u8::try_from(value.as_int()).map_err(|_| {
+            SchemaTypeError::ConversionError(format!(
+                "value `{}` is out of range for auth scheme id",
+                value
+            ))
+        })?;
+
+        let auth_scheme = AuthScheme::try_from(scheme_id).map_err(|err| {
+            SchemaTypeError::ConversionError(format!("invalid auth scheme id `{scheme_id}`: {err}"))
+        })?;
+
+        Ok(auth_scheme.to_string())
+    }
+}
+
 impl FeltType for u16 {
     fn type_name() -> SchemaTypeId {
         SchemaTypeId::u16()
@@ -354,7 +413,7 @@ impl FeltType for u32 {
 
 impl FeltType for Felt {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("felt").expect("type is well formed")
+        SchemaTypeId::native_felt()
     }
 
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
@@ -376,8 +435,7 @@ impl FeltType for Felt {
 
 impl FeltType for TokenSymbol {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol")
-            .expect("type is well formed")
+        SchemaTypeId::token_symbol()
     }
     fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
         let token = TokenSymbol::new(input).map_err(|err| {
@@ -443,32 +501,9 @@ impl WordType for Word {
     }
 }
 
-impl WordType for falcon512_rpo::PublicKey {
+impl WordType for PublicKey {
     fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key")
-            .expect("type is well formed")
-    }
-    fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
-        let padded_input = pad_hex_string(input);
-
-        Word::try_from(padded_input.as_str()).map_err(|err| {
-            SchemaTypeError::parse(
-                input.to_string(), // Use original input in error
-                Self::type_name(),
-                WordParseError(err.to_string()),
-            )
-        })
-    }
-
-    fn display_word(value: Word) -> Result<String, SchemaTypeError> {
-        Ok(value.to_string())
-    }
-}
-
-impl WordType for ecdsa_k256_keccak::PublicKey {
-    fn type_name() -> SchemaTypeId {
-        SchemaTypeId::new("miden::standards::auth::ecdsa_k256_keccak::pub_key")
-            .expect("type is well formed")
+        SchemaTypeId::pub_key()
     }
     fn parse_str(input: &str) -> Result<Word, SchemaTypeError> {
         let padded_input = pad_hex_string(input);
@@ -699,5 +734,46 @@ impl SchemaTypeRegistry {
     /// with zero-padding).
     pub fn contains_word_type(&self, type_name: &SchemaTypeId) -> bool {
         self.word.contains_key(type_name) || self.felt.contains_key(type_name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_scheme_type_supports_named_and_numeric_values() {
+        let auth_scheme_type = SchemaTypeId::auth_scheme();
+
+        let numeric_word = SCHEMA_TYPE_REGISTRY
+            .try_parse_word(&auth_scheme_type, "2")
+            .expect("numeric auth scheme id should parse");
+        assert_eq!(numeric_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(2u8)]));
+
+        let named_word = SCHEMA_TYPE_REGISTRY
+            .try_parse_word(&auth_scheme_type, "EcdsaK256Keccak")
+            .expect("named auth scheme should parse");
+        assert_eq!(named_word, Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(1u8)]));
+
+        let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
+        assert!(
+            matches!(displayed, WordDisplay::Felt(ref value) if value == "Falcon512Rpo"),
+            "expected canonical auth scheme display, got {displayed:?}"
+        );
+    }
+
+    #[test]
+    fn auth_scheme_type_rejects_invalid_values() {
+        let auth_scheme_type = SchemaTypeId::auth_scheme();
+
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "invalid").is_err());
+
+        let invalid_word = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::from(9u8)]);
+        assert!(
+            SCHEMA_TYPE_REGISTRY
+                .validate_word_value(&auth_scheme_type, invalid_word)
+                .is_err()
+        );
     }
 }

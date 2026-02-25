@@ -5,7 +5,13 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_agglayer::utils::felts_to_bytes;
-use miden_agglayer::{ExitRoot, UpdateGerNote, agglayer_library, create_existing_bridge_account};
+use miden_agglayer::{
+    AggLayerBridge,
+    ExitRoot,
+    UpdateGerNote,
+    agglayer_library,
+    create_existing_bridge_account,
+};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
@@ -13,7 +19,7 @@ use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_crypto::{Felt, FieldElement};
 use miden_protocol::Word;
-use miden_protocol::account::StorageSlotName;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -42,23 +48,29 @@ struct ExitRootsFile {
 
 /// Lazily parsed exit root vectors from the JSON file.
 static EXIT_ROOTS_VECTORS: LazyLock<ExitRootsFile> = LazyLock::new(|| {
-    serde_json::from_str(EXIT_ROOTS_JSON).expect("Failed to parse exit roots JSON")
+    serde_json::from_str(EXIT_ROOTS_JSON).expect("failed to parse exit roots JSON")
 });
 
 #[tokio::test]
 async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
+    // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
+    // --------------------------------------------------------------------------------------------
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE GER MANAGER ACCOUNT (note sender)
+    // --------------------------------------------------------------------------------------------
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
-    let bridge_account = create_existing_bridge_account(bridge_seed);
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
     builder.add_account(bridge_account.clone())?;
-
-    // CREATE USER ACCOUNT (NOTE SENDER)
-    // --------------------------------------------------------------------------------------------
-    let user_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    builder.add_account(user_account.clone())?;
 
     // CREATE UPDATE_GER NOTE WITH 8 STORAGE ITEMS (NEW GER AS TWO WORDS)
     // --------------------------------------------------------------------------------------------
@@ -70,7 +82,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     ];
     let ger = ExitRoot::from(ger_bytes);
     let update_ger_note =
-        UpdateGerNote::create(ger, user_account.id(), bridge_account.id(), builder.rng_mut())?;
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
 
     builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
@@ -101,10 +113,10 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     let ger_hash = Hasher::merge(&[ger_upper.into(), ger_lower.into()]);
     // Look up the GER hash in the map storage
-    let ger_storage_slot = StorageSlotName::new("miden::agglayer::bridge::ger")?;
+    let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
     let stored_value = updated_bridge_account
         .storage()
-        .get_map_item(&ger_storage_slot, ger_hash)
+        .get_map_item(ger_storage_slot, ger_hash)
         .expect("GER hash should be stored in the map");
 
     // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
@@ -124,11 +136,11 @@ async fn compute_ger() -> anyhow::Result<()> {
 
     for i in 0..vectors.mainnet_exit_roots.len() {
         let mainnet_exit_root_bytes =
-            hex_to_bytes(vectors.mainnet_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.mainnet_exit_roots[i].as_str()).expect("invalid hex string");
         let rollup_exit_root_bytes =
-            hex_to_bytes(vectors.rollup_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.rollup_exit_roots[i].as_str()).expect("invalid hex string");
         let expected_ger_bytes =
-            hex_to_bytes(vectors.global_exit_roots[i].as_str()).expect("Invalid hex string");
+            hex_to_bytes(vectors.global_exit_roots[i].as_str()).expect("invalid hex string");
 
         // Convert expected GER to felts for comparison
         let expected_ger_exit_root = ExitRoot::from(expected_ger_bytes);
@@ -162,7 +174,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::crypto_utils
+                use miden::agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -170,7 +182,7 @@ async fn compute_ger() -> anyhow::Result<()> {
 
                     # Call compute_ger with pointer to exit roots
                     push.0
-                    exec.crypto_utils::compute_ger
+                    exec.bridge_in::compute_ger
                     exec.sys::truncate_stack
                 end
             "#
@@ -245,7 +257,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::crypto_utils
+            use miden::agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots
@@ -253,7 +265,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
 
                 # Call compute_ger with pointer to exit roots
                 push.0
-                exec.crypto_utils::compute_ger
+                exec.bridge_in::compute_ger
                 exec.sys::truncate_stack
             end
         "#

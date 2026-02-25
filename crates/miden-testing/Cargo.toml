@@ -13,7 +13,12 @@ rust-version.workspace = true
 version.workspace      = true
 
 [features]
-std = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
+default = ["tx_context_debug"]
+std     = ["miden-protocol/std", "miden-standards/std", "miden-tx/std"]
+# Enables debug mode in the transaction context, which in turn enables debug mode in the transaction
+# executor. It is enabled by default and should generally be enabled. Can be opted out of to improve
+# CI test performance.
+tx_context_debug = []
 
 [dependencies]
 # Workspace dependencies
@@ -47,6 +52,6 @@ miden-protocol    = { features = ["std"], workspace = true }
 primitive-types   = { workspace = true }
 rstest            = { workspace = true }
 serde             = { features = ["derive"], workspace = true }
-serde_json        = { version = "1.0" }
+serde_json        = { features = ["arbitrary_precision"], version = "1.0" }
 tokio             = { features = ["macros", "rt"], workspace = true }
 winter-rand-utils = { version = "0.13" }

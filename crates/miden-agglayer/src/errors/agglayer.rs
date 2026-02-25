@@ -19,8 +19,8 @@ pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_s
 /// Error Message: "bridge not mainnet"
 pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
 
-/// Error Message: "CLAIM's target account address and transaction address do not match"
-pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM's target account address and transaction address do not match");
+/// Error Message: "CLAIM note attachment target account does not match consuming account"
+pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 
 /// Error Message: "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 pub const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE note attachment target account does not match consuming account");
@@ -60,6 +60,11 @@ pub const ERR_ROLLUP_INDEX_NON_ZERO: MasmError = MasmError::from_static_str("rol
 /// Error Message: "maximum scaling factor is 18"
 pub const ERR_SCALE_AMOUNT_EXCEEDED_LIMIT: MasmError = MasmError::from_static_str("maximum scaling factor is 18");
 
+/// Error Message: "note sender is not the bridge admin"
+pub const ERR_SENDER_NOT_BRIDGE_ADMIN: MasmError = MasmError::from_static_str("note sender is not the bridge admin");
+/// Error Message: "note sender is not the global exit root manager"
+pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("note sender is not the global exit root manager");
+
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
 
@@ -71,8 +76,8 @@ pub const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_st
 /// Error Message: "UPDATE_GER script expects exactly 8 note storage items"
 pub const ERR_UPDATE_GER_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("UPDATE_GER script expects exactly 8 note storage items");
 
-/// Error Message: "x must fit into 128 bits (x4..x7 must be 0)"
-pub const ERR_X_TOO_LARGE: MasmError = MasmError::from_static_str("x must fit into 128 bits (x4..x7 must be 0)");
+/// Error Message: "the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64"
+pub const ERR_X_TOO_LARGE: MasmError = MasmError::from_static_str("the agglayer bridge in u256 value is larger than 2**128 and cannot be verifiably scaled to u64");
 
 /// Error Message: "y exceeds max fungible token amount"
 pub const ERR_Y_TOO_LARGE: MasmError = MasmError::from_static_str("y exceeds max fungible token amount");

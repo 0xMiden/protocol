@@ -1,4 +1,4 @@
-use super::auth_scheme::AuthScheme;
+use super::auth_method::AuthMethod;
 
 pub mod auth;
 pub mod components;
@@ -6,6 +6,8 @@ pub mod faucets;
 pub mod interface;
 pub mod metadata;
 pub mod wallets;
+
+pub use metadata::AccountBuilderSchemaCommitmentExt;
 
 /// Macro to simplify the creation of static procedure digest constants.
 ///
