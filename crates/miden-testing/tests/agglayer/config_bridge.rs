@@ -6,6 +6,7 @@ use miden_agglayer::{
     create_existing_bridge_account,
     faucet_registry_key,
 };
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
@@ -25,10 +26,12 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (note sender)
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account(

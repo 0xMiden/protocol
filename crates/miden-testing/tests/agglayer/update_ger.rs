@@ -19,6 +19,7 @@ use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_crypto::{Felt, FieldElement};
 use miden_protocol::Word;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::sync::LazyLock;
@@ -56,11 +57,13 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE GER MANAGER ACCOUNT (note sender)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------

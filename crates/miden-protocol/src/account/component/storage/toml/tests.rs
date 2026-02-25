@@ -522,7 +522,7 @@ fn metadata_toml_round_trip_typed_slots() {
 
         [[storage.slots]]
         name = "demo::typed_map"
-        type = { key = "miden::standards::auth::falcon512_rpo::pub_key", value = "miden::standards::auth::falcon512_rpo::pub_key" }
+        type = { key = "miden::standards::auth::pub_key", value = "miden::standards::auth::pub_key" }
     "#;
 
     let metadata =
@@ -550,7 +550,7 @@ fn metadata_toml_round_trip_typed_slots() {
         _ => panic!("expected map slot"),
     };
 
-    let pub_key_type = SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").unwrap();
+    let pub_key_type = SchemaTypeId::new("miden::standards::auth::pub_key").unwrap();
     assert_eq!(map_slot.key_schema(), &WordSchema::new_simple(pub_key_type.clone()));
     assert_eq!(map_slot.value_schema(), &WordSchema::new_simple(pub_key_type));
 
@@ -582,11 +582,11 @@ fn metadata_toml_round_trip_typed_slots() {
     let map_type = typed_map_entry.get("type").unwrap().as_table().unwrap();
     assert_eq!(
         map_type.get("key").unwrap().as_str().unwrap(),
-        "miden::standards::auth::falcon512_rpo::pub_key"
+        "miden::standards::auth::pub_key"
     );
     assert_eq!(
         map_type.get("value").unwrap().as_str().unwrap(),
-        "miden::standards::auth::falcon512_rpo::pub_key"
+        "miden::standards::auth::pub_key"
     );
 }
 
@@ -613,7 +613,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         [[storage.slots]]
         name = "demo::owner_pub_key"
         description = "Owner public key"
-        type = "miden::standards::auth::falcon512_rpo::pub_key"
+        type = "miden::standards::auth::pub_key"
 
         # simple felt-typed word slot (parsed as felt, stored as [0,0,0,<felt>])
         [[storage.slots]]

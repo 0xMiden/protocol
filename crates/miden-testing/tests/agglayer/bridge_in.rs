@@ -109,15 +109,19 @@ fn merkle_proof_verification_code(
 #[case::simulated(ClaimDataSource::Simulated)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
+    use miden_protocol::account::auth::AuthScheme;
+
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     // CREATE BRIDGE ACCOUNT (with bridge_out component for MMR validation)
     // --------------------------------------------------------------------------------------------

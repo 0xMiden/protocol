@@ -50,6 +50,7 @@
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
 - Unified the underlying representation of `ExitRoot` and `SmtNode` and use type aliases ([#2387](https://github.com/0xMiden/miden-base/pull/2387)).
 - [BREAKING] Moved padding to the end of `CLAIM` `NoteStorage` layout ([#2405](https://github.com/0xMiden/miden-base/pull/2405)).
+- [BREAKING] Consolidated authentication components ([#2390] (https://github.com/0xMiden/miden-base/pull/2390))
 - [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
