@@ -33,11 +33,19 @@ const IS_FAUCET_REGISTERED_FLAG=1
 #! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
 #! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
 #!
+#! Panics if the note sender is not the global exit root manager.
+#!
 #! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc update_ger
+    # Assert the note sender is the global exit root manager.
+    # This has a net-zero stack effect: it pushes temporaries, compares, asserts,
+    # and drops them, leaving the original stack undisturbed.
+    exec.assert_sender_is_ger_manager
+    # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
+
     # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
     # inputs: [B, A] => output: hash(A || B)
     exec.rpo256::merge
@@ -98,19 +106,25 @@ end
 #! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
 #! non-existent entries (SMTs return EMPTY_WORD for missing keys).
 #!
+#! Panics if the note sender is not the bridge admin.
+#!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc register_faucet
+    # Assert the note sender is the bridge admin.
+    # This has a net-zero stack effect: it pushes temporaries, compares, asserts,
+    # and drops them, leaving the original stack undisturbed.
+    exec.assert_sender_is_bridge_admin
     # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
     # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
     push.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, slot_id_prefix, slot_id_suffix, pad(14)]
+    # => [IS_FAUCET_REGISTERED_FLAG, faucet_id_prefix, faucet_id_suffix, pad(14)]
 
     movdn.7
-    # => [[slot_id_prefix, slot_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
+    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
 
     # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]
@@ -161,7 +175,7 @@ end
 #! Panics if:
 #! - the note sender does not match the bridge admin account ID.
 #!
-#! Invocation: call
+#! Invocation: exec
 pub proc assert_sender_is_bridge_admin
     # => [pad(16)]
 
@@ -191,7 +205,7 @@ end
 #! Panics if:
 #! - the note sender does not match the GER manager account ID.
 #!
-#! Invocation: call
+#! Invocation: exec
 pub proc assert_sender_is_ger_manager
     # => [pad(16)]
 
