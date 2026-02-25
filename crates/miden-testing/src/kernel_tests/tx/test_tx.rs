@@ -75,11 +75,15 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
     let account1 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [asset],
     )?;
     let account2 = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [asset],
     )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
@@ -503,8 +507,9 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder
-        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_mock_account(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let mut rng = RpoRandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -541,9 +546,9 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
         AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
         AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
         AuthMethod::Multisig { .. } => {
-            panic!("Expected SingleSig auth scheme, got Falcon512RpoMultisig")
+            panic!("Expected SingleSig auth scheme, got Multisig")
         },
-        AuthMethod::Unknown => panic!("Expected Falcon512Rpo auth scheme, got Unknown"),
+        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
@@ -822,8 +827,9 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
 async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     // Use basic auth so the tx requires a signature for successful execution.
-    let account = builder
-        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_mock_account(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),

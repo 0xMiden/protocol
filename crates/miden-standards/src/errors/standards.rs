@@ -25,8 +25,8 @@ pub const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT: MasmE
 /// Error Message: "token supply exceeds max supply"
 pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
 
-/// Error Message: "invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak"
-pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak");
+/// Error Message: "invalid signature scheme id: expected 2 for falcon512_poseidon2, 1 for ecdsa_k256_keccak"
+pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid signature scheme id: expected 2 for falcon512_poseidon2, 1 for ecdsa_k256_keccak");
 /// Error Message: "invalid scheme ID word format expected three zero values followed by the scheme ID"
 pub const ERR_INVALID_SCHEME_ID_WORD: MasmError = MasmError::from_static_str("invalid scheme ID word format expected three zero values followed by the scheme ID");
 

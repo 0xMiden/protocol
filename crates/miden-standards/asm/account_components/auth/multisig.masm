@@ -518,7 +518,7 @@ end
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed

@@ -3,6 +3,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use core::error::Error;
 use core::fmt::{self, Display};
+use core::str::FromStr;
 
 use miden_core::{Felt, Word};
 use thiserror::Error;
@@ -345,16 +346,8 @@ impl FeltType for AuthScheme {
                 SchemaTypeError::parse(input.to_string(), <Self as FeltType>::type_name(), err)
             })?
         } else {
-            match input {
-                "Falcon512Rpo" => AuthScheme::Falcon512Rpo,
-                "EcdsaK256Keccak" => AuthScheme::EcdsaK256Keccak,
-                _ => {
-                    return Err(SchemaTypeError::ConversionError(format!(
-                        "invalid auth scheme `{input}`: expected one of `Falcon512Rpo`, \
-                         `EcdsaK256Keccak`, `1`, `2`"
-                    )));
-                },
-            }
+            AuthScheme::from_str(input)
+                .map_err(|err| SchemaTypeError::ConversionError(err.to_string()))?
         };
 
         Ok(Felt::from(auth_scheme.as_u8()))
@@ -762,7 +755,7 @@ mod tests {
 
         let displayed = SCHEMA_TYPE_REGISTRY.display_word(&auth_scheme_type, numeric_word);
         assert!(
-            matches!(displayed, WordDisplay::Felt(ref value) if value == "Falcon512Rpo"),
+            matches!(displayed, WordDisplay::Felt(ref value) if value == "Falcon512Poseidon2"),
             "expected canonical auth scheme display, got {displayed:?}"
         );
     }

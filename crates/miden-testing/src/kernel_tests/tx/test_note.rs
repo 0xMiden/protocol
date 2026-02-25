@@ -46,8 +46,9 @@ use crate::{
 async fn test_note_setup() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder
-            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -89,8 +90,9 @@ async fn test_note_setup() -> anyhow::Result<()> {
 async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     let mut tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder
-            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -480,7 +482,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test checks the scenario when some public key, which is provided to the RPO component of
+/// This test checks the scenario when some public key, which is provided to the auth component of
 /// the target account, is also provided as an input to the input note.
 ///
 /// Previously this setup was leading to the values collision in the advice map, see the
@@ -489,13 +491,15 @@ pub async fn test_timelock() -> anyhow::Result<()> {
 async fn test_public_key_as_note_input() -> anyhow::Result<()> {
     let mut rng = ChaCha20Rng::from_seed(Default::default());
     let sec_key = SecretKey::with_rng(&mut rng);
-    // this value will be used both as public key in the RPO component of the target account and as
+    // this value will be used both as public key in the auth component of the target account and as
     // well as the input of the input note
     let public_key = PublicKeyCommitment::from(sec_key.public_key());
     let public_key_value = Word::from(public_key);
 
-    let (rpo_component, authenticator) =
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo }.build_component();
+    let (rpo_component, authenticator) = Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    }
+    .build_component();
 
     let mock_seed_1 = Word::from([1, 2, 3, 4u32]).as_bytes();
     let target_account = AccountBuilder::new(mock_seed_1)

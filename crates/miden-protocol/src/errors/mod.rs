@@ -1160,5 +1160,5 @@ pub enum NullifierTreeError {
 #[derive(Debug, Error)]
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
-    InvalidAuthSchemeIdentifier(u8),
+    InvalidAuthSchemeIdentifier(String),
 }

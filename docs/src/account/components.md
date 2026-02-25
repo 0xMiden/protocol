@@ -7,7 +7,7 @@ title: "Components"
 
 Account components are reusable units of functionality that define a part of an account's code and storage. Multiple account components can be merged together to form an account's final [code](./code) and [storage](./storage).
 
-As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with an `Falcon512Rpo` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
+As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with a `Falcon512Poseidon2` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
 
 ## Account Component schemas
 

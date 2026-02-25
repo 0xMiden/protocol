@@ -85,7 +85,7 @@ fn setup_acl_test(
 
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let (account, mock_chain, note) = setup_acl_test(false, true, auth_scheme)?;
@@ -208,7 +208,7 @@ async fn test_acl(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
 
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_acl_with_allow_unauthorized_output_notes(
     #[case] auth_scheme: AuthScheme,
@@ -253,7 +253,7 @@ async fn test_acl_with_allow_unauthorized_output_notes(
 
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_acl_with_disallow_unauthorized_input_notes(
     #[case] auth_scheme: AuthScheme,
