@@ -6,6 +6,7 @@ use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth
+use miden::standards::auth::psm
 use miden::core::word
 
 # Local Memory Addresses
@@ -515,6 +516,17 @@ pub proc is_signer(pub_key: BeWord) -> felt
     # => [is_signer]
 end
 
+#! Updates the private state manager public key.
+#!
+#! Inputs: []
+#! Advice stack inputs: [NEW_PSM_PUBLIC_KEY]
+#! Outputs: []
+#!
+#! Invocation: call
+pub proc update_psm_public_key
+    exec.psm::update_psm_public_key
+end
+
 
 #! Authenticate a transaction using the signature scheme specified by scheme_id 
 #! with multi-signature support
@@ -609,6 +621,15 @@ pub proc auth_tx_multisig(salt: BeWord)
         emit.AUTH_UNAUTHORIZED_EVENT
         push.0 assert.err="insufficient number of signatures"
     end
+
+    # ------ Verifying private state manager signature ------
+
+    exec.psm::is_psm_initialized
+    # => [is_psm_initialized, TX_SUMMARY_COMMITMENT]
+    if.true
+        exec.psm::verify_psm_signature
+    end
+    # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Writing executed transaction MSG to map ------
 
