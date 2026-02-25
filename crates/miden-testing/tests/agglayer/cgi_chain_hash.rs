@@ -8,8 +8,9 @@ use miden_tx::utils::hex_to_bytes;
 
 use super::test_utils::{CGIChainHashTestData, CLAIMED_GLOBAL_INDEX_HASH_CHAIN};
 
+/// Checks the correctness of the claimed global index chain hash computation, used during the CLAIM
+/// note execution.
 #[tokio::test]
-#[ignore = "CGI chain hash is not stored anywhere yet"]
 async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> {
     let cgi_chain_hash_data: &CGIChainHashTestData = &CLAIMED_GLOBAL_INDEX_HASH_CHAIN;
 
@@ -34,6 +35,7 @@ async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> 
     let source = format!(
         r#"
         use miden::core::crypto::hashes::keccak256
+        use miden::core::word
         use miden::core::sys
 
         use miden::agglayer::common::utils
@@ -68,20 +70,26 @@ async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> 
 
         begin
             # push the expected hash onto the stack
-            push.{expected_cgi_hash_hi} push.{expected_cgi_hash_lo}
+            push.{expected_cgi_hash_hi} exec.word::reverse
+            push.{expected_cgi_hash_lo} exec.word::reverse
             # => [EXPECTED_CGI_HASH[8]]
 
             # push the leaf value onto the stack
-            push.{leaf_hi} push.{leaf_lo}
+            push.{leaf_hi} exec.word::reverse
+            push.{leaf_lo} exec.word::reverse
             # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
 
             # push the global index onto the stack and save it into the memory
-            push.GLOBAL_INDEX_PTR push.{global_index_hi} push.{global_index_lo}
+            push.GLOBAL_INDEX_PTR 
+            push.{global_index_hi} exec.word::reverse
+            push.{global_index_lo} exec.word::reverse
             exec.utils::mem_store_double_word dropw dropw drop
             # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
 
             # push the old CGI chain hash onto the stack and save it into the memory
-            push.OLD_CGI_CHAIN_HASH_PTR push.{old_cgi_hash_hi} push.{old_cgi_hash_lo}
+            push.OLD_CGI_CHAIN_HASH_PTR
+            push.{old_cgi_hash_hi} exec.word::reverse
+            push.{old_cgi_hash_lo} exec.word::reverse
             exec.utils::mem_store_double_word dropw dropw drop
             # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
 
@@ -91,8 +99,6 @@ async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> 
 
             # assert that the hashes are identical
             # => [NEW_CGI_CHAIN_HASH_LO, NEW_CGI_CHAIN_HASH_HI, EXPECTED_CGI_HASH_LO, EXPECTED_CGI_HASH_HI]
-
-            debug.stack
 
             swapw.3
             # => [EXPECTED_CGI_HASH_HI, NEW_CGI_CHAIN_HASH_HI, EXPECTED_CGI_HASH_LO, NEW_CGI_CHAIN_HASH_LO]
