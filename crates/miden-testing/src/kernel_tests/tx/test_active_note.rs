@@ -2,6 +2,7 @@ use alloc::string::String;
 
 use anyhow::Context;
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
@@ -37,7 +38,8 @@ use crate::{
 async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let p2id_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -169,7 +171,8 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -306,7 +309,8 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
         let p2id_note = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -466,7 +470,8 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -505,7 +510,8 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder
+            .add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
