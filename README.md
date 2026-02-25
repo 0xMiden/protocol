@@ -1,10 +1,10 @@
 # Miden protocol
 
-[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/miden-base/blob/main/LICENSE)
-[![test](https://github.com/0xMiden/miden-base/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/miden-base/actions/workflows/test.yml)
-[![build](https://github.com/0xMiden/miden-base/actions/workflows/build.yml/badge.svg)](https://github.com/0xMiden/miden-base/actions/workflows/build.yml)
+[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/protocol/blob/main/LICENSE)
+[![test](https://github.com/0xMiden/protocol/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/test.yml)
+[![build](https://github.com/0xMiden/protocol/actions/workflows/build.yml/badge.svg)](https://github.com/0xMiden/protocol/actions/workflows/build.yml)
 [![RUST_VERSION](https://img.shields.io/badge/rustc-1.90+-lightgray.svg)](https://www.rust-lang.org/tools/install)
-[![GitHub Release](https://img.shields.io/github/release/0xMiden/miden-base)](https://github.com/0xMiden/miden-base/releases/)
+[![GitHub Release](https://img.shields.io/github/release/0xMiden/protocol)](https://github.com/0xMiden/protocol/releases/)
 
 Description and core structures for the Miden Rollup protocol.
 
@@ -16,7 +16,7 @@ Miden is a zero-knowledge rollup for high-throughput and private applications. M
 
 If you want to join the technical discussion or learn more about the project, please check out
 
-- the [Documentation](https://docs.miden.xyz/miden-base/).
+- the [Documentation](https://docs.miden.xyz/protocol/).
 - the [Telegram](https://t.me/BuildOnMiden)
 - the [Repo](https://github.com/0xMiden)
 - the [Roadmap](https://miden.xyz/roadmap)
@@ -71,7 +71,7 @@ Some of the functions in this project are computationally intensive and may take
 
 ## Documentation
 
-The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/miden-base/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+The documentation in the `docs/` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://docs.miden.xyz/protocol/) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
 
 ## License
 
