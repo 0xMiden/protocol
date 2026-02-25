@@ -1,8 +1,8 @@
-# The MASM code of the Falcon 512 RPO authentication Account Component.
+# The MASM code of the BasicSignature Authentication Account Component.
 #
-# See the `AuthFalcon512Rpo` Rust type's documentation for more details.
+# See the `AuthBasicSignature` Rust type's documentation for more details.
 
-use miden::standards::auth::falcon512_rpo
+use miden::standards::auth::signature
 use miden::protocol::active_account
 
 type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
@@ -11,9 +11,16 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # =================================================================================================
 
 # The slot in this component's storage layout where the public key is stored.
-const PUBLIC_KEY_SLOT = word("miden::standards::auth::falcon512_rpo::public_key")
+const PUBLIC_KEY_SLOT = word("miden::standards::auth::singlesig::pub_key")
 
-#! Authenticate a transaction using the Falcon signature scheme.
+# The slot in this component's storage layout where the corresponding signature scheme id is stored.
+const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id.
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_rpo
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
 #! changed or not. Then it computes and signs the following message (in memory order):
@@ -28,16 +35,22 @@ const PUBLIC_KEY_SLOT = word("miden::standards::auth::falcon512_rpo::public_key"
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
-pub proc auth_tx_falcon512_rpo(auth_args: BeWord)
+pub proc auth_tx(auth_args: BeWord)
     dropw
     # => [pad(16)]
-
+    
     # Fetch public key from storage.
     # ---------------------------------------------------------------------------------------------
 
     push.PUBLIC_KEY_SLOT[0..2] exec.active_account::get_item
     # => [PUB_KEY, pad(16)]
 
-    exec.falcon512_rpo::authenticate_transaction
+    push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
+    # => [0, 0, 0, scheme_id, PUB_KEY, pad(16)]
+
+    drop drop drop movdn.4
+    # => [PUB_KEY, scheme_id, pad(16)]
+
+    exec.signature::authenticate_transaction
     # => [pad(16)]
 end
