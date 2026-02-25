@@ -3,21 +3,21 @@
 **Scope:** Implementation-accurate specification of the AggLayer bridge integration on
 Miden, covering contracts, note flows, storage, and encoding semantics.
 
-**Baseline:** Commit `be765b035`. All statements in sections 1–8 describe current
-implementation behaviour and are cross-checked against the test suite in
+**Baseline:** Branch `agglayer` (post-merge). All statements in sections 1-3 describe
+current implementation behaviour and are cross-checked against the test suite in
 `crates/miden-testing/tests/agglayer/`. Planned changes that diverge from the current
-implementation are isolated in section 8.
+implementation are called out inline with `TODO (Future)` markers.
 
 **Conventions:**
 
-- *Word* = 4 field elements (felts), each < p (Goldilocks prime 2^64 − 2^32 + 1).
+- *Word* = 4 field elements (felts), each < p (Goldilocks prime 2^64 - 2^32 + 1).
 - *Felt* = a single Goldilocks field element.
 - Word values in this spec use **element-index notation** matching Rust's
   `Word::new([e0, e1, e2, e3])`. MASM doc comments use **stack notation** (top-first),
   which reverses the order: stack `[a, b, c, d]` = Word `[d, c, b, a]`.
 - Procedure input/output signatures use **stack notation** (top-first), matching the
   MASM doc comments.
-- `TODO (Future)` marks non-implemented design points; see section 8 for the full list.
+- `TODO (Future)` marks non-implemented design points.
 
 ---
 
@@ -25,41 +25,47 @@ implementation are isolated in section 8.
 
 | Entity | Description | Account type |
 |--------|-------------|--------------|
-| **User** | End-user Miden account that holds assets and initiates bridge-out deposits, or recieves assets from a bridge-in claim. | Any account with `basic_wallet` component |
-| **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with `bridge_out` + `bridge_in` components (TODO: consolidate into single component)|
+| **User** | End-user Miden account that holds assets and initiates bridge-out deposits, or receives assets from a bridge-in claim. | Any account with `basic_wallet` component |
+| **AggLayer Bridge** | Onchain bridge account that manages the Local Exit Tree (LET), faucet registry, and GER state. Consumes B2AGG, CONFIG, and UPDATE_GER notes. | Network-mode account with a single `bridge` component |
 | **AggLayer Faucet** | Fungible faucet that represents a single bridged token. Mints on bridge-in claims, burns on bridge-out. Each foreign token has its own faucet instance. | `FungibleFaucet`, network-mode, with `agglayer_faucet` component |
 | **Integration Service** (offchain) | Observes L1 events (deposits, GER updates) and creates UPDATE_GER and CLAIM notes on Miden. Trusted to provide correct proofs and data. | Not an onchain entity; creates notes targeting bridge/faucet |
-| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. | Not an onchain entity; creates config notes |
+| **Bridge Operator** (offchain) | Deploys bridge and faucet accounts. Creates CONFIG_AGG_BRIDGE notes to register faucets. Must use the bridge admin account. | Not an onchain entity; creates config notes |
 
 ### Current permissions
 
 | Note type | Issuer (sender check) | Consumer (consuming-account check) |
 |-----------|----------------------|-----------------------------------|
-| B2AGG (bridge-out) | Any user — not restricted | Bridge account — **enforced** via `NetworkAccountTarget` attachment. |
-| B2AGG (reclaim) | Any user — not restricted | Original sender only — **enforced**: script checks `sender == consuming account` |
-| CONFIG_AGG_BRIDGE | Anyone — **not enforced** ([TODO #2450](https://github.com/0xMiden/miden-base/issues/2450)) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
-| UPDATE_GER | Anyone — **not enforced** ([TODO #2467](https://github.com/0xMiden/miden-base/issues/2467)) | Bridge account — **enforced** via `NetworkAccountTarget` attachment |
-| CLAIM | Anyone — not restricted | Target faucet only — **enforced**: script checks `consuming account == target_faucet_account_id` from note storage ([TODO #2468](https://github.com/0xMiden/miden-base/issues/2468)) |
+| B2AGG (bridge-out) | Any user -- not restricted | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+| B2AGG (reclaim) | Any user -- not restricted | Original sender only -- **enforced**: script checks `sender == consuming account` |
+| CONFIG_AGG_BRIDGE | Bridge admin only -- **enforced**: script calls `bridge_config::assert_sender_is_bridge_admin` | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+| UPDATE_GER | GER manager only -- **enforced**: script calls `bridge_config::assert_sender_is_ger_manager` | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+| CLAIM | Anyone -- not restricted | Target faucet only -- **enforced**: script checks `consuming account == target_faucet_account_id` from note storage (TODO (Future): unify enforcement via `NetworkAccountTarget` [#2468](https://github.com/0xMiden/protocol/issues/2468)) |
 
 ---
 
 ## 2. Contracts and Public Interfaces
 
-### 2.1 Bridge Account Components
+### 2.1 Bridge Account Component
 
-The bridge account is composed of two components:
-([TODO #2294](https://github.com/0xMiden/miden-base/issues/2294): consolidate into single component)
+The bridge account has a single unified `bridge` component (`components/bridge.masm`),
+which is a thin wrapper that re-exports procedures from the `agglayer` library modules:
 
-1. **`bridge_out` component** — includes `bridge_out.masm`, `bridge_config.masm`,
-   `local_exit_tree.masm`, and supporting modules
-2. **`bridge_in` component** — includes `bridge_in.masm`
+- `bridge_config::assert_sender_is_bridge_admin`
+- `bridge_config::assert_sender_is_ger_manager`
+- `bridge_config::register_faucet`
+- `bridge_config::update_ger`
+- `bridge_in::verify_leaf_bridge`
+- `bridge_out::bridge_out`
+
+The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
+`asm/agglayer/common/`.
 
 #### `bridge_out::bridge_out`
 
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[ASSET, dest_network_id, dest_addr₀, dest_addr₁, dest_addr₂, dest_addr₃, dest_addr₄, pad(4)]` |
+| **Inputs** | `[ASSET, dest_network_id, dest_addr(5), pad(4)]` |
 | **Outputs** | `[]` |
 | **Context** | Consuming a `B2AGG` note on the bridge account |
 | **Panics** | Faucet not in registry; FPI to faucet fails |
@@ -70,7 +76,7 @@ Bridges an asset out of Miden into the AggLayer:
 2. FPIs to `agglayer_faucet::asset_to_origin_asset` on the faucet account to obtain the scaled U256 amount, origin token address, and origin network.
 3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash).
 4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (MMR frontier).
-5. Creates a public `BURN` note targeting the faucet, tagged with `NoteTag::with_account_target(faucet_id)` ([TODO #2470](https://github.com/0xMiden/miden-base/issues/2470): should be a network note).
+5. Creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment.
 
 #### `bridge_config::register_faucet`
 
@@ -80,14 +86,15 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[faucet_id_prefix, faucet_id_suffix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | None (no authorization check) |
+| **Panics** | None |
 
-Writes `[0, 0, faucet_suffix, faucet_prefix] → [1, 0, 0, 0]` into the
+Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
 `faucet_registry` map slot.
 
-> **TODO (Future):** No sender validation — anyone can register. See [#2450](https://github.com/0xMiden/miden-base/issues/2450).
+Note: Sender authorization is enforced in the CONFIG_AGG_BRIDGE note script via
+`assert_sender_is_bridge_admin`, not within this procedure itself.
 
-#### `bridge_in::update_ger`
+#### `bridge_config::update_ger`
 
 | | |
 |-|-|
@@ -98,7 +105,34 @@ Writes `[0, 0, faucet_suffix, faucet_prefix] → [1, 0, 0, 0]` into the
 | **Panics** | None |
 
 Computes `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
-`KEY → [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
+`KEY -> [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
+
+Note: Sender authorization is enforced in the UPDATE_GER note script via
+`assert_sender_is_ger_manager`, not within this procedure itself.
+
+#### `bridge_config::assert_sender_is_bridge_admin`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[pad(16)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Called from CONFIG_AGG_BRIDGE note script |
+| **Panics** | Note sender does not match the bridge admin stored in `miden::agglayer::bridge::admin` |
+
+Reads the bridge admin account ID from storage and compares it against the note sender.
+
+#### `bridge_config::assert_sender_is_ger_manager`
+
+| | |
+|-|-|
+| **Invocation** | `call` |
+| **Inputs** | `[pad(16)]` |
+| **Outputs** | `[pad(16)]` |
+| **Context** | Called from UPDATE_GER note script |
+| **Panics** | Note sender does not match the GER manager stored in `miden::agglayer::bridge::ger_manager` |
+
+Reads the GER manager account ID from storage and compares it against the note sender.
 
 #### `bridge_in::verify_leaf_bridge`
 
@@ -107,7 +141,7 @@ Computes `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
 | **Invocation** | `call` (invoked via FPI from the faucet) |
 | **Inputs** | `[LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]` on the operand stack; proof data and leaf data in the advice map |
 | **Outputs** | `[pad(16)]` |
-| **Context** | FPI target — called by the faucet during `CLAIM` consumption |
+| **Context** | FPI target -- called by the faucet during `CLAIM` consumption |
 | **Panics** | GER not known; global index not mainnet; rollup index non-zero; Merkle proof verification failed |
 
 Verifies a bridge-in claim:
@@ -116,26 +150,36 @@ Verifies a bridge-in claim:
 2. Retrieves proof data from the advice map: SMT proofs, global index, exit roots.
 3. Computes the GER from `mainnet_exit_root` and `rollup_exit_root`, asserts it is in
    the known GER set.
-4. Extracts the leaf index from the global index (must be mainnet, rollup index = 0). (TODO: rollup indices are not processed yet [#2394](https://github.com/0xMiden/miden-base/issues/2394)).
+4. Extracts the leaf index from the global index (must be mainnet, rollup index = 0). (TODO (Future): rollup indices are not processed yet [#2394](https://github.com/0xMiden/protocol/issues/2394)).
 5. Verifies the Merkle proof: leaf value at `leaf_index` against `mainnet_exit_root`.
 
 #### Bridge Account Storage
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
-| `miden::agglayer::bridge::faucet_registry` | Map | `[0, 0, faucet_suffix, faucet_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
 | `miden::agglayer::bridge::ger` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
-| `miden::agglayer::let` | Map | `[h, 0, 0, 0]` → first word; `[h, 1, 0, 0]` → second word (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
-| `miden::agglayer::let::root_lo` | Value | — | `[root₀, root₁, root₂, root₃]` | LET root low word (Keccak-256 lower 16 bytes) |
-| `miden::agglayer::let::root_hi` | Value | — | `[root₄, root₅, root₆, root₇]` | LET root high word (Keccak-256 upper 16 bytes) |
-| `miden::agglayer::let::num_leaves` | Value | — | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
+| `miden::agglayer::let` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
+| `miden::agglayer::let::root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
+| `miden::agglayer::let::root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
+| `miden::agglayer::let::num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
+| `miden::agglayer::bridge::faucet_registry` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
+| `miden::agglayer::bridge::admin` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
+| `miden::agglayer::bridge::ger_manager` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]`.
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except `admin` and
+`ger_manager` which are set at account creation time.
 
 ### 2.2 Faucet Account Component
 
-The faucet account has the `agglayer_faucet` component, which bundles the `agglayer_faucet.masm`,
-`asset_conversion.masm`, and `eth_address.masm` modules.
+The faucet account has the `agglayer_faucet` component (`components/faucet.masm`),
+which is a thin wrapper that re-exports procedures from the `agglayer` library:
+
+- `faucet::claim`
+- `faucet::asset_to_origin_asset`
+- `faucet::burn`
+
+The underlying library code lives in `asm/agglayer/faucet/mod.masm` with supporting
+modules in `asm/agglayer/common/`.
 
 #### `agglayer_faucet::claim`
 
@@ -153,7 +197,7 @@ Processes a bridge-in claim:
 2. Extracts the destination account ID from the leaf data's destination address (via `eth_address::to_account_id`).
 3. Extracts the raw U256 claim amount from the leaf data.
 4. FPI to `bridge_in::verify_leaf_bridge` on the bridge account to validate the proof.
-5. Scales the amount down (TODO PR WIP [#2460](https://github.com/0xMiden/miden-base/pull/2460)).
+5. Verifies the pre-computed native claim amount (from note storage) against the U256 amount and scale factor using `asset_conversion::verify_u256_to_native_amount_conversion`.
 6. Mints the asset via `faucets::distribute` and creates a public P2ID output note for the recipient.
 
 #### `agglayer_faucet::asset_to_origin_asset`
@@ -162,8 +206,8 @@ Processes a bridge-in claim:
 |-|-|
 | **Invocation** | `call` (invoked via FPI from the bridge) |
 | **Inputs** | `[amount, pad(15)]` |
-| **Outputs** | `[AMOUNT_U256₀(4), AMOUNT_U256₁(4), addr₀..addr₄, origin_network, pad(2)]` |
-| **Context** | FPI target — called by the bridge during bridge-out |
+| **Outputs** | `[AMOUNT_U256_0(4), AMOUNT_U256_1(4), addr_0..addr_4, origin_network, pad(2)]` |
+| **Context** | FPI target -- called by the bridge during bridge-out |
 | **Panics** | Scale exceeds 18 |
 
 Converts a Miden-native asset amount to the origin chain's U256 representation:
@@ -188,9 +232,9 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
-| `miden::agglayer::faucet` (TODO change name in [#2356](https://github.com/0xMiden/miden-base/issues/2356)) | Value | `[0, 0, bridge_suffix, bridge_prefix]` | Bridge account ID this faucet is paired with |
-| `miden::agglayer::faucet::conversion_info_1` | Value | `[addr₀, addr₁, addr₂, addr₃]` | Origin token address, first 4 u32 limbs |
-| `miden::agglayer::faucet::conversion_info_2` | Value | `[addr₄, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
+| `miden::agglayer::faucet` (TODO (Future): rename for clarity [#2356](https://github.com/0xMiden/protocol/issues/2356)) | Value | `[0, 0, bridge_suffix, bridge_prefix]` | Bridge account ID this faucet is paired with |
+| `miden::agglayer::faucet::conversion_info_1` | Value | `[addr_0, addr_1, addr_2, addr_3]` | Origin token address, first 4 u32 limbs |
+| `miden::agglayer::faucet::conversion_info_2` | Value | `[addr_4, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
 
 ---
 
@@ -209,7 +253,7 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | `sender` | Any account (not validated) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
-| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+| `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
 
 **`NoteDetails`**
 
@@ -221,26 +265,26 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `B2AGG.masb` |
-| `storage` | 6 felts — see layout below |
+| `storage` | 6 felts -- see layout below |
 
 **Storage layout (6 felts):**
 
 | Index | Field | Encoding |
 |-------|-------|----------|
 | 0 | `destination_network` | u32 |
-| 1–5 | `destination_address` | 5 × u32 felts (20-byte Ethereum address) |
+| 1-5 | `destination_address` | 5 x u32 felts (20-byte Ethereum address) |
 
 **Consumption:**
 
-- **Bridge-out:** Consuming account is the bridge → note validates attachment target,
+- **Bridge-out:** Consuming account is the bridge -> note validates attachment target,
   loads storage and asset, calls `bridge_out::bridge_out`.
-- **Reclaim:** Consuming account is the original sender → assets are added back to the
+- **Reclaim:** Consuming account is the original sender -> assets are added back to the
   account via `basic_wallet::add_assets_to_account`. No output notes.
 
 ### 3.2 CLAIM
 
 **Purpose:** Claim assets, which were deposited on any AggLayer-connected rollup, on Miden. Consumed by
-the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protocol/issues/2506)), which mints the asset and sends it to the recipient.
+the faucet (TODO (Future): [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protocol/issues/2506) through the bridge account), which mints the asset and sends it to the recipient.
 
 **`NoteHeader`**
 
@@ -251,7 +295,7 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 | `sender` | Any account (not validated) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
-| `attachment` | `NetworkAccountTarget` — target is the faucet account; execution hint: Always |
+| `attachment` | `NetworkAccountTarget` -- target is the faucet account; execution hint: Always |
 
 **`NoteDetails`**
 
@@ -263,38 +307,38 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `CLAIM.masb` |
-| `storage` | 576 felts — see layout below |
+| `storage` | 576 felts -- see layout below |
 
 **Storage layout (576 felts):**
 
 | Range | Field | Size (felts) | Encoding |
 |-------|-------|-------------|----------|
-| 0–255 | `smt_proof_local_exit_root` | 256 | 32 × Keccak-256 nodes (8 felts each) |
-| 256–511 | `smt_proof_rollup_exit_root` | 256 | 32 × Keccak-256 nodes (8 felts each) |
-| 512–519 | `global_index` | 8 | U256 as 8 × u32 felts |
-| 520–527 | `mainnet_exit_root` | 8 | Keccak-256 hash as 8 × u32 felts |
-| 528–535 | `rollup_exit_root` | 8 | Keccak-256 hash as 8 × u32 felts |
+| 0-255 | `smt_proof_local_exit_root` | 256 | 32 x Keccak-256 nodes (8 felts each) |
+| 256-511 | `smt_proof_rollup_exit_root` | 256 | 32 x Keccak-256 nodes (8 felts each) |
+| 512-519 | `global_index` | 8 | U256 as 8 x u32 felts |
+| 520-527 | `mainnet_exit_root` | 8 | Keccak-256 hash as 8 x u32 felts |
+| 528-535 | `rollup_exit_root` | 8 | Keccak-256 hash as 8 x u32 felts |
 | 536 | `leaf_type` | 1 | u32 (0 = asset) |
 | 537 | `origin_network` | 1 | u32 |
-| 538–542 | `origin_token_address` | 5 | 5 × u32 felts |
+| 538-542 | `origin_token_address` | 5 | 5 x u32 felts |
 | 543 | `destination_network` | 1 | u32 |
-| 544–548 | `destination_address` | 5 | 5 × u32 felts |
-| 549–556 | `amount` | 8 | U256 as 8 × u32 felts |
-| 557–564 | `metadata_hash` | 8 | Keccak-256 hash as 8 × u32 felts |
-| 565–567 | padding | 3 | zeros |
-| 568–571 | `output_p2id_serial_num` | 4 | Word — serial number for the P2ID output note |
-| 572–573 | `target_faucet_account_id` | 2 | `[prefix, suffix]` of the target faucet |
+| 544-548 | `destination_address` | 5 | 5 x u32 felts |
+| 549-556 | `amount` | 8 | U256 as 8 x u32 felts |
+| 557-564 | `metadata_hash` | 8 | Keccak-256 hash as 8 x u32 felts |
+| 565-567 | padding | 3 | zeros |
+| 568-571 | `output_p2id_serial_num` | 4 | Word -- serial number for the P2ID output note |
+| 572-573 | `target_faucet_account_id` | 2 | `[prefix, suffix]` of the target faucet |
 | 574 | `output_note_tag` | 1 | NoteTag for the P2ID output note |
-| 575 | padding | 1 | zero |
+| 575 | `miden_claim_amount` | 1 | Scaled-down Miden token amount (Felt). Computed as `floor(amount / 10^scale)` |
 
 **Consumption:**
 
 1. All 576 felts are loaded into memory.
-2. Script asserts consuming account == target faucet (TODO unify how we enforce the consumer of CLAIM note [#2468](https://github.com/0xMiden/miden-base/issues/2468)).
+2. Script asserts consuming account == target faucet (TODO (Future): unify enforcement via `NetworkAccountTarget` [#2468](https://github.com/0xMiden/protocol/issues/2468)).
 3. Storage regions are hashed and inserted into the advice map as three keyed entries
    (proof data, leaf data, output note data).
 4. `agglayer_faucet::claim` is called, which validates the proof via FPI to the bridge,
-   then mints and creates a P2ID output note.
+   verifies the native claim amount conversion, then mints and creates a P2ID output note.
 
 ### 3.3 CONFIG_AGG_BRIDGE
 
@@ -306,10 +350,10 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 
 | Field | Value |
 |-------|-------|
-| `sender` | Bridge operator (TODO: not validated — [#2450](https://github.com/0xMiden/miden-base/issues/2450)) |
+| `sender` | Bridge admin -- **enforced** by `bridge_config::assert_sender_is_bridge_admin` |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
-| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+| `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
 
 **`NoteDetails`**
 
@@ -321,7 +365,7 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `CONFIG_AGG_BRIDGE.masb` |
-| `storage` | 2 felts — see layout below |
+| `storage` | 2 felts -- see layout below |
 
 **Storage layout (2 felts):**
 
@@ -330,8 +374,8 @@ the faucet (TODO [Re-orient `CLAIM` note flow](https://github.com/0xMiden/protoc
 | 0 | `faucet_id_prefix` | Felt (AccountId prefix) |
 | 1 | `faucet_id_suffix` | Felt (AccountId suffix) |
 
-**Consumption:** Script validates attachment target, loads storage, calls
-`bridge_config::register_faucet`.
+**Consumption:** Script validates attachment target, asserts sender is bridge admin, loads
+storage, and calls `bridge_config::register_faucet`.
 
 ### 3.4 UPDATE_GER
 
@@ -344,10 +388,10 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | Integration service (TODO: not validated — [#2467](https://github.com/0xMiden/miden-base/issues/2467)) |
+| `sender` | GER manager -- **enforced** by `bridge_config::assert_sender_is_ger_manager` |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
-| `attachment` | `NetworkAccountTarget` — target is the bridge account; execution hint: Always |
+| `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
 
 **`NoteDetails`**
 
@@ -359,18 +403,18 @@ CLAIM notes can be verified against it.
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `UPDATE_GER.masb` |
-| `storage` | 8 felts — see layout below |
+| `storage` | 8 felts -- see layout below |
 
 **Storage layout (8 felts):**
 
 | Range | Field | Encoding |
 |-------|-------|----------|
-| 0–3 | `GER_LOWER` | First 16 bytes as 4 × u32 felts |
-| 4–7 | `GER_UPPER` | Last 16 bytes as 4 × u32 felts |
+| 0-3 | `GER_LOWER` | First 16 bytes as 4 x u32 felts |
+| 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
-**Consumption:** Script validates attachment target, loads storage, calls
-`bridge_in::update_ger`, which computes `rpo256::merge(GER_UPPER, GER_LOWER)` and
-stores the result in the GER map.
+**Consumption:** Script validates attachment target, asserts sender is GER manager, loads
+storage, and calls `bridge_config::update_ger`, which computes
+`rpo256::merge(GER_UPPER, GER_LOWER)` and stores the result in the GER map.
 
 ### 3.5 BURN (generated)
 
@@ -384,8 +428,8 @@ stores the result in the GER map.
 |-------|-------|
 | `sender` | Bridge account |
 | `note_type` | `NoteType::Public` |
-| `tag` | `NoteTag::with_account_target(faucet_id)` (TODO [#2470](https://github.com/0xMiden/miden-base/issues/2470): should use `NetworkAccountTarget`) |
-| `attachment` | None (TODO [#2470](https://github.com/0xMiden/miden-base/issues/2470): should be `NetworkAccountTarget`) |
+| `tag` | `NoteTag::default()` |
+| `attachment` | `NetworkAccountTarget` -- target is the faucet account; execution hint: Always |
 
 **`NoteDetails`**
 
@@ -395,13 +439,13 @@ stores the result in the GER map.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | Derived by bridge at creation time |
-| `script` | Standard BURN script |
-| `storage` | None (0 felts) — see layout below |
+| `serial_num` | Derived as `rpo256::merge(B2AGG_SERIAL_NUM, ASSET)` |
+| `script` | Standard BURN script (`miden::standards::notes::burn::main`) |
+| `storage` | None (0 felts) |
 
 **Storage layout (0 felts):**
 
-No fields — this is a standard burn note with no custom data.
+No fields -- this is a standard burn note with no custom data.
 
 **Consumption:**
 
@@ -433,8 +477,8 @@ decreases the faucet's total token supply by the burned amount.
 | Field | Value |
 |-------|-------|
 | `serial_num` | From CLAIM note storage field `output_p2id_serial_num` |
-| `script` | Standard P2ID script |
-| `storage` | 2 felts — see layout below |
+| `script` | Standard P2ID script (`miden::standards::notes::p2id::main`) |
+| `storage` | 2 felts -- see layout below |
 
 **Storage layout (2 felts):**
 
