@@ -3,6 +3,7 @@ extern crate alloc;
 // TODO(bele): Deactivated - to be upgraded later.
 // mod agglayer;
 mod auth;
+mod metadata;
 mod scripts;
 mod wallet;
 

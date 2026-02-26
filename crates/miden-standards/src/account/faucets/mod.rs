@@ -10,7 +10,7 @@ mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
-pub use token_metadata::TokenMetadata;
+pub use token_metadata::{Description, ExternalLink, LogoURI, TokenMetadata, TokenName};
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================

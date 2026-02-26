@@ -12,6 +12,10 @@ use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
+# Token metadata slot — duplicated here so distribute can read it via exec without
+# going through the call-safe get_max_supply wrapper.
+const TOKEN_METADATA_SLOT = word("miden::standards::metadata::token_metadata")
+
 # ERRORS
 # =================================================================================================
 
@@ -31,9 +35,9 @@ const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 no
 # The local memory address at which the metadata slot content is stored.
 const METADATA_SLOT_LOCAL=0
 
-# The standard slot where fungible faucet metadata like token symbol or decimals are stored.
+# The standard slot where fungible faucet metadata is stored (canonical with metadata module).
 # Layout: [token_supply, max_supply, decimals, token_symbol]
-const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
+const METADATA_SLOT=word("miden::standards::metadata::token_metadata")
 
 #! Distributes freshly minted fungible assets to the provided recipient by creating a note.
 #!
@@ -69,19 +73,9 @@ pub proc distribute
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
-    #
-    # To make sure we cannot mint more than intended, we need to check:
-    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
-    # 2) amount + token_supply does not exceed max_supply
-    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
-    #
-    # This is done with the following concrete assertions:
-    # - assert token_supply <= max_supply which ensures 1)
-    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
-    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
-    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
-    #     max_supply and we already asserted that max_supply does not exceed
-    #     FUNGIBLE_ASSET_MAX_AMOUNT
+    # - assert token_supply <= max_supply
+    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
+    # - assert amount <= max_mint_amount
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
