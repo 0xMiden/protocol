@@ -30,10 +30,10 @@ type MemoryAddress = u32
 # Storage slot constants for the LET (Local Exit Tree).
 # The frontier is stored as a double-word array in a map slot.
 # The root and num_leaves are stored in separate value slots.
-const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::let")
-const LET_ROOT_LO_SLOT=word("miden::agglayer::let::root_lo")
-const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
-const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
+const LOCAL_EXIT_TREE_SLOT=word("miden::agglayer::bridge::let")
+const LET_ROOT_LO_SLOT=word("miden::agglayer::bridge::let::root_lo")
+const LET_ROOT_HI_SLOT=word("miden::agglayer::bridge::let::root_hi")
+const LET_NUM_LEAVES_SLOT=word("miden::agglayer::bridge::let::num_leaves")
 
 # Memory pointers
 const LEAF_DATA_START_PTR=44

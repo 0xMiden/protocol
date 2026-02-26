@@ -110,21 +110,22 @@ fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
 
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
-        .expect("bridge storage slot name should be valid")
+        .expect("GER storage slot name should be valid")
 });
 static LET_FRONTIER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
+    StorageSlotName::new("miden::agglayer::bridge::let")
+        .expect("LET storage slot name should be valid")
 });
 static LET_ROOT_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_lo")
+    StorageSlotName::new("miden::agglayer::bridge::let::root_lo")
         .expect("LET root_lo storage slot name should be valid")
 });
 static LET_ROOT_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_hi")
+    StorageSlotName::new("miden::agglayer::bridge::let::root_hi")
         .expect("LET root_hi storage slot name should be valid")
 });
 static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::num_leaves")
+    StorageSlotName::new("miden::agglayer::bridge::let::num_leaves")
         .expect("LET num_leaves storage slot name should be valid")
 });
 static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -269,9 +270,9 @@ fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponen
 /// Builds the two storage slot values for faucet conversion metadata.
 ///
 /// The conversion metadata is stored in two value storage slots:
-/// - Slot 1 (`miden::agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
+/// - Slot 1 (`miden::agglayer::bridge::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
 ///   4 felts of the origin token address (5 × u32 limbs).
-/// - Slot 2 (`miden::agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
+/// - Slot 2 (`miden::agglayer::bridge::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
 ///   remaining address felt + origin network + scale factor.
 ///
 /// # Parameters
@@ -299,16 +300,16 @@ fn agglayer_faucet_conversion_slots(
 // AGGLAYER FAUCET STRUCT
 // ================================================================================================
 
-static AGGLAYER_FAUCET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet")
+static AGGLAYER_BRIDGE_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::id")
         .expect("agglayer faucet storage slot name should be valid")
 });
 static CONVERSION_INFO_1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
+    StorageSlotName::new("miden::agglayer::bridge::conversion_info_1")
         .expect("conversion info 1 storage slot name should be valid")
 });
 static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
+    StorageSlotName::new("miden::agglayer::bridge::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
 
@@ -382,7 +383,7 @@ impl AggLayerFaucet {
 
     /// Storage slot name for the AggLayer bridge account ID.
     pub fn bridge_account_id_slot() -> &'static StorageSlotName {
-        &AGGLAYER_FAUCET_SLOT_NAME
+        &AGGLAYER_BRIDGE_ID_SLOT_NAME
     }
 
     /// Storage slot name for the first 4 felts of the origin token address.
@@ -407,7 +408,7 @@ impl From<AggLayerFaucet> for AccountComponent {
             faucet.bridge_account_id.prefix().as_felt(),
         ]);
         let bridge_slot =
-            StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
+            StorageSlot::with_value(AGGLAYER_BRIDGE_ID_SLOT_NAME.clone(), bridge_account_id_word);
 
         let (conversion_slot1_word, conversion_slot2_word) = agglayer_faucet_conversion_slots(
             &faucet.origin_token_address,

@@ -22,12 +22,12 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
 # Storage slots
 # The slot in this component's storage layout where the bridge account ID is stored.
-const BRIDGE_ID_SLOT = word("miden::agglayer::faucet")
+const BRIDGE_ID_SLOT = word("miden::agglayer::bridge::id")
 # Storage slots for conversion metadata.
 # Slot 1: [addr_felt0, addr_felt1, addr_felt2, addr_felt3] — first 4 felts of origin token address
-const CONVERSION_INFO_1_SLOT = word("miden::agglayer::faucet::conversion_info_1")
+const CONVERSION_INFO_1_SLOT = word("miden::agglayer::bridge::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
-const CONVERSION_INFO_2_SLOT = word("miden::agglayer::faucet::conversion_info_2")
+const CONVERSION_INFO_2_SLOT = word("miden::agglayer::bridge::conversion_info_2")
 
 # Memory pointers for piped advice map data
 const PROOF_DATA_START_PTR = 0
