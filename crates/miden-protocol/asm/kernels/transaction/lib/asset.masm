@@ -17,8 +17,8 @@ pub use ::$kernel::util::asset::get_faucet_id
 pub use ::$kernel::util::asset::into_faucet_id
 pub use ::$kernel::util::asset::get_asset_id
 pub use ::$kernel::util::asset::into_asset_id
-pub use ::$kernel::util::asset::mem_store
-pub use ::$kernel::util::asset::mem_load
+pub use ::$kernel::util::asset::store
+pub use ::$kernel::util::asset::load
 
 # PROCEDURES
 # =================================================================================================

@@ -11,8 +11,8 @@ pub use ::miden::protocol::util::asset::get_faucet_id
 pub use ::miden::protocol::util::asset::into_faucet_id
 pub use ::miden::protocol::util::asset::get_asset_id
 pub use ::miden::protocol::util::asset::into_asset_id
-pub use ::miden::protocol::util::asset::mem_store
-pub use ::miden::protocol::util::asset::mem_load
+pub use ::miden::protocol::util::asset::store
+pub use ::miden::protocol::util::asset::load
 pub use ::miden::protocol::util::asset::get_balance_from_fungible_asset
 
 # ERRORS

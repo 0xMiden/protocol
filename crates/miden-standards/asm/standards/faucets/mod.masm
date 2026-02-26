@@ -187,7 +187,7 @@ pub proc burn
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    exec.asset::mem_load
+    exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault

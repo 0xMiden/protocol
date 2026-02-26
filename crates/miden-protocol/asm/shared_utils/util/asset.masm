@@ -26,7 +26,7 @@ pub const ASSET_VALUE_MEMORY_OFFSET = 4
 #! - ptr is the memory address where the asset will be stored.
 #! - ASSET_KEY is the 4-element word representing the asset key.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc mem_store
+pub proc store
     # store asset key
     movdn.4 dup.4
     # => [ptr, ASSET_KEY, ptr, ASSET_VALUE]
@@ -48,7 +48,7 @@ end
 #! - ptr is the memory address of the asset.
 #! - ASSET_KEY is the 4-element word representing the asset key.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc mem_load
+pub proc load
     # load asset value
     padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
     # => [ASSET_VALUE, ptr]

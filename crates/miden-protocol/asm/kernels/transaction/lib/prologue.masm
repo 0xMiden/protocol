@@ -710,7 +710,7 @@ proc add_input_note_assets_to_vault
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # load asset key and value
-        dup.1 exec.asset::mem_load
+        dup.1 exec.asset::load
         # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so
