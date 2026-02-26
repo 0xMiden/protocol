@@ -47,7 +47,7 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 ///
 /// # Fungible assets
 ///
-/// - A fungible asset's value layout is:     `[amount, 0, 0, 0]`.
+/// - A fungible asset's value layout is: `[amount, 0, 0, 0]`.
 /// - A fungible asset's vault key layout is: `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 ///
 /// The most significant elements of a fungible asset's key are set to the prefix
