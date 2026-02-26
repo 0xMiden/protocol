@@ -8,6 +8,7 @@ use miden_protocol::assembly::{Library, LibraryExport};
 use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
+use crate::StandardsLib;
 use crate::account::interface::AccountComponentInterface;
 
 // WALLET LIBRARIES
@@ -97,6 +98,10 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
 });
 
+// Metadata Info component uses the standards library (get_name, get_description, etc. from metadata).
+static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
+    LazyLock::new(|| Library::from(StandardsLib::default()));
+
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
@@ -115,6 +120,15 @@ pub fn network_fungible_faucet_library() -> Library {
 /// Returns the Storage Schema Library.
 pub fn storage_schema_library() -> Library {
     STORAGE_SCHEMA_LIBRARY.clone()
+}
+
+/// Returns the Metadata Info component library.
+///
+/// Uses the standards library; the standalone [`Info`](crate::account::metadata::Info)
+/// component exposes get_name, get_description, get_logo_uri, get_external_link from
+/// `miden::standards::metadata::fungible`.
+pub fn metadata_info_component_library() -> Library {
+    METADATA_INFO_COMPONENT_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

@@ -184,18 +184,6 @@ proc get_external_link_chunk_6
     push.EXTERNAL_LINK_6_SLOT[0..2]
     exec.active_account::get_item
 end
-
-# =================================================================================================
-# TOKEN METADATA (token_supply, max_supply, decimals, token_symbol)
-# =================================================================================================
-
-#! Returns the full token metadata word.
-#!
-#! The word is stored as [token_supply, max_supply, decimals, token_symbol] and
-#! loaded onto the stack with word[0] on top (little-endian).
-#!
-#! Inputs:  []
-#! Outputs: [token_supply, max_supply, decimals, token_symbol, pad(12)] (word[0] on top)
 #!
 #! Invocation: call
 pub proc get_token_metadata
@@ -817,32 +805,30 @@ pub proc optional_set_external_link
 end
 
 # =================================================================================================
-# OPTIONAL SET MAX SUPPLY (owner-only when max_supply_mutable is 1)
+# OPTIONAL SET MAX SUPPLY (owner-only when max_supply_mutable == 1)
 # =================================================================================================
 
-#! Updates max_supply if the max_supply_mutable flag is set and the note sender is the owner.
-#! The new max_supply is passed on the stack (1 felt).
+#! Updates the max supply if the max supply mutability flag is 1
+#! and the note sender is the owner.
 #!
 #! Inputs:  [new_max_supply, pad(15)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - max_supply_mutable flag is 0 (immutable)
-#! - note sender is not the owner
-#! - new_max_supply < current token_supply
+#! - the max supply mutability flag is not 1.
+#! - the note sender is not the owner.
+#! - the new max supply is less than the current token supply.
 #!
 #! Invocation: call (from note script context)
 pub proc optional_set_max_supply
-    # 1. Check mutable flag from mutability config word
+    # 1. Check max supply mutability
     exec.get_mutability_config_word
+    swapw dropw
     # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, new_max_supply, pad(15)]
-    # max_supply_mutable is word[3]; bring it to top
-    movup.3
-    # => [max_supply_mutable, desc_mutable, logo_mutable, extlink_mutable, new_max_supply, pad(15)]
+    drop drop drop
+    # => [max_supply_mutable, new_max_supply, pad(15)]
     push.1 eq
     assert.err=ERR_MAX_SUPPLY_IMMUTABLE
-    # => [desc_mutable, logo_mutable, extlink_mutable, new_max_supply, pad(15)]
-    drop drop drop
     # => [new_max_supply, pad(15)]
 
     # 2. Verify note sender is the owner

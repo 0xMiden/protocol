@@ -238,26 +238,23 @@ pub static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|
     ]
 });
 
-/// Schema commitment slot.
-pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::storage_schema")
-        .expect("storage slot name should be valid")
-});
-
-/// The advice map key used by `optional_set_description` to read the 7 field words.
-///
-/// Must match `DESCRIPTION_DATA_KEY` in `fungible.masm`. The value stored under this key
-/// should be 28 felts: `[FIELD_0, FIELD_1, FIELD_2, FIELD_3, FIELD_4, FIELD_5, FIELD_6]`.
+/// Advice map key for the description field data (7 words).
 pub const DESCRIPTION_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)]);
 
-/// The advice map key used by `optional_set_logo_uri` to read the 7 field words.
+/// Advice map key for the logo URI field data (7 words).
 pub const LOGO_URI_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(2)]);
 
-/// The advice map key used by `optional_set_external_link` to read the 7 field words.
+/// Advice map key for the external link field data (7 words).
 pub const EXTERNAL_LINK_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(3)]);
+
+/// Schema commitment slot name.
+pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::metadata::schema_commitment")
+        .expect("storage slot name should be valid")
+});
 
 // SLOT ACCESSORS
 // ================================================================================================
