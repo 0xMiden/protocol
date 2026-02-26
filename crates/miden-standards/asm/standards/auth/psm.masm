@@ -26,9 +26,10 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 # - `enable_psm_signature_requirement` / `disable_psm_signature_requirement` procedures allow explicit control over PSM state.
 #
 # - `update_psm_public_key`:
-#     * Installs a new PSM public key in the map at `PSM_PUBLIC_KEY_MAP_SLOT`.
-#     * Does not itself perform any signature checks.
-#     * To update the key without requiring PSM signature, ensure selector is OFF.
+#     * Rotates the PSM public key at `PSM_PUBLIC_KEYS_SLOT` using the fixed map key `PSM_MAP_KEY`.
+#     * Performs storage update only and does not require signature by a PSM signer
+#     * Temporarily disables PSM signature requirement so key rotation can proceed without a PSM signature.
+
 
 # CONSTANTS
 # =================================================================================================
@@ -117,7 +118,7 @@ proc set_psm_signature_requirement(is_psm_signature_required: felt)
     # => []
 end
 
-#! Enables PSM signature requirement by setting is_psm_signature_required to 1.
+#! Enables PSM signature requirement by setting `is_psm_signature_required` to 1.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -131,7 +132,7 @@ proc enable_psm_signature_requirement
     # => []
 end
 
-#! Disables PSM signature requirement by setting is_psm_signature_required to 0.
+#! Disables PSM signature requirement by setting `is_psm_signature_required` to 0.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -148,7 +149,7 @@ end
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Returns 1 if this account is PSM-initialized, 0 otherwise.
+#! Returns 1 if this account is initialized with a PSM, 0 otherwise.
 #!
 #! Inputs:  []
 #! Outputs: [is_psm_initialized]

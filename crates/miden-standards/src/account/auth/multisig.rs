@@ -228,22 +228,22 @@ impl AuthMultisig {
 
     /// Returns PSM config word for `enabled + initialized` state.
     pub fn psm_config_enabled_initialized() -> Word {
-        Word::from([1u32, 1, 0, 0])
+        Word::from([1u32, 1u32, 0, 0])
     }
 
     /// Returns PSM config word for `enabled + uninitialized` state.
     pub fn psm_config_enabled_uninitialized() -> Word {
-        Word::from([1u32, 0, 0, 0])
+        Word::from([1u32, 0u32, 0, 0])
     }
 
     /// Returns PSM config word for `disabled + initialized` state.
     pub fn psm_config_disabled_initialized() -> Word {
-        Word::from([0u32, 1, 0, 0])
+        Word::from([0u32, 1u32, 0, 0])
     }
 
     /// Returns PSM config word for `disabled + uninitialized` state.
     pub fn psm_config_disabled_uninitialized() -> Word {
-        Word::from([0u32, 0, 0, 0])
+        Word::from([0u32, 0u32, 0u32, 0u32])
     }
 
     /// Returns the storage slot schema for the threshold configuration slot.
@@ -428,7 +428,7 @@ impl From<AuthMultisig> for AccountComponent {
             .into_iter()
             .map(|(pub_key, _)| (Word::from([0u32, 0, 0, 0]), Word::from(pub_key)));
         storage_slots.push(StorageSlot::with_map(
-            Authmultisig::psm_public_key_slot().clone(),
+            AuthMultisig::private_state_manager_public_keys_slot().clone(),
             StorageMap::with_entries(psm_public_key_entries).unwrap(),
         ));
 
@@ -449,7 +449,7 @@ impl From<AuthMultisig> for AccountComponent {
             AuthMultisig::executed_transactions_slot_schema(),
             AuthMultisig::procedure_thresholds_slot_schema(),
             AuthMultisig::private_state_manager_config_slot_schema(),
-            Authmultisig::psm_public_key_slot_schema(),
+            AuthMultisig::private_state_manager_public_keys_slot_schema(),
             AuthMultisig::psm_auth_scheme_slot_schema(),
         ])
         .expect("storage schema should be valid");
@@ -547,7 +547,10 @@ mod tests {
         assert!(
             account
                 .storage()
-                .get_map_item(Authmultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]),)
+                .get_map_item(
+                    AuthMultisig::private_state_manager_public_keys_slot(),
+                    Word::from([0u32, 0, 0, 0]),
+                )
                 .is_err()
         );
 
@@ -640,7 +643,10 @@ mod tests {
 
         let psm_public_key = account
             .storage()
-            .get_map_item(Authmultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(
+                AuthMultisig::private_state_manager_public_keys_slot(),
+                Word::from([0u32, 0, 0, 0]),
+            )
             .expect("private state manager public key storage map access failed");
         assert_eq!(psm_public_key, Word::from(psm_key.public_key().to_commitment()));
 

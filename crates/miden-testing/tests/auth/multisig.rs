@@ -429,7 +429,10 @@ async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Resu
 
     let updated_psm_public_key = updated_multisig_account
         .storage()
-        .get_map_item(Authmultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))?;
+        .get_map_item(
+            AuthMultisig::private_state_manager_public_keys_slot(),
+            Word::from([0u32, 0, 0, 0]),
+        )?;
     assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
 
     mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
