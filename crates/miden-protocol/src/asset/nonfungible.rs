@@ -106,19 +106,7 @@ impl NonFungibleAsset {
 
     /// Returns the vault key of the [`NonFungibleAsset`].
     ///
-    /// This is the same as the asset with the following modifications, in this order:
-    /// - Swaps the faucet ID at index 0 and `hash0` at index 3.
-    /// - Sets the fungible bit for `hash0` to `0`.
-    ///
-    /// # Rationale
-    ///
-    /// This means `hash0` will be used as the leaf index in the asset SMT which ensures that a
-    /// non-fungible faucet's assets generally end up in different leaves as the key is not based on
-    /// the faucet ID.
-    ///
-    /// It also ensures that there is never any collision in the leaf index between a non-fungible
-    /// asset and a fungible asset, as the former's vault key always has the fungible bit set to `0`
-    /// and the latter's vault key always has the bit set to `1`.
+    /// See [`Asset`] docs for details on the key.
     pub fn vault_key(&self) -> AssetVaultKey {
         let asset_id_suffix = self.value[0];
         let asset_id_prefix = self.value[1];

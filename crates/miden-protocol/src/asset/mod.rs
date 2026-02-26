@@ -45,7 +45,7 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 ///
 /// # Fungible assets
 ///
-/// - A fungible asset's value layout is:     `[amount, 0, 0, 0]`.
+/// - A fungible asset's value layout is: `[amount, 0, 0, 0]`.
 /// - A fungible asset's vault key layout is: `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 ///
 /// The most significant elements of a fungible asset's key are set to the prefix
@@ -203,18 +203,6 @@ impl Asset {
             Asset::Fungible(_) => panic!("the asset is fungible"),
             Asset::NonFungible(asset) => *asset,
         }
-    }
-}
-
-impl Ord for Asset {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.vault_key().cmp(&other.vault_key())
-    }
-}
-
-impl PartialOrd for Asset {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
