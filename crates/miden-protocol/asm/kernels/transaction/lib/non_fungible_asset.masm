@@ -53,7 +53,7 @@ end
 #! - the asset key's account ID is not valid.
 #! - the asset key's faucet ID is not a non-fungible one.
 pub proc validate_key
-    exec.asset::get_vault_key_faucet_id
+    exec.asset::get_faucet_id
     exec.account_id::validate
     # => [ASSET_KEY]
 
@@ -81,7 +81,7 @@ pub proc validate_origin
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
 
     # assert the origin of the asset is the faucet_id provided via the stack
-    exec.asset::get_vault_key_faucet_id
+    exec.asset::get_faucet_id
     # => [key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
 
     movup.11 movup.11

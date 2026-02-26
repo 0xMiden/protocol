@@ -215,26 +215,25 @@ end
 #!
 #! Invocation: exec
 proc convert_asset
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-
     # --- Step 1: Assert faucet is registered ---
+    swapw
+    exec.asset::get_balance_from_fungible_asset
+    movdn.4
+    # => [ASSET_KEY, amount]
+
+    exec.asset::into_faucet_id
+    # => [faucet_id_prefix, faucet_id_suffix, amount]
+
     dup.1 dup.1
     exec.bridge_config::assert_faucet_registered
-    dropw
-    # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
+    # => [faucet_id_prefix, faucet_id_suffix, amount]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
-
-    # Drop the zero padding between faucet_id and amount.
-    # TODO(expand_assets): Use asset::get_faucet_id helper.
-    movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix, amount]
 
     procref.agglayer_faucet::asset_to_origin_asset
     # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, amount]
 
     # Move faucet_id above PROC_MAST_ROOT
-    # TODO(expand_assets): This needs an update in 2437.
     movup.5 movup.5
     # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), amount]
 
@@ -466,8 +465,7 @@ proc create_burn_note
     exec.asset::mem_store
     # => [ASSET_KEY]
 
-    # TODO(expand_assets): Use asset::get_faucet_id helper.
-    dupw movup.2 drop movup.2 drop
+    dupw exec.asset::get_faucet_id
     # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
 
     # Create NetworkAccountTarget attachment for the faucet
@@ -531,6 +529,6 @@ proc create_burn_note
 
     # TODO: Check where the extra elements are coming from by adding pad comments throughout the
     # procedure.
-    drop
+    dropw drop
     # => []
 end

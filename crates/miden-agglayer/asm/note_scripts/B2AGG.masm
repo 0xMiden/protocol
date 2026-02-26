@@ -95,7 +95,7 @@ begin
         push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
         # => [dest_network, dest_address(5), pad(10)]
 
-        # Load ASSET_VALUE onto the stack from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+        # Load asset onto the stack from ASSET_PTR
         push.ASSET_PTR exec.asset::mem_load
         # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 

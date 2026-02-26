@@ -13,6 +13,10 @@ const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault k
 pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 pub use ::$kernel::util::asset::ASSET_SIZE
 pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use ::$kernel::util::asset::get_faucet_id
+pub use ::$kernel::util::asset::into_faucet_id
+pub use ::$kernel::util::asset::get_asset_id
+pub use ::$kernel::util::asset::into_asset_id
 pub use ::$kernel::util::asset::mem_store
 pub use ::$kernel::util::asset::mem_load
 
@@ -102,36 +106,4 @@ pub proc validate
         # => [ASSET_KEY, ASSET_VALUE]
     end
     # => [ASSET_KEY, ASSET_VALUE]
-end
-
-#! Returns the faucet ID from an asset vault key.
-#!
-#! WARNING: The faucet ID is not validated.
-#!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
-#!
-#! Where:
-#! - faucet_id is the account ID in the vault key.
-#! - ASSET_KEY is the vault key from which to extract the faucet ID.
-proc get_vault_key_faucet_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
-
-    dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
-end
-
-#! Returns the asset ID from an asset vault key.
-#!
-#! Inputs:  [ASSET_KEY]
-#! Outputs: [asset_id_prefix, asset_id_suffix, ASSET_KEY]
-#!
-#! Where:
-#! - asset_id is the asset ID in the vault key.
-#! - ASSET_KEY is the vault key from which to extract the asset ID.
-proc get_vault_key_asset_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
-
-    dup.3 dup.3
-    # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
 end

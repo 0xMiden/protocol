@@ -18,6 +18,8 @@ mod nonfungible;
 
 pub use nonfungible::{NonFungibleAsset, NonFungibleAssetDetails};
 
+use crate::FieldElement;
+
 mod token_symbol;
 pub use token_symbol::TokenSymbol;
 
@@ -175,7 +177,7 @@ impl Asset {
     /// The first four elements contain the asset key and the last four elements contain the asset
     /// value.
     pub fn as_elements(&self) -> [Felt; 8] {
-        let mut elements = [ZERO; 8];
+        let mut elements = [Felt::ZERO; 8];
         elements[0..4].copy_from_slice(self.to_key_word().as_elements());
         elements[4..8].copy_from_slice(self.to_value_word().as_elements());
         elements
