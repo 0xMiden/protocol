@@ -15,6 +15,30 @@ pub const ASSET_VALUE_MEMORY_OFFSET = 4
 # PROCEDURES
 # =================================================================================================
 
+#! Stores an asset key and value into memory at the given pointer.
+#!
+#! The memory range pointer..pointer+8 will be overwritten.
+#!
+#! Inputs: [ptr, ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ptr is the memory address where the asset will be stored.
+#! - ASSET_KEY is the 4-element word representing the asset key.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc mem_store
+    # store asset key
+    movdn.4 dup.4
+    # => [ptr, ASSET_KEY, ptr, ASSET_VALUE]
+
+    mem_storew_be dropw
+    # => [ptr, ASSET_VALUE]
+
+    # store asset value
+    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_be dropw
+    # => []
+end
+
 #! Loads an asset key and value from memory given a pointer to the asset.
 #!
 #! Inputs: [ptr]

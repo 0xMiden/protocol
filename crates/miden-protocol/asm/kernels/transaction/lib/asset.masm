@@ -13,6 +13,7 @@ const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault k
 pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 pub use ::$kernel::util::asset::ASSET_SIZE
 pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use ::$kernel::util::asset::mem_store
 pub use ::$kernel::util::asset::mem_load
 
 # PROCEDURES
