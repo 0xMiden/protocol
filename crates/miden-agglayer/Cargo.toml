@@ -23,9 +23,14 @@ testing = ["miden-protocol/testing"]
 # Miden dependencies
 miden-assembly   = { workspace = true }
 miden-core       = { workspace = true }
+miden-core-lib   = { workspace = true }
 miden-protocol   = { workspace = true }
 miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
+
+# Third-party dependencies
+primitive-types = { workspace = true }
+thiserror       = { workspace = true }
 
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }

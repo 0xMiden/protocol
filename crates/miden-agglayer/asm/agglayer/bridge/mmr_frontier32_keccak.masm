@@ -1,7 +1,7 @@
 use miden::core::crypto::hashes::keccak256
-use ::miden::agglayer::canonical_zeros::load_zeros_to_memory
-use ::miden::agglayer::utils::mem_store_double_word
-use ::miden::agglayer::utils::mem_load_double_word
+use ::miden::agglayer::bridge::canonical_zeros::load_zeros_to_memory
+use ::miden::agglayer::common::utils::mem_store_double_word
+use ::miden::agglayer::common::utils::mem_load_double_word
 
 # An MMR Frontier is a data structure based on an MMR, which combines some features of an MMR and an
 # SMT.
@@ -136,8 +136,8 @@ const CANONICAL_ZEROES_LOCAL = 8
 @locals(264) # new_leaf/curr_hash + canonical_zeros
 pub proc append_and_update_frontier
     # set CUR_HASH = NEW_LEAF and store to local memory
-    loc_storew_be.CUR_HASH_LO_LOCAL dropw
-    loc_storew_be.CUR_HASH_HI_LOCAL dropw
+    loc_storew_le.CUR_HASH_LO_LOCAL dropw
+    loc_storew_le.CUR_HASH_HI_LOCAL dropw
     # => [mmr_frontier_ptr]
 
     # get the current leaves number
@@ -203,8 +203,8 @@ pub proc append_and_update_frontier
             # load the current hash from the local memory back to the stack
             #
             # in the first iteration the current hash will be equal to the new node
-            padw loc_loadw_be.CUR_HASH_HI_LOCAL
-            padw loc_loadw_be.CUR_HASH_LO_LOCAL
+            padw loc_loadw_le.CUR_HASH_HI_LOCAL
+            padw loc_loadw_le.CUR_HASH_LO_LOCAL
             swapdw
             # => [
             #     FRONTIER[curr_tree_height]_LO, FRONTIER[curr_tree_height]_HI, CUR_HASH_LO, 
@@ -217,16 +217,16 @@ pub proc append_and_update_frontier
             # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mmr_frontier_ptr]
 
             # store the current hash of the next height back to the local memory
-            loc_storew_be.CUR_HASH_LO_LOCAL dropw
-            loc_storew_be.CUR_HASH_HI_LOCAL dropw
+            loc_storew_le.CUR_HASH_LO_LOCAL dropw
+            loc_storew_le.CUR_HASH_HI_LOCAL dropw
             # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
         else
             # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr]
             #
             # this height wasn't "occupied" yet: store the current hash as the subtree root 
             # (frontier node) at height `curr_tree_height`
-            padw loc_loadw_be.CUR_HASH_HI_LOCAL
-            padw loc_loadw_be.CUR_HASH_LO_LOCAL
+            padw loc_loadw_le.CUR_HASH_HI_LOCAL
+            padw loc_loadw_le.CUR_HASH_LO_LOCAL
             # => [
             #     CUR_HASH_LO, CUR_HASH_HI, frontier[curr_tree_height]_ptr, curr_tree_height,
             #     num_leaves, mmr_frontier_ptr
@@ -256,8 +256,8 @@ pub proc append_and_update_frontier
             # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mmr_frontier_ptr]
 
             # store the current hash of the next height back to the local memory
-            loc_storew_be.CUR_HASH_LO_LOCAL dropw
-            loc_storew_be.CUR_HASH_HI_LOCAL dropw
+            loc_storew_le.CUR_HASH_LO_LOCAL dropw
+            loc_storew_le.CUR_HASH_HI_LOCAL dropw
             # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
         end
         # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
@@ -292,8 +292,8 @@ pub proc append_and_update_frontier
     # compute.
 
     # load the final hash (which is also the root of the tree)
-    padw loc_loadw_be.CUR_HASH_HI_LOCAL
-    padw loc_loadw_be.CUR_HASH_LO_LOCAL
+    padw loc_loadw_le.CUR_HASH_HI_LOCAL
+    padw loc_loadw_le.CUR_HASH_LO_LOCAL
     # => [NEW_ROOT_LO, NEW_ROOT_HI, new_leaf_count]
 end
 
