@@ -161,7 +161,7 @@ end
 #! - the asset key's account ID is not valid.
 #! - the asset key's faucet ID is not a fungible one.
 pub proc validate_key
-    exec.asset::get_vault_key_faucet_id
+    exec.asset::get_faucet_id
     exec.account_id::validate
     # => [ASSET_KEY]
 
@@ -169,7 +169,7 @@ pub proc validate_key
     assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
     # => [ASSET_KEY]
 
-    exec.asset::get_vault_key_asset_id
+    exec.asset::get_asset_id
     # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
@@ -195,7 +195,7 @@ pub proc validate_origin
     # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # assert the origin of the asset is the faucet_id provided via the stack
-    exec.asset::get_vault_key_faucet_id
+    exec.asset::get_faucet_id
     # => [key_faucet_id_suffix, key_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     movup.11 movup.11

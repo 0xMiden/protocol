@@ -51,5 +51,5 @@ miden-protocol  = { features = ["std"], workspace = true }
 primitive-types = { workspace = true }
 rstest          = { workspace = true }
 serde           = { features = ["derive"], workspace = true }
-serde_json      = { version = "1.0" }
+serde_json      = { features = ["arbitrary_precision"], version = "1.0" }
 tokio           = { features = ["macros", "rt"], workspace = true }

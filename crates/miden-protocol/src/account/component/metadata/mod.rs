@@ -46,7 +46,7 @@ use crate::utils::serde::{
 ///     AccountComponentMetadata,
 ///     FeltSchema,
 ///     InitStorageData,
-///     SchemaTypeId,
+///     SchemaType,
 ///     StorageSchema,
 ///     StorageSlotSchema,
 ///     StorageValueName,

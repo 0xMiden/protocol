@@ -1,8 +1,9 @@
-use miden::agglayer::bridge_out
+use miden::agglayer::bridge::bridge_out
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
-use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
+use miden::protocol::asset
+use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::protocol::note
 use miden::standards::attachments::network_account_target
 use miden::standards::wallets::basic->basic_wallet
@@ -12,6 +13,9 @@ use miden::standards::wallets::basic->basic_wallet
 
 const ASSET_PTR=0
 const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
+
+const STORAGE_START_PTR=8
+const STORAGE_END_PTR=STORAGE_START_PTR + 8
 
 # ERRORS
 # =================================================================================================
@@ -32,14 +36,14 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Note storage is assumed to be as follows:
-#! - destination_network: u32 value representing the target chain ID
-#! - destination_address: split into 5 u32 values representing a 20-byte Ethereum address:
-#!   - destination_address_0: bytes 0-3
-#!   - destination_address_1: bytes 4-7
-#!   - destination_address_2: bytes 8-11
-#!   - destination_address_3: bytes 12-15
-#!   - destination_address_4: bytes 16-19
+#! Note storage layout (6 felts total):
+#! - destination_network [0]     : 1 felt
+#! - destination_address [1..5]  : 5 felts
+#!
+#! Where:
+#! - destination_network: Destination network identifier (uint32)
+#! - destination_address: 20-byte Ethereum address as 5 u32 felts
+#!
 #! Note attachment is constructed from a NetworkAccountTarget standard:
 #! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
 #!
@@ -73,7 +77,7 @@ begin
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]
-        push.8 exec.active_note::get_storage
+        push.STORAGE_START_PTR exec.active_note::get_storage
         # => [num_storage_items, dest_ptr, pad(16)]
 
         push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
@@ -88,20 +92,17 @@ begin
         # => [pad(16)]
 
         # load the 6 B2AGG felts from note storage as two words
-        mem_loadw_be.12 swapw.2 mem_loadw_be.8 swapw
-        # => [EMPTY_WORD, dest_network, dest_address(5), pad(6)]
+        push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
+        # => [dest_network, dest_address(5), pad(10)]
 
-        # Load ASSET_VALUE onto the stack from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
-        push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-        # => [ASSET_VALUE, dest_network, dest_address(5), pad(6)]
-
-        padw mem_loadw_be.0
-        # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(6)]
+        # Load asset onto the stack from ASSET_PTR
+        push.ASSET_PTR exec.asset::mem_load
+        # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out
-        # => [pad(20)]
+        # => [pad(24)]
 
-        dropw
+        dropw dropw
         # => [pad(16)]
     end
     # => [pad(16)]
