@@ -59,6 +59,10 @@ fn test_basic_wallet_default_notes() {
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
+                crate::account::faucets::TokenName::try_from("POL").unwrap(),
+                None,
+                None,
+                None,
             )
             .expect("failed to create a fungible faucet component"),
         )
@@ -325,6 +329,10 @@ fn test_basic_fungible_faucet_custom_notes() {
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
+                crate::account::faucets::TokenName::try_from("POL").unwrap(),
+                None,
+                None,
+                None,
             )
             .expect("failed to create a fungible faucet component"),
         )

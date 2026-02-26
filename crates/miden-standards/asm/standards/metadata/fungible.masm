@@ -1,0 +1,706 @@
+# miden::standards::metadata::fungible
+#
+# Metadata for fungible-style accounts: slots, getters (name, description, logo_uri,
+# external_link, token_metadata), get_owner, and optional setters.
+# Depends on ownable for owner and mutable fields.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::access::ownable
+
+# =================================================================================================
+# CONSTANTS — slot names
+# =================================================================================================
+
+const TOKEN_METADATA_SLOT = word("miden::standards::metadata::token_metadata")
+const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::name_0")
+const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::name_1")
+const CONFIG_SLOT = word("miden::standards::metadata::config")
+
+const DESCRIPTION_0_SLOT = word("miden::standards::metadata::description_0")
+const DESCRIPTION_1_SLOT = word("miden::standards::metadata::description_1")
+const DESCRIPTION_2_SLOT = word("miden::standards::metadata::description_2")
+const DESCRIPTION_3_SLOT = word("miden::standards::metadata::description_3")
+const DESCRIPTION_4_SLOT = word("miden::standards::metadata::description_4")
+const DESCRIPTION_5_SLOT = word("miden::standards::metadata::description_5")
+
+const LOGO_URI_0_SLOT = word("miden::standards::metadata::logo_uri_0")
+const LOGO_URI_1_SLOT = word("miden::standards::metadata::logo_uri_1")
+const LOGO_URI_2_SLOT = word("miden::standards::metadata::logo_uri_2")
+const LOGO_URI_3_SLOT = word("miden::standards::metadata::logo_uri_3")
+const LOGO_URI_4_SLOT = word("miden::standards::metadata::logo_uri_4")
+const LOGO_URI_5_SLOT = word("miden::standards::metadata::logo_uri_5")
+
+const EXTERNAL_LINK_0_SLOT = word("miden::standards::metadata::external_link_0")
+const EXTERNAL_LINK_1_SLOT = word("miden::standards::metadata::external_link_1")
+const EXTERNAL_LINK_2_SLOT = word("miden::standards::metadata::external_link_2")
+const EXTERNAL_LINK_3_SLOT = word("miden::standards::metadata::external_link_3")
+const EXTERNAL_LINK_4_SLOT = word("miden::standards::metadata::external_link_4")
+const EXTERNAL_LINK_5_SLOT = word("miden::standards::metadata::external_link_5")
+
+const CHUNK_1_LOC = 0
+const CHUNK_0_LOC = 4
+const FIELD_0_LOC = 0
+const FIELD_1_LOC = 4
+const FIELD_2_LOC = 8
+const FIELD_3_LOC = 12
+const FIELD_4_LOC = 16
+const FIELD_5_LOC = 20
+
+const ERR_DESCRIPTION_NOT_MUTABLE = "description is not mutable"
+const ERR_LOGO_URI_NOT_MUTABLE = "logo URI is not mutable"
+const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
+const ERR_MAX_SUPPLY_IMMUTABLE = "max supply is immutable"
+const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than current token supply"
+
+# Advice map keys for the 6-word field data.
+const DESCRIPTION_DATA_KEY = [0, 0, 0, 1]
+const LOGO_URI_DATA_KEY = [0, 0, 0, 2]
+const EXTERNAL_LINK_DATA_KEY = [0, 0, 0, 3]
+
+# =================================================================================================
+# PRIVATE HELPERS — single source of truth for slot access
+# =================================================================================================
+
+#! Loads token metadata word from storage. Output: [token_symbol, decimals, max_supply, token_supply].
+proc get_token_metadata_word
+    push.TOKEN_METADATA_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Loads name chunk 0 (1 Word). Output: [NAME_CHUNK_0].
+proc get_name_chunk_0
+    push.NAME_CHUNK_0_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Loads name chunk 1 (1 Word). Output: [NAME_CHUNK_1].
+proc get_name_chunk_1
+    push.NAME_CHUNK_1_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Loads the config word. Output: [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)].
+#! (word[3] on top after get_item)
+proc get_config_word
+    push.CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+# --- Description chunk loaders ---
+proc get_description_chunk_0
+    push.DESCRIPTION_0_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_description_chunk_1
+    push.DESCRIPTION_1_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_description_chunk_2
+    push.DESCRIPTION_2_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_description_chunk_3
+    push.DESCRIPTION_3_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_description_chunk_4
+    push.DESCRIPTION_4_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_description_chunk_5
+    push.DESCRIPTION_5_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+# --- Logo URI chunk loaders ---
+proc get_logo_uri_chunk_0
+    push.LOGO_URI_0_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_logo_uri_chunk_1
+    push.LOGO_URI_1_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_logo_uri_chunk_2
+    push.LOGO_URI_2_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_logo_uri_chunk_3
+    push.LOGO_URI_3_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_logo_uri_chunk_4
+    push.LOGO_URI_4_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_logo_uri_chunk_5
+    push.LOGO_URI_5_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+# --- External link chunk loaders ---
+proc get_external_link_chunk_0
+    push.EXTERNAL_LINK_0_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_external_link_chunk_1
+    push.EXTERNAL_LINK_1_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_external_link_chunk_2
+    push.EXTERNAL_LINK_2_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_external_link_chunk_3
+    push.EXTERNAL_LINK_3_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_external_link_chunk_4
+    push.EXTERNAL_LINK_4_SLOT[0..2]
+    exec.active_account::get_item
+end
+proc get_external_link_chunk_5
+    push.EXTERNAL_LINK_5_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+# =================================================================================================
+# TOKEN METADATA (token_supply, max_supply, decimals, token_symbol)
+# =================================================================================================
+
+#! Returns the full token metadata word.
+#!
+#! The word is stored as [token_supply, max_supply, decimals, token_symbol] and
+#! loaded onto the stack with word[3] on top.
+#!
+#! Inputs:  []
+#! Outputs: [token_symbol, decimals, max_supply, token_supply, pad(12)] (word[3] on top)
+#!
+#! Invocation: call
+pub proc get_token_metadata
+    exec.get_token_metadata_word
+    swapw dropw
+    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+end
+
+#! Returns the maximum supply.
+#! Inputs:  [pad(16)]  Outputs: [max_supply, pad(15)]  Invocation: call
+pub proc get_max_supply
+    exec.get_token_metadata
+    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+    drop drop swap drop
+    # => [max_supply, pad(15)]
+end
+
+#! Returns decimals (single felt; e.g. 8).
+#! Inputs:  [pad(16)]  Outputs: [decimals, pad(15)]  Invocation: call
+pub proc get_decimals
+    exec.get_token_metadata
+    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+    drop movdn.2 drop drop
+    # => [decimals, pad(15)]
+end
+
+#! Returns token_symbol (single felt).
+#! Inputs:  [pad(16)]  Outputs: [token_symbol, pad(15)]  Invocation: call
+pub proc get_token_symbol
+    exec.get_token_metadata
+    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+    movdn.3 drop drop drop
+    # => [token_symbol, pad(15)]
+end
+
+#! Returns token_supply (single felt).
+#! Inputs:  [pad(16)]  Outputs: [token_supply, pad(15)]  Invocation: call
+pub proc get_token_supply
+    exec.get_token_metadata
+    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+    drop drop drop
+    # => [token_supply, pad(15)]
+end
+
+# =================================================================================================
+# NAME (2 words)
+# =================================================================================================
+
+#! Returns the name (2 Words) padded to 16 elements: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)].
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]  (16 felts; chunk_0 on top)
+#!
+#! Invocation: call
+@locals(8)
+pub proc get_name
+    exec.get_name_chunk_1
+    loc_storew_be.CHUNK_1_LOC dropw
+
+    exec.get_name_chunk_0
+    loc_storew_be.CHUNK_0_LOC dropw
+
+    loc_loadw_be.CHUNK_1_LOC
+    swapw
+    loc_loadw_be.CHUNK_0_LOC
+    # => [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
+end
+
+# =================================================================================================
+# CONFIG — [desc_flag, logo_flag, extlink_flag, max_supply_mutable]
+# =================================================================================================
+
+#! Returns the config word.
+#!
+#! After get_item, stack has word[3] on top:
+#! [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+#!
+#! Invocation: call
+pub proc get_config
+    exec.get_config_word
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+end
+
+#! Returns whether max supply is mutable (single felt: 0 or 1).
+#!
+#! Reads config word felt[3] (max_supply_mutable), which is on top after get_item.
+#!
+#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
+pub proc is_max_supply_mutable
+    exec.get_config_word
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    movdn.3 drop drop drop
+    # => [max_supply_mutable, pad(15)]
+end
+
+#! Returns whether description is mutable (flag == 2).
+#!
+#! Reads config word felt[0] (desc_flag). Returns 1 if mutable, 0 otherwise.
+#!
+#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
+pub proc is_description_mutable
+    exec.get_config_word
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    drop drop drop
+    # => [desc_flag, pad(12)]
+    push.2 eq
+    # => [is_mutable, pad(12)]
+end
+
+#! Returns whether logo URI is mutable (flag == 2).
+#!
+#! Reads config word felt[1] (logo_flag). Returns 1 if mutable, 0 otherwise.
+#!
+#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
+pub proc is_logo_uri_mutable
+    exec.get_config_word
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    drop drop swap drop
+    # => [logo_flag, pad(12)]
+    push.2 eq
+    # => [is_mutable, pad(12)]
+end
+
+#! Returns whether external link is mutable (flag == 2).
+#!
+#! Reads config word felt[2] (extlink_flag). Returns 1 if mutable, 0 otherwise.
+#!
+#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
+pub proc is_external_link_mutable
+    exec.get_config_word
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    drop movdn.2 drop drop
+    # => [extlink_flag, pad(12)]
+    push.2 eq
+    # => [is_mutable, pad(12)]
+end
+
+# =================================================================================================
+# OWNER — re-export from ownable
+# =================================================================================================
+
+#! Returns the owner AccountId.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [owner_prefix, owner_suffix, pad(14)]
+#!
+#! Invocation: call
+pub use ownable::get_owner
+
+# =================================================================================================
+# DESCRIPTION (6 words)
+# =================================================================================================
+
+#! Returns the description (first word of 6).
+#!
+#! Due to the call convention (depth must be 16 at return), only DESCRIPTION_0 is
+#! returned on the visible stack.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [DESCRIPTION_0, pad(12)]
+#!
+#! Invocation: call
+@locals(24)
+pub proc get_description
+    exec.get_description_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
+
+    exec.get_description_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+
+    exec.get_description_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+
+    exec.get_description_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+
+    exec.get_description_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+
+    exec.get_description_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+
+    loc_loadw_be.FIELD_5_LOC
+    loc_loadw_be.FIELD_4_LOC
+    loc_loadw_be.FIELD_3_LOC
+    loc_loadw_be.FIELD_2_LOC
+    loc_loadw_be.FIELD_1_LOC
+    loc_loadw_be.FIELD_0_LOC
+end
+
+# =================================================================================================
+# LOGO URI (6 words)
+# =================================================================================================
+
+#! Returns the logo URI (first word of 6).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [LOGO_URI_0, pad(12)]
+#!
+#! Invocation: call
+@locals(24)
+pub proc get_logo_uri
+    exec.get_logo_uri_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
+
+    exec.get_logo_uri_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+
+    exec.get_logo_uri_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+
+    exec.get_logo_uri_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+
+    exec.get_logo_uri_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+
+    exec.get_logo_uri_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+
+    loc_loadw_be.FIELD_5_LOC
+    loc_loadw_be.FIELD_4_LOC
+    loc_loadw_be.FIELD_3_LOC
+    loc_loadw_be.FIELD_2_LOC
+    loc_loadw_be.FIELD_1_LOC
+    loc_loadw_be.FIELD_0_LOC
+end
+
+# =================================================================================================
+# EXTERNAL LINK (6 words)
+# =================================================================================================
+
+#! Returns the external link (first word of 6).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [EXTERNAL_LINK_0, pad(12)]
+#!
+#! Invocation: call
+@locals(24)
+pub proc get_external_link
+    exec.get_external_link_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
+
+    exec.get_external_link_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+
+    exec.get_external_link_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+
+    exec.get_external_link_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+
+    exec.get_external_link_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+
+    exec.get_external_link_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+
+    loc_loadw_be.FIELD_5_LOC
+    loc_loadw_be.FIELD_4_LOC
+    loc_loadw_be.FIELD_3_LOC
+    loc_loadw_be.FIELD_2_LOC
+    loc_loadw_be.FIELD_1_LOC
+    loc_loadw_be.FIELD_0_LOC
+end
+
+# =================================================================================================
+# OPTIONAL SET DESCRIPTION (owner-only when desc_flag == 2)
+# =================================================================================================
+
+#! Updates the description (6 Words) if the description flag is 2 (present+mutable)
+#! and the note sender is the owner.
+#!
+#! Before executing the transaction, populate the advice map:
+#!   key:   DESCRIPTION_DATA_KEY ([0, 0, 0, 1])
+#!   value: [D0, D1, D2, D3, D4, D5] (24 felts in natural order)
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the description flag is not 2 (not present+mutable).
+#! - the note sender is not the owner.
+#!
+#! Invocation: call (from note script context)
+pub proc optional_set_description
+    # Read config word: [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    exec.get_config_word
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    # desc_flag is at bottom of the 4 elements; drop the top 3
+    drop drop drop
+    # => [desc_flag, pad(15)]
+    push.2 eq
+    assert.err=ERR_DESCRIPTION_NOT_MUTABLE
+    # => [pad(16)]
+
+    # Verify note sender is the owner
+    exec.ownable::verify_owner
+    # => [pad(16)]
+
+    # Load the 6 description words from the advice map
+    push.DESCRIPTION_DATA_KEY
+    adv.push_mapval
+    dropw
+    # => [pad(16)]
+
+    padw adv_loadw
+    push.DESCRIPTION_0_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.DESCRIPTION_1_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.DESCRIPTION_2_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.DESCRIPTION_3_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.DESCRIPTION_4_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.DESCRIPTION_5_SLOT[0..2]
+    exec.native_account::set_item dropw
+end
+
+# =================================================================================================
+# OPTIONAL SET LOGO URI (owner-only when logo_flag == 2)
+# =================================================================================================
+
+#! Updates the logo URI (6 Words) if the logo URI flag is 2 (present+mutable)
+#! and the note sender is the owner.
+#!
+#! Before executing the transaction, populate the advice map:
+#!   key:   LOGO_URI_DATA_KEY ([0, 0, 0, 2])
+#!   value: [L0, L1, L2, L3, L4, L5] (24 felts in natural order)
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the logo URI flag is not 2 (not present+mutable).
+#! - the note sender is not the owner.
+#!
+#! Invocation: call (from note script context)
+pub proc optional_set_logo_uri
+    # Read config word: [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    exec.get_config_word
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    # logo_flag is word[1]; drop top 2 (max_supply_mutable, extlink_flag), then swap+drop
+    drop drop
+    # => [logo_flag, desc_flag, pad(14)]
+    swap drop
+    # => [logo_flag, pad(15)]
+    push.2 eq
+    assert.err=ERR_LOGO_URI_NOT_MUTABLE
+    # => [pad(16)]
+
+    exec.ownable::verify_owner
+
+    push.LOGO_URI_DATA_KEY
+    adv.push_mapval
+    dropw
+
+    padw adv_loadw
+    push.LOGO_URI_0_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.LOGO_URI_1_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.LOGO_URI_2_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.LOGO_URI_3_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.LOGO_URI_4_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.LOGO_URI_5_SLOT[0..2]
+    exec.native_account::set_item dropw
+end
+
+# =================================================================================================
+# OPTIONAL SET EXTERNAL LINK (owner-only when extlink_flag == 2)
+# =================================================================================================
+
+#! Updates the external link (6 Words) if the external link flag is 2 (present+mutable)
+#! and the note sender is the owner.
+#!
+#! Before executing the transaction, populate the advice map:
+#!   key:   EXTERNAL_LINK_DATA_KEY ([0, 0, 0, 3])
+#!   value: [E0, E1, E2, E3, E4, E5] (24 felts in natural order)
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the external link flag is not 2 (not present+mutable).
+#! - the note sender is not the owner.
+#!
+#! Invocation: call (from note script context)
+pub proc optional_set_external_link
+    # Read config word: [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(16)]
+    exec.get_config_word
+    swapw dropw
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+    # extlink_flag is word[2]; drop top 1 (max_supply_mutable), then move down and drop
+    drop
+    # => [extlink_flag, logo_flag, desc_flag, pad(13)]
+    movdn.2 drop drop
+    # => [extlink_flag, pad(15)]
+    push.2 eq
+    assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
+    # => [pad(16)]
+
+    exec.ownable::verify_owner
+
+    push.EXTERNAL_LINK_DATA_KEY
+    adv.push_mapval
+    dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_0_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_1_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_2_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_3_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_4_SLOT[0..2]
+    exec.native_account::set_item dropw
+
+    padw adv_loadw
+    push.EXTERNAL_LINK_5_SLOT[0..2]
+    exec.native_account::set_item dropw
+end
+
+# =================================================================================================
+# OPTIONAL SET MAX SUPPLY (owner-only when max_supply_mutable is 1)
+# =================================================================================================
+
+#! Updates max_supply if the max_supply_mutable flag is set and the note sender is the owner.
+#! The new max_supply is passed on the stack (1 felt).
+#!
+#! Inputs:  [new_max_supply, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - max_supply_mutable flag is 0 (immutable)
+#! - note sender is not the owner
+#! - new_max_supply < current token_supply
+#!
+#! Invocation: call (from note script context)
+pub proc optional_set_max_supply
+    # 1. Check mutable flag from config word
+    exec.get_config_word
+    # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, new_max_supply, pad(15)]
+    push.1 eq
+    assert.err=ERR_MAX_SUPPLY_IMMUTABLE
+    # => [extlink_flag, logo_flag, desc_flag, new_max_supply, pad(15)]
+    drop drop drop
+    # => [new_max_supply, pad(15)]
+
+    # 2. Verify note sender is the owner
+    exec.ownable::verify_owner
+    # => [new_max_supply, pad(15)]
+
+    # 3. Read current metadata word
+    exec.get_token_metadata_word
+    # => [token_symbol, decimals, max_supply, token_supply, new_max_supply, pad(15)]
+
+    # 4. Validate: new_max_supply >= token_supply (i.e. token_supply <= new_max_supply)
+    dup.3       # copy token_supply to top
+    dup.5       # copy new_max_supply to top
+    # => [new_max_supply, token_supply, token_symbol, decimals, max_supply, token_supply, new_max_supply, ...]
+    lte         # token_supply <= new_max_supply
+    assert.err=ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY
+    # => [token_symbol, decimals, max_supply, token_supply, new_max_supply, pad(15)]
+
+    # 5. Replace max_supply with new_max_supply in the metadata word
+    movup.4     # bring new_max_supply to top
+    movdn.2     # => [token_symbol, decimals, new_max_supply, max_supply, token_supply, pad(15)]
+    movup.3     # bring old max_supply to top
+    drop        # discard old max_supply
+    # => [token_symbol, decimals, new_max_supply, token_supply, pad(15)]
+
+    # 6. Write updated metadata word back to storage
+    push.TOKEN_METADATA_SLOT[0..2]
+    exec.native_account::set_item
+    # => [OLD_VALUE, pad(15)]
+    dropw
+    # => [pad(16)]
+end
