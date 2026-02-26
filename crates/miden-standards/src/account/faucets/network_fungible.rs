@@ -372,6 +372,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] type and
 /// contains no additional storage slots for its auth ([`NoAuth`]).
+#[allow(clippy::too_many_arguments)]
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
