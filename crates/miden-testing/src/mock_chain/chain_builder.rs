@@ -340,10 +340,17 @@ impl MockChainBuilder {
             .unwrap_or_else(|_| TokenName::try_from("").expect("empty name should be valid"));
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
-        let basic_faucet =
-            BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply, name, None, None, None)
-                .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-                .context("failed to create basic fungible faucet")?;
+        let basic_faucet = BasicFungibleFaucet::new(
+            token_symbol,
+            DEFAULT_FAUCET_DECIMALS,
+            max_supply,
+            name,
+            None,
+            None,
+            None,
+        )
+        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+        .context("failed to create basic fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
@@ -406,9 +413,9 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
         max_supply_mutable: bool,
-        description: Option<([Word; 6], u8)>,
-        logo_uri: Option<([Word; 6], u8)>,
-        external_link: Option<([Word; 6], u8)>,
+        description: Option<([Word; 6], bool)>,
+        logo_uri: Option<([Word; 6], bool)>,
+        external_link: Option<([Word; 6], bool)>,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)
             .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
@@ -435,14 +442,14 @@ impl MockChainBuilder {
         let mut info = Info::new()
             .with_name(name.as_words())
             .with_max_supply_mutable(max_supply_mutable);
-        if let Some((words, flag)) = description {
-            info = info.with_description(words, flag);
+        if let Some((words, mutable)) = description {
+            info = info.with_description(words, mutable);
         }
-        if let Some((words, flag)) = logo_uri {
-            info = info.with_logo_uri(words, flag);
+        if let Some((words, mutable)) = logo_uri {
+            info = info.with_logo_uri(words, mutable);
         }
-        if let Some((words, flag)) = external_link {
-            info = info.with_external_link(words, flag);
+        if let Some((words, mutable)) = external_link {
+            info = info.with_external_link(words, mutable);
         }
 
         let account_builder = AccountBuilder::new(self.rng.random())
