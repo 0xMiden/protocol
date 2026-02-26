@@ -9,7 +9,7 @@ use crate::account::component::{
     AccountComponentMetadata,
     InitStorageData,
     InitStorageDataError as CoreInitStorageDataError,
-    SchemaTypeId,
+    SchemaType,
     StorageSlotSchema,
     StorageValueName,
     StorageValueNameError,
@@ -498,7 +498,7 @@ fn metadata_toml_round_trip_composed_slot_with_typed_fields() {
             .remove(&"demo::composed.a".parse::<StorageValueName>().unwrap())
             .unwrap()
             .r#type,
-        SchemaTypeId::u16()
+        SchemaType::u16()
     );
 
     let round_trip_toml = original.to_toml().expect("serialize to toml");
@@ -538,7 +538,7 @@ fn metadata_toml_round_trip_typed_slots() {
         _ => panic!("expected value slot"),
     };
 
-    let typed_value = SchemaTypeId::native_word();
+    let typed_value = SchemaType::native_word();
     assert_eq!(value_slot.word(), &WordSchema::new_simple(typed_value.clone()));
 
     let map_slot = schema
@@ -550,7 +550,7 @@ fn metadata_toml_round_trip_typed_slots() {
         _ => panic!("expected map slot"),
     };
 
-    let pub_key_type = SchemaTypeId::new("miden::standards::auth::pub_key").unwrap();
+    let pub_key_type = SchemaType::new("miden::standards::auth::pub_key").unwrap();
     assert_eq!(map_slot.key_schema(), &WordSchema::new_simple(pub_key_type.clone()));
     assert_eq!(map_slot.value_schema(), &WordSchema::new_simple(pub_key_type));
 
@@ -676,8 +676,8 @@ fn extensive_schema_metadata_and_init_toml_example() {
     else {
         panic!("expected map slot schema");
     };
-    assert_eq!(default_map.key_schema(), &WordSchema::new_simple(SchemaTypeId::native_word()));
-    assert_eq!(default_map.value_schema(), &WordSchema::new_simple(SchemaTypeId::native_word()));
+    assert_eq!(default_map.key_schema(), &WordSchema::new_simple(SchemaType::native_word()));
+    assert_eq!(default_map.value_schema(), &WordSchema::new_simple(SchemaType::native_word()));
 
     // `type.key`/`type.value` parse as schema/type descriptors (not literal words).
     let typed_map_new_name = StorageSlotName::new("demo::typed_map_new").unwrap();
@@ -686,7 +686,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     else {
         panic!("expected map slot schema");
     };
-    assert_eq!(typed_map_new.value_schema(), &WordSchema::new_simple(SchemaTypeId::u16()));
+    assert_eq!(typed_map_new.value_schema(), &WordSchema::new_simple(SchemaType::u16()));
     assert!(matches!(typed_map_new.key_schema(), WordSchema::Composite { .. }));
 
     // used storage slots
@@ -708,7 +708,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         .expect("symbol should be reported with a default value");
     assert_eq!(
         symbol_requirement.r#type,
-        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
+        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
     );
     assert_eq!(symbol_requirement.default_value.as_deref(), Some("TST"));
     assert!(
