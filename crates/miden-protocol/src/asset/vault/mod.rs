@@ -299,6 +299,11 @@ impl AssetVault {
             FungibleAsset::from_key_value(other_asset.vault_key(), current_asset_value)
                 .expect("asset vault should store valid assets");
 
+        // If the asset's amount is 0, we consider it absent from the vault.
+        if current_asset.amount() == 0 {
+            return Err(AssetVaultError::FungibleAssetNotFound(other_asset));
+        }
+
         let new_asset = current_asset
             .sub(other_asset)
             .map_err(AssetVaultError::SubtractFungibleAssetBalanceError)?;
@@ -376,5 +381,22 @@ impl Deserializable for AssetVault {
         let num_assets = source.read_usize()?;
         let assets = source.read_many::<Asset>(num_assets)?;
         Self::new(&assets).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+
+    #[test]
+    fn vault_fails_on_absent_fungible_asset() {
+        let mut vault = AssetVault::default();
+        let err = vault.remove_asset(FungibleAsset::mock(50)).unwrap_err();
+        assert_matches!(err, AssetVaultError::FungibleAssetNotFound(_));
     }
 }
