@@ -222,18 +222,12 @@ pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 6], FieldBytesError> {
 /// Description (6 Words = 24 felts), split across 6 slots.
 pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| {
     [
-        StorageSlotName::new("miden::standards::metadata::description_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_1")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_2")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_3")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_4")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_5")
-            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_5").expect("valid slot name"),
     ]
 });
 
@@ -457,6 +451,7 @@ impl Info {
     ///
     /// Returns `(name, description, logo_uri, external_link)` where each is `Some` only if
     /// at least one word is non-zero.
+    #[allow(clippy::type_complexity)]
     pub fn read_metadata_from_storage(
         storage: &AccountStorage,
     ) -> (Option<[Word; 2]>, Option<[Word; 6]>, Option<[Word; 6]>, Option<[Word; 6]>) {
@@ -524,8 +519,7 @@ impl From<Info> for AccountComponent {
         let logo_uri = extension.logo_uri.unwrap_or([Word::default(); 6]);
         if extension.logo_uri_flag > 0 {
             for (i, word) in logo_uri.iter().enumerate() {
-                storage_slots
-                    .push(StorageSlot::with_value(Info::logo_uri_slot(i).clone(), *word));
+                storage_slots.push(StorageSlot::with_value(Info::logo_uri_slot(i).clone(), *word));
             }
         }
 

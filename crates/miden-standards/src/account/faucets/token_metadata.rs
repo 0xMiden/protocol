@@ -434,16 +434,9 @@ mod tests {
         let name = TokenName::try_from("polygon").unwrap();
         let description = Description::try_from("A polygon token").unwrap();
 
-        let metadata = TokenMetadata::new(
-            symbol,
-            decimals,
-            max_supply,
-            name,
-            Some(description),
-            None,
-            None,
-        )
-        .unwrap();
+        let metadata =
+            TokenMetadata::new(symbol, decimals, max_supply, name, Some(description), None, None)
+                .unwrap();
 
         assert_eq!(metadata.symbol(), symbol);
         assert_eq!(metadata.name(), &name);
@@ -507,8 +500,7 @@ mod tests {
         let max_supply = Felt::new(1_000_000);
         let name = TokenName::try_from("TEST").unwrap();
 
-        let result =
-            TokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
+        let result = TokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
         assert!(matches!(result, Err(FungibleFaucetError::TooManyDecimals { .. })));
     }
 
@@ -522,8 +514,7 @@ mod tests {
         let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT + 1);
         let name = TokenName::try_from("TEST").unwrap();
 
-        let result =
-            TokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
+        let result = TokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
         assert!(matches!(result, Err(FungibleFaucetError::MaxSupplyTooLarge { .. })));
     }
 
