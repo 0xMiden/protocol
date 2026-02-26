@@ -208,18 +208,6 @@ impl Asset {
     }
 }
 
-impl Ord for Asset {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.vault_key().cmp(&other.vault_key())
-    }
-}
-
-impl PartialOrd for Asset {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 // SERIALIZATION
 // ================================================================================================
 
