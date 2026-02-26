@@ -22,7 +22,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
+use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata, TokenName};
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -356,7 +356,9 @@ impl AggLayerFaucet {
         origin_network: u32,
         scale: u8,
     ) -> Result<Self, FungibleFaucetError> {
-        let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply)?;
+        // Use empty name for agglayer faucets (name is stored in Info component, not here).
+        let name = TokenName::try_from("").expect("empty string is valid");
+        let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply, name, None, None, None)?;
         Ok(Self {
             metadata,
             bridge_account_id,

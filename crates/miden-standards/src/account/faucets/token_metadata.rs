@@ -5,9 +5,6 @@ use miden_protocol::{Felt, Word};
 use super::FungibleFaucetError;
 use crate::account::metadata::{self, FieldBytesError, NameUtf8Error};
 
-/// Schema type ID for the token symbol field in token metadata storage schema.
-pub const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
-
 // TOKEN NAME
 // ================================================================================================
 
