@@ -3,6 +3,7 @@ use core::slice;
 use anyhow::Context;
 use miden_protocol::Felt;
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::{Note, NoteType};
@@ -371,9 +372,12 @@ fn setup_p2ide_test(
     let mut builder = MockChain::builder();
 
     // Create sender and target accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let malicious_account =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
     let p2ide_note = builder.add_p2ide_note(
         sender_account.id(),

@@ -158,7 +158,7 @@ Only those who know the RECIPIENT’s pre-image can consume the `Note`. For priv
 
 The [transaction prologue](transaction) requires all necessary data to compute the `Note` hash. This setup allows scenario-specific restrictions on who may consume a `Note`.
 
-For a practical example, refer to the [SWAP note script](https://github.com/0xMiden/miden-base/blob/next/crates/miden-standards/asm/standards/notes/swap.masm), where the RECIPIENT ensures that only a defined target can consume the swapped asset.
+For a practical example, refer to the [SWAP note script](https://github.com/0xMiden/protocol/blob/next/crates/miden-standards/asm/standards/notes/swap.masm), where the RECIPIENT ensures that only a defined target can consume the swapped asset.
 
 #### Note nullifier ensuring private consumption
 
@@ -182,7 +182,7 @@ That means if a `Note` is private and the operator stores only the note's hash, 
 
 ## Standard Note Types
 
-The miden-base repository provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
+The `miden::standards` library provides several standard note scripts that implement common use cases for asset transfers and interactions. These pre-built note types offer secure, tested implementations for typical scenarios.
 
 ### P2ID (Pay-to-ID)
 

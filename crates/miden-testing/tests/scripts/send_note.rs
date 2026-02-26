@@ -1,6 +1,7 @@
 use core::slice;
 use std::collections::BTreeMap;
 
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::note::{
@@ -30,8 +31,10 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let sent_asset = FungibleAsset::mock(10);
 
     let mut builder = MockChain::builder();
-    let sender_basic_wallet_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(100)])?;
+    let sender_basic_wallet_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [FungibleAsset::mock(100)],
+    )?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface = AccountInterface::from_account(&sender_basic_wallet_account);
@@ -88,8 +91,12 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let sender_basic_fungible_faucet_account =
-        builder.add_existing_basic_faucet(Auth::BasicAuth, "POL", 200, None)?;
+    let sender_basic_fungible_faucet_account = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "POL",
+        200,
+        None,
+    )?;
     let mock_chain = builder.build()?;
 
     let sender_account_interface =

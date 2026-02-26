@@ -18,7 +18,7 @@ use super::super::{
     WordValue,
 };
 use crate::account::component::storage::type_registry::SCHEMA_TYPE_REGISTRY;
-use crate::account::component::{AccountComponentMetadata, SchemaTypeId};
+use crate::account::component::{AccountComponentMetadata, SchemaType};
 use crate::account::{AccountType, StorageSlotName};
 use crate::errors::ComponentMetadataError;
 
@@ -103,8 +103,8 @@ struct RawStorageSchema {
 /// Storage slot type descriptor.
 ///
 /// This field accepts either:
-/// - a type identifier (e.g. `"word"`, `"u16"`, `"miden::standards::auth::falcon512_rpo::pub_key"`)
-///   for simple word slots,
+/// - a type identifier (e.g. `"word"`, `"u16"`, `"miden::standards::auth::pub_key"`) for simple
+///   word slots,
 /// - an array of 4 [`FeltSchema`] descriptors for composite word slots, or
 /// - a table `{ key = ..., value = ... }` for map slots.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -118,7 +118,7 @@ enum RawSlotType {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 enum RawWordType {
-    TypeIdentifier(SchemaTypeId),
+    TypeIdentifier(SchemaType),
     FeltSchemaArray(Vec<FeltSchema>),
 }
 
@@ -463,7 +463,7 @@ impl RawStorageSlotSchema {
 impl WordValue {
     pub(super) fn try_parse_as_typed_word(
         &self,
-        schema_type: &SchemaTypeId,
+        schema_type: &SchemaType,
         slot_prefix: &StorageValueName,
         label: &str,
     ) -> Result<Word, ComponentMetadataError> {
@@ -476,7 +476,7 @@ impl WordValue {
                 let felts = elements
                     .iter()
                     .map(|element| {
-                        SCHEMA_TYPE_REGISTRY.try_parse_felt(&SchemaTypeId::native_felt(), element)
+                        SCHEMA_TYPE_REGISTRY.try_parse_felt(&SchemaType::native_felt(), element)
                     })
                     .collect::<Result<Vec<Felt>, _>>()
                     .map_err(ComponentMetadataError::StorageValueParsingError)?;
@@ -493,7 +493,7 @@ impl WordValue {
         Ok(word)
     }
 
-    pub(super) fn from_word(schema_type: &SchemaTypeId, word: Word) -> Self {
+    pub(super) fn from_word(schema_type: &SchemaType, word: Word) -> Self {
         WordValue::Atomic(SCHEMA_TYPE_REGISTRY.display_word(schema_type, word).value().to_string())
     }
 }

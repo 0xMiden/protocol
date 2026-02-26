@@ -1,6 +1,7 @@
 use anyhow::Context;
 use miden_processor::ContextId;
 use miden_processor::fast::ExecutionOutput;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{Note, NoteType};
@@ -147,7 +148,7 @@ fn setup_test() -> anyhow::Result<TestSetup> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        crate::Auth::BasicAuth,
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         [fungible_asset_0_double_amount, fungible_asset_1],
     )?;
 

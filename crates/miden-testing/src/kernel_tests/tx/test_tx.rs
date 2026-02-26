@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -52,7 +53,7 @@ use miden_protocol::transaction::{
     TransactionSummary,
 };
 use miden_protocol::{Felt, Hasher, ONE, Word};
-use miden_standards::AuthScheme;
+use miden_standards::AuthMethod;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -73,8 +74,14 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     // Create a chain with an account
     let mut builder = MockChain::builder();
     let asset = FungibleAsset::mock(400);
-    let account1 = builder.add_existing_wallet_with_assets(Auth::BasicAuth, [asset])?;
-    let account2 = builder.add_existing_wallet_with_assets(Auth::BasicAuth, [asset])?;
+    let account1 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [asset],
+    )?;
+    let account2 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [asset],
+    )?;
     let output_note = create_public_p2any_note(account1.id(), [asset]);
     let spawn_note = builder.add_spawn_note([&output_note])?;
     let mut mock_chain = builder.build()?;
@@ -499,7 +506,8 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::BasicAuth)?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let mut rng = RpoRandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -533,18 +541,12 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthScheme::Falcon512Rpo { pub_key } => pub_key,
-        AuthScheme::NoAuth => panic!("Expected Falcon512Rpo auth scheme, got NoAuth"),
-        AuthScheme::Falcon512RpoMultisig { .. } => {
-            panic!("Expected Falcon512Rpo auth scheme, got Falcon512RpoMultisig")
+        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
+        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
+        AuthMethod::Multisig { .. } => {
+            panic!("Expected SingleSig auth scheme, got Falcon512RpoMultisig")
         },
-        AuthScheme::Unknown => panic!("Expected Falcon512Rpo auth scheme, got Unknown"),
-        AuthScheme::EcdsaK256Keccak { .. } => {
-            panic!("Expected Falcon512Rpo auth scheme, got EcdsaK256Keccak")
-        },
-        AuthScheme::EcdsaK256KeccakMultisig { .. } => {
-            panic!("Expected Falcon512Rpo auth scheme, got EcdsaK256KeccakMultisig")
-        },
+        AuthMethod::Unknown => panic!("Expected Falcon512Rpo auth scheme, got Unknown"),
     };
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
@@ -563,7 +565,8 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
 #[tokio::test]
 async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::EcdsaK256KeccakAuth)?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
     let mut rng = RpoRandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
@@ -597,18 +600,12 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
 
     let account_interface = AccountInterface::from_account(&account);
     let pub_key = match account_interface.auth().first().unwrap() {
-        AuthScheme::EcdsaK256Keccak { pub_key } => pub_key,
-        AuthScheme::EcdsaK256KeccakMultisig { .. } => {
-            panic!("Expected EcdsaK256Keccak auth scheme, got EcdsaK256KeccakMultisig")
+        AuthMethod::SingleSig { approver: (pub_key, _) } => pub_key,
+        AuthMethod::NoAuth => panic!("Expected SingleSig auth scheme, got NoAuth"),
+        AuthMethod::Multisig { .. } => {
+            panic!("Expected SingleSig auth scheme, got Multisig")
         },
-        AuthScheme::NoAuth => panic!("Expected EcdsaK256Keccak auth scheme, got NoAuth"),
-        AuthScheme::Falcon512RpoMultisig { .. } => {
-            panic!("Expected EcdsaK256Keccak auth scheme, got Falcon512RpoMultisig")
-        },
-        AuthScheme::Unknown => panic!("Expected EcdsaK256Keccak auth scheme, got Unknown"),
-        AuthScheme::Falcon512Rpo { .. } => {
-            panic!("Expected EcdsaK256Keccak auth scheme, got Falcon512Rpo")
-        },
+        AuthMethod::Unknown => panic!("Expected SingleSig auth scheme, got Unknown"),
     };
 
     // This is in an internal detail of the tx executor host, but this is the easiest way to check
@@ -828,7 +825,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
 async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     // Use basic auth so the tx requires a signature for successful execution.
-    let account = builder.add_existing_mock_account(Auth::BasicAuth)?;
+    let account = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
     let note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),
