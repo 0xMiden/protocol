@@ -1,7 +1,8 @@
-//! Account / contract / faucet metadata (slots 0..22)
+//! Account / contract / faucet metadata (slots 0..23)
 //!
 //! All of the following are metadata of the account (or faucet): token_symbol, decimals,
-//! max_supply, owner, name, config, description, logo URI, and external link.
+//! max_supply, owner, name, initialized_config, mutability_config, description, logo URI,
+//! and external link.
 //!
 //! ## Storage layout
 //!
@@ -11,7 +12,8 @@
 //! | `ownable::owner_config` | owner account id (defined by ownable module) |
 //! | `metadata::name_0` | first 4 felts of name |
 //! | `metadata::name_1` | last 4 felts of name |
-//! | `metadata::config` | `[desc_flag, logo_flag, extlink_flag, max_supply_mutable]` |
+//! | `metadata::initialized_config` | `[desc_init, logo_init, extlink_init, max_supply_mutable]` |
+//! | `metadata::mutability_config` | `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]` |
 //! | `metadata::description_0..5` | description (6 Words, ~192 bytes) |
 //! | `metadata::logo_uri_0..5` | logo URI (6 Words, ~192 bytes) |
 //! | `metadata::external_link_0..5` | external link (6 Words, ~192 bytes) |
@@ -23,17 +25,17 @@
 //! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
 //! Any change to slot indices or names must be applied in both Rust and MASM.
 //!
-//! ## Config Word
+//! ## Config Words
 //!
-//! The config Word stores per-field flags and the max_supply_mutable flag:
-//! `[desc_flag, logo_flag, extlink_flag, max_supply_mutable]`
+//! Two config Words store per-field boolean flags:
 //!
-//! Each flag uses 3 states:
-//! - `0` = field not present
-//! - `1` = field present, immutable
-//! - `2` = field present, mutable (owner can update)
+//! **initialized_config**: `[desc_init, logo_init, extlink_init, max_supply_mutable]`
+//! - Each flag is 0 (not initialized) or 1 (initialized).
 //!
-//! `max_supply_mutable` uses 0/1 (always present when the faucet exists).
+//! **mutability_config**: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
+//! - Each flag is 0 (immutable) or 1 (mutable / owner can update).
+//!
+//! `max_supply_mutable` appears in both words for convenient access.
 //!
 //! ## MASM modules
 //!
@@ -57,8 +59,8 @@
 //!
 //! let info = Info::new()
 //!     .with_name([name_word_0, name_word_1])
-//!     .with_description([d0, d1, d2, d3, d4, d5], 2)   // present + mutable
-//!     .with_logo_uri([l0, l1, l2, l3, l4, l5], 1);      // present + immutable
+//!     .with_description([d0, d1, d2, d3, d4, d5], true)   // initialized + mutable
+//!     .with_logo_uri([l0, l1, l2, l3, l4, l5], false);     // initialized + immutable
 //!
 //! let account = AccountBuilder::new(seed)
 //!     .with_component(info)
@@ -170,12 +172,21 @@ pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
     String::from_utf8(bytes[..len].to_vec()).map_err(|_| NameUtf8Error::InvalidUtf8)
 }
 
-/// Config slot: `[desc_flag, logo_flag, extlink_flag, max_supply_mutable]`.
+/// Initialized config slot: `[desc_init, logo_init, extlink_init, max_supply_mutable]`.
 ///
-/// Each flag is 0 (not present), 1 (present+immutable), or 2 (present+mutable).
-/// `max_supply_mutable` is 0 or 1.
-pub static CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::config")
+/// Each flag is 0 (not initialized) or 1 (initialized).
+/// `max_supply_mutable` appears here for convenient access.
+pub static INITIALIZED_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::initialized_config")
+        .expect("storage slot name should be valid")
+});
+
+/// Mutability config slot: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`.
+///
+/// Each flag is 0 (immutable) or 1 (mutable / owner can update).
+/// `max_supply_mutable` appears here for convenient access.
+pub static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::mutability_config")
         .expect("storage slot name should be valid")
 });
 
@@ -295,9 +306,14 @@ pub fn owner_config_slot() -> &'static StorageSlotName {
     &OWNER_CONFIG_SLOT
 }
 
-/// Returns the [`StorageSlotName`] for the config Word.
-pub fn config_slot() -> &'static StorageSlotName {
-    &CONFIG_SLOT
+/// Returns the [`StorageSlotName`] for the initialized config Word.
+pub fn initialized_config_slot() -> &'static StorageSlotName {
+    &INITIALIZED_CONFIG_SLOT
+}
+
+/// Returns the [`StorageSlotName`] for the mutability config Word.
+pub fn mutability_config_slot() -> &'static StorageSlotName {
+    &MUTABILITY_CONFIG_SLOT
 }
 
 // INFO COMPONENT
@@ -308,19 +324,20 @@ pub fn config_slot() -> &'static StorageSlotName {
 /// ## Storage Layout
 ///
 /// - Slot 2–3: name (2 Words = 8 felts)
-/// - Slot 4: config `[desc_flag, logo_flag, extlink_flag, max_supply_mutable]`
-/// - Slot 5–10: description (6 Words)
-/// - Slot 11–16: logo_uri (6 Words)
-/// - Slot 17–22: external_link (6 Words)
+/// - Slot 4: initialized_config `[desc_init, logo_init, extlink_init, max_supply_mutable]`
+/// - Slot 5: mutability_config `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
+/// - Slot 6–11: description (6 Words)
+/// - Slot 12–17: logo_uri (6 Words)
+/// - Slot 18–23: external_link (6 Words)
 #[derive(Debug, Clone, Default)]
 pub struct Info {
     name: Option<[Word; 2]>,
-    /// Description flag: 0=not present, 1=present+immutable, 2=present+mutable.
-    description_flag: u8,
-    /// Logo URI flag: 0=not present, 1=present+immutable, 2=present+mutable.
-    logo_uri_flag: u8,
-    /// External link flag: 0=not present, 1=present+immutable, 2=present+mutable.
-    external_link_flag: u8,
+    /// Whether the description field is mutable (owner can update).
+    description_mutable: bool,
+    /// Whether the logo URI field is mutable (owner can update).
+    logo_uri_mutable: bool,
+    /// Whether the external link field is mutable (owner can update).
+    external_link_mutable: bool,
     /// If true (1), the owner may call optional_set_max_supply. If false (0), immutable.
     max_supply_mutable: bool,
     description: Option<[Word; 6]>,
@@ -356,13 +373,13 @@ impl Info {
         Ok(self)
     }
 
-    /// Sets the description metadata (6 Words) with mutability flag.
+    /// Sets the description metadata (6 Words) with mutability.
     ///
-    /// `flag`: 1 = present+immutable, 2 = present+mutable.
-    pub fn with_description(mut self, description: [Word; 6], flag: u8) -> Self {
-        assert!(flag == 1 || flag == 2, "description flag must be 1 or 2");
+    /// When `mutable` is `true`, the owner can update the description later.
+    /// The field is always marked as initialized when data is provided.
+    pub fn with_description(mut self, description: [Word; 6], mutable: bool) -> Self {
         self.description = Some(description);
-        self.description_flag = flag;
+        self.description_mutable = mutable;
         self
     }
 
@@ -370,21 +387,20 @@ impl Info {
     pub fn with_description_from_bytes(
         mut self,
         bytes: &[u8],
-        flag: u8,
+        mutable: bool,
     ) -> Result<Self, FieldBytesError> {
-        assert!(flag == 1 || flag == 2, "description flag must be 1 or 2");
         self.description = Some(field_from_bytes(bytes)?);
-        self.description_flag = flag;
+        self.description_mutable = mutable;
         Ok(self)
     }
 
-    /// Sets the logo URI metadata (6 Words) with mutability flag.
+    /// Sets the logo URI metadata (6 Words) with mutability.
     ///
-    /// `flag`: 1 = present+immutable, 2 = present+mutable.
-    pub fn with_logo_uri(mut self, logo_uri: [Word; 6], flag: u8) -> Self {
-        assert!(flag == 1 || flag == 2, "logo_uri flag must be 1 or 2");
+    /// When `mutable` is `true`, the owner can update the logo URI later.
+    /// The field is always marked as initialized when data is provided.
+    pub fn with_logo_uri(mut self, logo_uri: [Word; 6], mutable: bool) -> Self {
         self.logo_uri = Some(logo_uri);
-        self.logo_uri_flag = flag;
+        self.logo_uri_mutable = mutable;
         self
     }
 
@@ -392,21 +408,20 @@ impl Info {
     pub fn with_logo_uri_from_bytes(
         mut self,
         bytes: &[u8],
-        flag: u8,
+        mutable: bool,
     ) -> Result<Self, FieldBytesError> {
-        assert!(flag == 1 || flag == 2, "logo_uri flag must be 1 or 2");
         self.logo_uri = Some(field_from_bytes(bytes)?);
-        self.logo_uri_flag = flag;
+        self.logo_uri_mutable = mutable;
         Ok(self)
     }
 
-    /// Sets the external link metadata (6 Words) with mutability flag.
+    /// Sets the external link metadata (6 Words) with mutability.
     ///
-    /// `flag`: 1 = present+immutable, 2 = present+mutable.
-    pub fn with_external_link(mut self, external_link: [Word; 6], flag: u8) -> Self {
-        assert!(flag == 1 || flag == 2, "external_link flag must be 1 or 2");
+    /// When `mutable` is `true`, the owner can update the external link later.
+    /// The field is always marked as initialized when data is provided.
+    pub fn with_external_link(mut self, external_link: [Word; 6], mutable: bool) -> Self {
         self.external_link = Some(external_link);
-        self.external_link_flag = flag;
+        self.external_link_mutable = mutable;
         self
     }
 
@@ -414,11 +429,10 @@ impl Info {
     pub fn with_external_link_from_bytes(
         mut self,
         bytes: &[u8],
-        flag: u8,
+        mutable: bool,
     ) -> Result<Self, FieldBytesError> {
-        assert!(flag == 1 || flag == 2, "external_link flag must be 1 or 2");
         self.external_link = Some(field_from_bytes(bytes)?);
-        self.external_link_flag = flag;
+        self.external_link_mutable = mutable;
         Ok(self)
     }
 
@@ -497,18 +511,36 @@ impl From<Info> for AccountComponent {
             storage_slots.push(StorageSlot::with_value(Info::name_chunk_1_slot().clone(), name[1]));
         }
 
-        // Config word: [desc_flag, logo_flag, extlink_flag, max_supply_mutable]
-        let config_word = Word::from([
-            Felt::from(extension.description_flag as u32),
-            Felt::from(extension.logo_uri_flag as u32),
-            Felt::from(extension.external_link_flag as u32),
+        let desc_initialized = extension.description.is_some();
+        let logo_initialized = extension.logo_uri.is_some();
+        let extlink_initialized = extension.external_link.is_some();
+
+        // Initialized config word: [desc_init, logo_init, extlink_init, max_supply_mutable]
+        let initialized_config_word = Word::from([
+            Felt::from(desc_initialized as u32),
+            Felt::from(logo_initialized as u32),
+            Felt::from(extlink_initialized as u32),
             Felt::from(extension.max_supply_mutable as u32),
         ]);
-        storage_slots.push(StorageSlot::with_value(config_slot().clone(), config_word));
+        storage_slots.push(StorageSlot::with_value(
+            initialized_config_slot().clone(),
+            initialized_config_word,
+        ));
 
-        // Description slots (always write 6 slots if flag > 0)
-        let description = extension.description.unwrap_or([Word::default(); 6]);
-        if extension.description_flag > 0 {
+        // Mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]
+        let mutability_config_word = Word::from([
+            Felt::from(extension.description_mutable as u32),
+            Felt::from(extension.logo_uri_mutable as u32),
+            Felt::from(extension.external_link_mutable as u32),
+            Felt::from(extension.max_supply_mutable as u32),
+        ]);
+        storage_slots.push(StorageSlot::with_value(
+            mutability_config_slot().clone(),
+            mutability_config_word,
+        ));
+
+        // Description slots (always write 6 slots if initialized)
+        if let Some(description) = extension.description {
             for (i, word) in description.iter().enumerate() {
                 storage_slots
                     .push(StorageSlot::with_value(Info::description_slot(i).clone(), *word));
@@ -516,16 +548,14 @@ impl From<Info> for AccountComponent {
         }
 
         // Logo URI slots
-        let logo_uri = extension.logo_uri.unwrap_or([Word::default(); 6]);
-        if extension.logo_uri_flag > 0 {
+        if let Some(logo_uri) = extension.logo_uri {
             for (i, word) in logo_uri.iter().enumerate() {
                 storage_slots.push(StorageSlot::with_value(Info::logo_uri_slot(i).clone(), *word));
             }
         }
 
         // External link slots
-        let external_link = extension.external_link.unwrap_or([Word::default(); 6]);
-        if extension.external_link_flag > 0 {
+        if let Some(external_link) = extension.external_link {
             for (i, word) in external_link.iter().enumerate() {
                 storage_slots
                     .push(StorageSlot::with_value(Info::external_link_slot(i).clone(), *word));
@@ -696,8 +726,9 @@ mod tests {
         Info,
         NAME_UTF8_MAX_BYTES,
         NameUtf8Error,
-        config_slot,
         field_from_bytes,
+        initialized_config_slot,
+        mutability_config_slot,
         name_from_utf8,
         name_to_utf8,
     };
@@ -715,7 +746,7 @@ mod tests {
             Word::from([30u32, 31, 32, 33]),
         ];
 
-        let extension = Info::new().with_name(name).with_description(description, 1);
+        let extension = Info::new().with_name(name).with_description(description, false);
 
         let account = AccountBuilder::new([1u8; 32])
             .with_auth_component(NoAuth)
@@ -748,23 +779,32 @@ mod tests {
     }
 
     #[test]
-    fn config_slot_set_correctly() {
+    fn config_slots_set_correctly() {
         use miden_protocol::Felt;
 
         // Info with description mutable, max_supply_mutable = true
         let info = Info::new()
-            .with_description([Word::default(); 6], 2)
+            .with_description([Word::default(); 6], true)
             .with_max_supply_mutable(true);
         let account = AccountBuilder::new([2u8; 32])
             .with_auth_component(NoAuth)
             .with_component(info)
             .build()
             .unwrap();
-        let word = account.storage().get_item(config_slot()).unwrap();
-        assert_eq!(word[0], Felt::from(2u32), "desc_flag should be 2");
-        assert_eq!(word[1], Felt::from(0u32), "logo_flag should be 0");
-        assert_eq!(word[2], Felt::from(0u32), "extlink_flag should be 0");
-        assert_eq!(word[3], Felt::from(1u32), "max_supply_mutable should be 1");
+
+        // Check initialized config
+        let init_word = account.storage().get_item(initialized_config_slot()).unwrap();
+        assert_eq!(init_word[0], Felt::from(1u32), "desc_init should be 1");
+        assert_eq!(init_word[1], Felt::from(0u32), "logo_init should be 0");
+        assert_eq!(init_word[2], Felt::from(0u32), "extlink_init should be 0");
+        assert_eq!(init_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
+
+        // Check mutability config
+        let mut_word = account.storage().get_item(mutability_config_slot()).unwrap();
+        assert_eq!(mut_word[0], Felt::from(1u32), "desc_mutable should be 1");
+        assert_eq!(mut_word[1], Felt::from(0u32), "logo_mutable should be 0");
+        assert_eq!(mut_word[2], Felt::from(0u32), "extlink_mutable should be 0");
+        assert_eq!(mut_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
 
         // Info with defaults (all flags 0)
         let account_default = AccountBuilder::new([3u8; 32])
@@ -772,9 +812,12 @@ mod tests {
             .with_component(Info::new())
             .build()
             .unwrap();
-        let word_default = account_default.storage().get_item(config_slot()).unwrap();
-        assert_eq!(word_default[0], Felt::from(0u32), "desc_flag should be 0 by default");
-        assert_eq!(word_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
+        let init_default = account_default.storage().get_item(initialized_config_slot()).unwrap();
+        assert_eq!(init_default[0], Felt::from(0u32), "desc_init should be 0 by default");
+        assert_eq!(init_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
+        let mut_default = account_default.storage().get_item(mutability_config_slot()).unwrap();
+        assert_eq!(mut_default[0], Felt::from(0u32), "desc_mutable should be 0 by default");
+        assert_eq!(mut_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
     }
 
     #[test]

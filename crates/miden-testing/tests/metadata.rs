@@ -22,8 +22,8 @@ use miden_standards::account::metadata::{
     FieldBytesError,
     Info,
     NAME_UTF8_MAX_BYTES,
-    config_slot,
     field_from_bytes,
+    mutability_config_slot,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -131,7 +131,7 @@ async fn metadata_info_get_description_from_masm() -> anyhow::Result<()> {
         Word::from([30u32, 31, 32, 33]),
     ];
 
-    let extension = Info::new().with_description(description, 1);
+    let extension = Info::new().with_description(description, false);
 
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
@@ -193,7 +193,7 @@ fn metadata_info_with_faucet_storage() {
     )
     .unwrap();
 
-    let extension = Info::new().with_name(name).with_description(description, 1);
+    let extension = Info::new().with_name(name).with_description(description, false);
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -262,7 +262,7 @@ fn description_6_words_full_capacity() {
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
     ];
-    let extension = Info::new().with_description(description, 1);
+    let extension = Info::new().with_description(description, false);
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
         .with_component(extension)
@@ -309,7 +309,7 @@ fn faucet_with_integrated_metadata() {
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(name).with_description(description, 1);
+    let extension = Info::new().with_name(name).with_description(description, false);
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -370,8 +370,10 @@ fn faucet_initialized_with_max_name_and_full_description() {
         None,
     )
     .unwrap();
-    let extension =
-        Info::new().with_name_utf8(&max_name).unwrap().with_description(description, 1);
+    let extension = Info::new()
+        .with_name_utf8(&max_name)
+        .unwrap()
+        .with_description(description, false);
 
     let account = AccountBuilder::new([5u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -432,8 +434,10 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
     .with_token_supply(Felt::new(0))
     .unwrap();
 
-    let extension =
-        Info::new().with_name_utf8(&max_name).unwrap().with_description(description, 1);
+    let extension = Info::new()
+        .with_name_utf8(&max_name)
+        .unwrap()
+        .with_description(description, false);
 
     let account = AccountBuilder::new([6u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -496,8 +500,10 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
     .with_token_supply(Felt::new(0))
     .unwrap();
 
-    let extension =
-        Info::new().with_name_utf8(&max_name).unwrap().with_description(description, 1);
+    let extension = Info::new()
+        .with_name_utf8(&max_name)
+        .unwrap()
+        .with_description(description, false);
 
     let account = AccountBuilder::new([7u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -828,7 +834,7 @@ async fn metadata_get_description_only() -> anyhow::Result<()> {
         Word::from([26u32, 27, 28, 29]),
         Word::from([30u32, 31, 32, 33]),
     ];
-    let extension = Info::new().with_description(description, 1);
+    let extension = Info::new().with_description(description, false);
 
     let account = AccountBuilder::new([1u8; 32])
         .with_auth_component(NoAuth)
@@ -861,11 +867,11 @@ async fn metadata_get_description_only() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Isolated test: only get_config.
+/// Isolated test: get_initialized_config and get_mutability_config.
 #[tokio::test]
 async fn metadata_get_config_only() -> anyhow::Result<()> {
     let extension = Info::new()
-        .with_description([Word::default(); 6], 2) // desc_flag=2 (mutable)
+        .with_description([Word::default(); 6], true) // mutable
         .with_max_supply_mutable(true);
 
     let account = AccountBuilder::new([1u8; 32])
@@ -875,16 +881,29 @@ async fn metadata_get_config_only() -> anyhow::Result<()> {
 
     let tx_script = r#"
         begin
-            call.::miden::standards::metadata::fungible::get_config
-            # => [max_supply_mutable, extlink_flag, logo_flag, desc_flag, pad(12)]
+            # Check initialized config
+            call.::miden::standards::metadata::fungible::get_initialized_config
+            # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
             push.1
             assert_eq.err="max_supply_mutable should be 1"
             push.0
-            assert_eq.err="extlink_flag should be 0"
+            assert_eq.err="extlink_init should be 0"
             push.0
-            assert_eq.err="logo_flag should be 0"
-            push.2
-            assert_eq.err="desc_flag should be 2"
+            assert_eq.err="logo_init should be 0"
+            push.1
+            assert_eq.err="desc_init should be 1"
+
+            # Check mutability config
+            call.::miden::standards::metadata::fungible::get_mutability_config
+            # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
+            push.1
+            assert_eq.err="max_supply_mutable should be 1"
+            push.0
+            assert_eq.err="extlink_mutable should be 0"
+            push.0
+            assert_eq.err="logo_mutable should be 0"
+            push.1
+            assert_eq.err="desc_mutable should be 1"
         end
         "#;
 
@@ -1133,7 +1152,7 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(name).with_description(description, 1);
+    let extension = Info::new().with_name(name).with_description(description, false);
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -1218,7 +1237,7 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
         owner_account_id,
         Some(0),
         false,
-        Some((description, 1)), // flag=1 → immutable
+        Some((description, false)), // immutable
         None,
         None,
     )?;
@@ -1291,19 +1310,15 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
         owner_account_id,
         Some(0),
         false,
-        Some((initial_desc, 2)), // flag=2 → mutable
+        Some((initial_desc, true)), // mutable
         None,
         None,
     )?;
     let mock_chain = builder.build()?;
 
     let committed = mock_chain.committed_account(faucet.id())?;
-    let config_word = committed.storage().get_item(config_slot())?;
-    assert_eq!(
-        config_word[0],
-        Felt::from(2u32),
-        "committed account must have desc_flag = 2"
-    );
+    let mut_word = committed.storage().get_item(mutability_config_slot())?;
+    assert_eq!(mut_word[0], Felt::from(1u32), "committed account must have desc_mutable = 1");
 
     let set_desc_note_script_code = r#"
         begin
@@ -1383,7 +1398,7 @@ async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()
         owner_account_id,
         Some(0),
         false,
-        Some((initial_desc, 2)),
+        Some((initial_desc, true)),
         None,
         None,
     )?;
@@ -1624,12 +1639,12 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
 
     let cases: Vec<(Info, &str, u8)> = vec![
         (Info::new().with_max_supply_mutable(true), "is_max_supply_mutable", 1),
-        (Info::new().with_description(data, 2), "is_description_mutable", 1),
-        (Info::new().with_description(data, 1), "is_description_mutable", 0),
-        (Info::new().with_logo_uri(data, 2), "is_logo_uri_mutable", 1),
-        (Info::new().with_logo_uri(data, 1), "is_logo_uri_mutable", 0),
-        (Info::new().with_external_link(data, 2), "is_external_link_mutable", 1),
-        (Info::new().with_external_link(data, 1), "is_external_link_mutable", 0),
+        (Info::new().with_description(data, true), "is_description_mutable", 1),
+        (Info::new().with_description(data, false), "is_description_mutable", 0),
+        (Info::new().with_logo_uri(data, true), "is_logo_uri_mutable", 1),
+        (Info::new().with_logo_uri(data, false), "is_logo_uri_mutable", 0),
+        (Info::new().with_external_link(data, true), "is_external_link_mutable", 1),
+        (Info::new().with_external_link(data, false), "is_external_link_mutable", 0),
     ];
 
     for (info, proc_name, expected) in cases {
@@ -1647,9 +1662,8 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
         );
 
         let source_manager = Arc::new(DefaultSourceManager::default());
-        let tx_script =
-            CodeBuilder::with_source_manager(source_manager.clone())
-                .compile_tx_script(&tx_script)?;
+        let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+            .compile_tx_script(&tx_script)?;
 
         let tx_context = TransactionContextBuilder::new(account)
             .tx_script(tx_script)

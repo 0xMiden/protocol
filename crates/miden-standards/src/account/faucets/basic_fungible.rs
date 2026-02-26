@@ -346,13 +346,13 @@ pub fn create_basic_fungible_faucet(
 
     let mut info = Info::new().with_name(name.as_words());
     if let Some(d) = &description {
-        info = info.with_description(d.as_words(), 1);
+        info = info.with_description(d.as_words(), false);
     }
     if let Some(l) = &logo_uri {
-        info = info.with_logo_uri(l.as_words(), 1);
+        info = info.with_logo_uri(l.as_words(), false);
     }
     if let Some(e) = &external_link {
-        info = info.with_external_link(e.as_words(), 1);
+        info = info.with_external_link(e.as_words(), false);
     }
 
     let account = AccountBuilder::new(init_seed)
