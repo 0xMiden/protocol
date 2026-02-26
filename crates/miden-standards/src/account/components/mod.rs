@@ -89,7 +89,8 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
 });
 
-// Metadata Info component uses the standards library (get_name, get_description, etc. from metadata).
+// Metadata Info component uses the standards library (get_name, get_description, etc. from
+// metadata).
 static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
     LazyLock::new(|| Library::from(StandardsLib::default()));
 

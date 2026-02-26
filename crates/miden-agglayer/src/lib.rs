@@ -358,7 +358,16 @@ impl AggLayerFaucet {
     ) -> Result<Self, FungibleFaucetError> {
         // Use empty name for agglayer faucets (name is stored in Info component, not here).
         let name = TokenName::try_from("").expect("empty string is valid");
-        let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply, name, None, None, None)?;
+        let metadata = TokenMetadata::with_supply(
+            symbol,
+            decimals,
+            max_supply,
+            token_supply,
+            name,
+            None,
+            None,
+            None,
+        )?;
         Ok(Self {
             metadata,
             bridge_account_id,
