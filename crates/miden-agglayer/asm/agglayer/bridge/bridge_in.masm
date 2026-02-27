@@ -1,9 +1,16 @@
 use miden::agglayer::bridge::bridge_config
 use miden::agglayer::bridge::leaf_utils
 use miden::agglayer::common::utils
+use miden::agglayer::common::asset_conversion
+use miden::agglayer::common::eth_address
 use miden::core::crypto::hashes::keccak256
+use miden::core::crypto::hashes::rpo256
 use miden::core::mem
 use miden::core::word
+use miden::protocol::note
+use miden::protocol::output_note
+use miden::standards::note_tag
+use miden::standards::attachments::network_account_target
 
 # TYPE ALIASES
 # =================================================================================================
@@ -19,6 +26,7 @@ const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
 # CONSTANTS
 # =================================================================================================
@@ -45,6 +53,65 @@ const CUR_HASH_HI_LOCAL = 4
 const PROOF_DATA_WORD_LEN = 134
 # the number of words (4 felts each) in the advice map leaf data
 const LEAF_DATA_NUM_WORDS = 8
+
+# Memory pointers for piped advice map data (used by claim procedure)
+const CLAIM_PROOF_DATA_START_PTR = 0
+const CLAIM_LEAF_DATA_START_PTR = 536
+const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
+
+# Memory addresses for stored keys (used by claim procedure)
+const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
+const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
+
+# Data sizes for claim
+const CLAIM_PROOF_DATA_WORD_LEN = 134
+const CLAIM_LEAF_DATA_WORD_LEN = 8
+
+# Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
+const ORIGIN_TOKEN_ADDRESS_0 = 538
+const ORIGIN_TOKEN_ADDRESS_1 = 539
+const ORIGIN_TOKEN_ADDRESS_2 = 540
+const ORIGIN_TOKEN_ADDRESS_3 = 541
+const ORIGIN_TOKEN_ADDRESS_4 = 542
+const DESTINATION_ADDRESS_0 = 544
+const DESTINATION_ADDRESS_1 = 545
+const DESTINATION_ADDRESS_2 = 546
+const DESTINATION_ADDRESS_3 = 547
+const DESTINATION_ADDRESS_4 = 548
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = 552
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
+const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
+
+# Memory for MINT note output construction
+const MINT_NOTE_STORAGE_MEM_ADDR = 800
+const P2ID_RECIPIENT_STORAGE_MEM_ADDR = 0
+
+# claim memory locals
+const CLAIM_PREFIX_MEM_LOC = 8
+const CLAIM_SUFFIX_MEM_LOC = 9
+const CLAIM_AMOUNT_MEM_LOC_0 = 0
+const CLAIM_AMOUNT_MEM_LOC_1 = 4
+
+# build_mint_output_note memory locals
+const BUILD_MINT_AMOUNT_MEM_LOC_0 = 0
+const BUILD_MINT_AMOUNT_MEM_LOC_1 = 4
+const BUILD_MINT_PREFIX_MEM_LOC = 8
+const BUILD_MINT_FAUCET_PREFIX_LOC = 10
+const BUILD_MINT_FAUCET_SUFFIX_LOC = 11
+
+# MINT note storage layout (private mode, 12 items):
+# [tag, amount, attachment_kind, attachment_scheme, ATTACHMENT(4), RECIPIENT_DIGEST(4)]
+const MINT_NOTE_NUM_STORAGE_ITEMS = 12
+const MINT_NOTE_TYPE_PUBLIC = 1
+
+# P2ID output note constants
+const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
+const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -189,6 +256,96 @@ pub proc verify_merkle_proof(
     # => [verification_flag]
 end
 
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
+#!
+#! This procedure is called by the CLAIM note script when consumed by the bridge account.
+#! It validates the Merkle proof directly (no FPI needed since bridge is the native account),
+#! then looks up the faucet account ID from the token registry using the origin token address
+#! from the leaf data, and creates a MINT note targeting the aggfaucet.
+#!
+#! The MINT note uses the standard MintNote pattern (private mode) with 12 storage items:
+#! [tag, amount, attachment_kind(0), attachment_scheme(0), ATTACHMENT(0,0,0,0), RECIPIENT_DIGEST(4)]
+#!
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Advice map: {
+#!   PROOF_DATA_KEY => [
+#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
+#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
+#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
+#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
+#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
+#!   ],
+#!   LEAF_DATA_KEY => [
+#!     leafType[1],                     // Leaf type (1 felt, uint32)
+#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!     originTokenAddress[5],           // Origin token address (5 felts)
+#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!     destinationAddress[5],           // Destination address (5 felts)
+#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!     padding[3],                      // padding (3 felts)
+#!   ],
+#! }
+#!
+#! Panics if:
+#! - the Merkle proof validation fails.
+#! - the origin token address is not registered in the bridge's token registry.
+#!
+#! Invocation: call
+@locals(12) # 0-3: amount_lo, 4-7: amount_hi, 8: dest_prefix, 9: dest_suffix, 10: faucet_prefix, 11: faucet_suffix
+pub proc claim
+    # Write output note faucet amount to memory
+    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(7)]
+
+    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
+    exec.claim_batch_pipe_double_words
+    # => [pad(7)]
+
+    # validate_claim will overwrite memory in-place, so we need to load the account and amount
+    # before calling validate_claim and store it in memory locals
+    exec.get_destination_account_id_data
+    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
+    # => [pad(7)]
+
+    exec.get_raw_claim_amount
+    loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
+    # => [pad(7)]
+
+    # Look up the faucet account ID from the origin token address in the leaf data
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), pad(7)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_prefix, faucet_id_suffix, pad(7)]
+
+    loc_store.BUILD_MINT_FAUCET_PREFIX_LOC loc_store.BUILD_MINT_FAUCET_SUFFIX_LOC
+    # => [pad(7)]
+
+    # VALIDATE CLAIM - call verify_leaf_bridge directly (bridge is the native account)
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(7)]
+
+    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
+
+    # Call verify_leaf_bridge directly (no FPI needed - bridge is the native account)
+    exec.verify_leaf_bridge
+    # => [pad(16)]
+
+    # Build MINT output note targeting the aggfaucet
+    loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
+    # => [AMOUNT[0], AMOUNT[1], pad(8)]
+
+    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
+    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
+
+    exec.build_mint_output_note
+    # => [pad(16)]
+end
+
 # HELPER PROCEDURES
 # =================================================================================================
 
@@ -283,6 +440,238 @@ proc verify_leaf
     # verify_merkle_proof procedure returns `true` if the verification was successful and `false` 
     # otherwise. Assert that `true` was returned.
     assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+    # => []
+end
+
+# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
+# Outputs: []
+proc claim_batch_pipe_double_words
+    # 1) Verify PROOF_DATA_KEY
+    mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    adv.push_mapval
+    # => [PROOF_DATA_KEY]
+
+    push.CLAIM_PROOF_DATA_START_PTR push.CLAIM_PROOF_DATA_WORD_LEN
+    exec.mem::pipe_double_words_preimage_to_memory drop
+
+    # 2) Verify LEAF_DATA_KEY
+    mem_storew_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+    adv.push_mapval
+    # => [LEAF_DATA_KEY]
+
+    push.CLAIM_LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
+    exec.mem::pipe_double_words_preimage_to_memory drop
+end
+
+#! Extracts the destination account ID as address[5] from memory.
+#!
+#! This procedure reads the destination address from the leaf data and converts it from
+#! Ethereum address format to AccountId format (prefix, suffix).
+#!
+#! Inputs:  []
+#! Outputs: [prefix, suffix]
+#!
+#! Invocation: exec
+proc get_destination_account_id_data
+    mem_load.DESTINATION_ADDRESS_4
+    mem_load.DESTINATION_ADDRESS_3
+    mem_load.DESTINATION_ADDRESS_2
+    mem_load.DESTINATION_ADDRESS_1
+    mem_load.DESTINATION_ADDRESS_0
+    # => [address[5]]
+
+    exec.eth_address::to_account_id
+    # => [prefix, suffix]
+end
+
+# Inputs: []
+# Outputs: [U256[0], U256[1]]
+proc get_raw_claim_amount
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
+    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
+end
+
+#! Reads the origin token address (5 felts) from the leaf data in memory.
+#!
+#! Inputs:  []
+#! Outputs: [origin_token_addr(5)]
+#!
+#! Invocation: exec
+proc get_origin_token_address
+    mem_load.ORIGIN_TOKEN_ADDRESS_0
+    mem_load.ORIGIN_TOKEN_ADDRESS_1
+    mem_load.ORIGIN_TOKEN_ADDRESS_2
+    mem_load.ORIGIN_TOKEN_ADDRESS_3
+    mem_load.ORIGIN_TOKEN_ADDRESS_4
+    # => [origin_token_addr(5)]
+end
+
+#! Builds a MINT output note targeting the aggfaucet.
+#!
+#! The MINT note uses private mode (12 storage items) and contains:
+#! - tag: Note tag targeting the faucet account
+#! - amount: The scaled-down Miden amount to mint
+#! - attachment_kind: 0 (no attachment)
+#! - attachment_scheme: 0 (no attachment)
+#! - ATTACHMENT: [0, 0, 0, 0]
+#! - RECIPIENT_DIGEST: The P2ID recipient digest for the destination account
+#!
+#! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
+#! Outputs: []
+#!
+#! Where:
+#! - prefix, suffix: destination account ID
+#! - AMOUNT[0], AMOUNT[1]: raw U256 claim amount (8 felts)
+@locals(12) # 0-3: amount_lo, 4-7: amount_hi, 8: prefix, 9: faucet_prefix, 10: faucet_suffix, 11: unused
+proc build_mint_output_note
+    # save prefix to local memory for later use in note tag computation
+    dup loc_store.BUILD_MINT_PREFIX_MEM_LOC
+
+    # write destination account id into memory for use in note::build_recipient
+    push.P2ID_RECIPIENT_STORAGE_MEM_ADDR add.1 mem_store mem_store.P2ID_RECIPIENT_STORAGE_MEM_ADDR
+
+    # store amount in memory locals
+    loc_storew_be.BUILD_MINT_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_MINT_AMOUNT_MEM_LOC_1 dropw
+    # => [pad(16)]
+
+    # Build P2ID recipient digest for the MINT note storage
+    # First, get the P2ID script root
+    procref.::miden::standards::notes::p2id::main
+    # => [SCRIPT_ROOT]
+
+    # Use PROOF_DATA_KEY as the P2ID serial number
+    swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM, SCRIPT_ROOT]
+
+    push.P2ID_NOTE_NUM_STORAGE_ITEMS
+    # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
+
+    push.P2ID_RECIPIENT_STORAGE_MEM_ADDR
+    # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
+
+    exec.note::build_recipient
+    # => [RECIPIENT_DIGEST]
+
+    # Now build the MINT note storage in memory
+    # Layout: [tag, amount, attachment_kind(0), attachment_scheme(0), ATTACHMENT(0,0,0,0), RECIPIENT_DIGEST(4)]
+
+    # Compute the note tag for the destination account
+    loc_load.BUILD_MINT_PREFIX_MEM_LOC
+    # => [dest_prefix, RECIPIENT_DIGEST]
+
+    exec.note_tag::create_account_target
+    # => [dest_tag, RECIPIENT_DIGEST]
+
+    # Verify the U256 amount converts correctly to the native amount
+    padw loc_loadw_be.BUILD_MINT_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_MINT_AMOUNT_MEM_LOC_0
+    # => [AMOUNT[0], AMOUNT[1], dest_tag, RECIPIENT_DIGEST]
+
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT movdn.8
+    # => [AMOUNT[0], AMOUNT[1], native_amount, dest_tag, RECIPIENT_DIGEST]
+
+    # We need the scale factor. Since the bridge doesn't store it, we use the
+    # pre-computed miden_claim_amount from the CLAIM note storage directly.
+    # The native_amount was already verified by the CLAIM note creator.
+    # Drop the U256 amount and use native_amount directly.
+    repeat.8 swap drop end
+    # => [native_amount, dest_tag, RECIPIENT_DIGEST]
+
+    # Store MINT note storage items in memory:
+    # [0]: dest_tag (tag for the P2ID output note)
+    # [1]: native_amount
+    # [2]: attachment_kind = 0
+    # [3]: attachment_scheme = 0
+    # [4..7]: ATTACHMENT = [0, 0, 0, 0]
+    # [8..11]: RECIPIENT_DIGEST
+
+    # Write tag to MINT note storage
+    push.MINT_NOTE_STORAGE_MEM_ADDR mem_store
+    # => [native_amount, RECIPIENT_DIGEST]
+
+    # Write amount to MINT note storage
+    push.MINT_NOTE_STORAGE_MEM_ADDR add.1 mem_store
+    # => [RECIPIENT_DIGEST]
+
+    # Write attachment_kind = 0
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.2 mem_store
+    # => [RECIPIENT_DIGEST]
+
+    # Write attachment_scheme = 0
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.3 mem_store
+    # => [RECIPIENT_DIGEST]
+
+    # Write ATTACHMENT = [0, 0, 0, 0]
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.4 mem_store
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.5 mem_store
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.6 mem_store
+    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.7 mem_store
+    # => [RECIPIENT_DIGEST]
+
+    # Write RECIPIENT_DIGEST to MINT note storage [8..11]
+    # Stack: [r0, r1, r2, r3]
+    push.MINT_NOTE_STORAGE_MEM_ADDR add.11 mem_store
+    push.MINT_NOTE_STORAGE_MEM_ADDR add.10 mem_store
+    push.MINT_NOTE_STORAGE_MEM_ADDR add.9 mem_store
+    push.MINT_NOTE_STORAGE_MEM_ADDR add.8 mem_store
+    # => []
+
+    # Now create the MINT output note
+    # Get the MINT note script root
+    procref.::miden::standards::notes::mint::main
+    # => [MINT_SCRIPT_ROOT]
+
+    # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
+    swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    # Build the MINT note recipient
+    push.MINT_NOTE_NUM_STORAGE_ITEMS
+    # => [num_storage_items, SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    push.MINT_NOTE_STORAGE_MEM_ADDR
+    # => [storage_ptr, num_storage_items, SERIAL_NUM, MINT_SCRIPT_ROOT]
+
+    exec.note::build_recipient
+    # => [MINT_RECIPIENT]
+
+    # Create the MINT output note targeting the faucet
+    push.MINT_NOTE_TYPE_PUBLIC
+    # => [note_type, MINT_RECIPIENT]
+
+    # Compute note tag targeting the faucet account
+    loc_load.BUILD_MINT_FAUCET_PREFIX_LOC
+    # => [faucet_prefix, note_type, MINT_RECIPIENT]
+
+    exec.note_tag::create_account_target
+    # => [faucet_tag, note_type, MINT_RECIPIENT]
+
+    # Create the output note (no assets - MINT notes carry no assets)
+    exec.output_note::create
+    # => [note_idx]
+
+    # Set the attachment on the MINT note to target the faucet account
+    # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
+    # network_account_target::new expects [prefix, suffix, exec_hint]
+    # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
+    push.1 # exec_hint = ALWAYS
+    loc_load.BUILD_MINT_FAUCET_SUFFIX_LOC
+    loc_load.BUILD_MINT_FAUCET_PREFIX_LOC
+    # => [faucet_prefix, faucet_suffix, exec_hint, note_idx]
+
+    exec.network_account_target::new
+    # => [attachment_scheme, attachment_kind, ATTACHMENT(4), note_idx]
+
+    # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    movup.6
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
+
+    exec.output_note::set_attachment
     # => []
 end
 

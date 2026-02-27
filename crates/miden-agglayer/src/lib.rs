@@ -131,6 +131,10 @@ static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
         .expect("faucet registry storage slot name should be valid")
 });
+static TOKEN_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::token_registry")
+        .expect("token registry storage slot name should be valid")
+});
 static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::admin")
         .expect("bridge admin storage slot name should be valid")
@@ -160,6 +164,7 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 /// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
+/// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
 ///
@@ -207,6 +212,11 @@ impl AggLayerBridge {
         &FAUCET_REGISTRY_SLOT_NAME
     }
 
+    /// Storage slot name for the token registry map.
+    pub fn token_registry_slot_name() -> &'static StorageSlotName {
+        &TOKEN_REGISTRY_SLOT_NAME
+    }
+
     /// Storage slot name for the bridge admin account ID.
     pub fn bridge_admin_slot_name() -> &'static StorageSlotName {
         &BRIDGE_ADMIN_SLOT_NAME
@@ -240,6 +250,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(FAUCET_REGISTRY_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
         ];
@@ -311,13 +322,17 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
+static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::ownable::owner_config")
+        .expect("owner config storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
 /// It reexports the procedures from `miden::agglayer::faucet`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
-/// - `claim`, which validates a CLAIM note against one of the stored GERs in the bridge.
+/// - `distribute`, which mints assets and creates output notes (with owner verification).
 /// - `asset_to_origin_asset`, which converts an asset to the origin asset (used in FPI from
 ///   bridge).
 /// - `burn`, which burns an asset.
@@ -329,6 +344,7 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
+/// - [`Self::owner_config_slot`]: Stores the owner account ID (bridge) for MINT note authorization.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
@@ -394,6 +410,11 @@ impl AggLayerFaucet {
     pub fn conversion_info_2_slot() -> &'static StorageSlotName {
         &CONVERSION_INFO_2_SLOT_NAME
     }
+
+    /// Storage slot name for the owner account ID (bridge) used by `ownable::verify_owner`.
+    pub fn owner_config_slot() -> &'static StorageSlotName {
+        &OWNER_CONFIG_SLOT_NAME
+    }
 }
 
 impl From<AggLayerFaucet> for AccountComponent {
@@ -419,8 +440,17 @@ impl From<AggLayerFaucet> for AccountComponent {
         let conversion_slot2 =
             StorageSlot::with_value(CONVERSION_INFO_2_SLOT_NAME.clone(), conversion_slot2_word);
 
+        // Owner config slot: bridge account ID as the owner for MINT note authorization
+        let owner_word = Word::new([
+            Felt::ZERO,
+            Felt::ZERO,
+            faucet.bridge_account_id.suffix(),
+            faucet.bridge_account_id.prefix().as_felt(),
+        ]);
+        let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
+
         let agglayer_storage_slots =
-            vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
+            vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2, owner_slot];
         agglayer_faucet_component(agglayer_storage_slots)
     }
 }

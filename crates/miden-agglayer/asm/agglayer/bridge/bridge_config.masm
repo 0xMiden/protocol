@@ -9,6 +9,7 @@ use miden::protocol::native_account
 
 const ERR_GER_NOT_FOUND = "GER not found in storage"
 const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
+const ERR_TOKEN_NOT_REGISTERED="token address is not registered in the bridge's token registry"
 const ERR_SENDER_NOT_BRIDGE_ADMIN="note sender is not the bridge admin"
 const ERR_SENDER_NOT_GER_MANAGER="note sender is not the global exit root manager"
 
@@ -20,6 +21,10 @@ const BRIDGE_ADMIN_SLOT=word("miden::agglayer::bridge::admin")
 const GER_MANAGER_SLOT=word("miden::agglayer::bridge::ger_manager")
 const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
 const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+const TOKEN_REGISTRY_SLOT=word("miden::agglayer::bridge::token_registry")
+
+# Memory pointer for hashing token address
+const TOKEN_ADDR_HASH_PTR=900
 
 # Flags
 const GER_KNOWN_FLAG=1
@@ -96,40 +101,67 @@ pub proc assert_valid_ger
     # => []
 end
 
-#! Registers a faucet in the bridge's faucet registry.
+#! Registers a faucet in the bridge's faucet registry and token registry.
 #!
-#! Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
-#! `KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]`.
-#!
-#! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
-#! non-existent entries (SMTs return EMPTY_WORD for missing keys).
+#! 1. Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
+#!    `KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]`.
+#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_prefix, faucet_id_suffix, 0, 0]`
+#!    into the `token_registry` map.
 #!
 #! Panics if the note sender is not the bridge admin.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
+#! Inputs:  [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc register_faucet
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
-    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+    # => [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
+    push.111 debug.stack drop
+
+    # Save faucet ID for later use in token_registry
+    dup.6 dup.6
+    # => [faucet_id_prefix, faucet_id_suffix, origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+
+    # --- 1. Register faucet in faucet_registry ---
     # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
     push.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, faucet_id_prefix, faucet_id_suffix, pad(14)]
+    # => [1, faucet_id_prefix, faucet_id_suffix, origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
     movdn.7
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
+    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, 1], origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
-    # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]
-    # Stack: [slot0, slot1, [prefix, suffix, 0, 0], [0, 0, 0, 1], pad(9)]
+    exec.native_account::set_map_item
+    # => [OLD_VALUE(4), origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
+    dropw
+    # => [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+
+    # --- 2. Register token address → faucet ID in token_registry ---
+
+    # Hash the token address
+    exec.hash_token_address
+    # => [TOKEN_ADDR_HASH(4), faucet_id_prefix, faucet_id_suffix, pad(9)]
+
+    # Build VALUE = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    movup.5 movup.5
+    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH(4), pad(9)]
+
+    push.0.0 movup.3 movup.3
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH(4), pad(9)]
+
+    swapw
+    # => [TOKEN_ADDR_HASH(4), faucet_id_prefix, faucet_id_suffix, 0, 0, pad(9)]
+
+    push.TOKEN_REGISTRY_SLOT[0..2]
     exec.native_account::set_map_item
     # => [OLD_VALUE(4), pad(9)]
 
     dropw
+    # => [pad(9)]
 end
 
 #! Asserts that a faucet is registered in the bridge's faucet registry.
@@ -158,6 +190,62 @@ pub proc assert_faucet_registered
     drop drop drop
     assert.err=ERR_FAUCET_NOT_REGISTERED
     # => []
+end
+
+#! Looks up the faucet account ID for a given origin token address.
+#!
+#! Hashes the origin token address (5 felts) using RPO256 and looks up the result
+#! in the token_registry map. Returns the faucet account ID.
+#!
+#! Inputs:  [origin_token_addr(5)]
+#! Outputs: [faucet_id_prefix, faucet_id_suffix]
+#!
+#! Panics if:
+#! - the token address is not registered in the token registry.
+#!
+#! Invocation: exec
+pub proc lookup_faucet_by_token_address
+    # Hash the token address
+    exec.hash_token_address
+    # => [TOKEN_ADDR_HASH(4)]
+
+    push.TOKEN_REGISTRY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [VALUE(4)] = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+
+    # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
+    # Check that at least one of prefix/suffix is non-zero (unregistered entries return all zeros).
+    dup dup.2 or assert.err=ERR_TOKEN_NOT_REGISTERED
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
+
+    movup.2 drop movup.2 drop
+    # => [faucet_id_prefix, faucet_id_suffix]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
+#! Hashes a 5-felt origin token address using RPO256.
+#!
+#! Writes the 5 felts to memory and computes the RPO hash.
+#!
+#! Inputs:  [origin_token_addr(5)]
+#! Outputs: [TOKEN_ADDR_HASH(4)]
+#!
+#! Invocation: exec
+proc hash_token_address
+    # Write origin_token_addr[5] to memory for hashing
+    mem_store.TOKEN_ADDR_HASH_PTR
+    push.TOKEN_ADDR_HASH_PTR add.1 mem_store
+    push.TOKEN_ADDR_HASH_PTR add.2 mem_store
+    push.TOKEN_ADDR_HASH_PTR add.3 mem_store
+    push.TOKEN_ADDR_HASH_PTR add.4 mem_store
+    # => []
+
+    # Hash the token address: rpo256::hash_elements(num_elements=5, start_ptr)
+    push.5 push.TOKEN_ADDR_HASH_PTR
+    exec.rpo256::hash_elements
+    # => [TOKEN_ADDR_HASH(4)]
 end
 
 #! Asserts that the note sender matches the bridge admin stored in account storage.
