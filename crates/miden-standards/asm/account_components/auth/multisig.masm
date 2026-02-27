@@ -641,10 +641,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: call
-pub proc update_psm_public_key
-    exec.psm::update_psm_public_key
-end
-
+pub use psm::update_psm_public_key
 
 #! Authenticate a transaction using the signature scheme specified by scheme_id 
 #! with multi-signature support
