@@ -486,7 +486,7 @@ impl StorageMapDelta {
 
     /// Returns a reference to the updated entries in this storage map delta.
     ///
-    /// Note that the returned key is the raw map key.
+    /// Note that the returned key is the [`StorageMapKey`].
     pub fn entries(&self) -> &BTreeMap<LexicographicWord<StorageMapKey>, Word> {
         &self.0
     }
