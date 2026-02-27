@@ -304,8 +304,10 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
     # => [MULTISIG_CONFIG, pad(12)]
 
-    # make sure all existing procedure threshold overrides remain reachable
     loc_load.NEW_NUM_OF_APPROVERS_LOC
+    # => [num_approvers, MULTISIG_CONFIG, pad(12)]
+
+    # make sure that all existing procedure threshold overrides remain reachable
     exec.assert_proc_thresholds_lte_num_approvers
     # => [MULTISIG_CONFIG, pad(12)]
 
