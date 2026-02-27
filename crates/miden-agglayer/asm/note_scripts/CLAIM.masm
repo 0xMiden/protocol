@@ -158,17 +158,12 @@ begin
     movdn.8
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
 
-    push.111 debug.stack drop
-
     # call the Bridge Claim procedure
     call.bridge::claim
     # => [pad(16), pad(7)]
 
-    sdepth push.666 debug.stack drop drop
-
     # a call invocation consumes and returns 16 elements, but we had trailing padding
     dropw dropw dropw
 
-    sdepth push.777 debug.stack drop drop
     # => [pad(16)]
 end

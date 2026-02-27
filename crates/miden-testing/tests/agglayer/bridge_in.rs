@@ -164,13 +164,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     );
     builder.add_account(agglayer_faucet.clone())?;
 
-    println!("origin address: {:?}", leaf_data.origin_token_address.to_elements());
-    println!(
-        "agg faucet id: {:?} {:?}",
-        agglayer_faucet.id().prefix(),
-        agglayer_faucet.id().suffix()
-    );
-
     // Get the destination account ID from the leaf data.
     // This requires the destination_address to be in the embedded Miden AccountId format
     // (first 4 bytes must be zero).
@@ -297,8 +290,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     mock_chain.add_pending_executed_transaction(&claim_executed)?;
     mock_chain.prove_next_block()?;
 
-    println!("tx 3");
-
     // TX3: EXECUTE MINT NOTE AGAINST AGGFAUCET (mints asset, creates P2ID note)
     // --------------------------------------------------------------------------------------------
     let mint_tx_context = mock_chain
@@ -308,7 +299,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     let mint_executed = mint_tx_context.execute().await?;
 
-    println!("311");
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
 
