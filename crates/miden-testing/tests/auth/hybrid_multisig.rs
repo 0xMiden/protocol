@@ -116,12 +116,12 @@ fn create_multisig_account_with_psm(
 ) -> anyhow::Result<Account> {
     let approvers = approvers
         .iter()
-        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment().into(), *auth_scheme))
+        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
         .collect();
 
     let config = AuthMultisigConfig::new(approvers, threshold)?
         .with_proc_thresholds(proc_threshold_map)?
-        .with_psm((psm.0.to_commitment().into(), psm.1))?;
+        .with_psm((psm.0.to_commitment(), psm.1))?;
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisig::new(config)?)
