@@ -541,19 +541,18 @@ mod tests {
         assert_eq!(psm_config, AuthMultisig::psm_config_disabled_uninitialized());
 
         // Verify no private state manager is configured by default.
-        assert!(
-            account
-                .storage()
-                .get_map_item(AuthMultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]),)
-                .is_err()
-        );
+        // Missing storage-map entries read back as the map's empty value.
+        let psm_public_key = account
+            .storage()
+            .get_map_item(AuthMultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager public key storage map access failed");
+        assert_eq!(psm_public_key, Word::from([0u32, 0, 0, 0]));
 
-        assert!(
-            account
-                .storage()
-                .get_map_item(AuthMultisig::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]),)
-                .is_err()
-        );
+        let psm_scheme_id = account
+            .storage()
+            .get_map_item(AuthMultisig::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager scheme ID storage map access failed");
+        assert_eq!(psm_scheme_id, Word::from([0u32, 0, 0, 0]));
     }
 
     /// Test multisig component with minimum threshold (1 of 1)
