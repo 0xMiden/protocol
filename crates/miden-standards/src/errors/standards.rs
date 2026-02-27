@@ -39,6 +39,9 @@ pub const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::fr
 /// Error Message: "note tag length can be at most 32"
 pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError::from_static_str("note tag length can be at most 32");
 
+/// Error Message: "max allowed approver count must be u32"
+pub const ERR_MAX_ALLOWED_NOT_U32: MasmError = MasmError::from_static_str("max allowed approver count must be u32");
+
 /// Error Message: "attachment is not a valid network account target"
 pub const ERR_NOT_NETWORK_ACCOUNT_TARGET: MasmError = MasmError::from_static_str("attachment is not a valid network account target");
 
@@ -57,6 +60,11 @@ pub const ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::f
 pub const ERR_P2ID_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("P2ID's target account address and transaction address do not match");
 /// Error Message: "P2ID note expects exactly 2 note storage items"
 pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("P2ID note expects exactly 2 note storage items");
+
+/// Error Message: "procedure threshold exceeds new number of approvers"
+pub const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS: MasmError = MasmError::from_static_str("procedure threshold exceeds new number of approvers");
+/// Error Message: "procedure threshold must be u32"
+pub const ERR_PROC_THRESHOLD_NOT_U32: MasmError = MasmError::from_static_str("procedure threshold must be u32");
 
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");

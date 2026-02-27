@@ -22,7 +22,10 @@ use miden_standards::account::components::multisig_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_TX_ALREADY_EXECUTED;
+use miden_standards::errors::standards::{
+    ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_TX_ALREADY_EXECUTED,
+};
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
@@ -843,6 +846,75 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         non_empty_count, 2,
         "Should have exactly 2 non-empty keys after removing 3 owners"
     );
+
+    Ok(())
+}
+
+/// Tests that signer updates are rejected when stored procedure threshold overrides would become
+/// unreachable for the new signer set.
+#[tokio::test]
+async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds() -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators(3, 2)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    // Configure a procedure override that is valid for the initial signer set (3-of-3),
+    // but invalid after updating to 2 signers.
+    let multisig_account =
+        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_digest(), 3)])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let new_public_keys = &public_keys[0..2];
+    let new_auth_schemes = &auth_schemes[0..2];
+    let threshold = 2u64;
+    let num_of_approvers = 2u64;
+
+    let mut config_and_pubkeys_vector =
+        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
+
+    for (public_key, auth_scheme) in new_public_keys.iter().rev().zip(new_auth_schemes.iter().rev())
+    {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(*auth_scheme as u64),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
+    }
+
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script("begin\n    call.::multisig::update_signers_and_threshold\nend")?;
+
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let salt = Word::from([Felt::new(8); 4]);
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
 
     Ok(())
 }

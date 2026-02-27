@@ -82,6 +82,12 @@ const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be
 
 const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 
+const ERR_MAX_ALLOWED_NOT_U32 = "max allowed approver count must be u32"
+
+const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
+
+const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
+
 #! Check if transaction has already been executed and add it to executed transactions for replay protection.
 #!
 #! Inputs:  [MSG]
@@ -187,6 +193,61 @@ proc create_approver_map_key(key_index: felt) -> BeWord
     # => [APPROVER_MAP_KEY]
 end
 
+#! Asserts that all configured per-procedure threshold overrides are less than or equal to 
+#! number of approvers 
+#!
+#! Inputs:  [num_approvers]
+#! Outputs: []
+#! Panics if:
+#! - num_approvers is not a u32 value.
+#! - any configured procedure threshold is not a u32 value.
+#! - any configured procedure threshold exceeds num_approvers.
+proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
+    u32assert.err=ERR_MAX_ALLOWED_NOT_U32
+    # => [num_approvers]
+
+    exec.active_account::get_num_procedures
+    # => [num_procedures, num_approvers]
+
+    dup neq.0
+    # => [should_continue, num_procedures, num_approvers]
+    while.true
+        sub.1 dup
+        # => [procedure_index, procedure_index, num_approvers]
+
+        exec.active_account::get_procedure_root
+        # => [PROC_ROOT, procedure_index, num_approvers]
+
+        push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+        # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, procedure_index, num_approvers]
+
+        exec.active_account::get_map_item
+        # => [[0, 0, 0, proc_threshold], procedure_index, num_approvers]
+
+        drop drop drop
+        # => [proc_threshold, procedure_index, num_approvers]
+
+        dup neq.0
+        # => [has_override, proc_threshold, procedure_index, num_approvers]
+        if.true
+            dup.2
+            # => [max_allowed, proc_threshold, procedure_index, num_approvers]
+
+            u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
+            u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+            # => [procedure_index, num_approvers]
+        else
+            drop
+            # => [procedure_index, num_approvers]
+        end
+
+        dup neq.0
+        # => [should_continue, procedure_index, num_approvers]
+    end
+
+    drop drop
+end
+
 #! Update threshold config, add / remove approvers,
 #! and update the approver scheme ids
 #! 
@@ -241,6 +302,11 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # make sure that threshold or num_approvers are not zero
     eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
     eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    # make sure all existing procedure threshold overrides remain reachable
+    loc_load.NEW_NUM_OF_APPROVERS_LOC
+    exec.assert_proc_thresholds_lte_num_approvers
     # => [MULTISIG_CONFIG, pad(12)]
 
     push.THRESHOLD_CONFIG_SLOT[0..2]
