@@ -267,10 +267,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
         let scheme_id_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
-                (
-                    StorageMapKey::from_index(i as u32),
-                    Word::from([*auth_scheme as u32, 0, 0, 0]),
-                )
+                (StorageMapKey::from_index(i as u32), Word::from([*auth_scheme as u32, 0, 0, 0]))
             });
 
         storage_slots.push(StorageSlot::with_map(
