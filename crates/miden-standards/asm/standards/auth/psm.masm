@@ -2,7 +2,7 @@
 # This component is composed into account auth flows especially for multisig and adds
 # an extra signature check by a dedicated private state manager signer.
 #
-# Private State Manager (PSM) is a cloud backup and syncronization layer for Miden private accounts
+# Private State Manager (PSM) is a cloud backup and synchronization layer for Miden private accounts
 # See: https://github.com/OpenZeppelin/private-state-manager
 
 use miden::protocol::active_account
