@@ -83,7 +83,7 @@ pub(crate) enum TransactionEvent {
 
     AccountStorageAfterSetMapItem {
         slot_name: StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
         old_value: Word,
         new_value: Word,
     },
@@ -297,6 +297,7 @@ impl TransactionEvent {
                 let old_value = process.get_stack_word_be(6);
                 let new_value = process.get_stack_word_be(10);
 
+                let key = StorageMapKey::from_raw(key);
                 // Resolve slot ID to slot name.
                 let (slot_id, ..) = process.get_storage_slot(slot_ptr)?;
                 let slot_header = base_host.initial_account_storage_slot(slot_id)?;

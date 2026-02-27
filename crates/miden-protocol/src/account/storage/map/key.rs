@@ -3,6 +3,13 @@ use alloc::string::String;
 use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH};
 use miden_protocol_macros::WordWrapper;
 
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Hasher, Word};
 
 // STORAGE MAP KEY
@@ -19,6 +26,23 @@ use crate::{Felt, Hasher, Word};
 pub struct StorageMapKey(Word);
 
 impl StorageMapKey {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// The serialized size of the map key in bytes.
+    pub const SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the storage map key based on an empty word.
+    pub fn empty() -> Self {
+        Self::from_raw(Word::empty())
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Hashes this raw map key to produce a [`StorageMapKeyHash`].
     ///
     /// Storage map keys are hashed before being inserted into the SMT to ensure a uniform
@@ -31,6 +55,29 @@ impl StorageMapKey {
 impl From<StorageMapKey> for Word {
     fn from(key: StorageMapKey) -> Self {
         key.0
+    }
+}
+
+impl core::fmt::Display for StorageMapKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("{}", self.as_word()))
+    }
+}
+
+impl Serializable for StorageMapKey {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        target.write_many(self.as_word());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Self::SERIALIZED_SIZE
+    }
+}
+
+impl Deserializable for StorageMapKey {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let key = source.read()?;
+        Ok(StorageMapKey::from_raw(key))
     }
 }
 

@@ -171,13 +171,9 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let mock_map = AccountStorage::mock_map();
     let existing_key = *mock_map.entries().next().unwrap().0;
 
-    let non_existent_key = Word::from([5, 5, 5, 5u32]);
+    let non_existent_key = StorageMapKey::from_array([5, 5, 5, 5u32]);
     assert!(
-        mock_map
-            .open(&StorageMapKey::from_raw(non_existent_key))
-            .get(StorageMapKey::from_raw(non_existent_key))
-            .unwrap()
-            == Word::empty(),
+        mock_map.open(&non_existent_key).get(non_existent_key).unwrap() == Word::empty(),
         "test setup requires that the non existent key does not exist"
     );
 
@@ -247,13 +243,9 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
     let mock_map = AccountStorage::mock_map();
     let (existing_key, existing_value) = mock_map.entries().next().unwrap();
 
-    let non_existent_key = Word::from([5, 5, 5, 5u32]);
+    let non_existent_key = StorageMapKey::from_array([5, 5, 5, 5u32]);
     assert!(
-        mock_map
-            .open(&StorageMapKey::from_raw(non_existent_key))
-            .get(StorageMapKey::from_raw(non_existent_key))
-            .unwrap()
-            == Word::empty(),
+        mock_map.open(&non_existent_key).get(non_existent_key).unwrap() == Word::empty(),
         "test setup requires that the non existent key does not exist"
     );
 

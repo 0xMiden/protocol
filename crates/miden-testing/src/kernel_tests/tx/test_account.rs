@@ -82,7 +82,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
     // Precompute a commitment to a changed account so we can assert it during tx script execution.
     let mut account_clone = account.clone();
-    let key = Word::from([1, 2, 3, 4u32]);
+    let key = StorageMapKey::from_raw(Word::from([1, 2, 3, 4u32]));
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
@@ -680,8 +680,10 @@ async fn test_set_item() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_map_item() -> anyhow::Result<()> {
-    let (new_key, new_value) =
-        (Word::from([109, 110, 111, 112u32]), Word::from([9, 10, 11, 12u32]));
+    let (new_key, new_value) = (
+        StorageMapKey::from_array([109, 110, 111, 112u32]),
+        Word::from([9, 10, 11, 12u32]),
+    );
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -745,9 +747,7 @@ async fn test_set_map_item() -> anyhow::Result<()> {
     );
 
     let old_value_for_key = match slot.content() {
-        StorageSlotContent::Map(original_map) => {
-            original_map.get(&StorageMapKey::from_raw(new_key))
-        },
+        StorageSlotContent::Map(original_map) => original_map.get(&new_key),
         _ => panic!("expected map"),
     };
     assert_eq!(
@@ -826,7 +826,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     account_storage.set_map_item(
         mock_map_slot,
-        [101, 102, 103, 104].map(Felt::new).into(),
+        StorageMapKey::from_array([101, 102, 103, 104u32]),
         [5, 6, 7, 8].map(Felt::new).into(),
     )?;
     let storage_commitment_map = account_storage.to_commitment();
@@ -940,7 +940,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
             let expected = &BTreeMap::from_iter(
             map_entries
                 .into_iter()
-                .map(|(key, value)| { (LexicographicWord::new(key), value) })
+                .map(|(key, value)| { (LexicographicWord::new(StorageMapKey::from_raw(key)), value) })
             );
             assert_eq!(expected, map_delta.entries())
         }

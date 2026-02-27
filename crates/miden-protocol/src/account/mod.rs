@@ -576,6 +576,7 @@ mod tests {
         PartialAccount,
         StorageMap,
         StorageMapDelta,
+        StorageMapKey,
         StorageSlot,
         StorageSlotContent,
         StorageSlotName,
@@ -660,14 +661,11 @@ mod tests {
         );
 
         // update storage map
-        let new_map_entry = (
-            Word::new([Felt::new(101), Felt::new(102), Felt::new(103), Felt::new(104)]),
-            [Felt::new(9_u64), Felt::new(10_u64), Felt::new(11_u64), Felt::new(12_u64)],
-        );
+        let key = StorageMapKey::from_array([101, 102, 103, 104]);
+        let value = Word::from([9, 10, 11, 12u32]);
 
-        let updated_map =
-            StorageMapDelta::from_iters([], [(new_map_entry.0, new_map_entry.1.into())]);
-        storage_map.insert(new_map_entry.0, new_map_entry.1.into()).unwrap();
+        let updated_map = StorageMapDelta::from_iters([], [(key.as_word(), value)]);
+        storage_map.insert(key, value).unwrap();
 
         // build account delta
         let final_nonce = Felt::new(2);

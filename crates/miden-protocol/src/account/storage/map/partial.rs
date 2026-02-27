@@ -25,11 +25,11 @@ use crate::utils::serde::{ByteReader, DeserializationError};
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PartialStorageMap {
     partial_smt: PartialSmt,
-    /// The entries of the map where the key is the raw user-chosen one.
+    /// The entries of the map that retains the original unhashed keys (i.e. [`StorageMapKey`]).
     ///
     /// It is an invariant of this type that the map's entries are always consistent with the
     /// partial SMT's entries and vice-versa.
-    entries: BTreeMap<Word, Word>,
+    entries: BTreeMap<StorageMapKey, Word>,
 }
 
 impl PartialStorageMap {
@@ -113,7 +113,7 @@ impl PartialStorageMap {
     /// - the key is not tracked by this partial storage map.
     pub fn open(&self, key: &StorageMapKey) -> Result<StorageMapWitness, MerkleError> {
         let smt_proof = self.partial_smt.open(&key.hash().as_word())?;
-        let value = self.entries.get(&key.as_word()).copied().unwrap_or_default();
+        let value = self.entries.get(key).copied().unwrap_or_default();
 
         // SAFETY: The key value pair is guaranteed to be present in the provided proof since we
         // open its hashed version and because of the guarantees of the partial storage map.
@@ -129,9 +129,7 @@ impl PartialStorageMap {
     }
 
     /// Returns an iterator over the key-value pairs in this storage map.
-    ///
-    /// Note that the returned key is the raw map key.
-    pub fn entries(&self) -> impl Iterator<Item = (&Word, &Word)> {
+    pub fn entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> {
         self.entries.iter()
     }
 
@@ -166,8 +164,8 @@ impl Deserializable for PartialStorageMap {
         let num_entries: usize = source.read()?;
 
         for _ in 0..num_entries {
-            let key: Word = source.read()?;
-            let hashed_map_key: Word = StorageMapKey::from_raw(key).hash().into();
+            let key: StorageMapKey = source.read()?;
+            let hashed_map_key: Word = key.hash().into();
             let value = partial_smt.get_value(&hashed_map_key).map_err(|err| {
                 DeserializationError::InvalidValue(format!(
                     "failed to find map key {key} in partial SMT: {err}"
