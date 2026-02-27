@@ -35,9 +35,22 @@ impl StorageMapKey {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
+    /// Creates a new [`StorageMapKey`] from the given word.
+    pub fn new(word: Word) -> Self {
+        Self::from_raw(word)
+    }
+
     /// Returns the storage map key based on an empty word.
     pub fn empty() -> Self {
         Self::from_raw(Word::empty())
+    }
+
+    /// Creates a [`StorageMapKey`] from a `u32` index.
+    ///
+    /// This is a convenience constructor for the common pattern of using sequential indices
+    /// as storage map keys, producing a key of `[idx, 0, 0, 0]`.
+    pub fn from_index(idx: u32) -> Self {
+        Self::from_raw(Word::from([idx, 0, 0, 0]))
     }
 
     // PUBLIC ACCESSORS

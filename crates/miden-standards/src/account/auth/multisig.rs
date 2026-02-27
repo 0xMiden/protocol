@@ -255,7 +255,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Approver public keys slot (map)
         let map_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (pub_key, _))| {
-                (StorageMapKey::from_raw(Word::from([i as u32, 0, 0, 0])), Word::from(*pub_key))
+                (StorageMapKey::from_index(i as u32), Word::from(*pub_key))
             });
 
         // Safe to unwrap because we know that the map keys are unique.
@@ -268,7 +268,7 @@ impl From<AuthMultisig> for AccountComponent {
         let scheme_id_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
                 (
-                    StorageMapKey::from_raw(Word::from([i as u32, 0, 0, 0])),
+                    StorageMapKey::from_index(i as u32),
                     Word::from([*auth_scheme as u32, 0, 0, 0]),
                 )
             });
