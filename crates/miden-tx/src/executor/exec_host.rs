@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountDelta,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageSlotId,
     StorageSlotName,
 };
@@ -283,7 +284,7 @@ where
         &self,
         active_account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let storage_map_witness = self
             .base_host

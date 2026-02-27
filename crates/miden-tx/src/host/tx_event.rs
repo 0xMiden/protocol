@@ -95,7 +95,7 @@ pub(crate) enum TransactionEvent {
         /// The root of the storage map for which a witness is requested.
         map_root: Word,
         /// The raw map key for which a witness is requested.
-        map_key: Word,
+        map_key: StorageMapKey,
     },
 
     /// The data necessary to request an asset witness from the data store.
@@ -278,6 +278,7 @@ impl TransactionEvent {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
                 let map_key = process.get_stack_word_be(2);
+                let map_key = StorageMapKey::from_raw(map_key);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
             },
@@ -286,6 +287,7 @@ impl TransactionEvent {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
                 let map_key = process.get_stack_word_be(2);
+                let map_key = StorageMapKey::from_raw(map_key);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
             },
@@ -588,7 +590,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
     process: &ProcessState,
     slot_ptr: Felt,
-    map_key: Word,
+    map_key: StorageMapKey,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
     let (slot_id, slot_type, current_map_root) = process.get_storage_slot(slot_ptr)?;
 
@@ -599,7 +601,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     }
 
     let active_account_id = process.get_active_account_id()?;
-    let leaf_index: Felt = StorageMapKey::from_raw(map_key)
+    let leaf_index: Felt = map_key
         .hash()
         .to_leaf_index()
         .value()

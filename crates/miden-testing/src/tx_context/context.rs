@@ -328,7 +328,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
             if account_id == self.account().id() {
@@ -350,7 +350,7 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(storage_map.open(&StorageMapKey::from_raw(map_key)))
+                Ok(storage_map.open(&map_key))
             } else {
                 let (foreign_account, _witness) = self
                     .foreign_account_inputs
@@ -380,7 +380,7 @@ impl DataStore for TransactionContext {
                         ))
                     })?;
 
-                Ok(map.open(&StorageMapKey::from_raw(map_key)))
+                Ok(map.open(&map_key))
             }
         }
     }
