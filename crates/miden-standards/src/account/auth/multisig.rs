@@ -332,8 +332,8 @@ impl AuthMultisig {
             Self::psm_public_key_slot().clone(),
             StorageSlotSchema::map(
                 "Private state manager public keys",
-                SchemaTypeId::u32(),
-                SchemaTypeId::pub_key(),
+                SchemaType::u32(),
+                SchemaType::pub_key(),
             ),
         )
     }
@@ -344,8 +344,8 @@ impl AuthMultisig {
             Self::psm_scheme_id_slot().clone(),
             StorageSlotSchema::map(
                 "Private state manager scheme IDs",
-                SchemaTypeId::u32(),
-                SchemaTypeId::auth_scheme(),
+                SchemaType::u32(),
+                SchemaType::auth_scheme(),
             ),
         )
     }
@@ -599,7 +599,7 @@ mod tests {
 
     /// Test multisig component setup with a private state manager.
     #[test]
-    fn test_multisig_component_with_private_state_manager() {
+    fn test_multisig_component_with_psm() {
         let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
         let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
         let psm_key = AuthSecretKey::new_ecdsa_k256_keccak();
