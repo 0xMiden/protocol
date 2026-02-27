@@ -104,12 +104,11 @@ const BUILD_MINT_PREFIX_MEM_LOC = 8
 const BUILD_MINT_FAUCET_PREFIX_LOC = 10
 const BUILD_MINT_FAUCET_SUFFIX_LOC = 11
 
-# MINT note storage layout (private mode, 12 items):
-# [tag, amount, attachment_kind, attachment_scheme, ATTACHMENT(4), RECIPIENT_DIGEST(4)]
-const MINT_NOTE_NUM_STORAGE_ITEMS = 12
+# MINT note storage layout (public mode, 18 items):
+const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 const MINT_NOTE_TYPE_PUBLIC = 1
 
-# P2ID output note constants
+# MINT note output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
@@ -504,11 +503,11 @@ end
 #!
 #! Invocation: exec
 proc get_origin_token_address
-    mem_load.ORIGIN_TOKEN_ADDRESS_0
-    mem_load.ORIGIN_TOKEN_ADDRESS_1
-    mem_load.ORIGIN_TOKEN_ADDRESS_2
-    mem_load.ORIGIN_TOKEN_ADDRESS_3
     mem_load.ORIGIN_TOKEN_ADDRESS_4
+    mem_load.ORIGIN_TOKEN_ADDRESS_3
+    mem_load.ORIGIN_TOKEN_ADDRESS_2
+    mem_load.ORIGIN_TOKEN_ADDRESS_1
+    mem_load.ORIGIN_TOKEN_ADDRESS_0
     # => [origin_token_addr(5)]
 end
 

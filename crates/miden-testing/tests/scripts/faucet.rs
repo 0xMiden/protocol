@@ -597,6 +597,9 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         &mut rng,
     )?;
 
+    println!("mint note script: {:?}", mint_note.script().root());
+    println!("mint note storage: {:?}", mint_note.storage().to_elements());
+
     // Add the MINT note to the mock chain
     builder.add_output_note(OutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
@@ -1257,6 +1260,9 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteAttachment::default(),
         &mut rng,
     )?;
+
+    println!("mint note public storage: {:?}", mint_note.storage().to_elements());
+    println!("num elements: {:?}", mint_note.storage().num_items());
 
     builder.add_output_note(OutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;

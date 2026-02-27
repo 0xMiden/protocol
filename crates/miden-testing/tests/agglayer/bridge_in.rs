@@ -163,6 +163,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     );
     builder.add_account(agglayer_faucet.clone())?;
 
+    println!("origin address: {:?}", leaf_data.origin_token_address.to_elements());
+    println!("agg faucet id: {:?} {:?}", agglayer_faucet.id().prefix(), agglayer_faucet.id().suffix());
+
     // Get the destination account ID from the leaf data.
     // This requires the destination_address to be in the embedded Miden AccountId format
     // (first 4 bytes must be zero).

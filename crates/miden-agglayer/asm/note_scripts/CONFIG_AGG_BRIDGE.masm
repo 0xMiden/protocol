@@ -67,8 +67,6 @@ begin
     padw mem_loadw_le.STORAGE_START_PTR
     # => [addr4, addr3, addr2, addr1, addr0, faucet_id_prefix, faucet_id_suffix, pad(12)]
 
-    debug.stack
-
     # Register the faucet in the bridge
     call.bridge_config::register_faucet
     # => [pad(16)]
