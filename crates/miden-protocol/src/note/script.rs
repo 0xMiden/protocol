@@ -5,6 +5,7 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
+use miden_mast_package::{MastArtifact, Package};
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -137,6 +138,30 @@ impl NoteScript {
         let (mast, entrypoint) = create_external_node_forest(digest);
 
         Ok(Self { mast: Arc::new(mast), entrypoint })
+    }
+
+    /// Creates an [`NoteScript`] from a [`Package`].
+    ///
+    /// # Arguments
+    ///
+    /// * `package` - The package containing the
+    ///   [`Library`](miden_mast_package::MastArtifact::Executable).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The package does not contain an executable artifact
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
+        let program = match &package.mast {
+            MastArtifact::Executable(executable) => executable.as_ref().clone(),
+            MastArtifact::Library(_) => {
+                return Err(NoteError::other(
+                    "expected Package to contain an executable, but got a library",
+                ));
+            },
+        };
+
+        Ok(NoteScript::from_parts(program.mast_forest().clone(), program.entrypoint()))
     }
 
     // PUBLIC ACCESSORS
