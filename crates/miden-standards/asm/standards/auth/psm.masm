@@ -50,15 +50,15 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 
 # The slot in this component's storage layout where the PSM configuration is stored.
 # [is_psm_signature_required, is_psm_initialized, 0, 0]
-const PSM_CONFIG_SLOT = word("miden::standards::auth::multisig::private_state_manager_config")
+const PSM_CONFIG_SLOT = word("miden::standards::auth::psm::config")
 
 # The slot in this component's storage layout where the PSM public key map is stored.
 # Map entries: [PSM_MAP_KEY] => [PSM_PUBLIC_KEY]
-const PSM_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::psm_public_key")
+const PSM_PUBLIC_KEYS_SLOT = word("miden::standards::auth::psm::pub_key")
 
 # The slot in this component's storage layout where the scheme id for the corresponding PSM public key map is stored.
 # Map entries: [PSM_MAP_KEY] => [scheme_id, 0, 0, 0]
-const PSM_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::psm_scheme")
+const PSM_SCHEME_ID_SLOT = word("miden::standards::auth::psm::scheme")
 
 # Single-entry storage map key where private state manager signer data is stored.
 const PSM_MAP_KEY = [0, 0, 0, 0]
@@ -236,10 +236,8 @@ pub proc verify_psm_signature(msg: BeWord)
     # => [is_psm_initialized, MSG]
 
     if.true
-        # Read current config (not initial config) so auth flow can honor temporary
-        # requirement toggles done earlier in the same transaction.
-        push.PSM_CONFIG_SLOT[0..2]
-        exec.active_account::get_item
+        # Use current config to apply temporary PSM changes in this tx.
+        push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
         # => [0, 0, is_psm_initialized, is_psm_signature_required, MSG]
 
         drop drop drop
@@ -248,16 +246,25 @@ pub proc verify_psm_signature(msg: BeWord)
         if.true
             # Verify exactly one signature from the configured private state manager signer.
             push.1
+            # => [1, MSG]
+
             push.PSM_PUBLIC_KEYS_SLOT[0..2]
+            # => [psm_pubkeys_slot_prefix, psm_pubkeys_slot_suffix, 1, MSG]
+
             push.PSM_SCHEME_ID_SLOT[0..2]
+            # => [psm_scheme_slot_prefix, psm_scheme_slot_suffix, psm_pubkeys_slot_prefix, psm_pubkeys_slot_suffix, 1, MSG]
+
             exec.signature::verify_signatures
             # => [num_verified_signatures, MSG]
 
             push.1 neq
+            # => [is_not_exactly_one, MSG]
+
             if.true
                 emit.AUTH_UNAUTHORIZED_EVENT
                 push.0 assert.err=ERR_INVALID_PSM_SIGNATURE
             end
+            # => [MSG]
         end
         # => [MSG]
 

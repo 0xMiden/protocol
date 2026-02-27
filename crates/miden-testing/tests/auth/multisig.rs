@@ -103,10 +103,10 @@ fn create_multisig_account(
 }
 
 /// Creates a multisig account configured with a private state manager signer.
-fn create_multisig_account_with_private_state_manager(
+fn create_multisig_account_with_psm(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
-    private_state_manager: (PublicKey, AuthScheme),
+    psm: (PublicKey, AuthScheme),
     asset_amount: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
@@ -117,10 +117,7 @@ fn create_multisig_account_with_private_state_manager(
 
     let config = AuthMultisigConfig::new(approvers, threshold)?
         .with_proc_thresholds(proc_threshold_map)?
-        .with_private_state_manager((
-            private_state_manager.0.to_commitment().into(),
-            private_state_manager.1,
-        ))?;
+        .with_psm((psm.0.to_commitment().into(), psm.1))?;
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisig::new(config)?)
@@ -240,7 +237,7 @@ async fn test_multisig_2_of_2_with_note_creation(
 /// Tests that multisig authentication requires an additional private state manager signature when
 /// configured.
 #[tokio::test]
-async fn test_multisig_private_state_manager_signature_required() -> anyhow::Result<()> {
+async fn test_multisig_psm_signature_required() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let approvers = public_keys
@@ -253,16 +250,14 @@ async fn test_multisig_private_state_manager_signature_required() -> anyhow::Res
     let psm_public_key = psm_secret_key.public_key();
     let psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&psm_secret_key));
 
-    let mut multisig_account = create_multisig_account_with_private_state_manager(
+    let mut multisig_account = create_multisig_account_with_psm(
         2,
         &approvers,
         (psm_public_key.clone(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
-    let psm_config = multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_enabled_initialized());
 
     let output_note_asset = FungibleAsset::mock(0);
@@ -328,9 +323,7 @@ async fn test_multisig_private_state_manager_signature_required() -> anyhow::Res
         .await?;
 
     multisig_account.apply_delta(tx_context_execute.account_delta())?;
-    let psm_config = multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_enabled_initialized());
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
@@ -348,7 +341,7 @@ async fn test_multisig_private_state_manager_signature_required() -> anyhow::Res
 
 /// Tests that the private state manager public key can be updated and then enforced.
 #[tokio::test]
-async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Result<()> {
+async fn test_multisig_update_psm_public_key() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let approvers = public_keys
@@ -365,16 +358,14 @@ async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Resu
     let new_psm_public_key = new_psm_secret_key.public_key();
     let new_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&new_psm_secret_key));
 
-    let multisig_account = create_multisig_account_with_private_state_manager(
+    let multisig_account = create_multisig_account_with_psm(
         2,
         &approvers,
         (old_psm_public_key.clone(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
-    let psm_config = multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_enabled_initialized());
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
@@ -425,15 +416,12 @@ async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Resu
 
     let mut updated_multisig_account = multisig_account.clone();
     updated_multisig_account.apply_delta(update_psm_tx.account_delta())?;
-    let psm_config = updated_multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = updated_multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_enabled_initialized());
 
-    let updated_psm_public_key = updated_multisig_account.storage().get_map_item(
-        AuthMultisig::private_state_manager_public_keys_slot(),
-        Word::from([0u32, 0, 0, 0]),
-    )?;
+    let updated_psm_public_key = updated_multisig_account
+        .storage()
+        .get_map_item(AuthMultisig::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))?;
     assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
 
     mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
@@ -471,9 +459,7 @@ async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Resu
         .execute()
         .await?;
     updated_multisig_account.apply_delta(reenable_tx.account_delta())?;
-    let psm_config = updated_multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = updated_multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_enabled_initialized());
 
     mock_chain.add_pending_executed_transaction(&reenable_tx)?;
@@ -534,8 +520,7 @@ async fn test_multisig_update_private_state_manager_public_key() -> anyhow::Resu
 
 /// Tests strict mode behavior: accounts created without PSM support cannot initialize it later.
 #[tokio::test]
-async fn test_multisig_update_private_state_manager_public_key_requires_capability()
--> anyhow::Result<()> {
+async fn test_multisig_update_psm_public_key_requires_capability() -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, _authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
     let approvers = public_keys
@@ -546,9 +531,7 @@ async fn test_multisig_update_private_state_manager_public_key_requires_capabili
 
     // Create a regular multisig account with no private state manager initialization configured.
     let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
-    let psm_config = multisig_account
-        .storage()
-        .get_item(AuthMultisig::private_state_manager_config_slot())?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisig::psm_config_slot())?;
     assert_eq!(psm_config, AuthMultisig::psm_config_disabled_uninitialized());
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
