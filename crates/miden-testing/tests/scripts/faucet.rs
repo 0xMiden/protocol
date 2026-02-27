@@ -1234,6 +1234,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     )
     .unwrap();
 
+    println!("p2id script: {:?}", p2id_mint_output_note.script().root());
+
     // Create MINT note based on note type
     let mint_storage = match note_type {
         NoteType::Private => {

@@ -95,6 +95,9 @@ pub proc main
         push.OUTPUT_PUBLIC_NOTE_STORAGE_ADDR
         # => [storage_ptr, num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
 
+
+        push.202 debug.stack drop
+
         exec.note::build_recipient
         # => [RECIPIENT, pad(12)]
 

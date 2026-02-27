@@ -26,6 +26,7 @@ use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{AccountState, Auth, MockChain, TransactionContextBuilder};
@@ -302,10 +303,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
     let mint_tx_context = mock_chain
         .build_tx_context(agglayer_faucet.id(), &[mint_output_note.id()], &[])?
+        .add_note_script(P2idNote::script())
         .build()?;
 
     let mint_executed = mint_tx_context.execute().await?;
 
+    println!("311");
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
 

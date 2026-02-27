@@ -600,6 +600,8 @@ proc build_mint_output_note
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT(4), pad(16)]
 
+    exec.word::reverse
+
     push.MINT_NOTE_STORAGE_MEM_ADDR add.8 mem_store
     push.MINT_NOTE_STORAGE_MEM_ADDR add.9 mem_store
     push.MINT_NOTE_STORAGE_MEM_ADDR add.10 mem_store
@@ -609,6 +611,8 @@ proc build_mint_output_note
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM(4), pad(16)]
+
+    exec.word::reverse
 
     push.MINT_NOTE_STORAGE_MEM_ADDR add.12 mem_store
     push.MINT_NOTE_STORAGE_MEM_ADDR add.13 mem_store
