@@ -533,16 +533,18 @@ impl StorageMapDelta {
 impl StorageMapDelta {
     /// Creates a new [StorageMapDelta] from the provided iterators.
     pub fn from_iters(
-        cleared_leaves: impl IntoIterator<Item = Word>,
-        updated_leaves: impl IntoIterator<Item = (Word, Word)>,
+        cleared_leaves: impl IntoIterator<Item = StorageMapKey>,
+        updated_leaves: impl IntoIterator<Item = (StorageMapKey, Word)>,
     ) -> Self {
         Self(BTreeMap::from_iter(
             cleared_leaves
                 .into_iter()
-                .map(|key| (LexicographicWord::new(StorageMapKey::from_raw(key)), EMPTY_WORD))
-                .chain(updated_leaves.into_iter().map(|(key, value)| {
-                    (LexicographicWord::new(StorageMapKey::from_raw(key)), value)
-                })),
+                .map(|key| (LexicographicWord::new(key), EMPTY_WORD))
+                .chain(
+                    updated_leaves
+                        .into_iter()
+                        .map(|(key, value)| (LexicographicWord::new(key), value)),
+                ),
         ))
     }
 
@@ -712,13 +714,16 @@ mod tests {
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
 
-        let storage_map_delta = StorageMapDelta::from_iters([Word::from([ONE, ONE, ONE, ONE])], []);
+        let storage_map_delta =
+            StorageMapDelta::from_iters([StorageMapKey::from_array([1, 1, 1, 1])], []);
         let serialized = storage_map_delta.to_bytes();
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
 
-        let storage_map_delta =
-            StorageMapDelta::from_iters([], [(Word::empty(), Word::from([ONE, ONE, ONE, ONE]))]);
+        let storage_map_delta = StorageMapDelta::from_iters(
+            [],
+            [(StorageMapKey::from_raw(Word::empty()), Word::from([ONE, ONE, ONE, ONE]))],
+        );
         let serialized = storage_map_delta.to_bytes();
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, storage_map_delta);
@@ -745,8 +750,8 @@ mod tests {
         assert_eq!(deserialized, slot_delta);
 
         let map_delta = StorageMapDelta::from_iters(
-            [Word::from([1, 2, 3, 4u32])],
-            [(Word::from([5, 6, 7, 8u32]), Word::from([3, 4, 5, 6u32]))],
+            [StorageMapKey::from_array([1, 2, 3, 4])],
+            [(StorageMapKey::from_array([5, 6, 7, 8]), Word::from([3, 4, 5, 6u32]))],
         );
         let slot_delta = StorageSlotDelta::Map(map_delta);
         let serialized = slot_delta.to_bytes();
@@ -792,7 +797,7 @@ mod tests {
     #[test]
     fn merge_maps(#[case] x: Option<u32>, #[case] y: Option<u32>, #[case] expected: Option<u32>) {
         fn create_delta(value: Option<u32>) -> StorageMapDelta {
-            let key = Word::from([10u32, 0, 0, 0]);
+            let key = StorageMapKey::from_array([10, 0, 0, 0]);
             match value {
                 Some(value) => {
                     StorageMapDelta::from_iters([], [(key, Word::from([value, 0, 0, 0]))])

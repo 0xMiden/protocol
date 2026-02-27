@@ -664,7 +664,7 @@ mod tests {
         let key = StorageMapKey::from_array([101, 102, 103, 104]);
         let value = Word::from([9, 10, 11, 12u32]);
 
-        let updated_map = StorageMapDelta::from_iters([], [(key.as_word(), value)]);
+        let updated_map = StorageMapDelta::from_iters([], [(key, value)]);
         storage_map.insert(key, value).unwrap();
 
         // build account delta
