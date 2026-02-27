@@ -1218,9 +1218,11 @@ async fn test_network_note_unwrap() -> anyhow::Result<()> {
         .build()?;
 
     assert!(note.is_network_note());
-    let network_note = note.as_account_target_network_note()?;
+    let expected_note_type = note.metadata().note_type();
+    let network_note = note.into_account_target_network_note()?;
     assert_eq!(network_note.target_account_id(), target_id);
-    assert_eq!(network_note.note_type(), note.metadata().note_type());
+    assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+    assert_eq!(network_note.note_type(), expected_note_type);
 
     Ok(())
 }
