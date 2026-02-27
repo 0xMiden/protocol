@@ -571,6 +571,8 @@ pub enum NoteError {
     TooManyAssets(usize),
     #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
     TooManyStorageItems(usize),
+    #[error("invalid note storage length: expected {expected} items, got {actual}")]
+    InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(
@@ -805,7 +807,7 @@ pub enum ProvenTransactionError {
     )]
     ExistingPublicStateAccountRequiresDeltaDetails(AccountId),
     #[error("failed to construct output notes for proven transaction")]
-    OutputNotesError(TransactionOutputError),
+    OutputNotesError(#[source] TransactionOutputError),
     #[error(
         "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
     )]

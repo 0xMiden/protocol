@@ -9,6 +9,9 @@ use miden_protocol::errors::MasmError;
 // STANDARDS ERRORS
 // ================================================================================================
 
+/// Error Message: "initial and new number of approvers must be u32"
+pub const ERR_APPROVER_COUNTS_NOT_U32: MasmError = MasmError::from_static_str("initial and new number of approvers must be u32");
+
 /// Error Message: "burn requires exactly 1 note asset"
 pub const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("burn requires exactly 1 note asset");
 
@@ -21,6 +24,11 @@ pub const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY: MasmError = M
 pub const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT: MasmError = MasmError::from_static_str("max supply exceeds maximum representable fungible asset amount");
 /// Error Message: "token supply exceeds max supply"
 pub const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY: MasmError = MasmError::from_static_str("token supply exceeds max supply");
+
+/// Error Message: "invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak"
+pub const ERR_INVALID_SCHEME_ID: MasmError = MasmError::from_static_str("invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak");
+/// Error Message: "invalid scheme ID word format expected three zero values followed by the scheme ID"
+pub const ERR_INVALID_SCHEME_ID_WORD: MasmError = MasmError::from_static_str("invalid scheme ID word format expected three zero values followed by the scheme ID");
 
 /// Error Message: "number of approvers must be equal to or greater than threshold"
 pub const ERR_MALFORMED_MULTISIG_CONFIG: MasmError = MasmError::from_static_str("number of approvers must be equal to or greater than threshold");
@@ -52,6 +60,9 @@ pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::fr
 
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
+
+/// Error Message: "signer index must be u32"
+pub const ERR_SIGNER_INDEX_NOT_U32: MasmError = MasmError::from_static_str("signer index must be u32");
 
 /// Error Message: "SWAP script expects exactly 16 note storage items"
 pub const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("SWAP script expects exactly 16 note storage items");

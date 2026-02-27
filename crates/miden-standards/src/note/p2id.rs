@@ -1,6 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::Asset;
@@ -18,9 +17,9 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
-
 // NOTE SCRIPT
 // ================================================================================================
 
@@ -46,7 +45,7 @@ impl P2idNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the P2ID note.
-    pub const NUM_STORAGE_ITEMS: usize = 2;
+    pub const NUM_STORAGE_ITEMS: usize = P2idNoteStorage::NUM_ITEMS;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -83,7 +82,7 @@ impl P2idNote {
         rng: &mut R,
     ) -> Result<Note, NoteError> {
         let serial_num = rng.draw_word();
-        let recipient = Self::build_recipient(target, serial_num)?;
+        let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
 
         let tag = NoteTag::with_account_target(target);
 
@@ -93,18 +92,122 @@ impl P2idNote {
 
         Ok(Note::new(vault, metadata, recipient))
     }
+}
 
-    /// Creates a [NoteRecipient] for the P2ID note.
+/// Canonical storage representation for a P2ID note.
+///
+/// Contains the identifier of the target account that is authorized
+/// to consume the note. Only the account matching this ID can execute
+/// the note and claim its assets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct P2idNoteStorage {
+    target: AccountId,
+}
+
+impl P2idNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items of the P2ID note.
+    pub const NUM_ITEMS: usize = 2;
+
+    /// Creates new P2ID note storage targeting the given account.
+    pub fn new(target: AccountId) -> Self {
+        Self { target }
+    }
+
+    /// Consumes the storage and returns a P2ID [`NoteRecipient`] with the provided serial number.
     ///
     /// Notes created with this recipient will be P2ID notes consumable by the specified target
-    /// account.
-    pub fn build_recipient(
-        target: AccountId,
-        serial_num: Word,
-    ) -> Result<NoteRecipient, NoteError> {
-        let note_script = Self::script();
-        let note_storage = NoteStorage::new(vec![target.suffix(), target.prefix().as_felt()])?;
+    /// account stored in this [`P2idNoteStorage`].
+    pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
+        NoteRecipient::new(serial_num, P2idNote::script(), NoteStorage::from(self))
+    }
 
-        Ok(NoteRecipient::new(serial_num, note_script, note_storage))
+    /// Returns the target account ID.
+    pub fn target(&self) -> AccountId {
+        self.target
+    }
+}
+
+impl From<P2idNoteStorage> for NoteStorage {
+    fn from(storage: P2idNoteStorage) -> Self {
+        // Storage layout:
+        // [ account_id_suffix, account_id_prefix ]
+        NoteStorage::new(vec![storage.target.suffix(), storage.target.prefix().as_felt()])
+            .expect("number of storage items should not exceed max storage items")
+    }
+}
+
+impl TryFrom<&[Felt]> for P2idNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
+        if note_storage.len() != P2idNote::NUM_STORAGE_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: P2idNote::NUM_STORAGE_ITEMS,
+                actual: note_storage.len(),
+            });
+        }
+
+        let target = AccountId::try_from([note_storage[1], note_storage[0]])
+            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
+
+        Ok(Self { target })
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::errors::NoteError;
+    use miden_protocol::{Felt, FieldElement};
+
+    use super::*;
+
+    #[test]
+    fn try_from_valid_storage_succeeds() {
+        let target = AccountId::dummy(
+            [1u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::FungibleFaucet,
+            AccountStorageMode::Private,
+        );
+
+        let storage = vec![target.suffix(), target.prefix().as_felt()];
+
+        let parsed =
+            P2idNoteStorage::try_from(storage.as_slice()).expect("storage should be valid");
+
+        assert_eq!(parsed.target(), target);
+    }
+
+    #[test]
+    fn try_from_invalid_length_returns_error() {
+        let storage = vec![Felt::ZERO];
+
+        let err = P2idNoteStorage::try_from(storage.as_slice())
+            .expect_err("should fail due to invalid length");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: P2idNote::NUM_STORAGE_ITEMS,
+                actual: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_storage_contents_returns_error() {
+        let storage = vec![Felt::new(999u64), Felt::new(888u64)];
+
+        let err = P2idNoteStorage::try_from(storage.as_slice())
+            .expect_err("should fail due to invalid account id encoding");
+
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
     }
 }

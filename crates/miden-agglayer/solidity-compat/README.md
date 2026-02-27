@@ -46,5 +46,12 @@ The canonical zeros should match the constants in:
 
 ### MMR Frontier Vectors
 
-The `test_generateVectors` adds leaves `0, 1, 2, ...` (as left-padded 32-byte values)
-and outputs the root after each addition.
+The `test_generateVectors` adds 32 leaves and outputs the root after each addition.
+Each leaf uses:
+
+- `amounts[i] = i + 1`
+- `destination_networks[i]` and `destination_addresses[i]` generated deterministically from
+  a fixed seed in `MMRTestVectors.t.sol`
+
+This gives reproducible "random-looking" destination parameters while keeping vector generation
+stable across machines and reruns.
