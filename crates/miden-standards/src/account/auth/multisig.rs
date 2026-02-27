@@ -5,7 +5,7 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -268,8 +268,8 @@ impl AuthMultisig {
             Self::approver_public_keys_slot().clone(),
             StorageSlotSchema::map(
                 "Approver public keys",
-                SchemaTypeId::u32(),
-                SchemaTypeId::pub_key(),
+                SchemaType::u32(),
+                SchemaType::pub_key(),
             ),
         )
     }
@@ -280,8 +280,8 @@ impl AuthMultisig {
             Self::approver_scheme_ids_slot().clone(),
             StorageSlotSchema::map(
                 "Approver scheme IDs",
-                SchemaTypeId::u32(),
-                SchemaTypeId::auth_scheme(),
+                SchemaType::u32(),
+                SchemaType::auth_scheme(),
             ),
         )
     }
@@ -292,8 +292,8 @@ impl AuthMultisig {
             Self::executed_transactions_slot().clone(),
             StorageSlotSchema::map(
                 "Executed transactions",
-                SchemaTypeId::native_word(),
-                SchemaTypeId::native_word(),
+                SchemaType::native_word(),
+                SchemaType::native_word(),
             ),
         )
     }
@@ -304,8 +304,8 @@ impl AuthMultisig {
             Self::procedure_thresholds_slot().clone(),
             StorageSlotSchema::map(
                 "Procedure thresholds",
-                SchemaTypeId::native_word(),
-                SchemaTypeId::u32(),
+                SchemaType::native_word(),
+                SchemaType::u32(),
             ),
         )
     }
