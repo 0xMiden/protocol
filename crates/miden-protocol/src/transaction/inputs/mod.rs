@@ -236,10 +236,10 @@ impl TransactionInputs {
     pub fn read_storage_map_witness(
         &self,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> Result<StorageMapWitness, TransactionInputsExtractionError> {
         // Convert map key into the index at which the key-value pair for this key is stored
-        let leaf_index = StorageMapKey::from_raw(map_key).hash().to_leaf_index();
+        let leaf_index = map_key.hash().to_leaf_index();
 
         // Construct sparse Merkle path.
         let merkle_path = self.advice_inputs.store.get_path(map_root, leaf_index.into())?;
@@ -256,8 +256,7 @@ impl TransactionInputs {
 
         // Construct SMT proof and witness.
         let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
-        let storage_witness =
-            StorageMapWitness::new(smt_proof, [StorageMapKey::from_raw(map_key)])?;
+        let storage_witness = StorageMapWitness::new(smt_proof, [map_key])?;
 
         Ok(storage_witness)
     }

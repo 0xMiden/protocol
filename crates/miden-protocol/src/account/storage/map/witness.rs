@@ -82,9 +82,6 @@ impl StorageMapWitness {
     /// - a non-empty [`Word`] if the key is tracked by this witness and exists in it,
     /// - [`Word::empty`] if the key is tracked by this witness and does not exist,
     /// - `None` if the key is not tracked by this witness.
-    ///
-    /// Accepts either a [`StorageMapKey`] (which will be hashed) or a [`StorageMapKeyHash`]
-    /// directly.
     pub fn get(&self, key: StorageMapKey) -> Option<Word> {
         let hash_word = key.hash().as_word();
         self.proof.get(&hash_word)
@@ -120,13 +117,13 @@ mod tests {
     #[test]
     fn creating_witness_fails_on_missing_key() {
         // Create a storage map with one key-value pair
-        let key1 = Word::from([1, 2, 3, 4u32]);
+        let key1 = StorageMapKey::from_array([1, 2, 3, 4]);
         let value1 = Word::from([10, 20, 30, 40u32]);
-        let entries = [(key1, value1)];
+        let entries = [(key1.as_word(), value1)];
         let storage_map = StorageMap::with_entries(entries).unwrap();
 
         // Create a proof for the existing key
-        let proof = storage_map.open(&StorageMapKey::from_raw(key1)).into();
+        let proof = storage_map.open(&key1).into();
 
         // Try to create a witness for a different key that's not in the proof
         let missing_key = StorageMapKey::from_array([5, 6, 7, 8u32]);

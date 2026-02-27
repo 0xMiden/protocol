@@ -82,7 +82,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
     // Precompute a commitment to a changed account so we can assert it during tx script execution.
     let mut account_clone = account.clone();
-    let key = StorageMapKey::from_raw(Word::from([1, 2, 3, 4u32]));
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();

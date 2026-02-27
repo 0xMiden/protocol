@@ -722,7 +722,7 @@ mod tests {
 
         let storage_map_delta = StorageMapDelta::from_iters(
             [],
-            [(StorageMapKey::from_raw(Word::empty()), Word::from([ONE, ONE, ONE, ONE]))],
+            [(StorageMapKey::empty(), Word::from([ONE, ONE, ONE, ONE]))],
         );
         let serialized = storage_map_delta.to_bytes();
         let deserialized = StorageMapDelta::read_from_bytes(&serialized).unwrap();

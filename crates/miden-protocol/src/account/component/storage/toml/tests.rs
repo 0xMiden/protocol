@@ -784,12 +784,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         Word::parse("0x10").unwrap()
     );
     assert_eq!(
-        static_map.get(&StorageMapKey::from_raw(Word::from([
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::new(2)
-        ]))),
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
 
@@ -835,9 +830,8 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(typed_map_new_contents.num_entries(), 2);
 
-    let key1 = Word::from([Felt::new(1), Felt::new(2), Felt::ZERO, Felt::ZERO]);
     assert_eq!(
-        typed_map_new_contents.get(&StorageMapKey::from_raw(key1)),
+        typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(16)])
     );
 
@@ -867,12 +861,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         Word::parse("0x99").unwrap()
     );
     assert_eq!(
-        static_map.get(&StorageMapKey::from_raw(Word::from([
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::ZERO,
-            Felt::new(2)
-        ]))),
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
     assert_eq!(

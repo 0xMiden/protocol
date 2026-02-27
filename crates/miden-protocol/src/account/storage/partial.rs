@@ -170,8 +170,8 @@ mod tests {
 
     #[test]
     pub fn new_partial_storage() -> anyhow::Result<()> {
-        let map_key_present = StorageMapKey::from_raw(Word::from([1, 2, 3, 4u32]));
-        let map_key_absent = StorageMapKey::from_raw(Word::from([9, 12, 18, 3u32]));
+        let map_key_present = StorageMapKey::from_array([1, 2, 3, 4]);
+        let map_key_absent = StorageMapKey::from_array([9, 12, 18, 3]);
 
         let mut map_1 = StorageMap::new();
         map_1.insert(map_key_absent, Word::try_from([1u64, 2, 3, 2])?).unwrap();
