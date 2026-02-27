@@ -899,7 +899,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     let slot1 = StorageSlot::with_value(slot_name1.clone(), Word::from([10, 20, 30, 40u32]));
     let mut map_entries = Vec::new();
     for _ in 0..10 {
-        map_entries.push((rand_value::<Word>(), rand_value::<Word>()));
+        map_entries.push((StorageMapKey::from_raw(rand_value::<Word>()), rand_value::<Word>()));
     }
     let map_slot =
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
@@ -940,7 +940,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
             let expected = &BTreeMap::from_iter(
             map_entries
                 .into_iter()
-                .map(|(key, value)| { (LexicographicWord::new(StorageMapKey::from_raw(key)), value) })
+                .map(|(key, value)| { (LexicographicWord::new(key), value) })
             );
             assert_eq!(expected, map_delta.entries())
         }

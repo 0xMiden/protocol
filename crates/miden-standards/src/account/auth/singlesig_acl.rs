@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
@@ -269,12 +270,9 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         // Trigger procedure roots slot
         // We add the map even if there are no trigger procedures, to always maintain the same
         // storage layout.
-        let map_entries = singlesig_acl
-            .config
-            .auth_trigger_procedures
-            .iter()
-            .enumerate()
-            .map(|(i, proc_root)| (Word::from([i as u32, 0, 0, 0]), *proc_root));
+        let map_entries = singlesig_acl.config.auth_trigger_procedures.iter().enumerate().map(
+            |(i, proc_root)| (StorageMapKey::from_raw(Word::from([i as u32, 0, 0, 0])), *proc_root),
+        );
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(

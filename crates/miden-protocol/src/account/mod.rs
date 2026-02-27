@@ -638,7 +638,7 @@ mod tests {
         let storage_slot_value_1 = StorageSlotContent::Value(Word::from([5, 6, 7, 8u32]));
         let mut storage_map = StorageMap::with_entries([
             (
-                Word::new([Felt::new(101), Felt::new(102), Felt::new(103), Felt::new(104)]),
+                StorageMapKey::from_array([101, 102, 103, 104]),
                 Word::from([
                     Felt::new(1_u64),
                     Felt::new(2_u64),
@@ -647,7 +647,7 @@ mod tests {
                 ]),
             ),
             (
-                Word::new([Felt::new(105), Felt::new(106), Felt::new(107), Felt::new(108)]),
+                StorageMapKey::from_array([105, 106, 107, 108]),
                 Word::new([Felt::new(5_u64), Felt::new(6_u64), Felt::new(7_u64), Felt::new(8_u64)]),
             ),
         ])

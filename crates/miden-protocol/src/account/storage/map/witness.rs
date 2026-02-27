@@ -119,7 +119,7 @@ mod tests {
         // Create a storage map with one key-value pair
         let key1 = StorageMapKey::from_array([1, 2, 3, 4]);
         let value1 = Word::from([10, 20, 30, 40u32]);
-        let entries = [(key1.as_word(), value1)];
+        let entries = [(key1, value1)];
         let storage_map = StorageMap::with_entries(entries).unwrap();
 
         // Create a proof for the existing key

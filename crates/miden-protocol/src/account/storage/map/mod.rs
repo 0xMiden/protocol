@@ -81,13 +81,12 @@ impl StorageMap {
     ///
     /// Returns an error if:
     /// - the provided entries contain multiple values for the same key.
-    pub fn with_entries<I: ExactSizeIterator<Item = (Word, Word)>>(
-        entries: impl IntoIterator<Item = (Word, Word), IntoIter = I>,
+    pub fn with_entries<I: ExactSizeIterator<Item = (StorageMapKey, Word)>>(
+        entries: impl IntoIterator<Item = (StorageMapKey, Word), IntoIter = I>,
     ) -> Result<Self, StorageMapError> {
         let mut map = BTreeMap::new();
 
         for (key, value) in entries {
-            let key = StorageMapKey::from_raw(key);
             if let Some(prev_value) = map.insert(key, value) {
                 return Err(StorageMapError::DuplicateKey {
                     key,
@@ -235,7 +234,14 @@ impl Deserializable for StorageMap {
 mod tests {
     use assert_matches::assert_matches;
 
-    use super::{Deserializable, EMPTY_STORAGE_MAP_ROOT, Serializable, StorageMap, Word};
+    use super::{
+        Deserializable,
+        EMPTY_STORAGE_MAP_ROOT,
+        Serializable,
+        StorageMap,
+        StorageMapKey,
+        Word,
+    };
     use crate::errors::StorageMapError;
 
     #[test]
@@ -246,9 +252,9 @@ mod tests {
         assert_eq!(storage_map_default, StorageMap::read_from_bytes(&bytes).unwrap());
 
         // StorageMap with values
-        let storage_map_leaves_2: [(Word, Word); 2] = [
-            (Word::from([101, 102, 103, 104u32]), Word::from([1, 2, 3, 4u32])),
-            (Word::from([105, 106, 107, 108u32]), Word::from([5, 6, 7, 8u32])),
+        let storage_map_leaves_2 = [
+            (StorageMapKey::from_array([101, 102, 103, 104]), Word::from([1, 2, 3, 4u32])),
+            (StorageMapKey::from_array([105, 106, 107, 108]), Word::from([5, 6, 7, 8u32])),
         ];
         let storage_map = StorageMap::with_entries(storage_map_leaves_2).unwrap();
         assert_eq!(storage_map.num_entries(), 2);
@@ -271,9 +277,9 @@ mod tests {
     #[test]
     fn account_storage_map_fails_on_duplicate_entries() {
         // StorageMap with values
-        let storage_map_leaves_2: [(Word, Word); 2] = [
-            (Word::from([101, 102, 103, 104u32]), Word::from([1, 2, 3, 4u32])),
-            (Word::from([101, 102, 103, 104u32]), Word::from([5, 6, 7, 8u32])),
+        let storage_map_leaves_2 = [
+            (StorageMapKey::from_array([101, 102, 103, 104]), Word::from([1, 2, 3, 4u32])),
+            (StorageMapKey::from_array([101, 102, 103, 104]), Word::from([5, 6, 7, 8u32])),
         ];
 
         let error = StorageMap::with_entries(storage_map_leaves_2).unwrap_err();

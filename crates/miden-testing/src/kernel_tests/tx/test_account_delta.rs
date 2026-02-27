@@ -795,13 +795,13 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow::Result<()> {
     // Use two identical maps to test that they are properly handled
     // (see also https://github.com/0xMiden/protocol/issues/2037).
-    let map0 = StorageMap::with_entries([(rand_value(), rand_value())])?;
+    let map0 = StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?;
     let map1 = map0.clone();
     let mut map2 = StorageMap::with_entries([
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
     ])?;
 
     let map0_slot_name = StorageSlotName::mock(1);
