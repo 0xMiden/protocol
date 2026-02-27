@@ -2,8 +2,7 @@ use anyhow::Context;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteDetails, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -12,7 +11,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNoteStorage;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;
@@ -346,22 +345,4 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
         swap_note,
         payback_note,
     })
-}
-
-/// Generates a P2ID note - Pay-to-ID note with an exact serial number
-pub fn create_p2id_note_exact(
-    sender: AccountId,
-    target: AccountId,
-    assets: Vec<Asset>,
-    note_type: NoteType,
-    serial_num: Word,
-) -> Result<Note, NoteError> {
-    let recipient = P2idNoteStorage::new(target).into_recipient(serial_num);
-
-    let tag = NoteTag::with_account_target(target);
-
-    let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
-    let vault = NoteAssets::new(assets)?;
-
-    Ok(Note::new(vault, metadata, recipient))
 }

@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added AggLayer faucet registry to bridge account with conversion metadata, `CONFIG_AGG_BRIDGE` note for faucet registration, and FPI-based asset conversion in `bridge_out` ([#2426](https://github.com/0xMiden/miden-base/pull/2426)).
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
 - Added single-word `Array` standard ([#2203](https://github.com/0xMiden/miden-base/pull/2203)).
@@ -13,6 +14,8 @@
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
 - Added `AccountTargetNetworkNote` type and `NetworkNoteExt` trait with `is_network_note()` / `as_account_target_network_note()` helpers ([#2365](https://github.com/0xMiden/miden-base/pull/2365)).
+- Changed GER storage to a map ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
+- Implemented `assert_valid_ger` procedure for verifying GER against storage ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
 - Added `P2idNoteStorage` and `P2ideNoteStorage` ([#2389](https://github.com/0xMiden/miden-base/pull/2389)).
 - [BREAKING] Added `get_asset` and `get_initial_asset` kernel procedures and removed `get_balance`, `get_initial_balance` and `has_non_fungible_asset` kernel procedures ([#2369](https://github.com/0xMiden/miden-base/pull/2369)).
 - Added `p2id::new` MASM constructor procedure for creating P2ID notes from MASM code ([#2381](https://github.com/0xMiden/miden-base/pull/2381)).
@@ -26,6 +29,7 @@
 
 ### Changes
 
+- Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
 - [BREAKING] Made `AccountComponentMetadata` a required parameter of `AccountComponent::new()`; removed `with_supported_type`, `with_supports_all_types`, and `with_metadata` methods from `AccountComponent`; simplified `AccountComponentMetadata::new()` to take just `name`; renamed `AccountComponentTemplateError` to `ComponentMetadataError` ([#2373](https://github.com/0xMiden/miden-base/pull/2373), [#2395](https://github.com/0xMiden/miden-base/pull/2395)).
 - Fixed MASM inline comment casing to adhere to commenting conventions ([#2398](https://github.com/0xMiden/miden-base/pull/2398)).
@@ -46,6 +50,8 @@
 - [BREAKING] Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
+- Unified the underlying representation of `ExitRoot` and `SmtNode` and use type aliases ([#2387](https://github.com/0xMiden/miden-base/pull/2387)).
+- [BREAKING] Moved padding to the end of `CLAIM` `NoteStorage` layout ([#2405](https://github.com/0xMiden/miden-base/pull/2405)).
 - [BREAKING] Consolidated authentication components ([#2390] (https://github.com/0xMiden/miden-base/pull/2390))
 - [BREAKING] Refactored account ID and nonce memory and advice stack layout ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Removed `hash_account` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).

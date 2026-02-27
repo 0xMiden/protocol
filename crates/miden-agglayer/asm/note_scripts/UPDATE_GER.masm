@@ -1,4 +1,4 @@
-use miden::agglayer::bridge_in
+use miden::agglayer::bridge::bridge_config
 use miden::protocol::active_note
 use miden::protocol::active_account
 use miden::protocol::account_id
@@ -19,13 +19,14 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 # NOTE SCRIPT
 # =================================================================================================
 
-#! Agglayer Bridge UPDATE_GER script: updates the GER by calling the bridge_in::update_ger function.
+#! Agglayer Bridge UPDATE_GER script: updates the GER by calling the bridge_config::update_ger function.
 #!
 #! This note can only be consumed by the specific agglayer bridge account whose ID is provided
-#! in the note attachment (target_account_id).
+#! in the note attachment (target_account_id), and only if the note was sent by the
+#! global exit root manager.
 #!
 #! Requires that the account exposes:
-#! - agglayer::bridge_in::update_ger procedure.
+#! - agglayer::bridge_config::update_ger procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -55,13 +56,13 @@ begin
     # => [pad(16)]
 
     # Load GER_LOWER and GER_UPPER from note storage
-    mem_loadw_be.STORAGE_PTR_GER_UPPER
+    mem_loadw_le.STORAGE_PTR_GER_UPPER
     # => [GER_UPPER[4], pad(12)]
     swapw
-    mem_loadw_be.STORAGE_PTR_GER_LOWER
+    mem_loadw_le.STORAGE_PTR_GER_LOWER
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    call.bridge_in::update_ger
+    call.bridge_config::update_ger
     # => [pad(16)]
 
 end
