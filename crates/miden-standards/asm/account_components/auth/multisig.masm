@@ -85,6 +85,8 @@ const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 const ERR_MAX_ALLOWED_NOT_U32 = "max allowed approver count must be u32"
 
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
+const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 =
+    "number of approvers and procedure threshold must be u32"
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
@@ -213,36 +215,36 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     # => [should_continue, num_procedures, num_approvers]
     while.true
         sub.1 dup
-        # => [procedure_index, procedure_index, num_approvers]
+        # => [proc_index, proc_index, num_approvers]
 
         exec.active_account::get_procedure_root
-        # => [PROC_ROOT, procedure_index, num_approvers]
+        # => [PROC_ROOT, proc_index, num_approvers]
 
         push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-        # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, procedure_index, num_approvers]
+        # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, proc_index, num_approvers]
 
         exec.active_account::get_map_item
-        # => [[0, 0, 0, proc_threshold], procedure_index, num_approvers]
+        # => [[0, 0, 0, proc_threshold], proc_index, num_approvers]
 
         drop drop drop
-        # => [proc_threshold, procedure_index, num_approvers]
+        # => [proc_threshold, proc_index, num_approvers]
 
         dup neq.0
-        # => [has_override, proc_threshold, procedure_index, num_approvers]
+        # => [has_override, proc_threshold, proc_index, num_approvers]
         if.true
             dup.2
-            # => [max_allowed, proc_threshold, procedure_index, num_approvers]
+            # => [num_approvers, proc_threshold, proc_index, num_approvers]
 
             u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
             u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-            # => [procedure_index, num_approvers]
+            # => [proc_index, num_approvers]
         else
             drop
-            # => [procedure_index, num_approvers]
+            # => [proc_index, num_approvers]
         end
 
         dup neq.0
-        # => [should_continue, procedure_index, num_approvers]
+        # => [should_continue, proc_index, num_approvers]
     end
 
     drop drop
@@ -490,6 +492,54 @@ pub proc get_threshold_and_num_approvers
 
     swap
     # => [threshold, num_approvers]
+end
+
+#! Sets or clears a per-procedure threshold override.
+#!
+#! Inputs: [proc_threshold, PROC_ROOT]
+#! Outputs: []
+#!
+#! Where:
+#! - PROC_ROOT is the root of the account procedure whose override is being updated.
+#! - proc_threshold is the override threshold to set.
+#!   - if proc_threshold == 0, override is cleared and the default threshold applies.
+#!   - if proc_threshold > 0, it must be <= current num_approvers.
+#!
+#! Panics if:
+#! - proc_threshold is not a u32 value.
+#! - current num_approvers is not a u32 value.
+#! - proc_threshold > current num_approvers.
+#!
+#! Invocation: call
+pub proc set_procedure_threshold
+    u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
+    # => [proc_threshold, PROC_ROOT]
+
+    exec.get_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
+
+    drop
+    # => [num_approvers, proc_threshold, PROC_ROOT]
+
+    dup.1 swap
+    # => [num_approvers, proc_threshold, proc_threshold, PROC_ROOT]
+
+    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [proc_threshold, PROC_ROOT]
+
+    # Store [proc_threshold, 0, 0, 0] = PROC_THRESHOLD_WORD, where proc_threshold == 0 acts as clear.
+    push.0.0.0 swapw
+    # => [PROC_ROOT, PROC_THRESHOLD_WORD]
+
+    push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+    # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, PROC_THRESHOLD_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_PROC_THRESHOLD_WORD]
+
+    dropw
+    # => []
 end
 
 #! Returns signer public key at index i

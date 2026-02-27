@@ -1638,3 +1638,296 @@ async fn test_multisig_proc_threshold_overrides(
 
     Ok(())
 }
+
+/// Tests setting a per-procedure threshold override and clearing it via `proc_threshold == 0`.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root_elements = proc_root.as_elements();
+    let proc_root_word = Word::from([
+        proc_root_elements[0],
+        proc_root_elements[1],
+        proc_root_elements[2],
+        proc_root_elements[3],
+    ]);
+
+    let set_script_code = format!(
+        r#"
+        begin
+            push.{proc_root_word}
+            push.1
+            call.::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let set_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(set_script_code)?;
+
+    // 1) Set override to 1 (requires default 2 signatures).
+    let mut mgmt_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let set_salt = Word::from([Felt::new(50); 4]);
+
+    let set_init = mgmt_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(set_script.clone())
+        .auth_args(set_salt)
+        .build()?;
+    let set_summary = match set_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let set_msg = set_summary.as_ref().to_commitment();
+    let set_summary = SigningInputs::TransactionSummary(set_summary);
+    let set_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &set_summary)
+        .await?;
+    let set_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &set_summary)
+        .await?;
+
+    let set_tx = mgmt_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(set_script)
+        .add_signature(public_keys[0].to_commitment(), set_msg, set_sig_1)
+        .add_signature(public_keys[1].to_commitment(), set_msg, set_sig_2)
+        .auth_args(set_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut account_with_override = multisig_account.clone();
+    account_with_override.apply_delta(set_tx.account_delta())?;
+    mgmt_chain.add_pending_executed_transaction(&set_tx)?;
+    mgmt_chain.prove_next_block()?;
+
+    // 2) Verify receive_asset can now execute with one signature.
+    let mut one_sig_chain_builder =
+        MockChainBuilder::with_accounts([account_with_override.clone()]).unwrap();
+    let one_sig_note = one_sig_chain_builder.add_p2id_note(
+        account_with_override.id(),
+        account_with_override.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let one_sig_chain = one_sig_chain_builder.build()?;
+    let one_sig_salt = Word::from([Felt::new(51); 4]);
+
+    let one_sig_init = one_sig_chain
+        .build_tx_context(account_with_override.id(), &[one_sig_note.id()], &[])?
+        .auth_args(one_sig_salt)
+        .build()?;
+    let one_sig_summary = match one_sig_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let one_sig_msg = one_sig_summary.as_ref().to_commitment();
+    let one_sig_summary = SigningInputs::TransactionSummary(one_sig_summary);
+    let one_sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &one_sig_summary)
+        .await?;
+
+    let one_sig_result = one_sig_chain
+        .build_tx_context(account_with_override.id(), &[one_sig_note.id()], &[])?
+        .add_signature(public_keys[0].to_commitment(), one_sig_msg, one_sig)
+        .auth_args(one_sig_salt)
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        one_sig_result.is_ok(),
+        "override=1 should allow receive_asset with one signature"
+    );
+
+    // 3) Clear override by setting threshold to zero.
+    let clear_script_code = format!(
+        r#"
+        begin
+            push.{proc_root_word}
+            push.0
+            call.::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let clear_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(clear_script_code)?;
+    let clear_salt = Word::from([Felt::new(52); 4]);
+
+    let clear_init = mgmt_chain
+        .build_tx_context(account_with_override.id(), &[], &[])?
+        .tx_script(clear_script.clone())
+        .auth_args(clear_salt)
+        .build()?;
+    let clear_summary = match clear_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let clear_msg = clear_summary.as_ref().to_commitment();
+    let clear_summary = SigningInputs::TransactionSummary(clear_summary);
+    let clear_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &clear_summary)
+        .await?;
+    let clear_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &clear_summary)
+        .await?;
+
+    let clear_tx = mgmt_chain
+        .build_tx_context(account_with_override.id(), &[], &[])?
+        .tx_script(clear_script)
+        .add_signature(public_keys[0].to_commitment(), clear_msg, clear_sig_1)
+        .add_signature(public_keys[1].to_commitment(), clear_msg, clear_sig_2)
+        .auth_args(clear_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut account_after_clear = account_with_override.clone();
+    account_after_clear.apply_delta(clear_tx.account_delta())?;
+    mgmt_chain.add_pending_executed_transaction(&clear_tx)?;
+    mgmt_chain.prove_next_block()?;
+
+    // 4) After clear, one signature should no longer be sufficient for receive_asset.
+    let mut clear_check_builder =
+        MockChainBuilder::with_accounts([account_after_clear.clone()]).unwrap();
+    let clear_check_note = clear_check_builder.add_p2id_note(
+        account_after_clear.id(),
+        account_after_clear.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let clear_check_chain = clear_check_builder.build()?;
+    let clear_check_salt = Word::from([Felt::new(53); 4]);
+
+    let clear_check_init = clear_check_chain
+        .build_tx_context(account_after_clear.id(), &[clear_check_note.id()], &[])?
+        .auth_args(clear_check_salt)
+        .build()?;
+    let clear_check_summary = match clear_check_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let clear_check_msg = clear_check_summary.as_ref().to_commitment();
+    let clear_check_summary = SigningInputs::TransactionSummary(clear_check_summary);
+    let clear_check_sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &clear_check_summary)
+        .await?;
+
+    let clear_check_result = clear_check_chain
+        .build_tx_context(account_after_clear.id(), &[clear_check_note.id()], &[])?
+        .add_signature(public_keys[0].to_commitment(), clear_check_msg, clear_check_sig)
+        .auth_args(clear_check_salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        matches!(clear_check_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "override cleared via threshold=0 should restore default threshold requirements"
+    );
+
+    Ok(())
+}
+
+/// Tests setting an override threshold above num_approvers is rejected.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let proc_root = BasicWallet::receive_asset_digest();
+    let proc_root_elements = proc_root.as_elements();
+    let proc_root_word = Word::from([
+        proc_root_elements[0],
+        proc_root_elements[1],
+        proc_root_elements[2],
+        proc_root_elements[3],
+    ]);
+
+    let script_code = format!(
+        r#"
+        begin
+            push.{proc_root_word}
+            push.3
+            call.::multisig::set_procedure_threshold
+        end
+        "#
+    );
+    let script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(script_code)?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let salt = Word::from([Felt::new(54); 4]);
+
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(script.clone())
+        .auth_args(salt)
+        .build()?;
+
+    let result = match tx_context_init.execute().await {
+        Err(TransactionExecutorError::Unauthorized(tx_effects)) => {
+            let msg = tx_effects.as_ref().to_commitment();
+            let tx_effects = SigningInputs::TransactionSummary(tx_effects);
+            let sig_1 = authenticators[0]
+                .get_signature(public_keys[0].to_commitment(), &tx_effects)
+                .await?;
+            let sig_2 = authenticators[1]
+                .get_signature(public_keys[1].to_commitment(), &tx_effects)
+                .await?;
+
+            mock_chain
+                .build_tx_context(multisig_account.id(), &[], &[])?
+                .tx_script(script)
+                .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+                .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+                .auth_args(salt)
+                .build()?
+                .execute()
+                .await
+        },
+        other => other,
+    };
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
