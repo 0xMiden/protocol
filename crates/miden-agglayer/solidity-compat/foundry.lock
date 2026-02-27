@@ -7,5 +7,11 @@
       "name": "v1.14.0",
       "rev": "1801b0541f4fda118a10798fd3486bb7051c5dd6"
     }
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "branch": {
+      "name": "release-v4.9",
+      "rev": "2d081f24cac1a867f6f73d512f2022e1fa987854"
+    }
   }
 }
