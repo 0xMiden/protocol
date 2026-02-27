@@ -73,6 +73,8 @@ pub proc main
     u32gte.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
     # => [is_public_output_note, num_storage_items, storage_ptr, pad(16)]
 
+    push.101 debug.stack drop
+
     if.true
         # public output note creation
         # => [num_storage_items, storage_ptr, pad(16)]
@@ -96,6 +98,8 @@ pub proc main
         exec.note::build_recipient
         # => [RECIPIENT, pad(12)]
 
+        push.222 debug.stack drop
+
         # push note_type, and load tag and amount
         push.OUTPUT_NOTE_TYPE_PUBLIC
         mem_load.0 mem_load.1
@@ -118,6 +122,8 @@ pub proc main
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     end
     # => [amount, tag, note_type, RECIPIENT, pad(12)]
+
+    push.333 debug.stack drop
 
     # distribute expects 9 pad elements, returns 15 and 12 are provided here.
     # so the total number of pads after calling is 12 + (15-9) = 18
