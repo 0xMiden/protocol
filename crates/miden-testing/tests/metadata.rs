@@ -1250,7 +1250,8 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When description mutable flag is 1 and note sender is the owner, optional_set_description succeeds.
+/// When description mutable flag is 1 and note sender is the owner, optional_set_description
+/// succeeds.
 #[tokio::test]
 async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1332,7 +1333,8 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
     Ok(())
 }
 
-/// When description mutable flag is 1 but note sender is not the owner, optional_set_description panics.
+/// When description mutable flag is 1 but note sender is not the owner, optional_set_description
+/// panics.
 #[tokio::test]
 async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -2084,7 +2086,8 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When external link mutable flag is 1 and note sender is the owner, optional_set_external_link succeeds.
+/// When external link mutable flag is 1 and note sender is the owner, optional_set_external_link
+/// succeeds.
 #[tokio::test]
 async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -2162,7 +2165,8 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
     Ok(())
 }
 
-/// When external link mutable flag is 1 but note sender is not the owner, optional_set_external_link panics.
+/// When external link mutable flag is 1 but note sender is not the owner,
+/// optional_set_external_link panics.
 #[tokio::test]
 async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
