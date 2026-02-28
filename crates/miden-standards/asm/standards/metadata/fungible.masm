@@ -7,6 +7,8 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable
+use miden::core::crypto::hashes::rpo256
+use miden::core::mem
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -15,7 +17,6 @@ use miden::standards::access::ownable
 const TOKEN_METADATA_SLOT = word("miden::standards::metadata::token_metadata")
 const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::name_0")
 const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::name_1")
-const INITIALIZED_CONFIG_SLOT = word("miden::standards::metadata::initialized_config")
 const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::mutability_config")
 
 const DESCRIPTION_0_SLOT = word("miden::standards::metadata::description_0")
@@ -78,14 +79,6 @@ end
 #! Loads name chunk 1 (1 Word). Output: [NAME_CHUNK_1].
 proc get_name_chunk_1
     push.NAME_CHUNK_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-#! Loads the initialized config word.
-#! Output: [max_supply_mutable, extlink_init, logo_init, desc_init, pad(16)].
-#! (word[3] on top after get_item)
-proc get_initialized_config_word
-    push.INITIALIZED_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
 
@@ -255,25 +248,6 @@ pub proc get_name
 end
 
 # =================================================================================================
-# INITIALIZED CONFIG — [desc_init, logo_init, extlink_init, max_supply_mutable]
-# =================================================================================================
-
-#! Returns the initialized config word.
-#!
-#! After get_item, stack has word[3] on top:
-#! [max_supply_mutable, extlink_init, logo_init, desc_init, pad(16)]
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-#!
-#! Invocation: call
-pub proc get_initialized_config
-    exec.get_initialized_config_word
-    swapw dropw
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-end
-
-# =================================================================================================
 # MUTABILITY CONFIG — [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]
 # =================================================================================================
 
@@ -290,52 +264,6 @@ pub proc get_mutability_config
     exec.get_mutability_config_word
     swapw dropw
     # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-end
-
-# =================================================================================================
-# INITIALIZED CHECKS — read initialized_config
-# =================================================================================================
-
-#! Returns whether description is initialized (1 or 0).
-#!
-#! Reads initialized_config word felt[0] (desc_init).
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_description_initialized
-    exec.get_initialized_config_word
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(16)]
-    swapw dropw
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-    drop drop drop
-    # => [desc_init, pad(12)]
-end
-
-#! Returns whether logo URI is initialized (1 or 0).
-#!
-#! Reads initialized_config word felt[1] (logo_init).
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_logo_uri_initialized
-    exec.get_initialized_config_word
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(16)]
-    swapw dropw
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-    drop drop swap drop
-    # => [logo_init, pad(12)]
-end
-
-#! Returns whether external link is initialized (1 or 0).
-#!
-#! Reads initialized_config word felt[2] (extlink_init).
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_external_link_initialized
-    exec.get_initialized_config_word
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(16)]
-    swapw dropw
-    # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-    drop movdn.2 drop drop
-    # => [extlink_init, pad(12)]
 end
 
 # =================================================================================================
@@ -417,120 +345,244 @@ end
 pub use ownable::get_owner
 
 # =================================================================================================
-# DESCRIPTION (6 words)
+# DESCRIPTION (6 words) — commitment/unhashing pattern
 # =================================================================================================
 
-#! Returns the description (first word of 6).
+#! Returns an RPO256 commitment to the description and inserts the 6 words into the advice map.
 #!
-#! Due to the call convention (depth must be 16 at return), only DESCRIPTION_0 is
-#! returned on the visible stack.
+#! The commitment is computed over the 24 felts of the description. The preimage (6 words)
+#! is placed in the advice map keyed by the commitment so that a subsequent
+#! `get_description` call can retrieve and verify it.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [DESCRIPTION_0, pad(12)]
+#! Outputs: [COMMITMENT, pad(12)]
 #!
 #! Invocation: call
 @locals(24)
-pub proc get_description
-    exec.get_description_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
-
-    exec.get_description_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
-
-    exec.get_description_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
-
-    exec.get_description_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
-
-    exec.get_description_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
-
+pub proc get_description_commitment
     exec.get_description_chunk_0
     loc_storew_be.FIELD_0_LOC dropw
+    exec.get_description_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_description_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_description_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_description_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+    exec.get_description_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
+    # => [pad(16)]
 
-    loc_loadw_be.FIELD_5_LOC
-    loc_loadw_be.FIELD_4_LOC
-    loc_loadw_be.FIELD_3_LOC
-    loc_loadw_be.FIELD_2_LOC
-    loc_loadw_be.FIELD_1_LOC
-    loc_loadw_be.FIELD_0_LOC
+    # Hash the 6 words (24 felts) in local memory via RPO256.
+    # hash_elements expects [ptr, num_felts].
+    push.24 locaddr.FIELD_0_LOC
+    exec.rpo256::hash_elements
+    # => [COMMITMENT, pad(16)]  depth=20
+
+    # Insert the 6-word preimage into the advice map keyed by COMMITMENT.
+    # adv.insert_mem expects [COMMITMENT, start_addr, end_addr] on stack.
+    locaddr.FIELD_0_LOC dup add.24
+    movdn.5 movdn.4
+    adv.insert_mem
+    movup.4 drop movup.4 drop
+    # => [COMMITMENT, pad(16)]  depth=20
+
+    swapw dropw
+    # => [COMMITMENT, pad(12)]  depth=16
+end
+
+#! Writes the description (6 Words) to memory at the given pointer.
+#!
+#! Loads the description from storage, computes its RPO256 commitment, inserts the preimage
+#! into the advice map, then pipes it into destination memory and verifies the commitment.
+#!
+#! Inputs:  [dest_ptr, pad(15)]
+#! Outputs: [dest_ptr, pad(15)]
+#!
+#! Invocation: exec
+@locals(24)
+pub proc get_description
+    exec.get_description_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+    exec.get_description_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_description_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_description_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_description_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+    exec.get_description_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
+    # => [dest_ptr, pad(15)]  depth=16
+
+    # Hash the 6 words (24 felts) in local memory.
+    push.24 locaddr.FIELD_0_LOC
+    # => [start_ptr, 24, dest_ptr, pad(15)]  depth=18
+    exec.rpo256::hash_elements
+    # => [COMMITMENT, dest_ptr, pad(15)]  depth=20
+
+    # Insert preimage into advice map keyed by COMMITMENT.
+    locaddr.FIELD_0_LOC dup add.24
+    # => [end_ptr, start_ptr, COMMITMENT, dest_ptr, pad(15)]  depth=22
+    movdn.5 movdn.4
+    # => [COMMITMENT, start_ptr, end_ptr, dest_ptr, pad(15)]
+    adv.insert_mem
+    movup.4 drop movup.4 drop
+    # => [COMMITMENT, dest_ptr, pad(15)]  depth=20
+
+    # Load preimage onto the advice stack.
+    adv.push_mapval
+    # AS => [[DESCRIPTION_DATA]]
+
+    # Set up pipe_preimage_to_memory: [num_words, dest_ptr, COMMITMENT, ...]
+    # dest_ptr is at position 4 (right after COMMITMENT)
+    dup.4 push.6
+    # => [6, dest_ptr, COMMITMENT, dest_ptr, pad(15)]  depth=22
+
+    exec.mem::pipe_preimage_to_memory drop
+    # => [dest_ptr, pad(15)]  depth=16 (consumed 6 [6,dest_ptr,COMMITMENT], pushed 1 [updated_ptr], dropped it)
 end
 
 # =================================================================================================
-# LOGO URI (6 words)
+# LOGO URI (6 words) — commitment/unhashing pattern
 # =================================================================================================
 
-#! Returns the logo URI (first word of 6).
+#! Returns an RPO256 commitment to the logo URI and inserts the 6 words into the advice map.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [LOGO_URI_0, pad(12)]
+#! Outputs: [COMMITMENT, pad(12)]
 #!
 #! Invocation: call
 @locals(24)
-pub proc get_logo_uri
+pub proc get_logo_uri_commitment
+    exec.get_logo_uri_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+    exec.get_logo_uri_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_logo_uri_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_logo_uri_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_logo_uri_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
     exec.get_logo_uri_chunk_5
     loc_storew_be.FIELD_5_LOC dropw
 
-    exec.get_logo_uri_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    push.24 locaddr.FIELD_0_LOC
+    exec.rpo256::hash_elements
 
-    exec.get_logo_uri_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    locaddr.FIELD_0_LOC dup add.24
+    movdn.5 movdn.4
+    adv.insert_mem
+    movup.4 drop movup.4 drop
 
-    exec.get_logo_uri_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    swapw dropw
+end
 
-    exec.get_logo_uri_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
-
+#! Writes the logo URI (6 Words) to memory at the given pointer.
+#!
+#! Inputs:  [dest_ptr, pad(15)]
+#! Outputs: [dest_ptr, pad(15)]
+#!
+#! Invocation: exec
+@locals(24)
+pub proc get_logo_uri
     exec.get_logo_uri_chunk_0
     loc_storew_be.FIELD_0_LOC dropw
+    exec.get_logo_uri_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_logo_uri_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_logo_uri_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_logo_uri_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+    exec.get_logo_uri_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
 
-    loc_loadw_be.FIELD_5_LOC
-    loc_loadw_be.FIELD_4_LOC
-    loc_loadw_be.FIELD_3_LOC
-    loc_loadw_be.FIELD_2_LOC
-    loc_loadw_be.FIELD_1_LOC
-    loc_loadw_be.FIELD_0_LOC
+    push.24 locaddr.FIELD_0_LOC
+    exec.rpo256::hash_elements
+
+    locaddr.FIELD_0_LOC dup add.24
+    movdn.5 movdn.4
+    adv.insert_mem
+    movup.4 drop movup.4 drop
+
+    adv.push_mapval
+    dup.4 push.6
+    exec.mem::pipe_preimage_to_memory drop
 end
 
 # =================================================================================================
-# EXTERNAL LINK (6 words)
+# EXTERNAL LINK (6 words) — commitment/unhashing pattern
 # =================================================================================================
 
-#! Returns the external link (first word of 6).
+#! Returns an RPO256 commitment to the external link and inserts the 6 words into the advice map.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [EXTERNAL_LINK_0, pad(12)]
+#! Outputs: [COMMITMENT, pad(12)]
 #!
 #! Invocation: call
 @locals(24)
-pub proc get_external_link
+pub proc get_external_link_commitment
+    exec.get_external_link_chunk_0
+    loc_storew_be.FIELD_0_LOC dropw
+    exec.get_external_link_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_external_link_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_external_link_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_external_link_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
     exec.get_external_link_chunk_5
     loc_storew_be.FIELD_5_LOC dropw
 
-    exec.get_external_link_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    push.24 locaddr.FIELD_0_LOC
+    exec.rpo256::hash_elements
 
-    exec.get_external_link_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    locaddr.FIELD_0_LOC dup add.24
+    movdn.5 movdn.4
+    adv.insert_mem
+    movup.4 drop movup.4 drop
 
-    exec.get_external_link_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    swapw dropw
+end
 
-    exec.get_external_link_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
-
+#! Writes the external link (6 Words) to memory at the given pointer.
+#!
+#! Inputs:  [dest_ptr, pad(15)]
+#! Outputs: [dest_ptr, pad(15)]
+#!
+#! Invocation: exec
+@locals(24)
+pub proc get_external_link
     exec.get_external_link_chunk_0
     loc_storew_be.FIELD_0_LOC dropw
+    exec.get_external_link_chunk_1
+    loc_storew_be.FIELD_1_LOC dropw
+    exec.get_external_link_chunk_2
+    loc_storew_be.FIELD_2_LOC dropw
+    exec.get_external_link_chunk_3
+    loc_storew_be.FIELD_3_LOC dropw
+    exec.get_external_link_chunk_4
+    loc_storew_be.FIELD_4_LOC dropw
+    exec.get_external_link_chunk_5
+    loc_storew_be.FIELD_5_LOC dropw
 
-    loc_loadw_be.FIELD_5_LOC
-    loc_loadw_be.FIELD_4_LOC
-    loc_loadw_be.FIELD_3_LOC
-    loc_loadw_be.FIELD_2_LOC
-    loc_loadw_be.FIELD_1_LOC
-    loc_loadw_be.FIELD_0_LOC
+    push.24 locaddr.FIELD_0_LOC
+    exec.rpo256::hash_elements
+
+    locaddr.FIELD_0_LOC dup add.24
+    movdn.5 movdn.4
+    adv.insert_mem
+    movup.4 drop movup.4 drop
+
+    adv.push_mapval
+    dup.4 push.6
+    exec.mem::pipe_preimage_to_memory drop
 end
 
 # =================================================================================================

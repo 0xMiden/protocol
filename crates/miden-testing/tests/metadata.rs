@@ -4,6 +4,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
+use miden_crypto::hash::rpo::Rpo256 as Hasher;
 use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
@@ -16,34 +17,60 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::TokenName;
+use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
+    Description,
+    ExternalLink,
+    LogoURI,
+    TokenName,
+};
 use miden_standards::account::metadata::{
     DESCRIPTION_DATA_KEY,
+    EXTERNAL_LINK_DATA_KEY,
     FieldBytesError,
-    Info,
+    LOGO_URI_DATA_KEY,
     NAME_UTF8_MAX_BYTES,
+    TokenMetadata as Info,
     field_from_bytes,
     mutability_config_slot,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
+    ERR_EXTERNAL_LINK_NOT_MUTABLE,
+    ERR_LOGO_URI_NOT_MUTABLE,
     ERR_MAX_SUPPLY_IMMUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
 
+fn build_faucet_with_info(info: Info) -> BasicFungibleFaucet {
+    BasicFungibleFaucet::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        TokenName::new("T").unwrap(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_info(info)
+}
+
 /// Tests that the metadata extension can store and retrieve name via MASM.
 #[tokio::test]
 async fn metadata_info_get_name_from_masm() -> anyhow::Result<()> {
-    let name = [Word::from([1u32, 2, 3, 4]), Word::from([5u32, 6, 7, 8])];
+    let token_name = TokenName::new("test name").unwrap();
+    let name = token_name.to_words();
 
-    let extension = Info::new().with_name(name);
+    let extension = Info::new().with_name(token_name);
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
 
     // MASM script to read name and verify values
@@ -86,13 +113,12 @@ async fn metadata_info_get_name_from_masm() -> anyhow::Result<()> {
 /// Tests that reading zero-valued name returns empty words.
 #[tokio::test]
 async fn metadata_info_get_name_zeros_returns_empty() -> anyhow::Result<()> {
-    // Create extension with zero-valued name (slots exist, but contain zeros)
-    let name = [Word::default(), Word::default()];
-    let extension = Info::new().with_name(name);
+    let extension = Info::new();
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
 
     let tx_script = r#"
@@ -119,36 +145,35 @@ async fn metadata_info_get_name_zeros_returns_empty() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that get_description (first word of 6) can be read via MASM.
+/// Tests that get_description_commitment returns the RPO256 hash of the 6 description words.
 #[tokio::test]
 async fn metadata_info_get_description_from_masm() -> anyhow::Result<()> {
-    let description = [
-        Word::from([10u32, 11, 12, 13]),
-        Word::from([14u32, 15, 16, 17]),
-        Word::from([18u32, 19, 20, 21]),
-        Word::from([22u32, 23, 24, 25]),
-        Word::from([26u32, 27, 28, 29]),
-        Word::from([30u32, 31, 32, 33]),
-    ];
+    let desc_text = "some test description text";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
 
-    let extension = Info::new().with_description(description, false);
+    let extension = Info::new().with_description(description_typed, false);
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
+
+    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_commitment = Hasher::hash_elements(&desc_felts);
 
     let tx_script = format!(
         r#"
         begin
-            call.::miden::standards::metadata::fungible::get_description
-            # => [DESCRIPTION_0, pad(12)]
+            call.::miden::standards::metadata::fungible::get_description_commitment
+            # => [COMMITMENT, pad(12)]
 
-            push.{expected_0}
-            assert_eqw.err="description_0 does not match"
+            push.{expected}
+            assert_eqw.err="description commitment does not match"
         end
         "#,
-        expected_0 = description[0],
+        expected = expected_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -170,37 +195,32 @@ async fn metadata_info_get_description_from_masm() -> anyhow::Result<()> {
 fn metadata_info_with_faucet_storage() {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
-    let name = [Word::from([111u32, 222, 333, 444]), Word::from([555u32, 666, 777, 888])];
-    let description = [
-        Word::from([10u32, 20, 30, 40]),
-        Word::from([50u32, 60, 70, 80]),
-        Word::from([90u32, 100, 110, 120]),
-        Word::from([130u32, 140, 150, 160]),
-        Word::from([170u32, 180, 190, 200]),
-        Word::from([210u32, 220, 230, 240]),
-    ];
+    let token_name = TokenName::new("test faucet name").unwrap();
+    let name = token_name.to_words();
+    let desc_text = "faucet description text for testing";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
+
+    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
 
     let faucet = BasicFungibleFaucet::new(
         "TST".try_into().unwrap(),
         8,                    // decimals
         Felt::new(1_000_000), // max_supply
-        TokenName::try_from("TST").unwrap(),
+        TokenName::new("TST").unwrap(),
         None,
         None,
         None,
     )
-    .unwrap();
-
-    let extension = Info::new().with_name(name).with_description(description, false);
+    .unwrap()
+    .with_info(extension);
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
         .with_component(faucet)
-        .with_component(extension)
         .build()
         .unwrap();
 
@@ -227,10 +247,12 @@ fn metadata_info_with_faucet_storage() {
 #[test]
 fn name_32_bytes_accepted() {
     let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
-    let extension = Info::new().with_name_utf8(&max_name).unwrap();
+    let token_name = TokenName::new(&max_name).unwrap();
+    let extension = Info::new().with_name(token_name);
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()
         .unwrap();
     let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
@@ -243,7 +265,7 @@ fn name_32_bytes_accepted() {
 #[test]
 fn name_33_bytes_rejected() {
     let too_long = "a".repeat(33);
-    let result = Info::new().with_name_utf8(&too_long);
+    let result = TokenName::new(&too_long);
     assert!(result.is_err());
     assert!(matches!(
         result,
@@ -254,18 +276,14 @@ fn name_33_bytes_rejected() {
 /// Tests that description at full capacity (6 Words) is supported.
 #[test]
 fn description_6_words_full_capacity() {
-    let description = [
-        Word::from([1u32, 2, 3, 4]),
-        Word::from([5u32, 6, 7, 8]),
-        Word::from([9u32, 10, 11, 12]),
-        Word::from([13u32, 14, 15, 16]),
-        Word::from([17u32, 18, 19, 20]),
-        Word::from([21u32, 22, 23, 24]),
-    ];
-    let extension = Info::new().with_description(description, false);
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description_typed = Description::new(&desc_text).unwrap();
+    let description = description_typed.to_words();
+    let extension = Info::new().with_description(description_typed, false);
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()
         .unwrap();
     for (i, expected) in description.iter().enumerate() {
@@ -277,7 +295,8 @@ fn description_6_words_full_capacity() {
 /// Tests that field longer than 192 bytes (193 bytes) is rejected.
 #[test]
 fn field_193_bytes_rejected() {
-    let result = field_from_bytes(&[0u8; 193]);
+    let long_string = "a".repeat(193);
+    let result = field_from_bytes(long_string.as_bytes());
     assert!(result.is_err());
     assert!(matches!(result, Err(FieldBytesError::TooLong(193))));
 }
@@ -287,36 +306,30 @@ fn field_193_bytes_rejected() {
 fn faucet_with_integrated_metadata() {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
-    let name = [Word::from([11u32, 22, 33, 44]), Word::from([55u32, 66, 77, 88])];
-    let description = [
-        Word::from([1u32, 2, 3, 4]),
-        Word::from([5u32, 6, 7, 8]),
-        Word::from([9u32, 10, 11, 12]),
-        Word::from([13u32, 14, 15, 16]),
-        Word::from([17u32, 18, 19, 20]),
-        Word::from([21u32, 22, 23, 24]),
-    ];
+    let token_name = TokenName::new("integrated name").unwrap();
+    let name = token_name.to_words();
+    let desc_text = "integrated description text";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
 
     let faucet = BasicFungibleFaucet::new(
         "INT".try_into().unwrap(),
         6,                  // decimals
         Felt::new(500_000), // max_supply
-        TokenName::try_from("INT").unwrap(),
+        TokenName::new("INT").unwrap(),
         None,
         None,
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(name).with_description(description, false);
+    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
-        .with_component(faucet)
-        .with_component(extension)
+        .with_component(faucet.with_info(extension))
         .build()
         .unwrap();
 
@@ -348,39 +361,31 @@ fn faucet_with_integrated_metadata() {
 #[test]
 fn faucet_initialized_with_max_name_and_full_description() {
     use miden_protocol::account::AccountStorageMode;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let max_name = "0".repeat(NAME_UTF8_MAX_BYTES);
-    let description = [
-        Word::from([101u32, 102, 103, 104]),
-        Word::from([105u32, 106, 107, 108]),
-        Word::from([109u32, 110, 111, 112]),
-        Word::from([113u32, 114, 115, 116]),
-        Word::from([117u32, 118, 119, 120]),
-        Word::from([121u32, 122, 123, 124]),
-    ];
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description_typed = Description::new(&desc_text).unwrap();
+    let description = description_typed.to_words();
 
     let faucet = BasicFungibleFaucet::new(
         "MAX".try_into().unwrap(),
         6,
         Felt::new(1_000_000),
-        TokenName::try_from("MAX").unwrap(),
+        TokenName::new("MAX").unwrap(),
         None,
         None,
         None,
     )
     .unwrap();
     let extension = Info::new()
-        .with_name_utf8(&max_name)
-        .unwrap()
-        .with_description(description, false);
+        .with_name(TokenName::new(&max_name).unwrap())
+        .with_description(description_typed, false);
 
     let account = AccountBuilder::new([5u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
-        .with_component(faucet)
-        .with_component(extension)
+        .with_component(faucet.with_info(extension))
         .build()
         .unwrap();
 
@@ -411,21 +416,16 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
     );
 
     let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
-    let description = [
-        Word::from([201u32, 202, 203, 204]),
-        Word::from([205u32, 206, 207, 208]),
-        Word::from([209u32, 210, 211, 212]),
-        Word::from([213u32, 214, 215, 216]),
-        Word::from([217u32, 218, 219, 220]),
-        Word::from([221u32, 222, 223, 224]),
-    ];
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description_typed = Description::new(&desc_text).unwrap();
+    let description = description_typed.to_words();
 
     let network_faucet = NetworkFungibleFaucet::new(
         "NET".try_into().unwrap(),
         6,
         Felt::new(2_000_000),
         owner_account_id,
-        TokenName::try_from("NET").unwrap(),
+        TokenName::new("NET").unwrap(),
         None,
         None,
         None,
@@ -435,16 +435,14 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
     .unwrap();
 
     let extension = Info::new()
-        .with_name_utf8(&max_name)
-        .unwrap()
-        .with_description(description, false);
+        .with_name(TokenName::new(&max_name).unwrap())
+        .with_description(description_typed, false);
 
     let account = AccountBuilder::new([6u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(NoAuth)
-        .with_component(network_faucet)
-        .with_component(extension)
+        .with_component(network_faucet.with_info(extension))
         .build()
         .unwrap();
 
@@ -477,21 +475,16 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
 
     let max_name = "b".repeat(NAME_UTF8_MAX_BYTES);
     let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
-    let description = [
-        Word::from([301u32, 302, 303, 304]),
-        Word::from([305u32, 306, 307, 308]),
-        Word::from([309u32, 310, 311, 312]),
-        Word::from([313u32, 314, 315, 316]),
-        Word::from([317u32, 318, 319, 320]),
-        Word::from([321u32, 322, 323, 324]),
-    ];
+    let desc_text = "network faucet description";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
 
     let network_faucet = NetworkFungibleFaucet::new(
         "MAS".try_into().unwrap(),
         6,
         Felt::new(1_000_000),
         owner_account_id,
-        TokenName::try_from("MAS").unwrap(),
+        TokenName::new("MAS").unwrap(),
         None,
         None,
         None,
@@ -501,17 +494,18 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
     .unwrap();
 
     let extension = Info::new()
-        .with_name_utf8(&max_name)
-        .unwrap()
-        .with_description(description, false);
+        .with_name(TokenName::new(&max_name).unwrap())
+        .with_description(description_typed, false);
 
     let account = AccountBuilder::new([7u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(NoAuth)
-        .with_component(network_faucet)
-        .with_component(extension)
+        .with_component(network_faucet.with_info(extension))
         .build()?;
+
+    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_desc_commitment = Hasher::hash_elements(&desc_felts);
 
     let tx_script = format!(
         r#"
@@ -522,15 +516,15 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
             push.{expected_name_1}
             assert_eqw.err="network faucet name chunk 1 does not match"
 
-            call.::miden::standards::metadata::fungible::get_description
-            # => [DESCRIPTION_0, pad(12)]
-            push.{expected_desc_0}
-            assert_eqw.err="network faucet description_0 does not match"
+            call.::miden::standards::metadata::fungible::get_description_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected_desc_commitment}
+            assert_eqw.err="network faucet description commitment does not match"
         end
         "#,
         expected_name_0 = name_words[0],
         expected_name_1 = name_words[1],
-        expected_desc_0 = description[0],
+        expected_desc_commitment = expected_desc_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -553,7 +547,6 @@ async fn faucet_get_decimals_only() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -563,7 +556,7 @@ async fn faucet_get_decimals_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -611,7 +604,6 @@ async fn faucet_get_token_symbol_only() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -621,7 +613,7 @@ async fn faucet_get_token_symbol_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -669,7 +661,6 @@ async fn faucet_get_token_supply_only() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -680,7 +671,7 @@ async fn faucet_get_token_supply_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -728,7 +719,6 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -738,7 +728,7 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -787,12 +777,14 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
 /// Isolated test: only get_name.
 #[tokio::test]
 async fn metadata_get_name_only() -> anyhow::Result<()> {
-    let name = [Word::from([1u32, 2, 3, 4]), Word::from([5u32, 6, 7, 8])];
-    let extension = Info::new().with_name(name);
+    let token_name = TokenName::new("test name").unwrap();
+    let name = token_name.to_words();
+    let extension = Info::new().with_name(token_name);
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
 
     let tx_script = format!(
@@ -823,34 +815,33 @@ async fn metadata_get_name_only() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Isolated test: only get_description.
+/// Isolated test: get_description_commitment returns the RPO256 hash of the 6 description words.
 #[tokio::test]
 async fn metadata_get_description_only() -> anyhow::Result<()> {
-    let description = [
-        Word::from([10u32, 11, 12, 13]),
-        Word::from([14u32, 15, 16, 17]),
-        Word::from([18u32, 19, 20, 21]),
-        Word::from([22u32, 23, 24, 25]),
-        Word::from([26u32, 27, 28, 29]),
-        Word::from([30u32, 31, 32, 33]),
-    ];
-    let extension = Info::new().with_description(description, false);
+    let desc_text = "some test description text";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
+    let extension = Info::new().with_description(description_typed, false);
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
+
+    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_commitment = Hasher::hash_elements(&desc_felts);
 
     let tx_script = format!(
         r#"
         begin
-            call.::miden::standards::metadata::fungible::get_description
-            # => [DESCRIPTION_0, pad(12)]
-            push.{expected_0}
-            assert_eqw.err="description_0 does not match"
+            call.::miden::standards::metadata::fungible::get_description_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected}
+            assert_eqw.err="description commitment does not match"
         end
         "#,
-        expected_0 = description[0],
+        expected = expected_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -867,32 +858,21 @@ async fn metadata_get_description_only() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Isolated test: get_initialized_config and get_mutability_config.
+/// Isolated test: get_mutability_config.
 #[tokio::test]
 async fn metadata_get_config_only() -> anyhow::Result<()> {
     let extension = Info::new()
-        .with_description([Word::default(); 6], true) // mutable
+        .with_description(Description::new("test").unwrap(), true) // mutable
         .with_max_supply_mutable(true);
 
     let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
-        .with_component(extension)
+        .with_component(build_faucet_with_info(extension))
         .build()?;
 
     let tx_script = r#"
         begin
-            # Check initialized config
-            call.::miden::standards::metadata::fungible::get_initialized_config
-            # => [max_supply_mutable, extlink_init, logo_init, desc_init, pad(12)]
-            push.1
-            assert_eq.err="max_supply_mutable should be 1"
-            push.0
-            assert_eq.err="extlink_init should be 0"
-            push.0
-            assert_eq.err="logo_init should be 0"
-            push.1
-            assert_eq.err="desc_init should be 1"
-
             # Check mutability config
             call.::miden::standards::metadata::fungible::get_mutability_config
             # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
@@ -944,7 +924,7 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
         decimals,
         max_supply,
         owner_account_id,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -996,7 +976,6 @@ async fn faucet_get_max_supply_only() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -1006,7 +985,7 @@ async fn faucet_get_max_supply_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -1054,7 +1033,6 @@ async fn faucet_get_decimals_and_symbol_from_masm() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
     use miden_protocol::asset::TokenSymbol;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
     let token_symbol = TokenSymbol::new("POL").unwrap();
     let decimals: u8 = 8;
@@ -1064,7 +1042,7 @@ async fn faucet_get_decimals_and_symbol_from_masm() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        TokenName::try_from("POL").unwrap(),
+        TokenName::new("POL").unwrap(),
         None,
         None,
         None,
@@ -1130,39 +1108,36 @@ async fn faucet_get_decimals_and_symbol_from_masm() -> anyhow::Result<()> {
 async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
     use miden_protocol::Felt;
     use miden_protocol::account::AccountStorageMode;
-    use miden_standards::account::faucets::BasicFungibleFaucet;
 
-    let name = [Word::from([100u32, 200, 300, 400]), Word::from([500u32, 600, 700, 800])];
-    let description = [
-        Word::from([1u32, 2, 3, 4]),
-        Word::from([5u32, 6, 7, 8]),
-        Word::from([9u32, 10, 11, 12]),
-        Word::from([13u32, 14, 15, 16]),
-        Word::from([17u32, 18, 19, 20]),
-        Word::from([21u32, 22, 23, 24]),
-    ];
+    let token_name = TokenName::new("readable name").unwrap();
+    let name = token_name.to_words();
+    let desc_text = "readable description";
+    let description_typed = Description::new(desc_text).unwrap();
+    let description = description_typed.to_words();
 
     let faucet = BasicFungibleFaucet::new(
         "MAS".try_into().unwrap(),
         10,                 // decimals
         Felt::new(999_999), // max_supply
-        TokenName::try_from("MAS").unwrap(),
+        TokenName::new("MAS").unwrap(),
         None,
         None,
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(name).with_description(description, false);
+    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
-        .with_component(faucet)
-        .with_component(extension)
+        .with_component(faucet.with_info(extension))
         .build()?;
 
-    // MASM script to read name and description via the metadata procedures and verify
+    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_desc_commitment = Hasher::hash_elements(&desc_felts);
+
+    // MASM script to read name and description commitment via the metadata procedures and verify
     let tx_script = format!(
         r#"
         begin
@@ -1174,16 +1149,16 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
             push.{expected_name_1}
             assert_eqw.err="faucet name chunk 1 does not match"
 
-            # Get description and verify first chunk
-            call.::miden::standards::metadata::fungible::get_description
-            # => [DESCRIPTION_0, pad(12)]
-            push.{expected_desc_0}
-            assert_eqw.err="faucet description_0 does not match"
+            # Get description commitment and verify
+            call.::miden::standards::metadata::fungible::get_description_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected_desc_commitment}
+            assert_eqw.err="faucet description commitment does not match"
         end
         "#,
         expected_name_0 = name[0],
         expected_name_1 = name[1],
-        expected_desc_0 = description[0],
+        expected_desc_commitment = expected_desc_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1275,7 +1250,7 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When description flag is 2 and note sender is the owner, optional_set_description succeeds.
+/// When description mutable flag is 1 and note sender is the owner, optional_set_description succeeds.
 #[tokio::test]
 async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1357,7 +1332,7 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
     Ok(())
 }
 
-/// When description flag is 2 but note sender is not the owner, optional_set_description panics.
+/// When description mutable flag is 1 but note sender is not the owner, optional_set_description panics.
 #[tokio::test]
 async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1635,22 +1610,29 @@ async fn optional_set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()>
 /// Also tests is_max_supply_mutable with true (expects 1).
 #[tokio::test]
 async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
-    let data = field_from_bytes(b"test").unwrap();
+    let desc = Description::new("test").unwrap();
+    let logo = LogoURI::new("https://example.com/logo").unwrap();
+    let link = ExternalLink::new("https://example.com").unwrap();
 
     let cases: Vec<(Info, &str, u8)> = vec![
         (Info::new().with_max_supply_mutable(true), "is_max_supply_mutable", 1),
-        (Info::new().with_description(data, true), "is_description_mutable", 1),
-        (Info::new().with_description(data, false), "is_description_mutable", 0),
-        (Info::new().with_logo_uri(data, true), "is_logo_uri_mutable", 1),
-        (Info::new().with_logo_uri(data, false), "is_logo_uri_mutable", 0),
-        (Info::new().with_external_link(data, true), "is_external_link_mutable", 1),
-        (Info::new().with_external_link(data, false), "is_external_link_mutable", 0),
+        (Info::new().with_description(desc.clone(), true), "is_description_mutable", 1),
+        (Info::new().with_description(desc, false), "is_description_mutable", 0),
+        (Info::new().with_logo_uri(logo.clone(), true), "is_logo_uri_mutable", 1),
+        (Info::new().with_logo_uri(logo, false), "is_logo_uri_mutable", 0),
+        (
+            Info::new().with_external_link(link.clone(), true),
+            "is_external_link_mutable",
+            1,
+        ),
+        (Info::new().with_external_link(link, false), "is_external_link_mutable", 0),
     ];
 
     for (info, proc_name, expected) in cases {
         let account = AccountBuilder::new([1u8; 32])
+            .account_type(AccountType::FungibleFaucet)
             .with_auth_component(NoAuth)
-            .with_component(info)
+            .with_component(build_faucet_with_info(info))
             .build()?;
 
         let tx_script = format!(
@@ -1672,6 +1654,588 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
 
         tx_context.execute().await?;
     }
+
+    Ok(())
+}
+
+// =================================================================================================
+// get_logo_uri_commitment: commitment test
+// =================================================================================================
+
+/// Tests that get_logo_uri_commitment returns the RPO256 hash of the 6 logo URI words.
+#[tokio::test]
+async fn metadata_get_logo_uri_commitment() -> anyhow::Result<()> {
+    let logo_text = "https://example.com/logo.png";
+    let logo_typed = LogoURI::new(logo_text).unwrap();
+    let logo_words = logo_typed.to_words();
+
+    let extension = Info::new().with_logo_uri(logo_typed, false);
+
+    let account = AccountBuilder::new([10u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(build_faucet_with_info(extension))
+        .build()?;
+
+    let logo_felts: Vec<Felt> = logo_words.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_commitment = Hasher::hash_elements(&logo_felts);
+
+    let tx_script = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_logo_uri_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected}
+            assert_eqw.err="logo URI commitment does not match"
+        end
+        "#,
+        expected = expected_commitment,
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
+
+    let tx_context = TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    tx_context.execute().await?;
+
+    Ok(())
+}
+
+// =================================================================================================
+// get_external_link_commitment: commitment test
+// =================================================================================================
+
+/// Tests that get_external_link_commitment returns the RPO256 hash of the 6 external link words.
+#[tokio::test]
+async fn metadata_get_external_link_commitment() -> anyhow::Result<()> {
+    let link_text = "https://example.com";
+    let link_typed = ExternalLink::new(link_text).unwrap();
+    let link_words = link_typed.to_words();
+
+    let extension = Info::new().with_external_link(link_typed, false);
+
+    let account = AccountBuilder::new([11u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(build_faucet_with_info(extension))
+        .build()?;
+
+    let link_felts: Vec<Felt> = link_words.iter().flat_map(|w| w.iter().copied()).collect();
+    let expected_commitment = Hasher::hash_elements(&link_felts);
+
+    let tx_script = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_external_link_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected}
+            assert_eqw.err="external link commitment does not match"
+        end
+        "#,
+        expected = expected_commitment,
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
+
+    let tx_context = TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    tx_context.execute().await?;
+
+    Ok(())
+}
+
+/// Tests that commitment of an empty (all-zero) description is deterministic.
+#[tokio::test]
+async fn metadata_get_description_commitment_zero_field() -> anyhow::Result<()> {
+    // No description set — all storage slots will be zero words
+    let extension = Info::new();
+
+    let account = AccountBuilder::new([12u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(build_faucet_with_info(extension))
+        .build()?;
+
+    // Expected: RPO256 hash of 24 zero felts
+    let zero_felts = vec![Felt::new(0); 24];
+    let expected_commitment = Hasher::hash_elements(&zero_felts);
+
+    let tx_script = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_description_commitment
+            # => [COMMITMENT, pad(12)]
+            push.{expected}
+            assert_eqw.err="zero description commitment does not match"
+        end
+        "#,
+        expected = expected_commitment,
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
+
+    let tx_context = TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    tx_context.execute().await?;
+
+    Ok(())
+}
+
+// =================================================================================================
+// optional_set_logo_uri: mutable flag and verify_owner
+// =================================================================================================
+
+/// When logo URI flag is 0 (immutable), optional_set_logo_uri panics.
+#[tokio::test]
+async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let logo = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "LGO",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        Some((logo, false)), // immutable
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let new_logo = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let tx_script = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .extend_advice_map([(LOGO_URI_DATA_KEY, field_advice_map_value(&new_logo))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_LOGO_URI_NOT_MUTABLE);
+
+    Ok(())
+}
+
+/// When logo URI mutable flag is 1 and note sender is the owner, optional_set_logo_uri succeeds.
+#[tokio::test]
+async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let initial_logo = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let new_logo = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "LGO",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        Some((initial_logo, true)), // mutable
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let set_logo_note_script_code = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let set_logo_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(set_logo_note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(50u32); 4].into());
+    let set_logo_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([40, 41, 42, 43u32]))
+        .code(set_logo_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[set_logo_note])?
+        .add_note_script(set_logo_note_script)
+        .extend_advice_map([(LOGO_URI_DATA_KEY, field_advice_map_value(&new_logo))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed = tx_context.execute().await?;
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_delta(executed.account_delta())?;
+
+    for (i, expected) in new_logo.iter().enumerate() {
+        let chunk = updated_faucet.storage().get_item(Info::logo_uri_slot(i))?;
+        assert_eq!(chunk, *expected, "logo_uri_{i} should be updated");
+    }
+
+    Ok(())
+}
+
+/// When logo URI mutable flag is 1 but note sender is not the owner, optional_set_logo_uri panics.
+#[tokio::test]
+async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let non_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let initial_logo = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let new_logo = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "LGO",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        Some((initial_logo, true)),
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let set_logo_note_script_code = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let set_logo_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(set_logo_note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let set_logo_note = NoteBuilder::new(non_owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([50, 51, 52, 53u32]))
+        .code(set_logo_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[set_logo_note])?
+        .add_note_script(set_logo_note_script)
+        .extend_advice_map([(LOGO_URI_DATA_KEY, field_advice_map_value(&new_logo))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+// =================================================================================================
+// optional_set_external_link: mutable flag and verify_owner
+// =================================================================================================
+
+/// When external link flag is 0 (immutable), optional_set_external_link panics.
+#[tokio::test]
+async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let link = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "EXL",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        None,
+        Some((link, false)), // immutable
+    )?;
+    let mock_chain = builder.build()?;
+
+    let new_link = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let tx_script = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_external_link
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script =
+        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .extend_advice_map([(EXTERNAL_LINK_DATA_KEY, field_advice_map_value(&new_link))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_EXTERNAL_LINK_NOT_MUTABLE);
+
+    Ok(())
+}
+
+/// When external link mutable flag is 1 and note sender is the owner, optional_set_external_link succeeds.
+#[tokio::test]
+async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let initial_link = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let new_link = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "EXL",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        None,
+        Some((initial_link, true)), // mutable
+    )?;
+    let mock_chain = builder.build()?;
+
+    let set_link_note_script_code = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_external_link
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let set_link_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(set_link_note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(60u32); 4].into());
+    let set_link_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([60, 61, 62, 63u32]))
+        .code(set_link_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[set_link_note])?
+        .add_note_script(set_link_note_script)
+        .extend_advice_map([(EXTERNAL_LINK_DATA_KEY, field_advice_map_value(&new_link))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed = tx_context.execute().await?;
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_delta(executed.account_delta())?;
+
+    for (i, expected) in new_link.iter().enumerate() {
+        let chunk = updated_faucet.storage().get_item(Info::external_link_slot(i))?;
+        assert_eq!(chunk, *expected, "external_link_{i} should be updated");
+    }
+
+    Ok(())
+}
+
+/// When external link mutable flag is 1 but note sender is not the owner, optional_set_external_link panics.
+#[tokio::test]
+async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+    let non_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let initial_link = [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+    ];
+    let new_link = [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+    ];
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "EXL",
+        1000,
+        owner_account_id,
+        Some(0),
+        false,
+        None,
+        None,
+        Some((initial_link, true)),
+    )?;
+    let mock_chain = builder.build()?;
+
+    let set_link_note_script_code = r#"
+        begin
+            call.::miden::standards::metadata::fungible::optional_set_external_link
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let set_link_note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(set_link_note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let set_link_note = NoteBuilder::new(non_owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([70, 71, 72, 73u32]))
+        .code(set_link_note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[set_link_note])?
+        .add_note_script(set_link_note_script)
+        .extend_advice_map([(EXTERNAL_LINK_DATA_KEY, field_advice_map_value(&new_link))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
 
     Ok(())
 }

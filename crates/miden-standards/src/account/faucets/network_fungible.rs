@@ -19,14 +19,21 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
-use super::{Description, ExternalLink, FungibleFaucetError, LogoURI, TokenMetadata, TokenName};
+use super::{
+    Description,
+    ExternalLink,
+    FungibleFaucetError,
+    FungibleTokenMetadata,
+    LogoURI,
+    TokenName,
+};
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::metadata::Info;
+use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
 use crate::procedure_digest;
 
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -66,8 +73,9 @@ procedure_digest!(
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct NetworkFungibleFaucet {
-    metadata: TokenMetadata,
+    metadata: FungibleTokenMetadata,
     owner_account_id: AccountId,
+    info: Option<TokenMetadataInfo>,
 }
 
 impl NetworkFungibleFaucet {
@@ -78,7 +86,7 @@ impl NetworkFungibleFaucet {
     pub const NAME: &'static str = "miden::network_fungible_faucet";
 
     /// The maximum number of decimals supported by the component.
-    pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
+    pub const MAX_DECIMALS: u8 = FungibleTokenMetadata::MAX_DECIMALS;
 
     const DISTRIBUTE_PROC_NAME: &str = "network_fungible_faucet::distribute";
     const BURN_PROC_NAME: &str = "network_fungible_faucet::burn";
@@ -88,9 +96,8 @@ impl NetworkFungibleFaucet {
 
     /// Creates a new [`NetworkFungibleFaucet`] component from the given pieces of metadata.
     ///
-    /// Optional `description`, `logo_uri`, and `external_link` are stored in the metadata
-    /// [`Info`][Info] component when building an account (e.g. via
-    /// [`create_network_fungible_faucet`]).
+    /// Optional `description`, `logo_uri`, and `external_link` are stored in the component's
+    /// storage slots when building an account.
     ///
     /// # Errors:
     /// Returns an error if:
@@ -107,7 +114,7 @@ impl NetworkFungibleFaucet {
         logo_uri: Option<LogoURI>,
         external_link: Option<ExternalLink>,
     ) -> Result<Self, FungibleFaucetError> {
-        let metadata = TokenMetadata::new(
+        let metadata = FungibleTokenMetadata::new(
             symbol,
             decimals,
             max_supply,
@@ -116,15 +123,22 @@ impl NetworkFungibleFaucet {
             logo_uri,
             external_link,
         )?;
-        Ok(Self { metadata, owner_account_id })
+        Ok(Self { metadata, owner_account_id, info: None })
     }
 
-    /// Creates a new [`NetworkFungibleFaucet`] component from the given [`TokenMetadata`].
+    /// Creates a new [`NetworkFungibleFaucet`] component from the given [`FungibleTokenMetadata`].
     ///
     /// This is a convenience constructor that allows creating a faucet from pre-validated
     /// metadata.
-    pub fn from_metadata(metadata: TokenMetadata, owner_account_id: AccountId) -> Self {
-        Self { metadata, owner_account_id }
+    pub fn from_metadata(metadata: FungibleTokenMetadata, owner_account_id: AccountId) -> Self {
+        Self { metadata, owner_account_id, info: None }
+    }
+
+    /// Attaches token metadata (name, description, logo, link, mutability flags) to the
+    /// faucet. These storage slots will be included in the component when built.
+    pub fn with_info(mut self, info: TokenMetadataInfo) -> Self {
+        self.info = Some(info);
+        self
     }
 
     /// Attempts to create a new [`NetworkFungibleFaucet`] component from the associated account
@@ -153,7 +167,7 @@ impl NetworkFungibleFaucet {
         }
 
         // Read token metadata from storage
-        let metadata = TokenMetadata::try_from(storage)?;
+        let metadata = FungibleTokenMetadata::try_from(storage)?;
 
         // obtain owner account ID from the next storage slot
         let owner_account_id_word: Word = storage
@@ -169,7 +183,7 @@ impl NetworkFungibleFaucet {
         let suffix = owner_account_id_word[2];
         let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
 
-        Ok(Self { metadata, owner_account_id })
+        Ok(Self { metadata, owner_account_id, info: None })
     }
 
     // PUBLIC ACCESSORS
@@ -178,7 +192,7 @@ impl NetworkFungibleFaucet {
     /// Returns the [`StorageSlotName`] where the [`NetworkFungibleFaucet`]'s metadata is stored
     /// (slot 0).
     pub fn metadata_slot() -> &'static StorageSlotName {
-        TokenMetadata::metadata_slot()
+        FungibleTokenMetadata::metadata_slot()
     }
 
     /// Returns the [`StorageSlotName`] where the [`NetworkFungibleFaucet`]'s owner configuration is
@@ -221,7 +235,7 @@ impl NetworkFungibleFaucet {
     }
 
     /// Returns the token metadata.
-    pub fn metadata(&self) -> &TokenMetadata {
+    pub fn metadata(&self) -> &FungibleTokenMetadata {
         &self.metadata
     }
 
@@ -284,7 +298,6 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
 
-        // Convert AccountId into its Word encoding for storage.
         let owner_account_id_word: Word = [
             Felt::new(0),
             Felt::new(0),
@@ -298,6 +311,11 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             owner_account_id_word,
         );
 
+        let mut slots = vec![metadata_slot, owner_slot];
+        if let Some(info) = &network_faucet.info {
+            slots.extend(info.storage_slots());
+        }
+
         let storage_schema = StorageSchema::new([
             NetworkFungibleFaucet::metadata_slot_schema(),
             NetworkFungibleFaucet::owner_config_slot_schema(),
@@ -309,12 +327,8 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             .with_supported_type(AccountType::FungibleFaucet)
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(
-            network_fungible_faucet_library(),
-            vec![metadata_slot, owner_slot],
-            metadata,
-        )
-        .expect("network fungible faucet component should satisfy the requirements of a valid account component")
+        AccountComponent::new(network_fungible_faucet_library(), slots, metadata)
+            .expect("network fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 
@@ -340,7 +354,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 
 /// Creates a new faucet account with network fungible faucet interface and provided metadata
 /// (token symbol, decimals, max supply, owner account ID). Optional `name`, `description`,
-/// `logo_uri`, and `external_link` are stored in the metadata [`Info`][Info] component when
+/// `logo_uri`, and `external_link` are stored in the faucet's metadata storage slots when
 /// provided.
 ///
 /// The network faucet interface exposes two procedures:
@@ -371,6 +385,17 @@ pub fn create_network_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
+    let mut info = TokenMetadataInfo::new().with_name(name.clone());
+    if let Some(d) = &description {
+        info = info.with_description(d.clone(), false);
+    }
+    if let Some(l) = &logo_uri {
+        info = info.with_logo_uri(l.clone(), false);
+    }
+    if let Some(e) = &external_link {
+        info = info.with_external_link(e.clone(), false);
+    }
+
     let faucet = NetworkFungibleFaucet::new(
         symbol,
         decimals,
@@ -380,25 +405,14 @@ pub fn create_network_fungible_faucet(
         description,
         logo_uri,
         external_link,
-    )?;
-
-    let mut info = Info::new().with_name(name.as_words());
-    if let Some(d) = &description {
-        info = info.with_description(d.as_words(), false);
-    }
-    if let Some(l) = &logo_uri {
-        info = info.with_logo_uri(l.as_words(), false);
-    }
-    if let Some(e) = &external_link {
-        info = info.with_external_link(e.as_words(), false);
-    }
+    )?
+    .with_info(info);
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(auth_component)
         .with_component(faucet)
-        .with_component(info)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

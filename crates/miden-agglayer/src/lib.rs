@@ -22,7 +22,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata, TokenName};
+use miden_standards::account::faucets::{FungibleFaucetError, FungibleTokenMetadata, TokenName};
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -324,14 +324,14 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 ///
 /// ## Storage Layout
 ///
-/// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
+/// - [`Self::metadata_slot`]: Stores [`FungibleTokenMetadata`].
 /// - [`Self::bridge_account_id_slot`]: Stores the AggLayer bridge account ID.
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
-    metadata: TokenMetadata,
+    metadata: FungibleTokenMetadata,
     bridge_account_id: AccountId,
     origin_token_address: EthAddressFormat,
     origin_network: u32,
@@ -343,7 +343,7 @@ impl AggLayerFaucet {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The decimals parameter exceeds maximum value of [`TokenMetadata::MAX_DECIMALS`].
+    /// - The decimals parameter exceeds maximum value of [`FungibleTokenMetadata::MAX_DECIMALS`].
     /// - The max supply exceeds maximum possible amount for a fungible asset.
     /// - The token supply exceeds the max supply.
     pub fn new(
@@ -357,8 +357,8 @@ impl AggLayerFaucet {
         scale: u8,
     ) -> Result<Self, FungibleFaucetError> {
         // Use empty name for agglayer faucets (name is stored in Info component, not here).
-        let name = TokenName::try_from("").expect("empty string is valid");
-        let metadata = TokenMetadata::with_supply(
+        let name = TokenName::new("").expect("empty string is valid");
+        let metadata = FungibleTokenMetadata::with_supply(
             symbol,
             decimals,
             max_supply,
@@ -386,9 +386,9 @@ impl AggLayerFaucet {
         Ok(self)
     }
 
-    /// Storage slot name for [`TokenMetadata`].
+    /// Storage slot name for [`FungibleTokenMetadata`].
     pub fn metadata_slot() -> &'static StorageSlotName {
-        TokenMetadata::metadata_slot()
+        FungibleTokenMetadata::metadata_slot()
     }
 
     /// Storage slot name for the AggLayer bridge account ID.

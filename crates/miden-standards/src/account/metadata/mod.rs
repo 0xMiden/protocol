@@ -1,7 +1,7 @@
 //! Account / contract / faucet metadata (slots 0..23)
 //!
 //! All of the following are metadata of the account (or faucet): token_symbol, decimals,
-//! max_supply, owner, name, initialized_config, mutability_config, description, logo URI,
+//! max_supply, owner, name, mutability_config, description, logo URI,
 //! and external link.
 //!
 //! ## Storage layout
@@ -12,7 +12,6 @@
 //! | `ownable::owner_config` | owner account id (defined by ownable module) |
 //! | `metadata::name_0` | first 4 felts of name |
 //! | `metadata::name_1` | last 4 felts of name |
-//! | `metadata::initialized_config` | `[desc_init, logo_init, extlink_init, max_supply_mutable]` |
 //! | `metadata::mutability_config` | `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]` |
 //! | `metadata::description_0..5` | description (6 Words, ~192 bytes) |
 //! | `metadata::logo_uri_0..5` | logo URI (6 Words, ~192 bytes) |
@@ -25,25 +24,23 @@
 //! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
 //! Any change to slot indices or names must be applied in both Rust and MASM.
 //!
-//! ## Config Words
+//! ## Config Word
 //!
-//! Two config Words store per-field boolean flags:
-//!
-//! **initialized_config**: `[desc_init, logo_init, extlink_init, max_supply_mutable]`
-//! - Each flag is 0 (not initialized) or 1 (initialized).
+//! A single config Word stores per-field boolean flags:
 //!
 //! **mutability_config**: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
 //! - Each flag is 0 (immutable) or 1 (mutable / owner can update).
 //!
-//! `max_supply_mutable` appears in both words for convenient access.
+//! Whether a field is *present* is determined by whether its storage words are all zero
+//! (absent) or not (present). No separate `initialized_config` is needed.
 //!
 //! ## MASM modules
 //!
 //! All metadata procedures (getters, `get_owner`, setters) live in
 //! `miden::standards::metadata::fungible`, which depends on ownable. The standalone
-//! Info component uses the standards library and exposes `get_name`, `get_description`,
-//! `get_logo_uri`, `get_external_link`; for owner and mutable fields use a component
-//! that re-exports from fungible (e.g. network fungible faucet).
+//! The TokenMetadata component uses the standards library and exposes `get_name`,
+//! `get_description`, `get_logo_uri`, `get_external_link`; for owner and mutable fields use a
+//! component that re-exports from fungible (e.g. network fungible faucet).
 //!
 //! ## Name encoding (UTF-8)
 //!
@@ -55,15 +52,17 @@
 //! # Example
 //!
 //! ```ignore
-//! use miden_standards::account::metadata::Info;
+//! use miden_standards::account::metadata::TokenMetadata;
+//! use miden_standards::account::faucets::{TokenName, Description, LogoURI};
 //!
-//! let info = Info::new()
-//!     .with_name([name_word_0, name_word_1])
-//!     .with_description([d0, d1, d2, d3, d4, d5], true)   // initialized + mutable
-//!     .with_logo_uri([l0, l1, l2, l3, l4, l5], false);     // initialized + immutable
+//! let info = TokenMetadata::new()
+//!     .with_name(TokenName::new("My Token").unwrap())
+//!     .with_description(Description::new("A cool token").unwrap(), true)
+//!     .with_logo_uri(LogoURI::new("https://example.com/logo.png").unwrap(), false);
 //!
+//! let faucet = BasicFungibleFaucet::new(/* ... */).unwrap().with_info(info);
 //! let account = AccountBuilder::new(seed)
-//!     .with_component(info)
+//!     .with_component(faucet)
 //!     .build()?;
 //! ```
 
@@ -85,7 +84,8 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::components::{metadata_info_component_library, storage_schema_library};
+use crate::account::components::storage_schema_library;
+use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 
 // CONSTANTS — canonical layout: slots 0–22
 // ================================================================================================
@@ -108,7 +108,7 @@ pub static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Token name (2 Words = 8 felts), split across 2 slots.
 ///
 /// The encoding is not specified; the value is opaque word data. For human-readable names,
-/// use UTF-8 encoding via [`name_from_utf8`] / [`name_to_utf8`] or [`Info::with_name_utf8`].
+/// use [`TokenName::new`] / [`TokenName::to_words`] / [`TokenName::try_from_words`].
 pub static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
@@ -134,57 +134,27 @@ pub enum NameUtf8Error {
 ///
 /// Bytes are packed little-endian, 4 bytes per felt (8 felts total). The string is
 /// zero-padded to 32 bytes. Returns an error if the UTF-8 byte length exceeds 32.
+///
+/// Prefer using [`TokenName::new`] + [`TokenName::to_words`] directly.
 pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
-    let bytes = s.as_bytes();
-    if bytes.len() > NAME_UTF8_MAX_BYTES {
-        return Err(NameUtf8Error::TooLong(bytes.len()));
-    }
-    let mut padded = [0u8; NAME_UTF8_MAX_BYTES];
-    padded[..bytes.len()].copy_from_slice(bytes);
-    let felts: [Felt; 8] = padded
-        .chunks_exact(4)
-        .map(|chunk| Felt::from(u32::from_le_bytes(chunk.try_into().unwrap())))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    Ok([
-        Word::from([felts[0], felts[1], felts[2], felts[3]]),
-        Word::from([felts[4], felts[5], felts[6], felts[7]]),
-    ])
+    use crate::account::faucets::TokenName;
+    Ok(TokenName::new(s)?.to_words())
 }
 
 /// Decodes the 2-Word name format as UTF-8.
 ///
 /// Assumes the name was encoded with [`name_from_utf8`] (little-endian, 4 bytes per felt).
 /// Trailing zero bytes are trimmed before UTF-8 validation.
-pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
-    let mut bytes = [0u8; NAME_UTF8_MAX_BYTES];
-    for (i, word) in words.iter().enumerate() {
-        for (j, f) in word.iter().enumerate() {
-            let v = f.as_int();
-            if v > u32::MAX as u64 {
-                return Err(NameUtf8Error::InvalidUtf8);
-            }
-            bytes[i * 16 + j * 4..][..4].copy_from_slice(&(v as u32).to_le_bytes());
-        }
-    }
-    let len = bytes.iter().position(|&b| b == 0).unwrap_or(NAME_UTF8_MAX_BYTES);
-    String::from_utf8(bytes[..len].to_vec()).map_err(|_| NameUtf8Error::InvalidUtf8)
-}
-
-/// Initialized config slot: `[desc_init, logo_init, extlink_init, max_supply_mutable]`.
 ///
-/// Each flag is 0 (not initialized) or 1 (initialized).
-/// `max_supply_mutable` appears here for convenient access.
-pub static INITIALIZED_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::initialized_config")
-        .expect("storage slot name should be valid")
-});
+/// Prefer using [`TokenName::try_from_words`] directly.
+pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
+    use crate::account::faucets::TokenName;
+    Ok(TokenName::try_from_words(words)?.as_str().into())
+}
 
 /// Mutability config slot: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`.
 ///
 /// Each flag is 0 (immutable) or 1 (mutable / owner can update).
-/// `max_supply_mutable` appears here for convenient access.
 pub static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::mutability_config")
         .expect("storage slot name should be valid")
@@ -194,40 +164,28 @@ pub static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// 6 Words = 24 felts × 8 bytes = 192 bytes.
 pub const FIELD_MAX_BYTES: usize = 192;
 
-/// Errors when encoding metadata fields from bytes.
+/// Errors when encoding or decoding metadata fields.
 #[derive(Debug, Clone, Error)]
 pub enum FieldBytesError {
     /// Field exceeds [`FIELD_MAX_BYTES`].
     #[error("field must be at most {FIELD_MAX_BYTES} bytes, got {0}")]
     TooLong(usize),
+    /// Decoded bytes are not valid UTF-8.
+    #[error("field is not valid UTF-8")]
+    InvalidUtf8,
 }
 
-/// Encodes a byte slice into 6 Words (24 felts).
+/// Encodes a UTF-8 string into 6 Words (24 felts).
 ///
-/// Bytes are packed little-endian, 8 bytes per felt (24 felts total). The slice is zero-padded
+/// Bytes are packed little-endian, 8 bytes per felt (24 felts total). The string is zero-padded
 /// to 192 bytes. Returns an error if the length exceeds 192.
+///
+/// Prefer using [`Description::new`] + [`Description::to_words`] (or `LogoURI` / `ExternalLink`)
+/// directly.
 pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 6], FieldBytesError> {
-    if bytes.len() > FIELD_MAX_BYTES {
-        return Err(FieldBytesError::TooLong(bytes.len()));
-    }
-    let mut padded = [0u8; FIELD_MAX_BYTES];
-    padded[..bytes.len()].copy_from_slice(bytes);
-    let felts: Vec<Felt> = padded
-        .chunks_exact(8)
-        .map(|chunk| {
-            Felt::try_from(u64::from_le_bytes(chunk.try_into().unwrap()))
-                .expect("u64 values from 8-byte chunks fit in Felt")
-        })
-        .collect();
-    let felts: [Felt; 24] = felts.try_into().unwrap();
-    Ok([
-        Word::from([felts[0], felts[1], felts[2], felts[3]]),
-        Word::from([felts[4], felts[5], felts[6], felts[7]]),
-        Word::from([felts[8], felts[9], felts[10], felts[11]]),
-        Word::from([felts[12], felts[13], felts[14], felts[15]]),
-        Word::from([felts[16], felts[17], felts[18], felts[19]]),
-        Word::from([felts[20], felts[21], felts[22], felts[23]]),
-    ])
+    use crate::account::faucets::Description;
+    let s = core::str::from_utf8(bytes).map_err(|_| FieldBytesError::InvalidUtf8)?;
+    Ok(Description::new(s)?.to_words())
 }
 
 /// Description (6 Words = 24 felts), split across 6 slots.
@@ -306,11 +264,6 @@ pub fn owner_config_slot() -> &'static StorageSlotName {
     &OWNER_CONFIG_SLOT
 }
 
-/// Returns the [`StorageSlotName`] for the initialized config Word.
-pub fn initialized_config_slot() -> &'static StorageSlotName {
-    &INITIALIZED_CONFIG_SLOT
-}
-
 /// Returns the [`StorageSlotName`] for the mutability config Word.
 pub fn mutability_config_slot() -> &'static StorageSlotName {
     &MUTABILITY_CONFIG_SLOT
@@ -324,29 +277,24 @@ pub fn mutability_config_slot() -> &'static StorageSlotName {
 /// ## Storage Layout
 ///
 /// - Slot 2–3: name (2 Words = 8 felts)
-/// - Slot 4: initialized_config `[desc_init, logo_init, extlink_init, max_supply_mutable]`
-/// - Slot 5: mutability_config `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
-/// - Slot 6–11: description (6 Words)
-/// - Slot 12–17: logo_uri (6 Words)
-/// - Slot 18–23: external_link (6 Words)
+/// - Slot 4: mutability_config `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
+/// - Slot 5–10: description (6 Words)
+/// - Slot 11–16: logo_uri (6 Words)
+/// - Slot 17–22: external_link (6 Words)
 #[derive(Debug, Clone, Default)]
-pub struct Info {
-    name: Option<[Word; 2]>,
-    /// Whether the description field is mutable (owner can update).
+pub struct TokenMetadata {
+    name: Option<TokenName>,
+    description: Option<Description>,
+    logo_uri: Option<LogoURI>,
+    external_link: Option<ExternalLink>,
     description_mutable: bool,
-    /// Whether the logo URI field is mutable (owner can update).
     logo_uri_mutable: bool,
-    /// Whether the external link field is mutable (owner can update).
     external_link_mutable: bool,
-    /// If true (1), the owner may call optional_set_max_supply. If false (0), immutable.
     max_supply_mutable: bool,
-    description: Option<[Word; 6]>,
-    logo_uri: Option<[Word; 6]>,
-    external_link: Option<[Word; 6]>,
 }
 
-impl Info {
-    /// Creates a new empty metadata info (all fields absent by default).
+impl TokenMetadata {
+    /// Creates a new empty token metadata (all fields absent by default).
     pub fn new() -> Self {
         Self::default()
     }
@@ -358,82 +306,37 @@ impl Info {
         self
     }
 
-    /// Sets the name metadata (2 Words = 8 felts).
-    ///
-    /// Encoding is not specified; for human-readable UTF-8 text use
-    /// [`with_name_utf8`](Info::with_name_utf8).
-    pub fn with_name(mut self, name: [Word; 2]) -> Self {
+    /// Sets the token name.
+    pub fn with_name(mut self, name: TokenName) -> Self {
         self.name = Some(name);
         self
     }
 
-    /// Sets the name from a UTF-8 string (at most [`NAME_UTF8_MAX_BYTES`] bytes).
-    pub fn with_name_utf8(mut self, s: &str) -> Result<Self, NameUtf8Error> {
-        self.name = Some(name_from_utf8(s)?);
-        Ok(self)
-    }
-
-    /// Sets the description metadata (6 Words) with mutability.
+    /// Sets the description with mutability.
     ///
     /// When `mutable` is `true`, the owner can update the description later.
-    /// The field is always marked as initialized when data is provided.
-    pub fn with_description(mut self, description: [Word; 6], mutable: bool) -> Self {
+    pub fn with_description(mut self, description: Description, mutable: bool) -> Self {
         self.description = Some(description);
         self.description_mutable = mutable;
         self
     }
 
-    /// Sets the description from a byte slice (at most [`FIELD_MAX_BYTES`] bytes).
-    pub fn with_description_from_bytes(
-        mut self,
-        bytes: &[u8],
-        mutable: bool,
-    ) -> Result<Self, FieldBytesError> {
-        self.description = Some(field_from_bytes(bytes)?);
-        self.description_mutable = mutable;
-        Ok(self)
-    }
-
-    /// Sets the logo URI metadata (6 Words) with mutability.
+    /// Sets the logo URI with mutability.
     ///
     /// When `mutable` is `true`, the owner can update the logo URI later.
-    /// The field is always marked as initialized when data is provided.
-    pub fn with_logo_uri(mut self, logo_uri: [Word; 6], mutable: bool) -> Self {
+    pub fn with_logo_uri(mut self, logo_uri: LogoURI, mutable: bool) -> Self {
         self.logo_uri = Some(logo_uri);
         self.logo_uri_mutable = mutable;
         self
     }
 
-    /// Sets the logo URI from a byte slice (at most [`FIELD_MAX_BYTES`] bytes).
-    pub fn with_logo_uri_from_bytes(
-        mut self,
-        bytes: &[u8],
-        mutable: bool,
-    ) -> Result<Self, FieldBytesError> {
-        self.logo_uri = Some(field_from_bytes(bytes)?);
-        self.logo_uri_mutable = mutable;
-        Ok(self)
-    }
-
-    /// Sets the external link metadata (6 Words) with mutability.
+    /// Sets the external link with mutability.
     ///
     /// When `mutable` is `true`, the owner can update the external link later.
-    /// The field is always marked as initialized when data is provided.
-    pub fn with_external_link(mut self, external_link: [Word; 6], mutable: bool) -> Self {
+    pub fn with_external_link(mut self, external_link: ExternalLink, mutable: bool) -> Self {
         self.external_link = Some(external_link);
         self.external_link_mutable = mutable;
         self
-    }
-
-    /// Sets the external link from a byte slice (at most [`FIELD_MAX_BYTES`] bytes).
-    pub fn with_external_link_from_bytes(
-        mut self,
-        bytes: &[u8],
-        mutable: bool,
-    ) -> Result<Self, FieldBytesError> {
-        self.external_link = Some(field_from_bytes(bytes)?);
-        self.external_link_mutable = mutable;
-        Ok(self)
     }
 
     /// Returns the slot name for name chunk 0.
@@ -464,18 +367,21 @@ impl Info {
     /// Reads the name and optional metadata fields from account storage.
     ///
     /// Returns `(name, description, logo_uri, external_link)` where each is `Some` only if
-    /// at least one word is non-zero.
-    #[allow(clippy::type_complexity)]
+    /// at least one word is non-zero. Decoding errors (e.g. invalid UTF-8 in storage) cause the
+    /// field to be returned as `None`.
     pub fn read_metadata_from_storage(
         storage: &AccountStorage,
-    ) -> (Option<[Word; 2]>, Option<[Word; 6]>, Option<[Word; 6]>, Option<[Word; 6]>) {
-        // Read name
+    ) -> (Option<TokenName>, Option<Description>, Option<LogoURI>, Option<ExternalLink>) {
         let name = if let (Ok(chunk_0), Ok(chunk_1)) = (
-            storage.get_item(Info::name_chunk_0_slot()),
-            storage.get_item(Info::name_chunk_1_slot()),
+            storage.get_item(TokenMetadata::name_chunk_0_slot()),
+            storage.get_item(TokenMetadata::name_chunk_1_slot()),
         ) {
-            let name: [Word; 2] = [chunk_0, chunk_1];
-            if name != [Word::default(); 2] { Some(name) } else { None }
+            let words: [Word; 2] = [chunk_0, chunk_1];
+            if words != [Word::default(); 2] {
+                TokenName::try_from_words(&words).ok()
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -494,82 +400,65 @@ impl Info {
             if any_set { Some(field) } else { None }
         };
 
-        let description = read_field(&DESCRIPTION_SLOTS);
-        let logo_uri = read_field(&LOGO_URI_SLOTS);
-        let external_link = read_field(&EXTERNAL_LINK_SLOTS);
+        let description =
+            read_field(&DESCRIPTION_SLOTS).and_then(|w| Description::try_from_words(&w).ok());
+        let logo_uri = read_field(&LOGO_URI_SLOTS).and_then(|w| LogoURI::try_from_words(&w).ok());
+        let external_link =
+            read_field(&EXTERNAL_LINK_SLOTS).and_then(|w| ExternalLink::try_from_words(&w).ok());
 
         (name, description, logo_uri, external_link)
     }
 }
 
-impl From<Info> for AccountComponent {
-    fn from(extension: Info) -> Self {
-        let mut storage_slots: Vec<StorageSlot> = Vec::new();
+impl TokenMetadata {
+    /// Returns the storage slots for this metadata (without creating an `AccountComponent`).
+    ///
+    /// These slots are meant to be included directly in a faucet component rather than
+    /// added as a separate `AccountComponent`.
+    pub fn storage_slots(&self) -> Vec<StorageSlot> {
+        let mut slots: Vec<StorageSlot> = Vec::new();
 
-        if let Some(name) = extension.name {
-            storage_slots.push(StorageSlot::with_value(Info::name_chunk_0_slot().clone(), name[0]));
-            storage_slots.push(StorageSlot::with_value(Info::name_chunk_1_slot().clone(), name[1]));
-        }
-
-        let desc_initialized = extension.description.is_some();
-        let logo_initialized = extension.logo_uri.is_some();
-        let extlink_initialized = extension.external_link.is_some();
-
-        // Initialized config word: [desc_init, logo_init, extlink_init, max_supply_mutable]
-        let initialized_config_word = Word::from([
-            Felt::from(desc_initialized as u32),
-            Felt::from(logo_initialized as u32),
-            Felt::from(extlink_initialized as u32),
-            Felt::from(extension.max_supply_mutable as u32),
-        ]);
-        storage_slots.push(StorageSlot::with_value(
-            initialized_config_slot().clone(),
-            initialized_config_word,
+        let name_words = self.name.as_ref().map(|n| n.to_words()).unwrap_or_default();
+        slots.push(StorageSlot::with_value(
+            TokenMetadata::name_chunk_0_slot().clone(),
+            name_words[0],
+        ));
+        slots.push(StorageSlot::with_value(
+            TokenMetadata::name_chunk_1_slot().clone(),
+            name_words[1],
         ));
 
-        // Mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]
         let mutability_config_word = Word::from([
-            Felt::from(extension.description_mutable as u32),
-            Felt::from(extension.logo_uri_mutable as u32),
-            Felt::from(extension.external_link_mutable as u32),
-            Felt::from(extension.max_supply_mutable as u32),
+            Felt::from(self.description_mutable as u32),
+            Felt::from(self.logo_uri_mutable as u32),
+            Felt::from(self.external_link_mutable as u32),
+            Felt::from(self.max_supply_mutable as u32),
         ]);
-        storage_slots.push(StorageSlot::with_value(
+        slots.push(StorageSlot::with_value(
             mutability_config_slot().clone(),
             mutability_config_word,
         ));
 
-        // Description slots (always write 6 slots if initialized)
-        if let Some(description) = extension.description {
-            for (i, word) in description.iter().enumerate() {
-                storage_slots
-                    .push(StorageSlot::with_value(Info::description_slot(i).clone(), *word));
-            }
+        let desc_words: [Word; 6] =
+            self.description.as_ref().map(|d| d.to_words()).unwrap_or_default();
+        for (i, word) in desc_words.iter().enumerate() {
+            slots.push(StorageSlot::with_value(TokenMetadata::description_slot(i).clone(), *word));
         }
 
-        // Logo URI slots
-        if let Some(logo_uri) = extension.logo_uri {
-            for (i, word) in logo_uri.iter().enumerate() {
-                storage_slots.push(StorageSlot::with_value(Info::logo_uri_slot(i).clone(), *word));
-            }
+        let logo_words: [Word; 6] =
+            self.logo_uri.as_ref().map(|l| l.to_words()).unwrap_or_default();
+        for (i, word) in logo_words.iter().enumerate() {
+            slots.push(StorageSlot::with_value(TokenMetadata::logo_uri_slot(i).clone(), *word));
         }
 
-        // External link slots
-        if let Some(external_link) = extension.external_link {
-            for (i, word) in external_link.iter().enumerate() {
-                storage_slots
-                    .push(StorageSlot::with_value(Info::external_link_slot(i).clone(), *word));
-            }
+        let link_words: [Word; 6] =
+            self.external_link.as_ref().map(|e| e.to_words()).unwrap_or_default();
+        for (i, word) in link_words.iter().enumerate() {
+            slots
+                .push(StorageSlot::with_value(TokenMetadata::external_link_slot(i).clone(), *word));
         }
 
-        let metadata = AccountComponentMetadata::new("miden::standards::metadata::info")
-            .with_description(
-                "Metadata info (name, config, description, logo URI, external link) in fixed value slots",
-            )
-            .with_supports_all_types();
-
-        AccountComponent::new(metadata_info_component_library(), storage_slots, metadata)
-            .expect("Info component should satisfy the requirements")
+        slots
     }
 }
 
@@ -714,177 +603,139 @@ fn compute_schema_commitment<'a>(
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
-    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
     use miden_protocol::account::component::AccountComponentMetadata;
+    use miden_protocol::account::{Account, AccountBuilder};
 
     use super::{
         AccountBuilderSchemaCommitmentExt,
         AccountSchemaCommitment,
-        FIELD_MAX_BYTES,
-        FieldBytesError,
-        Info,
         NAME_UTF8_MAX_BYTES,
-        NameUtf8Error,
-        field_from_bytes,
-        initialized_config_slot,
+        TokenMetadata as InfoType,
         mutability_config_slot,
-        name_from_utf8,
-        name_to_utf8,
     };
     use crate::account::auth::{AuthSingleSig, NoAuth};
+    use crate::account::faucets::{BasicFungibleFaucet, Description, TokenName};
+
+    fn build_account_with_info(info: InfoType) -> Account {
+        let name = TokenName::new("T").unwrap();
+        let faucet = BasicFungibleFaucet::new(
+            miden_protocol::asset::TokenSymbol::new("TST").unwrap(),
+            2,
+            miden_protocol::Felt::new(1_000),
+            name,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .with_info(info);
+        AccountBuilder::new([1u8; 32])
+            .account_type(miden_protocol::account::AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(faucet)
+            .build()
+            .unwrap()
+    }
 
     #[test]
     fn metadata_info_can_store_name_and_description() {
-        let name = [Word::from([1u32, 2, 3, 4]), Word::from([5u32, 6, 7, 8])];
-        let description = [
-            Word::from([10u32, 11, 12, 13]),
-            Word::from([14u32, 15, 16, 17]),
-            Word::from([18u32, 19, 20, 21]),
-            Word::from([22u32, 23, 24, 25]),
-            Word::from([26u32, 27, 28, 29]),
-            Word::from([30u32, 31, 32, 33]),
-        ];
+        let name = TokenName::new("test_name").unwrap();
+        let description = Description::new("test description").unwrap();
 
-        let extension = Info::new().with_name(name).with_description(description, false);
+        let name_words = name.to_words();
+        let desc_words = description.to_words();
 
-        let account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(extension)
-            .build()
-            .unwrap();
+        let info = InfoType::new().with_name(name).with_description(description, false);
+        let account = build_account_with_info(info);
 
-        // Verify name chunks
-        let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-        let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
-        assert_eq!(name_0, name[0]);
-        assert_eq!(name_1, name[1]);
+        let name_0 = account.storage().get_item(InfoType::name_chunk_0_slot()).unwrap();
+        let name_1 = account.storage().get_item(InfoType::name_chunk_1_slot()).unwrap();
+        assert_eq!(name_0, name_words[0]);
+        assert_eq!(name_1, name_words[1]);
 
-        // Verify description chunks
-        for (i, expected) in description.iter().enumerate() {
-            let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        for (i, expected) in desc_words.iter().enumerate() {
+            let chunk = account.storage().get_item(InfoType::description_slot(i)).unwrap();
             assert_eq!(chunk, *expected);
         }
     }
 
     #[test]
     fn metadata_info_empty_works() {
-        let extension = Info::new();
-
-        let _account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(extension)
-            .build()
-            .unwrap();
+        let _account = build_account_with_info(InfoType::new());
     }
 
     #[test]
     fn config_slots_set_correctly() {
         use miden_protocol::Felt;
 
-        // Info with description mutable, max_supply_mutable = true
-        let info = Info::new()
-            .with_description([Word::default(); 6], true)
+        let info = InfoType::new()
+            .with_description(Description::new("test").unwrap(), true)
             .with_max_supply_mutable(true);
-        let account = AccountBuilder::new([2u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(info)
-            .build()
-            .unwrap();
+        let account = build_account_with_info(info);
 
-        // Check initialized config
-        let init_word = account.storage().get_item(initialized_config_slot()).unwrap();
-        assert_eq!(init_word[0], Felt::from(1u32), "desc_init should be 1");
-        assert_eq!(init_word[1], Felt::from(0u32), "logo_init should be 0");
-        assert_eq!(init_word[2], Felt::from(0u32), "extlink_init should be 0");
-        assert_eq!(init_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
-
-        // Check mutability config
         let mut_word = account.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(mut_word[0], Felt::from(1u32), "desc_mutable should be 1");
         assert_eq!(mut_word[1], Felt::from(0u32), "logo_mutable should be 0");
         assert_eq!(mut_word[2], Felt::from(0u32), "extlink_mutable should be 0");
         assert_eq!(mut_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
 
-        // Info with defaults (all flags 0)
-        let account_default = AccountBuilder::new([3u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(Info::new())
-            .build()
-            .unwrap();
-        let init_default = account_default.storage().get_item(initialized_config_slot()).unwrap();
-        assert_eq!(init_default[0], Felt::from(0u32), "desc_init should be 0 by default");
-        assert_eq!(init_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
+        let account_default = build_account_with_info(InfoType::new());
         let mut_default = account_default.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(mut_default[0], Felt::from(0u32), "desc_mutable should be 0 by default");
         assert_eq!(mut_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
     }
 
     #[test]
-    fn name_utf8_roundtrip() {
+    fn name_roundtrip() {
         let s = "POL Faucet";
-        let words = name_from_utf8(s).unwrap();
-        let decoded = name_to_utf8(&words).unwrap();
-        assert_eq!(decoded, s);
+        let name = TokenName::new(s).unwrap();
+        let words = name.to_words();
+        let decoded = TokenName::try_from_words(&words).unwrap();
+        assert_eq!(decoded.as_str(), s);
     }
 
     #[test]
-    fn name_utf8_max_32_bytes_accepted() {
+    fn name_max_32_bytes_accepted() {
         let s = "a".repeat(NAME_UTF8_MAX_BYTES);
         assert_eq!(s.len(), 32);
-        let words = name_from_utf8(&s).unwrap();
-        let decoded = name_to_utf8(&words).unwrap();
-        assert_eq!(decoded, s);
+        let name = TokenName::new(&s).unwrap();
+        let words = name.to_words();
+        let decoded = TokenName::try_from_words(&words).unwrap();
+        assert_eq!(decoded.as_str(), s);
     }
 
     #[test]
-    fn name_utf8_too_long_errors() {
+    fn name_too_long_errors() {
         let s = "a".repeat(33);
-        assert!(matches!(name_from_utf8(&s), Err(NameUtf8Error::TooLong(33))));
+        assert!(TokenName::new(&s).is_err());
     }
 
     #[test]
-    fn field_192_bytes_accepted() {
-        let bytes = [0u8; FIELD_MAX_BYTES];
-        let words = field_from_bytes(&bytes).unwrap();
-        assert_eq!(words.len(), 6);
+    fn description_max_bytes_accepted() {
+        let s = "a".repeat(Description::MAX_BYTES);
+        let desc = Description::new(&s).unwrap();
+        assert_eq!(desc.to_words().len(), 6);
     }
 
     #[test]
-    fn field_193_bytes_rejected() {
-        let bytes = [0u8; 193];
-        assert!(matches!(field_from_bytes(&bytes), Err(FieldBytesError::TooLong(193))));
+    fn description_too_long_rejected() {
+        let s = "a".repeat(193);
+        assert!(Description::new(&s).is_err());
     }
 
     #[test]
-    fn metadata_info_with_name_utf8() {
-        let extension = Info::new().with_name_utf8("My Token").unwrap();
-        let account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(extension)
-            .build()
-            .unwrap();
-        let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-        let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
-        let decoded = name_to_utf8(&[name_0, name_1]).unwrap();
-        assert_eq!(decoded, "My Token");
-    }
-
-    #[test]
-    fn metadata_info_name_only_works() {
-        let name = [Word::from([1u32, 2, 3, 4]), Word::from([5u32, 6, 7, 8])];
-        let extension = Info::new().with_name(name);
-
-        let account = AccountBuilder::new([1u8; 32])
-            .with_auth_component(NoAuth)
-            .with_component(extension)
-            .build()
-            .unwrap();
-
-        let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-        let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
-        assert_eq!(name_0, name[0]);
-        assert_eq!(name_1, name[1]);
+    fn metadata_info_with_name() {
+        let name = TokenName::new("My Token").unwrap();
+        let name_words = name.to_words();
+        let info = InfoType::new().with_name(name);
+        let account = build_account_with_info(info);
+        let name_0 = account.storage().get_item(InfoType::name_chunk_0_slot()).unwrap();
+        let name_1 = account.storage().get_item(InfoType::name_chunk_1_slot()).unwrap();
+        let decoded = TokenName::try_from_words(&[name_0, name_1]).unwrap();
+        assert_eq!(decoded.as_str(), "My Token");
+        assert_eq!(name_0, name_words[0]);
+        assert_eq!(name_1, name_words[1]);
     }
 
     #[test]
