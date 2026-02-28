@@ -18,3 +18,6 @@ pub use ordered_batches::OrderedBatches;
 
 mod input_output_note_tracker;
 pub(crate) use input_output_note_tracker::InputOutputNoteTracker;
+
+pub mod kernel;
+pub use kernel::{BatchAdviceInputs, BatchKernel, BatchKernelError, BatchKernelOutputs};

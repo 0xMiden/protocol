@@ -2,6 +2,13 @@ use miden::core::collections::smt
 use miden::core::word
 use $kernel::memory
 
+# TODO: Consider moving LinkMap to miden-stdlib (std::collections)
+# To make it reusable outside kernel context, add a `link_map::new(start_ptr, end_ptr)` 
+# constructor that stores the memory region in metadata instead of using hardcoded
+# kernel-specific memory procs. This would allow users to allocate their desired
+# memory region (determining max elements) while the stdlib doesn't need to care about that.
+# See: https://github.com/0xMiden/miden-base/pull/1428#discussion_r2041192629
+
 # A link map is a map data structure based on a sorted linked list.
 #
 # # Basics & Terminology

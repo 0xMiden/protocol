@@ -1,0 +1,226 @@
+#! Batch Kernel Prologue
+#!
+#! Handles initialization: unhashing inputs, loading transaction data from advice,
+#! and validating basic batch constraints.
+
+use $kernel::memory
+use miden::core::crypto::hashes::rpo256
+use miden::core::word
+
+# CONSTANTS
+# =================================================================================================
+
+# Maximum number of transactions allowed in a single batch
+const MAX_TRANSACTIONS_PER_BATCH=4
+
+# ERRORS
+# =================================================================================================
+
+const ERR_BATCH_EMPTY="batch contains no transactions"
+const ERR_BATCH_TOO_LARGE="batch exceeds maximum transactions per batch"
+const ERR_TX_COMMITMENT_MISMATCH="transaction list does not hash to TRANSACTIONS_COMMITMENT"
+const ERR_DUPLICATE_TX_ID="duplicate transaction id in batch"
+
+# PROLOGUE
+# =================================================================================================
+
+#! Prepares the batch by unhashing inputs and loading data into memory.
+#!
+#! Inputs:
+#!   Operand stack: [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
+#! Outputs:
+#!   Operand stack: []
+pub proc prepare_batch
+    # Store BLOCK_HASH and load block header fields from advice
+    exec.memory::set_block_hash
+    # => [TRANSACTIONS_COMMITMENT]
+
+    adv_push.1 exec.memory::set_block_num
+    # => [TRANSACTIONS_COMMITMENT]
+
+    adv_push.4 exec.memory::set_chain_commitment
+    # => [TRANSACTIONS_COMMITMENT]
+
+    # Save TRANSACTIONS_COMMITMENT for later verification
+    exec.memory::set_saved_tx_commitment
+    # => []
+
+    # Load and validate transaction count
+    adv_push.1
+    # => [tx_count]
+
+    dup eq.0 assertz.err=ERR_BATCH_EMPTY
+    dup push.MAX_TRANSACTIONS_PER_BATCH lte assert.err=ERR_BATCH_TOO_LARGE
+    exec.memory::set_transaction_count
+    # => []
+
+    # Load and verify transaction list
+    exec.load_and_verify_transaction_list
+    exec.check_duplicate_tx_ids
+    exec.load_transaction_preimages
+    # => []
+
+    # Initialize batch expiration to max u32 (computed from tx expirations later)
+    push.0xFFFFFFFF exec.memory::set_batch_expiration_block_num
+    # => []
+end
+
+# TRANSACTION DATA
+# =================================================================================================
+
+#! Loads transaction list from advice, stores in memory, and verifies hash.
+#!
+#! Hash format: [(TX_ID, account_id_prefix, account_id_suffix, 0, 0), ...] per transaction.
+#!
+#! Inputs:
+#!   Operand stack: []
+#! Outputs:
+#!   Operand stack: []
+proc load_and_verify_transaction_list
+    exec.memory::get_transaction_count push.0
+    # => [i, tx_count]
+
+    dup.1 dup.1 gt
+    # => [should_loop, i, tx_count]
+
+    while.true
+        # Compute pointers: hash_ptr = HASH_BUFFER + i*8, tx_ptr = TX_DATA + i*48
+        dup push.8 mul exec.memory::get_hash_buffer_ptr add
+        dup.1 exec.memory::get_tx_data_ptr
+        # => [tx_ptr, hash_ptr, i, tx_count]
+
+        # Load and store TX_ID to both locations
+        padw adv_loadw
+        # => [TX_ID, tx_ptr, hash_ptr, i, tx_count]
+
+        dup.4 mem_storew_be
+        dup.5 mem_storew_be dropw
+        # => [tx_ptr, hash_ptr, i, tx_count]
+
+        # Load and store account_id (prefix and suffix)
+        adv_push.1 dup dup.2 add.4 mem_store dup.2 add.4 mem_store
+        adv_push.1 dup dup.2 add.5 mem_store dup.2 add.5 mem_store
+        # => [tx_ptr, hash_ptr, i, tx_count]
+
+        # Pad hash buffer with zeros at positions 6-7
+        push.0.0 dup.3 add.6 mem_store dup.2 add.7 mem_store
+        # => [tx_ptr, hash_ptr, i, tx_count]
+
+        # Next iteration
+        drop drop add.1
+        # => [i+1, tx_count]
+
+        dup.1 dup.1 gt
+        # => [should_loop, i+1, tx_count]
+    end
+
+    drop
+    # => [tx_count]
+
+    # Verify: hash(tx_data) == TRANSACTIONS_COMMITMENT
+    push.8 mul exec.memory::get_hash_buffer_ptr
+    # => [hash_buffer_end_ptr]
+
+    exec.rpo256::hash_elements
+    # => [COMPUTED_HASH]
+
+    exec.memory::get_saved_tx_commitment
+    # => [SAVED_TX_COMMITMENT, COMPUTED_HASH]
+
+    assert_eqw.err=ERR_TX_COMMITMENT_MISMATCH
+    # => []
+end
+
+#! Loads transaction preimages from advice into memory.
+#!
+#! For each transaction: INIT_ACCOUNT_COMMITMENT, FINAL_ACCOUNT_COMMITMENT,
+#! INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, expiration_block_num.
+#!
+#! Inputs:
+#!   Operand stack: []
+#! Outputs:
+#!   Operand stack: []
+proc load_transaction_preimages
+    exec.memory::get_transaction_count push.0
+    # => [i, tx_count]
+
+    dup.1 dup.1 gt
+    # => [should_loop, i, tx_count]
+
+    while.true
+        dup exec.memory::get_tx_data_ptr
+        # => [tx_ptr, i, tx_count]
+
+        padw adv_loadw dup.4 add.8 mem_storew_be dropw   # INIT_ACCOUNT_COMMITMENT
+        padw adv_loadw dup.4 add.12 mem_storew_be dropw  # FINAL_ACCOUNT_COMMITMENT
+        padw adv_loadw dup.4 add.16 mem_storew_be dropw  # INPUT_NOTES_COMMITMENT
+        padw adv_loadw dup.4 add.20 mem_storew_be dropw  # OUTPUT_NOTES_COMMITMENT
+        adv_push.1 dup.1 add.6 mem_store                 # expiration_block_num
+        # => [tx_ptr, i, tx_count]
+
+        drop add.1
+        # => [i+1, tx_count]
+
+        dup.1 dup.1 gt
+        # => [should_loop, i+1, tx_count]
+    end
+
+    drop drop
+    # => []
+end
+
+# VALIDATION
+# =================================================================================================
+
+#! Checks for duplicate TX_IDs using O(n²) pairwise comparison.
+#!
+#! Inputs:
+#!   Operand stack: []
+#! Outputs:
+#!   Operand stack: []
+proc check_duplicate_tx_ids
+    exec.memory::get_transaction_count push.0
+    # => [i, tx_count]
+
+    dup.1 push.1 sub dup.1 gt
+    # => [should_loop, i, tx_count]
+
+    while.true
+        # Inner loop: compare TX_ID[i] with TX_ID[j] for j in [i+1, tx_count)
+        dup add.1
+        # => [j, i, tx_count]
+
+        dup.2 dup.1 gt
+        # => [should_loop, j, i, tx_count]
+
+        while.true
+            # Load TX_ID[i]
+            dup.1 exec.memory::get_tx_data_ptr
+            padw movup.4 mem_loadw_be
+            # => [TX_ID_I, j, i, tx_count]
+
+            # Load TX_ID[j]
+            dup.4 exec.memory::get_tx_data_ptr
+            padw movup.4 mem_loadw_be
+            # => [TX_ID_J, TX_ID_I, j, i, tx_count]
+
+            exec.word::eq assertz.err=ERR_DUPLICATE_TX_ID
+            # => [j, i, tx_count]
+
+            add.1
+            # => [j+1, i, tx_count]
+
+            dup.2 dup.1 gt
+            # => [should_loop, j+1, i, tx_count]
+        end
+
+        drop add.1
+        # => [i+1, tx_count]
+
+        dup.1 push.1 sub dup.1 gt
+        # => [should_loop, i+1, tx_count]
+    end
+
+    drop drop
+    # => []
+end

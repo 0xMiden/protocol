@@ -1775,6 +1775,7 @@ dependencies = [
 name = "miden-tx-batch-prover"
 version = "0.14.0"
 dependencies = [
+ "miden-air",
  "miden-protocol",
  "miden-tx",
 ]

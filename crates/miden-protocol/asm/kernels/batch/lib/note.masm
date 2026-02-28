@@ -1,0 +1,45 @@
+#! Batch Kernel Note Module
+#!
+#! This module handles note validation for the batch:
+#! - Collecting input notes from all transactions
+#! - Collecting output notes from all transactions
+#! - Checking for duplicate input notes (same nullifier)
+#! - Checking for duplicate output notes (same note_id)
+#! - Erasing consumed unauthenticated notes (output -> input cancellation)
+#! - Validating note counts are within limits
+
+use $kernel::memory
+
+# CONSTANTS
+# =================================================================================================
+
+# Maximum input notes per batch
+const MAX_INPUT_NOTES_PER_BATCH=256
+
+# Maximum output notes per batch  
+const MAX_OUTPUT_NOTES_PER_BATCH=256
+
+# Error constants
+const ERR_BATCH_DUPLICATE_INPUT_NOTE="duplicate input note (nullifier) in batch"
+const ERR_BATCH_TOO_MANY_INPUT_NOTES="batch exceeds maximum input notes"
+const ERR_BATCH_TOO_MANY_OUTPUT_NOTES="batch exceeds maximum output notes"
+
+# NOTE VALIDATION
+# =================================================================================================
+
+#! Validates all notes in the batch.
+#!
+#! This procedure:
+#! 1. Collects input notes from all transactions
+#! 2. Collects output notes from all transactions
+#! 3. Checks for duplicate input notes
+#! 4. Checks for duplicate output notes
+#! 5. Erases consumed unauthenticated notes
+#! 6. Validates counts are within limits
+#!
+#! Inputs: []
+#! Outputs: []
+pub proc validate_notes
+    # TODO: Implement note validation
+    push.0 drop
+end

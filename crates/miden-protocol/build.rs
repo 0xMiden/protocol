@@ -23,7 +23,9 @@ const ASM_PROTOCOL_DIR: &str = "protocol";
 
 const SHARED_UTILS_DIR: &str = "shared_utils";
 const SHARED_MODULES_DIR: &str = "shared_modules";
+const KERNEL_SHARED_MODULES_DIR: &str = "kernels/shared";
 const ASM_TX_KERNEL_DIR: &str = "kernels/transaction";
+const ASM_BATCH_KERNEL_DIR: &str = "kernels/batch";
 const KERNEL_PROCEDURES_RS_FILE: &str = "src/transaction/kernel/procedures.rs";
 
 const PROTOCOL_LIB_NAMESPACE: &str = "miden::protocol";
@@ -76,12 +78,18 @@ fn main() -> Result<()> {
     // copy the shared modules to the kernel and protocol library folders
     copy_shared_modules(&source_dir)?;
 
+    // copy the kernel-only shared modules to the kernel library folders
+    copy_kernel_shared_modules(&source_dir)?;
+
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
     // compile transaction kernel
     let mut assembler =
         compile_tx_kernel(&source_dir.join(ASM_TX_KERNEL_DIR), &target_dir.join("kernels"))?;
+
+    // compile batch kernel
+    compile_batch_kernel(&source_dir.join(ASM_BATCH_KERNEL_DIR), &target_dir.join("kernels"))?;
 
     // compile protocol library
     let protocol_lib = compile_protocol_lib(&source_dir, &target_dir, assembler.clone())?;
@@ -190,6 +198,43 @@ fn compile_tx_script_main(
 
     let masb_file_path = target_dir.join("tx_script_main.masb");
     tx_script_main.write_to_file(masb_file_path).into_diagnostic()
+}
+
+// COMPILE BATCH KERNEL
+// ================================================================================================
+
+/// Reads the batch kernel MASM source from the `source_dir`, compiles it, and saves the results
+/// to the `target_dir`.
+///
+/// `source_dir` is expected to have the following structure:
+///
+/// - {source_dir}/main.masm      -> defines the executable program of the batch kernel.
+/// - {source_dir}/lib            -> contains modules used by main.masm.
+///
+/// The compiled files are written as follows:
+///
+/// - {target_dir}/batch_kernel.masb -> contains the executable compiled from main.masm.
+///
+/// NOTE: Unlike the transaction kernel, the batch kernel does not have an api.masm file
+/// because it doesn't expose syscall procedures. It's a standalone program.
+fn compile_batch_kernel(source_dir: &Path, target_dir: &Path) -> Result<()> {
+    let shared_utils_path = std::path::Path::new(ASM_DIR).join(SHARED_UTILS_DIR);
+    let kernel_path = miden_assembly::Path::kernel_path();
+
+    let mut assembler = build_assembler(None)?;
+    // add the shared util modules under the ::$kernel::util namespace
+    assembler.compile_and_statically_link_from_dir(&shared_utils_path, kernel_path)?;
+    // add the batch kernel lib modules under the ::$kernel namespace
+    assembler.compile_and_statically_link_from_dir(source_dir.join("lib"), kernel_path)?;
+
+    // assemble the kernel program and write it to the "batch_kernel.masb" file
+    let main_file_path = source_dir.join("main.masm");
+    let kernel_main = assembler.assemble_program(main_file_path)?;
+
+    let masb_file_path = target_dir.join("batch_kernel.masb");
+    kernel_main.write_to_file(masb_file_path).into_diagnostic()?;
+
+    Ok(())
 }
 
 /// Generates kernel `procedures.rs` file based on the kernel library
@@ -315,13 +360,44 @@ fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
     for module_path in shared::get_masm_files(shared_modules_dir).unwrap() {
         let module_name = module_path.file_name().unwrap();
 
-        // copy to kernel lib
-        let kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
-        fs::copy(&module_path, kernel_lib_folder.join(module_name)).into_diagnostic()?;
+        // copy to transaction kernel lib
+        let tx_kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
+        fs::copy(&module_path, tx_kernel_lib_folder.join(module_name)).into_diagnostic()?;
+
+        // copy to batch kernel lib
+        let batch_kernel_lib_folder = source_dir.as_ref().join(ASM_BATCH_KERNEL_DIR).join("lib");
+        fs::copy(&module_path, batch_kernel_lib_folder.join(module_name)).into_diagnostic()?;
 
         // copy to protocol lib
         let protocol_lib_folder = source_dir.as_ref().join(ASM_PROTOCOL_DIR);
         fs::copy(&module_path, protocol_lib_folder.join(module_name)).into_diagnostic()?;
+    }
+
+    Ok(())
+}
+
+/// Copies the content of the build `kernel_shared_modules` folder to the kernel `lib` folders only.
+/// These modules depend on kernel-specific namespaces (like `$kernel::memory`) and cannot be used
+/// in the protocol library.
+///
+/// This is done to make it possible to import the modules in the `kernel_shared_modules` folder
+/// directly in kernels, i.e. "use $kernel::link_map".
+fn copy_kernel_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
+    // source is expected to be an `OUT_DIR/asm` folder
+    let kernel_shared_modules_dir = source_dir.as_ref().join(KERNEL_SHARED_MODULES_DIR);
+
+    for module_path in shared::get_masm_files(kernel_shared_modules_dir).unwrap() {
+        let module_name = module_path.file_name().unwrap();
+
+        // copy to transaction kernel lib
+        let tx_kernel_lib_folder = source_dir.as_ref().join(ASM_TX_KERNEL_DIR).join("lib");
+        fs::copy(&module_path, tx_kernel_lib_folder.join(module_name)).into_diagnostic()?;
+
+        // copy to batch kernel lib
+        let batch_kernel_lib_folder = source_dir.as_ref().join(ASM_BATCH_KERNEL_DIR).join("lib");
+        fs::copy(&module_path, batch_kernel_lib_folder.join(module_name)).into_diagnostic()?;
+
+        // NOTE: NOT copying to protocol lib - these modules depend on $kernel::memory
     }
 
     Ok(())

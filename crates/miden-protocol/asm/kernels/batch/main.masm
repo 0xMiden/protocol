@@ -1,0 +1,94 @@
+#! Miden Batch Kernel
+#!
+#! This is the main program for proving a transaction batch. The batch kernel loads
+#! transaction data from the advice provider, validates batch-level constraints, and
+#! produces output commitments for the block kernel.
+#!
+#! All of the required data is loaded from the advice provider:
+#! - Block header preimage (for unhashing BLOCK_HASH)
+#! - Transaction list preimage (for unhashing TRANSACTIONS_COMMITMENT)
+#! - Transaction data (account states, notes)
+#! - Note data for computing input/output commitments
+#!
+#! NOTE: Recursive STARK verification of transaction proofs is NOT implemented yet.
+#! Currently, transaction validation uses only transaction IDs as commitments.
+#!
+#! # Inputs
+#!
+#! Inputs are provided via the operand stack:
+#! ```text
+#! [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
+#! ```
+#!
+#! Where:
+#! - BLOCK_HASH is the commitment to the reference block header.
+#! - TRANSACTIONS_COMMITMENT (BatchId) is a sequential hash of [(TX_ID, account_id), ...].
+#!
+#! # Outputs
+#!
+#! Outputs are left on the operand stack:
+#! ```text
+#! [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, ...]
+#! ```
+#!
+#! Where:
+#! - INPUT_NOTES_COMMITMENT is a sequential hash of [(nullifier, empty_word_or_note_hash), ...]
+#!   where empty_word_or_note_hash is hash(note_id, note_metadata) for unauthenticated notes.
+#! - OUTPUT_NOTES_SMT_ROOT is the root of the output notes Sparse Merkle Tree.
+#! - batch_expiration_block_num is the minimum expiration block across all transactions.
+
+use $kernel::prologue
+use $kernel::transaction
+use $kernel::note
+use $kernel::account
+use $kernel::epilogue
+
+# MAIN
+# =================================================================================================
+
+#! Batch kernel main program.
+#!
+#! Inputs: [BLOCK_HASH, TRANSACTIONS_COMMITMENT]
+#! Outputs: [INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_SMT_ROOT, batch_expiration_block_num, ...]
+proc main
+    # PHASE 1: PROLOGUE
+    # -------------------------------------------------------------------------
+    # Unhash block header to get block fields
+    # Unhash transactions commitment to get [(TX_ID, account_id), ...]
+    exec.prologue::prepare_batch
+
+    # PHASE 2: PROCESS TRANSACTIONS
+    # -------------------------------------------------------------------------
+    # For each transaction:
+    # - Load transaction data from advice (tx_id is the commitment)
+    # - Validate transaction hasn't expired
+    # - Track minimum expiration for batch expiration
+    # NOTE: Recursive STARK verification is NOT implemented yet
+    exec.transaction::process_transactions
+
+    # PHASE 3: VALIDATE CONSTRAINTS
+    # -------------------------------------------------------------------------
+    # Check account state transitions (A->B->C ordering)
+    exec.account::validate_account_updates
+    
+    # Check note constraints (no duplicates, counts within limits)
+    exec.note::validate_notes
+
+    # PHASE 4: VERIFY TRANSACTION PROOFS
+    # -------------------------------------------------------------------------
+    # TODO: Recursive STARK verification of transaction proofs goes here.
+    # This is expensive and runs AFTER all cheap validation passes.
+    # Currently stubbed - using tx_id as commitment without proof verification.
+
+    # PHASE 5: EPILOGUE
+    # -------------------------------------------------------------------------
+    # Compute output commitments
+    # - INPUT_NOTES_COMMITMENT
+    # - OUTPUT_NOTES_SMT_ROOT  
+    # - batch_expiration_block_num
+    exec.epilogue::finalize_batch
+end
+
+begin
+    exec.main
+end

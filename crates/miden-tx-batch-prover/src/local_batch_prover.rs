@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
 use miden_protocol::errors::ProvenBatchError;
+use miden_protocol::vm::ExecutionProof;
 use miden_tx::TransactionVerifier;
 
 // LOCAL BATCH PROVER
@@ -30,7 +31,11 @@ impl LocalBatchProver {
     ///
     /// Returns an error if:
     /// - a proof of any transaction in the batch fails to verify.
-    pub fn prove(&self, proposed_batch: ProposedBatch) -> Result<ProvenBatch, ProvenBatchError> {
+    pub fn prove(
+        &self,
+        proposed_batch: ProposedBatch,
+        proof: ExecutionProof,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
         let verifier = TransactionVerifier::new(self.proof_security_level);
 
         for tx in proposed_batch.transactions() {
@@ -42,25 +47,28 @@ impl LocalBatchProver {
             })?;
         }
 
-        self.prove_inner(proposed_batch)
+        self.build_proven_batch(proposed_batch, proof)
     }
 
     /// Proves the provided [`ProposedBatch`] into a [`ProvenBatch`], **without verifying batches
     /// and proving the block**.
     ///
-    /// This is exposed for testing purposes.
+    /// This is exposed for testing purposes. Uses a dummy proof.
     #[cfg(any(feature = "testing", test))]
     pub fn prove_dummy(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, ProvenBatchError> {
-        self.prove_inner(proposed_batch)
+        let proof = miden_air::ExecutionProof::new_dummy();
+        self.build_proven_batch(proposed_batch, proof)
     }
 
-    /// Converts a proposed batch into a proven batch.
-    ///
-    /// For now, this doesn't do anything interesting.
-    fn prove_inner(&self, proposed_batch: ProposedBatch) -> Result<ProvenBatch, ProvenBatchError> {
+    /// Converts a proposed batch into a proven batch with the given proof.
+    fn build_proven_batch(
+        &self,
+        proposed_batch: ProposedBatch,
+        proof: ExecutionProof,
+    ) -> Result<ProvenBatch, ProvenBatchError> {
         let tx_headers = proposed_batch.transaction_headers();
         let (
             _transactions,
@@ -83,6 +91,7 @@ impl LocalBatchProver {
             output_notes,
             batch_expiration_block_num,
             tx_headers,
+            proof,
         )
     }
 }

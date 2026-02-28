@@ -1,0 +1,283 @@
+#! Batch Kernel Memory Layout
+#!
+#! This module defines the memory layout for the batch kernel and provides
+#! accessors for reading/writing data to specific memory regions.
+#!
+#! Memory is organized into several regions:
+#! - Block data (block hash preimage, chain commitment, etc.)
+#! - Transaction data (tx_ids, account_ids, proofs metadata)
+#! - Note data (input notes, output notes)
+#! - Account update data
+#! - Temporary/scratch space
+
+# MEMORY LAYOUT CONSTANTS
+# =================================================================================================
+
+# Block data region: stores block header fields
+const BLOCK_DATA_PTR=100
+
+# Transaction data region: stores transaction list
+const TX_DATA_PTR=200
+
+# Input notes region
+const INPUT_NOTES_PTR=1000
+
+# Output notes region  
+const OUTPUT_NOTES_PTR=2000
+
+# Account updates region
+const ACCOUNT_UPDATES_PTR=3000
+
+# Bookkeeping
+const TX_COUNT_PTR=50
+const BATCH_EXPIRATION_PTR=51
+
+# Temporary storage for TRANSACTIONS_COMMITMENT verification
+const SAVED_TX_COMMITMENT_PTR=52
+
+# Temporary buffer for hash computation
+# Used to store [(TX_ID, account_id_prefix, account_id_suffix, 0, 0), ...] for hashing
+# Max 4 txs * 8 felts = 32 felts = 8 words, so addresses 60-91
+const HASH_BUFFER_PTR=60
+
+# BLOCK DATA ACCESSORS
+# =================================================================================================
+
+#! Returns the reference block hash from memory.
+#!
+#! Inputs: []
+#! Outputs: [BLOCK_HASH]
+pub proc get_block_hash
+    padw push.BLOCK_DATA_PTR mem_loadw_be
+end
+
+#! Stores the reference block hash in memory.
+#!
+#! Inputs: [BLOCK_HASH]
+#! Outputs: []
+pub proc set_block_hash
+    push.BLOCK_DATA_PTR mem_storew_be dropw
+end
+
+#! Returns the reference block number from memory.
+#!
+#! Inputs: []
+#! Outputs: [block_num]
+pub proc get_block_num
+    push.BLOCK_DATA_PTR push.4 add mem_load
+end
+
+#! Stores the reference block number in memory.
+#!
+#! Inputs: [block_num]
+#! Outputs: []
+pub proc set_block_num
+    push.BLOCK_DATA_PTR push.4 add mem_store
+end
+
+#! Returns the chain commitment from memory.
+#!
+#! Inputs: []
+#! Outputs: [CHAIN_COMMITMENT]
+pub proc get_chain_commitment
+    padw push.BLOCK_DATA_PTR push.8 add mem_loadw_be
+end
+
+#! Stores the chain commitment in memory.
+#!
+#! Inputs: [CHAIN_COMMITMENT]
+#! Outputs: []
+pub proc set_chain_commitment
+    push.BLOCK_DATA_PTR push.8 add mem_storew_be dropw
+end
+
+# TRANSACTION DATA ACCESSORS
+# =================================================================================================
+
+#! Returns the number of transactions in the batch.
+#!
+#! Inputs: []
+#! Outputs: [tx_count]
+pub proc get_transaction_count
+    push.TX_COUNT_PTR mem_load
+end
+
+#! Stores the number of transactions in the batch.
+#!
+#! Inputs: [tx_count]
+#! Outputs: []
+pub proc set_transaction_count
+    push.TX_COUNT_PTR mem_store
+end
+
+#! Returns the pointer to transaction data for the given index.
+#!
+#! Inputs: [tx_index]
+#! Outputs: [tx_data_ptr]
+#!
+#! Each transaction entry takes 12 words:
+#! - Word 0: TX_ID
+#! - Word 1: account_id_prefix, account_id_suffix, expiration_block_num, ref_block_num
+#! - Words 2-3: INIT_ACCOUNT_COMMITMENT
+#! - Words 4-5: FINAL_ACCOUNT_COMMITMENT
+#! - Words 6-7: INPUT_NOTES_COMMITMENT
+#! - Words 8-9: OUTPUT_NOTES_COMMITMENT
+#! - Words 10-11: reserved
+pub proc get_tx_data_ptr
+    # tx_data_ptr = TX_DATA_PTR + tx_index * 48 (12 words * 4 felts)
+    push.48 mul push.TX_DATA_PTR add
+end
+
+# BATCH EXPIRATION
+# =================================================================================================
+
+#! Returns the batch expiration block number.
+#!
+#! Inputs: []
+#! Outputs: [batch_expiration_block_num]
+pub proc get_batch_expiration_block_num
+    push.BATCH_EXPIRATION_PTR mem_load
+end
+
+#! Stores the batch expiration block number.
+#!
+#! Inputs: [batch_expiration_block_num]
+#! Outputs: []
+pub proc set_batch_expiration_block_num
+    push.BATCH_EXPIRATION_PTR mem_store
+end
+
+#! Returns the saved TRANSACTIONS_COMMITMENT from memory.
+#!
+#! Inputs: []
+#! Outputs: [TRANSACTIONS_COMMITMENT]
+pub proc get_saved_tx_commitment
+    padw push.SAVED_TX_COMMITMENT_PTR mem_loadw_be
+end
+
+#! Stores the TRANSACTIONS_COMMITMENT in memory for later verification.
+#!
+#! Inputs: [TRANSACTIONS_COMMITMENT]
+#! Outputs: []
+pub proc set_saved_tx_commitment
+    push.SAVED_TX_COMMITMENT_PTR mem_storew_be dropw
+end
+
+#! Returns the hash buffer pointer.
+#!
+#! Inputs: []
+#! Outputs: [hash_buffer_ptr]
+pub proc get_hash_buffer_ptr
+    push.HASH_BUFFER_PTR
+end
+
+# NOTE DATA ACCESSORS
+# =================================================================================================
+
+#! Returns the pointer to input notes data.
+#!
+#! Inputs: []
+#! Outputs: [input_notes_ptr]
+pub proc get_input_notes_ptr
+    push.INPUT_NOTES_PTR
+end
+
+#! Returns the pointer to output notes data.
+#!
+#! Inputs: []
+#! Outputs: [output_notes_ptr]
+pub proc get_output_notes_ptr
+    push.OUTPUT_NOTES_PTR
+end
+
+# ACCOUNT UPDATES ACCESSORS
+# =================================================================================================
+
+#! Returns the pointer to account updates data.
+#!
+#! Inputs: []
+#! Outputs: [account_updates_ptr]
+pub proc get_account_updates_ptr
+    push.ACCOUNT_UPDATES_PTR
+end
+
+# LINK MAP MEMORY REGION
+# =================================================================================================
+# 
+# The link map is used for sorted data structures (account deltas, notes).
+# Each entry takes 16 field elements (4 words).
+
+# Error when link map memory is exhausted
+const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maximum"
+
+# The inclusive start of the link map dynamic memory region.
+# Chosen as a number greater than 2^25 such that all entry pointers are multiples of
+# LINK_MAP_ENTRY_SIZE. That enables a simpler check in assert_entry_ptr_is_valid.
+const LINK_MAP_REGION_START_PTR=33554448
+
+# The non-inclusive end of the link map dynamic memory region.
+# This happens to be 2^26, but if it is changed, it should be chosen as a number such that
+# LINK_MAP_REGION_END_PTR - LINK_MAP_REGION_START_PTR is a multiple of LINK_MAP_ENTRY_SIZE,
+# because that enables checking whether a newly allocated entry pointer is at the end of the range
+# using equality rather than lt/gt in link_map_malloc.
+const LINK_MAP_REGION_END_PTR=67108864
+
+# LINK_MAP_REGION_START_PTR + the currently used size stored at this pointer defines the next
+# entry pointer that will be allocated.
+const LINK_MAP_USED_MEMORY_SIZE=33554432
+
+# The size of each map entry, i.e. four words.
+const LINK_MAP_ENTRY_SIZE=16
+
+#! Returns the link map memory start ptr constant.
+#!
+#! Inputs:  []
+#! Outputs: [start_ptr]
+pub proc get_link_map_region_start_ptr
+    push.LINK_MAP_REGION_START_PTR
+end
+
+#! Returns the link map memory end ptr constant.
+#!
+#! Inputs:  []
+#! Outputs: [end_ptr]
+pub proc get_link_map_region_end_ptr
+    push.LINK_MAP_REGION_END_PTR
+end
+
+#! Returns the link map entry size constant.
+#!
+#! Inputs:  []
+#! Outputs: [entry_size]
+pub proc get_link_map_entry_size
+    push.LINK_MAP_ENTRY_SIZE
+end
+
+#! Returns the next pointer to an empty link map entry.
+#!
+#! Inputs:  []
+#! Outputs: [entry_ptr]
+#!
+#! Panics if:
+#! - the allocation exceeds the maximum possible number of link map entries.
+pub proc link_map_malloc
+    # retrieve the current memory size
+    mem_load.LINK_MAP_USED_MEMORY_SIZE dup
+    # => [current_mem_size, current_mem_size]
+
+    # store next offset
+    add.LINK_MAP_ENTRY_SIZE
+    # => [next_mem_size, current_mem_size]
+
+    mem_store.LINK_MAP_USED_MEMORY_SIZE
+    # => [current_mem_size]
+
+    add.LINK_MAP_REGION_START_PTR
+    # => [entry_ptr]
+
+    # If entry_ptr is the end_ptr the entry would be allocated in the next memory region so
+    # we must abort.
+    # We can use neq because of how the end ptr is chosen. See its docs for details.
+    dup neq.LINK_MAP_REGION_END_PTR assert.err=ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED
+    # => [entry_ptr]
+end

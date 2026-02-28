@@ -18,8 +18,12 @@ bench = false
 [features]
 default = ["std"]
 std     = ["miden-protocol/std", "miden-tx/std"]
-testing = []
+# miden-air/testing provides ExecutionProof::new_dummy()
+testing = ["miden-air/testing", "miden-protocol/testing"]
 
 [dependencies]
 miden-protocol = { workspace = true }
 miden-tx       = { workspace = true }
+
+# Only needed for ExecutionProof::new_dummy() in testing mode
+miden-air = { optional = true, workspace = true }

@@ -1,0 +1,75 @@
+#! Batch Kernel Transaction Module
+#!
+#! This module handles transaction processing:
+#! - Validating transaction expiration
+#! - Tracking minimum expiration for batch
+#!
+#! NOTE: Recursive STARK proof verification is NOT implemented yet.
+#! Transaction IDs serve as commitments to proven transactions.
+
+use $kernel::memory
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_EXPIRED="transaction has expired relative to batch reference block"
+
+# TRANSACTION PROCESSING
+# =================================================================================================
+
+#! Processes all transactions in the batch.
+#!
+#! For each transaction:
+#! 1. Validate transaction hasn't expired (expiration > block_num)
+#! 2. Update batch_expiration to min(batch_expiration, tx_expiration)
+#!
+#! NOTE: Recursive STARK verification is NOT implemented yet.
+#! Transaction data was already loaded by prologue.
+#!
+#! Inputs:
+#!   Operand stack: []
+#! Outputs:
+#!   Operand stack: []
+pub proc process_transactions
+    exec.memory::get_transaction_count push.0
+    # => [i, tx_count]
+
+    dup.1 dup.1 gt
+    # => [should_loop, i, tx_count]
+
+    while.true
+        # Get tx_expiration_block_num from memory (at tx_data_ptr + 6)
+        dup exec.memory::get_tx_data_ptr push.6 add mem_load
+        # => [tx_expiration, i, tx_count]
+
+        # Validate: tx_expiration > block_num
+        dup exec.memory::get_block_num gt assert.err=ERR_TX_EXPIRED
+        # => [tx_expiration, i, tx_count]
+
+        # Update batch_expiration = min(batch_expiration, tx_expiration)
+        exec.memory::get_batch_expiration_block_num
+        # => [batch_expiration, tx_expiration, i, tx_count]
+
+        dup.1 dup.1 lt
+        # => [tx_expiration < batch_expiration, batch_expiration, tx_expiration, i, tx_count]
+
+        if.true
+            # tx_expiration is smaller, use it
+            drop exec.memory::set_batch_expiration_block_num
+            # => [i, tx_count]
+        else
+            # batch_expiration is smaller or equal, keep it
+            drop drop
+            # => [i, tx_count]
+        end
+
+        add.1
+        # => [i+1, tx_count]
+
+        dup.1 dup.1 gt
+        # => [should_loop, i+1, tx_count]
+    end
+
+    drop drop
+    # => []
+end

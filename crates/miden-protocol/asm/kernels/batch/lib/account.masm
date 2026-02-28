@@ -1,0 +1,36 @@
+#! Batch Kernel Account Module
+#!
+#! This module handles account validation for the batch:
+#! - Validating account state transitions (A->B->C ordering)
+#! - Checking that the same account's transactions are properly ordered
+#! - Validating account update count is within limits
+
+use $kernel::memory
+
+# CONSTANTS
+# =================================================================================================
+
+# Maximum number of unique accounts per batch
+const MAX_ACCOUNTS_PER_BATCH=1024
+
+# Error constants
+const ERR_BATCH_INVALID_ACCOUNT_TRANSITION="invalid account state transition in batch"
+const ERR_BATCH_TOO_MANY_ACCOUNTS="batch exceeds maximum unique accounts"
+
+# ACCOUNT VALIDATION
+# =================================================================================================
+
+#! Validates all account updates in the batch.
+#!
+#! For accounts that appear in multiple transactions, validates that:
+#! - Transactions are ordered correctly (tx1.final == tx2.init)
+#! - State transitions form a valid chain
+#!
+#! Also validates total unique account count is within limits.
+#!
+#! Inputs: []
+#! Outputs: []
+pub proc validate_account_updates
+    # TODO: Implement account validation
+    push.0 drop
+end
