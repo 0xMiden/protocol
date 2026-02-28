@@ -17,7 +17,14 @@ use miden_protocol::account::{
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
-use super::{Description, ExternalLink, FungibleFaucetError, LogoURI, TokenMetadata, TokenName};
+use super::{
+    Description,
+    ExternalLink,
+    FungibleFaucetError,
+    FungibleTokenMetadata,
+    LogoURI,
+    TokenName,
+};
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
@@ -25,7 +32,7 @@ use crate::account::components::basic_fungible_faucet_library;
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::metadata::Info;
+use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -63,11 +70,12 @@ procedure_digest!(
 ///
 /// ## Storage Layout
 ///
-/// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
+/// - [`Self::metadata_slot`]: Stores [`FungibleTokenMetadata`].
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct BasicFungibleFaucet {
-    metadata: TokenMetadata,
+    metadata: FungibleTokenMetadata,
+    info: Option<TokenMetadataInfo>,
 }
 
 impl BasicFungibleFaucet {
@@ -78,7 +86,7 @@ impl BasicFungibleFaucet {
     pub const NAME: &'static str = "miden::basic_fungible_faucet";
 
     /// The maximum number of decimals supported by the component.
-    pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
+    pub const MAX_DECIMALS: u8 = FungibleTokenMetadata::MAX_DECIMALS;
 
     const DISTRIBUTE_PROC_NAME: &str = "basic_fungible_faucet::distribute";
     const BURN_PROC_NAME: &str = "basic_fungible_faucet::burn";
@@ -90,7 +98,7 @@ impl BasicFungibleFaucet {
     /// an initial token supply of zero.
     ///
     /// Optional `description`, `logo_uri`, and `external_link` are stored in the metadata
-    /// [`Info`][Info] component when building an account (e.g. via
+    /// the faucet's storage slots when building an account (e.g. via
     /// [`create_basic_fungible_faucet`]).
     ///
     /// # Errors
@@ -108,7 +116,7 @@ impl BasicFungibleFaucet {
         logo_uri: Option<LogoURI>,
         external_link: Option<ExternalLink>,
     ) -> Result<Self, FungibleFaucetError> {
-        let metadata = TokenMetadata::new(
+        let metadata = FungibleTokenMetadata::new(
             symbol,
             decimals,
             max_supply,
@@ -117,15 +125,22 @@ impl BasicFungibleFaucet {
             logo_uri,
             external_link,
         )?;
-        Ok(Self { metadata })
+        Ok(Self { metadata, info: None })
     }
 
-    /// Creates a new [`BasicFungibleFaucet`] component from the given [`TokenMetadata`].
+    /// Creates a new [`BasicFungibleFaucet`] component from the given [`FungibleTokenMetadata`].
     ///
     /// This is a convenience constructor that allows creating a faucet from pre-validated
     /// metadata.
-    pub fn from_metadata(metadata: TokenMetadata) -> Self {
-        Self { metadata }
+    pub fn from_metadata(metadata: FungibleTokenMetadata) -> Self {
+        Self { metadata, info: None }
+    }
+
+    /// Attaches token metadata (name, description, logo, link, mutability flags) to the
+    /// faucet. These storage slots will be included in the component when built.
+    pub fn with_info(mut self, info: TokenMetadataInfo) -> Self {
+        self.info = Some(info);
+        self
     }
 
     /// Attempts to create a new [`BasicFungibleFaucet`] component from the associated account
@@ -151,8 +166,8 @@ impl BasicFungibleFaucet {
             return Err(FungibleFaucetError::MissingBasicFungibleFaucetInterface);
         }
 
-        let metadata = TokenMetadata::try_from(storage)?;
-        Ok(Self { metadata })
+        let metadata = FungibleTokenMetadata::try_from(storage)?;
+        Ok(Self { metadata, info: None })
     }
 
     // PUBLIC ACCESSORS
@@ -161,7 +176,7 @@ impl BasicFungibleFaucet {
     /// Returns the [`StorageSlotName`] where the [`BasicFungibleFaucet`]'s metadata is stored (slot
     /// 0).
     pub fn metadata_slot() -> &'static StorageSlotName {
-        TokenMetadata::metadata_slot()
+        FungibleTokenMetadata::metadata_slot()
     }
 
     /// Returns the storage slot schema for the metadata slot.
@@ -182,7 +197,7 @@ impl BasicFungibleFaucet {
     }
 
     /// Returns the token metadata.
-    pub fn metadata(&self) -> &TokenMetadata {
+    pub fn metadata(&self) -> &FungibleTokenMetadata {
         &self.metadata
     }
 
@@ -240,6 +255,11 @@ impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
         let storage_slot = faucet.metadata.into();
 
+        let mut slots = vec![storage_slot];
+        if let Some(info) = &faucet.info {
+            slots.extend(info.storage_slots());
+        }
+
         let storage_schema = StorageSchema::new([BasicFungibleFaucet::metadata_slot_schema()])
             .expect("storage schema should be valid");
 
@@ -248,7 +268,7 @@ impl From<BasicFungibleFaucet> for AccountComponent {
             .with_supported_type(AccountType::FungibleFaucet)
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
+        AccountComponent::new(basic_fungible_faucet_library(), slots, metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
@@ -276,7 +296,7 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// Creates a new faucet account with basic fungible faucet interface,
 /// account storage type, specified authentication scheme, and provided meta data (token symbol,
 /// decimals, max supply). Optional `name`, `description`, `logo_uri`, and `external_link` are
-/// stored in the metadata [`Info`][Info] component when provided.
+/// stored in the faucet's metadata storage slots when provided.
 ///
 /// The basic faucet interface exposes two procedures:
 /// - `distribute`, which mints an assets and create a note for the provided recipient.
@@ -290,7 +310,7 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// components (see their docs for details):
 /// - [`BasicFungibleFaucet`]
 /// - [`AuthSingleSigAcl`]
-/// - [`Info`][Info] (when `name` or optional fields are provided)
+/// - Token metadata (name, description, etc.) when provided via [`BasicFungibleFaucet::with_info`]
 #[allow(clippy::too_many_arguments)]
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
@@ -334,6 +354,17 @@ pub fn create_basic_fungible_faucet(
         },
     };
 
+    let mut info = TokenMetadataInfo::new().with_name(name.clone());
+    if let Some(d) = &description {
+        info = info.with_description(d.clone(), false);
+    }
+    if let Some(l) = &logo_uri {
+        info = info.with_logo_uri(l.clone(), false);
+    }
+    if let Some(e) = &external_link {
+        info = info.with_external_link(e.clone(), false);
+    }
+
     let faucet = BasicFungibleFaucet::new(
         symbol,
         decimals,
@@ -342,25 +373,14 @@ pub fn create_basic_fungible_faucet(
         description,
         logo_uri,
         external_link,
-    )?;
-
-    let mut info = Info::new().with_name(name.as_words());
-    if let Some(d) = &description {
-        info = info.with_description(d.as_words(), false);
-    }
-    if let Some(l) = &logo_uri {
-        info = info.with_logo_uri(l.as_words(), false);
-    }
-    if let Some(e) = &external_link {
-        info = info.with_external_link(e.as_words(), false);
-    }
+    )?
+    .with_info(info);
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(faucet)
-        .with_component(info)
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
@@ -390,7 +410,7 @@ mod tests {
         create_basic_fungible_faucet,
     };
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
-    use crate::account::metadata::{self as account_metadata, Info};
+    use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -414,8 +434,8 @@ mod tests {
         let decimals = 2u8;
         let storage_mode = AccountStorageMode::Private;
 
-        let token_name = TokenName::try_from(token_name_string).unwrap();
-        let description = Description::try_from(description_string).unwrap();
+        let token_name = TokenName::new(token_name_string).unwrap();
+        let description = Description::new(description_string).unwrap();
         let faucet_account = create_basic_fungible_faucet(
             init_seed,
             token_symbol,
@@ -467,14 +487,22 @@ mod tests {
         );
 
         // Check that Info component has name and description
-        let name_0 = faucet_account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-        let name_1 = faucet_account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
-        let decoded_name = account_metadata::name_to_utf8(&[name_0, name_1]).unwrap();
-        assert_eq!(decoded_name, token_name_string);
-        let expected_desc_words =
-            account_metadata::field_from_bytes(description_string.as_bytes()).unwrap();
+        let name_0 = faucet_account
+            .storage()
+            .get_item(TokenMetadataInfo::name_chunk_0_slot())
+            .unwrap();
+        let name_1 = faucet_account
+            .storage()
+            .get_item(TokenMetadataInfo::name_chunk_1_slot())
+            .unwrap();
+        let decoded_name = TokenName::try_from_words(&[name_0, name_1]).unwrap();
+        assert_eq!(decoded_name.as_str(), token_name_string);
+        let expected_desc_words = Description::new(description_string).unwrap().to_words();
         for (i, expected) in expected_desc_words.iter().enumerate() {
-            let chunk = faucet_account.storage().get_item(Info::description_slot(i)).unwrap();
+            let chunk = faucet_account
+                .storage()
+                .get_item(TokenMetadataInfo::description_slot(i))
+                .unwrap();
             assert_eq!(chunk, *expected);
         }
 
@@ -506,7 +534,7 @@ mod tests {
                     token_symbol,
                     10,
                     Felt::new(100),
-                    TokenName::try_from("POL").unwrap(),
+                    TokenName::new("POL").unwrap(),
                     None,
                     None,
                     None,

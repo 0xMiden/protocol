@@ -23,7 +23,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::OutputNote;
-use miden_standards::account::faucets::TokenMetadata;
+use miden_standards::account::faucets::FungibleTokenMetadata;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
@@ -262,7 +262,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // STEP 3: CONSUME ALL BURN NOTES WITH THE AGGLAYER FAUCET
     // --------------------------------------------------------------------------------------------
-    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let initial_token_supply = FungibleTokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         initial_token_supply,
         Felt::new(total_burned),
@@ -286,7 +286,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         mock_chain.prove_next_block()?;
     }
 
-    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    let final_token_supply = FungibleTokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
         Felt::new(initial_token_supply.as_int() - total_burned),
