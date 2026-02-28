@@ -8,7 +8,6 @@ use miden_protocol::assembly::{Library, LibraryExport};
 use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::StandardsLib;
 use crate::account::interface::AccountComponentInterface;
 
 // WALLET LIBRARIES
@@ -89,6 +88,11 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // METADATA LIBRARIES
 // ================================================================================================
 
+// Metadata Info component uses the standards library (get_name, get_description, etc. from
+// metadata).
+static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
+    LazyLock::new(|| Library::from(crate::StandardsLib::default()));
+
 // Initialize the Storage Schema library only once.
 static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -97,10 +101,6 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     ));
     Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
 });
-
-// Metadata Info component uses the standards library (get_name, get_description, etc. from metadata).
-static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
-    LazyLock::new(|| Library::from(StandardsLib::default()));
 
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
@@ -117,18 +117,18 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
-}
-
 /// Returns the Metadata Info component library.
 ///
-/// Uses the standards library; the standalone [`Info`](crate::account::metadata::Info)
+/// Uses the standards library; the standalone [`Info`](crate::account::metadata::TokenMetadata)
 /// component exposes get_name, get_description, get_logo_uri, get_external_link from
 /// `miden::standards::metadata::fungible`.
 pub fn metadata_info_component_library() -> Library {
     METADATA_INFO_COMPONENT_LIBRARY.clone()
+}
+
+/// Returns the Storage Schema Library.
+pub fn storage_schema_library() -> Library {
+    STORAGE_SCHEMA_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.

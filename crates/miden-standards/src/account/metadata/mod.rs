@@ -24,7 +24,7 @@
 //! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
 //! Any change to slot indices or names must be applied in both Rust and MASM.
 //!
-//! ## Config Words
+//! ## Config Word
 //!
 //! A single config Word stores per-field boolean flags:
 //!

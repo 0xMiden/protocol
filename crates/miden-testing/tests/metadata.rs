@@ -1829,27 +1829,6 @@ async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
     ];
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
-        "LGO",
-        1000,
-        owner_account_id,
-        Some(0),
-        false,
-        None,
-        Some((logo, false)), // immutable
-        None,
-    )?;
-    let mock_chain = builder.build()?;
-
-    let new_logo = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
-    ];
 
     let tx_script = r#"
         begin
@@ -1894,15 +1873,6 @@ async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
-    ];
-    let new_logo = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -1981,15 +1951,6 @@ async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
     ];
-    let new_logo = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
-    ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
         "LGO",
@@ -2057,27 +2018,6 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
     ];
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
-        "EXL",
-        1000,
-        owner_account_id,
-        Some(0),
-        false,
-        None,
-        None,
-        Some((link, false)), // immutable
-    )?;
-    let mock_chain = builder.build()?;
-
-    let new_link = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
-    ];
 
     let tx_script = r#"
         begin
@@ -2123,15 +2063,6 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
-    ];
-    let new_link = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -2210,15 +2141,6 @@ async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
         Word::from([25u32, 26, 27, 28]),
-    ];
-    let new_link = [
-        Word::from([100u32, 101, 102, 103]),
-        Word::from([104u32, 105, 106, 107]),
-        Word::from([108u32, 109, 110, 111]),
-        Word::from([112u32, 113, 114, 115]),
-        Word::from([116u32, 117, 118, 119]),
-        Word::from([120u32, 121, 122, 123]),
-        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
