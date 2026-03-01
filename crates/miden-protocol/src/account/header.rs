@@ -14,7 +14,13 @@ use crate::transaction::memory::{
     ACCT_VAULT_ROOT_OFFSET,
     MemoryOffset,
 };
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{WORD_SIZE, Word, WordError};
 
 // ACCOUNT HEADER
@@ -197,7 +203,7 @@ impl SequentialCommit for AccountHeader {
 // ================================================================================================
 
 impl Serializable for AccountHeader {
-    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -207,9 +213,7 @@ impl Serializable for AccountHeader {
 }
 
 impl Deserializable for AccountHeader {
-    fn read_from<R: crate::utils::serde::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, crate::utils::serde::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
