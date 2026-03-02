@@ -16,7 +16,7 @@ use crate::account::component::{
     WordSchema,
     WordValue,
 };
-use crate::account::{StorageSlotContent, StorageSlotName};
+use crate::account::{StorageMapKey, StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
 use crate::errors::ComponentMetadataError;
 
@@ -779,9 +779,12 @@ fn extensive_schema_metadata_and_init_toml_example() {
         panic!("expected map slot for static_map");
     };
     assert_eq!(static_map.num_entries(), 2);
-    assert_eq!(static_map.get(&Word::parse("0x1").unwrap()), Word::parse("0x10").unwrap());
     assert_eq!(
-        static_map.get(&Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(2)])),
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x1").unwrap())),
+        Word::parse("0x10").unwrap()
+    );
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
 
@@ -827,9 +830,8 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(typed_map_new_contents.num_entries(), 2);
 
-    let key1 = Word::from([Felt::new(1), Felt::new(2), Felt::ZERO, Felt::ZERO]);
     assert_eq!(
-        typed_map_new_contents.get(&key1),
+        typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(16)])
     );
 
@@ -854,12 +856,18 @@ fn extensive_schema_metadata_and_init_toml_example() {
         panic!("expected map slot for static_map");
     };
     assert_eq!(static_map.num_entries(), 3);
-    assert_eq!(static_map.get(&Word::parse("0x1").unwrap()), Word::parse("0x99").unwrap());
     assert_eq!(
-        static_map.get(&Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(2)])),
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x1").unwrap())),
+        Word::parse("0x99").unwrap()
+    );
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
-    assert_eq!(static_map.get(&Word::parse("0x3").unwrap()), Word::parse("0x30").unwrap());
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),
+        Word::parse("0x30").unwrap()
+    );
 }
 
 #[test]
@@ -935,5 +943,5 @@ fn typed_map_supports_non_numeric_value_types() {
     let key = Word::parse("0x1").unwrap();
     let symbol_felt: Felt = TokenSymbol::new("BTC").unwrap().into();
     let expected_value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, symbol_felt]);
-    assert_eq!(map.get(&key), expected_value);
+    assert_eq!(map.get(&StorageMapKey::from_raw(key)), expected_value);
 }

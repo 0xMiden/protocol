@@ -1,14 +1,15 @@
 //! Tests for the Array utility `get` and `set` procedures.
 
+use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     AccountBuilder,
     AccountComponent,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::code_builder::CodeBuilder;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -66,10 +67,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
         wrapper_library.clone(),
         vec![StorageSlot::with_map(
             slot_name.clone(),
-            StorageMap::with_entries([(
-                Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-                initial_value,
-            )])?,
+            StorageMap::with_entries([(StorageMapKey::empty(), initial_value)])?,
         )],
         AccountComponentMetadata::mock("wrapper::component"),
     )?;
@@ -144,7 +142,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
 async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     let slot_name =
         StorageSlotName::new(TEST_DOUBLE_WORD_ARRAY_SLOT).expect("slot name should be valid");
-    let index = Felt::new(7);
+    let index = 7;
 
     let wrapper_component_code = format!(
         r#"
@@ -185,8 +183,8 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
         vec![StorageSlot::with_map(
             slot_name.clone(),
             StorageMap::with_entries([
-                (Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, index]), initial_value_0),
-                (Word::from([Felt::ZERO, Felt::ZERO, Felt::ONE, index]), initial_value_1),
+                (StorageMapKey::from_array([0, 0, 0, index]), initial_value_0),
+                (StorageMapKey::from_array([0, 0, 1, index]), initial_value_1),
             ])?,
         )],
         AccountComponentMetadata::mock("wrapper::component"),

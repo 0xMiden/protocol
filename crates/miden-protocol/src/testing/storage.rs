@@ -7,6 +7,7 @@ use crate::account::{
     AccountStorageDelta,
     StorageMap,
     StorageMapDelta,
+    StorageMapKey,
     StorageSlot,
     StorageSlotDelta,
     StorageSlotName,
@@ -130,6 +131,9 @@ impl AccountStorage {
     }
 
     pub fn mock_map() -> StorageMap {
-        StorageMap::with_entries(STORAGE_LEAVES_2).unwrap()
+        StorageMap::with_entries(
+            STORAGE_LEAVES_2.map(|(key, value)| (StorageMapKey::from_raw(key), value)),
+        )
+        .unwrap()
     }
 }
