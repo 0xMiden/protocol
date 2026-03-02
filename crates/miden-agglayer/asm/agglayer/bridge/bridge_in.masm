@@ -312,7 +312,7 @@ pub proc claim
 
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.claim_batch_pipe_double_words
-    # => [pad(7)]
+    # => [pad(16)]
 
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
