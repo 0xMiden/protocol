@@ -32,6 +32,9 @@ pub use swap::SwapNote;
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
 
+mod network_note;
+pub use network_note::{AccountTargetNetworkNote, NetworkNoteExt};
+
 mod standard_note_attachment;
 use miden_protocol::errors::NoteError;
 pub use standard_note_attachment::StandardNoteAttachment;
