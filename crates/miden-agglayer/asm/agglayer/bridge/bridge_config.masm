@@ -146,7 +146,7 @@ pub proc register_faucet
 
     # Hash the token address
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, pad(10)]
 
     # Build VALUE = [faucet_id_prefix, faucet_id_suffix, 0, 0]
     movup.5 movup.5
