@@ -87,9 +87,23 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
 
-# Memory for MINT note output construction
-const MINT_NOTE_STORAGE_MEM_ADDR = 800
-const P2ID_RECIPIENT_STORAGE_MEM_ADDR = 0
+# Memory Addresses for MINT note output construction
+const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
+const MINT_NOTE_STORAGE_DEST_TAG = 800
+const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 801
+const MINT_NOTE_STORAGE_ATTACHMENT_KIND = 802
+const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
+const MINT_NOTE_STORAGE_ATTACHMENT = 804
+const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
+const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT = 816
+
+# MINT note storage layout (public mode, 18 items):
+# [0]: tag, [1]: amount, [2]: attachment_kind, [3]: attachment_scheme,
+# [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
+# [16]: account_id_suffix, [17]: account_id_prefix
+const MINT_NOTE_NUM_STORAGE_ITEMS = 18
+const MINT_NOTE_TYPE_PUBLIC = 1
 
 # claim memory locals
 const CLAIM_PREFIX_MEM_LOC = 8
@@ -104,13 +118,6 @@ const BUILD_MINT_PREFIX_MEM_LOC = 8
 const BUILD_MINT_SUFFIX_MEM_LOC = 9
 const BUILD_MINT_FAUCET_PREFIX_LOC = 10
 const BUILD_MINT_FAUCET_SUFFIX_LOC = 11
-
-# MINT note storage layout (public mode, 18 items):
-# [0]: tag, [1]: amount, [2]: attachment_kind, [3]: attachment_scheme,
-# [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
-# [16]: account_id_suffix, [17]: account_id_prefix
-const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-const MINT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
@@ -574,79 +581,66 @@ proc build_mint_output_note
 
     # Write tag to MINT note storage [0]
     # Stack: [dest_tag, native_amount, ...]
-    push.MINT_NOTE_STORAGE_MEM_ADDR mem_store
+    mem_store.MINT_NOTE_STORAGE_DEST_TAG
     # => [native_amount, pad(16)]
 
     # Write amount to MINT note storage [1]
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.1 mem_store
+    mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT 
     # => [pad(16)]
 
     # Write attachment_kind = 0 [2]
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.2 mem_store
+    push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND 
     # => [pad(16)]
 
     # Write attachment_scheme = 0 [3]
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.3 mem_store
+    push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME 
     # => [pad(16)]
 
     # Write ATTACHMENT = [0, 0, 0, 0] [4..7]
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.4 mem_store
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.5 mem_store
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.6 mem_store
-    push.0 push.MINT_NOTE_STORAGE_MEM_ADDR add.7 mem_store
+    padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
     # => [pad(16)]
 
     # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
     procref.::miden::standards::notes::p2id::main
-    # => [P2ID_SCRIPT_ROOT(4), pad(16)]
+    # => [P2ID_SCRIPT_ROOT, pad(16)]
 
-    exec.word::reverse
-
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.8 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.9 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.10 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.11 mem_store
+    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => [pad(16)]
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [SERIAL_NUM(4), pad(16)]
+    # => [SERIAL_NUM, pad(16)]
 
-    exec.word::reverse
-
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.12 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.13 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.14 mem_store
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.15 mem_store
+    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
     # => [pad(16)]
 
     # Write P2ID storage items: [account_id_suffix, account_id_prefix] [16..17]
     loc_load.BUILD_MINT_SUFFIX_MEM_LOC
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.16 mem_store
+    mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT 
     # => [pad(16)]
 
     loc_load.BUILD_MINT_PREFIX_MEM_LOC
-    push.MINT_NOTE_STORAGE_MEM_ADDR add.17 mem_store
+    push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
     # => [pad(16)]
 
     # Now create the MINT output note
     # Get the MINT note script root
     procref.::miden::standards::notes::mint::main
-    # => [MINT_SCRIPT_ROOT(4), pad(16)]
+    # => [MINT_SCRIPT_ROOT, pad(16)]
 
     # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
     swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [MINT_SERIAL_NUM(4), MINT_SCRIPT_ROOT(4), pad(16)]
+    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
 
     # Build the MINT note recipient
     push.MINT_NOTE_NUM_STORAGE_ITEMS
     # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
 
-    push.MINT_NOTE_STORAGE_MEM_ADDR
+    push.MINT_NOTE_STORAGE_MEM_ADDR_0
     # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
 
     exec.note::build_recipient
-    # => [MINT_RECIPIENT(4), pad(16)]
+    # => [MINT_RECIPIENT, pad(16)]
 
     # Create the MINT output note targeting the faucet
     push.MINT_NOTE_TYPE_PUBLIC
@@ -673,7 +667,7 @@ proc build_mint_output_note
     # => [faucet_prefix, faucet_suffix, exec_hint, note_idx, pad(16)]
 
     exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, ATTACHMENT(4), note_idx, pad(16)]
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx, pad(16)]
 
     # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
     movup.6
