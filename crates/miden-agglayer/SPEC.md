@@ -325,7 +325,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 
 | Field | Value |
 |-------|-------|
-| `sender` | Any account (sender authorization enforced by the bridge's `register_faucet` procedure) |
+| `sender` | Bridge admin (sender authorization enforced by the bridge's `register_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -363,7 +363,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | Any account (sender authorization enforced by the bridge's `update_ger` procedure) |
+| `sender` | GER manager (sender authorization enforced by the bridge's `update_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
