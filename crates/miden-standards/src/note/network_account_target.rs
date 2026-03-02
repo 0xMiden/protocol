@@ -6,6 +6,7 @@ use miden_protocol::note::{
     NoteAttachmentContent,
     NoteAttachmentKind,
     NoteAttachmentScheme,
+    NoteType,
 };
 
 use crate::note::{NoteExecutionHint, StandardNoteAttachment};
@@ -136,6 +137,8 @@ pub enum NetworkAccountTargetError {
     DecodeTargetId(#[source] AccountIdError),
     #[error("failed to decode execution hint")]
     DecodeExecutionHint(#[source] NoteError),
+    #[error("network note must be public, but was {0:?}")]
+    NoteNotPublic(NoteType),
 }
 
 // TESTS

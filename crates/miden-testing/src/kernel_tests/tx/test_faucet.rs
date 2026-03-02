@@ -64,7 +64,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => [ASSET_VALUE]
 
             # extract balance from asset
-            swap.3 drop drop drop
+            movdn.3 drop drop drop
             # => [balance]
 
             push.{FUNGIBLE_ASSET_AMOUNT} assert_eq.err="input vault should contain minted asset"
@@ -333,7 +333,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => [ASSET_VALUE]
 
             # extract balance from asset
-            swap.3 drop drop drop
+            movdn.3 drop drop drop
             # => [balance]
 
             push.{final_input_vault_asset_amount}

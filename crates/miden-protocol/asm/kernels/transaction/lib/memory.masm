@@ -7,7 +7,6 @@ use miden::core::mem
 # =================================================================================================
 
 type AccountID = struct { suffix: felt, prefix: felt }
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
 type MemoryAddress = u32
 
 # ERRORS
@@ -55,8 +54,8 @@ const OUTPUT_VAULT_ROOT_PTR = 8
 
 # Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
 # upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
-const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = 12
-const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR + 1
+const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR = 12
+const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR + 1
 
 # Pointer to the 16th input value (with index 15) of the foreign procedure which will be loaded
 # during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
@@ -462,7 +461,7 @@ end
 #! Where:
 #! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
 #!   call.
-pub proc set_fpi_procedure_root(foreign_proc_root: Word) -> Word
+pub proc set_fpi_procedure_root(foreign_proc_root: word) -> word
     mem_storew_le.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
@@ -1127,8 +1126,8 @@ end
 
 #! Sets the account ID and nonce.
 #!
-#! Inputs:  [account_id_suffix, account_id_prefix, 0, nonce]
-#! Outputs: [account_id_suffix, account_id_prefix, 0, nonce]
+#! Inputs:  [nonce, 0, account_id_suffix, account_id_prefix]
+#! Outputs: [nonce, 0, account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.

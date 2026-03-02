@@ -10,8 +10,6 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
-
 # PROCEDURES
 # =================================================================================================
 
@@ -26,7 +24,7 @@ type Word = struct { a: felt, b: felt, c: felt, d: felt }
 #! - VALUE is the word to store at the specified index.
 #!
 #! Invocation: exec
-pub proc set(slot_id_suffix: felt, slot_id_prefix: felt, index: felt, value: Word) -> Word
+pub proc set(slot_id_suffix: felt, slot_id_prefix: felt, index: felt, value: word) -> word
     # Build KEY = [0, 0, 0, index]
     movup.2 push.0.0.0
     # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix, VALUE]
@@ -49,7 +47,7 @@ end
 #! - VALUE is the word stored at the specified index (zero if not set).
 #!
 #! Invocation: exec
-pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> Word
+pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> word
     # Build KEY = [0, 0, 0, index]
     movup.2 push.0.0.0
     # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix]

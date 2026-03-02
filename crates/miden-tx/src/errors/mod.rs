@@ -5,8 +5,8 @@ use core::error::Error;
 
 use miden_processor::ExecutionError;
 use miden_processor::serde::DeserializationError;
-use miden_protocol::account::AccountId;
 use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::asset::AssetVaultKey;
 use miden_protocol::block::BlockNumber;
@@ -287,7 +287,7 @@ pub enum TransactionKernelError {
     )]
     GetStorageMapWitness {
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
         // thiserror will return this when calling Error::source on TransactionKernelError.
         source: DataStoreError,
     },

@@ -113,6 +113,7 @@ impl NonFungibleAsset {
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
         AssetVaultKey::new(asset_id, self.faucet_id)
+            .expect("constructors should ensure account ID is of type non-fungible faucet")
     }
 
     /// Returns the ID of the faucet which issued this asset.
@@ -241,7 +242,7 @@ mod tests {
         let invalid_key = AssetVaultKey::new(
             AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
-        );
+        )?;
         let err =
             NonFungibleAsset::from_key_value(invalid_key, Word::from([4, 5, 6, 7u32])).unwrap_err();
 

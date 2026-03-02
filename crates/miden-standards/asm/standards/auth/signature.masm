@@ -281,7 +281,7 @@ pub proc verify_signatures
             exec.active_account::get_initial_map_item
             # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
 
-            swap.3 drop drop drop
+            movdn.3 drop drop drop
             # OS => [scheme_id, PUB_KEY, MSG, MSG, i-1]
             # AS => [SIGNATURE]
 

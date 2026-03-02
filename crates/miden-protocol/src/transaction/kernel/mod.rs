@@ -19,7 +19,9 @@ use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
 use crate::{Felt, Hasher, Word};
 
-mod procedures;
+mod procedures {
+    include!(concat!(env!("OUT_DIR"), "/procedures.rs"));
+}
 
 pub mod memory;
 
@@ -159,7 +161,7 @@ impl TransactionKernel {
     ///     BLOCK_COMMITMENT,
     ///     INITIAL_ACCOUNT_COMMITMENT,
     ///     INPUT_NOTES_COMMITMENT,
-    ///     account_id_prefix, account_id_suffix, block_num
+    ///     account_id_suffix, account_id_prefix, block_num
     /// ]
     /// ```
     ///
@@ -197,8 +199,7 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
-    ///     expiration_block_num,
+    ///     native_asset_id_suffix, native_asset_id_prefix, fee_amount, expiration_block_num
     /// ]
     /// ```
     ///

@@ -8,8 +8,6 @@ use miden::protocol::tx
 use miden::standards::auth::signature
 use miden::core::word
 
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
-
 # CONSTANTS
 # ================================================================================================
 
@@ -48,7 +46,7 @@ const ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC = 1
 #!
 #! Invocation: call
 @locals(2)
-pub proc auth_tx_acl(auth_args: Word)
+pub proc auth_tx_acl(auth_args: word)
     dropw
     # => [pad(16)]
 

@@ -9,6 +9,7 @@ use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotContent,
 };
@@ -327,7 +328,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
             if account_id == self.account().id() {

@@ -14,7 +14,7 @@ use crate::account::{
     AccountStorageHeader,
     PartialAccount,
     PartialStorage,
-    StorageMap,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotId,
     StorageSlotName,
@@ -26,7 +26,13 @@ use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
 use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 #[cfg(test)]
@@ -240,10 +246,10 @@ impl TransactionInputs {
     pub fn read_storage_map_witness(
         &self,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> Result<StorageMapWitness, TransactionInputsExtractionError> {
         // Convert map key into the index at which the key-value pair for this key is stored
-        let leaf_index = StorageMap::map_key_to_leaf_index(map_key);
+        let leaf_index = map_key.hash().to_leaf_index();
 
         // Construct sparse Merkle path.
         let merkle_path = self.advice_inputs.store.get_path(map_root, leaf_index.into())?;
@@ -491,7 +497,7 @@ impl TransactionInputs {
 // ================================================================================================
 
 impl Serializable for TransactionInputs {
-    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
         self.blockchain.write_into(target);
@@ -504,9 +510,7 @@ impl Serializable for TransactionInputs {
 }
 
 impl Deserializable for TransactionInputs {
-    fn read_from<R: crate::utils::serde::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, crate::utils::serde::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;

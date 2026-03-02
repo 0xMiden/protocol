@@ -7,7 +7,13 @@ use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 use super::vault_key::AssetVaultKey;
 use crate::asset::Asset;
 use crate::errors::AssetError;
-use crate::utils::serde::{Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A witness of an asset in an [`AssetVault`](super::AssetVault).
 ///
@@ -90,15 +96,13 @@ impl From<AssetWitness> for SmtProof {
 }
 
 impl Serializable for AssetWitness {
-    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.0.write_into(target);
     }
 }
 
 impl Deserializable for AssetWitness {
-    fn read_from<R: crate::utils::serde::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let proof = SmtProof::read_from(source)?;
         Self::new(proof).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }

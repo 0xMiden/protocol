@@ -10,7 +10,13 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -247,12 +253,10 @@ impl From<AuthMultisig> for AccountComponent {
         ));
 
         // Approver public keys slot (map)
-        let map_entries = multisig
-            .config
-            .approvers()
-            .iter()
-            .enumerate()
-            .map(|(i, (pub_key, _))| (Word::from([i as u32, 0, 0, 0]), Word::from(*pub_key)));
+        let map_entries =
+            multisig.config.approvers().iter().enumerate().map(|(i, (pub_key, _))| {
+                (StorageMapKey::from_index(i as u32), Word::from(*pub_key))
+            });
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -263,7 +267,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
         let scheme_id_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
-                (Word::from([i as u32, 0, 0, 0]), Word::from([*auth_scheme as u32, 0, 0, 0]))
+                (StorageMapKey::from_index(i as u32), Word::from([*auth_scheme as u32, 0, 0, 0]))
             });
 
         storage_slots.push(StorageSlot::with_map(
@@ -280,11 +284,9 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Procedure thresholds slot (map: PROC_ROOT -> threshold)
         let proc_threshold_roots = StorageMap::with_entries(
-            multisig
-                .config
-                .proc_thresholds()
-                .iter()
-                .map(|(proc_root, threshold)| (*proc_root, Word::from([*threshold, 0, 0, 0]))),
+            multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
+                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
+            }),
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(

@@ -193,7 +193,7 @@ pub proc burn
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    dup.4 movdn.8
+    exec.asset::fungible_to_amount movdn.8
     # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset

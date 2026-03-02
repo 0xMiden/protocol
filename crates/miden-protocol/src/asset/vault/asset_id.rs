@@ -25,6 +25,11 @@ impl AssetId {
     pub fn prefix(&self) -> Felt {
         self.prefix
     }
+
+    /// Returns `true` if both prefix and suffix are zero, `false` otherwise.
+    pub fn is_empty(&self) -> bool {
+        self.prefix == Felt::ZERO && self.suffix == Felt::ZERO
+    }
 }
 
 impl Display for AssetId {
