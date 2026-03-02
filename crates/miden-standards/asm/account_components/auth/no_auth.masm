@@ -12,6 +12,7 @@ use miden::core::word
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
+@auth_script
 pub proc auth_no_auth
     # check if the account state has changed by comparing initial and final commitments
 
