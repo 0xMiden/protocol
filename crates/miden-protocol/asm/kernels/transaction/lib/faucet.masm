@@ -161,7 +161,7 @@ end
 #! - For non-fungible faucets if the non-fungible asset being minted already exists.
 pub proc mint
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true
@@ -195,7 +195,7 @@ end
 #!   provided as input to the transaction via a note or the accounts vault.
 pub proc burn
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true

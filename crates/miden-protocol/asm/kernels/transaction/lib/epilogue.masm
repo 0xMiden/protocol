@@ -327,7 +327,7 @@ proc compute_and_remove_fee
     # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
 
     # prepare the return value
-    exec.asset::get_faucet_id
+    exec.asset::key_to_faucet_id
     # => [native_asset_id_suffix, native_asset_id_prefix, FEE_ASSET_KEY, FEE_ASSET_VALUE, fee_amount]
 
     movdn.9 movdn.9

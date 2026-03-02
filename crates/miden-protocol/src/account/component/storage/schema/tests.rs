@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 
 use super::super::{InitStorageData, SchemaType};
 use super::{FeltSchema, MapSlotSchema, ValueSlotSchema, WordSchema};
-use crate::account::{StorageMap, StorageSlotName};
+use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
 use crate::{Felt, Word};
 
 #[test]
@@ -131,7 +131,7 @@ fn map_slot_schema_accepts_typed_map_init_value() {
 
     let built = slot.try_build_map(&init_data, &slot_name).unwrap();
     let expected = StorageMap::with_entries([(
-        Word::from([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)]),
+        StorageMapKey::from_array([1, 0, 0, 0]),
         Word::from([Felt::new(10), Felt::new(11), Felt::new(12), Felt::new(13)]),
     )])
     .unwrap();

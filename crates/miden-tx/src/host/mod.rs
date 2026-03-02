@@ -41,6 +41,7 @@ use miden_protocol::account::{
     AccountId,
     AccountStorageHeader,
     PartialAccount,
+    StorageMapKey,
     StorageSlotHeader,
     StorageSlotId,
     StorageSlotName,
@@ -353,7 +354,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     pub fn on_account_storage_after_set_map_item(
         &mut self,
         slot_name: StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
         old_map_value: Word,
         new_map_value: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {

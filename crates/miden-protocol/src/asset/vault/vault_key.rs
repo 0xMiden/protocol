@@ -36,8 +36,22 @@ pub struct AssetVaultKey {
 
 impl AssetVaultKey {
     /// Creates an [`AssetVaultKey`] from its parts.
-    pub fn new(asset_id: AssetId, faucet_id: AccountId) -> Self {
-        Self { asset_id, faucet_id }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided ID is not of type
+    ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet) or
+    ///   [`AccountType::NonFungibleFaucet`](crate::account::AccountType::NonFungibleFaucet)
+    pub fn new(asset_id: AssetId, faucet_id: AccountId) -> Result<Self, AssetError> {
+        if !faucet_id.is_faucet() {
+            return Err(AssetError::InvalidFaucetAccountId(Box::from(format!(
+                "expected account ID of type faucet, found account type {}",
+                faucet_id.account_type()
+            ))));
+        }
+
+        Ok(Self { asset_id, faucet_id })
     }
 
     /// Returns the word representation of the vault key.
@@ -65,7 +79,10 @@ impl AssetVaultKey {
     pub fn new_fungible(faucet_id: AccountId) -> Option<Self> {
         if matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
             let asset_id = AssetId::new(Felt::ZERO, Felt::ZERO);
-            Some(Self::new(asset_id, faucet_id))
+            Some(
+                Self::new(asset_id, faucet_id)
+                    .expect("we should have account type fungible faucet"),
+            )
         } else {
             None
         }
@@ -118,7 +135,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id = AccountId::try_from([faucet_id_prefix, faucet_id_suffix])
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
-        Ok(Self::new(asset_id, faucet_id))
+        Self::new(asset_id, faucet_id)
     }
 }
 

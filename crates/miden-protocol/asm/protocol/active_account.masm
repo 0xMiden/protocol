@@ -570,6 +570,8 @@ end
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
     # assert that the faucet id is a non-fungible faucet
     dup.3 exec.account_id::is_non_fungible_faucet
     assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET

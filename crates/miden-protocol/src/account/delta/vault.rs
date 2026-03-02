@@ -100,8 +100,6 @@ impl AccountVaultDelta {
         added_assets: impl IntoIterator<Item = crate::asset::Asset>,
         removed_assets: impl IntoIterator<Item = crate::asset::Asset>,
     ) -> Self {
-        use crate::asset::Asset;
-
         let mut fungible = FungibleAssetDelta::default();
         let mut non_fungible = NonFungibleAssetDelta::default();
 
@@ -132,7 +130,6 @@ impl AccountVaultDelta {
 
     /// Returns an iterator over the added assets in this delta.
     pub fn added_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        use crate::asset::{Asset, FungibleAsset};
         self.fungible
             .0
             .iter()
@@ -149,7 +146,6 @@ impl AccountVaultDelta {
 
     /// Returns an iterator over the removed assets in this delta.
     pub fn removed_assets(&self) -> impl Iterator<Item = crate::asset::Asset> + '_ {
-        use crate::asset::{Asset, FungibleAsset};
         self.fungible
             .0
             .iter()
