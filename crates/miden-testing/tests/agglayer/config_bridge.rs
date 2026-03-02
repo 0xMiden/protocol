@@ -72,9 +72,6 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    println!("origin token address as vec: {:?}", origin_token_address.to_elements());
-    println!("faucet id: {:?} {:?}", faucet_to_register.prefix(), faucet_to_register.suffix());
-
     builder.add_output_note(OutputNote::Full(config_note.clone()));
     let mock_chain = builder.build()?;
 
