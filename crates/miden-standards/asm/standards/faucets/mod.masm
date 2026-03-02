@@ -125,13 +125,17 @@ pub proc distribute
     # ---------------------------------------------------------------------------------------------
 
     # creating the asset
-    exec.faucet::create_fungible_asset
-    # => [ASSET, tag, note_type, RECIPIENT]
+    exec.faucet::create_fungible_asset dupw
+    # => [ASSET, ASSET, tag, note_type, RECIPIENT]
 
     # mint the asset; this is needed to satisfy asset preservation logic.
     # this ensures that the asset's faucet ID matches the native account's ID.
     # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
+    # => [ASSET', ASSET, tag, note_type, RECIPIENT]
+
+    # drop the asset that represents the total amount in the vault after minting
+    dropw
     # => [ASSET, tag, note_type, RECIPIENT]
 
     movdn.9 movdn.9 movdn.9 movdn.9
