@@ -13,13 +13,10 @@ pub const ALWAYS = 1
 
 #! The note's script can be executed after the specified block number.
 #!
-#! This constant encodes only the tag bits. The block number must be encoded in the upper 32 bits
-#! of the Felt: `(block_num << 8) | AFTER_BLOCK`.
+#! This constant encodes only the tag bits. The block number must be encoded in the payload.
 pub const AFTER_BLOCK = 2
 
 #! The note's script can be executed in a specified slot within a specified round.
 #!
-#! This constant encodes only the tag bits. The slot parameters must be encoded in the upper 32
-#! bits of the Felt: `((round_len as u32) << 16 | (slot_len as u32) << 8 | slot_offset) << 8 |
-#! ON_BLOCK_SLOT`.
+#! This constant encodes only the tag bits. The slot parameters must be encoded in the payload.
 pub const ON_BLOCK_SLOT = 3

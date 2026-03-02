@@ -398,7 +398,7 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
 /// `miden::protocol::active_note::get_inputs` procedure.
 ///
 /// Previously this setup was leading to the incorrect number of note storage items computed during
-/// the `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/miden-base/issues/1363)
+/// the `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/protocol/issues/1363)
 /// for more details.
 #[tokio::test]
 async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {

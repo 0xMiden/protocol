@@ -8,7 +8,6 @@ use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::{
     ClaimNoteStorage,
     ExitRoot,
-    OutputNoteData,
     SmtNode,
     UpdateGerNote,
     agglayer_library,
@@ -18,8 +17,9 @@ use miden_agglayer::{
 };
 use miden_protocol::account::Account;
 use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement};
@@ -123,7 +123,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let ger_manager =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
-    // CREATE BRIDGE ACCOUNT (with bridge_out component for MMR validation)
+    // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
     let bridge_seed = builder.rng_mut().draw_word();
     let bridge_account =
@@ -199,8 +199,8 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE CLAIM NOTE
     // --------------------------------------------------------------------------------------------
 
-    // Generate a serial number for the P2ID note
-    let serial_num = builder.rng_mut().draw_word();
+    // The P2ID serial number is derived from the PROOF_DATA_KEY (RPO hash of proof data)
+    let serial_num = proof_data.to_commitment();
 
     // Calculate the scaled-down Miden amount using the faucet's scale factor
     let miden_claim_amount = leaf_data
@@ -208,13 +208,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
 
-    let output_note_data = OutputNoteData {
-        output_p2id_serial_num: serial_num,
-        output_note_tag: NoteTag::with_account_target(destination_account_id),
+    let claim_inputs = ClaimNoteStorage {
+        proof_data,
+        leaf_data,
         miden_claim_amount,
     };
-
-    let claim_inputs = ClaimNoteStorage { proof_data, leaf_data, output_note_data };
 
     let claim_note = create_claim_note(
         claim_inputs,

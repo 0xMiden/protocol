@@ -4,7 +4,7 @@ use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -197,7 +197,7 @@ impl AuthSingleSigAcl {
     pub fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::public_key_slot().clone(),
-            StorageSlotSchema::value("Public key commitment", SchemaTypeId::pub_key()),
+            StorageSlotSchema::value("Public key commitment", SchemaType::pub_key()),
         )
     }
 
@@ -221,7 +221,7 @@ impl AuthSingleSigAcl {
     pub fn auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::scheme_id_slot().clone(),
-            StorageSlotSchema::value("Scheme ID", SchemaTypeId::auth_scheme()),
+            StorageSlotSchema::value("Scheme ID", SchemaType::auth_scheme()),
         )
     }
 
@@ -231,8 +231,8 @@ impl AuthSingleSigAcl {
             Self::trigger_procedure_roots_slot().clone(),
             StorageSlotSchema::map(
                 "Trigger procedure roots",
-                SchemaTypeId::u32(),
-                SchemaTypeId::native_word(),
+                SchemaType::u32(),
+                SchemaType::native_word(),
             ),
         )
     }

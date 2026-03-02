@@ -414,7 +414,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let ger_manager =
         builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 
-    // Create a bridge account (includes a `bridge_out` component)
+    // Create a bridge account (includes a `bridge` component)
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
         bridge_admin.id(),

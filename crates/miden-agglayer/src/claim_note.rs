@@ -8,15 +8,7 @@ use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
-use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteMetadata,
-    NoteRecipient,
-    NoteStorage,
-    NoteTag,
-    NoteType,
-};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
 use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
@@ -170,43 +162,6 @@ impl SequentialCommit for LeafData {
     }
 }
 
-/// Output note data for CLAIM note creation.
-/// Contains note-specific data and can use Miden types.
-#[derive(Clone)]
-pub struct OutputNoteData {
-    /// P2ID note serial number (4 felts as Word)
-    pub output_p2id_serial_num: Word,
-    /// P2ID output note tag
-    pub output_note_tag: NoteTag,
-    /// Miden claim amount (scaled-down token amount as Felt)
-    pub miden_claim_amount: Felt,
-}
-
-impl OutputNoteData {
-    /// Converts the output note data to a vector of field elements for note storage.
-    ///
-    /// Layout (8 felts = 2 words):
-    /// `[serial_num(4), tag(1), miden_claim_amount(1), padding(2)]`
-    pub fn to_elements(&self) -> Vec<Felt> {
-        const OUTPUT_NOTE_DATA_ELEMENT_COUNT: usize = 8;
-        let mut elements = Vec::with_capacity(OUTPUT_NOTE_DATA_ELEMENT_COUNT);
-
-        // P2ID note serial number (4 felts as Word)
-        elements.extend(self.output_p2id_serial_num);
-
-        // Output note tag
-        elements.push(Felt::new(self.output_note_tag.as_u32() as u64));
-
-        // Miden claim amount
-        elements.push(self.miden_claim_amount);
-
-        // Padding to keep 8 felts (2 words) for pipe_double_words_preimage_to_memory
-        elements.extend([Felt::ZERO; 2]);
-
-        elements
-    }
-}
-
 /// Data for creating a CLAIM note.
 ///
 /// This struct groups the core data needed to create a CLAIM note that exactly
@@ -217,21 +172,21 @@ pub struct ClaimNoteStorage {
     pub proof_data: ProofData,
     /// Leaf data containing network, address, amount, and metadata
     pub leaf_data: LeafData,
-    /// Output note data containing note-specific information
-    pub output_note_data: OutputNoteData,
+    /// Miden claim amount (scaled-down token amount as Felt)
+    pub miden_claim_amount: Felt,
 }
 
 impl TryFrom<ClaimNoteStorage> for NoteStorage {
     type Error = NoteError;
 
     fn try_from(storage: ClaimNoteStorage) -> Result<Self, Self::Error> {
-        // proof_data + leaf_data + empty_word + output_note_data
-        // 536 + 32 + 8
-        let mut claim_storage = Vec::with_capacity(576);
+        // proof_data + leaf_data + miden_claim_amount
+        // 536 + 32 + 1
+        let mut claim_storage = Vec::with_capacity(569);
 
         claim_storage.extend(storage.proof_data.to_elements());
         claim_storage.extend(storage.leaf_data.to_elements());
-        claim_storage.extend(storage.output_note_data.to_elements());
+        claim_storage.push(storage.miden_claim_amount);
 
         NoteStorage::new(claim_storage)
     }

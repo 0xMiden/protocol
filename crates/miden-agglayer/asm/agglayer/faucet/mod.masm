@@ -6,11 +6,11 @@ use miden::agglayer::common::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
+use miden::standards::note_tag
 use miden::protocol::note
 use miden::protocol::tx
 use miden::core::mem
 use miden::core::word
-
 
 # ERRORS
 # =================================================================================================
@@ -54,11 +54,8 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
-const OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR = 568
-const OUTPUT_NOTE_TAG_MEM_ADDR = 572
-const OUTPUT_NOTE_FAUCET_AMOUNT = 573
 const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
-const P2ID_OUTPUT_NOTE_AMOUNT_MEM_PTR = 611
+const OUTPUT_NOTE_FAUCET_AMOUNT = 568 
 
 # Memory locals in claim
 const CLAIM_PREFIX_MEM_LOC = 8
@@ -69,6 +66,7 @@ const CLAIM_AMOUNT_MEM_LOC_1 = 4
 # Memory locals in build_p2id_output_note
 const BUILD_P2ID_AMOUNT_MEM_LOC_0 = 0
 const BUILD_P2ID_AMOUNT_MEM_LOC_1 = 4
+const BUILD_P2ID_PREFIX_MEM_LOC = 8
 
 # Data sizes
 const PROOF_DATA_WORD_LEN = 134
@@ -243,7 +241,7 @@ proc scale_down_amount
     repeat.7 drop end
 end
 
-# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
 # Outputs: []
 proc batch_pipe_double_words
     # 1) Verify PROOF_DATA_KEY
@@ -260,14 +258,6 @@ proc batch_pipe_double_words
     # => [LEAF_DATA_KEY]
 
     push.LEAF_DATA_START_PTR push.LEAF_DATA_WORD_LEN
-    exec.mem::pipe_double_words_preimage_to_memory drop
-
-    # 3) Verify OUTPUT_NOTE_DATA_KEY
-    mem_storew_be.OUTPUT_NOTE_DATA_MEM_ADDR
-    adv.push_mapval
-    # => [OUTPUT_NOTE_DATA_KEY]
-
-    push.OUTPUT_NOTE_DATA_START_PTR push.OUTPUT_NOTE_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
 end
 
@@ -308,8 +298,11 @@ end
 #! TODO: Add an explicit assertion that AMOUNT[1] is zero.
 #!
 #! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
-@locals(8)
+@locals(9)
 proc build_p2id_output_note
+    # save prefix to local memory for later use in note tag computation
+    dup loc_store.BUILD_P2ID_PREFIX_MEM_LOC
+
     # write destination account id into memory for use in note::build_recipient
     push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
 
@@ -321,7 +314,8 @@ proc build_p2id_output_note
     procref.::miden::standards::notes::p2id::main
     # => [SCRIPT_ROOT]
 
-    swapw mem_loadw_be.OUTPUT_NOTE_SERIAL_NUM_MEM_ADDR
+    # Use PROOF_DATA_KEY as the P2ID serial number
+    swapw mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
@@ -334,10 +328,14 @@ proc build_p2id_output_note
     # => [RECIPIENT]
 
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, RECIPIENT] 
+    # => [note_type, RECIPIENT]
 
-    mem_load.OUTPUT_NOTE_TAG_MEM_ADDR
-    # => [tag, RECIPIENT]
+    # Compute note tag from destination account prefix (read from local memory)
+    loc_load.BUILD_P2ID_PREFIX_MEM_LOC
+    # => [account_id_prefix, note_type, RECIPIENT]
+
+    exec.note_tag::create_account_target
+    # => [tag, note_type, RECIPIENT]
 
     padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
@@ -370,7 +368,7 @@ end
 #! 2) We can have a mapping in the bridge or in the faucet that stores consumed claim proofs
 #!    as a hash -> bool value (similar to how it's done in the agglayer solidity contract).
 #!
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY, pad(4)]
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
 #! Outputs: [pad(16)]
 #!
 #! Advice map: {
@@ -390,12 +388,6 @@ end
 #!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
 #!   ],
-#!   OUTPUT_NOTE_DATA_KEY => [
-#!     output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
-#!     output_note_tag[1],              // P2ID output note tag
-#!     miden_claim_amount[1],           // Miden claim amount (1 felt)
-#!     padding[2],                      // padding (2 felts)
-#!   ]
 #! }
 #!
 #! Panics if:
@@ -405,26 +397,30 @@ end
 #! Invocation: call
 @locals(10) # 2 for prefix and suffix, 8 for amount
 pub proc claim
+    # Write output note faucet amount to memory
+    movup.8 mem_store.OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(7)]
+
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.batch_pipe_double_words
-    # => [pad(16)]
+    # => [pad(7)]
 
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
     exec.get_destination_account_id_data
     loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
-    # => [pad(16)]
+    # => [pad(7)]
 
     exec.get_raw_claim_amount
     loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
-    # => [pad(16)]
+    # => [pad(7)]
 
     # VALIDATE CLAIM 
     mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
-    # => [PROOF_DATA_KEY, pad(12)]
+    # => [PROOF_DATA_KEY, pad(7)]
     
     swapw mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
 
     # Errors on invalid proof
     exec.validate_claim
