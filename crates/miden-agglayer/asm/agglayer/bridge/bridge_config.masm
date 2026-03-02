@@ -213,7 +213,7 @@ pub proc lookup_faucet_by_token_address
 
     push.TOKEN_REGISTRY_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [VALUE(4)] = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
 
     # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
     dup.1 dup.1
