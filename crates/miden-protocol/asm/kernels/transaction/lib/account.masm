@@ -1061,11 +1061,11 @@ pub proc load_foreign_account
 
     # store the id and nonce of the foreign account to memory
     adv_loadw
-    # OS => [account_id_prefix, account_id_suffix, 0, account_nonce]
+    # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     exec.memory::set_account_id_and_nonce
-    # OS => [account_nonce, 0, account_id_prefix, account_id_suffix]
+    # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
     # store the vault root of the foreign account to the memory
