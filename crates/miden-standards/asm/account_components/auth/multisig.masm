@@ -17,8 +17,6 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
-
 # CONSTANTS
 # =================================================================================================
 
@@ -88,7 +86,7 @@ const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 #!
 #! Panics if:
 #! - the same transaction has already been executed
-proc assert_new_tx(msg: Word)
+proc assert_new_tx(msg: word)
     push.IS_EXECUTED_FLAG
     # => [[is_executed, 0, 0, 0], MSG]
 
@@ -216,7 +214,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
-pub proc update_signers_and_threshold(multisig_config_hash: Word)
+pub proc update_signers_and_threshold(multisig_config_hash: word)
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -453,7 +451,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
-pub proc is_signer(pub_key: Word) -> felt
+pub proc is_signer(pub_key: word) -> felt
     # initialize is_signer_found = false
     push.0 loc_store.IS_SIGNER_FOUND_LOC
     # => [PUB_KEY]
@@ -550,7 +548,7 @@ end
 #!
 #! Invocation: call
 @locals(1)
-pub proc auth_tx_multisig(salt: Word)
+pub proc auth_tx_multisig(salt: word)
     exec.native_account::incr_nonce drop
     # => [SALT]
 

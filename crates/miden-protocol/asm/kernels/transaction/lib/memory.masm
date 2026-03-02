@@ -7,7 +7,6 @@ use miden::core::mem
 # =================================================================================================
 
 type AccountID = struct { suffix: felt, prefix: felt }
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
 type MemoryAddress = u32
 
 # ERRORS
@@ -462,7 +461,7 @@ end
 #! Where:
 #! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
 #!   call.
-pub proc set_fpi_procedure_root(foreign_proc_root: Word) -> Word
+pub proc set_fpi_procedure_root(foreign_proc_root: word) -> word
     mem_storew_le.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
