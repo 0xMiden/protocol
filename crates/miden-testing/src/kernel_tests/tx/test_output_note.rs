@@ -1258,6 +1258,24 @@ async fn test_network_note() -> anyhow::Result<()> {
     // TryFrom<Note> fails for a non-network note.
     assert!(AccountTargetNetworkNote::try_from(non_network_note).is_err());
 
+    // --- Invalid: private note with valid NetworkAccountTarget attachment ---
+    let private_network_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Private)
+        .attachment(attachment)
+        .build()?;
+
+    // is_network_note() returns false for a private note even with a valid attachment.
+    assert!(!private_network_note.is_network_note());
+
+    // AccountTargetNetworkNote::new() fails for a private note.
+    assert!(AccountTargetNetworkNote::new(private_network_note.clone()).is_err());
+
+    // into_account_target_network_note() fails for a private note.
+    assert!(private_network_note.clone().into_account_target_network_note().is_err());
+
+    // TryFrom<Note> fails for a private note.
+    assert!(AccountTargetNetworkNote::try_from(private_network_note).is_err());
+
     Ok(())
 }
 

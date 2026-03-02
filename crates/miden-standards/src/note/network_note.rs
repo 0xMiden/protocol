@@ -17,9 +17,16 @@ pub struct AccountTargetNetworkNote {
 impl AccountTargetNetworkNote {
     /// Attempts to construct an [`AccountTargetNetworkNote`] from `note`.
     ///
-    /// Returns an error if the note's attachment cannot be decoded as a [`NetworkAccountTarget`].
+    /// Returns an error if:
+    /// - the note is not [`NoteType::Public`].
+    /// - the note's attachment cannot be decoded as a [`NetworkAccountTarget`].
     pub fn new(note: Note) -> Result<Self, NetworkAccountTargetError> {
-        // Validate that the attachment is a valid NetworkAccountTarget
+        // Network notes must be public.
+        if note.metadata().note_type() != NoteType::Public {
+            return Err(NetworkAccountTargetError::NoteNotPublic(note.metadata().note_type()));
+        }
+
+        // Validate that the attachment is a valid NetworkAccountTarget.
         NetworkAccountTarget::try_from(note.metadata().attachment())?;
         Ok(Self { note })
     }
@@ -68,7 +75,8 @@ impl AccountTargetNetworkNote {
 
 /// Convenience helpers for [`Note`]s that may target a network account.
 pub trait NetworkNoteExt {
-    /// Returns `true` if this note's attachment decodes as a [`NetworkAccountTarget`].
+    /// Returns `true` if this note is public and its attachment decodes as a
+    /// [`NetworkAccountTarget`].
     fn is_network_note(&self) -> bool;
 
     /// Consumes `self` and returns an [`AccountTargetNetworkNote`], or an error if the attachment
@@ -80,7 +88,8 @@ pub trait NetworkNoteExt {
 
 impl NetworkNoteExt for Note {
     fn is_network_note(&self) -> bool {
-        NetworkAccountTarget::try_from(self.metadata().attachment()).is_ok()
+        self.metadata().note_type() == NoteType::Public
+            && NetworkAccountTarget::try_from(self.metadata().attachment()).is_ok()
     }
 
     fn into_account_target_network_note(
