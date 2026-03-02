@@ -1,6 +1,6 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::{AccountId, StorageMap, StorageSlot, StorageSlotName};
+use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
@@ -135,7 +135,7 @@ async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
             StorageSlot::with_value(StorageSlotName::mock(0), rand_value()),
             StorageSlot::with_map(
                 StorageSlotName::mock(1),
-                StorageMap::with_entries([(rand_value(), rand_value())])?,
+                StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?,
             ),
         ],
         [Asset::from(native_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
@@ -166,7 +166,7 @@ async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
         [
             StorageSlot::with_map(
                 StorageSlotName::mock(0),
-                StorageMap::with_entries([(rand_value(), rand_value())])?,
+                StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?,
             ),
             StorageSlot::with_value(StorageSlotName::mock(1), rand_value()),
         ],

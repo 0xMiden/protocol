@@ -9,7 +9,13 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, StorageMap, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponent,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -363,12 +369,10 @@ impl From<AuthMultisig> for AccountComponent {
         ));
 
         // Approver public keys slot (map)
-        let map_entries = multisig
-            .config
-            .approvers()
-            .iter()
-            .enumerate()
-            .map(|(i, (pub_key, _))| (Word::from([i as u32, 0, 0, 0]), Word::from(*pub_key)));
+        let map_entries =
+            multisig.config.approvers().iter().enumerate().map(|(i, (pub_key, _))| {
+                (StorageMapKey::from_index(i as u32), Word::from(*pub_key))
+            });
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
@@ -379,7 +383,7 @@ impl From<AuthMultisig> for AccountComponent {
         // Approver scheme IDs slot (map): [index, 0, 0, 0] => [scheme_id, 0, 0, 0]
         let scheme_id_entries =
             multisig.config.approvers().iter().enumerate().map(|(i, (_, auth_scheme))| {
-                (Word::from([i as u32, 0, 0, 0]), Word::from([*auth_scheme as u32, 0, 0, 0]))
+                (StorageMapKey::from_index(i as u32), Word::from([*auth_scheme as u32, 0, 0, 0]))
             });
 
         storage_slots.push(StorageSlot::with_map(
@@ -396,11 +400,9 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Procedure thresholds slot (map: PROC_ROOT -> threshold)
         let proc_threshold_roots = StorageMap::with_entries(
-            multisig
-                .config
-                .proc_thresholds()
-                .iter()
-                .map(|(proc_root, threshold)| (*proc_root, Word::from([*threshold, 0, 0, 0]))),
+            multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
+                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
+            }),
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
@@ -420,11 +422,9 @@ impl From<AuthMultisig> for AccountComponent {
             .push(StorageSlot::with_value(AuthMultisig::psm_config_slot().clone(), psm_config));
 
         // Private state manager public key slot (map: [0, 0, 0, 0] -> pubkey)
-        let psm_public_key_entries = multisig
-            .config
-            .psm()
-            .into_iter()
-            .map(|(pub_key, _)| (Word::from([0u32, 0, 0, 0]), Word::from(pub_key)));
+        let psm_public_key_entries = multisig.config.psm().into_iter().map(|(pub_key, _)| {
+            (StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(pub_key))
+        });
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::psm_public_key_slot().clone(),
             StorageMap::with_entries(psm_public_key_entries).unwrap(),
@@ -432,7 +432,10 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Private state manager scheme IDs slot (map: [0, 0, 0, 0] -> [scheme_id, 0, 0, 0])
         let psm_scheme_id_entries = multisig.config.psm().into_iter().map(|(_, auth_scheme)| {
-            (Word::from([0u32, 0, 0, 0]), Word::from([auth_scheme as u32, 0, 0, 0]))
+            (
+                StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])),
+                Word::from([auth_scheme as u32, 0, 0, 0]),
+            )
         });
         storage_slots.push(StorageSlot::with_map(
             AuthMultisig::psm_scheme_id_slot().clone(),
