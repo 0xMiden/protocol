@@ -513,10 +513,6 @@ An `AccountId` is embedded in a 20-byte Ethereum address as follows:
 | `[4..12)` | `prefix` | Big-endian `u64` (`felts[0].as_int().to_be_bytes()`) |
 | `[12..20)` | `suffix` | Big-endian `u64` (`felts[1].as_int().to_be_bytes()`) |
 
-The four leading zero bytes are required for a valid embedded `AccountId`. A non-zero
-leading prefix signals an arbitrary Ethereum address that does not correspond to a Miden
-account.
-
 **Example conversions:**
 
 | Bech32 | Ethereum address |
@@ -528,10 +524,10 @@ account.
 Note that the last byte of the Ethereum address is always `0x00` because the lower 8 bits
 of the `AccountId` suffix are always zero.
 
-### 5.3 MASM Limb Representation (`address[5]`)
+### 5.3 MASM Limb Representation
 
 Inside the Miden VM, a 20-byte Ethereum address is represented as 5 field elements, each
-holding a `u32` value. This layout is called `address[5]` and uses **big-endian limb
+holding a `u32` value. This layout uses **big-endian limb
 order** (matching the Solidity ABI encoding convention):
 
 | Limb | Byte range | Description |
@@ -543,9 +539,8 @@ order** (matching the Solidity ABI encoding convention):
 | `address[4]` | `bytes[16..20]` | Lower half of suffix |
 
 **Byte order within each limb:** Each 4-byte chunk is packed into a `u32` felt using
-**little-endian** byte order. This means the felt value `v` for bytes `[b0, b1, b2, b3]`
-is `v = b0 + (b1 << 8) + (b2 << 16) + (b3 << 24)`. This convention aligns with how
-Keccak-256 byte inputs are packed in the Miden VM.
+**little-endian** byte order, aligning with the expected format for the
+Keccak-256 precompile.
 
 The Rust function `EthAddressFormat::to_elements()` produces exactly this 5-felt array
 from a 20-byte address.
@@ -665,12 +660,10 @@ table clarifies:
 |-------|-----------|--------|
 | **Limb order** | Big-endian | `address[0]` holds the most-significant 4 bytes of the 20-byte address |
 | **Byte order within each limb** | Little-endian | The 4 bytes of a limb are packed as `b0 + b1×2^8 + b2×2^16 + b3×2^24` |
-| **Felt packing (u64)** | Big-endian u32 pairs | `felt = hi_be × 2^32 + lo_be` where `hi_be` and `lo_be` are the byte-swapped limbs |
-| **Prefix/suffix in [u8; 20]** | Big-endian u64 | `bytes[4..12]` is `prefix.to_be_bytes()`, `bytes[12..20]` is `suffix.to_be_bytes()` |
+| **Felt packing (u64)** | Big-endian u32 pairs | `felt = hi_be × 2^32 + lo_be` where `hi_be` |
 
 The byte swap (`swap_u32_bytes`) in the MASM `build_felt` procedure bridges between
-the little-endian limb storage (as received from `to_elements`) and the big-endian
-`u64` interpretation needed to reconstruct the original felt values.
+the little-endian bytes within each limb in `NoteStorage` (as received from `to_elements`) and the big-endian `u32` pairs needed to construct the prefix and suffix.
 
 ### 5.6 Where Conversions Are Used
 
@@ -687,18 +680,7 @@ the little-endian limb storage (as received from `to_elements`) and the big-endi
 
 The encoding is a bijection over the set of valid `AccountId` values: for every valid
 `AccountId`, `from_account_id` followed by `to_account_id` (or the MASM equivalent)
-recovers the original. This holds because:
-
-1. Every valid felt value (< p) survives the big-endian `u64` ↔ `Felt` round-trip
-   without reduction.
-2. The suffix's MSB is zero and lower 8 bits are zero, so the `u64` representation fits
-   comfortably within the field.
-3. The prefix is always a valid felt by construction (hash output).
-
-The test suite (`solidity_miden_address_conversion.rs`) validates this roundtrip for
-known Bech32 addresses, standard account ID constants, and randomly generated accounts,
-including end-to-end MASM execution of `eth_address::to_account_id`.
-
+recovers the original.
 ### 5.8 Limitations
 
 - **Not all Ethereum addresses are valid Miden accounts.** The conversion from Ethereum
@@ -706,6 +688,3 @@ including end-to-end MASM execution of `eth_address::to_account_id`.
   the packed `u64` values exceed the field modulus, or if the resulting felts don't form
   a valid `AccountId`. Arbitrary Ethereum addresses (e.g., from EOAs or contracts on L1)
   cannot generally be decoded into `AccountId` values.
-- **No EVM address derivation.** This encoding does not derive an Ethereum address from a
-  Miden account in any cryptographic sense (e.g., via a public key). It is purely a
-  format-level embedding for interoperability within the AggLayer bridge protocol.
