@@ -264,7 +264,7 @@ mod tests {
         let invalid_key = AssetVaultKey::new(
             AssetId::new(1u32.into(), 2u32.into()),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
-        );
+        )?;
 
         let err =
             FungibleAsset::from_key_value(invalid_key, FungibleAsset::mock(5).to_value_word())
