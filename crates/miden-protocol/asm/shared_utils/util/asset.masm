@@ -83,7 +83,7 @@ end
 #! Where:
 #! - faucet_id is the account ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the faucet ID.
-pub proc get_faucet_id
+pub proc key_to_faucet_id
     # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
     dup.1 dup.1
@@ -100,7 +100,7 @@ end
 #! Where:
 #! - faucet_id is the account ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the faucet ID.
-pub proc into_faucet_id
+pub proc key_into_faucet_id
     # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
     movup.2 drop movup.2 drop

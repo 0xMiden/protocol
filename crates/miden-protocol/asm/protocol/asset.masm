@@ -7,8 +7,8 @@ use miden::protocol::util::asset
 pub use ::miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 pub use ::miden::protocol::util::asset::ASSET_SIZE
 pub use ::miden::protocol::util::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use ::miden::protocol::util::asset::get_faucet_id
-pub use ::miden::protocol::util::asset::into_faucet_id
+pub use ::miden::protocol::util::asset::key_to_faucet_id
+pub use ::miden::protocol::util::asset::key_into_faucet_id
 pub use ::miden::protocol::util::asset::get_asset_id
 pub use ::miden::protocol::util::asset::into_asset_id
 pub use ::miden::protocol::util::asset::mem_store
