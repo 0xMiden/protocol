@@ -12,6 +12,7 @@ use miden_protocol::account::{
     AccountCode,
     AccountComponent,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotName,
 };
@@ -274,7 +275,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             .auth_trigger_procedures
             .iter()
             .enumerate()
-            .map(|(i, proc_root)| (Word::from([i as u32, 0, 0, 0]), *proc_root));
+            .map(|(i, proc_root)| (StorageMapKey::from_index(i as u32), *proc_root));
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(

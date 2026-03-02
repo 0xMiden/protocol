@@ -19,7 +19,7 @@ mod slot;
 pub use slot::{StorageSlot, StorageSlotContent, StorageSlotId, StorageSlotName, StorageSlotType};
 
 mod map;
-pub use map::{PartialStorageMap, StorageMap, StorageMapWitness};
+pub use map::{PartialStorageMap, StorageMap, StorageMapKey, StorageMapKeyHash, StorageMapWitness};
 
 mod header;
 pub use header::{AccountStorageHeader, StorageSlotHeader};
@@ -191,7 +191,7 @@ impl AccountStorage {
         self.get(slot_name)
             .ok_or_else(|| AccountError::StorageSlotNameNotFound { slot_name: slot_name.clone() })
             .and_then(|slot| match slot.content() {
-                StorageSlotContent::Map(map) => Ok(map.get(&key)),
+                StorageSlotContent::Map(map) => Ok(map.get(&StorageMapKey::from_raw(key))),
                 _ => Err(AccountError::StorageSlotNotMap(slot_name.clone())),
             })
     }
@@ -271,7 +271,7 @@ impl AccountStorage {
     pub fn set_map_item(
         &mut self,
         slot_name: &StorageSlotName,
-        raw_key: Word,
+        key: StorageMapKey,
         value: Word,
     ) -> Result<(Word, Word), AccountError> {
         let slot = self.get_mut(slot_name).ok_or_else(|| {
@@ -284,7 +284,7 @@ impl AccountStorage {
 
         let old_root = storage_map.root();
 
-        let old_value = storage_map.insert(raw_key, value)?;
+        let old_value = storage_map.insert(key, value)?;
 
         Ok((old_root, old_value))
     }
