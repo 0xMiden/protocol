@@ -76,7 +76,7 @@ pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 /// as the faucet ID is included in the description of the non-fungible asset and this is guaranteed
 /// to be different as per the faucet creation logic.
 ///
-/// The most significant elements of a fungible asset's key are set to the prefix
+/// The most significant elements of a non-fungible asset's key are set to the prefix
 /// (`faucet_id_prefix`) and suffix (`faucet_id_suffix`) of the ID of the faucet which issues the
 /// asset. The asset ID limbs are set to hashes from the asset's value. This means the collision
 /// resistance of non-fungible assets issued by the same faucet is ~2^64, due to the 128-bit asset
