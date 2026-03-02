@@ -163,7 +163,7 @@ pub proc register_faucet
     # => [OLD_VALUE, pad(12)]
 
     dropw
-    # => [pad(9)]
+    # => [pad(16)]
 end
 
 #! Asserts that a faucet is registered in the bridge's faucet registry.
