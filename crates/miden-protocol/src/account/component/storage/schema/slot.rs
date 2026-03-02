@@ -4,7 +4,7 @@ use alloc::string::String;
 use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_processor::DeserializationError;
 
-use super::super::type_registry::{SchemaRequirement, SchemaTypeId};
+use super::super::type_registry::{SchemaRequirement, SchemaType};
 use super::super::{InitStorageData, StorageValueName};
 use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
@@ -25,7 +25,7 @@ pub enum StorageSlotSchema {
 impl StorageSlotSchema {
     /// Creates a value slot schema with the given description and word schema.
     ///
-    /// Accepts anything convertible to [`WordSchema`]: a [`SchemaTypeId`] for simple typed slots,
+    /// Accepts anything convertible to [`WordSchema`]: a [`SchemaType`] for simple typed slots,
     /// a `[FeltSchema; 4]` for composite slots, or a [`WordSchema`] directly.
     pub fn value(description: impl Into<String>, word: impl Into<WordSchema>) -> Self {
         Self::Value(ValueSlotSchema::new(Some(description.into()), word.into()))
@@ -34,8 +34,8 @@ impl StorageSlotSchema {
     /// Creates a map slot schema with the given description and simple key/value types.
     pub fn map(
         description: impl Into<String>,
-        key_type: SchemaTypeId,
-        value_type: SchemaTypeId,
+        key_type: SchemaType,
+        value_type: SchemaType,
     ) -> Self {
         Self::Map(MapSlotSchema::new(
             Some(description.into()),

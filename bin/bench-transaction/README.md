@@ -44,7 +44,7 @@ Benchmarks consist of two groups:
 
 You can run the benchmarks in two ways:
 
-### Option 1: Using Make (from miden-base directory)
+### Option 1: Using Make (from protocol directory)
 
 ```bash
 make bench-tx
@@ -52,7 +52,7 @@ make bench-tx
 
 This command will run both the cycle counting and the time counting benchmarks.
 
-### Option 2: Running each benchmark individually (from miden-base directory)
+### Option 2: Running each benchmark individually (from protocol directory)
 
 ```bash
 # Run the cycle counting benchmarks

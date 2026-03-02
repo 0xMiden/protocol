@@ -64,6 +64,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_protocol::{
+/// #    account::auth::AuthScheme,
 /// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType,
 /// # };
@@ -76,8 +77,10 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// let mut builder = MockChain::builder();
 ///
-/// // Add a recipient wallet.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth)?;
+/// // Add a recipient wallet with basic authentication.
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Rpo (scheme_id: 2) auth scheme.
+/// let receiver =
+///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -127,18 +130,29 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// ```
 /// # use anyhow::Result;
-/// # use miden_protocol::{Felt, asset::{Asset, FungibleAsset}, note::NoteType};
+/// # use miden_protocol::{
+/// #    Felt,
+/// #    account::auth::AuthScheme,
+/// #    asset::{Asset, FungibleAsset},
+/// #    note::NoteType
+/// # };
 /// # use miden_testing::{Auth, MockChain, TransactionContextBuilder};
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<()> {
 /// let mut builder = MockChain::builder();
 ///
-/// let faucet = builder.create_new_faucet(Auth::BasicAuth, "USDT", 100_000)?;
+/// let faucet = builder.create_new_faucet(
+///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+///     "USDT",
+///     100_000,
+/// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth)?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth)?;
+/// let sender =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// let target =
+///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -1153,6 +1167,7 @@ impl From<Account> for TxContextInput {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountStorageMode};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
@@ -1184,8 +1199,9 @@ mod tests {
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
+        let auth_scheme = AuthScheme::EcdsaK256Keccak;
         let account = builder.add_account_from_builder(
-            Auth::BasicAuth,
+            Auth::BasicAuth { auth_scheme },
             account_builder,
             AccountState::New,
         )?;
@@ -1229,7 +1245,7 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth,
+                    Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )
