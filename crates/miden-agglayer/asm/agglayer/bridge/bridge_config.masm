@@ -239,10 +239,7 @@ end
 #! Invocation: exec
 proc hash_token_address
     # Write origin_token_addr[5] to memory for hashing
-    mem_store.TOKEN_ADDR_HASH_PTR
-    push.TOKEN_ADDR_HASH_PTR add.1 mem_store
-    push.TOKEN_ADDR_HASH_PTR add.2 mem_store
-    push.TOKEN_ADDR_HASH_PTR add.3 mem_store
+    mem_storew_le.TOKEN_ADDR_HASH_PTR dropw
     push.TOKEN_ADDR_HASH_PTR add.4 mem_store
     # => []
 
