@@ -567,7 +567,8 @@ fn on_account_vault_asset_accessed<'store, STORE>(
     vault_key: AssetVaultKey,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::new(vault_key.to_leaf_index().value());
+    let leaf_index =
+        Felt::try_from(vault_key.to_leaf_index().value()).expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 
     // For the native account we need to explicitly request the initial vault root, while for

@@ -176,7 +176,6 @@ impl Deserializable for BlockNoteTree {
         let count = source.read_u32()?;
         let leaves = source.read_many_iter(count as usize)?.collect::<Result<Vec<_>, _>>()?;
 
-        // TODO: Check if we need untrusted deserialization here.
         SimpleSmt::with_leaves(leaves)
             .map(Self)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
