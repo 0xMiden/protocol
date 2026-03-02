@@ -545,12 +545,8 @@ end
 @locals(12) # 0-3: amount_lo, 4-7: amount_hi, 8: prefix, 9: suffix, 10: faucet_prefix, 11: faucet_suffix
 proc build_mint_output_note
     # save prefix and suffix to local memory for later use
-    dup loc_store.BUILD_MINT_PREFIX_MEM_LOC
-    swap dup loc_store.BUILD_MINT_SUFFIX_MEM_LOC swap
-    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], ...]
-
-    # drop prefix and suffix from stack (already saved in locals)
-    swap drop drop
+    loc_store.BUILD_MINT_PREFIX_MEM_LOC
+    loc_store.BUILD_MINT_SUFFIX_MEM_LOC
     # => [AMOUNT[0], AMOUNT[1], ...]
 
     # store amount in memory locals
