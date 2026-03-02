@@ -45,7 +45,13 @@ use miden_protocol::transaction::memory::{
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint, P2idNote};
+use miden_standards::note::{
+    AccountTargetNetworkNote,
+    NetworkAccountTarget,
+    NetworkNoteExt,
+    NoteExecutionHint,
+    P2idNote,
+};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -1200,6 +1206,75 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     // Make sure we can deserialize the attachment back into its original type.
     let actual_attachment = NetworkAccountTarget::try_from(actual_note.metadata().attachment())?;
     assert_eq!(actual_attachment, attachment);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_network_note() -> anyhow::Result<()> {
+    let sender = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let mut rng = RpoRandomCoin::new(Word::from([9, 8, 7, 6u32]));
+
+    // --- Valid network note ---
+    let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
+    let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
+
+    let note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(attachment)
+        .build()?;
+
+    // is_network_note() returns true for a note with a valid NetworkAccountTarget attachment.
+    assert!(note.is_network_note());
+
+    // into_account_target_network_note() succeeds and accessors return correct values.
+    let expected_note_type = note.metadata().note_type();
+    let network_note = note.into_account_target_network_note()?;
+    assert_eq!(network_note.target_account_id(), target_id);
+    assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+    assert_eq!(network_note.note_type(), expected_note_type);
+
+    // TryFrom<Note> succeeds for a valid network note.
+    let valid_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(attachment)
+        .build()?;
+    let try_from_note = AccountTargetNetworkNote::try_from(valid_note)?;
+    assert_eq!(try_from_note.target_account_id(), target_id);
+
+    // --- Invalid: note with default (empty) attachment ---
+    let non_network_note =
+        NoteBuilder::new(sender.id(), &mut rng).note_type(NoteType::Public).build()?;
+
+    // is_network_note() returns false for a note without a NetworkAccountTarget attachment.
+    assert!(!non_network_note.is_network_note());
+
+    // AccountTargetNetworkNote::new() fails for an invalid attachment.
+    assert!(AccountTargetNetworkNote::new(non_network_note.clone()).is_err());
+
+    // into_account_target_network_note() fails for a non-network note.
+    assert!(non_network_note.clone().into_account_target_network_note().is_err());
+
+    // TryFrom<Note> fails for a non-network note.
+    assert!(AccountTargetNetworkNote::try_from(non_network_note).is_err());
+
+    // --- Invalid: private note with valid NetworkAccountTarget attachment ---
+    let private_network_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Private)
+        .attachment(attachment)
+        .build()?;
+
+    // is_network_note() returns false for a private note even with a valid attachment.
+    assert!(!private_network_note.is_network_note());
+
+    // AccountTargetNetworkNote::new() fails for a private note.
+    assert!(AccountTargetNetworkNote::new(private_network_note.clone()).is_err());
+
+    // into_account_target_network_note() fails for a private note.
+    assert!(private_network_note.clone().into_account_target_network_note().is_err());
+
+    // TryFrom<Note> fails for a private note.
+    assert!(AccountTargetNetworkNote::try_from(private_network_note).is_err());
 
     Ok(())
 }
