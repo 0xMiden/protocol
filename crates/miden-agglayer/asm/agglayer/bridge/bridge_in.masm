@@ -268,13 +268,12 @@ end
 
 #! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
 #!
-#! This procedure is called by the CLAIM note script when consumed by the bridge account.
-#! It validates the Merkle proof directly (no FPI needed since bridge is the native account),
-#! then looks up the faucet account ID from the token registry using the origin token address
-#! from the leaf data, and creates a MINT note targeting the aggfaucet.
+#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then 
+#! looks up the faucet account ID from the token registry using the origin token address from 
+#! the leaf data, and creates a MINT note targeting the aggfaucet.
 #!
-#! The MINT note uses the standard MintNote pattern (private mode) with 12 storage items:
-#! [tag, amount, attachment_kind(0), attachment_scheme(0), ATTACHMENT(0,0,0,0), RECIPIENT_DIGEST(4)]
+#! The MINT note uses the standard MintNote pattern (public mode) with 16+ storage items:
+#! [tag, amount, attachment_kind(0), attachment_scheme(0), ATTACHMENT(0,0,0,0), RECIPIENT_DIGEST(4), [STORAGE]]
 #!
 #! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
 #! Outputs: [pad(16)]
@@ -314,8 +313,6 @@ pub proc claim
     exec.claim_batch_pipe_double_words
     # => [pad(16)]
 
-    # validate_claim will overwrite memory in-place, so we need to load the account and amount
-    # before calling validate_claim and store it in memory locals
     exec.get_destination_account_id_data
     loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
     # => [pad(7)]
@@ -524,7 +521,9 @@ end
 
 #! Builds a PUBLIC MINT output note targeting the aggfaucet.
 #!
-#! The MINT note uses public mode (18 storage items) so the faucet creates a PUBLIC P2ID note.
+#! The MINT note uses public mode (16 storage items + 2 for target AccountId) so the AggFaucet creates
+#! a PUBLIC P2ID note on consumption.
+#!
 #! Storage layout:
 #! - [0]: tag (note tag for the P2ID output note, targeting the destination account)
 #! - [1]: amount (the scaled-down Miden amount to mint)
