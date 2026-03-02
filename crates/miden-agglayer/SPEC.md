@@ -212,6 +212,14 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 
 ## 3. Note Types and Storage Layouts
 
+**Encoding conventions:** All multi-byte values in note storage (addresses, U256
+integers, Keccak-256 hashes) are encoded as arrays of u32 felts via
+`bytes_to_packed_u32_felts`: big-endian limb order with **little-endian byte order**
+within each 4-byte limb (see [Section 5.5](#55-endianness-summary)). Scalar u32 fields
+(network IDs) are byte-reversed at storage time so their in-memory bytes align with the
+Keccak preimage format directly — the felt value does **not** equal the numeric value
+(e.g., chain ID `1` = `0x00000001` is stored as felt `0x01000000`).
+
 ### 3.1 B2AGG
 (Bridge-to-AggLayer)
 
