@@ -508,7 +508,7 @@ end
 #! - ASSET_VALUE is the value of the asset that is added.
 pub proc add_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true
@@ -540,7 +540,7 @@ end
 #! - ASSET_VALUE is the value of the asset that is removed.
 pub proc remove_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true

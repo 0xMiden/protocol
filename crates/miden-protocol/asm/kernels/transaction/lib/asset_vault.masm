@@ -241,7 +241,7 @@ end
 #! - the vault already contains the same non-fungible asset.
 pub proc add_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
     # add the asset to the asset vault
@@ -394,7 +394,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 pub proc remove_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
     # remove the asset from the asset vault

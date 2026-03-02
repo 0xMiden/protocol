@@ -530,7 +530,7 @@ proc add_asset_raw
         # if the asset exists, do not increment num assets
 
         # abort if the asset is non-fungible since it cannot be merged
-        exec.asset::is_fungible_asset
+        exec.asset::is_fungible_asset_key
         assert.err=ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS
         # => [ASSET_KEY, ASSET_VALUE, asset_ptr, note_ptr]
 

@@ -165,7 +165,7 @@ pub proc validate_key
     exec.account_id::validate
     # => [ASSET_KEY]
 
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
     # => [ASSET_KEY]
 
