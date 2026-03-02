@@ -169,7 +169,7 @@ pub proc validate_key
     assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
     # => [ASSET_KEY]
 
-    exec.asset::get_asset_id
+    exec.asset::key_to_asset_id
     # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
 
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO

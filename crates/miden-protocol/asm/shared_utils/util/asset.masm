@@ -115,7 +115,7 @@ end
 #! Where:
 #! - asset_id is the asset ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the asset ID.
-pub proc get_asset_id
+pub proc key_to_asset_id
     # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
     dup.3 dup.3
@@ -130,7 +130,7 @@ end
 #! Where:
 #! - asset_id is the asset ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the asset ID.
-pub proc into_asset_id
+pub proc key_into_asset_id
     # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
     drop drop

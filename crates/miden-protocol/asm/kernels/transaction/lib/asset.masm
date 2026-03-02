@@ -15,8 +15,8 @@ pub use ::$kernel::util::asset::ASSET_SIZE
 pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
 pub use ::$kernel::util::asset::key_to_faucet_id
 pub use ::$kernel::util::asset::key_into_faucet_id
-pub use ::$kernel::util::asset::get_asset_id
-pub use ::$kernel::util::asset::into_asset_id
+pub use ::$kernel::util::asset::key_to_asset_id
+pub use ::$kernel::util::asset::key_into_asset_id
 pub use ::$kernel::util::asset::mem_store
 pub use ::$kernel::util::asset::mem_load
 
