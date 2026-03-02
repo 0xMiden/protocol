@@ -310,9 +310,13 @@ pub proc claim
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
 
-    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
-    exec.claim_batch_pipe_double_words
-    # => [pad(16)]
+    # Store PROOF_DATA_KEY to memory (used later as MINT & P2ID serial number)
+    mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR dropw
+    # => [LEAF_DATA_KEY, pad(8)]
+
+    # Pipe leaf data preimage to memory
+    exec.pipe_leaf_data_to_memory
+    # => [pad(7)]
 
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
@@ -453,24 +457,18 @@ proc verify_leaf
     # => []
 end
 
-# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
+# Pipes the leaf data preimage into memory at CLAIM_LEAF_DATA_START_PTR
+#
+# Inputs: [LEAF_DATA_KEY]
 # Outputs: []
-proc claim_batch_pipe_double_words
-    # 1) Verify PROOF_DATA_KEY
-    mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    adv.push_mapval
-    # => [PROOF_DATA_KEY]
-
-    push.CLAIM_PROOF_DATA_START_PTR push.CLAIM_PROOF_DATA_WORD_LEN
-    exec.mem::pipe_double_words_preimage_to_memory drop
-
-    # 2) Verify LEAF_DATA_KEY
+proc pipe_leaf_data_to_memory
     mem_storew_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
     adv.push_mapval
     # => [LEAF_DATA_KEY]
 
     push.CLAIM_LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
+    # => []
 end
 
 #! Extracts the destination account ID as address[5] from memory.
