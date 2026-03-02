@@ -31,11 +31,11 @@ pub proc mem_store
     movdn.4 dup.4
     # => [ptr, ASSET_KEY, ptr, ASSET_VALUE]
 
-    mem_storew_be dropw
+    mem_storew_le dropw
     # => [ptr, ASSET_VALUE]
 
     # store asset value
-    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_be dropw
+    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
     # => []
 end
 
