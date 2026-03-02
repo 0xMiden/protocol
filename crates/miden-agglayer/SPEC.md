@@ -551,9 +551,7 @@ from a 20-byte address.
 
 `EthAddressFormat::from_account_id(account_id: AccountId) -> EthAddressFormat`
 
-This is the **external API** used by integrators (Gateway, claim managers) to convert a
-Miden `AccountId` into an Ethereum address for constructing CLAIM notes or calling the
-AggLayer Bridge's `bridgeAsset()` function.
+This is the **external API** used by the bridge interface. It lets a user convert a Miden `AccountId` (destination account on Miden) into an Ethereum address that will be encoded in the deposit data.
 
 **Algorithm:**
 
@@ -681,6 +679,7 @@ the little-endian bytes within each limb in `NoteStorage` (as received from `to_
 The encoding is a bijection over the set of valid `AccountId` values: for every valid
 `AccountId`, `from_account_id` followed by `to_account_id` (or the MASM equivalent)
 recovers the original.
+
 ### 5.8 Limitations
 
 - **Not all Ethereum addresses are valid Miden accounts.** The conversion from Ethereum
