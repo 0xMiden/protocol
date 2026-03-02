@@ -160,7 +160,7 @@ pub proc register_faucet
 
     push.TOKEN_REGISTRY_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(9)]
+    # => [OLD_VALUE, pad(12)]
 
     dropw
     # => [pad(9)]
