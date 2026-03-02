@@ -212,7 +212,8 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 
 ## 3. Note Types and Storage Layouts
 
-### 3.1 B2AGG (Bridge-to-AggLayer)
+### 3.1 B2AGG
+(Bridge-to-AggLayer)
 
 **Purpose:** User bridges an asset from Miden to the AggLayer.
 
@@ -524,6 +525,12 @@ An `AccountId` is embedded in a 20-byte Ethereum address as follows:
 Note that the last byte of the Ethereum address is always `0x00` because the lower 8 bits
 of the `AccountId` suffix are always zero.
 
+**Limitation:** Not all Ethereum addresses are valid Miden accounts. The conversion from
+Ethereum address to `AccountId` is partial — it fails if the leading 4 bytes are
+non-zero, if the packed `u64` values exceed the field modulus, or if the resulting felts
+don't form a valid `AccountId`. Arbitrary Ethereum addresses (e.g., from EOAs or
+contracts on L1) cannot generally be decoded into `AccountId` values.
+
 ### 5.3 MASM Limb Representation
 
 Inside the Miden VM, a 20-byte Ethereum address is represented as 5 field elements, each
@@ -570,6 +577,9 @@ address.
 This is used internally during CLAIM note processing to extract the recipient's
 `AccountId` from the embedded Ethereum address.
 
+While currently this is only used for testing purposes, the claim manager service could use this to
+extract the recipient's `AccountId` from the embedded Ethereum address and e.g. perform some checks on the receiving account, such as checking if the account is new or already has funds.
+
 **Algorithm:**
 
 1. Assert `bytes[0..4] == [0, 0, 0, 0]`. Error: `NonZeroBytePrefix`.
@@ -594,7 +604,7 @@ This is used internally during CLAIM note processing to extract the recipient's
 `eth_address::to_account_id` — Module: `miden::agglayer::common::eth_address`
 
 This is the in-VM counterpart of the Rust `to_account_id`, invoked during CLAIM note
-consumption to decode the recipient's address from the leaf data.
+consumption to decode the recipient's address from the leaf data, and eventually for building the P2ID note for the recipient.
 
 **Stack signature:**
 
@@ -609,7 +619,7 @@ Invocation: exec
 1. `assertz limb0` — the most-significant limb must be zero (error: `ERR_MSB_NONZERO`).
 2. Build `suffix` from `(limb4, limb3)`:
    a. Validate both values are `u32` (error: `ERR_NOT_U32`).
-   b. Byte-swap each limb from little-endian to big-endian via `utils::swap_u32_bytes`.
+   b. Byte-swap each limb from little-endian to big-endian via `utils::swap_u32_bytes` (see [Section 5.5](#55-endianness-summary)).
    c. Pack into a felt: `suffix = bswap(limb3) × 2^32 + bswap(limb4)`.
    d. Verify no mod-p reduction: split the felt back via `u32split` and assert equality
       with the original limbs (error: `ERR_FELT_OUT_OF_FIELD`).
@@ -619,7 +629,7 @@ Invocation: exec
 **Helper: `build_felt`**
 
 ```text
-Inputs:  [lo, hi]    (little-endian u32 limbs)
+Inputs:  [lo, hi]    (little-endian u32 limbs, little-endian bytes)
 Outputs: [felt]
 ```
 
@@ -642,48 +652,27 @@ Reverses the byte order of a `u32`: `[b0, b1, b2, b3] → [b3, b2, b1, b0]`.
 
 `EthAddressFormat::to_elements(&self) -> Vec<Felt>`
 
-Converts the 20-byte address into the `address[5]` limb array for use in the Miden VM.
+Converts the 20-byte address into a field element array for use in the Miden VM.
 Each 4-byte chunk is interpreted as a **little-endian** `u32` and stored as a `Felt`.
-The output order matches the big-endian limb order described in Section 5.3.
+The output order matches the big-endian limb order described in [Section 5.3](#53-masm-limb-representation).
 
-This is used when constructing CLAIM note storage (indices 544–548 for
-`destination_address`, and indices 538–542 for `origin_token_address`).
+This is used when constructing `NoteStorage` for B2AGG notes (see [Section 3.1](#31-b2agg)) and CLAIM notes (see [Section 3.2](#32-claim)).
 
 ### 5.5 Endianness Summary
 
-The conversion involves two levels of byte ordering, which can be confusing. This
-table clarifies:
+The conversion involves multiple levels of byte ordering: this table clarifies the different conventions used.
 
 | Level | Convention | Detail |
 |-------|-----------|--------|
 | **Limb order** | Big-endian | `address[0]` holds the most-significant 4 bytes of the 20-byte address |
 | **Byte order within each limb** | Little-endian | The 4 bytes of a limb are packed as `b0 + b1×2^8 + b2×2^16 + b3×2^24` |
-| **Felt packing (u64)** | Big-endian u32 pairs | `felt = hi_be × 2^32 + lo_be` where `hi_be` |
+| **Felt packing (u64)** | Big-endian u32 pairs | `felt = hi_be × 2^32 + lo_be` where `hi_be` and `lo_be` are field elements representing the big-endian-encoded `u32` values |
 
 The byte swap (`swap_u32_bytes`) in the MASM `build_felt` procedure bridges between
-the little-endian bytes within each limb in `NoteStorage` (as received from `to_elements`) and the big-endian `u32` pairs needed to construct the prefix and suffix.
+the little-endian bytes within each limb in `NoteStorage` and the big-endian-bytes within the `u32` pairs needed to construct the prefix and suffix in the MASM `build_felt` procedure.
 
-### 5.6 Where Conversions Are Used
-
-| Context | Direction | API |
-|---------|-----------|-----|
-| Constructing a CLAIM note (offchain) | `AccountId` → Ethereum address | `EthAddressFormat::from_account_id` (Rust) |
-| Encoding destination address in CLAIM note storage | Ethereum address → 5 felts | `EthAddressFormat::to_elements` (Rust) |
-| CLAIM note consumption (in-VM) | 5 felts → `AccountId` | `eth_address::to_account_id` (MASM) |
-| Constructing a B2AGG note (offchain) | Destination address → 5 felts | `EthAddressFormat::to_elements` (Rust) |
-| Bridge-out leaf construction (in-VM) | 5 felts written to leaf data | `bridge_out::write_address_to_memory` (MASM) |
-| Calling AggLayer Bridge `bridgeAsset()` | `AccountId` → Ethereum address | `EthAddressFormat::from_account_id` (Rust) |
-
-### 5.7 Roundtrip Guarantee
+### 5.6 Roundtrip Guarantee
 
 The encoding is a bijection over the set of valid `AccountId` values: for every valid
 `AccountId`, `from_account_id` followed by `to_account_id` (or the MASM equivalent)
 recovers the original.
-
-### 5.8 Limitations
-
-- **Not all Ethereum addresses are valid Miden accounts.** The conversion from Ethereum
-  address to `AccountId` is partial — it fails if the leading 4 bytes are non-zero, if
-  the packed `u64` values exceed the field modulus, or if the resulting felts don't form
-  a valid `AccountId`. Arbitrary Ethereum addresses (e.g., from EOAs or contracts on L1)
-  cannot generally be decoded into `AccountId` values.
