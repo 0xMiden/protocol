@@ -319,13 +319,12 @@ impl TransactionAdviceInputs {
     /// The advice provider is populated with:
     ///
     /// - For each note:
-    ///     - The note's details (serial number, script root, and its input / assets commitment).
+    ///     - The note's details (serial number, script root, and its storage / assets commitment).
     ///     - The note's private arguments.
-    ///     - The note's public metadata.
-    ///     - The note's public inputs data. Prefixed by its length and padded to an even word
-    ///       length.
-    ///     - The note's asset padded. Prefixed by its length and padded to an even word length.
-    ///     - The note's script MAST forest's advice map inputs
+    ///     - The note's public metadata (sender account ID, note type, note tag, attachment kind /
+    ///       scheme and the attachment content).
+    ///     - The note's storage (unpadded).
+    ///     - The note's assets (key and value words).
     ///     - For authenticated notes (determined by the `is_authenticated` flag):
     ///         - The note's authentication path against its block's note tree.
     ///         - The block number, sub commitment, note root.
