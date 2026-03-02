@@ -146,21 +146,21 @@ pub proc register_faucet
 
     # Hash the token address
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH(4), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, pad(9)]
 
     # Build VALUE = [faucet_id_prefix, faucet_id_suffix, 0, 0]
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH(4), pad(9)]
+    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH, pad(9)]
 
     push.0.0 movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH(4), pad(9)]
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH, pad(9)]
 
     swapw
-    # => [TOKEN_ADDR_HASH(4), faucet_id_prefix, faucet_id_suffix, 0, 0, pad(9)]
+    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, 0, 0, pad(9)]
 
     push.TOKEN_REGISTRY_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE(4), pad(9)]
+    # => [OLD_VALUE, pad(9)]
 
     dropw
     # => [pad(9)]
@@ -209,7 +209,7 @@ end
 pub proc lookup_faucet_by_token_address
     # Hash the token address
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH(4)]
+    # => [TOKEN_ADDR_HASH]
 
     push.TOKEN_REGISTRY_SLOT[0..2]
     exec.active_account::get_map_item
@@ -237,7 +237,7 @@ end
 #! Writes the 5 felts to memory and computes the RPO hash.
 #!
 #! Inputs:  [origin_token_addr(5)]
-#! Outputs: [TOKEN_ADDR_HASH(4)]
+#! Outputs: [TOKEN_ADDR_HASH]
 #!
 #! Invocation: exec
 proc hash_token_address
@@ -252,7 +252,7 @@ proc hash_token_address
     # Hash the token address: rpo256::hash_elements(num_elements=5, start_ptr)
     push.5 push.TOKEN_ADDR_HASH_PTR
     exec.rpo256::hash_elements
-    # => [TOKEN_ADDR_HASH(4)]
+    # => [TOKEN_ADDR_HASH]
 end
 
 #! Asserts that the note sender matches the bridge admin stored in account storage.
