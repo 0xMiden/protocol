@@ -160,7 +160,7 @@ begin
 
     # call the Bridge Claim procedure
     call.bridge::claim
-    # => [pad(16), pad(7)]
+    # => [pad(16), pad(9)]
 
     # a call invocation consumes and returns 16 elements, but we had trailing padding
     dropw dropw dropw
