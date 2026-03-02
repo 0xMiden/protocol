@@ -1,6 +1,6 @@
 use core::fmt::Display;
 
-use crate::Felt;
+use crate::{Felt, FieldElement};
 
 /// The [`AssetId`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
 /// assets issued by the same faucet.
@@ -24,6 +24,11 @@ impl AssetId {
     /// Returns the prefix of the asset ID.
     pub fn prefix(&self) -> Felt {
         self.prefix
+    }
+
+    /// Returns `true` if both prefix and suffix are zero, `false` otherwise.
+    pub fn is_empty(&self) -> bool {
+        self.prefix == Felt::ZERO && self.suffix == Felt::ZERO
     }
 }
 

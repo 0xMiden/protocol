@@ -72,7 +72,7 @@ impl FungibleAsset {
     /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
     ///   most significant elements are not zero.
     pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
-        if key.asset_id().prefix() != Felt::ZERO || key.asset_id().suffix() != Felt::ZERO {
+        if !key.asset_id().is_empty() {
             return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
         }
 
