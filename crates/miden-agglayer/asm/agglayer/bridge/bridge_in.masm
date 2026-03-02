@@ -308,7 +308,7 @@ end
 pub proc claim
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(7)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
 
     # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
     exec.claim_batch_pipe_double_words
