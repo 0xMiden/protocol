@@ -37,9 +37,9 @@ implementation are called out inline with `TODO (Future)` markers.
 |-----------|----------------------|-----------------------------------|
 | B2AGG (bridge-out) | Any user -- not restricted | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 | B2AGG (reclaim) | Any user -- not restricted | Original sender only -- **enforced**: script checks `sender == consuming account` |
-| CONFIG_AGG_BRIDGE | Bridge admin only -- **enforced**: script calls `bridge_config::assert_sender_is_bridge_admin` | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| UPDATE_GER | GER manager only -- **enforced**: script calls `bridge_config::assert_sender_is_ger_manager` | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| CLAIM | Anyone -- not restricted | Target faucet only -- **enforced**: script checks `consuming account == target_faucet_account_id` from note storage (TODO (Future): unify enforcement via `NetworkAccountTarget` [#2468](https://github.com/0xMiden/protocol/issues/2468)) |
+| CONFIG_AGG_BRIDGE | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+| UPDATE_GER | GER manager only -- **enforced** by `bridge_config::update_ger` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
+| CLAIM | Anyone -- not restricted | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
 ---
 
@@ -50,8 +50,6 @@ implementation are called out inline with `TODO (Future)` markers.
 The bridge account has a single unified `bridge` component (`components/bridge.masm`),
 which is a thin wrapper that re-exports procedures from the `agglayer` library modules:
 
-- `bridge_config::assert_sender_is_bridge_admin`
-- `bridge_config::assert_sender_is_ger_manager`
 - `bridge_config::register_faucet`
 - `bridge_config::update_ger`
 - `bridge_in::verify_leaf_bridge`
@@ -86,13 +84,12 @@ Bridges an asset out of Miden into the AggLayer:
 | **Inputs** | `[faucet_id_prefix, faucet_id_suffix, pad(14)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CONFIG_AGG_BRIDGE` note on the bridge account |
-| **Panics** | None |
+| **Panics** | Note sender is not the bridge admin |
 
-Writes `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
+Asserts the note sender matches the bridge admin stored in
+`miden::agglayer::bridge::admin`, then writes
+`[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
 `faucet_registry` map slot.
-
-Note: Sender authorization is enforced in the CONFIG_AGG_BRIDGE note script via
-`assert_sender_is_bridge_admin`, not within this procedure itself.
 
 #### `bridge_config::update_ger`
 
@@ -102,37 +99,12 @@ Note: Sender authorization is enforced in the CONFIG_AGG_BRIDGE note script via
 | **Inputs** | `[GER_LOWER(4), GER_UPPER(4), pad(8)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming an `UPDATE_GER` note on the bridge account |
-| **Panics** | None |
+| **Panics** | Note sender is not the GER manager |
 
-Computes `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
+Asserts the note sender matches the GER manager stored in
+`miden::agglayer::bridge::ger_manager`, then computes
+`KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
-
-Note: Sender authorization is enforced in the UPDATE_GER note script via
-`assert_sender_is_ger_manager`, not within this procedure itself.
-
-#### `bridge_config::assert_sender_is_bridge_admin`
-
-| | |
-|-|-|
-| **Invocation** | `call` |
-| **Inputs** | `[pad(16)]` |
-| **Outputs** | `[pad(16)]` |
-| **Context** | Called from CONFIG_AGG_BRIDGE note script |
-| **Panics** | Note sender does not match the bridge admin stored in `miden::agglayer::bridge::admin` |
-
-Reads the bridge admin account ID from storage and compares it against the note sender.
-
-#### `bridge_config::assert_sender_is_ger_manager`
-
-| | |
-|-|-|
-| **Invocation** | `call` |
-| **Inputs** | `[pad(16)]` |
-| **Outputs** | `[pad(16)]` |
-| **Context** | Called from UPDATE_GER note script |
-| **Panics** | Note sender does not match the GER manager stored in `miden::agglayer::bridge::ger_manager` |
-
-Reads the GER manager account ID from storage and compares it against the note sender.
 
 #### `bridge_in::verify_leaf_bridge`
 
@@ -186,19 +158,19 @@ modules in `asm/agglayer/common/`.
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY, pad(4)]` |
+| **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the faucet account |
 | **Panics** | Invalid proof; bridge ID not set; FPI to bridge fails; faucet distribution fails |
 
 Processes a bridge-in claim:
 
-1. Loads and verifies three advice map entries (proof data, leaf data, output note data).
+1. Loads and verifies two advice map entries (proof data, leaf data) into memory.
 2. Extracts the destination account ID from the leaf data's destination address (via `eth_address::to_account_id`).
 3. Extracts the raw U256 claim amount from the leaf data.
 4. FPI to `bridge_in::verify_leaf_bridge` on the bridge account to validate the proof.
-5. Verifies the pre-computed native claim amount (from note storage) against the U256 amount and scale factor using `asset_conversion::verify_u256_to_native_amount_conversion`. This ensures the amount conversion was performed correctly off-chain, without requiring expensive U256 division inside the VM.
-6. Mints the asset via `faucets::distribute` and creates a public P2ID output note for the recipient.
+5. Verifies `faucet_mint_amount` (passed on the stack from the CLAIM note script) against the U256 amount and scale factor using `asset_conversion::verify_u256_to_native_amount_conversion`. This ensures the amount conversion was performed correctly off-chain, without requiring expensive U256 division inside the VM.
+6. Mints the asset via `faucets::distribute` and creates a public P2ID output note for the recipient. The P2ID serial number is derived deterministically from `PROOF_DATA_KEY` (RPO256 hash of the proof data), and the note tag is computed at runtime from the destination account's prefix.
 
 #### `agglayer_faucet::asset_to_origin_asset`
 
@@ -307,9 +279,12 @@ the faucet (TODO (Future): [Re-orient `CLAIM` note flow](https://github.com/0xMi
 |-------|-------|
 | `serial_num` | Random (`rng.draw_word()`) |
 | `script` | `CLAIM.masb` |
-| `storage` | 576 felts -- see layout below |
+| `storage` | 569 felts -- see layout below |
 
-**Storage layout (576 felts):**
+**Storage layout (569 felts):**
+
+The storage is divided into three logical regions: proof data (felts 0-535), leaf data
+(felts 536-567), and the native claim amount (felt 568).
 
 | Range | Field | Size (felts) | Encoding |
 |-------|-------|-------------|----------|
@@ -326,19 +301,19 @@ the faucet (TODO (Future): [Re-orient `CLAIM` note flow](https://github.com/0xMi
 | 549-556 | `amount` | 8 | U256 as 8 x u32 felts |
 | 557-564 | `metadata_hash` | 8 | Keccak-256 hash as 8 x u32 felts |
 | 565-567 | padding | 3 | zeros |
-| 568-571 | `output_p2id_serial_num` | 4 | Word -- serial number for the P2ID output note |
-| 572-573 | `target_faucet_account_id` | 2 | `[prefix, suffix]` of the target faucet |
-| 574 | `output_note_tag` | 1 | NoteTag for the P2ID output note |
-| 575 | `miden_claim_amount` | 1 | Scaled-down Miden token amount (Felt). Computed as `floor(amount / 10^scale)` |
+| 568 | `miden_claim_amount` | 1 | Scaled-down Miden token amount (Felt). Computed as `floor(amount / 10^scale)` |
 
 **Consumption:**
 
-1. All 576 felts are loaded into memory.
-2. Script asserts consuming account == target faucet (TODO (Future): unify enforcement via `NetworkAccountTarget` [#2468](https://github.com/0xMiden/protocol/issues/2468)).
-3. Storage regions are hashed and inserted into the advice map as three keyed entries
-   (proof data, leaf data, output note data).
-4. `agglayer_faucet::claim` is called, which validates the proof via FPI to the bridge,
-   verifies the native claim amount conversion, then mints and creates a P2ID output note.
+1. Script asserts consuming account matches the target faucet via `NetworkAccountTarget`
+   attachment (checked before loading storage).
+2. All 569 felts are loaded into memory.
+3. The `miden_claim_amount` is read from memory index 568 and placed on the stack.
+4. Proof data and leaf data regions are hashed and inserted into the advice map as two
+   keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
+5. `agglayer_faucet::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
+   on the stack. It validates the proof via FPI to the bridge, verifies the native claim
+   amount conversion, then mints and creates a P2ID output note.
 
 ### 3.3 CONFIG_AGG_BRIDGE
 
@@ -350,7 +325,7 @@ the faucet (TODO (Future): [Re-orient `CLAIM` note flow](https://github.com/0xMi
 
 | Field | Value |
 |-------|-------|
-| `sender` | Bridge admin -- **enforced** by `bridge_config::assert_sender_is_bridge_admin` |
+| `sender` | Bridge admin (sender authorization enforced by the bridge's `register_faucet` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -374,8 +349,8 @@ the faucet (TODO (Future): [Re-orient `CLAIM` note flow](https://github.com/0xMi
 | 0 | `faucet_id_prefix` | Felt (AccountId prefix) |
 | 1 | `faucet_id_suffix` | Felt (AccountId suffix) |
 
-**Consumption:** Script validates attachment target, asserts sender is bridge admin, loads
-storage, and calls `bridge_config::register_faucet`.
+**Consumption:** Script validates attachment target, loads storage, and calls
+`bridge_config::register_faucet` (which asserts sender is bridge admin).
 
 ### 3.4 UPDATE_GER
 
@@ -388,7 +363,7 @@ CLAIM notes can be verified against it.
 
 | Field | Value |
 |-------|-------|
-| `sender` | GER manager -- **enforced** by `bridge_config::assert_sender_is_ger_manager` |
+| `sender` | GER manager (sender authorization enforced by the bridge's `update_ger` procedure) |
 | `note_type` | `NoteType::Public` |
 | `tag` | `NoteTag::default()` |
 | `attachment` | `NetworkAccountTarget` -- target is the bridge account; execution hint: Always |
@@ -412,8 +387,8 @@ CLAIM notes can be verified against it.
 | 0-3 | `GER_LOWER` | First 16 bytes as 4 x u32 felts |
 | 4-7 | `GER_UPPER` | Last 16 bytes as 4 x u32 felts |
 
-**Consumption:** Script validates attachment target, asserts sender is GER manager, loads
-storage, and calls `bridge_config::update_ger`, which computes
+**Consumption:** Script validates attachment target, loads storage, and calls
+`bridge_config::update_ger` (which asserts sender is GER manager), which computes
 `rpo256::merge(GER_UPPER, GER_LOWER)` and stores the result in the GER map.
 
 ### 3.5 BURN (generated)
@@ -465,7 +440,7 @@ decreases the faucet's total token supply by the burned amount.
 |-------|-------|
 | `sender` | Faucet account |
 | `note_type` | `NoteType::Public` |
-| `tag` | From CLAIM note storage field `output_note_tag` |
+| `tag` | Computed at runtime from destination account prefix via `note_tag::create_account_target` |
 | `attachment` | None |
 
 **`NoteDetails`**
@@ -476,7 +451,7 @@ decreases the faucet's total token supply by the burned amount.
 
 | Field | Value |
 |-------|-------|
-| `serial_num` | From CLAIM note storage field `output_p2id_serial_num` |
+| `serial_num` | Derived deterministically from `PROOF_DATA_KEY` (RPO256 hash of the CLAIM proof data) |
 | `script` | Standard P2ID script (`miden::standards::notes::p2id::main`) |
 | `storage` | 2 felts -- see layout below |
 
