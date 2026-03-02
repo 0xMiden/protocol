@@ -18,6 +18,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotDelta,
@@ -81,7 +82,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
     // Precompute a commitment to a changed account so we can assert it during tx script execution.
     let mut account_clone = account.clone();
-    let key = Word::from([1, 2, 3, 4u32]);
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
@@ -679,8 +680,10 @@ async fn test_set_item() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_map_item() -> anyhow::Result<()> {
-    let (new_key, new_value) =
-        (Word::from([109, 110, 111, 112u32]), Word::from([9, 10, 11, 12u32]));
+    let (new_key, new_value) = (
+        StorageMapKey::from_array([109, 110, 111, 112u32]),
+        Word::from([9, 10, 11, 12u32]),
+    );
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -823,7 +826,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     account_storage.set_map_item(
         mock_map_slot,
-        [101, 102, 103, 104].map(Felt::new).into(),
+        StorageMapKey::from_array([101, 102, 103, 104u32]),
         [5, 6, 7, 8].map(Felt::new).into(),
     )?;
     let storage_commitment_map = account_storage.to_commitment();
@@ -896,7 +899,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     let slot1 = StorageSlot::with_value(slot_name1.clone(), Word::from([10, 20, 30, 40u32]));
     let mut map_entries = Vec::new();
     for _ in 0..10 {
-        map_entries.push((rand_value::<Word>(), rand_value::<Word>()));
+        map_entries.push((StorageMapKey::from_raw(rand_value::<Word>()), rand_value::<Word>()));
     }
     let map_slot =
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);

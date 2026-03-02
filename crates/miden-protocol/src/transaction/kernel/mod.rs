@@ -20,7 +20,9 @@ use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
 use crate::{Felt, Hasher, Word};
 
-mod procedures;
+mod procedures {
+    include!(concat!(env!("OUT_DIR"), "/procedures.rs"));
+}
 
 pub mod memory;
 

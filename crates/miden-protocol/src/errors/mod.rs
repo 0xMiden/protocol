@@ -24,6 +24,7 @@ use crate::account::{
     AccountIdPrefix,
     AccountStorage,
     AccountType,
+    StorageMapKey,
     StorageSlotId,
     StorageSlotName,
 };
@@ -49,13 +50,15 @@ pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod tx_kernel;
+pub mod tx_kernel {
+    include!(concat!(env!("OUT_DIR"), "/tx_kernel_errors.rs"));
+}
 
 /// The errors from the MASM code of the Miden protocol library.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod protocol;
+pub mod protocol {
+    include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
@@ -398,9 +401,13 @@ pub enum AccountDeltaError {
 #[derive(Debug, Error)]
 pub enum StorageMapError {
     #[error("map entries contain key {key} twice with values {value0} and {value1}")]
-    DuplicateKey { key: Word, value0: Word, value1: Word },
-    #[error("map key {raw_key} is not present in provided SMT proof")]
-    MissingKey { raw_key: Word },
+    DuplicateKey {
+        key: StorageMapKey,
+        value0: Word,
+        value1: Word,
+    },
+    #[error("map key {key} is not present in provided SMT proof")]
+    MissingKey { key: StorageMapKey },
 }
 
 // BATCH ACCOUNT UPDATE ERROR
