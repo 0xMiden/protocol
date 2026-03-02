@@ -471,6 +471,12 @@ script). All note assets are added to the consuming account via
 
 ---
 
+## 4. Amount Conversion
+
+*This section is a placeholder. Content to be added.*
+
+---
+
 ## 5. Ethereum ↔ Miden Address Conversion
 
 The AggLayer bridge operates across two address spaces: Ethereum's 20-byte addresses and
