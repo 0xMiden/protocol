@@ -8,6 +8,7 @@ use $kernel::asset
 # =================================================================================================
 
 pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
+pub use $kernel::util::asset::fungible_to_amount->to_amount
 
 # ERRORS
 # =================================================================================================
@@ -61,7 +62,7 @@ pub proc merge
     # => [merged_amount]
 
     # reconstruct the asset value
-    push.0.0.0 swap.3
+    push.0.0.0 movup.3
     # => [MERGED_ASSET_VALUE]
 end
 
@@ -96,7 +97,7 @@ pub proc split
     # => [new_amount]
 
     # reconstruct the asset value
-    push.0.0.0 swap.3
+    push.0.0.0 movup.3
     # => [NEW_ASSET_VALUE]
 end
 

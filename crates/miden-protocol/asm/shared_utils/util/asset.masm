@@ -58,7 +58,8 @@ pub proc mem_load
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
-#! Returns the balance of the given fungible asset.
+# TODO(bele): Rename to fungible_into_amount
+#! Returns the balance of the given fungible asset and consumes it.
 #!
 #! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
 #!
@@ -69,8 +70,24 @@ end
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
 pub proc get_balance_from_fungible_asset
-    swap.3 drop drop drop
+    movdn.3 drop drop drop
     # => [balance]
+end
+
+#! Returns the balance of the given fungible asset.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [amount, ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - amount is the amount of the fungible asset.
+pub proc fungible_to_amount
+    # => [ASSET_KEY, [amount, 0, 0, 0]]
+    dup.4
+    # => [amount, ASSET_KEY, ASSET_VALUE]
 end
 
 #! Returns the faucet ID from an asset vault key.
