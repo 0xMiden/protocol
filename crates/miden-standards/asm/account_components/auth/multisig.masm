@@ -100,7 +100,7 @@ proc assert_new_tx(msg: word)
     exec.native_account::set_map_item
     # => [[is_executed, 0, 0, 0]]
 
-    swap.3 drop drop drop
+    movdn.3 drop drop drop
     # => [is_executed]
 
     assertz.err=ERR_TX_ALREADY_EXECUTED
@@ -366,7 +366,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
             exec.active_account::get_initial_map_item
             # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
 
-            swap.3 drop drop drop dup dup.3
+            movdn.3 drop drop drop dup dup.3
             # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
 
             u32assert2.err="transaction threshold or procedure threshold are not u32"
@@ -411,7 +411,6 @@ end
 pub proc get_threshold_and_num_approvers
     push.THRESHOLD_CONFIG_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [0, 0, num_approvers, threshold]
     # => [threshold, num_approvers, 0, 0]
 
     movup.2 drop movup.2 drop

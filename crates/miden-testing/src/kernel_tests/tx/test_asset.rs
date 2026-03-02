@@ -103,12 +103,12 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 )]
 #[case::asset_id_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(0u32), Felt::from(4u32)),
+    AssetId::new(Felt::from(0u32), Felt::from(3u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
 )]
 #[case::asset_id_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(Felt::from(5u32), Felt::from(0u32)),
+    AssetId::new(Felt::from(2u32), Felt::from(0u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
@@ -123,8 +123,8 @@ async fn test_validate_non_fungible_asset(
 
         begin
             # a random asset value
-            push.[5,4,3,2]
-            # => [hash0 = 5, hash1 = 4, 3, 2]
+            push.[2, 3, 4, 5]
+            # => [hash0 = 2, hash1 = 3, 4, 5]
 
             push.{account_id_prefix}
             push.{account_id_suffix}
