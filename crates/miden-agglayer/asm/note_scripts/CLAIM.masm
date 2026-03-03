@@ -163,7 +163,7 @@ begin
     # => [pad(16), pad(9)]
 
     # a call invocation consumes and returns 16 elements, but we had trailing padding
-    dropw dropw dropw
+    dropw dropw drop 
 
     # => [pad(16)]
 end
