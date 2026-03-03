@@ -22,7 +22,7 @@ const FAUCET_MINT_AMOUNT = 568
 
 const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
 
-#! Reads claim data from memory and inserts it into the advice map under three separate keys.
+#! Reads claim data from memory and inserts it into the advice map under two separate keys.
 #!
 #! This procedure organizes the claim note data into three logical groups and inserts them
 #! into the advice map under separate keys for easier access.
