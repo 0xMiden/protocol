@@ -33,7 +33,7 @@ pub use ::$kernel::util::asset::mem_load
 # PROCEDURES
 # =================================================================================================
 
-#! Validates that a fungible asset is well formed.
+#! Loads an asset key and value from memory given a pointer to the asset.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
