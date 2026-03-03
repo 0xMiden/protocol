@@ -33,6 +33,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
+@auth_script
 pub proc auth_tx(auth_args: word)
     dropw
     # => [pad(16)]
