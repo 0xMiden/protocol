@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "miden-agglayer"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "fs-err",
  "miden-agglayer",
@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "miden-protocol",
  "thiserror",
@@ -1644,7 +1644,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1683,7 +1683,7 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol-macros"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "miden-protocol",
  "proc-macro2",
@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "miden-standards"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1726,7 +1726,7 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1756,7 +1756,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.14.0"
+version = "0.14.0-alpha.1"
 dependencies = [
  "miden-protocol",
  "miden-tx",
