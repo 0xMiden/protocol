@@ -6,6 +6,7 @@ use miden_protocol::account::{
     AccountStorageDelta,
     AccountStorageHeader,
     PartialAccount,
+    StorageMapKey,
     StorageSlotDelta,
     StorageSlotHeader,
     StorageSlotName,
@@ -32,7 +33,7 @@ pub struct StorageDeltaTracker {
     storage_header: AccountStorageHeader,
     /// A map from slot name to a map of key-value pairs where the key is a storage map key and
     /// the value represents the value of that key at the beginning of transaction execution.
-    init_maps: BTreeMap<StorageSlotName, BTreeMap<Word, Word>>,
+    init_maps: BTreeMap<StorageSlotName, BTreeMap<StorageMapKey, Word>>,
     /// The account storage delta.
     delta: AccountStorageDelta,
 }
@@ -111,7 +112,7 @@ impl StorageDeltaTracker {
     pub fn set_map_item(
         &mut self,
         slot_name: StorageSlotName,
-        key: Word,
+        key: StorageMapKey,
         prev_value: Word,
         new_value: Word,
     ) {
@@ -134,7 +135,12 @@ impl StorageDeltaTracker {
 
     /// Sets the initial value of the given key in the given slot to the given value, if no value is
     /// already tracked for that key.
-    fn set_init_map_item(&mut self, slot_name: StorageSlotName, key: Word, prev_value: Word) {
+    fn set_init_map_item(
+        &mut self,
+        slot_name: StorageSlotName,
+        key: StorageMapKey,
+        prev_value: Word,
+    ) {
         let slot_map = self.init_maps.entry(slot_name).or_default();
         slot_map.entry(key).or_insert(prev_value);
     }

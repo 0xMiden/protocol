@@ -9,11 +9,6 @@ use miden_protocol::transaction::TransactionKernel;
 // CONSTANTS
 // ================================================================================================
 
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
-
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
@@ -21,7 +16,7 @@ const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
 
-const STANDARDS_ERRORS_FILE: &str = "src/errors/standards.rs";
+const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 
 // PRE-PROCESSING
@@ -34,7 +29,6 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
 
     // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -63,7 +57,7 @@ fn main() -> Result<()> {
         assembler,
     )?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -165,14 +159,9 @@ fn compile_account_components(
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
 ///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+/// The generated file is written to `build_dir` (i.e. `OUT_DIR`) and included via `include!`
+/// in the source.
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden standards errors
     // ------------------------------------------
 
@@ -180,7 +169,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: STANDARDS_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(STANDARDS_ERRORS_RS_FILE),
             array_name: STANDARDS_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -380,7 +369,7 @@ mod shared {
     }
 
     /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the category's file.
+    /// writes it to the file at the path specified in the module.
     pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
         let mut output = String::new();
 
@@ -427,24 +416,9 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        write_if_changed(module.file_name, output)?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
-    }
-
-    /// Writes `contents` to `path` only if the file doesn't exist or its current contents
-    /// differ. This avoids updating the file's mtime when nothing changed, which prevents
-    /// cargo from treating the crate as dirty on the next build.
-    pub fn write_if_changed(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-        let path = path.as_ref();
-        let new_contents = contents.as_ref();
-        if path.exists() {
-            let existing = std::fs::read(path).into_diagnostic()?;
-            if existing == new_contents {
-                return Ok(());
-            }
-        }
-        std::fs::write(path, new_contents).into_diagnostic()
     }
 
     pub type ErrorName = String;
@@ -460,9 +434,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }
