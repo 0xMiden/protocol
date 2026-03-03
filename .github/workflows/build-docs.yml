@@ -16,6 +16,7 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/build-docs.yml"
+  merge_group:
   workflow_dispatch:
 
 permissions:
