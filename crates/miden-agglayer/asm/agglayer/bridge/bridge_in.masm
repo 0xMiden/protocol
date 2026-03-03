@@ -31,7 +31,30 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 # CONSTANTS
 # =================================================================================================
 
-# Memory pointers for proof data layout
+# Data sizes
+# -------------------------------------------------------------------------------------------------
+
+const PROOF_DATA_WORD_LEN = 134
+# the number of words (4 felts each) in the advice map leaf data
+const LEAF_DATA_NUM_WORDS = 8
+const CLAIM_PROOF_DATA_WORD_LEN = 134
+const CLAIM_LEAF_DATA_WORD_LEN = 8
+
+# MINT note storage layout (public mode, 18 items):
+# [0]: tag, [1]: amount, [2]: attachment_kind, [3]: attachment_scheme,
+# [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
+# [16]: account_id_suffix, [17]: account_id_prefix
+const MINT_NOTE_NUM_STORAGE_ITEMS = 18
+const MINT_NOTE_TYPE_PUBLIC = 1
+
+# P2ID output note constants
+const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
+const OUTPUT_NOTE_TYPE_PUBLIC = 1
+
+# Global memory pointers
+# -------------------------------------------------------------------------------------------------
+
+# Memory pointers for proof data layout (used by verify_leaf / get_leaf_value)
 const PROOF_DATA_PTR = 0
 const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
 const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
@@ -41,19 +64,6 @@ const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
 # the memory address where leaf data is stored for get_leaf_value
 const LEAF_DATA_START_PTR = 0
 
-# The offset of the first half of the current Keccak256 hash value in the local memory of the
-# `calculate_root` procedure.
-const CUR_HASH_LO_LOCAL = 0
-
-# The offset of the second half of the current Keccak256 hash value in the local memory of the
-# `calculate_root` procedure.
-const CUR_HASH_HI_LOCAL = 4
-
-# Data sizes
-const PROOF_DATA_WORD_LEN = 134
-# the number of words (4 felts each) in the advice map leaf data
-const LEAF_DATA_NUM_WORDS = 8
-
 # Memory pointers for piped advice map data (used by claim procedure)
 const CLAIM_PROOF_DATA_START_PTR = 0
 const CLAIM_LEAF_DATA_START_PTR = 536
@@ -62,10 +72,6 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 # Memory addresses for stored keys (used by claim procedure)
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
-
-# Data sizes for claim
-const CLAIM_PROOF_DATA_WORD_LEN = 134
-const CLAIM_LEAF_DATA_WORD_LEN = 8
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
@@ -87,7 +93,7 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
 
-# Memory Addresses for MINT note output construction
+# Memory addresses for MINT note output construction
 const MINT_NOTE_STORAGE_MEM_ADDR_0 = 800
 const MINT_NOTE_STORAGE_DEST_TAG = 800
 const MINT_NOTE_STORAGE_NATIVE_AMOUNT = 801
@@ -98,30 +104,26 @@ const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
 const MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT = 816
 
-# MINT note storage layout (public mode, 18 items):
-# [0]: tag, [1]: amount, [2]: attachment_kind, [3]: attachment_scheme,
-# [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
-# [16]: account_id_suffix, [17]: account_id_prefix
-const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-const MINT_NOTE_TYPE_PUBLIC = 1
+# Local memory offsets
+# -------------------------------------------------------------------------------------------------
 
-# claim memory locals
-const CLAIM_PREFIX_MEM_LOC = 8
-const CLAIM_SUFFIX_MEM_LOC = 9
+# Offsets in the local memory of the `calculate_root` procedure
+const CUR_HASH_LO_LOCAL = 0 # first half of the current Keccak256 hash value
+const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
+
+# Offsets in the local memory of the `claim` procedure
 const CLAIM_AMOUNT_MEM_LOC_0 = 0
 const CLAIM_AMOUNT_MEM_LOC_1 = 4
+const CLAIM_PREFIX_MEM_LOC = 8
+const CLAIM_SUFFIX_MEM_LOC = 9
 
-# build_mint_output_note memory locals
+# Offsets in the local memory of the `build_mint_output_note` procedure
 const BUILD_MINT_AMOUNT_MEM_LOC_0 = 0
 const BUILD_MINT_AMOUNT_MEM_LOC_1 = 4
 const BUILD_MINT_PREFIX_MEM_LOC = 8
 const BUILD_MINT_SUFFIX_MEM_LOC = 9
 const BUILD_MINT_FAUCET_PREFIX_LOC = 10
 const BUILD_MINT_FAUCET_SUFFIX_LOC = 11
-
-# P2ID output note constants
-const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
-const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
