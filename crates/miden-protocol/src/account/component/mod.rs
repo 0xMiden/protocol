@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_mast_package::{MastArtifact, Package};
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 
 mod metadata;
 pub use metadata::*;
