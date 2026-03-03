@@ -412,16 +412,20 @@ end
 #! Invocation: exec
 proc verify_leaf
     movupw.2
+    # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
+
     # load proof data from the advice map into memory
     adv.push_mapval
     # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
 
     push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.PROOF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
+    # => [LEAF_VALUE[8]]
 
     # 1. compute GER from mainnet + rollup exit roots
     push.EXIT_ROOTS_PTR
     # => [exit_roots_ptr, LEAF_VALUE[8]]
+    
     exec.compute_ger
     # => [GER[8], LEAF_VALUE[8]]
 
