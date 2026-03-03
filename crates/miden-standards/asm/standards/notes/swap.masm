@@ -1,13 +1,13 @@
 use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::protocol::output_note
 use miden::standards::wallets::basic->wallet
-use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # CONSTANTS
 # =================================================================================================
 
-const ASSET_PTR=0
-const SWAP_NOTE_NUM_STORAGE_ITEMS=16
+const SWAP_NOTE_NUM_STORAGE_ITEMS=20
 
 const PAYBACK_NOTE_TYPE_ADDRESS=0
 const PAYBACK_NOTE_TAG_ADDRESS=1
@@ -15,7 +15,8 @@ const ATTACHMENT_KIND_ADDRESS=2
 const ATTACHMENT_SCHEME_ADDRESS=3
 const ATTACHMENT_ADDRESS=4
 const REQUESTED_ASSET_ADDRESS=8
-const PAYBACK_RECIPIENT_ADDRESS=12
+const PAYBACK_RECIPIENT_ADDRESS=16
+const ASSET_ADDRESS=20
 
 # ERRORS
 # =================================================================================================
@@ -25,7 +26,7 @@ const ERR_SWAP_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="SWAP script expects exactly 1
 const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset"
 
 #! Swap script: adds an asset from the note into consumers account and
-#! creates a note consumable by note issuer containing requested ASSET.
+#! creates a note consumable by note issuer containing requested asset.
 #!
 #! Requires that the account exposes:
 #! - miden::standards::wallets::basic::receive_asset procedure.
@@ -40,7 +41,8 @@ const ERR_SWAP_WRONG_NUMBER_OF_ASSETS="SWAP script requires exactly 1 note asset
 #! - attachment_kind
 #! - attachment_scheme
 #! - ATTACHMENT
-#! - REQUESTED_ASSET
+#! - REQUESTED_ASSET_KEY
+#! - REQUESTED_ASSET_VALUE
 #! - PAYBACK_RECIPIENT
 #!
 #! Panics if:
@@ -68,60 +70,53 @@ pub proc main
     drop
     # => []
 
-    mem_loadw_be.REQUESTED_ASSET_ADDRESS
-    # => [REQUESTED_ASSET]
-
     padw mem_loadw_be.PAYBACK_RECIPIENT_ADDRESS
-    # => [PAYBACK_NOTE_RECIPIENT, REQUESTED_ASSET]
+    # => [PAYBACK_NOTE_RECIPIENT]
 
     # load payback P2ID details
     mem_load.PAYBACK_NOTE_TYPE_ADDRESS
     mem_load.PAYBACK_NOTE_TAG_ADDRESS
-    # => [tag, note_type, PAYBACK_NOTE_RECIPIENT, REQUESTED_ASSET]
+    # => [tag, note_type, PAYBACK_NOTE_RECIPIENT]
 
     # create payback P2ID note
     exec.output_note::create
-    # => [note_idx, REQUESTED_ASSET]
+    # => [note_idx]
 
-    movdn.4
-    # => [REQUESTED_ASSET, note_idx]
+    padw push.0.0.0 dup.7
+    # => [note_idx, pad(7), note_idx]
 
-    # padding stack with 11 zeros
-    repeat.11
-        push.0
-        movdn.5
-    end
-    # => [REQUESTED_ASSET, note_idx, pad(11)]
+    push.REQUESTED_ASSET_ADDRESS exec.asset::mem_load
+    # => [REQUESTED_ASSET_KEY, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
     call.wallet::move_asset_to_note
-    # => [REQUESTED_ASSET, note_idx, pad(11)]
+    # => [pad(16), note_idx]
 
     dropw
-    # => [note_idx, pad(11)]
-
     mem_loadw_be.ATTACHMENT_ADDRESS
+    # => [ATTACHMENT, pad(8), note_idx]
+
     mem_load.ATTACHMENT_KIND_ADDRESS
     mem_load.ATTACHMENT_SCHEME_ADDRESS
-    movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
+    movup.14
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(8)]
 
     exec.output_note::set_attachment
-    # => [pad(12)]
+    # => [pad(8)]
 
     # --- move assets from the SWAP note into the account -------------------------
 
-    # store the number of note assets to memory starting at address 0
-    push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, ptr, pad(12)]
+    # store the number of note assets to memory starting at address ASSET_ADDRESS
+    push.ASSET_ADDRESS exec.active_note::get_assets
+    # => [num_assets, asset_ptr, pad(8)]
 
     # make sure the number of assets is 1
     assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS
-    # => [ptr, pad(12)]
+    # => [asset_ptr, pad(8)]
 
-    # load asset value from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
-    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-    # => [ASSET_VALUE, pad(12)]
+    # load asset
+    exec.asset::mem_load
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # add the asset to the account
     call.wallet::receive_asset

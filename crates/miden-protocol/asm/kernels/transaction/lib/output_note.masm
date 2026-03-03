@@ -43,8 +43,6 @@ const ERR_OUTPUT_NOTE_ATTACHMENT_KIND_NONE_MUST_BE_EMPTY_WORD="attachment kind N
 
 const ERR_NOTE_INVALID_INDEX="failed to find note at the given index; index must be within [0, num_of_notes]"
 
-const ERR_NOTE_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding a fungible asset to a note cannot exceed the max_amount of 9223372036854775807"
-
 const ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="non-fungible asset that already exists in the note cannot be added again"
 
 const ERR_NOTE_TAG_MUST_BE_U32="the note's tag must fit into a u32 so the 32 most significant bits of the felt must be zero"
@@ -57,9 +55,9 @@ const NOTE_BEFORE_CREATED_EVENT=event("miden::protocol::note::before_created")
 # Event emitted after a new note is created.
 const NOTE_AFTER_CREATED_EVENT=event("miden::protocol::note::after_created")
 
-# Event emitted before an ASSET is added to a note
+# Event emitted before an asset is added to a note
 const NOTE_BEFORE_ADD_ASSET_EVENT=event("miden::protocol::note::before_add_asset")
-# Event emitted after an ASSET is added to a note
+# Event emitted after an asset is added to a note
 const NOTE_AFTER_ADD_ASSET_EVENT=event("miden::protocol::note::after_add_asset")
 
 # Event emitted before an ATTACHMENT is added to a note
@@ -178,7 +176,7 @@ pub proc get_assets_info
     # => [ASSETS_COMMITMENT, num_assets]
 end
 
-#! Adds the ASSET to the note specified by the index.
+#! Adds the asset to the note specified by the index.
 #!
 #! Inputs:  [note_idx, ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
@@ -477,7 +475,6 @@ proc add_asset_raw
     # compute the pointer at which we should stop iterating
     mul.ASSET_SIZE dup.9 add movdn.9
     # => [ASSET_KEY, ASSET_VALUE, asset_ptr, asset_end_ptr, note_ptr]
-
 
     # initialize loop variable is_existing_asset to false
     push.0 movdn.8

@@ -1,8 +1,7 @@
-use miden_protocol::account::AccountId;
-use miden_protocol::asset::NonFungibleAsset;
+use miden_protocol::Hasher;
+use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
-use miden_protocol::{Felt, Hasher, Word};
 
 use crate::TransactionContextBuilder;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -12,6 +11,7 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
     let tx_context =
         TransactionContextBuilder::with_fungible_faucet(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)
             .build()?;
+    let expected_asset = FungibleAsset::new(tx_context.account().id(), FUNGIBLE_ASSET_AMOUNT)?;
 
     let code = format!(
         "
@@ -24,25 +24,19 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
             # create fungible asset
             push.{FUNGIBLE_ASSET_AMOUNT}
             exec.faucet::create_fungible_asset
+            # => [ASSET_KEY, ASSET_VALUE]
 
             # truncate the stack
-            swapw dropw
+            exec.::miden::core::sys::truncate_stack
         end
         "
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-    assert_eq!(
-        exec_output.get_stack_word_be(0),
-        Word::from([
-            Felt::new(FUNGIBLE_ASSET_AMOUNT),
-            Felt::new(0),
-            faucet_id.suffix(),
-            faucet_id.prefix().as_felt(),
-        ])
-    );
+    assert_eq!(exec_output.get_stack_word_be(0), expected_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word_be(4), expected_asset.to_value_word());
+
     Ok(())
 }
 
@@ -67,14 +61,16 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             exec.faucet::create_non_fungible_asset
 
             # truncate the stack
-            swapw dropw
+            exec.::miden::core::sys::truncate_stack
         end
         ",
         non_fungible_asset_data_hash = Hasher::hash(&NON_FUNGIBLE_ASSET_DATA),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
-    assert_eq!(exec_output.get_stack_word_be(0), Word::from(non_fungible_asset));
+
+    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word_be(4), non_fungible_asset.to_value_word());
 
     Ok(())
 }

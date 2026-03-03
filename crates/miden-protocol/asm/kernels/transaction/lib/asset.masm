@@ -27,30 +27,13 @@ const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault k
 pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 pub use ::$kernel::util::asset::ASSET_SIZE
 pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use ::$kernel::util::asset::mem_store
+pub use ::$kernel::util::asset::mem_load
 
 # PROCEDURES
 # =================================================================================================
 
 #! Loads an asset key and value from memory given a pointer to the asset.
-#!
-#! Inputs: [ptr]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
-#!
-#! Where:
-#! - ptr is the memory address of the asset.
-#! - ASSET_KEY is the 4-element word representing the asset key.
-#! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc load_asset_key_and_value
-    # load asset value
-    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-    # => [ASSET_VALUE, ptr]
-
-    # load asset key
-    padw movup.8 mem_loadw_be
-    # => [ASSET_KEY, ASSET_VALUE]
-end
-
-#! Validates that a fungible asset is well formed.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]

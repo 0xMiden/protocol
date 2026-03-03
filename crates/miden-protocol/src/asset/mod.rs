@@ -155,6 +155,17 @@ impl Asset {
         Word::from(*self)
     }
 
+    /// Returns the asset encoded as elements.
+    ///
+    /// The first four elements contain the asset key and the last four elements contain the asset
+    /// value.
+    pub fn as_elements(&self) -> [Felt; 8] {
+        let mut elements = [ZERO; 8];
+        elements[0..4].copy_from_slice(self.to_key_word().as_elements());
+        elements[4..8].copy_from_slice(self.to_value_word().as_elements());
+        elements
+    }
+
     /// Returns the inner [`FungibleAsset`].
     ///
     /// # Panics

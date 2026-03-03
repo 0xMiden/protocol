@@ -1,5 +1,4 @@
 use anyhow::Result;
-use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::NoteType;
@@ -41,9 +40,10 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
             # => [note_idx]
 
             # move the asset to the note
-            push.{asset}
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # truncate the stack
@@ -53,7 +53,8 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         RECIPIENT = output_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note.metadata().tag(),
-        asset = Word::from(fungible_asset),
+        ASSET_KEY = fungible_asset.to_key_word(),
+        ASSET_VALUE = fungible_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_note_creation_script)?;

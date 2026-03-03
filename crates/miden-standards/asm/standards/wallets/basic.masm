@@ -10,11 +10,12 @@ const PUBLIC_NOTE=1
 
 #! Adds the provided asset to the active account.
 #!
-#! Inputs:  [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET is the asset to be received, can be fungible or non-fungible
+#! - ASSET_KEY is the vault key of the received asset.
+#! - ASSET_VALUE is the value of the received asset.
 #!
 #! Panics if:
 #! - the same non-fungible asset already exists in the account.
@@ -24,7 +25,7 @@ const PUBLIC_NOTE=1
 #! Invocation: call
 pub proc receive_asset
     exec.native_account::add_asset
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 
     # drop the final asset
     dropw
@@ -38,12 +39,13 @@ end
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
 #! these elements do not contain any meaningful data.
 #!
-#! Inputs:  [ASSET, note_idx, pad(11)]
-#! Outputs: [ASSET, note_idx, pad(11)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the output note.
-#! - ASSET is the fungible or non-fungible asset of interest.
+#! - ASSET_KEY is the vault key of the asset to move to the note.
+#! - ASSET_VALUE is the value of the asset to move to the note.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -52,15 +54,16 @@ end
 #!
 #! Invocation: call
 pub proc move_asset_to_note
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
     # remove the asset from the account
     exec.native_account::remove_asset
-    # => [ASSET, note_idx, pad(11)]
-
-    dupw dup.8 movdn.4
-    # => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+    dropw
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
-    # => [ASSET, note_idx, pad(11)]
+    # => [pad(16)]
 end
 
 #! Adds all assets from the active note to the native account's vault.
@@ -80,43 +83,51 @@ pub proc add_assets_to_account
     # => [end_ptr, ptr]
 
     # pad the stack and move the pointer to the top
-    padw movup.5
-    # => [ptr, EMPTY_WORD, end_ptr]
+    padw padw movup.9
+    # => [ptr, pad(8), end_ptr]
 
     # loop if the amount of assets is non-zero
-    dup dup.6 neq
-    # => [should_loop, ptr, EMPTY_WORD, end_ptr]
+    dup dup.10 neq
+    # => [should_loop, ptr, pad(8), end_ptr]
 
     while.true
-        # => [ptr, EMPTY_WORD, end_ptr]
+        # => [ptr, pad(8), end_ptr]
 
         # save the pointer so that we can use it later
-        dup movdn.5
-        # => [ptr, EMPTY_WORD, ptr, end_ptr]
+        dup movdn.9
+        # => [ptr, pad(8), ptr, end_ptr]
 
         # load the asset value
-        add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-        # => [ASSET_VALUE, ptr, end_ptr]
+        add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be swapw
+        # => [EMPTY_WORD, ASSET_VALUE, ptr, end_ptr]
+
+        # load the asset key
+        dup.8 mem_loadw_be
+        # => [ASSET_KEY, ASSET_VALUE, ptr, end_ptr]
 
         # pad the stack before call
-        padw swapw padw padw swapdw
-        # => [ASSET_VALUE, pad(12), ptr, end_ptr]
+        padw padw swapdw
+        # => [ASSET_KEY, ASSET_VALUE, pad(8), ptr, end_ptr]
 
         # add asset to the account
         call.receive_asset
         # => [pad(16), ptr, end_ptr]
 
         # clean the stack after call
-        dropw dropw dropw
-        # => [EMPTY_WORD, ptr, end_ptr]
+        dropw dropw
+        # => [pad(8), ptr, end_ptr]
 
-        # increment the pointer and continue looping if ptr != end_ptr
-        movup.4 add.ASSET_SIZE dup dup.6 neq
-        # => [should_loop, ptr+ASSET_SIZE, EMPTY_WORD, end_ptr]
+        # increment the pointer
+        movup.8 add.ASSET_SIZE dup
+        # => [ptr+ASSET_SIZE, ptr+ASSET_SIZE, pad(8), end_ptr]
+
+        # continue looping if ptr != end_ptr
+        dup.10 neq
+        # => [should_loop, ptr+ASSET_SIZE, pad(8), end_ptr]
     end
-    # => [ptr', EMPTY_WORD, end_ptr]
+    # => [ptr', pad(8), end_ptr]
 
     # clear the stack
-    drop dropw drop
+    drop dropw dropw drop
     # => []
 end

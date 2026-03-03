@@ -1,4 +1,5 @@
 use anyhow::Context;
+use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
@@ -9,7 +10,6 @@ use miden_protocol::testing::account_id::{
     AccountIdBuilder,
 };
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain};
@@ -40,7 +40,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
             push.{tag}
             exec.output_note::create
 
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
             dropw dropw dropw dropw
         end
@@ -48,7 +49,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         recipient = swap_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = Felt::from(swap_note.metadata().tag()),
-        asset = Word::from(offered_asset),
+        ASSET_KEY = offered_asset.to_key_word(),
+        ASSET_VALUE = offered_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;

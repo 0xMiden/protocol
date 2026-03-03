@@ -6,6 +6,8 @@ use miden::protocol::account_id
 pub use ::miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 pub use ::miden::protocol::util::asset::ASSET_SIZE
 pub use ::miden::protocol::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use ::miden::protocol::util::asset::mem_store
+pub use ::miden::protocol::util::asset::mem_load
 
 # ERRORS
 # =================================================================================================
@@ -22,16 +24,17 @@ const ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID="failed to build the 
 #! Builds a fungible asset for the specified fungible faucet and amount.
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
-#! - ASSET is the built fungible asset.
+#! - ASSET_KEY is the vault key of the created fungible asset.
+#! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Invocation: exec
-pub proc build_fungible_asset
+pub proc create_fungible_asset
     # assert the faucet is a fungible faucet
     dup exec.account_id::is_fungible_faucet assert.err=ERR_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
     # => [faucet_id_prefix, faucet_id_suffix, amount]
@@ -43,22 +46,26 @@ pub proc build_fungible_asset
 
     # create the asset
     push.0 movdn.2
-    # => [ASSET]
+    # => [ASSET_VALUE]
+
+    exec.::miden::protocol::util::asset::build_fungible_asset_vault_key
+    # => [ASSET_KEY, ASSET_VALUE]
 end
 
-#! Builds a non fungible asset for the specified non-fungible faucet and amount.
+#! Builds a non fungible asset for the specified non-fungible faucet.
 #!
 #! Inputs:  [faucet_id_prefix, DATA_HASH]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
 #!   for.
 #! - DATA_HASH is the data hash of the non-fungible asset to build.
-#! - ASSET is the built non-fungible asset.
+#! - ASSET_KEY is the vault key of the created non-fungible asset.
+#! - ASSET_VALUE is the value of the created non-fungible asset.
 #!
 #! Invocation: exec
-pub proc build_non_fungible_asset
+pub proc create_non_fungible_asset
     # assert the faucet is a non-fungible faucet
     dup exec.account_id::is_non_fungible_faucet
     assert.err=ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
@@ -67,5 +74,8 @@ pub proc build_non_fungible_asset
     # build the asset
     swap drop
     # => [faucet_id_prefix, hash2, hash1, hash0]
-    # => [ASSET]
+    # => [ASSET_VALUE]
+
+    dupw exec.::miden::protocol::util::asset::build_non_fungible_asset_vault_key
+    # => [ASSET_KEY, ASSET_VALUE]
 end

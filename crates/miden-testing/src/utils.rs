@@ -8,7 +8,6 @@ use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
-use miden_protocol::testing::storage::prepare_assets;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
@@ -100,32 +99,31 @@ pub fn create_p2any_note(
     let serial_number = rng.draw_word();
     let assets: Vec<_> = assets.into_iter().collect();
     let mut code_body = String::new();
-    for i in 0..assets.len() {
-        if i == 0 {
-            // first asset (dest_ptr is already on stack)
-            code_body.push_str(
-                "
-                # add first asset
+    for asset_idx in 0..assets.len() {
+        code_body.push_str(&format!(
+            "
+                # => [dest_ptr]
+
+                # current_asset_ptr = dest_ptr + ASSET_SIZE * asset_idx
+                dup push.ASSET_SIZE mul.{asset_idx}
+                # => [current_asset_ptr, dest_ptr]
 
                 padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-                padw swapw padw padw swapdw
-                call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]
-                ",
-            );
-        } else {
-            code_body.push_str(
-                "
-                # add next asset
+                # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
-                add.ASSET_SIZE dup movdn.13
-                padw movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+                padw movup.8 mem_loadw_be
+                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+
+                padw padw swapdw
+                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+
                 call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]",
-            );
-        }
+                # => [pad(16), dest_ptr]
+
+                dropw dropw dropw dropw
+                # => [dest_ptr]
+                ",
+        ));
     }
     code_body.push_str("dropw dropw dropw dropw");
 
@@ -255,11 +253,17 @@ fn note_script_that_creates_notes<'note>(
             attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
         ));
 
-        let assets_str = prepare_assets(note.assets());
-        for asset in assets_str {
+        for asset in note.assets().iter() {
             out.push_str(&format!(
-                " push.{asset}
-                  call.::miden::standards::wallets::basic::move_asset_to_note\n",
+                " dup
+                  push.{ASSET_VALUE}
+                  push.{ASSET_KEY}
+                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  call.::miden::standards::wallets::basic::move_asset_to_note
+                  # => [note_idx]
+                ",
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             ));
         }
     }
