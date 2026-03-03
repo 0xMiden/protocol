@@ -419,6 +419,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
       const AUTH_UNAUTHORIZED_EVENT=event("miden::protocol::auth::unauthorized")
       #! Inputs:  [AUTH_ARGS, pad(12)]
       #! Outputs: [pad(16)]
+      @auth_script
       pub proc auth_abort_tx
           dropw
           # => [pad(16)]

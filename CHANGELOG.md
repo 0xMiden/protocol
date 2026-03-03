@@ -68,6 +68,7 @@
 - Updated account schema commitment construction to accept borrowed schema iterators; added extension trait to enable `AccountBuilder::with_schema_commitment()` helper ([#2419](https://github.com/0xMiden/miden-base/pull/2419)).
 - [BREAKING] Renamed `SchemaTypeId` to `SchemaType` ([#2494](https://github.com/0xMiden/miden-base/pull/2494)).
 - Updated stale `miden-base` references to `protocol` across docs, READMEs, code comments, and Cargo.toml repository URL ([#2503](https://github.com/0xMiden/protocol/pull/2503)).
+- Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
 
 ## 0.13.3 (2026-01-27)
 

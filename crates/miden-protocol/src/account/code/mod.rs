@@ -474,10 +474,12 @@ mod tests {
         use miden_assembly::Assembler;
 
         let code_with_multiple_auth = "
+            @auth_script
             pub proc auth_basic
                 push.1 drop
             end
 
+            @auth_script
             pub proc auth_secondary
                 push.0 drop
             end
