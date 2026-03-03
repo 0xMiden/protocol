@@ -223,10 +223,10 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=2340
 # -------------------------------------------------------------------------------------------------
 
 # The link map pointer at which the delta of the fungible asset vault is stored.
-const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
+pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
 
 # The link map pointer at which the delta of the non-fungible asset vault is stored.
-const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
+pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
 
 # The section of link map pointers where storage map deltas are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
@@ -1504,28 +1504,6 @@ end
 
 ### ACCOUNT DELTA #################################################
 
-#! Returns the link map pointer to the fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_fungible_asset_ptr is the link map pointer to the fungible asset vault delta.
-pub proc get_account_delta_fungible_asset_ptr
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-end
-
-#! Returns the link map pointer to the non-fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_non_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_non_fungible_asset_ptr is the link map pointer to the non-fungible asset vault delta.
-pub proc get_account_delta_non_fungible_asset_ptr
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-end
-
 #! Returns the link map pointer to the storage map delta of the storage map in the given slot index.
 #!
 #! Inputs:  [slot_idx]
@@ -2041,6 +2019,24 @@ pub proc set_output_note_num_assets
     dup.1 push.MAX_ASSETS_PER_NOTE lt assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
 
     mem_store
+end
+
+#! Increments the number of assets in the output note by 1.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#!
+#! Panics if:
+#! - the number of assets exceeds the maximum allowed number of assets per note.
+pub proc increment_output_note_num_assets
+    dup exec.get_output_note_num_assets add.1
+    # => [num_assets + 1, note_ptr]
+
+    swap exec.set_output_note_num_assets
+    # => []
 end
 
 #! Returns the dirty flag for the assets commitment.

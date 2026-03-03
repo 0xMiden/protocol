@@ -24,14 +24,12 @@ use crate::account::{
     AccountIdPrefix,
     AccountStorage,
     AccountType,
+    StorageMapKey,
     StorageSlotId,
-    // StorageValueName,
-    // StorageValueNameError,
-    // TemplateTypeError,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetVaultKey;
+use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
@@ -52,13 +50,15 @@ pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod tx_kernel;
+pub mod tx_kernel {
+    include!(concat!(env!("OUT_DIR"), "/tx_kernel_errors.rs"));
+}
 
 /// The errors from the MASM code of the Miden protocol library.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod protocol;
+pub mod protocol {
+    include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
@@ -401,9 +401,13 @@ pub enum AccountDeltaError {
 #[derive(Debug, Error)]
 pub enum StorageMapError {
     #[error("map entries contain key {key} twice with values {value0} and {value1}")]
-    DuplicateKey { key: Word, value0: Word, value1: Word },
-    #[error("map key {raw_key} is not present in provided SMT proof")]
-    MissingKey { raw_key: Word },
+    DuplicateKey {
+        key: StorageMapKey,
+        value0: Word,
+        value1: Word,
+    },
+    #[error("map key {key} is not present in provided SMT proof")]
+    MissingKey { key: StorageMapKey },
 }
 
 // BATCH ACCOUNT UPDATE ERROR
@@ -439,8 +443,6 @@ pub enum AssetError {
     FungibleAssetAmountTooBig(u64),
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
-    #[error("fungible asset word {0} does not contain expected ZERO at word index 1")]
-    FungibleAssetExpectedZero(Word),
     #[error(
         "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
     )]
@@ -450,8 +452,6 @@ pub enum AssetError {
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
-    #[error("faucet account ID in asset has a non-faucet prefix: {}", .0)]
-    InvalidFaucetAccountIdPrefix(AccountIdPrefix),
     #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
       id_type = .0.account_type(),
@@ -459,13 +459,23 @@ pub enum AssetError {
     )]
     FungibleFaucetIdTypeMismatch(AccountId),
     #[error(
+        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+    )]
+    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
+    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
+    FungibleAssetIdMustBeZero(AssetId),
+    #[error(
+        "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
+    )]
+    FungibleAssetValueMostSignificantElementsMustBeZero(Word),
+    #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
       id_type = .0.account_type(),
       expected_ty = AccountType::NonFungibleFaucet
     )]
-    NonFungibleFaucetIdTypeMismatch(AccountIdPrefix),
-    #[error("asset vault key {actual} does not match expected asset vault key {expected}")]
-    AssetVaultKeyMismatch { actual: Word, expected: Word },
+    NonFungibleFaucetIdTypeMismatch(AccountId),
+    #[error("smt proof in asset witness contains invalid key or value")]
+    AssetWitnessInvalid(#[source] Box<AssetError>),
 }
 
 // TOKEN SYMBOL ERROR
@@ -513,8 +523,6 @@ pub enum AssetVaultError {
 pub enum PartialAssetVaultError {
     #[error("provided SMT entry {entry} is not a valid asset")]
     InvalidAssetInSmt { entry: Word, source: AssetError },
-    #[error("expected asset vault key to be {expected} but it was {actual}")]
-    AssetVaultKeyMismatch { expected: AssetVaultKey, actual: Word },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]
@@ -807,7 +815,7 @@ pub enum ProvenTransactionError {
     )]
     ExistingPublicStateAccountRequiresDeltaDetails(AccountId),
     #[error("failed to construct output notes for proven transaction")]
-    OutputNotesError(TransactionOutputError),
+    OutputNotesError(#[source] TransactionOutputError),
     #[error(
         "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
     )]

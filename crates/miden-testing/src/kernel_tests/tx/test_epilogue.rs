@@ -4,7 +4,6 @@ use std::borrow::ToOwned;
 
 use miden_processor::crypto::RpoRandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
@@ -27,6 +26,7 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{OutputNote, OutputNotes, TransactionOutputs};
+use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
@@ -74,7 +74,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -87,7 +88,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),
-        asset = Word::from(asset)
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -114,24 +116,20 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        miden_protocol::Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
+        Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
+    let fee_asset = FungibleAsset::new(
+        tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
+        0,
+    )?;
 
     let mut expected_stack = Vec::with_capacity(16);
     expected_stack.extend(output_notes.commitment().as_elements().iter().rev());
     expected_stack.extend(account_update_commitment.as_elements().iter().rev());
-    expected_stack.extend(
-        Word::from(
-            FungibleAsset::new(
-                tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
-                0,
-            )
-            .unwrap(),
-        )
-        .iter()
-        .rev(),
-    );
+    expected_stack.push(fee_asset.faucet_id().prefix().as_felt());
+    expected_stack.push(fee_asset.faucet_id().suffix());
+    expected_stack.push(Felt::try_from(fee_asset.amount()).unwrap());
     expected_stack.push(Felt::from(u32::MAX)); // Value for tx expiration block number
-    expected_stack.extend((13..16).map(|_| ZERO));
+    expected_stack.resize(16, ZERO);
 
     assert_eq!(
         exec_output.stack.as_slice(),
@@ -187,14 +185,16 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
         exec.output_note::create
         # => [note_idx]
 
-        push.{asset}
+        push.{ASSET_VALUE}
+        push.{ASSET_KEY}
         call.::miden::standards::wallets::basic::move_asset_to_note
         # => []
         ",
             recipient = note.recipient().digest(),
             note_type = Felt::from(note.metadata().note_type()),
             tag = Felt::from(note.metadata().tag()),
-            asset = Word::from(asset)
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
         ));
     }
 
@@ -231,13 +231,21 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that a transaction fails due to the asset preservation rules when the input note has an
-/// asset with amount 100 and the output note has the same asset with amount 200.
+/// Tests that a transaction fails when assets aren't preserved, i.e.
+/// - when the input note has asset amount 100 and the output note has asset amount 200.
+/// - when the input note has asset amount 200 and the output note has asset amount 100.
+#[rstest::rstest]
+#[case::outputs_exceed_inputs(100, 200)]
+#[case::inputs_exceed_outputs(200, 100)]
 #[tokio::test]
-async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyhow::Result<()> {
-    // Create an input asset with amount 100 and an output asset with amount 200.
-    let input_asset = FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, 100)?;
-    let output_asset = input_asset.add(input_asset)?;
+async fn epilogue_fails_when_assets_arent_preserved(
+    #[case] input_amount: u64,
+    #[case] output_amount: u64,
+) -> anyhow::Result<()> {
+    let input_asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, input_amount)?;
+    let output_asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, output_amount)?;
 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
@@ -257,65 +265,14 @@ async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyh
 
       begin
           # create a note with the output asset
-          push.{OUTPUT_ASSET}
+          push.{OUTPUT_ASSET_VALUE}
+          push.{OUTPUT_ASSET_KEY}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET = Word::from(output_asset),
-    );
-
-    let builder = CodeBuilder::with_mock_libraries();
-    let source_manager = builder.source_manager();
-    let tx_script = builder.compile_tx_script(code)?;
-
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[input_note])?
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    let exec_output = tx_context.execute().await;
-    assert_transaction_executor_error!(
-        exec_output,
-        ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME
-    );
-
-    Ok(())
-}
-
-/// Tests that a transaction fails due to the asset preservation rules when the input note has an
-/// asset with amount 200 and the output note has the same asset with amount 100.
-#[tokio::test]
-async fn epilogue_fails_when_num_input_assets_exceed_num_output_assets() -> anyhow::Result<()> {
-    // Create an input asset with amount 200 and an output asset with amount 100.
-    let output_asset = FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, 100)?;
-    let input_asset = output_asset.add(output_asset)?;
-
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    // Add an input note that (automatically) adds its assets to the transaction's input vault, but
-    // _does not_ add the asset to the account. This is just to keep the test conceptually simple -
-    // there is no account involved.
-    let input_note = NoteBuilder::new(account.id(), *builder.rng_mut())
-        .add_assets([Asset::from(output_asset)])
-        .build()?;
-    builder.add_output_note(OutputNote::Full(input_note.clone()));
-    let mock_chain = builder.build()?;
-
-    let code = format!(
-        "
-      use mock::account
-      use mock::util
-
-      begin
-          # create a note with the output asset
-          push.{OUTPUT_ASSET}
-          exec.util::create_default_note_with_asset
-          # => []
-      end
-      ",
-        OUTPUT_ASSET = Word::from(input_asset),
+        OUTPUT_ASSET_KEY = output_asset.to_key_word(),
+        OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();

@@ -17,7 +17,7 @@ use crate::{Felt, Hasher, Word};
 // ================================================================================================
 
 /// Identifier of signature schemes use for transaction authentication
-const FALCON_512_RPO: u8 = 0;
+const FALCON_512_RPO: u8 = 2;
 const ECDSA_K256_KECCAK: u8 = 1;
 
 /// Defines standard authentication schemes (i.e., signature schemes) available in the Miden
@@ -121,6 +121,32 @@ impl AuthSecretKey {
     /// Generates an EcdsaK256Keccak secret key using the provided random number generator.
     pub fn new_ecdsa_k256_keccak_with_rng<R: Rng + CryptoRng>(rng: &mut R) -> Self {
         Self::EcdsaK256Keccak(ecdsa_k256_keccak::SecretKey::with_rng(rng))
+    }
+
+    /// Generates a new secret key for the specified authentication scheme using the provided
+    /// random number generator.
+    ///
+    /// Returns an error if the specified authentication scheme is not supported.
+    pub fn with_scheme_and_rng<R: Rng + CryptoRng>(
+        scheme: AuthScheme,
+        rng: &mut R,
+    ) -> Result<Self, AuthSchemeError> {
+        match scheme {
+            AuthScheme::Falcon512Rpo => Ok(Self::new_falcon512_rpo_with_rng(rng)),
+            AuthScheme::EcdsaK256Keccak => Ok(Self::new_ecdsa_k256_keccak_with_rng(rng)),
+        }
+    }
+
+    /// Generates a new secret key for the specified authentication scheme from the
+    /// OS-provided randomness.
+    ///
+    /// Returns an error if the specified authentication scheme is not supported.
+    #[cfg(feature = "std")]
+    pub fn with_scheme(scheme: AuthScheme) -> Result<Self, AuthSchemeError> {
+        match scheme {
+            AuthScheme::Falcon512Rpo => Ok(Self::new_falcon512_rpo()),
+            AuthScheme::EcdsaK256Keccak => Ok(Self::new_ecdsa_k256_keccak()),
+        }
     }
 
     /// Returns the authentication scheme of this secret key.

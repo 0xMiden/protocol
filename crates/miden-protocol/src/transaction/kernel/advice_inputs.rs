@@ -340,7 +340,7 @@ impl TransactionAdviceInputs {
             // recipient storage
             self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
-            self.add_map_entry(assets.commitment(), assets.to_padded_assets());
+            self.add_map_entry(assets.commitment(), assets.to_elements());
             // array attachments
             if let NoteAttachmentContent::Array(array_attachment) =
                 note.metadata().attachment().content()
@@ -361,7 +361,7 @@ impl TransactionAdviceInputs {
             note_data.extend(note.metadata().to_attachment_word());
             note_data.push(recipient.storage().num_items().into());
             note_data.push((assets.num_assets() as u32).into());
-            note_data.extend(assets.to_padded_assets());
+            note_data.extend(assets.to_elements());
 
             // authentication vs unauthenticated
             match input_note {

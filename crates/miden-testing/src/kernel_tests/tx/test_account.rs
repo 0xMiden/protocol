@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_processor::{ExecutionError, Word};
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
@@ -17,6 +18,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotContent,
     StorageSlotDelta,
@@ -80,7 +82,7 @@ pub async fn compute_commitment() -> anyhow::Result<()> {
 
     // Precompute a commitment to a changed account so we can assert it during tx script execution.
     let mut account_clone = account.clone();
-    let key = Word::from([1, 2, 3, 4u32]);
+    let key = StorageMapKey::from_array([1, 2, 3, 4]);
     let value = Word::from([2, 3, 4, 5u32]);
     let mock_map_slot = &*MOCK_MAP_SLOT;
     account_clone.storage_mut().set_map_item(mock_map_slot, key, value).unwrap();
@@ -532,8 +534,9 @@ async fn test_account_get_item_fails_on_unknown_slot() -> anyhow::Result<()> {
     let account_empty_storage = builder.add_existing_mock_account(Auth::IncrNonce)?;
     assert_eq!(account_empty_storage.storage().num_slots(), 0);
 
-    let account_non_empty_storage = builder.add_existing_mock_account(Auth::BasicAuth)?;
-    assert_eq!(account_non_empty_storage.storage().num_slots(), 1);
+    let account_non_empty_storage = builder
+        .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    assert_eq!(account_non_empty_storage.storage().num_slots(), 2);
 
     let chain = builder.build()?;
 
@@ -677,8 +680,10 @@ async fn test_set_item() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_set_map_item() -> anyhow::Result<()> {
-    let (new_key, new_value) =
-        (Word::from([109, 110, 111, 112u32]), Word::from([9, 10, 11, 12u32]));
+    let (new_key, new_value) = (
+        StorageMapKey::from_array([109, 110, 111, 112u32]),
+        Word::from([9, 10, 11, 12u32]),
+    );
 
     let slot = AccountStorage::mock_map_slot();
     let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
@@ -821,7 +826,7 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
     account_storage.set_map_item(
         mock_map_slot,
-        [101, 102, 103, 104].map(Felt::new).into(),
+        StorageMapKey::from_array([101, 102, 103, 104u32]),
         [5, 6, 7, 8].map(Felt::new).into(),
     )?;
     let storage_commitment_map = account_storage.to_commitment();
@@ -894,7 +899,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     let slot1 = StorageSlot::with_value(slot_name1.clone(), Word::from([10, 20, 30, 40u32]));
     let mut map_entries = Vec::new();
     for _ in 0..10 {
-        map_entries.push((rand_value::<Word>(), rand_value::<Word>()));
+        map_entries.push((StorageMapKey::from_raw(rand_value::<Word>()), rand_value::<Word>()));
     }
     let map_slot =
         StorageSlot::with_map(slot_name2.clone(), StorageMap::with_entries(map_entries.clone())?);
@@ -1004,8 +1009,10 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add an asset to the account
-            push.{fungible_asset}
-            call.mock_account::add_asset dropw
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
+            call.mock_account::add_asset
+            dropw dropw
             # => []
 
             # get the current vault root
@@ -1014,7 +1021,8 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="vault root mismatch"
         end
         "#,
-        fungible_asset = Word::from(&fungible_asset),
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
         expected_vault_root = &account.vault().root(),
     );
     tx_context.execute_code(&code).await?;
@@ -1043,8 +1051,10 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder
-        .add_existing_wallet_with_assets(crate::Auth::BasicAuth, [fungible_asset_for_account])?;
+    let account = builder.add_existing_wallet_with_assets(
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [fungible_asset_for_account],
+    )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
@@ -1191,8 +1201,10 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder
-        .add_existing_wallet_with_assets(crate::Auth::BasicAuth, [fungible_asset_for_account])?;
+    let account = builder.add_existing_wallet_with_assets(
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [fungible_asset_for_account],
+    )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
@@ -1215,28 +1227,14 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        # Inputs:  [ASSET, note_idx]
-        # Outputs: [ASSET, note_idx]
-        proc move_asset_to_note
-            # pad the stack before call
-            push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-            # => [ASSET, note_idx, pad(11)]
-
-            call.wallet::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
-
-            # remove excess PADs from the stack
-            swapdw dropw dropw swapw movdn.7 drop drop drop
-            # => [ASSET, note_idx]
-        end
-
         begin
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            exec.move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # push faucet ID prefix and suffix
@@ -1261,7 +1259,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
@@ -1296,8 +1295,10 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
     let fungible_asset_for_account = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 10).context("fungible_asset_0 is invalid")?,
     );
-    let account = builder
-        .add_existing_wallet_with_assets(crate::Auth::BasicAuth, [fungible_asset_for_account])?;
+    let account = builder.add_existing_wallet_with_assets(
+        crate::Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        [fungible_asset_for_account],
+    )?;
 
     let fungible_asset_for_note_existing = Asset::Fungible(
         FungibleAsset::new(faucet_existing_asset, 7).context("fungible_asset_0 is invalid")?,
@@ -1324,13 +1325,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            call.wallet::move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # get the current asset
             push.{ASSET_KEY} exec.active_account::get_asset
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
@@ -1340,14 +1342,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             push.{ASSET_KEY} exec.active_account::get_initial_asset
             # => [INITIAL_ASSET]
 
-            push.{INITIAL_ASSET}
+            push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
-        INITIAL_ASSET = Word::from(fungible_asset_for_account),
-        FINAL_ASSET = Word::from(final_asset),
+        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
+        INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
+        FINAL_ASSET = final_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;
@@ -1588,6 +1590,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     let source_code = "
         use miden::protocol::native_account
 
+        @auth_script
         pub proc auth_incr_nonce_twice
             exec.native_account::incr_nonce drop
             exec.native_account::incr_nonce drop
