@@ -3,6 +3,7 @@ use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
+use miden::protocol::asset
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
@@ -123,36 +124,34 @@ pub proc distribute
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [amount, tag, note_type, RECIPIENT]
 
+    # Create a new note.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.6 exec.output_note::create
+    # => [note_idx, amount]
+
+    dup movup.2
+    # => [amount, note_idx, note_idx]
+
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
     # creating the asset
-    exec.faucet::create_fungible_asset dupw
-    # => [ASSET, ASSET, tag, note_type, RECIPIENT]
+    exec.faucet::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     # mint the asset; this is needed to satisfy asset preservation logic.
     # this ensures that the asset's faucet ID matches the native account's ID.
     # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
-    # => [ASSET', ASSET, tag, note_type, RECIPIENT]
-
-    # drop the asset that represents the total amount in the vault after minting
     dropw
-    # => [ASSET, tag, note_type, RECIPIENT]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    movdn.9 movdn.9 movdn.9 movdn.9
-    # => [tag, note_type, RECIPIENT, ASSET]
-
-    # Create a new note with the asset.
+    # Add the asset to the note.
     # ---------------------------------------------------------------------------------------------
-
-    # create a note
-    exec.output_note::create
-    # => [note_idx, ASSET]
-
-    # load the ASSET and add it to the note
-    dup movdn.5 movdn.5
-    # => [ASSET, note_idx, note_idx]
 
     exec.output_note::add_asset
     # => [note_idx]
@@ -188,16 +187,14 @@ pub proc burn
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    # load asset value from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
-    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
-    # => [ASSET_VALUE, pad(16)]
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], pad(16)]
+    exec.asset::mem_load
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    dup.3 movdn.4
-    # => [ASSET_VALUE, amount, pad(16)]
+    dup.7 movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are

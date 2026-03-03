@@ -56,7 +56,8 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #! ]
 #! Outputs: [
 #!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
-#!   FEE_ASSET_VALUE, tx_expiration_block_num, pad(3)
+#!   native_asset_id_prefix, native_asset_id_suffix, fee_amount, tx_expiration_block_num,
+#!   pad(4)
 #! ]
 #!
 #! Where:
@@ -68,7 +69,10 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   delta commitment.
-#! - FEE_ASSET_VALUE is the fungible asset used as the transaction fee.
+#! - fee_amount is the computed fee amount of the transaction denominated in the native asset.
+#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
+#!   native asset.
+#! - tx_expiration_block_num is the transaction expiration block number.
 @locals(1)
 proc main
     # Prologue
@@ -170,11 +174,13 @@ proc main
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+    #     native_asset_id_prefix, native_asset_id_suffix, fee_amount, tx_expiration_block_num, pad(16)]
 
     # truncate the stack to contain 16 elements in total
-    repeat.13 movup.13 drop end
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num, pad(3)]
+    repeat.3 movupw.3 dropw end
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+    #     native_asset_id_prefix, native_asset_id_suffix, fee_amount, tx_expiration_block_num, pad(4)]
 
     emit.EPILOGUE_END_EVENT
 end

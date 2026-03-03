@@ -740,7 +740,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     // Create two different assets.
     let fungible_asset = Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 1)?);
     let non_fungible_asset = Asset::NonFungible(NonFungibleAsset::new(
-        &NonFungibleAssetDetails::new(non_fungible_faucet_id.prefix(), vec![1, 2, 3])?,
+        &NonFungibleAssetDetails::new(non_fungible_faucet_id, vec![1, 2, 3])?,
     )?);
 
     let foreign_account_code_source = format!(
@@ -754,7 +754,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
             # => [balance]
 
             # check presence of non fungible asset
-            push.{non_fungible_asset_word}
+            push.{NON_FUNGIBLE_ASSET_KEY}
             exec.active_account::has_non_fungible_asset
             # => [has_asset, balance]
 
@@ -769,7 +769,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
         ",
         fungible_faucet_id_prefix = fungible_faucet_id.prefix().as_felt(),
         fungible_faucet_id_suffix = fungible_faucet_id.suffix(),
-        non_fungible_asset_word = Word::from(non_fungible_asset),
+        NON_FUNGIBLE_ASSET_KEY = non_fungible_asset.to_key_word(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());

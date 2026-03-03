@@ -521,8 +521,8 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let asset_key: Word = *asset.vault_key().as_word();
-            let asset_value: Word = asset.into();
+            let asset_key = asset.to_key_word();
+            let asset_value = asset.to_value_word();
 
             let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
             let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;

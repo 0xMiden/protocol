@@ -1009,8 +1009,10 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
 
             # add an asset to the account
-            push.{fungible_asset}
-            call.mock_account::add_asset dropw
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
+            call.mock_account::add_asset
+            dropw dropw
             # => []
 
             # get the current vault root
@@ -1019,7 +1021,8 @@ async fn test_get_vault_root() -> anyhow::Result<()> {
             assert_eqw.err="vault root mismatch"
         end
         "#,
-        fungible_asset = Word::from(&fungible_asset),
+        FUNGIBLE_ASSET_VALUE = fungible_asset.to_value_word(),
+        FUNGIBLE_ASSET_KEY = fungible_asset.to_key_word(),
         expected_vault_root = &account.vault().root(),
     );
     tx_context.execute_code(&code).await?;
@@ -1224,28 +1227,14 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         use miden::standards::wallets::basic->wallet
         use mock::util
 
-        # Inputs:  [ASSET, note_idx]
-        # Outputs: [ASSET, note_idx]
-        proc move_asset_to_note
-            # pad the stack before call
-            push.0.0.0 movdn.7 movdn.7 movdn.7 padw padw swapdw
-            # => [ASSET, note_idx, pad(11)]
-
-            call.wallet::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
-
-            # remove excess PADs from the stack
-            swapdw dropw dropw swapw movdn.7 drop drop drop
-            # => [ASSET, note_idx]
-        end
-
         begin
             # create random note and move the asset into it
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            exec.move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # push faucet ID prefix and suffix
@@ -1270,7 +1259,8 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
             assert_eq.err="initial balance is incorrect"
         end
     "#,
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
+        REMOVED_ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
@@ -1335,13 +1325,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             exec.util::create_default_note
             # => [note_idx]
 
-            push.{REMOVED_ASSET}
-            call.wallet::move_asset_to_note dropw drop
+            push.{REMOVED_ASSET_VALUE}
+            push.{ASSET_KEY}
+            exec.util::move_asset_to_note
             # => []
 
             # get the current asset
             push.{ASSET_KEY} exec.active_account::get_asset
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             push.{FINAL_ASSET}
             assert_eqw.err="final asset is incorrect"
@@ -1351,14 +1342,14 @@ async fn test_get_init_asset() -> anyhow::Result<()> {
             push.{ASSET_KEY} exec.active_account::get_initial_asset
             # => [INITIAL_ASSET]
 
-            push.{INITIAL_ASSET}
+            push.{INITIAL_ASSET_VALUE}
             assert_eqw.err="initial asset is incorrect"
         end
     "#,
-        ASSET_KEY = fungible_asset_for_note_existing.vault_key(),
-        REMOVED_ASSET = Word::from(fungible_asset_for_note_existing),
-        INITIAL_ASSET = Word::from(fungible_asset_for_account),
-        FINAL_ASSET = Word::from(final_asset),
+        ASSET_KEY = fungible_asset_for_note_existing.to_key_word(),
+        REMOVED_ASSET_VALUE = fungible_asset_for_note_existing.to_value_word(),
+        INITIAL_ASSET_VALUE = fungible_asset_for_account.to_value_word(),
+        FINAL_ASSET = final_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;

@@ -223,10 +223,10 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=2340
 # -------------------------------------------------------------------------------------------------
 
 # The link map pointer at which the delta of the fungible asset vault is stored.
-const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
+pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
 
 # The link map pointer at which the delta of the non-fungible asset vault is stored.
-const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
+pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
 
 # The section of link map pointers where storage map deltas are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
@@ -1503,28 +1503,6 @@ pub proc get_account_initial_storage_slots_ptr
 end
 
 ### ACCOUNT DELTA #################################################
-
-#! Returns the link map pointer to the fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_fungible_asset_ptr is the link map pointer to the fungible asset vault delta.
-pub proc get_account_delta_fungible_asset_ptr
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-end
-
-#! Returns the link map pointer to the non-fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_non_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_non_fungible_asset_ptr is the link map pointer to the non-fungible asset vault delta.
-pub proc get_account_delta_non_fungible_asset_ptr
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-end
 
 #! Returns the link map pointer to the storage map delta of the storage map in the given slot index.
 #!

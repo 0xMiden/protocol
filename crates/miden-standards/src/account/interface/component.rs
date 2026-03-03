@@ -186,9 +186,9 @@ impl AccountComponentInterface {
                     let asset =
                         partial_note.assets().iter().next().expect("note should contain an asset");
 
-                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                    if asset.faucet_id() != sender_account_id {
                         return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id_prefix(),
+                            asset.faucet_id(),
                         ));
                     }
 
@@ -214,13 +214,22 @@ impl AccountComponentInterface {
                     for asset in partial_note.assets().iter() {
                         body.push_str(&format!(
                             "
-                            push.{asset}
-                            # => [ASSET, note_idx, pad(16)]
+                            # duplicate note index
+                            padw push.0 push.0 push.0 dup.7
+                            # => [note_idx, pad(7), note_idx, pad(16)]
+
+                            push.{ASSET_VALUE}
+                            push.{ASSET_KEY}
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            dropw
+                            # => [pad(16), note_idx, pad(16)]
+
+                            dropw dropw dropw dropw
                             # => [note_idx, pad(16)]\n
                             ",
-                            asset = Word::from(*asset)
+                            ASSET_KEY = asset.to_key_word(),
+                            ASSET_VALUE = asset.to_value_word(),
                         ));
                     }
                 },

@@ -179,12 +179,7 @@ impl SequentialCommit for NoteAssets {
 
 fn to_elements(assets: &[Asset]) -> Vec<Felt> {
     let mut elements = Vec::with_capacity(assets.len() * 2 * WORD_SIZE);
-
-    for asset in assets.iter() {
-        elements.extend(asset.to_key_word().as_elements());
-        elements.extend(asset.to_value_word().as_elements());
-    }
-
+    elements.extend(assets.iter().flat_map(Asset::as_elements));
     elements
 }
 
@@ -255,7 +250,7 @@ mod tests {
         let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
         let faucet_id_2 = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
         let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET).unwrap();
-        let details = NonFungibleAssetDetails::new(account_id.prefix(), vec![1, 2, 3]).unwrap();
+        let details = NonFungibleAssetDetails::new(account_id, vec![1, 2, 3]).unwrap();
 
         let asset1 = Asset::Fungible(FungibleAsset::new(faucet_id_1, 100).unwrap());
         let asset2 = Asset::Fungible(FungibleAsset::new(faucet_id_2, 50).unwrap());

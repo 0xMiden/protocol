@@ -1,11 +1,30 @@
 # Contains procedures for the built-in fungible asset.
 
+use $kernel::account_id
 use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use $kernel::asset
+
+# RE-EXPORTS
+# =================================================================================================
+
+pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
 
 # ERRORS
 # =================================================================================================
 
 const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the vault would exceed the max amount"
+
+const ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE = "fungible asset vault key's account ID must be of type fungible faucet"
+
+const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the fungible asset is not this faucet"
+
+const ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT="fungible asset amount exceeds the maximum allowed amount"
+
+const ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO="fungible asset value elements 1, 2 and 3 must be zeros"
+
+const ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO="fungible asset key asset ID prefix and suffix must be zero"
+
+const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
 
 # PROCEDURES
 # =================================================================================================
@@ -13,9 +32,6 @@ const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the v
 #! Merges two fungible assets.
 #!
 #! WARNING: This procedure assumes the assets have been validated.
-#!
-#! NOTE: we do not assert that faucet IDs match since this asset layout will soon no longer contain
-#! them anyway
 #!
 #! Inputs:  [ASSET_VALUE_0, ASSET_VALUE_1]
 #! Outputs: [MERGED_ASSET_VALUE]
@@ -27,25 +43,61 @@ const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the v
 #! Panics if:
 #! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
 pub proc merge
-    # extract amount from asset 1
-    dup.7
-    # => [amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+    # extract amounts from assets
+    exec.get_amount movdn.4 exec.get_amount
+    # => [amount_1, amount_0]
 
-    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - current_amount
-    # this is the amount that can at most be added to still have a valid asset
-    push.FUNGIBLE_ASSET_MAX_AMOUNT dup.5 sub
-    # => [max_add_amount, amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - amount_0
+    # this is the amount that can at most be added to amount_0 still have a valid asset
+    dup push.FUNGIBLE_ASSET_MAX_AMOUNT dup.3 sub
+    # => [max_add_amount, amount_1, amount_1, amount_0]
 
     # assert it is safe to add the amounts together, i.e. amount_1 <= max_add_amount
     lte assert.err=ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED
-    # => [ASSET_VALUE_0, ASSET_VALUE_1]
-
-    exec.get_amount
-    # => [current_amount, ASSET_VALUE_1]
+    # => [amount_1, amount_0]
 
     # add the amounts
-    movup.4 add movdn.3
+    add
+    # => [merged_amount]
+
+    # reconstruct the asset value
+    push.0.0.0
     # => [MERGED_ASSET_VALUE]
+end
+
+#! Computes ASSET_VALUE_0 - ASSET_VALUE_1 and returns the result.
+#!
+#! For instance, split(40, 100) returns 60. The operand order matches the `sub` instruction.
+#!
+#! WARNING: This procedure assumes the assets have been validated.
+#!
+#! Inputs:  [ASSET_VALUE_1, ASSET_VALUE_0]
+#! Outputs: [NEW_ASSET_VALUE_0]
+#!
+#! Where:
+#! - ASSET_VALUE_{0, 1} are the assets to split.
+#! - NEW_ASSET_VALUE_0 is the result of the split computation.
+#!
+#! Panics if:
+#! - ASSET_VALUE_0 does not contain at least the amount of ASSET_VALUE_1.
+pub proc split
+    # extract amounts from assets
+    exec.get_amount movdn.4 exec.get_amount swap
+    # => [amount_1, amount_0]
+
+    # assert amount_1 <= amount_0 so we can safely subtract
+    dup dup.2
+    # => [amount_0, amount_1, amount_1, amount_0]
+
+    lte assert.err=ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
+    # => [amount_1, amount_0]
+
+    sub
+    # => [new_amount]
+
+    # reconstruct the asset value
+    push.0.0.0
+    # => [NEW_ASSET_VALUE]
 end
 
 #! Extracts the amount of a fungible asset.
@@ -60,4 +112,95 @@ end
 #! - amount is the amount of the fungible asset.
 pub proc get_amount
     exec.::$kernel::util::asset::get_balance_from_fungible_asset
+end
+
+#! Validates that a fungible asset is well formed.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key is invalid (see validate_key).
+#! - the three most significant elements in the value are not 0.
+#! - the amount exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
+pub proc validate
+    exec.validate_key
+    # => [ASSET_KEY, ASSET_VALUE]
+
+    dupw.1
+    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+
+    # assuming the asset is valid, its layout is:
+    # => [0, 0, 0, amount, ASSET_KEY, ASSET_VALUE]
+
+    # assert the first three elements are zeros
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    # => [amount, ASSET_KEY, ASSET_VALUE]
+
+    # assert amount <= FUNGIBLE_ASSET_MAX_AMOUNT
+    lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Validates that a fungible asset's vault key is well formed.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's faucet ID is not a fungible one.
+pub proc validate_key
+    exec.asset::key_to_faucet_id
+    exec.account_id::validate
+    # => [ASSET_KEY]
+
+    exec.asset::is_fungible_asset_key
+    assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
+    # => [ASSET_KEY]
+
+    exec.asset::key_to_asset_id
+    # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
+    # => [ASSET_KEY]
+end
+
+#! Validates that a fungible asset is associated with the provided faucet_id.
+#!
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_prefix is the prefix of the faucet's account ID.
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+pub proc validate_origin
+    movdn.9 movdn.9
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
+    # assert the fungible asset key and value are valid
+    exec.validate
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
+    # assert the origin of the asset is the faucet_id provided via the stack
+    exec.asset::key_to_faucet_id
+    # => [key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
+    movup.11 movup.11
+    # => [faucet_id_prefix, faucet_id_suffix, key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
+
+    exec.account_id::is_equal assert.err=ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
+    # => [ASSET_KEY, ASSET_VALUE]
 end

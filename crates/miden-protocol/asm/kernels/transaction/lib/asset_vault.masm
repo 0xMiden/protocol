@@ -5,6 +5,7 @@ use $kernel::account_id
 use $kernel::asset
 use $kernel::fungible_asset
 use $kernel::memory
+use $kernel::non_fungible_asset
 use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # ERRORS
@@ -14,17 +15,9 @@ const ERR_VAULT_ADD_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to add f
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS="the non-fungible asset already exists in the asset vault"
 
-const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to remove the fungible asset from the vault since the amount of the asset in the vault is less than the amount to remove"
-
 const ERR_VAULT_REMOVE_FUNGIBLE_ASSET_FAILED_INITIAL_VALUE_INVALID="failed to remove fungible asset from the asset vault due to the initial value being invalid"
 
 const ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND="failed to remove non-existent non-fungible asset from the vault"
-
-# CONSTANTS
-# =================================================================================================
-
-# The bitmask that when applied will set the fungible bit to zero.
-const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
 
 # ACCESSORS
 # =================================================================================================
@@ -51,7 +44,7 @@ pub proc get_asset
     # => [ASSET_VALUE]
 end
 
-#! Returns the _peeked_ ASSET associated with the provided asset vault key.
+#! Returns the _peeked_ asset associated with the provided asset vault key.
 #!
 #! WARNING: Peeked means the asset is loaded from the advice provider, which is susceptible to
 #! manipulation from a malicious host. Therefore this should only be used when the inclusion of the
@@ -137,14 +130,8 @@ pub proc add_fungible_asset
 
     # since we have peeked the value, we need to later assert that the actual value matches this
     # one, so we'll keep a copy for later
+    # set the current asset value equal to the current vault value
     swapw dupw.1
-    # => [CUR_VAULT_VALUE, ASSET_KEY, CUR_VAULT_VALUE, ASSET_VALUE]
-
-    # the current vault value may be the empty word if it does not exist and so its faucet id would
-    # be zeros. We therefore overwrite the faucet id with the faucet id from ASSET_VALUE to account
-    # for this edge case
-    drop drop
-    dup.11 dup.11
     # => [CURRENT_ASSET_VALUE, ASSET_KEY, CUR_VAULT_VALUE, ASSET_VALUE]
 
     movupw.3
@@ -254,20 +241,20 @@ end
 #! - the vault already contains the same non-fungible asset.
 pub proc add_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
     # add the asset to the asset vault
     if.true
         # validate the fungible asset
-        exec.asset::validate_fungible_asset
+        exec.fungible_asset::validate
         # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
         exec.add_fungible_asset
         # => [ASSET_VALUE']
     else
         # validate the non-fungible asset
-        exec.asset::validate_non_fungible_asset
+        exec.non_fungible_asset::validate
         # => [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
         exec.add_non_fungible_asset
@@ -314,41 +301,29 @@ pub proc remove_fungible_asset
     loc_storew_be.0
     # => [ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    dup.3 dup.12
-    # => [peeked_amount, amount, ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    dupw.2 swapw
+    # => [ASSET_VALUE, PEEKED_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    # assert amount <= peeked_amount
-    lte assert.err=ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW
-    # => [ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # compute PEEKED_ASSET_VALUE - ASSET_VALUE
+    exec.fungible_asset::split
+    # => [NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    dup.11 movup.4
-    # => [amount, peeked_amount, [faucet_id_prefix, faucet_id_suffix, 0], ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    # compute peeked_amount - amount
-    sub
-    # => [new_amount, [faucet_id_prefix, faucet_id_suffix, 0], ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    movdn.3
-    # => [[faucet_id_prefix, faucet_id_suffix, new_amount], ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-    # => [ASSET_VALUE', ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    padw dup.7
-    # => [new_amount, EMPTY_WORD, ASSET_VALUE', ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    padw dupw.1 exec.fungible_asset::get_amount
+    # => [new_amount, EMPTY_WORD, NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     eq.0
-    # => [is_new_amount_zero, EMPTY_WORD, ASSET_VALUE', ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [is_new_amount_zero, EMPTY_WORD, NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     # If is_new_amount_zero EMPTY_WORD remains.
-    # If !is_new_amount_zero ASSET_VALUE' remains.
+    # If !is_new_amount_zero NEW_ASSET_VALUE remains.
     cdropw
-    # => [EMPTY_WORD_OR_ASSET', ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     dup.12 padw movup.4 mem_loadw_be
-    # => [VAULT_ROOT, EMPTY_WORD_OR_ASSET', ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [VAULT_ROOT, EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     movdnw.2
-    # => [EMPTY_WORD_OR_ASSET', ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     # update asset in vault and assert the old value is equivalent to the peeked value provided
     # via peek_asset
@@ -419,7 +394,7 @@ end
 #! - the non-fungible asset is not found in the vault.
 pub proc remove_asset
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
+    exec.asset::is_fungible_asset_key
     # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE, vault_root_ptr]
 
     # remove the asset from the asset vault
@@ -429,77 +404,5 @@ pub proc remove_asset
     else
         exec.remove_non_fungible_asset
         # => [ASSET_VALUE]
-    end
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Builds the vault key of a non fungible asset. The asset is NOT validated and therefore must
-#! be a valid non-fungible asset.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY]
-#!
-#! Where:
-#! - ASSET_VALUE is the non-fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the non-fungible asset.
-pub proc build_non_fungible_asset_vault_key
-    # create the asset key from the non-fungible asset by swapping hash0 with the faucet id
-    # => [faucet_id_prefix, hash2, hash1, hash0]
-    swap.3
-    # => [hash0, hash2, hash1, faucet_id_prefix]
-
-    # disassemble hash0 into u32 limbs
-    u32split swap
-    # => [hash0_lo, hash0_hi, hash2, hash1, faucet_id_prefix]
-
-    # set the fungible bit to 0
-    u32and.INVERSE_FUNGIBLE_BITMASK_U32
-    # => [hash0_lo', hash0_hi, hash2, hash1, faucet_id_prefix]
-
-    # reassemble hash0 felt by multiplying the high part with 2^32 and adding the lo part
-    swap mul.0x0100000000 add
-    # => [ASSET_KEY]
-end
-
-#! TODO: Add Rust <-> MASM test.
-#!
-#! Builds the vault key of a fungible asset. The asset is NOT validated and therefore must
-#! be a valid fungible asset.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
-#!
-#! Where:
-#! - ASSET_VALUE is the fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the fungible asset.
-pub proc build_fungible_asset_vault_key
-  # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-  push.0.0
-  # => [0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-
-  dup.3 dup.3
-  # => [faucet_id_prefix, faucet_id_suffix, 0, 0, faucet_id_prefix, faucet_id_suffix, 0, amount]
-end
-
-#! TODO(expand_assets): Temporary procedure for building an asset vault key.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [ASSET_KEY, ASSET_VALUE]
-pub proc build_asset_vault_key
-    # check the first element, it will be:
-    # - zero for a fungible asset
-    # - non zero for a non-fungible asset
-    dup.2 eq.0
-    # => [is_fungible_asset, ASSET_VALUE]
-
-    if.true
-        exec.build_fungible_asset_vault_key
-        # => [ASSET_KEY, ASSET_VALUE]
-    else
-        dupw exec.build_non_fungible_asset_vault_key
-        # => [ASSET_KEY, ASSET_VALUE]
     end
 end

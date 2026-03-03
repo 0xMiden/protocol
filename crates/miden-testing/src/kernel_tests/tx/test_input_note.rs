@@ -259,8 +259,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
                     add.{ASSET_SIZE}
                     # => [dest_ptr+ASSET_SIZE, note_index]
                 "#,
-                NOTE_ASSET_KEY = asset.vault_key().as_word(),
-                NOTE_ASSET_VALUE = Word::from(*asset),
+                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
             ));

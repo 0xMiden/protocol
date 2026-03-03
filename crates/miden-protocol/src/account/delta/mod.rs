@@ -190,22 +190,23 @@ impl AccountDelta {
     /// [`LexicographicWord`](crate::LexicographicWord). The WORD layout is in memory-order.
     ///
     /// - Append `[[nonce_delta, 0, account_id_suffix, account_id_prefix], EMPTY_WORD]`, where
-    ///   account_id_{prefix,suffix} are the prefix and suffix felts of the native account id and
-    ///   nonce_delta is the value by which the nonce was incremented.
+    ///   `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account id and
+    ///   `nonce_delta` is the value by which the nonce was incremented.
     /// - Fungible Asset Delta
     ///   - For each **updated** fungible asset, sorted by its vault key, whose amount delta is
     ///     **non-zero**:
-    ///     - Append `[domain = 1, was_added, 0, 0]`.
-    ///     - Append `[amount, 0, faucet_id_suffix, faucet_id_prefix]` where amount is the delta by
-    ///       which the fungible asset's amount has changed and was_added is a boolean flag
-    ///       indicating whether the amount was added (1) or subtracted (0).
+    ///     - Append `[domain = 1, was_added, faucet_id_suffix, faucet_id_prefix]`.
+    ///     - Append `[amount_delta, 0, 0, 0]` where `amount_delta` is the delta by which the
+    ///       fungible asset's amount has changed and `was_added` is a boolean flag indicating
+    ///       whether the amount was added (1) or subtracted (0).
     /// - Non-Fungible Asset Delta
     ///   - For each **updated** non-fungible asset, sorted by its vault key:
-    ///     - Append `[domain = 1, was_added, 0, 0]` where was_added is a boolean flag indicating
-    ///       whether the asset was added (1) or removed (0). Note that the domain is the same for
-    ///       assets since `faucet_id_prefix` is at the same position in the layout for both assets,
-    ///       and, by design, it is never the same for fungible and non-fungible assets.
-    ///     - Append `[hash0, hash1, hash2, faucet_id_prefix]`, i.e. the non-fungible asset.
+    ///     - Append `[domain = 1, was_added, faucet_id_suffix, faucet_id_prefix]` where `was_added`
+    ///       is a boolean flag indicating whether the asset was added (1) or removed (0). Note that
+    ///       the domain is the same for assets since `faucet_id_suffix` and `faucet_id_prefix` are
+    ///       at the same position in the layout for both assets, and, by design, they are never the
+    ///       same for fungible and non-fungible assets.
+    ///     - Append `[hash0, hash1, hash2, hash3]`, i.e. the non-fungible asset.
     /// - Storage Slots are sorted by slot ID and are iterated in this order. For each slot **whose
     ///   value has changed**, depending on the slot type:
     ///   - Value Slot
@@ -269,7 +270,7 @@ impl AccountDelta {
     /// [
     ///   ID_AND_NONCE, EMPTY_WORD,
     ///   [/* no fungible asset delta */],
-    ///   [[domain = 1, was_added = 0, 0, 0], NON_FUNGIBLE_ASSET],
+    ///   [[domain = 1, was_added = 0, faucet_id_suffix, faucet_id_prefix], NON_FUNGIBLE_ASSET],
     ///   [/* no storage delta */]
     /// ]
     /// ```
@@ -279,14 +280,15 @@ impl AccountDelta {
     ///   ID_AND_NONCE, EMPTY_WORD,
     ///   [/* no fungible asset delta */],
     ///   [/* no non-fungible asset delta */],
-    ///   [[domain = 2, 0, slot_id_suffix = 0, slot_id_prefix = 0], NEW_VALUE]
+    ///   [[domain = 2, 0, slot_id_suffix = faucet_id_suffix, slot_id_prefix = faucet_id_prefix], NEW_VALUE]
     /// ]
     /// ```
     ///
-    /// `NEW_VALUE` is user-controllable so it can be crafted to match `NON_FUNGIBLE_ASSET`. The
-    /// domain separator is then the only value that differentiates these two deltas. This shows the
-    /// importance of placing the domain separators in the same index within each word's layout
-    /// which makes it easy to see that this value cannot be crafted to be the same.
+    /// `NEW_VALUE` is user-controllable so it can be crafted to match `NON_FUNGIBLE_ASSET`. Users
+    /// would have to choose a slot ID (at account creation time) that is equal to the faucet ID.
+    /// The domain separator is then the only value that differentiates these two deltas. This shows
+    /// the importance of placing the domain separators in the same index within each word's layout
+    /// to ensure users cannot craft an ambiguous delta.
     ///
     /// ### Number of Changed Entries
     ///
@@ -699,8 +701,7 @@ mod tests {
                 AccountIdBuilder::new()
                     .account_type(AccountType::NonFungibleFaucet)
                     .storage_mode(AccountStorageMode::Public)
-                    .build_with_rng(&mut rand::rng())
-                    .prefix(),
+                    .build_with_rng(&mut rand::rng()),
                 vec![6],
             )
             .unwrap(),

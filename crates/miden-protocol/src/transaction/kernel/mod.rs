@@ -221,12 +221,16 @@ impl TransactionKernel {
     ) -> StackOutputs {
         let account_update_commitment =
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
-        let mut outputs: Vec<Felt> = Vec::with_capacity(9);
+
+        let mut outputs: Vec<Felt> = Vec::with_capacity(12);
         outputs.push(Felt::from(expiration_block_num));
-        outputs.extend(Word::from(fee));
+        outputs.push(Felt::try_from(fee.amount()).expect("amount should fit into felt"));
+        outputs.push(fee.faucet_id().suffix());
+        outputs.push(fee.faucet_id().prefix().as_felt());
         outputs.extend(account_update_commitment);
         outputs.extend(output_notes_commitment);
         outputs.reverse();
+
         StackOutputs::new(outputs)
             .map_err(|e| e.to_string())
             .expect("Invalid stack output")
@@ -270,13 +274,19 @@ impl TransactionKernel {
             .get_stack_word_be(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX * 4)
             .expect("account_update_commitment (second word) missing");
 
-        let fee = stack
-            .get_stack_word_be(TransactionOutputs::FEE_ASSET_WORD_IDX * 4)
-            .expect("fee_asset (third word) missing");
+        let native_asset_id_prefix = stack
+            .get_stack_item(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX)
+            .expect("native_asset_id_prefix missing");
+        let native_asset_id_suffix = stack
+            .get_stack_item(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX)
+            .expect("native_asset_id_suffix missing");
+        let fee_amount = stack
+            .get_stack_item(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
+            .expect("fee_amount missing");
 
         let expiration_block_num = stack
             .get_stack_item(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .expect("tx_expiration_block_num (element on index 12) missing");
+            .expect("tx_expiration_block_num missing");
 
         let expiration_block_num = u32::try_from(expiration_block_num.as_int())
             .map_err(|_| {
@@ -296,7 +306,9 @@ impl TransactionKernel {
             ));
         }
 
-        let fee = FungibleAsset::try_from(fee)
+        let native_asset_id = AccountId::try_from([native_asset_id_prefix, native_asset_id_suffix])
+            .expect("native asset ID should be validated by the tx kernel");
+        let fee = FungibleAsset::new(native_asset_id, fee_amount.as_int())
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
         Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))

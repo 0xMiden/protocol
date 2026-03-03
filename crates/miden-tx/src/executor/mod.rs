@@ -274,7 +274,7 @@ where
 
         let native_account_vault_root = account.vault().root();
         let fee_asset_vault_key =
-            AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
 
         let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
@@ -339,7 +339,7 @@ where
         let initial_fee_asset_balance = {
             let vault_root = tx_inputs.account().vault().root();
             let native_asset_id = tx_inputs.block_header().fee_parameters().native_asset_id();
-            let fee_asset_vault_key = AssetVaultKey::from_account_id(native_asset_id)
+            let fee_asset_vault_key = AssetVaultKey::new_fungible(native_asset_id)
                 .expect("fee asset should be a fungible asset");
 
             let fee_asset = tx_inputs
