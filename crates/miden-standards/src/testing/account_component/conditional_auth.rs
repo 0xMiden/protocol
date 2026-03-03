@@ -15,6 +15,7 @@ static CONDITIONAL_AUTH_CODE: LazyLock<String> = LazyLock::new(|| {
 
         const WRONG_ARGS="{ERR_WRONG_ARGS_MSG}"
 
+        @auth_script
         pub proc auth_conditional
             # => [AUTH_ARGS]
 

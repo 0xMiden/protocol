@@ -1599,6 +1599,7 @@ async fn incrementing_nonce_twice_fails() -> anyhow::Result<()> {
     let source_code = "
         use miden::protocol::native_account
 
+        @auth_script
         pub proc auth_incr_nonce_twice
             exec.native_account::incr_nonce drop
             exec.native_account::incr_nonce drop
