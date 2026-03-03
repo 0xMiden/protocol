@@ -89,6 +89,16 @@ impl FungibleAsset {
             .expect("faucet ID should be of type fungible")
     }
 
+    /// Returns the asset's key encoded to a [`Word`].
+    pub fn to_key_word(&self) -> Word {
+        *self.vault_key().as_word()
+    }
+
+    /// Returns the asset's value encoded to a [`Word`].
+    pub fn to_value_word(&self) -> Word {
+        Word::from(*self)
+    }
+
     // OPERATIONS
     // --------------------------------------------------------------------------------------------
 

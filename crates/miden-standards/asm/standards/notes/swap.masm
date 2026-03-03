@@ -1,10 +1,12 @@
 use miden::protocol::active_note
 use miden::protocol::output_note
 use miden::standards::wallets::basic->wallet
+use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const SWAP_NOTE_NUM_STORAGE_ITEMS=16
 
 const PAYBACK_NOTE_TYPE_ADDRESS=0
@@ -110,18 +112,18 @@ pub proc main
     # --- move assets from the SWAP note into the account -------------------------
 
     # store the number of note assets to memory starting at address 0
-    push.0 exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, ptr, pad(12)]
 
     # make sure the number of assets is 1
     assert.err=ERR_SWAP_WRONG_NUMBER_OF_ASSETS
     # => [ptr, pad(12)]
 
-    # load the ASSET
-    mem_loadw_be
-    # => [ASSET, pad(12)]
+    # load asset value from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    # => [ASSET_VALUE, pad(12)]
 
-    # add the ASSET to the account
+    # add the asset to the account
     call.wallet::receive_asset
     # => [pad(16)]
 

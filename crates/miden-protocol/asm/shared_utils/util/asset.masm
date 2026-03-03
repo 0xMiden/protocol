@@ -6,6 +6,12 @@
 # This is 2^63 - 2^31. See account_delta.masm for more details.
 pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
 
+# The number of elements in an asset, i.e. vault key and value.
+pub const ASSET_SIZE = 8
+
+# The offset of the asset value in an asset stored in memory.
+pub const ASSET_VALUE_MEMORY_OFFSET = 4
+
 # PROCEDURES
 # =================================================================================================
 

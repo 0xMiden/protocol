@@ -4,10 +4,12 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
 # ERRORS
@@ -179,22 +181,23 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
 
     # this will fail if not called from a note context.
-    push.0 exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
 
     # Verify we have exactly one asset
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    mem_loadw_be
-    # => [ASSET, pad(16)]
+    # load asset value from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
+    push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    # => [ASSET_VALUE, pad(16)]
     # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
     dup.3 movdn.4
-    # => [ASSET, amount, pad(16)]
+    # => [ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are

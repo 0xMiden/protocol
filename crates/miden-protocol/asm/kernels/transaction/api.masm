@@ -1,3 +1,5 @@
+use $kernel::asset
+use $kernel::asset_vault
 use $kernel::account
 use $kernel::account_delta
 use $kernel::account_id
@@ -551,15 +553,15 @@ end
 
 #! Adds the specified asset to the vault.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET', pad(12)]
+#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Outputs: [ASSET_VALUE', pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset to add to the vault.
-#! - ASSET' final asset in the account vault defined as follows:
-#!   - If ASSET is a non-fungible asset, then ASSET' is the same as ASSET.
-#!   - If ASSET is a fungible asset, then ASSET' is the total fungible asset in the account vault
-#!     after ASSET was added to it.
+#! - ASSET_VALUE is the value of the asset to add to the vault.
+#! - ASSET_VALUE' final asset in the account vault defined as follows:
+#!   - If ASSET_VALUE is a non-fungible asset, then ASSET_VALUE' is the same as ASSET_VALUE.
+#!   - If ASSET_VALUE is a fungible asset, then ASSET_VALUE' is the total fungible asset in the account vault
+#!     after ASSET_VALUE was added to it.
 #!
 #! Panics if:
 #! - the asset is not valid.
@@ -572,24 +574,26 @@ end
 pub proc account_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # add the specified asset to the account vault, emitting the corresponding events
+    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
+    exec.asset_vault::build_asset_vault_key
     exec.account::add_asset_to_vault
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 end
 
 #! Removes the specified asset from the vault.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset to remove from the vault.
+#! - ASSET_VALUE is the value of the asset to remove from the vault.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -601,50 +605,52 @@ end
 pub proc account_remove_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # remove the specified asset from the account vault, emitting the corresponding events
+    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
+    exec.asset_vault::build_asset_vault_key
     exec.account::remove_asset_from_vault
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
-#! Returns the ASSET associated with the provided asset vault key in the active account's vault.
+#! Returns the asset associated with the provided asset vault key in the active account's vault.
 #!
 #! Inputs:  [ASSET_KEY, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
 pub proc account_get_asset
     # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
 
     exec.account::get_asset
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
-#! Returns the ASSET associated with the provided asset vault key in the active account's vault at
+#! Returns the asset associated with the provided asset vault key in the active account's vault at
 #! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_KEY, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't present.
 #!
 #! Invocation: dynexec
 pub proc account_get_initial_asset
     # TODO(expand_assets): Validate ASSET_KEY once validation logic exists.
 
     exec.account::get_initial_asset
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
 #! Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.
@@ -737,11 +743,14 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Outputs: [NEW_ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset that was minted.
+#! - ASSET_VALUE is the value of the asset that was minted.
+#! - NEW_ASSET_VALUE is:
+#!   - For fungible assets: the ASSET_VALUE merged with the existing vault asset value, if any.
+#!   - For non-fungible assets: identical to ASSET_VALUE.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -758,24 +767,26 @@ end
 pub proc faucet_mint_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # mint the asset
+    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
+    exec.asset_vault::build_asset_vault_key
     exec.faucet::mint
-    # => [ASSET, pad(12)]
+    # => [NEW_ASSET_VALUE, pad(12)]
 end
 
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET, pad(12)]
-#! Outputs: [ASSET, pad(12)]
+#! Inputs:  [ASSET_VALUE, pad(12)]
+#! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Where:
-#! - ASSET is the asset that was burned.
+#! - ASSET_VALUE is the value of the asset that was burned.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -793,15 +804,17 @@ end
 pub proc faucet_burn_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # authenticate that the procedure invocation originates from the account context
     exec.authenticate_account_origin
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # burn the asset
+    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
+    exec.asset_vault::build_asset_vault_key
     exec.faucet::burn
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 end
 
 # INPUT NOTE
@@ -1080,14 +1093,14 @@ pub proc output_note_create
     # => [note_idx, pad(15)]
 end
 
-#! Adds the ASSET to the note specified by the index.
+#! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [note_idx, ASSET, pad(11)]
+#! Inputs:  [note_idx, ASSET_VALUE, pad(11)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
-#! - ASSET can be a fungible or non-fungible asset.
+#! - ASSET_VALUE can be a fungible or non-fungible asset.
 #!
 #! Panics if:
 #! - the procedure is called when the active account is not the native one.
@@ -1096,8 +1109,10 @@ end
 pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
-    # => [note_idx, ASSET, pad(11)]
+    # => [note_idx, ASSET_VALUE, pad(11)]
 
+    # TODO(expand_assets): Derive the asset key from the asset for temporary compatibility.
+    movdn.4 exec.asset_vault::build_asset_vault_key movup.8
     exec.output_note::add_asset
     # => [pad(16)]
 end

@@ -7,6 +7,7 @@ use crate::Word;
 use crate::account::AccountType::FungibleFaucet;
 use crate::account::{AccountId, AccountIdPrefix};
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use crate::errors::AssetError;
 
 /// The key of an [`Asset`] in the asset vault.
 ///
@@ -101,6 +102,23 @@ impl fmt::Display for AssetVaultKey {
 
 // CONVERSIONS
 // ================================================================================================
+
+impl TryFrom<Word> for AssetVaultKey {
+    type Error = AssetError;
+
+    /// Attempts to convert the provided [`Word`] into an [`AssetVaultKey`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - TODO(expand_assets)
+    fn try_from(key: Word) -> Result<Self, Self::Error> {
+        // TODO(expand_assets): Implement validation once the new structure of the asset vault
+        // key is defined.
+
+        Ok(Self::new_unchecked(key))
+    }
+}
 
 impl From<AssetVaultKey> for Word {
     fn from(vault_key: AssetVaultKey) -> Self {

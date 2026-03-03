@@ -4,6 +4,8 @@ use miden::protocol::account_id
 # =================================================================================================
 
 pub use ::miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use ::miden::protocol::util::asset::ASSET_SIZE
+pub use ::miden::protocol::util::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # ERRORS
 # =================================================================================================

@@ -54,7 +54,10 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #!   INPUT_NOTES_COMMITMENT,
 #!   account_id_prefix, account_id_suffix, block_num, pad(1)
 #! ]
-#! Outputs: [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(3)]
+#! Outputs: [
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+#!   FEE_ASSET_VALUE, tx_expiration_block_num, pad(3)
+#! ]
 #!
 #! Where:
 #! - BLOCK_COMMITMENT is the reference block for the transaction execution.
@@ -65,7 +68,7 @@ const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   delta commitment.
-#! - FEE_ASSET is the fungible asset used as the transaction fee.
+#! - FEE_ASSET_VALUE is the fungible asset used as the transaction fee.
 @locals(1)
 proc main
     # Prologue
@@ -167,11 +170,11 @@ proc main
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num, pad(16)]
 
     # truncate the stack to contain 16 elements in total
     repeat.13 movup.13 drop end
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(3)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num, pad(3)]
 
     emit.EPILOGUE_END_EVENT
 end

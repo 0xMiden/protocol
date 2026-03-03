@@ -681,6 +681,7 @@ pub use psm::update_psm_public_key
 #! - the same transaction has already been executed (replay protection).
 #!
 #! Invocation: call
+@auth_script
 @locals(1)
 pub proc auth_tx_multisig(salt: BeWord)
     exec.native_account::incr_nonce drop

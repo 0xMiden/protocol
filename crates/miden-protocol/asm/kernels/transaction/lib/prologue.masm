@@ -4,16 +4,16 @@ use miden::core::crypto::hashes::rpo256
 use miden::core::word
 
 use $kernel::account
-use $kernel::account_delta
 use $kernel::account_id
 use $kernel::asset_vault
+use $kernel::asset::ASSET_SIZE
+use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
+use $kernel::asset::load_asset_key_and_value
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::MAX_INPUT_NOTES_PER_TX
 use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
 use $kernel::constants::NOTE_TREE_DEPTH
-use $kernel::constants::STORAGE_SLOT_TYPE_MAP
-use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
 
 # CONSTS
@@ -628,83 +628,51 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [assets_count, ASSET_0, ..., ASSET_N]
+#!   Advice stack: [num_assets, ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N]
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - assets_count is the note's assets count.
-#! - ASSET_0, ..., ASSET_N are the padded note's assets.
+#! - num_assets is the number of note assets.
+#! - ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N are the note's assets.
 proc process_note_assets
-    # verify and save the assets count
+    # Validate num_assets and setup commitment computation.
     # ---------------------------------------------------------------------------------------------
 
     adv_push.1
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
-    dup push.MAX_ASSETS_PER_NOTE lte
+    dup lte.MAX_ASSETS_PER_NOTE
     assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
     dup dup.2 exec.memory::set_input_note_num_assets
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
-    # round up the number of assets, to the its padded length
-    dup u32and.1 add
-    # => [rounded_num_assets, note_ptr]
+    dup.1 exec.memory::get_input_note_assets_ptr swap
+    # => [num_assets, assets_ptr, note_ptr]
 
-    # read the note's assets
+    mul.ASSET_SIZE dup.1 add swap
+    # => [assets_ptr, assets_end_ptr, note_ptr]
+
+    exec.rpo256::init_no_padding
+    # => [PERM, PERM, PERM, assets_ptr, assets_end_ptr, note_ptr]
+
+    # Compute assets commitment and validate.
     # ---------------------------------------------------------------------------------------------
 
-    # Stack organization:
-    # - Top of the stack contains the hash state. The complete state is needed to extract the final
-    #   hash.
-    # - Followed by the assets_ptr, with the target address used to pipe data from the advice
-    #   provider.
-    # - Followed by a copy of the note_ptr for later use.
-    # - Followed by the loop variables, the current counter and rounded_num_assets, laid at this
-    #   depth because dup.15 is an efficient operation.
-
-    push.0 movup.2
-    # => [note_ptr, counter, rounded_num_assets]
-
-    dup exec.memory::get_input_note_assets_ptr
-    # => [assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    padw padw padw
-    # => [PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop condition: counter != rounded_num_assets
-    dup.15 dup.15 neq
-    # => [should_loop, PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop and read assets from the advice provider
-    while.true
-        # read data and compute its digest. See `Advice stack` above for details.
-        adv_pipe exec.rpo256::permute
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter, rounded_num_assets]
-
-        # update counter
-        swapw.3 movup.2 add.2 movdn.2 swapw.3
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-
-        # loop condition: counter != rounded_num_assets
-        dup.15 dup.15 neq
-        # => [should_loop, PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-    end
-    # => [PERM, PERM, PERM, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
-
+    exec.mem::pipe_double_words_to_memory
     exec.rpo256::squeeze_digest
-    # => [ASSET_COMMITMENT_COMPUTED, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
+    # => [COMPUTED_ASSETS_COMMITMENT, assets_ptr, note_ptr]
 
-    swapw drop movdn.2 drop drop
-    # => [note_ptr, ASSET_COMMITMENT_COMPUTED]
-
-    # VERIFY: computed ASSET_COMMITMENT matches the provided hash
-    exec.memory::get_input_note_assets_commitment
+    # assert COMPUTED_ASSETS_COMMITMENT matches the provided commitment
+    movup.6 exec.memory::get_input_note_assets_commitment
     assert_eqw.err=ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT
+    # => [assets_ptr]
+
+    drop
     # => []
 end
 
@@ -725,7 +693,7 @@ proc add_input_note_assets_to_vault
     dup.1 exec.memory::get_input_note_assets_ptr
     # => [assets_start_ptr, input_vault_root_ptr, note_ptr]
 
-    dup movup.3 exec.memory::get_input_note_num_assets mul.4 add swap
+    dup movup.3 exec.memory::get_input_note_num_assets mul.ASSET_SIZE add swap
     # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
     # add input note's assets to input vault
@@ -739,20 +707,21 @@ proc add_input_note_assets_to_vault
         dup.2
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        padw dup.5 mem_loadw_be
-        # => [ASSET, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        # load asset key and value
+        dup.1 exec.load_asset_key_and_value
+        # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
         exec.asset_vault::add_asset dropw
         # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        add.4
-        # => [assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        add.ASSET_SIZE
+        # => [assets_start_ptr+ASSET_SIZE, assets_end_ptr, input_vault_root_ptr]
 
         # loop condition: assets_start_ptr != assets_end_ptr
         dup.1 dup.1 neq
-        # => [should_loop, assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        # => [should_loop, assets_start_ptr+ASSET_SIZE, assets_end_ptr, input_vault_root_ptr]
     end
 
     drop drop drop
@@ -806,7 +775,7 @@ end
 #!      NOTE_ARGS,
 #!      NOTE_METADATA_HEADER,
 #!      NOTE_ATTACHMENT,
-#!      assets_count,
+#!      num_assets,
 #!      ASSET_0, ..., ASSET_N,
 #!      is_authenticated,
 #!      (
@@ -830,7 +799,7 @@ end
 #! - NOTE_METADATA_HEADER is the note's metadata header.
 #! - NOTE_ATTACHMENT is the note's attachment.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - assets_count is the note's assets count.
+#! - num_assets is the number of note assets.
 #! - ASSET_0, ..., ASSET_N are the padded note's assets.
 #! - is_authenticated is the boolean indicating if the note contains an authentication proof.
 #! - optional values, required if `is_authenticated` is true:

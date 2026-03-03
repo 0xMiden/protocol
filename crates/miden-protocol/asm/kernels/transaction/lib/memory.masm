@@ -2043,6 +2043,24 @@ pub proc set_output_note_num_assets
     mem_store
 end
 
+#! Increments the number of assets in the output note by 1.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#!
+#! Panics if:
+#! - the number of assets exceeds the maximum allowed number of assets per note.
+pub proc increment_output_note_num_assets
+    dup exec.get_output_note_num_assets add.1
+    # => [num_assets + 1, note_ptr]
+
+    swap exec.set_output_note_num_assets
+    # => []
+end
+
 #! Returns the dirty flag for the assets commitment.
 #!
 #! This binary flag specifies whether the assets commitment stored in the specified note is

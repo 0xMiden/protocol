@@ -14,14 +14,17 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::FungibleAsset;
+use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
+use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::{
     ACCT_DB_ROOT_PTR,
+    ASSET_SIZE,
+    ASSET_VALUE_OFFSET,
     BLOCK_COMMITMENT_PTR,
     BLOCK_METADATA_PTR,
     BLOCK_NUMBER_IDX,
@@ -109,7 +112,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
         );
         let input_note_2 = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
-            [FungibleAsset::mock(100)],
+            [FungibleAsset::mock(100), NonFungibleAsset::mock(&[1, 2, 3])],
         );
         let input_note_3 = create_public_p2any_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -136,16 +139,15 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
 
     let tx_script = CodeBuilder::default().compile_tx_script(mock_tx_script_code).unwrap();
 
-    let note_args = [Word::from([91u32; 4]), Word::from([92u32; 4])];
-
+    // Input note 2 does not have any note args.
     let note_args_map = BTreeMap::from([
-        (tx_context.input_notes().get_note(0).note().id(), note_args[0]),
-        (tx_context.input_notes().get_note(1).note().id(), note_args[1]),
+        (tx_context.input_notes().get_note(0).note().id(), Word::from([91u32; 4])),
+        (tx_context.input_notes().get_note(1).note().id(), Word::from([92u32; 4])),
     ]);
 
     let tx_args = TransactionArgs::new(tx_context.tx_args().advice_inputs().clone().map)
         .with_tx_script(tx_script)
-        .with_note_args(note_args_map);
+        .with_note_args(note_args_map.clone());
 
     tx_context.set_tx_args(tx_args);
     let exec_output = &tx_context.execute_code(code).await?;
@@ -155,7 +157,7 @@ async fn test_transaction_prologue() -> anyhow::Result<()> {
     partial_blockchain_memory_assertions(exec_output, &tx_context);
     kernel_data_memory_assertions(exec_output);
     account_data_memory_assertions(exec_output, &tx_context);
-    input_notes_memory_assertions(exec_output, &tx_context, &note_args);
+    input_notes_memory_assertions(exec_output, &tx_context, &note_args_map);
 
     Ok(())
 }
@@ -439,7 +441,7 @@ fn account_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transa
 fn input_notes_memory_assertions(
     exec_output: &ExecutionOutput,
     inputs: &TransactionContext,
-    note_args: &[Word],
+    note_args: &BTreeMap<NoteId, Word>,
 ) {
     assert_eq!(
         exec_output.get_kernel_mem_word(INPUT_NOTE_SECTION_PTR),
@@ -508,7 +510,7 @@ fn input_notes_memory_assertions(
 
         assert_eq!(
             exec_output.get_note_mem_word(note_idx, INPUT_NOTE_ARGS_OFFSET),
-            note_args[note_idx as usize],
+            note_args.get(&input_note.id()).copied().unwrap_or_default(),
             "note args should be stored at the correct offset"
         );
 
@@ -519,14 +521,22 @@ fn input_notes_memory_assertions(
         );
 
         for (asset, asset_idx) in note.assets().iter().cloned().zip(0_u32..) {
-            let word: Word = asset.into();
+            let asset_key: Word = *asset.vault_key().as_word();
+            let asset_value: Word = asset.into();
+
+            let asset_key_addr = INPUT_NOTE_ASSETS_OFFSET + asset_idx * ASSET_SIZE;
+            let asset_value_addr = asset_key_addr + ASSET_VALUE_OFFSET;
+
             assert_eq!(
-                exec_output.get_note_mem_word(
-                    note_idx,
-                    INPUT_NOTE_ASSETS_OFFSET + asset_idx * WORD_SIZE as u32
-                ),
-                word,
-                "assets should be stored at (INPUT_NOTES_DATA_OFFSET + note_index * 2048 + 32 + asset_idx * 4)"
+                exec_output.get_note_mem_word(note_idx, asset_key_addr),
+                asset_key,
+                "asset key should be stored at the correct offset"
+            );
+
+            assert_eq!(
+                exec_output.get_note_mem_word(note_idx, asset_value_addr),
+                asset_value,
+                "asset value should be stored at the correct offset"
             );
         }
     }

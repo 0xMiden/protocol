@@ -14,7 +14,7 @@ pub const MAX_ASSETS_PER_NOTE = 256
 pub const MAX_INPUT_NOTES_PER_TX = 1024
 
 # The size of the memory segment allocated to each note.
-pub const NOTE_MEM_SIZE = 2048
+pub const NOTE_MEM_SIZE = 3072
 
 # The depth of the Merkle tree used to commit to notes produced in a block.
 pub const NOTE_TREE_DEPTH = 16

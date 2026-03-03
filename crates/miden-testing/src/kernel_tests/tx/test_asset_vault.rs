@@ -7,7 +7,6 @@ use miden_protocol::asset::{
     NonFungibleAsset,
     NonFungibleAssetDetails,
 };
-use miden_protocol::errors::AssetVaultError;
 use miden_protocol::errors::protocol::ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET;
 use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
@@ -15,8 +14,10 @@ use miden_protocol::errors::tx_kernel::{
     ERR_VAULT_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
+use miden_protocol::errors::{AssetError, AssetVaultError};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET_1,
 };
@@ -24,6 +25,7 @@ use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASS
 use miden_protocol::transaction::memory;
 use miden_protocol::{Felt, ONE, Word, ZERO};
 
+use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::{TransactionContextBuilder, assert_execution_error};
 
@@ -539,6 +541,101 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
     assert_eq!(
         exec_output.get_kernel_mem_word(memory::NATIVE_ACCT_VAULT_ROOT_PTR),
         account_vault.root()
+    );
+
+    Ok(())
+}
+
+/// Tests that adding two fungible assets results in the expected value.
+#[tokio::test]
+async fn test_merge_fungible_asset_success() -> anyhow::Result<()> {
+    let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
+    let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT - FUNGIBLE_ASSET_AMOUNT);
+    let merged_asset = asset0.unwrap_fungible().add(asset1.unwrap_fungible())?;
+
+    // Check merging is commutative by checking asset0 + asset1 = asset1 + asset0.
+    for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
+        let code = format!(
+            "
+        use $kernel::fungible_asset
+
+        begin
+            push.{ASSETA}
+            push.{ASSETB}
+            exec.fungible_asset::merge
+            # => [MERGED_ASSET]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+            ASSETA = asset_a.to_value_word(),
+            ASSETB = asset_b.to_value_word(),
+        );
+
+        let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+        assert_eq!(exec_output.get_stack_word_be(0), merged_asset.to_value_word());
+    }
+
+    Ok(())
+}
+
+/// Tests that adding two fungible assets fails when the added amounts exceed
+/// [`FungibleAsset::MAX_AMOUNT`].
+#[tokio::test]
+async fn test_merge_fungible_asset_fails_when_max_amount_exceeded() -> anyhow::Result<()> {
+    let asset0 = FungibleAsset::mock(FUNGIBLE_ASSET_AMOUNT);
+    let asset1 = FungibleAsset::mock(FungibleAsset::MAX_AMOUNT + 1 - FUNGIBLE_ASSET_AMOUNT);
+
+    // Check merging fails for both asset0 + asset1 and asset1 + asset0.
+    for (asset_a, asset_b) in [(asset0, asset1), (asset1, asset0)] {
+        // Sanity check that the Rust implementation errors.
+        assert_matches!(
+            asset_a.unwrap_fungible().add(asset_b.unwrap_fungible()).unwrap_err(),
+            AssetError::FungibleAssetAmountTooBig(_)
+        );
+
+        let code = format!(
+            "
+        use $kernel::fungible_asset
+
+        begin
+            push.{ASSETA}
+            push.{ASSETB}
+            exec.fungible_asset::merge
+            # => [MERGED_ASSET]
+
+            # truncate the stack
+            swapw dropw
+        end
+        ",
+            ASSETA = asset_a.to_value_word(),
+            ASSETB = asset_b.to_value_word(),
+        );
+
+        let exec_output = CodeExecutor::with_default_host().run(&code).await;
+
+        assert_execution_error!(exec_output, ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED);
+    }
+
+    Ok(())
+}
+
+/// Tests that merging two different fungible assets fails.
+#[tokio::test]
+async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {
+    // Create two fungible assets from different faucets
+    let faucet_id1: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet_id2: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into().unwrap();
+
+    let asset0 = FungibleAsset::new(faucet_id1, FUNGIBLE_ASSET_AMOUNT)?;
+    let asset1 = FungibleAsset::new(faucet_id2, FUNGIBLE_ASSET_AMOUNT)?;
+
+    // Sanity check that the Rust implementation errors when adding assets from different faucets.
+    assert_matches!(
+        asset0.add(asset1).unwrap_err(),
+        AssetError::FungibleAssetInconsistentFaucetIds { .. }
     );
 
     Ok(())

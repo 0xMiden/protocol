@@ -199,28 +199,24 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET, account_vault_root_ptr]
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "on_account_vault_before_add_or_remove_asset",
-                        source,
-                    }
-                })?;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, account_vault_root_ptr]
+                let asset_vault_key = process.get_stack_word_be(1);
+                let vault_root_ptr = process.get_stack_item(9);
 
-                let vault_root_ptr = process.get_stack_item(5);
+                let asset_vault_key =
+                    AssetVaultKey::try_from(asset_vault_key).expect("TODO(expand_assets)");
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
 
                 on_account_vault_asset_accessed(
                     base_host,
                     process,
-                    asset.vault_key(),
+                    asset_vault_key,
                     current_vault_root,
                 )?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
-                // Expected stack state: [event, ASSET]
-                let asset: Asset = process.get_stack_word_be(1).try_into().map_err(|source| {
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+                let asset: Asset = process.get_stack_word_be(5).try_into().map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_account_vault_after_remove_asset",
                         source,
@@ -230,8 +226,9 @@ impl TransactionEvent {
                 Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset })
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
-                // Expected stack state: [event, ASSET]
-                let asset: Asset = process.get_stack_word_be(1).try_into().map_err(|source| {
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+
+                let asset: Asset = process.get_stack_word_be(5).try_into().map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_account_vault_after_add_asset",
                         source,
@@ -246,8 +243,7 @@ impl TransactionEvent {
                 let asset_key = process.get_stack_word_be(1);
                 let vault_root_ptr = process.get_stack_item(5);
 
-                // TODO(expand_assets): Consider whether validation is necessary.
-                let asset_key = AssetVaultKey::new_unchecked(asset_key);
+                let asset_key = AssetVaultKey::try_from(asset_key).expect("TODO(expand_assets)");
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
                 on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
@@ -390,16 +386,17 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET, note_ptr, num_of_assets, note_idx]
-                let note_idx = process.get_stack_item(7).as_int() as usize;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_ptr]
+                let asset_value = process.get_stack_word_be(5);
+                let note_ptr = process.get_stack_item(9);
 
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
+                let asset = Asset::try_from(asset_value).map_err(|source| {
                     TransactionKernelError::MalformedAssetInEventHandler {
                         handler: "on_note_before_add_asset",
                         source,
                     }
                 })?;
+                let note_idx = note_ptr_to_idx(note_ptr)? as usize;
 
                 Some(TransactionEvent::NoteBeforeAddAsset { note_idx, asset })
             },
@@ -453,9 +450,11 @@ impl TransactionEvent {
             },
 
             TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
-                // Expected stack state: [event, FEE_ASSET]
-                let fee_asset = process.get_stack_word_be(1);
-                let fee_asset = FungibleAsset::try_from(fee_asset)
+                // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
+
+                let fee_asset_value = process.get_stack_word_be(5);
+
+                let fee_asset = FungibleAsset::try_from(fee_asset_value)
                     .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
 
                 Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })

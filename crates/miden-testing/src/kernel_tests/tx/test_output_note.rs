@@ -34,11 +34,14 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::NON_FUNGIBLE_ASSET_DATA_2;
 use miden_protocol::transaction::memory::{
+    ASSET_SIZE,
+    ASSET_VALUE_OFFSET,
     NOTE_MEM_SIZE,
     NUM_OUTPUT_NOTES_PTR,
     OUTPUT_NOTE_ASSETS_OFFSET,
     OUTPUT_NOTE_ATTACHMENT_OFFSET,
     OUTPUT_NOTE_METADATA_HEADER_OFFSET,
+    OUTPUT_NOTE_NUM_ASSETS_OFFSET,
     OUTPUT_NOTE_RECIPIENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
@@ -395,7 +398,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_id);
-    let asset = Word::from(FungibleAsset::new(faucet_id, 10)?);
+    let asset = FungibleAsset::new(faucet_id, 10)?;
 
     let code = format!(
         "
@@ -417,8 +420,8 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             dup assertz.err=\"index of the created note should be zero\"
             # => [note_idx]
 
-            push.{asset}
-            # => [ASSET, note_idx]
+            push.{ASSET_VALUE}
+            # => [ASSET_VALUE, note_idx]
 
             call.output_note::add_asset
             # => []
@@ -430,15 +433,20 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        asset = asset,
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset,
-        "asset must be stored at the correct memory location",
+        asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 4),
+        asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     Ok(())
@@ -454,13 +462,12 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_2);
 
-    let asset = Word::from(FungibleAsset::new(faucet, 10)?);
-    let asset_2 = Word::from(FungibleAsset::new(faucet_2, 20)?);
-    let asset_3 = Word::from(FungibleAsset::new(faucet_2, 30)?);
-    let asset_2_and_3 = Word::from(FungibleAsset::new(faucet_2, 50)?);
+    let asset = FungibleAsset::new(faucet, 10)?;
+    let asset_2 = FungibleAsset::new(faucet_2, 20)?;
+    let asset_3 = FungibleAsset::new(faucet_2, 30)?;
+    let asset_2_plus_3 = FungibleAsset::new(faucet_2, 50)?;
 
     let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
-    let non_fungible_asset_encoded = Word::from(non_fungible_asset);
 
     let code = format!(
         "
@@ -481,19 +488,19 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             # => [note_idx]
 
             dup push.{asset}
-            call.output_note::add_asset
+            exec.output_note::add_asset
             # => [note_idx]
 
             dup push.{asset_2}
-            call.output_note::add_asset
+            exec.output_note::add_asset
             # => [note_idx]
 
             dup push.{asset_3}
-            call.output_note::add_asset
+            exec.output_note::add_asset
             # => [note_idx]
 
             push.{nft}
-            call.output_note::add_asset
+            exec.output_note::add_asset
             # => []
 
             # truncate the stack
@@ -503,30 +510,69 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        asset = asset,
-        asset_2 = asset_2,
-        asset_3 = asset_3,
-        nft = non_fungible_asset_encoded,
+        asset = asset.to_value_word(),
+        asset_2 = asset_2.to_value_word(),
+        asset_3 = asset_3.to_value_word(),
+        nft = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
+        exec_output
+            .get_kernel_mem_element(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_NUM_ASSETS_OFFSET)
+            .as_int(),
+        3,
+        "unexpected number of assets in output note",
+    );
+
+    assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset,
-        "asset must be stored at the correct memory location",
+        asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_VALUE_OFFSET
+        ),
+        asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 4),
-        asset_2_and_3,
-        "asset_2 and asset_3 must be stored at the same correct memory location",
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE
+        ),
+        asset_2_plus_3.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET
+                + OUTPUT_NOTE_ASSETS_OFFSET
+                + ASSET_SIZE
+                + ASSET_VALUE_OFFSET
+        ),
+        asset_2_plus_3.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 8),
-        non_fungible_asset_encoded,
-        "non_fungible_asset must be stored at the correct memory location",
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE * 2
+        ),
+        non_fungible_asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET
+                + OUTPUT_NOTE_ASSETS_OFFSET
+                + ASSET_SIZE * 2
+                + ASSET_VALUE_OFFSET
+        ),
+        non_fungible_asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     Ok(())
@@ -927,13 +973,13 @@ async fn test_get_assets() -> anyhow::Result<()> {
             push.{note_idx} push.{dest_ptr}
             # => [dest_ptr, note_index]
 
-            # write the assets to the memory
+            # write the assets to memory
             exec.output_note::get_assets
             # => [num_assets, dest_ptr, note_index]
 
             # assert the number of note assets
             push.{assets_number}
-            assert_eq.err="note {note_index} has incorrect assets number"
+            assert_eq.err="expected note {note_index} to have {assets_number} assets"
             # => [dest_ptr, note_index]
         "#,
             note_idx = note_index,
@@ -947,18 +993,30 @@ async fn test_get_assets() -> anyhow::Result<()> {
                 r#"
                     # load the asset stored in memory
                     padw dup.4 mem_loadw_be
-                    # => [STORED_ASSET, dest_ptr, note_index]
+                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
-                    # assert the asset
-                    push.{NOTE_ASSET}
-                    assert_eqw.err="asset {asset_index} of the note {note_index} is incorrect"
+                    # assert the asset key matches
+                    push.{NOTE_ASSET_KEY}
+                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # => [dest_ptr, note_index]
+
+                    # load the asset stored in memory
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be
+                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+
+                    # assert the asset value matches
+                    push.{NOTE_ASSET_VALUE}
+                    assert_eqw.err="expected asset value at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_VALUE}"
                     # => [dest_ptr, note_index]
 
                     # move the pointer
-                    add.4
-                    # => [dest_ptr+4, note_index]
+                    add.{ASSET_SIZE}
+                    # => [dest_ptr+ASSET_SIZE, note_index]
                 "#,
-                NOTE_ASSET = Word::from(*asset),
+                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
             ));
@@ -992,9 +1050,9 @@ async fn test_get_assets() -> anyhow::Result<()> {
         create_note_0 = create_output_note(&p2id_note_0_assets),
         check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
         create_note_1 = create_output_note(&p2id_note_1_asset),
-        check_note_1 = check_assets_code(1, 4, &p2id_note_1_asset),
+        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
         create_note_2 = create_output_note(&p2id_note_2_assets),
-        check_note_2 = check_assets_code(2, 8, &p2id_note_2_assets),
+        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;

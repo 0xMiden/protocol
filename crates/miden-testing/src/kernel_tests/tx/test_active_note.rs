@@ -20,6 +20,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -207,10 +208,16 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         for asset in note.assets().iter() {
             code += &format!(
                 r#"
-                # assert the asset is correct
-                dup padw movup.4 mem_loadw_be push.{asset} assert_eqw.err="asset mismatch" push.4 add
+                dup padw movup.4 mem_loadw_be push.{ASSET_KEY}
+                assert_eqw.err="asset key mismatch"
+
+                dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be push.{ASSET_VALUE}
+                assert_eqw.err="asset value mismatch"
+
+                add.{ASSET_SIZE}
                 "#,
-                asset = Word::from(asset)
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             );
         }
         code

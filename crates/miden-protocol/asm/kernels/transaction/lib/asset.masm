@@ -3,172 +3,352 @@ use $kernel::account_id
 # ERRORS
 # =================================================================================================
 
+const ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE = "fungible asset vault key's account ID must be of type fungible faucet"
+
 const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ONE_MUST_BE_ZERO="malformed fungible asset: `ASSET[1]` must be 0"
 
 const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_TWO_AND_THREE_MUST_BE_FUNGIBLE_FAUCET_ID="malformed fungible asset: `ASSET[2]` and `ASSET[3]` must be a valid fungible faucet id"
 
 const ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS="malformed fungible asset: `ASSET[0]` exceeds the maximum allowed amount"
 
-const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID="malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
-
-const ERR_NON_FUNGIBLE_ASSET_FORMAT_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO="malformed non-fungible asset: the most significant bit must be 0"
-
 const ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the fungible asset is not this faucet"
 
+const ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE = "non-fungible asset vault key's account ID must be of type non-fungible faucet"
+
+const ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID="malformed non-fungible asset: `ASSET[3]` is not a valid non-fungible faucet id"
+
 const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungible asset is not this faucet"
+
+const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault key must be either of type fungible or non-fungible faucet"
 
 # CONSTANT ACCESSORS
 # =================================================================================================
 
 pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use ::$kernel::util::asset::ASSET_SIZE
+pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
 
 # PROCEDURES
 # =================================================================================================
 
-#! Validates that a fungible asset is well formed.
+#! Loads an asset key and value from memory given a pointer to the asset.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs: [ptr]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset to validate.
+#! - ptr is the memory address of the asset.
+#! - ASSET_KEY is the 4-element word representing the asset key.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc load_asset_key_and_value
+    # load asset value
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    # => [ASSET_VALUE, ptr]
+
+    # load asset key
+    padw movup.8 mem_loadw_be
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Validates that a fungible asset is well formed.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset is not well formed.
+#! - the asset key or value are not well formed.
 pub proc validate_fungible_asset
-    # assert that ASSET[1] == ZERO
-    dup.2 not assert.err=ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ONE_MUST_BE_ZERO
-    # => [ASSET]
+    exec.validate_fungible_asset_key
+    # => [ASSET_KEY, ASSET_VALUE]
 
-    # assert that the tuple (ASSET[3], ASSET[2]) forms a valid account ID
+    swapw exec.validate_fungible_asset_value swapw
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Validates that a fungible asset value is well formed.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset value is not well formed.
+proc validate_fungible_asset_value
+    # assert that ASSET_VALUE[1] == ZERO
+    dup.2 eq.0 assert.err=ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ONE_MUST_BE_ZERO
+    # => [ASSET_VALUE]
+
+    # assert that the tuple (ASSET_VALUE[3], ASSET_VALUE[2]) forms a valid account ID
     dup.1 dup.1 exec.account_id::validate
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
-    # assert that the prefix (ASSET[3]) of the account ID is of type fungible faucet
+    # assert that the prefix (ASSET_VALUE[3]) of the account ID is of type fungible faucet
     dup exec.account_id::is_fungible_faucet
     assert.err=ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_TWO_AND_THREE_MUST_BE_FUNGIBLE_FAUCET_ID
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
-    # assert that the max amount (ASSET[0]) of a fungible asset is not exceeded
+    # assert that the max amount (ASSET_VALUE[0]) of a fungible asset is not exceeded
     dup.3 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_FORMAT_ELEMENT_ZERO_MUST_BE_WITHIN_LIMITS
-    # => [ASSET]
+    # => [ASSET_VALUE]
+end
+
+#! Validates that a fungible asset's vault key is well formed.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's faucet ID is not a fungible one.
+pub proc validate_fungible_asset_key
+    exec.validate_asset_key
+    # => [ASSET_KEY]
+
+    exec.is_fungible_asset
+    assert.err=ERR_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_FUNGIBLE
+    # => [ASSET_KEY]
 end
 
 #! Returns a boolean indicating whether the asset is fungible.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [is_fungible_asset, ASSET]
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [is_fungible_asset, ASSET_KEY]
 #!
 #! Where:
-#! - ASSET is the asset to check.
+#! - ASSET_KEY is the vault key of the asset to check.
 #! - is_fungible_asset is a boolean indicating whether the asset is fungible.
 pub proc is_fungible_asset
-    # check the first element, it will be:
-    # - zero for a fungible asset
-    # - non zero for a non-fungible asset
-    dup.2 eq.0
-    # => [is_fungible_asset, ASSET]
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    dup exec.account_id::is_fungible_faucet
+    # => [is_fungible_asset, ASSET_KEY]
 end
 
 #! Validates that a non fungible asset is well formed.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset to validate.
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset is not well formed.
+#! - the asset key or value are not well formed.
 pub proc validate_non_fungible_asset
-    # assert that ASSET[3] is a valid account ID prefix
+    exec.validate_non_fungible_asset_key
+    swapw
+    # => [ASSET_VALUE, ASSET_KEY]
+
+    exec.validate_non_fungible_asset_value
+    swapw
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Validates that a non fungible asset is well formed.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key or value are not well formed.
+proc validate_non_fungible_asset_value
+    # assert that ASSET_VALUE[3] is a valid account ID prefix
     # hack: because we only have the prefix we add a 0 as the suffix which is always valid
     push.0 dup.1 exec.account_id::validate
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
-    # assert that the account ID prefix ASSET[3] is of type non fungible faucet
+    # assert that the account ID prefix ASSET_VALUE[3] is of type non fungible faucet
     dup exec.account_id::is_non_fungible_faucet
     assert.err=ERR_NON_FUNGIBLE_ASSET_FORMAT_ELEMENT_THREE_MUST_BE_FUNGIBLE_FAUCET_ID
-    # => [ASSET]
+    # => [ASSET_VALUE]
+end
+
+#! Validates that a non-fungible asset's vault key is well formed.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's faucet ID is not a non-fungible one.
+proc validate_non_fungible_asset_key
+    # => [ASSET_KEY]
+    # => [hash0', hash2, hash1, faucet_id_prefix]
+
+    # hack: because we only have the prefix we add a 0 as the suffix which is always valid
+    push.0 dup.4
+    # => [faucet_id_prefix, 0, ASSET_KEY]
+
+    exec.account_id::validate
+    # => [ASSET_KEY]
+
+    exec.is_non_fungible_asset
+    assert.err=ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE
+
+    # => [ASSET_KEY]
+end
+
+#! Validates that a fungible asset's vault key is well formed.
+#!
+#! TODO(expand_assets):
+#! WARNING: For now, this only works for keys from fungible assets.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's account ID is neither of type fungible nor of type non-fungible.
+proc validate_asset_key
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    dup.1 dup.1
+    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    exec.account_id::validate
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    dup exec.account_id::is_fungible_faucet
+    # => [is_fungible_faucet, faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    dup.1 exec.account_id::is_non_fungible_faucet
+    # => [is_fungible_faucet, is_non_fungible_faucet, faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    # assert the asset key's account ID is either of type fungible or type non-fungible
+    or assert.err=ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [ASSET_KEY]
 end
 
 #! Returns a boolean indicating whether the asset is non-fungible.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [is_non_fungible_asset, ASSET]
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [is_non_fungible_asset, ASSET_KEY]
 #!
 #! Where:
-#! - ASSET is the asset to check.
+#! - ASSET_KEY is the vault key of the asset to check.
 #! - is_non_fungible_asset is a boolean indicating whether the asset is non-fungible.
 pub proc is_non_fungible_asset
-    # check the first element, it will be:
-    # - zero for a fungible asset
-    # - non zero for a non-fungible asset
-    exec.is_fungible_asset not
-    # => [is_non_fungible_asset, ASSET]
+    # TODO(expand_assets): Eventually do:
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # dup exec.account_id::is_non_fungible_faucet
+    # => [is_non_fungible_asset, ASSET_KEY]
+
+    # => [ASSET_KEY]
+    dup.3 exec.account_id::is_non_fungible_faucet
+    # => [is_non_fungible_asset, ASSET_KEY]
 end
 
 #! Validates that an asset is well formed.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset to validate.
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
 #!
 #! Panics if:
-#! - the asset is not well formed.
+#! - the asset key or value are not well formed.
 pub proc validate_asset
     # check if the asset is fungible
     exec.is_fungible_asset
-    # => [is_fungible_asset, ASSET]
+    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     # if the asset is fungible, validate the fungible asset
     if.true
         exec.validate_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE]
     else
         # if the asset is non fungible, validate the non fungible asset
         exec.validate_non_fungible_asset
+        # => [ASSET_KEY, ASSET_VALUE]
     end
-    # => [ASSET]
+    # => [ASSET_KEY, ASSET_VALUE]
 end
 
 #! Validates that a fungible asset is associated with the provided faucet_id.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - faucet_id_prefix is the prefix of the faucet's account ID.
-#! - ASSET is the asset to validate.
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
 pub proc validate_fungible_asset_origin
+    movdn.9 movdn.9
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
+    # assert the fungible asset key and value are valid
+    exec.validate_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
     # assert the origin of the asset is the faucet_id provided via the stack
-    dup.3 dup.3
-    # => [asset_id_prefix, asset_id_suffix, faucet_id_prefix, faucet_id_suffix, ASSET]
+    exec.get_vault_key_faucet_id
+    # => [key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+
+    movup.11 movup.11
+    # => [faucet_id_prefix, faucet_id_suffix, key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
 
     exec.account_id::is_equal assert.err=ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
-    # => [ASSET]
-
-    # assert the fungible asset is valid
-    exec.validate_fungible_asset
-    # => [ASSET]
+    # => [ASSET_KEY, ASSET_VALUE]
 end
 
 #! Validates that a non-fungible asset is associated with the provided faucet_id.
 #!
-#! Inputs:  [faucet_id_prefix, ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
 #! - faucet_id_prefix is the prefix of the faucet's account ID.
-#! - ASSET is the asset to validate.
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
 pub proc validate_non_fungible_asset_origin
     # assert the origin of the asset is the faucet_id prefix provided via the stack
-    dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
-    # => [ASSET]
+    dup.4 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
+    # => [ASSET_KEY, ASSET_VALUE]
 
     # assert the non-fungible asset is valid
     exec.validate_non_fungible_asset
-    # => [ASSET]
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Returns the faucet ID from an asset vault key.
+#!
+#! TODO(expand_assets):
+#! WARNING: For now, this only works for keys from fungible assets.
+#! WARNING: The faucet ID is not validated.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+#!
+#! Where:
+#! - faucet_id is the account ID in the vault key.
+#! - ASSET_KEY is the vault key from which to extract the faucet ID.
+proc get_vault_key_faucet_id
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+
+    dup.1 dup.1
+    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
 end

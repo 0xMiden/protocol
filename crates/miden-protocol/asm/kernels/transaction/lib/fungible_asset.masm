@@ -1,0 +1,63 @@
+# Contains procedures for the built-in fungible asset.
+
+use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+
+# ERRORS
+# =================================================================================================
+
+const ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED="adding the fungible asset to the vault would exceed the max amount"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Merges two fungible assets.
+#!
+#! WARNING: This procedure assumes the assets have been validated.
+#!
+#! NOTE: we do not assert that faucet IDs match since this asset layout will soon no longer contain
+#! them anyway
+#!
+#! Inputs:  [ASSET_VALUE_0, ASSET_VALUE_1]
+#! Outputs: [MERGED_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE_{0, 1} are the assets to merge.
+#! - MERGED_ASSET_VALUE is the merged asset.
+#!
+#! Panics if:
+#! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
+pub proc merge
+    # extract amount from asset 1
+    dup.7
+    # => [amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+
+    # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - current_amount
+    # this is the amount that can at most be added to still have a valid asset
+    push.FUNGIBLE_ASSET_MAX_AMOUNT dup.5 sub
+    # => [max_add_amount, amount_1, ASSET_VALUE_0, ASSET_VALUE_1]
+
+    # assert it is safe to add the amounts together, i.e. amount_1 <= max_add_amount
+    lte assert.err=ERR_VAULT_FUNGIBLE_MAX_AMOUNT_EXCEEDED
+    # => [ASSET_VALUE_0, ASSET_VALUE_1]
+
+    exec.get_amount
+    # => [current_amount, ASSET_VALUE_1]
+
+    # add the amounts
+    movup.4 add movdn.3
+    # => [MERGED_ASSET_VALUE]
+end
+
+#! Extracts the amount of a fungible asset.
+#!
+#! WARNING: This procedure assumes the asset has been validated.
+#!
+#! Inputs:  [ASSET_VALUE]
+#! Outputs: [amount]
+#!
+#! Where:
+#! - ASSET_VALUE are the asset from which to extract the amount.
+#! - amount is the amount of the fungible asset.
+pub proc get_amount
+    exec.::$kernel::util::asset::get_balance_from_fungible_asset
+end

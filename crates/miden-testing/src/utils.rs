@@ -107,7 +107,7 @@ pub fn create_p2any_note(
                 "
                 # add first asset
 
-                padw dup.4 mem_loadw_be
+                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
                 padw swapw padw padw swapdw
                 call.wallet::receive_asset
                 dropw movup.12
@@ -119,8 +119,8 @@ pub fn create_p2any_note(
                 "
                 # add next asset
 
-                add.4 dup movdn.13
-                padw movup.4 mem_loadw_be
+                add.ASSET_SIZE dup movdn.13
+                padw movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
                 call.wallet::receive_asset
                 dropw movup.12
                 # => [dest_ptr, pad(12)]",
@@ -133,6 +133,8 @@ pub fn create_p2any_note(
         r#"
         use mock::account
         use miden::protocol::active_note
+        use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
+        use ::miden::protocol::asset::ASSET_SIZE
         use miden::standards::wallets::basic->wallet
 
         begin

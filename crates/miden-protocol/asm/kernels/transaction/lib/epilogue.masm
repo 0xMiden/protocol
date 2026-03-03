@@ -1,5 +1,8 @@
 use $kernel::account
 use $kernel::account_delta
+use $kernel::asset::ASSET_SIZE
+use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
+use $kernel::asset::load_asset_key_and_value
 use $kernel::asset_vault
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::memory
@@ -151,7 +154,7 @@ proc build_output_vault
         #     output_notes_end_ptr]
 
         # compute the end pointer for output note asset looping
-        dup.3 mul.4 add swap
+        dup.3 mul.ASSET_SIZE add swap
         # => [assets_start_ptr, assets_end_ptr, output_vault_root_ptr, num_assets, note_data_ptr,
         #     output_notes_end_ptr]
 
@@ -168,8 +171,8 @@ proc build_output_vault
             #     num_assets, note_data_ptr, output_notes_end_ptr]
 
             # read the output note asset from memory
-            padw dup.5 mem_loadw_be
-            # => [ASSET, output_vault_root_ptr, assets_start_ptr, assets_end_ptr,
+            dup.1 exec.load_asset_key_and_value
+            # => [ASSET_KEY, ASSET_VALUE, output_vault_root_ptr, assets_start_ptr, assets_end_ptr,
             #     output_vault_root_ptr, num_assets, note_data_ptr, output_notes_end_ptr]
 
             # insert output note asset into output vault
@@ -178,7 +181,7 @@ proc build_output_vault
             #     note_data_ptr, output_notes_end_ptr]
 
             # increment assets_start_ptr and asses if we should loop again
-            add.4 dup.1 dup.1 neq
+            add.ASSET_SIZE dup.1 dup.1 neq
             # => [should_loop, assets_start_ptr, assets_end_ptr, output_vault_root_ptr, num_assets,
             #     note_data_ptr, output_notes_end_ptr]
         end
@@ -277,19 +280,23 @@ end
 #! reference block as the faucet ID.
 #!
 #! Inputs:  [fee_amount]
-#! Outputs: [FEE_ASSET]
+#! Outputs: [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 #!
 #! Where:
 #! - fee_amount is the computed fee amount of the transaction in the native asset.
-#! - FEE_ASSET is the fungible asset with amount set to fee_amount and the faucet ID set to the
-#!   native asset.
+#! - FEE_ASSET_KEY is the asset vault key of the fee asset.
+#! - FEE_ASSET_VALUE is the fungible asset with amount set to fee_amount and the faucet ID set to
+#!   the native asset.
 proc build_native_fee_asset
     exec.memory::get_native_asset_id
     # => [native_asset_id_prefix, native_asset_id_suffix, fee_amount]
 
     push.0 movdn.2
     # => [native_asset_id_prefix, native_asset_id_suffix, 0, fee_amount]
-    # => [FEE_ASSET]
+    # => [FEE_ASSET_VALUE]
+
+    exec.asset_vault::build_fungible_asset_vault_key
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 end
 
 #! Computes the fee of this transaction and removes the asset from the native account's vault.
@@ -300,12 +307,11 @@ end
 #! check. That's okay, because the logic is entirely determined by the transaction kernel.
 #!
 #! Inputs:  []
-#! Outputs: [FEE_ASSET]
+#! Outputs: [FEE_ASSET_VALUE]
 #!
 #! Where:
 #! - fee_amount is the computed fee amount of the transaction in the native asset.
-#! - FEE_ASSET is the fungible asset with amount set to fee_amount and the faucet ID set to the
-#!   native asset.
+#! - FEE_ASSET_VALUE is the fee asset with the faucet ID set to the native asset.
 #!
 #! Panics if:
 #! - the account vault does not contain the computed fee.
@@ -316,10 +322,10 @@ proc compute_and_remove_fee
 
     # build the native asset from the fee amount
     exec.build_native_fee_asset
-    # => [FEE_ASSET]
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 
     emit.EPILOGUE_BEFORE_TX_FEE_REMOVED_FROM_ACCOUNT_EVENT
-    # => [FEE_ASSET]
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE]
 
     # remove the fee from the native account's vault
     # note that this deliberately does not use account::remove_asset_from_vault, because that
@@ -329,13 +335,13 @@ proc compute_and_remove_fee
     # commitment has already been computed and so any modifications done to the delta at this point
     # are essentially ignored.
 
-    # fetch the vault root
-    exec.memory::get_account_vault_root_ptr movdn.4
-    # => [FEE_ASSET, acct_vault_root_ptr]
+    # fetch the vault root ptr
+    exec.memory::get_account_vault_root_ptr movdn.8
+    # => [FEE_ASSET_KEY, FEE_ASSET_VALUE, acct_vault_root_ptr]
 
     # remove the asset from the account vault
     exec.asset_vault::remove_fungible_asset
-    # => [FEE_ASSET]
+    # => [FEE_ASSET_VALUE]
 end
 
 # TRANSACTION EPILOGUE PROCEDURE
@@ -355,18 +361,21 @@ end
 #! them in the fee and calculating is easiest when the operations are simple.
 #!
 #! Inputs:  []
-#! Outputs: [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num]
+#! Outputs: [
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+#!   FEE_ASSET_VALUE, tx_expiration_block_num
+#! ]
 #!
 #! Where:
 #! - OUTPUT_NOTES_COMMITMENT is the commitment of the output notes.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   delta commitment.
-#! - FEE_ASSET is the fungible asset used as the transaction fee.
+#! - FEE_ASSET_VALUE is the fungible asset used as the transaction fee.
 #! - tx_expiration_block_num is the transaction expiration block number.
 #!
 #! Locals:
 #! - 0..4: OUTPUT_NOTES_COMMITMENT
-#! - 4..8: FEE_ASSET
+#! - 4..8: FEE_ASSET_VALUE
 #! - 8..12: ACCOUNT_DELTA_COMMITMENT
 #!
 #! Panics if:
@@ -450,8 +459,9 @@ pub proc finalize_transaction
     # ------ Compute fees ------
 
     exec.compute_and_remove_fee
-    # => [FEE_ASSET]
+    # => [FEE_ASSET_VALUE]
 
+    # TODO(programmable_assets): Decide what the public tx output of the fee asset looks like.
     # store fee asset in local
     loc_storew_be.4 dropw
     # => []
@@ -499,9 +509,9 @@ pub proc finalize_transaction
 
     # load fee asset from local
     padw loc_loadw_be.4 swapw
-    # => [ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num]
+    # => [ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num]
 
     # load output notes commitment from local
     padw loc_loadw_be.0
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET_VALUE, tx_expiration_block_num]
 end

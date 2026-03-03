@@ -2,6 +2,7 @@ use miden::agglayer::bridge::bridge_out
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::protocol::note
 use miden::standards::attachments::network_account_target
 use miden::standards::wallets::basic->basic_wallet
@@ -9,11 +10,11 @@ use miden::standards::wallets::basic->basic_wallet
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
 
 const STORAGE_START_PTR=8
 const STORAGE_END_PTR=STORAGE_START_PTR + 8
-const ASSET_PTR=0
 
 # ERRORS
 # =================================================================================================
@@ -81,7 +82,7 @@ begin
         push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
         # => [pad(16)]
 
-        # Store note assets -> mem[0..4]
+        # Store note assets -> mem[0..8]
         push.ASSET_PTR exec.active_note::get_assets
         # => [num_assets, ptr, pad(16)]
 
@@ -93,10 +94,11 @@ begin
         push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
         # => [dest_network, dest_address(5), pad(10)]
 
-        # Load ASSET onto the stack
+        # Load ASSET_VALUE onto the stack from ASSET_PTR + ASSET_VALUE_MEMORY_OFFSET
         movupw.2
-        mem_loadw_be.ASSET_PTR
-        # => [ASSET, dest_network, dest_address(5), pad(6)]
+        push.ASSET_PTR add.ASSET_VALUE_MEMORY_OFFSET
+        mem_loadw_be
+        # => [ASSET_VALUE, dest_network, dest_address(5), pad(6)]
 
         call.bridge_out::bridge_out
         # => [pad(16)]

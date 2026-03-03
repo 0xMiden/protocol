@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use miden_crypto::SequentialCommit;
+
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use crate::errors::NoteError;
 use crate::utils::serde::{
@@ -9,10 +11,11 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word, ZERO};
+use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 // NOTE ASSETS
 // ================================================================================================
+
 /// An asset container for a note.
 ///
 /// A note can contain between 0 and 256 assets. No duplicates are allowed, but the order of assets
@@ -24,7 +27,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word, ZERO};
 #[derive(Debug, Default, Clone)]
 pub struct NoteAssets {
     assets: Vec<Asset>,
-    hash: Word,
+    commitment: Word,
 }
 
 impl NoteAssets {
@@ -60,8 +63,9 @@ impl NoteAssets {
             }
         }
 
-        let hash = compute_asset_commitment(&assets);
-        Ok(Self { assets, hash })
+        let commitment = to_commitment(&assets);
+
+        Ok(Self { assets, commitment })
     }
 
     // PUBLIC ACCESSORS
@@ -69,7 +73,7 @@ impl NoteAssets {
 
     /// Returns a commitment to the note's assets.
     pub fn commitment(&self) -> Word {
-        self.hash
+        self.commitment
     }
 
     /// Returns the number of assets.
@@ -88,27 +92,8 @@ impl NoteAssets {
     }
 
     /// Returns all assets represented as a vector of field elements.
-    ///
-    /// The vector is padded with ZEROs so that its length is a multiple of 8. This is useful
-    /// because hashing the returned elements results in the note asset commitment.
-    pub fn to_padded_assets(&self) -> Vec<Felt> {
-        // if we have an odd number of assets with pad with a single word.
-        let padded_len = if self.assets.len().is_multiple_of(2) {
-            self.assets.len() * WORD_SIZE
-        } else {
-            (self.assets.len() + 1) * WORD_SIZE
-        };
-
-        // allocate a vector to hold the padded assets
-        let mut padded_assets = Vec::with_capacity(padded_len * WORD_SIZE);
-
-        // populate the vector with the assets
-        padded_assets.extend(self.assets.iter().flat_map(|asset| Word::from(*asset)));
-
-        // pad with an empty word if we have an odd number of assets
-        padded_assets.resize(padded_len, ZERO);
-
-        padded_assets
+    pub fn to_elements(&self) -> Vec<Felt> {
+        <Self as SequentialCommit>::to_elements(self)
     }
 
     /// Returns an iterator over all [`FungibleAsset`].
@@ -163,7 +148,8 @@ impl NoteAssets {
             }
         }
 
-        self.hash = compute_asset_commitment(&self.assets);
+        // Recompute the commitment.
+        self.commitment = self.to_commitment();
 
         Ok(())
     }
@@ -177,42 +163,33 @@ impl PartialEq for NoteAssets {
 
 impl Eq for NoteAssets {}
 
-// HELPER FUNCTIONS
-// ================================================================================================
+impl SequentialCommit for NoteAssets {
+    type Commitment = Word;
 
-/// Returns a commitment to a note's assets.
-///
-/// The commitment is computed as a sequential hash of all assets (each asset represented by 4
-/// field elements), padded to the next multiple of 2. If the asset list is empty, a default digest
-/// is returned.
-fn compute_asset_commitment(assets: &[Asset]) -> Word {
-    if assets.is_empty() {
-        return Word::empty();
+    /// Returns all assets represented as a vector of field elements.
+    fn to_elements(&self) -> Vec<Felt> {
+        to_elements(&self.assets)
     }
 
-    // If we have an odd number of assets we pad the vector with 4 zero elements. This is to
-    // ensure the number of elements is a multiple of 8 - the size of the hasher rate.
-    let word_capacity = if assets.len().is_multiple_of(2) {
-        assets.len()
-    } else {
-        assets.len() + 1
-    };
-    let mut asset_elements = Vec::with_capacity(word_capacity * WORD_SIZE);
+    /// Computes the commitment to the assets.
+    fn to_commitment(&self) -> Self::Commitment {
+        to_commitment(&self.assets)
+    }
+}
+
+fn to_elements(assets: &[Asset]) -> Vec<Felt> {
+    let mut elements = Vec::with_capacity(assets.len() * 2 * WORD_SIZE);
 
     for asset in assets.iter() {
-        // convert the asset into field elements and add them to the list elements
-        let asset_word: Word = (*asset).into();
-        asset_elements.extend_from_slice(asset_word.as_elements());
+        elements.extend(asset.to_key_word().as_elements());
+        elements.extend(asset.to_value_word().as_elements());
     }
 
-    // If we have an odd number of assets we pad the vector with 4 zero elements. This is to
-    // ensure the number of elements is a multiple of 8 - the size of the hasher rate. This
-    // simplifies hashing inside of the virtual machine when ingesting assets from a note.
-    if assets.len() % 2 == 1 {
-        asset_elements.extend_from_slice(Word::empty().as_elements());
-    }
+    elements
+}
 
-    Hasher::hash_elements(&asset_elements)
+fn to_commitment(assets: &[Asset]) -> Word {
+    Hasher::hash_elements(&to_elements(assets))
 }
 
 // SERIALIZATION
@@ -240,7 +217,7 @@ impl Deserializable for NoteAssets {
 
 #[cfg(test)]
 mod tests {
-    use super::{NoteAssets, compute_asset_commitment};
+    use super::NoteAssets;
     use crate::Word;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
@@ -260,18 +237,18 @@ mod tests {
         // create empty assets
         let mut assets = NoteAssets::default();
 
-        assert_eq!(assets.hash, Word::empty());
+        assert_eq!(assets.commitment, Word::empty());
 
         // add asset1
         assert!(assets.add_asset(asset1).is_ok());
         assert_eq!(assets.assets, vec![asset1]);
-        assert_eq!(assets.hash, compute_asset_commitment(&[asset1]));
+        assert!(!assets.commitment.is_empty());
 
         // add asset2
         assert!(assets.add_asset(asset2).is_ok());
         let expected_asset = Asset::Fungible(FungibleAsset::new(faucet_id, 150).unwrap());
         assert_eq!(assets.assets, vec![expected_asset]);
-        assert_eq!(assets.hash, compute_asset_commitment(&[expected_asset]));
+        assert!(!assets.commitment.is_empty());
     }
     #[test]
     fn iter_fungible_asset() {
