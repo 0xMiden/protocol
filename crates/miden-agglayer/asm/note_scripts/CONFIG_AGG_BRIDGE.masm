@@ -10,6 +10,10 @@ use miden::standards::attachments::network_account_target
 const STORAGE_START_PTR = 0
 const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
 
+const FAUCET_ID_SUFFIX = 6
+const FAUCET_ID_PREFIX = 5
+const ORIGIN_TOKEN_ADDR_4 = 4
+
 # ERRORS
 # =================================================================================================
 
@@ -61,7 +65,7 @@ begin
     # register_faucet expects: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
     # Load all 7 values individually in the correct order
-    mem_load.6 mem_load.5 mem_load.4
+    mem_load.FAUCET_ID_SUFFIX mem_load.FAUCET_ID_PREFIX mem_load.ORIGIN_TOKEN_ADDR_4
     # => [addr4, faucet_id_prefix, faucet_id_suffix, pad(12)]
 
     padw mem_loadw_le.STORAGE_START_PTR
