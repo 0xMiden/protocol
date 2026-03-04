@@ -67,6 +67,7 @@ const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const ATTACHMENT_LOC=8
 const ATTACHMENT_SCHEME_LOC=12
 const ATTACHMENT_KIND_LOC=13
+const NOTE_IDX_LOC=14
 
 # Other constants
 const LEAF_TYPE_ASSET=0
@@ -308,7 +309,7 @@ proc load_let_frontier_to_memory
     exec.active_account::get_item
     # => [num_leaves_word]
 
-    push.LET_FRONTIER_MEM_PTR mem_storew_be dropw
+    push.LET_FRONTIER_MEM_PTR mem_storew_le dropw
     # => []
 
     # 2. Load 32 frontier double-word entries from the map via double_word_array::get
@@ -358,8 +359,8 @@ proc save_let_root_and_num_leaves
     # => [new_leaf_count]
 
     # 3. Save new_leaf_count to its value slot as [new_leaf_count, 0, 0, 0]
-    push.0.0.0
-    # => [0, 0, 0, new_leaf_count]
+    push.0.0.0 movup.3
+    # => [new_leaf_count, 0, 0, 0]
     push.LET_NUM_LEAVES_SLOT[0..2]
     exec.native_account::set_item
     dropw
@@ -456,7 +457,7 @@ end
 #! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
-@locals(14)
+@locals(15)
 proc create_burn_note
     swapw dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
@@ -499,36 +500,42 @@ proc create_burn_note
     # => [tag, note_type, RECIPIENT]
 
     call.output_note::create
-    # => [note_idx]
+    # => [note_idx, pad(15)]
 
-    # Duplicate note_idx: one for set_attachment, one for add_asset
-    dup
-    # => [note_idx, note_idx]
+    # Save note_idx to a local so it survives loc_loadw_be (which overwrites top 4)
+    loc_store.NOTE_IDX_LOC
+    # => [pad(15)]
 
     # Set the NetworkAccountTarget attachment
     loc_loadw_be.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx]
+    # => [NOTE_ATTACHMENT, pad(11)]
 
     loc_load.ATTACHMENT_KIND_LOC
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx]
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, pad(11)]
+
+    loc_load.NOTE_IDX_LOC
+    movdn.6
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(10)]
 
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx]
+    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, pad(10)]
 
     exec.output_note::set_attachment
-    # => [note_idx]
+    # => []
 
     # Add the asset to the note
+    loc_load.NOTE_IDX_LOC
+    # => [note_idx]
+
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
-    # => []
+    # => [residual_padding...]
 
-    # TODO: Check where the extra elements are coming from by adding pad comments throughout the
-    # procedure.
+    # Clean up residual stack elements from call boundaries
     dropw drop
     # => []
 end

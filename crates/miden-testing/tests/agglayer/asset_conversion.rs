@@ -51,7 +51,7 @@ async fn test_scale_up_helper(
         .to_elements()
         .into_iter()
         .rev()
-        .map(|f| Felt::new((f.as_int() as u32).swap_bytes() as u64))
+        .map(|f| Felt::new((f.as_canonical_u64() as u32).swap_bytes() as u64))
         .collect();
 
     assert_eq!(actual_felts, expected_felts);
@@ -134,23 +134,23 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
         "#,
         y,
         scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
+        x_felts[7].as_canonical_u64(),
+        x_felts[6].as_canonical_u64(),
+        x_felts[5].as_canonical_u64(),
+        x_felts[4].as_canonical_u64(),
+        x_felts[3].as_canonical_u64(),
+        x_felts[2].as_canonical_u64(),
+        x_felts[1].as_canonical_u64(),
+        x_felts[0].as_canonical_u64(),
     )
 }
 
 /// Assert that scaling down succeeds with the correct result
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
-    let y = x.scale_to_token_amount(scale).unwrap().as_int();
+    let y = x.scale_to_token_amount(scale).unwrap().as_canonical_u64();
     let script = build_scale_down_script(x, scale, y);
     let out = execute_masm_script(&script).await?;
-    assert_eq!(out.stack[0].as_int(), y);
+    assert_eq!(out.stack[0].as_canonical_u64(), y);
     Ok(y)
 }
 
@@ -286,7 +286,7 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let x = EthAmount::from_u256(U256::from(6u64 * scale));
 
     // Calculate the correct y using scale_to_token_amount
-    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
+    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
     assert_eq!(correct_y, 6);
 
     // Providing wrong_y = correct_y - 1 should fail with ERR_REMAINDER_TOO_LARGE
@@ -306,7 +306,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // y = x / 1e10 = 10000000000 (100 * 1e8)
     let x = EthAmount::from_uint_str("100000000000000000000").unwrap();
     let scale_exp = 10u32;
-    let y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
+    let y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
 
     let x_felts = x.to_elements();
 
@@ -335,21 +335,21 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         "#,
         y,
         scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
+        x_felts[7].as_canonical_u64(),
+        x_felts[6].as_canonical_u64(),
+        x_felts[5].as_canonical_u64(),
+        x_felts[4].as_canonical_u64(),
+        x_felts[3].as_canonical_u64(),
+        x_felts[2].as_canonical_u64(),
+        x_felts[1].as_canonical_u64(),
+        x_felts[0].as_canonical_u64(),
     );
 
     // Execute the script
     let exec_output = execute_masm_script(&script_code).await?;
 
     // Verify the result
-    let result = exec_output.stack[0].as_int();
+    let result = exec_output.stack[0].as_canonical_u64();
     assert_eq!(result, y);
 
     Ok(())

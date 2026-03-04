@@ -9,7 +9,7 @@ use miden_agglayer::utils::felts_to_bytes;
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::{Felt, Word};
 use miden_tx::utils::hex_to_bytes;
 
@@ -25,7 +25,7 @@ use super::test_utils::{
 fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(limbs.len() * 4);
     for limb in limbs.iter() {
-        let u32_value = limb.as_int() as u32;
+        let u32_value = limb.as_canonical_u64() as u32;
         bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
     bytes
@@ -132,13 +132,12 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
 
     // Read packed elements from memory at addresses 0..29
     let ctx = miden_processor::ContextId::root();
-    let err_ctx = ();
 
     let packed_elements: Vec<Felt> = (0..29u32)
         .map(|addr| {
             exec_output
                 .memory
-                .read_element(ctx, Felt::from(addr), &err_ctx)
+                .read_element(ctx, Felt::from(addr))
                 .expect("address should be valid")
         })
         .collect();

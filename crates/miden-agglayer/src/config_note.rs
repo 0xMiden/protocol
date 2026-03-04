@@ -91,8 +91,10 @@ impl ConfigAggBridgeNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 2 felts: [faucet_id_prefix, faucet_id_suffix]
-        let storage_values = vec![faucet_account_id.prefix().as_felt(), faucet_account_id.suffix()];
+        // Create note storage with 2 felts: [faucet_id_suffix, faucet_id_prefix]
+        // After mem_loadw_le in MASM, the stack will have [suffix, prefix, 0, 0]
+        // which matches the format expected by register_faucet and assert_faucet_registered.
+        let storage_values = vec![faucet_account_id.suffix(), faucet_account_id.prefix().as_felt()];
 
         let note_storage = NoteStorage::new(storage_values)?;
 

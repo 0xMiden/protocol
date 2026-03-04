@@ -22,7 +22,7 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::Felt;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
@@ -51,8 +51,8 @@ fn merkle_proof_verification_code(
         let [node_lo, node_hi] = smt_node.to_words();
         store_path_source.push_str(&format!(
             "
-            \tpush.{node_lo} mem_storew_be.{} dropw
-            \tpush.{node_hi} mem_storew_be.{} dropw
+            \tpush.{node_lo} mem_storew_le.{} dropw
+            \tpush.{node_hi} mem_storew_le.{} dropw
     ",
             height * 8,
             height * 8 + 4
@@ -68,21 +68,18 @@ fn merkle_proof_verification_code(
     format!(
         r#"
         use miden::agglayer::bridge::bridge_in
-        use miden::core::word
 
         begin
             {store_path_source}
 
-            push.{root_lo} mem_storew_be.256 dropw
-            push.{root_hi} mem_storew_be.260 dropw
+            push.{root_lo} mem_storew_le.256 dropw
+            push.{root_hi} mem_storew_le.260 dropw
 
             push.256
             push.{index}
             push.0
             push.{leaf_hi}
-            exec.word::reverse
             push.{leaf_lo}
-            exec.word::reverse
 
             exec.bridge_in::verify_merkle_proof
             assert.err="verification failed"
@@ -116,12 +113,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -288,7 +285,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify full note ID construction
     let expected_asset: Asset =
-        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_int())
+        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
             .into();
     let expected_output_p2id_note = create_p2id_note_exact(
@@ -329,7 +326,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
         assert_eq!(
             balance,
-            miden_claim_amount.as_int(),
+            miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );
     }

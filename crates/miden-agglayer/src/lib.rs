@@ -222,16 +222,16 @@ impl AggLayerBridge {
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
         let bridge_admin_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
             bridge.bridge_admin_id.suffix(),
             bridge.bridge_admin_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
         let ger_manager_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
             bridge.ger_manager_id.suffix(),
             bridge.ger_manager_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
 
         let bridge_storage_slots = vec![
@@ -289,10 +289,10 @@ fn agglayer_faucet_conversion_slots(
 ) -> (Word, Word) {
     let addr_elements = origin_token_address.to_elements();
 
-    let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
+    let slot1 = Word::new([addr_elements[3], addr_elements[2], addr_elements[1], addr_elements[0]]);
 
     let slot2 =
-        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
+        Word::new([Felt::ZERO, Felt::from(scale), Felt::from(origin_network), addr_elements[4]]);
 
     (slot1, slot2)
 }
@@ -402,10 +402,10 @@ impl From<AggLayerFaucet> for AccountComponent {
         let metadata_slot = StorageSlot::from(faucet.metadata);
 
         let bridge_account_id_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
             faucet.bridge_account_id.suffix(),
             faucet.bridge_account_id.prefix().as_felt(),
+            Felt::ZERO,
+            Felt::ZERO,
         ]);
         let bridge_slot =
             StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
@@ -433,7 +433,7 @@ impl From<AggLayerFaucet> for AccountComponent {
 ///
 /// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
+    Word::new([faucet_id.suffix(), faucet_id.prefix().as_felt(), Felt::ZERO, Felt::ZERO])
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

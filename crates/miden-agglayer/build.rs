@@ -281,7 +281,6 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
         let zero_as_u32_vec = zero
             .chunks(4)
             .map(|chunk_u32| u32::from_le_bytes(chunk_u32.try_into().unwrap()).to_string())
-            .rev()
             .collect::<Vec<String>>();
 
         zero_constants.push_str(&format!(
@@ -303,7 +302,7 @@ pub proc load_zeros_to_memory\n",
     );
 
     for zero_index in 0..32 {
-        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_L.ZERO_{zero_index}_R exec.mem_store_double_word dropw dropw add.8\n"));
+        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_R.ZERO_{zero_index}_L exec.mem_store_double_word dropw dropw add.8\n"));
     }
 
     zero_constants.push_str("\tdrop\nend\n");
