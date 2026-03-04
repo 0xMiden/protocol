@@ -38,35 +38,11 @@ async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> 
         use miden::core::word
         use miden::core::sys
 
+        use miden::agglayer::bridge::bridge_in
         use miden::agglayer::common::utils
         
-        const GLOBAL_INDEX_PTR = 0
-        const OLD_CGI_CHAIN_HASH_PTR = 8
-
-        # This is a copy of the `compute_cgi_hash_chain` procedure, designed only for testing
-        # purposes. Keep in sync with the original procedure.
-        #
-        # This procedure expects the global index and the old CGI chain hash to be stored in memory
-        # at addresses 0 and 8 respectively.
-        #
-        # Inputs: [LEAF_VALUE[8]]
-        # Outputs: [NEW_CGI_CHAIN_HASH[8]]
-        proc compute_cgi_hash_chain_copy
-            # load the global index onto the stack
-            push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
-            # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
-
-            exec.keccak256::merge
-            # => [Keccak256(GLOBAL_INDEX, LEAF_VALUE), pad(8)]
-
-            # load the old CGI chain hash
-            push.OLD_CGI_CHAIN_HASH_PTR exec.utils::mem_load_double_word
-            # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE), pad(8)]
-
-            # compute the new CGI chain hash
-            exec.keccak256::merge
-            # => [NEW_CGI_CHAIN_HASH[8], pad(8)]
-        end
+        const LEAF_VALUE_PTR = 0
+        const GLOBAL_INDEX_PTR = 512
 
         begin
             # push the expected hash onto the stack
@@ -74,27 +50,27 @@ async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> 
             push.{expected_cgi_hash_lo} exec.word::reverse
             # => [EXPECTED_CGI_HASH[8]]
 
-            # push the leaf value onto the stack
+            # push the old CGI chain hash onto the stack
+            push.{old_cgi_hash_hi} exec.word::reverse
+            push.{old_cgi_hash_lo} exec.word::reverse
+            # => [OLD_CGI_CHAIN_HASH[8], EXPECTED_CGI_HASH[8]]
+
+            # push the leaf value onto the stack and save it into the memory
+            push.LEAF_VALUE_PTR 
             push.{leaf_hi} exec.word::reverse
             push.{leaf_lo} exec.word::reverse
-            # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
+            exec.utils::mem_store_double_word dropw dropw
+            # => [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8], EXPECTED_CGI_HASH[8]]
 
             # push the global index onto the stack and save it into the memory
             push.GLOBAL_INDEX_PTR 
             push.{global_index_hi} exec.word::reverse
             push.{global_index_lo} exec.word::reverse
             exec.utils::mem_store_double_word dropw dropw drop
-            # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
-
-            # push the old CGI chain hash onto the stack and save it into the memory
-            push.OLD_CGI_CHAIN_HASH_PTR
-            push.{old_cgi_hash_hi} exec.word::reverse
-            push.{old_cgi_hash_lo} exec.word::reverse
-            exec.utils::mem_store_double_word dropw dropw drop
-            # => [LEAF_VALUE[8], EXPECTED_CGI_HASH[8]]
+            # => [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8], EXPECTED_CGI_HASH[8]]
 
             # compute the CGI chain hash
-            exec.compute_cgi_hash_chain_copy
+            exec.bridge_in::compute_cgi_hash_chain
             # => [NEW_CGI_CHAIN_HASH[8], EXPECTED_CGI_HASH[8]]
 
             # assert that the hashes are identical

@@ -143,6 +143,14 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger_manager")
         .expect("GER manager storage slot name should be valid")
 });
+static CGI_CHAIN_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_lo")
+        .expect("CGI chain hash lo storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_hi")
+        .expect("CGI chain hash hi storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
@@ -253,6 +261,8 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
         ];
         bridge_component(bridge_storage_slots)
     }

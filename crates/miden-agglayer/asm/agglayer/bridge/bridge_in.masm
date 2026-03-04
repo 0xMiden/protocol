@@ -11,6 +11,8 @@ use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::note_tag
 use miden::standards::attachments::network_account_target
+use miden::protocol::native_account
+use miden::protocol::active_account
 
 # TYPE ALIASES
 # =================================================================================================
@@ -30,6 +32,11 @@ const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
 # CONSTANTS
 # =================================================================================================
+
+# Storage slot constants for the CGI (claimed global index) chain hash. 
+# It is stored in two separate value slots.
+const CGI_CHAIN_HASH_LO_SLOT_NAME = word("miden::agglayer::let::root_lo")
+const CGI_CHAIN_HASH_HI_SLOT_NAME = word("miden::agglayer::let::root_hi")
 
 # Memory pointers for proof data layout
 const PROOF_DATA_PTR = 0
@@ -189,20 +196,25 @@ pub proc verify_leaf_bridge
     # this hash is computed as:
     # NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
 
-    # load the leaf value back to the stack from local memory
-    loc_loadw_le.4 swapw loc_loadw_le.0
-    # => [LEAF_VALUE[8], pad(8)]
+    # load the old CGI chain hash
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH_HI, pad(16)]
+
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH[8], pad(16)]
+
+    # load the pointer to the leaf value onto the stack
+    locaddr.0
+    # => [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8], pad(16)]
 
     # compute the claimed global index chain hash
     exec.compute_cgi_hash_chain
-    # => [NEW_CGI_CHAIN_HASH[8], pad(8)]
+    # => [NEW_CGI_CHAIN_HASH[8], pad(16)]
 
     # store the computed CGI chain hash
-    #
-    # TODO: once the CLAIM note will be consumed against the bridge contract (and not FPIed against
-    # it), store the computed value. Notice that this value is used during the computation of the
-    # next CGI chain hash, so the `compute_cgi_hash_chain` procedure should be updated.
-    dropw dropw
+    exec.store_cgi_hash_chain
     # => [pad(16)]
 end
 
@@ -781,25 +793,39 @@ end
 #! value of the CGI chain hash:
 #! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
 #!
-#! Inputs: [LEAF_VALUE[8]]
+#! Inputs: [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8]]
 #! Outputs: [NEW_CGI_CHAIN_HASH[8]]
 #!
 #! Invocation: exec
-proc compute_cgi_hash_chain
+pub proc compute_cgi_hash_chain
+    # load the leaf value onto the stack
+    exec.utils::mem_load_double_word
+    # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
     # load the global index onto the stack
     push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
-    # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
 
-    exec.keccak256::merge
-    # => [Keccak256(GLOBAL_INDEX, LEAF_VALUE), pad(8)]
-
-    # load the old CGI chain hash
-    #
-    # TODO: load the CGI chain hash value here once it will be stored
-    padw padw
-    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE), pad(8)]
+    exec.keccak256::merge swapdw
+    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
 
     # compute the new CGI chain hash
     exec.keccak256::merge
-    # => [NEW_CGI_CHAIN_HASH[8], pad(8)]
+    # => [NEW_CGI_CHAIN_HASH[8]]
 end
+
+#! Stores the computed global index (CGI) chain hash into the corresponding storage slots.
+#!
+#! Inputs: [NEW_CGI_CHAIN_HASH_LO, NEW_CGI_CHAIN_HASH_HI]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc store_cgi_hash_chain
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => [NEW_CGI_CHAIN_HASH_HI]
+
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => []
+end 
