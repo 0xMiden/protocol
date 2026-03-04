@@ -31,7 +31,7 @@ std = [
   "miden-processor/std",
   "miden-verifier/std",
 ]
-testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing"]
+testing = ["dep:rand_chacha", "dep:rand_xoshiro", "miden-core/testing", "miden-crypto/std"]
 
 [dependencies]
 # Miden dependencies
