@@ -5,9 +5,15 @@ use alloc::sync::Arc;
 use miden_agglayer::{EthAddressFormat, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::{ExecutionOutput, FastProcessor};
 use miden_processor::advice::AdviceInputs;
-use miden_processor::{DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::{
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
+};
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::address::NetworkId;
@@ -40,7 +46,8 @@ async fn execute_program_with_default_host(
     let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = AdviceInputs::default();
 
-    let processor = FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
+    let processor =
+        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 
