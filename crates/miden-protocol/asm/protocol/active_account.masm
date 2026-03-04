@@ -1,4 +1,5 @@
-use ::miden::protocol::account_id
+use miden::protocol::util::asset
+use miden::protocol::account_id
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
@@ -433,14 +434,15 @@ end
 # VAULT
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the asset associated with the provided faucet_id in the active account's vault.
+#! Returns the asset associated with the provided asset vault key in the active account's vault.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_asset
@@ -453,22 +455,23 @@ pub proc get_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
-#! Returns the asset issued by the provided faucet_id in the active account's vault at the
-#! beginning of the transaction.
+#! Returns the asset associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset at the beginning of the transaction.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_initial_asset
@@ -481,11 +484,11 @@ pub proc get_initial_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
 #! Returns the balance of the fungible asset associated with the provided faucet_id in the active
@@ -513,7 +516,7 @@ pub proc get_balance
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
     exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
@@ -545,40 +548,37 @@ pub proc get_initial_balance
     # => [ASSET_KEY]
 
     exec.get_initial_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
     exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
     # => [balance]
 end
 
-#! Returns a boolean indicating whether the non-fungible asset is present in the active account's
-#! vault.
+#! Returns a boolean indicating whether the active account stores an asset with the provided
+#! non-fungible asset vault key in its vault.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY]
 #! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET is the non-fungible asset of interest
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest
+#! - ASSET_KEY is the key of the fungible asset to check.
+#! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
-#! - the ASSET is a fungible asset.
+#! - the ASSET_VALUE is a fungible asset.
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
-    # check if the asset is a non-fungible asset
-    # hack: assert second element is zero to ensure it is a non-fungible asset
-    # TODO(expand_assets): This procedure may go away. If not, check more reliably.
-    dup.2 neq.0
-    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET]
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
-    exec.build_non_fungible_asset_vault_key
+    # assert that the faucet id is a non-fungible faucet
+    dup exec.account_id::is_non_fungible_faucet
+    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # compare with EMPTY_WORD to assess if the asset exists in the vault
     exec.word::eqz not
@@ -670,40 +670,4 @@ pub proc has_procedure
     # clean the stack
     swapdw dropw dropw swapw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
-end
-
-# TODO(expand_assets):
-# Exact copy of $kernel::asset_vault::build_non_fungible_asset_vault_key
-# This should only be temporarily needed and if not, deduplicate.
-
-# The bitmask that when applied will set the fungible bit to zero.
-const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
-
-#!
-#! Builds the vault key of a non fungible asset. The asset is NOT validated and therefore must
-#! be a valid non-fungible asset.
-#!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET_KEY]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the non-fungible asset.
-proc build_non_fungible_asset_vault_key
-    # create the asset key from the non-fungible asset by swapping hash0 with the faucet id
-    # => [faucet_id_prefix, hash2, hash1, hash0]
-    swap.3
-    # => [hash0, hash2, hash1 faucet_id_prefix]
-
-    # disassemble hash0 into u32 limbs
-    u32split swap
-    # => [hash0_lo, hash0_hi, hash2, hash1 faucet_id_prefix]
-
-    # set the fungible bit to 0
-    u32and.INVERSE_FUNGIBLE_BITMASK_U32
-    # => [hash0_lo', hash0_hi, hash2, hash1 faucet_id_prefix]
-
-    # reassemble hash0 felt by multiplying the high part with 2^32 and adding the lo part
-    swap mul.0x0100000000 add
-    # => [ASSET_KEY]
 end

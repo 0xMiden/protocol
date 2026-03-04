@@ -702,6 +702,7 @@ mod tests {
         AccountType,
         AccountVaultDelta,
         StorageMapDelta,
+        StorageMapKey,
         StorageSlotName,
     };
     use crate::asset::FungibleAsset;
@@ -767,7 +768,10 @@ mod tests {
         // 32 bytes in size.
         let required_entries = ACCOUNT_UPDATE_MAX_SIZE / (2 * 32);
         for _ in 0..required_entries {
-            map.insert(LexicographicWord::new(rand_value::<Word>()), rand_value::<Word>());
+            map.insert(
+                LexicographicWord::new(StorageMapKey::from_raw(rand_value())),
+                rand_value::<Word>(),
+            );
         }
         let storage_delta = StorageMapDelta::new(map);
 

@@ -20,8 +20,8 @@ use miden_protocol::note::{
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
-use super::P2idNote;
 use crate::StandardsLib;
+use crate::note::P2idNoteStorage;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -48,7 +48,7 @@ impl SwapNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items of the SWAP note.
-    pub const NUM_STORAGE_ITEMS: usize = 16;
+    pub const NUM_STORAGE_ITEMS: usize = 20;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -92,26 +92,25 @@ impl SwapNote {
         let note_script = Self::script();
 
         let payback_serial_num = rng.draw_word();
-        let payback_recipient = P2idNote::build_recipient(sender, payback_serial_num)?;
+        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
 
-        let requested_asset_word: Word = requested_asset.into();
         let payback_tag = NoteTag::with_account_target(sender);
 
         let attachment_scheme = Felt::from(payback_note_attachment.attachment_scheme().as_u32());
         let attachment_kind = Felt::from(payback_note_attachment.attachment_kind().as_u8());
         let attachment = payback_note_attachment.content().to_word();
 
-        let mut inputs = Vec::with_capacity(16);
-        inputs.extend_from_slice(&[
+        let mut storage = Vec::with_capacity(SwapNote::NUM_STORAGE_ITEMS);
+        storage.extend_from_slice(&[
             payback_note_type.into(),
             payback_tag.into(),
             attachment_scheme,
             attachment_kind,
         ]);
-        inputs.extend_from_slice(attachment.as_elements());
-        inputs.extend_from_slice(requested_asset_word.as_elements());
-        inputs.extend_from_slice(payback_recipient.digest().as_elements());
-        let inputs = NoteStorage::new(inputs)?;
+        storage.extend_from_slice(attachment.as_elements());
+        storage.extend_from_slice(&requested_asset.as_elements());
+        storage.extend_from_slice(payback_recipient.digest().as_elements());
+        let inputs = NoteStorage::new(storage)?;
 
         // build the tag for the SWAP use case
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
@@ -156,10 +155,10 @@ impl SwapNote {
         swap_use_case_id |= (swap_root_bytes[1] >> 2) as u16;
 
         // Get bits 0..8 from the faucet IDs of both assets which will form the tag payload.
-        let offered_asset_id: u64 = offered_asset.faucet_id_prefix().into();
+        let offered_asset_id: u64 = offered_asset.faucet_id().prefix().into();
         let offered_asset_tag = (offered_asset_id >> 56) as u8;
 
-        let requested_asset_id: u64 = requested_asset.faucet_id_prefix().into();
+        let requested_asset_id: u64 = requested_asset.faucet_id().prefix().into();
         let requested_asset_tag = (requested_asset_id >> 56) as u8;
 
         let asset_pair = ((offered_asset_tag as u16) << 8) | (requested_asset_tag as u16);
@@ -216,8 +215,7 @@ mod tests {
                         AccountIdVersion::Version0,
                         AccountType::NonFungibleFaucet,
                         AccountStorageMode::Public,
-                    )
-                    .prefix(),
+                    ),
                     vec![0xaa, 0xbb, 0xcc, 0xdd],
                 )
                 .unwrap(),

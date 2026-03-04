@@ -59,18 +59,18 @@ pub proc write_assets_to_memory
     # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
-    # calculate number of assets rounded up to an even number
-    dup.4 dup is_odd add
-    # OS => [even_num_assets, ASSETS_COMMITMENT, num_assets, dest_ptr]
+    dup.5 dup.5
+    # OS => [num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
-    # prepare the stack for the `pipe_preimage_to_memory` procedure
-    dup.6 swap
-    # OS => [even_num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
+    # each asset takes up two words, so num_words = 2 * num_assets
+    # this also guarantees we pass an even number to pipe_double_words_preimage_to_memory
+    mul.2
+    # OS => [num_words, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
     # write the data from the advice stack into memory
-    exec.mem::pipe_preimage_to_memory drop
+    exec.mem::pipe_double_words_preimage_to_memory drop
     # OS => [num_assets, dest_ptr]
     # AS => []
 end

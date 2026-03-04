@@ -5,7 +5,7 @@ use serde::ser::{Error as SerError, SerializeStruct};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::super::type_registry::SCHEMA_TYPE_REGISTRY;
-use super::super::{FeltSchema, SchemaTypeId, WordValue};
+use super::super::{FeltSchema, SchemaType, WordValue};
 
 // FELT SCHEMA SERIALIZATION
 // ================================================================================================
@@ -15,9 +15,9 @@ impl Serialize for FeltSchema {
     where
         S: Serializer,
     {
-        if self.felt_type() == SchemaTypeId::void() {
+        if self.felt_type() == SchemaType::void() {
             let mut state = serializer.serialize_struct("FeltSchema", 2)?;
-            state.serialize_field("type", &SchemaTypeId::void())?;
+            state.serialize_field("type", &SchemaType::void())?;
             if let Some(description) = self.description() {
                 state.serialize_field("description", description)?;
             }
@@ -33,7 +33,7 @@ impl Serialize for FeltSchema {
         if let Some(description) = self.description() {
             state.serialize_field("description", description)?;
         }
-        if self.felt_type() != SchemaTypeId::native_felt() {
+        if self.felt_type() != SchemaType::native_felt() {
             state.serialize_field("type", &self.felt_type())?;
         }
         if let Some(default_value) = self.default_value() {
@@ -61,12 +61,12 @@ impl<'de> Deserialize<'de> for FeltSchema {
             #[serde(default, rename = "default-value")]
             default_value: Option<String>,
             #[serde(default, rename = "type")]
-            r#type: Option<SchemaTypeId>,
+            r#type: Option<SchemaType>,
         }
 
         let raw = RawFeltSchema::deserialize(deserializer)?;
 
-        let felt_type = raw.r#type.unwrap_or_else(SchemaTypeId::native_felt);
+        let felt_type = raw.r#type.unwrap_or_else(SchemaType::native_felt);
 
         let description = raw.description.and_then(|description| {
             if description.trim().is_empty() {
@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for FeltSchema {
             }
         });
 
-        if felt_type == SchemaTypeId::void() {
+        if felt_type == SchemaType::void() {
             if raw.name.is_some() {
                 return Err(D::Error::custom("`type = \"void\"` elements must omit `name`"));
             }

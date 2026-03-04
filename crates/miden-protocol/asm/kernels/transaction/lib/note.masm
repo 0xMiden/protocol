@@ -1,5 +1,6 @@
 use miden::core::crypto::hashes::rpo256
 
+use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::memory
 
@@ -102,52 +103,20 @@ pub proc compute_output_note_assets_commitment
         # => [note_data_ptr]
 
         # duplicate note pointer and fetch num_assets
-        dup dup exec.memory::get_output_note_num_assets
-        # => [num_assets, note_data_ptr, note_data_ptr]
+        dup exec.memory::get_output_note_asset_data_ptr
+        # => [assets_ptr, note_data_ptr]
 
-        # calculate the number of pairs of assets (takes ceiling if we have an odd number)
-        add.1
-        u32assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
-        u32div.2
-        # => [num_asset_pairs, note_data_ptr, note_data_ptr]
+        dup.1 exec.memory::get_output_note_num_assets
+        # => [num_assets, assets_ptr, note_data_ptr]
 
-        # initiate counter for assets
-        push.0
-        # => [asset_counter, num_asset_pairs, note_data_ptr, note_data_ptr]
+        # compute the asset_end_ptr
+        mul.ASSET_SIZE dup.1 add swap
+        # => [assets_ptr, assets_end_ptr, note_data_ptr]
 
-        # prepare address and stack for reading assets
-        movup.2 exec.memory::get_output_note_asset_data_ptr padw padw padw
-        # => [PAD, PAD, PAD, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # check if we should loop
-        dup.14 dup.14 neq
-        # => [should_loop, PAD, PAD, PAD, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # loop and read assets from memory
-        while.true
-            # read assets from memory.
-            # if this is the last permutation of the loop and we have an odd number of assets then we
-            # implicitly pad the last word of the hasher rate with zeros by reading from empty memory.
-            mem_stream exec.rpo256::permute
-            # => [PERM, PERM, PERM, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-            # check if we should loop again
-            movup.13 add.1 dup movdn.14 dup.15 neq
-            # => [should_loop, PERM, PERM, PERM, asset_data_ptr, asset_counter, num_asset_pairs,
-            #     note_data_ptr]
-        end
-
-        # extract digest
-        exec.rpo256::squeeze_digest
-        # => [ASSETS_COMMITMENT, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # drop accessory variables from stack
-        movup.4 drop
-        movup.4 drop
-        movup.4 drop
+        exec.rpo256::hash_double_words
         # => [ASSETS_COMMITMENT, note_data_ptr]
 
-        # save the assets hash to memory
+        # save the assets commitment to memory
         dup.4 exec.memory::set_output_note_assets_commitment
         # => [ASSETS_COMMITMENT, note_data_ptr]
 

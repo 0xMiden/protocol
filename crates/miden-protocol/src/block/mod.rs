@@ -37,9 +37,6 @@ pub use block_inputs::BlockInputs;
 mod note_tree;
 pub use note_tree::{BlockNoteIndex, BlockNoteTree};
 
-mod signer;
-pub use signer::BlockSigner;
-
 /// The set of notes created in a transaction batch with their index in the batch.
 ///
 /// The index is included as some notes may be erased at the block level that were part of the

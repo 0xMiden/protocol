@@ -9,14 +9,14 @@ use crate::account::component::{
     AccountComponentMetadata,
     InitStorageData,
     InitStorageDataError as CoreInitStorageDataError,
-    SchemaTypeId,
+    SchemaType,
     StorageSlotSchema,
     StorageValueName,
     StorageValueNameError,
     WordSchema,
     WordValue,
 };
-use crate::account::{StorageSlotContent, StorageSlotName};
+use crate::account::{StorageMapKey, StorageSlotContent, StorageSlotName};
 use crate::asset::TokenSymbol;
 use crate::errors::ComponentMetadataError;
 
@@ -498,7 +498,7 @@ fn metadata_toml_round_trip_composed_slot_with_typed_fields() {
             .remove(&"demo::composed.a".parse::<StorageValueName>().unwrap())
             .unwrap()
             .r#type,
-        SchemaTypeId::u16()
+        SchemaType::u16()
     );
 
     let round_trip_toml = original.to_toml().expect("serialize to toml");
@@ -522,7 +522,7 @@ fn metadata_toml_round_trip_typed_slots() {
 
         [[storage.slots]]
         name = "demo::typed_map"
-        type = { key = "miden::standards::auth::falcon512_rpo::pub_key", value = "miden::standards::auth::falcon512_rpo::pub_key" }
+        type = { key = "miden::standards::auth::pub_key", value = "miden::standards::auth::pub_key" }
     "#;
 
     let metadata =
@@ -538,7 +538,7 @@ fn metadata_toml_round_trip_typed_slots() {
         _ => panic!("expected value slot"),
     };
 
-    let typed_value = SchemaTypeId::native_word();
+    let typed_value = SchemaType::native_word();
     assert_eq!(value_slot.word(), &WordSchema::new_simple(typed_value.clone()));
 
     let map_slot = schema
@@ -550,7 +550,7 @@ fn metadata_toml_round_trip_typed_slots() {
         _ => panic!("expected map slot"),
     };
 
-    let pub_key_type = SchemaTypeId::new("miden::standards::auth::falcon512_rpo::pub_key").unwrap();
+    let pub_key_type = SchemaType::new("miden::standards::auth::pub_key").unwrap();
     assert_eq!(map_slot.key_schema(), &WordSchema::new_simple(pub_key_type.clone()));
     assert_eq!(map_slot.value_schema(), &WordSchema::new_simple(pub_key_type));
 
@@ -582,11 +582,11 @@ fn metadata_toml_round_trip_typed_slots() {
     let map_type = typed_map_entry.get("type").unwrap().as_table().unwrap();
     assert_eq!(
         map_type.get("key").unwrap().as_str().unwrap(),
-        "miden::standards::auth::falcon512_rpo::pub_key"
+        "miden::standards::auth::pub_key"
     );
     assert_eq!(
         map_type.get("value").unwrap().as_str().unwrap(),
-        "miden::standards::auth::falcon512_rpo::pub_key"
+        "miden::standards::auth::pub_key"
     );
 }
 
@@ -613,7 +613,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         [[storage.slots]]
         name = "demo::owner_pub_key"
         description = "Owner public key"
-        type = "miden::standards::auth::falcon512_rpo::pub_key"
+        type = "miden::standards::auth::pub_key"
 
         # simple felt-typed word slot (parsed as felt, stored as [0,0,0,<felt>])
         [[storage.slots]]
@@ -676,8 +676,8 @@ fn extensive_schema_metadata_and_init_toml_example() {
     else {
         panic!("expected map slot schema");
     };
-    assert_eq!(default_map.key_schema(), &WordSchema::new_simple(SchemaTypeId::native_word()));
-    assert_eq!(default_map.value_schema(), &WordSchema::new_simple(SchemaTypeId::native_word()));
+    assert_eq!(default_map.key_schema(), &WordSchema::new_simple(SchemaType::native_word()));
+    assert_eq!(default_map.value_schema(), &WordSchema::new_simple(SchemaType::native_word()));
 
     // `type.key`/`type.value` parse as schema/type descriptors (not literal words).
     let typed_map_new_name = StorageSlotName::new("demo::typed_map_new").unwrap();
@@ -686,7 +686,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
     else {
         panic!("expected map slot schema");
     };
-    assert_eq!(typed_map_new.value_schema(), &WordSchema::new_simple(SchemaTypeId::u16()));
+    assert_eq!(typed_map_new.value_schema(), &WordSchema::new_simple(SchemaType::u16()));
     assert!(matches!(typed_map_new.key_schema(), WordSchema::Composite { .. }));
 
     // used storage slots
@@ -708,7 +708,7 @@ fn extensive_schema_metadata_and_init_toml_example() {
         .expect("symbol should be reported with a default value");
     assert_eq!(
         symbol_requirement.r#type,
-        SchemaTypeId::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
+        SchemaType::new("miden::standards::fungible_faucets::metadata::token_symbol").unwrap()
     );
     assert_eq!(symbol_requirement.default_value.as_deref(), Some("TST"));
     assert!(
@@ -779,9 +779,12 @@ fn extensive_schema_metadata_and_init_toml_example() {
         panic!("expected map slot for static_map");
     };
     assert_eq!(static_map.num_entries(), 2);
-    assert_eq!(static_map.get(&Word::parse("0x1").unwrap()), Word::parse("0x10").unwrap());
     assert_eq!(
-        static_map.get(&Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(2)])),
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x1").unwrap())),
+        Word::parse("0x10").unwrap()
+    );
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
 
@@ -827,9 +830,8 @@ fn extensive_schema_metadata_and_init_toml_example() {
     };
     assert_eq!(typed_map_new_contents.num_entries(), 2);
 
-    let key1 = Word::from([Felt::new(1), Felt::new(2), Felt::ZERO, Felt::ZERO]);
     assert_eq!(
-        typed_map_new_contents.get(&key1),
+        typed_map_new_contents.get(&StorageMapKey::from_array([1, 2, 0, 0])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(16)])
     );
 
@@ -854,12 +856,18 @@ fn extensive_schema_metadata_and_init_toml_example() {
         panic!("expected map slot for static_map");
     };
     assert_eq!(static_map.num_entries(), 3);
-    assert_eq!(static_map.get(&Word::parse("0x1").unwrap()), Word::parse("0x99").unwrap());
     assert_eq!(
-        static_map.get(&Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(2)])),
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x1").unwrap())),
+        Word::parse("0x99").unwrap()
+    );
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_array([0, 0, 0, 2])),
         Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(32)])
     );
-    assert_eq!(static_map.get(&Word::parse("0x3").unwrap()), Word::parse("0x30").unwrap());
+    assert_eq!(
+        static_map.get(&StorageMapKey::from_raw(Word::parse("0x3").unwrap())),
+        Word::parse("0x30").unwrap()
+    );
 }
 
 #[test]
@@ -935,5 +943,5 @@ fn typed_map_supports_non_numeric_value_types() {
     let key = Word::parse("0x1").unwrap();
     let symbol_felt: Felt = TokenSymbol::new("BTC").unwrap().into();
     let expected_value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, symbol_felt]);
-    assert_eq!(map.get(&key), expected_value);
+    assert_eq!(map.get(&StorageMapKey::from_raw(key)), expected_value);
 }

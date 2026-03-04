@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use core::slice;
 
 use miden_processor::crypto::RpoRandomCoin;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -40,9 +41,9 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use crate::scripts::swap::create_p2id_note_exact;
 use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
 
 // Shared test utilities for faucet tests
@@ -131,7 +132,12 @@ pub fn verify_minted_output_note(
 #[tokio::test]
 async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "TST",
+        200,
+        None,
+    )?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -154,7 +160,12 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
     // CONSTRUCT AND EXECUTE TX (Failure)
     // --------------------------------------------------------------------------------------------
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "TST",
+        200,
+        None,
+    )?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -204,7 +215,11 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 #[tokio::test]
 async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.create_new_faucet(Auth::BasicAuth, "TST", 200)?;
+    let faucet = builder.create_new_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "TST",
+        200,
+    )?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -232,7 +247,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth,
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -248,7 +263,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
             # => []
 
             call.::miden::standards::faucets::basic_fungible::burn
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             # truncate the stack
             dropw
@@ -295,7 +310,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
-        Auth::BasicAuth,
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
         "TST",
         max_supply.into(),
         Some(token_supply.into()),
@@ -312,7 +327,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
             # => []
 
             call.::miden::standards::faucets::basic_fungible::burn
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             # truncate the stack
             dropw
@@ -345,7 +360,12 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "TST",
+        200,
+        None,
+    )?;
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
@@ -1280,6 +1300,95 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
     let balance = target_account_mut.vault().get_balance(faucet.id())?;
     assert_eq!(balance, expected_asset.amount());
+
+    Ok(())
+}
+
+/// Tests that calling distribute multiple times in a single transaction produces output notes
+/// with the correct individual amounts, not the cumulative vault totals.
+#[tokio::test]
+async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        "TST",
+        300,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let recipient_1 = Word::from([0, 1, 2, 3u32]);
+    let recipient_2 = Word::from([4, 5, 6, 7u32]);
+    let tag = NoteTag::default();
+    let note_type = NoteType::Private;
+    let amount_1: u64 = 100;
+    let amount_2: u64 = 50;
+
+    let tx_script_code = format!(
+        "
+            begin
+                # --- First distribute: mint {amount_1} tokens to recipient_1 ---
+                padw padw push.0
+
+                push.{recipient_1}
+                push.{note_type}
+                push.{tag}
+                push.{amount_1}
+                # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
+
+                call.::miden::standards::faucets::basic_fungible::distribute
+                # => [note_idx, pad(15)]
+
+                # clean up the stack before the second call
+                dropw dropw dropw dropw
+
+                # --- Second distribute: mint {amount_2} tokens to recipient_2 ---
+                padw padw push.0
+
+                push.{recipient_2}
+                push.{note_type}
+                push.{tag}
+                push.{amount_2}
+                # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
+
+                call.::miden::standards::faucets::basic_fungible::distribute
+                # => [note_idx, pad(15)]
+
+                # truncate the stack
+                dropw dropw dropw dropw
+            end
+            ",
+        note_type = note_type as u8,
+        tag = u32::from(tag),
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_tx_script(tx_script_code)?;
+    let tx_context = mock_chain
+        .build_tx_context(faucet.clone(), &[], &[])?
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify two output notes were created
+    assert_eq!(executed_transaction.output_notes().num_notes(), 2);
+
+    // Verify first note has exactly amount_1 tokens.
+    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?.into();
+    let output_note_1 = executed_transaction.output_notes().get_note(0);
+    let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
+    let expected_id_1 = NoteId::new(recipient_1, assets_1.commitment());
+    assert_eq!(output_note_1.id(), expected_id_1);
+
+    // Verify second note has exactly amount_2 tokens.
+    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?.into();
+    let output_note_2 = executed_transaction.output_notes().get_note(1);
+    let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
+    let expected_id_2 = NoteId::new(recipient_2, assets_2.commitment());
+    assert_eq!(output_note_2.id(), expected_id_2);
 
     Ok(())
 }

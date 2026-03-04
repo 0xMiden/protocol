@@ -126,24 +126,24 @@ pub proc get_assets
     # => [num_assets, dest_ptr, note_index]
 end
 
-#! Adds the ASSET to the note specified by the index.
+#! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [ASSET, note_idx]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx]
 #! Outputs: []
 #!
 #! Where:
 #! - note_idx is the index of the note to which the asset is added.
-#! - ASSET can be a fungible or non-fungible asset.
+#! - ASSET_KEY is the vault key of the asset to add.
+#! - ASSET_VALUE is the value of the asset to add.
 #!
 #! Invocation: exec
 pub proc add_asset
-    movup.4 push.OUTPUT_NOTE_ADD_ASSET_OFFSET
-    # => [offset, note_idx, ASSET]
+    push.OUTPUT_NOTE_ADD_ASSET_OFFSET
+    # => [offset, ASSET_KEY, ASSET_VALUE, note_idx]
 
-    # pad the stack before the syscall to prevent accidental modification of the deeper stack
-    # elements
-    push.0.0 movdn.7 movdn.7 padw padw swapdw
-    # => [offset, note_idx, ASSET, pad(10)]
+    # pad the stack
+    repeat.6 push.0 movdn.10 end
+    # => [offset, ASSET_KEY, ASSET_VALUE, note_idx, pad(6)]
 
     syscall.exec_kernel_proc
     # => [pad(16)]

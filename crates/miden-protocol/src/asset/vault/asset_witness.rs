@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use miden_crypto::merkle::InnerNodeInfo;
@@ -23,17 +24,12 @@ impl AssetWitness {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - any of the entries in the SMT leaf is not a valid asset.
-    /// - any of the entries' vault keys does not match the expected vault key of the asset.
+    /// - any of the key value pairs in the SMT leaf do not form a valid asset.
     pub fn new(smt_proof: SmtProof) -> Result<Self, AssetError> {
-        for (vault_key, asset) in smt_proof.leaf().entries() {
-            let asset = Asset::try_from(asset)?;
-            if *vault_key != asset.vault_key().into() {
-                return Err(AssetError::AssetVaultKeyMismatch {
-                    actual: *vault_key,
-                    expected: asset.vault_key().into(),
-                });
-            }
+        for (vault_key, asset_value) in smt_proof.leaf().entries() {
+            // This ensures that vault key and value are consistent.
+            Asset::from_key_value_words(*vault_key, *asset_value)
+                .map_err(|err| AssetError::AssetWitnessInvalid(Box::new(err)))?;
         }
 
         Ok(Self(smt_proof))
@@ -72,8 +68,9 @@ impl AssetWitness {
             SmtLeaf::Multiple(kv_pairs) => kv_pairs,
         };
 
-        entries.iter().map(|(_key, value)| {
-            Asset::try_from(value).expect("asset witness should track valid assets")
+        entries.iter().map(|(key, value)| {
+            Asset::from_key_value_words(*key, *value)
+                .expect("asset witness should track valid assets")
         })
     }
 
@@ -132,7 +129,9 @@ mod tests {
 
         let err = AssetWitness::new(proof).unwrap_err();
 
-        assert_matches!(err, AssetError::InvalidFaucetAccountId(_));
+        assert_matches!(err, AssetError::AssetWitnessInvalid(source) => {
+            assert_matches!(*source, AssetError::InvalidFaucetAccountId(_));
+        });
 
         Ok(())
     }
@@ -144,15 +143,16 @@ mod tests {
         let fungible_asset = FungibleAsset::mock(500);
         let non_fungible_asset = NonFungibleAsset::mock(&[1]);
 
-        let smt =
-            Smt::with_entries([(fungible_asset.vault_key().into(), non_fungible_asset.into())])?;
+        let smt = Smt::with_entries([(
+            fungible_asset.vault_key().into(),
+            non_fungible_asset.to_value_word(),
+        )])?;
         let proof = smt.open(&fungible_asset.vault_key().into());
 
         let err = AssetWitness::new(proof).unwrap_err();
 
-        assert_matches!(err, AssetError::AssetVaultKeyMismatch { actual, expected } => {
-            assert_eq!(actual, fungible_asset.vault_key().into());
-            assert_eq!(expected, non_fungible_asset.vault_key().into());
+        assert_matches!(err, AssetError::AssetWitnessInvalid(source) => {
+            assert_matches!(*source, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
         });
 
         Ok(())

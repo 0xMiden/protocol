@@ -64,7 +64,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
                 // TODO: It should be possible to remove this after implementing
-                // https://github.com/0xMiden/miden-base/issues/1852.
+                // https://github.com/0xMiden/protocol/issues/1852.
                 &TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount,
             ]
             .map(TransactionEventId::event_id),

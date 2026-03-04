@@ -525,19 +525,26 @@ fn multiple_transactions_against_same_account() -> anyhow::Result<()> {
 
 /// Tests that the input and outputs notes commitment is correctly computed.
 /// - Notes created and consumed in the same batch are erased from these commitments.
-/// - The input note commitment is sorted by the order in which the notes appeared in the batch.
+/// - The input note commitment is sorted by [`Nullifier`].
 /// - The output note commitment is sorted by [`NoteId`].
 #[test]
 fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     let TestSetup { chain, account1, account2, .. } = setup_chain();
     let block1 = chain.block_header(1);
 
-    let note0 = mock_output_note(50);
-    let note1 = mock_note(60);
-    let note2 = mock_output_note(70);
-    let note3 = mock_output_note(80);
-    let note4 = mock_note(90);
-    let note5 = mock_note(100);
+    // Randomize the note IDs and nullifiers on each test run to make sure the sorting property
+    // is tested with various inputs.
+    let mut rng = rand::rng();
+    // Generate a single random number and derive other unique numbers from it to avoid collisions.
+    let note_num = rng.random();
+
+    let note0 = mock_output_note(note_num);
+    let note1 = mock_note(note_num.wrapping_add(1));
+    let note2 = mock_output_note(note_num.wrapping_add(2));
+    let note3 = mock_output_note(note_num.wrapping_add(3));
+    let note4 = mock_note(note_num.wrapping_add(4));
+    let note5 = mock_note(note_num.wrapping_add(5));
+    let note6 = mock_note(note_num.wrapping_add(6));
 
     let tx1 =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
@@ -572,15 +579,17 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     assert_eq!(batch.output_notes().len(), 3);
     assert_eq!(batch.output_notes(), expected_output_notes);
 
+    let mut expected_input_notes = [
+        InputNoteCommitment::from(&InputNote::unauthenticated(note4)),
+        InputNoteCommitment::from(&InputNote::unauthenticated(note5)),
+        InputNoteCommitment::from(&InputNote::unauthenticated(note6)),
+    ];
+    // We expect a vector sorted by Nullifier (since InputOutputNoteTracker is set up that way).
+    expected_input_notes.sort_unstable_by_key(InputNoteCommitment::nullifier);
+
     // Input notes are sorted by the order in which they appeared in the batch.
-    assert_eq!(batch.input_notes().num_notes(), 2);
-    assert_eq!(
-        batch.input_notes().clone().into_vec(),
-        &[
-            InputNoteCommitment::from(&InputNote::unauthenticated(note5)),
-            InputNoteCommitment::from(&InputNote::unauthenticated(note4)),
-        ]
-    );
+    assert_eq!(batch.input_notes().num_notes(), 3);
+    assert_eq!(batch.input_notes().clone().into_vec(), &expected_input_notes);
 
     Ok(())
 }
