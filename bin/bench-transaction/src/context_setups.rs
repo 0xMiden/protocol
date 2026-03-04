@@ -13,7 +13,9 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset],
     )?;
 
@@ -77,8 +79,9 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
     // Create target account
-    let target_account =
-        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create the note
     let note = builder
@@ -104,8 +107,9 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
 pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let fungible_asset_1: Asset = FungibleAsset::mock(100);
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 

@@ -217,7 +217,7 @@ end
 proc convert_asset
     # --- Step 1: Assert faucet is registered ---
     swapw
-    exec.asset::get_balance_from_fungible_asset
+    exec.asset::fungible_value_into_amount
     movdn.4
     # => [ASSET_KEY, amount]
 

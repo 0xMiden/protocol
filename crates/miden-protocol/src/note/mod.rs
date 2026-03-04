@@ -1,9 +1,15 @@
-use miden_processor::DeserializationError;
+use miden_crypto::Word;
 
 use crate::account::AccountId;
 use crate::errors::NoteError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use crate::{Felt, Hasher, WORD_SIZE, Word, ZERO};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
+use crate::{Felt, Hasher, ZERO};
 
 mod assets;
 pub use assets::NoteAssets;

@@ -555,7 +555,7 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     let tx2 =
         MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
-            .unauthenticated_notes(vec![note4.clone()])
+            .unauthenticated_notes(vec![note4.clone(), note6.clone()])
             .output_notes(vec![
                 OutputNote::Full(note1.clone()).to_proven_output_note().unwrap(),
                 note2.clone(),

@@ -279,7 +279,7 @@ fn extract_singlesig_auth_method(
     let scheme_id = storage
         .get_item(scheme_id_slot)
         .expect("invalid storage index of the scheme id")[0]
-        .as_int() as u8;
+        .as_canonical_u64() as u8;
 
     let auth_scheme =
         AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
@@ -300,8 +300,8 @@ fn extract_multisig_auth_method(
         .get_item(config_slot)
         .expect("invalid slot name of the multisig configuration");
 
-    let threshold = config[0].as_int() as u32;
-    let num_approvers = config[1].as_int() as u8;
+    let threshold = config[0].as_canonical_u64() as u32;
+    let num_approvers = config[1].as_canonical_u64() as u8;
 
     let mut approvers = Vec::new();
 
@@ -331,7 +331,7 @@ fn extract_multisig_auth_method(
                 )
             });
 
-        let scheme_id = scheme_word[0].as_int() as u8;
+        let scheme_id = scheme_word[0].as_canonical_u64() as u8;
         let auth_scheme =
             AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
         approvers.push((pub_key, auth_scheme));

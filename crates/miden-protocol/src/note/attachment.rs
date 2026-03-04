@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 
 use crate::crypto::SequentialCommit;
 use crate::errors::NoteError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Hasher, Word};
 
 // NOTE ATTACHMENT
@@ -242,7 +248,8 @@ impl Deserializable for NoteAttachmentContent {
             },
             NoteAttachmentKind::Array => {
                 let num_elements = u16::read_from(source)?;
-                let elements = source.read_many(num_elements as usize)?;
+                let elements =
+                    source.read_many_iter(num_elements as usize)?.collect::<Result<_, _>>()?;
                 Self::new_array(elements)
                     .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             },

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, Result, WrapErr, miette};
 use miden_assembly::{Assembler, DefaultSourceManager, KernelLibrary, Library};
+use miden_core::events::EventId;
 use regex::Regex;
 use walkdir::WalkDir;
 
@@ -501,7 +502,7 @@ fn generate_event_file_content(
     // want to error out as early as possible:
     // TODO: make the error out at build-time to be able to present better error hints
     for (event_path, event_name) in events {
-        let value = miden_core::EventId::from_name(event_path).as_felt().as_int();
+        let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
         debug_assert!(!event_name.is_empty());
         writeln!(&mut output, "const {}: u64 = {};", event_name, value)?;
     }

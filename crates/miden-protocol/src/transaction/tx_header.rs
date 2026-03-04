@@ -1,7 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_processor::DeserializationError;
-
 use crate::Word;
 use crate::asset::FungibleAsset;
 use crate::note::NoteHeader;
@@ -14,7 +12,13 @@ use crate::transaction::{
     ProvenTransaction,
     TransactionId,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A transaction header derived from a
 /// [`ProvenTransaction`](crate::transaction::ProvenTransaction).

@@ -1,5 +1,5 @@
-use miden_processor::AdviceInputs;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::advice::AdviceInputs;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -57,7 +57,9 @@ fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Rpo => AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng),
+            AuthScheme::Falcon512Poseidon2 => {
+                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
+            },
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
@@ -114,7 +116,7 @@ fn create_multisig_account(
 /// - 1 Multisig Contract
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_2_of_2_with_note_creation(
     #[case] auth_scheme: AuthScheme,
@@ -213,7 +215,7 @@ async fn test_multisig_2_of_2_with_note_creation(
 /// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_2_of_4_all_signer_combinations(
     #[case] auth_scheme: AuthScheme,
@@ -257,7 +259,7 @@ async fn test_multisig_2_of_4_all_signer_combinations(
 
         let tx_summary = match tx_context_init.execute().await.unwrap_err() {
             TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => panic!("expected abort with tx effects: {error:?}"),
+            error => anyhow::bail!("expected abort with tx effects: {error}"),
         };
 
         // Get signatures from the specific combination of signers
@@ -303,7 +305,7 @@ async fn test_multisig_2_of_4_all_signer_combinations(
 /// - 1 Multisig Contract
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
@@ -391,7 +393,7 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
 /// - 1 Transaction Script calling multisig procedures
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     let (_secret_keys, auth_schemes, public_keys, authenticators) =
@@ -677,7 +679,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
 /// - 1 Transaction Script calling multisig procedures
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_update_signers_remove_owner(
     #[case] auth_scheme: AuthScheme,
@@ -875,7 +877,7 @@ async fn test_multisig_update_signers_remove_owner(
 /// 4. Verify that only the CURRENT approvers can sign the update transaction
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_new_approvers_cannot_sign_before_update(
     #[case] auth_scheme: AuthScheme,
@@ -1023,7 +1025,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
 /// 2. Send a note only when both approvers sign the transaction (default threshold)
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_proc_threshold_overrides(
     #[case] auth_scheme: AuthScheme,

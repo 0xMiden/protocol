@@ -322,20 +322,19 @@ pub proc build_metadata_header
     # Merge note type and sender ID suffix.
     # --------------------------------------------------------------------------------------------
 
-    exec.account::get_id swap
+    exec.account::get_id
     # => [sender_id_suffix, sender_id_prefix, tag, note_type]
 
     # the lower bits of an account ID suffix are guaranteed to be zero, so we can safely use that
     # space to encode the note type
-    movup.3 add swap
-    # => [sender_id_prefix, sender_id_suffix_and_note_type, tag]
+    movup.3 add
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag]
 
     # Build metadata header.
     # --------------------------------------------------------------------------------------------
 
-    movup.2
-    push.ATTACHMENT_DEFAULT_KIND_AND_SCHEME
-    # => [attachment_kind_scheme, tag, sender_id_prefix, sender_id_suffix_and_note_type]
+    push.ATTACHMENT_DEFAULT_KIND_AND_SCHEME movdn.3
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
     # => [NOTE_METADATA_HEADER]
 end
 
@@ -485,7 +484,7 @@ proc add_asset_raw
     # => [has_assets, ASSET_KEY, ASSET_VALUE, is_existing_asset, asset_ptr, asset_end_ptr, note_ptr]
 
     while.true
-        padw dup.13 mem_loadw_be
+        padw dup.13 mem_loadw_le
         # => [STORED_ASSET_KEY, ASSET_KEY, ASSET_VALUE, is_existing_asset, asset_ptr, asset_end_ptr, note_ptr]
 
         exec.word::test_eq
@@ -537,7 +536,7 @@ proc add_asset_raw
         # if the asset is fungible, merge the asset values
         # overwrite asset key on the stack with the stored asset value
         # note that asset_ptr already stores ASSET_KEY so there is no need to overwrite it
-        dup.8 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+        dup.8 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
         # => [STORED_ASSET_VALUE, ASSET_VALUE, asset_ptr, note_ptr]
 
         # merge the two fungible assets
@@ -545,7 +544,7 @@ proc add_asset_raw
         # => [MERGED_ASSET_VALUE, asset_ptr, note_ptr]
 
         # store the merged asset value
-        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_be dropw drop
+        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw drop
         # => []
     else
         # if the asset does not exist, increment num assets and append the asset
@@ -557,11 +556,11 @@ proc add_asset_raw
         # => [ASSET_KEY, ASSET_VALUE, asset_ptr]
 
         # store ASSET_KEY
-        dup.8 mem_storew_be dropw
+        dup.8 mem_storew_le dropw
         # => [ASSET_VALUE, asset_ptr]
 
         # store ASSET_VALUE
-        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_be dropw
+        movup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
         # => []
     end
 end

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
-use miden_processor::DeserializationError;
+use miden_processor::serde::DeserializationError;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -32,9 +32,8 @@ use miden_protocol::transaction::{
 };
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::utils::{ByteReader, Deserializable, Serializable};
+use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_tx_batch_prover::LocalBatchProver;
-use winterfell::ByteWriter;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, TransactionContextBuilder};
@@ -78,9 +77,10 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Rpo (scheme_id: 2) auth scheme.
-/// let receiver =
-///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -143,16 +143,20 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// let faucet = builder.create_new_faucet(
-///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+///     Auth::BasicAuth {
+///         auth_scheme: AuthScheme::Falcon512Poseidon2,
+///     },
 ///     "USDT",
 ///     100_000,
 /// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-/// let target =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -1224,7 +1228,7 @@ mod tests {
         )?;
 
         let account_id = account.id();
-        assert_eq!(account.nonce().as_int(), 0);
+        assert_eq!(account.nonce().as_canonical_u64(), 0);
 
         let note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -1245,7 +1249,7 @@ mod tests {
         mock_chain.add_pending_executed_transaction(&tx)?;
         mock_chain.prove_next_block()?;
 
-        assert!(tx.final_account().nonce().as_int() > 0);
+        assert!(tx.final_account().nonce().as_canonical_u64() > 0);
         assert_eq!(
             tx.final_account().to_commitment(),
             mock_chain.account_tree.open(account_id).state_commitment()
@@ -1262,7 +1266,9 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+                    Auth::BasicAuth {
+                        auth_scheme: AuthScheme::Falcon512Poseidon2,
+                    },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

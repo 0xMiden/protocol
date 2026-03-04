@@ -686,9 +686,8 @@ mod tests {
     use alloc::collections::BTreeMap;
 
     use anyhow::Context;
-    use miden_core::utils::Deserializable;
+    use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
-    use winter_rand_utils::rand_value;
 
     use super::ProvenTransaction;
     use crate::account::delta::AccountUpdateDetails;
@@ -715,7 +714,7 @@ mod tests {
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::transaction::{ProvenTransactionBuilder, TxAccountUpdate};
-    use crate::utils::Serializable;
+    use crate::utils::serde::{Deserializable, Serializable};
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, LexicographicWord, ONE, Word};
 
     fn check_if_sync<T: Sync>() {}

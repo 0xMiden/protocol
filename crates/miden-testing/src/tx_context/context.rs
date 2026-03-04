@@ -3,8 +3,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_processor::mast::MastForest;
+use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,

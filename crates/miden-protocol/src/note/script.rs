@@ -2,8 +2,9 @@ use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
+use core::num::TryFromIntError;
 
-use miden_processor::MastNodeExt;
+use miden_core::mast::MastNodeExt;
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -156,12 +157,13 @@ impl NoteScript {
         self.entrypoint
     }
 
-    /// Removes all decorators from this MAST forest.
+    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
+    /// procedure names.
     ///
-    /// See [`MastForest::strip_decorators`] for more details.
-    pub fn strip_decorators(&mut self) {
+    /// See [`MastForest::clear_debug_info`] for more details.
+    pub fn clear_debug_info(&mut self) {
         let mut mast = self.mast.clone();
-        Arc::make_mut(&mut mast).strip_decorators();
+        Arc::make_mut(&mut mast).clear_debug_info();
         self.mast = mast;
     }
 
@@ -241,16 +243,23 @@ impl TryFrom<&[Felt]> for NoteScript {
             return Err(DeserializationError::UnexpectedEOF);
         }
 
-        let entrypoint: u32 = elements[0].try_into().map_err(DeserializationError::InvalidValue)?;
-        let len = elements[1].as_int();
+        let entrypoint: u32 = elements[0]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|err: TryFromIntError| DeserializationError::InvalidValue(err.to_string()))?;
+        let len = elements[1].as_canonical_u64();
         let mut data = Vec::with_capacity(elements.len() * 4);
 
         for &felt in &elements[2..] {
-            let v: u32 = felt.try_into().map_err(DeserializationError::InvalidValue)?;
-            data.extend(v.to_le_bytes())
+            let element: u32 =
+                felt.as_canonical_u64().try_into().map_err(|err: TryFromIntError| {
+                    DeserializationError::InvalidValue(err.to_string())
+                })?;
+            data.extend(element.to_le_bytes())
         }
         data.shrink_to(len as usize);
 
+        // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
         let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
         Ok(NoteScript::from_parts(Arc::new(mast), entrypoint))
@@ -353,7 +362,9 @@ mod tests {
 
     #[test]
     fn test_note_script_with_advice_map() {
-        use miden_core::{AdviceMap, Word};
+        use miden_core::advice::AdviceMap;
+
+        use crate::Word;
 
         let assembler = Assembler::default();
         let program = assembler.assemble_program("begin nop end").unwrap();

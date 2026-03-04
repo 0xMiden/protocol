@@ -251,14 +251,18 @@ impl TryFrom<Word> for NoteMetadataHeader {
     fn try_from(word: Word) -> Result<Self, Self::Error> {
         let (sender_suffix, note_type) = unmerge_sender_suffix_and_note_type(word[0])?;
         let sender_prefix = word[1];
-        let tag = u32::try_from(word[2]).map(NoteTag::new).map_err(|_| {
+        let tag = u32::try_from(word[2].as_canonical_u64()).map(NoteTag::new).map_err(|_| {
             NoteError::other("failed to convert note tag from metadata header to u32")
         })?;
         let (attachment_kind, attachment_scheme) = unmerge_attachment_kind_scheme(word[3])?;
 
-        let sender = AccountId::try_from([sender_prefix, sender_suffix]).map_err(|source| {
-            NoteError::other_with_source("failed to decode account ID from metadata header", source)
-        })?;
+        let sender =
+            AccountId::try_from_elements(sender_suffix, sender_prefix).map_err(|source| {
+                NoteError::other_with_source(
+                    "failed to decode account ID from metadata header",
+                    source,
+                )
+            })?;
 
         Ok(Self {
             sender,
@@ -286,7 +290,7 @@ impl TryFrom<Word> for NoteMetadataHeader {
 ///
 /// The `sender_id_suffix` is the suffix of the sender's account ID.
 fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType) -> Felt {
-    let mut merged = sender_id_suffix.as_int();
+    let mut merged = sender_id_suffix.as_canonical_u64();
 
     let note_type_byte = note_type as u8;
     debug_assert!(note_type_byte < 4, "note type must not contain values >= 4");
@@ -303,14 +307,14 @@ fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType)
     // Inverts the note type mask.
     const SENDER_SUFFIX_MASK: u64 = !(NOTE_TYPE_MASK as u64);
 
-    let note_type_byte = element.as_int() as u8 & NOTE_TYPE_MASK;
+    let note_type_byte = element.as_canonical_u64() as u8 & NOTE_TYPE_MASK;
     let note_type = NoteType::try_from(note_type_byte).map_err(|source| {
         NoteError::other_with_source("failed to decode note type from metadata header", source)
     })?;
 
     // No bits were set so felt should still be valid.
-    let sender_suffix =
-        Felt::try_from(element.as_int() & SENDER_SUFFIX_MASK).expect("felt should still be valid");
+    let sender_suffix = Felt::try_from(element.as_canonical_u64() & SENDER_SUFFIX_MASK)
+        .expect("felt should still be valid");
 
     Ok((sender_suffix, note_type))
 }
@@ -338,8 +342,8 @@ fn merge_attachment_kind_scheme(
 fn unmerge_attachment_kind_scheme(
     element: Felt,
 ) -> Result<(NoteAttachmentKind, NoteAttachmentScheme), NoteError> {
-    let attachment_scheme = element.as_int() as u32;
-    let attachment_kind = (element.as_int() >> 32) as u8;
+    let attachment_scheme = element.as_canonical_u64() as u32;
+    let attachment_kind = (element.as_canonical_u64() >> 32) as u8;
 
     let attachment_scheme = NoteAttachmentScheme::new(attachment_scheme);
     let attachment_kind = NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {

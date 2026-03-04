@@ -1,6 +1,6 @@
 use core::fmt::Display;
 
-use crate::{Felt, FieldElement};
+use crate::Felt;
 
 /// The [`AssetId`] in an [`AssetVaultKey`](crate::asset::AssetVaultKey) distinguishes different
 /// assets issued by the same faucet.
@@ -36,8 +36,8 @@ impl Display for AssetId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_fmt(format_args!(
             "0x{:016x}{:016x}",
-            self.prefix().as_int(),
-            self.suffix().as_int()
+            self.prefix().as_canonical_u64(),
+            self.suffix().as_canonical_u64()
         ))
     }
 }

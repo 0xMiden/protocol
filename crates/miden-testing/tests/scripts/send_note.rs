@@ -44,7 +44,9 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let sender_basic_wallet_account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [sent_asset0, total_asset],
     )?;
     let p2any_note = create_p2any_note(
@@ -120,7 +122,9 @@ async fn test_send_note_script_basic_wallet() -> anyhow::Result<()> {
 async fn test_send_note_script_basic_fungible_faucet() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let sender_basic_fungible_faucet_account = builder.add_existing_basic_faucet(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         "POL",
         200,
         None,

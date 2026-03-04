@@ -346,7 +346,7 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
-        if new_nonce.as_int() < self.nonce.as_int() {
+        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
             return Err(AccountError::NonceOverflow {
                 current: self.nonce,
                 increment: nonce_delta,
@@ -553,7 +553,6 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::Assembler;
-    use miden_core::FieldElement;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
