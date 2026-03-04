@@ -212,6 +212,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .amount
         .scale_to_token_amount(scale as u32)
         .expect("amount should scale successfully");
+    let miden_claim_amount = miden_claim_amount * Felt::from(10_u32);
 
     let claim_inputs = ClaimNoteStorage {
         proof_data,
