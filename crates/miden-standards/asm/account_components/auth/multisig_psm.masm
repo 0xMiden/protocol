@@ -26,15 +26,8 @@ pub use psm::update_psm_public_key
 pub proc auth_tx_multisig_psm(salt: BeWord)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
-    
-    # ------ Verifying Private State Manager Signature ------
 
-    exec.psm::is_initialized
-    # => [is_initialized, TX_SUMMARY_COMMITMENT]
-
-    if.true
-        exec.psm::verify_signature
-    end
+    exec.psm::verify_signature
     # => [TX_SUMMARY_COMMITMENT]
 
     exec.multisig::assert_new_tx

@@ -173,7 +173,7 @@ impl AuthMultisigPsmConfig {
 /// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
 /// - Slot 3(map): A map which stores executed transactions
 /// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
-/// - Slot 5(value): [is_psm_signature_required, is_initialized, 0, 0]
+/// - Slot 5(value): [is_psm_signature_required, 0, 0, 0]
 /// - Slot 6(map): A map with private state manager public key ([0, 0, 0, 0] -> pubkey)
 /// - Slot 7(map): A map with private state manager scheme id ([0, 0, 0, 0] -> scheme_id)
 ///
@@ -232,23 +232,13 @@ impl AuthMultisigPsm {
         &PSM_SCHEME_ID_SLOT_NAME
     }
 
-    /// Returns PSM config word for `enabled + initialized` state.
-    pub fn psm_config_enabled_initialized() -> Word {
-        Word::from([1u32, 1u32, 0, 0])
-    }
-
-    /// Returns PSM config word for `enabled + uninitialized` state.
-    pub fn psm_config_enabled_uninitialized() -> Word {
+    /// Returns PSM config word for `enabled` state.
+    pub fn psm_config_enabled() -> Word {
         Word::from([1u32, 0u32, 0, 0])
     }
 
-    /// Returns PSM config word for `disabled + initialized` state.
-    pub fn psm_config_disabled_initialized() -> Word {
-        Word::from([0u32, 1u32, 0, 0])
-    }
-
-    /// Returns PSM config word for `disabled + uninitialized` state.
-    pub fn psm_config_disabled_uninitialized() -> Word {
+    /// Returns PSM config word for `disabled` state.
+    pub fn psm_config_disabled() -> Word {
         Word::from([0u32, 0u32, 0u32, 0u32])
     }
 
@@ -324,7 +314,7 @@ impl AuthMultisigPsm {
                 "Private state manager config",
                 [
                     FeltSchema::u32("is_psm_signature_required").with_default(Felt::new(0)),
-                    FeltSchema::u32("is_initialized").with_default(Felt::new(0)),
+                    FeltSchema::new_void(),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -410,13 +400,11 @@ impl From<AuthMultisigPsm> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        // Private state manager config slot (value: [is_psm_signature_required, is_initialized,
-        // 0, 0])
-        let is_initialized = u32::from(multisig.config.psm().is_some());
-        let psm_config = if is_initialized == 1 {
-            AuthMultisigPsm::psm_config_enabled_initialized()
+        // Private state manager config slot (value: [is_psm_signature_required, 0, 0, 0])
+        let psm_config = if multisig.config.psm().is_some() {
+            AuthMultisigPsm::psm_config_enabled()
         } else {
-            AuthMultisigPsm::psm_config_disabled_uninitialized()
+            AuthMultisigPsm::psm_config_disabled()
         };
         storage_slots
             .push(StorageSlot::with_value(AuthMultisigPsm::psm_config_slot().clone(), psm_config));
@@ -542,7 +530,7 @@ mod tests {
             .storage()
             .get_item(AuthMultisigPsm::psm_config_slot())
             .expect("private state manager config storage slot access failed");
-        assert_eq!(psm_config, AuthMultisigPsm::psm_config_disabled_uninitialized());
+        assert_eq!(psm_config, AuthMultisigPsm::psm_config_disabled());
 
         // Verify no private state manager is configured by default.
         // Missing storage-map entries read back as the map's empty value.
@@ -631,7 +619,7 @@ mod tests {
             .storage()
             .get_item(AuthMultisigPsm::psm_config_slot())
             .expect("private state manager config storage slot access failed");
-        assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+        assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
         let psm_public_key = account
             .storage()
@@ -714,15 +702,7 @@ mod tests {
 
     #[test]
     fn test_multisig_psm_config_state_constants() {
-        assert_eq!(AuthMultisigPsm::psm_config_enabled_initialized(), Word::from([1u32, 1, 0, 0]));
-        assert_eq!(
-            AuthMultisigPsm::psm_config_enabled_uninitialized(),
-            Word::from([1u32, 0, 0, 0])
-        );
-        assert_eq!(AuthMultisigPsm::psm_config_disabled_initialized(), Word::from([0u32, 1, 0, 0]));
-        assert_eq!(
-            AuthMultisigPsm::psm_config_disabled_uninitialized(),
-            Word::from([0u32, 0, 0, 0])
-        );
+        assert_eq!(AuthMultisigPsm::psm_config_enabled(), Word::from([1u32, 0, 0, 0]));
+        assert_eq!(AuthMultisigPsm::psm_config_disabled(), Word::from([0u32, 0, 0, 0]));
     }
 }

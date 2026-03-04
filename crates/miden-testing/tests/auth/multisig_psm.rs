@@ -263,7 +263,7 @@ async fn test_multisig_psm_signature_required(
         vec![],
     )?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
     let output_note_asset = FungibleAsset::mock(0);
     let mut mock_chain_builder =
@@ -329,7 +329,7 @@ async fn test_multisig_psm_signature_required(
 
     multisig_account.apply_delta(tx_context_execute.account_delta())?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -1725,7 +1725,7 @@ async fn test_multisig_update_psm_public_key(
         vec![],
     )?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1776,7 +1776,7 @@ async fn test_multisig_update_psm_public_key(
     let psm_config = updated_multisig_account
         .storage()
         .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
     let updated_psm_public_key = updated_multisig_account
         .storage()
@@ -1821,7 +1821,7 @@ async fn test_multisig_update_psm_public_key(
     let psm_config = updated_multisig_account
         .storage()
         .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
 
     mock_chain.add_pending_executed_transaction(&reenable_tx)?;
     mock_chain.prove_next_block()?;
@@ -1875,73 +1875,6 @@ async fn test_multisig_update_psm_public_key(
         .build()?
         .execute()
         .await?;
-
-    Ok(())
-}
-
-/// Tests strict mode behavior: Accounts created without PSM support cannot initialize it later.
-#[rstest]
-#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
-#[tokio::test]
-async fn test_multisig_update_psm_public_key_requires_capability(
-    #[case] auth_scheme: AuthScheme,
-) -> anyhow::Result<()> {
-    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
-        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
-    let approvers = public_keys
-        .iter()
-        .zip(auth_schemes.iter())
-        .map(|(pk, scheme)| (pk.clone(), *scheme))
-        .collect::<Vec<_>>();
-
-    // Create a multisig-psm account with PSM support but without an initialized manager key.
-    let approvers_for_builder = approvers
-        .iter()
-        .map(|(pub_key, auth_scheme)| (Word::from(pub_key.to_commitment()), *auth_scheme))
-        .collect();
-    let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::MultisigPsm {
-            threshold: 2,
-            approvers: approvers_for_builder,
-            psm: None,
-            proc_threshold_map: vec![],
-        })
-        .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_assets(vec![FungibleAsset::mock(10)])
-        .build_existing()?;
-    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_disabled_uninitialized());
-
-    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
-        .unwrap()
-        .build()
-        .unwrap();
-
-    let new_psm_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
-    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-
-    let update_psm_script = CodeBuilder::new()
-        .with_dynamically_linked_library(multisig_psm_library())?
-        .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    call.::multisig_psm::update_psm_public_key\n    dropw\nend"
-        ))?;
-
-    let update_salt = Word::from([Felt::new(994); 4]);
-    let update_result = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .tx_script(update_psm_script)
-        .auth_args(update_salt)
-        .build()?
-        .execute()
-        .await;
-
-    assert!(
-        update_result.is_err(),
-        "PSM key update should fail for accounts without initialized PSM configuration"
-    );
 
     Ok(())
 }
