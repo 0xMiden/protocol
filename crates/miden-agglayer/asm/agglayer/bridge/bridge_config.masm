@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -30,7 +30,7 @@ const IS_FAUCET_REGISTERED_FLAG=1
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
-#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
+#! Computes hash(GER) = poseidon2::merge(GER_UPPER, GER_LOWER) and stores it in a map
 #! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
 #!
 #! Panics if the note sender is not the global exit root manager.
@@ -44,9 +44,9 @@ pub proc update_ger
     exec.assert_sender_is_ger_manager
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
+    # compute hash(GER) = poseidon2::merge(GER_UPPER, GER_LOWER)
     # inputs: [B, A] => output: hash(A || B)
-    exec.rpo256::merge
+    exec.poseidon2::merge
     # => [GER_HASH, pad(12)]
 
     # prepare VALUE = [0, 0, 0, GER_KNOWN_FLAG]
@@ -67,7 +67,7 @@ end
 
 #! Asserts that the provided GER is valid (exists in storage).
 #!
-#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and looks up the hash in
+#! Computes hash(GER) = poseidon2::merge(GER_UPPER, GER_LOWER) and looks up the hash in
 #! the GER storage map. Panics if the GER has never been stored.
 #!
 #! Inputs: [GER_ROOT[8]]
@@ -79,7 +79,7 @@ end
 #! Invocation: exec
 pub proc assert_valid_ger
     # compute hash(GER)
-    exec.rpo256::merge
+    exec.poseidon2::merge
     # => [GER_HASH]
 
     push.GER_STORAGE_SLOT[0..2]

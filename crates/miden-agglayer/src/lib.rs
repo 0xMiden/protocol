@@ -6,8 +6,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_assembly::Library;
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::program::Program;
+use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,

@@ -10,7 +10,7 @@ use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 use miden::agglayer::common::utils
 use miden::agglayer::faucet -> agglayer_faucet
@@ -99,7 +99,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 pub proc bridge_out
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
-    exec.asset::mem_store
+    exec.asset::store
     # => [dest_network_id, dest_address(5)]
 
     loc_store.DESTINATION_NETWORK_LOC
@@ -112,7 +112,7 @@ pub proc bridge_out
 
     # --- 1. Validate faucet registration and convert asset via FPI ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
-    exec.asset::mem_load
+    exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE]
 
     exec.convert_asset
@@ -187,7 +187,7 @@ pub proc bridge_out
 
     # --- 4. Create BURN output note for ASSET ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
-    exec.asset::mem_load
+    exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE]
     exec.create_burn_note
 end
@@ -439,7 +439,7 @@ proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
     # => [B2AGG_SERIAL_NUM, ASSET_KEY]
 
-    exec.rpo256::merge
+    exec.poseidon2::merge
     # => [SERIAL_NUM]
 end
 
@@ -462,7 +462,7 @@ proc create_burn_note
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
-    exec.asset::mem_store
+    exec.asset::store
     # => [ASSET_KEY]
 
     dupw exec.asset::key_to_faucet_id
@@ -521,7 +521,7 @@ proc create_burn_note
 
     # Add the asset to the note
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
-    exec.asset::mem_load
+    exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
