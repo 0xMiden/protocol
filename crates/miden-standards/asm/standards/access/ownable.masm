@@ -89,6 +89,10 @@ end
 #! Invocation: call
 pub proc get_owner
     exec.owner
+    # => [owner_suffix, owner_prefix, pad(16)]  depth=18
+    # get_item returns 4 elements from 2 inputs (net +2); owner drops 2, leaving +2 excess.
+    # Remove 2 excess pad elements to restore call-convention depth of 16.
+    movup.2 drop movup.2 drop
     # => [owner_suffix, owner_prefix, pad(14)]
 end
 
