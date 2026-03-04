@@ -82,8 +82,6 @@ const ERR_APPROVER_COUNTS_NOT_U32 = "initial and new number of approvers must be
 
 const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 
-const ERR_MAX_ALLOWED_NOT_U32 = "max allowed approver count must be u32"
-
 const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
@@ -201,13 +199,9 @@ end
 #! Inputs:  [num_approvers]
 #! Outputs: []
 #! Panics if:
-#! - num_approvers is not a u32 value.
 #! - any configured procedure threshold is not a u32 value.
 #! - any configured procedure threshold exceeds num_approvers.
 proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
-    u32assert.err=ERR_MAX_ALLOWED_NOT_U32
-    # => [num_approvers]
-
     exec.active_account::get_num_procedures
     # => [num_procedures, num_approvers]
 
@@ -229,19 +223,12 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
         drop drop drop
         # => [proc_threshold, proc_index, num_approvers]
 
-        dup neq.0
-        # => [has_override, proc_threshold, proc_index, num_approvers]
-        if.true
-            dup.2
-            # => [num_approvers, proc_threshold, proc_index, num_approvers]
+        dup.2
+        # => [num_approvers, proc_threshold, proc_index, num_approvers]
 
-            u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
-            u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-            # => [proc_index, num_approvers]
-        else
-            drop
-            # => [proc_index, num_approvers]
-        end
+        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
+        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+        # => [proc_index, num_approvers]
 
         dup neq.0
         # => [should_continue, proc_index, num_approvers]
@@ -514,9 +501,6 @@ end
 #!
 #! Invocation: call
 pub proc set_procedure_threshold
-    u32assert.err=ERR_PROC_THRESHOLD_NOT_U32
-    # => [proc_threshold, PROC_ROOT]
-
     exec.get_threshold_and_num_approvers
     # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
 
@@ -638,8 +622,7 @@ end
 
 #! Updates the private state manager public key.
 #!
-#! Inputs: []
-#! Advice stack inputs: [NEW_PSM_PUBLIC_KEY]
+#! Inputs: [NEW_PSM_PUBLIC_KEY]
 #! Outputs: []
 #!
 #! Invocation: call
@@ -741,11 +724,11 @@ pub proc auth_tx_multisig(salt: BeWord)
 
     # ------ Verifying Private State Manager Signature ------
 
-    exec.psm::is_psm_initialized
-    # => [is_psm_initialized, TX_SUMMARY_COMMITMENT]
+    exec.psm::is_initialized
+    # => [is_initialized, TX_SUMMARY_COMMITMENT]
     
     if.true
-        exec.psm::verify_psm_signature
+        exec.psm::verify_signature
     end
     # => [TX_SUMMARY_COMMITMENT]
 

@@ -19,8 +19,8 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 #     * (is_psm_signature_required == 1) => exactly one valid PSM signature is required.
 #     * (is_psm_signature_required == 0) => PSM signature is skipped.
 #
-# - `verify_psm_signature` reads the `is_psm_signature_required` from initial storage state.
-#   This means changes made during the same transaction won't affect the check.
+# - `verify_signature` reads `is_psm_signature_required` from current storage state.
+#   This allows same transaction temporary updates to affect the check.
 #
 # - `enable_psm_signature_requirement` / `disable_psm_signature_requirement` procedures allow explicit control over PSM state.
 #
@@ -37,7 +37,7 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 #
 # This authentication component uses named storage slots.
 # - PSM_CONFIG_SLOT:
-#   [is_psm_signature_required, is_psm_initialized, 0, 0]
+#   [is_psm_signature_required, is_initialized, 0, 0]
 #
 # - PSM_PUBLIC_KEYS_SLOT (map):
 #   PSM_MAP_KEY => PSM_PUBLIC_KEY
@@ -48,7 +48,7 @@ type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
 #   where: PSM_MAP_KEY = [0, 0, 0, 0]
 
 # The slot in this component's storage layout where the PSM configuration is stored.
-# [is_psm_signature_required, is_psm_initialized, 0, 0]
+# [is_psm_signature_required, is_initialized, 0, 0]
 const PSM_CONFIG_SLOT = word("miden::standards::auth::psm::config")
 
 # The slot in this component's storage layout where the PSM public key map is stored.
@@ -62,12 +62,6 @@ const PSM_SCHEME_ID_SLOT = word("miden::standards::auth::psm::scheme")
 # Single-entry storage map key where private state manager signer data is stored.
 const PSM_MAP_KEY = [0, 0, 0, 0]
 
-# PSM logical configuration state constants
-const PSM_CONFIG_ENABLED_INITIALIZED = [1, 1, 0, 0]
-const PSM_CONFIG_ENABLED_UNINITIALIZED = [1, 0, 0, 0]
-const PSM_CONFIG_DISABLED_INITIALIZED = [0, 1, 0, 0]
-const PSM_CONFIG_DISABLED_UNINITIALIZED = [0, 0, 0, 0]
-
 # ERRORS
 # -------------------------------------------------------------------------------------------------
 const ERR_PSM_NOT_INITIALIZED = "private state manager is not initialized for this account"
@@ -76,35 +70,23 @@ const ERR_INVALID_PSM_SIGNATURE = "invalid private state manager signature"
 # INTERNAL PROCEDURES
 # ================================================================================================
 
-#! Updates the PSM config's signature requirement bit while preserving initialization bit.
+#! Updates the PSM config's signature requirement felt while preserving initialization felt.
 #!
 #! Notes:
-#! - The initialization bit is read from initial account state.
-#! - Only the signature-requirement bit is changed.
+#! - Signature requirement input is normalized to boolean value.
+#! - The initialization felt is read from current account state.
+#! - Only the felt which specifies the signature requirement is changed.
 #!
 #! Inputs:  [is_psm_signature_required]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc set_psm_signature_requirement(is_psm_signature_required: felt)
-    exec.is_psm_initialized
-    # => [is_psm_initialized, is_psm_signature_required]
+    push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [0, 0, is_initialized, is_psm_signature_required, new_is_psm_signature_required]
 
-    if.true
-        # => [is_psm_signature_required]
-        if.true
-            push.PSM_CONFIG_ENABLED_INITIALIZED
-        else
-            push.PSM_CONFIG_DISABLED_INITIALIZED
-        end
-    else
-        # => [is_psm_signature_required]
-        if.true
-            push.PSM_CONFIG_ENABLED_UNINITIALIZED
-        else
-            push.PSM_CONFIG_DISABLED_UNINITIALIZED
-        end
-    end
+    movup.3 drop
+    # => [0, 0, is_initialized, new_is_psm_signature_required]
     # => [NEW_PSM_CONFIG_WORD]
 
     push.PSM_CONFIG_SLOT[0..2]
@@ -151,18 +133,18 @@ end
 #! Returns 1 if this account is initialized with a PSM, 0 otherwise.
 #!
 #! Inputs:  []
-#! Outputs: [is_psm_initialized]
+#! Outputs: [is_initialized]
 #!
 #! Invocation: exec
-pub proc is_psm_initialized
+pub proc is_initialized() -> i1
     push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_initial_item
-    # => [0, 0, is_psm_initialized, is_psm_signature_required]
+    # => [0, 0, is_initialized, is_psm_signature_required]
 
     drop drop
-    # => [is_psm_initialized, is_psm_signature_required]
+    # => [is_initialized, is_psm_signature_required]
 
     swap drop
-    # => [is_psm_initialized]
+    # => [is_initialized]
 end
 
 #! Asserts that the account is initialized with Private State Manager (PSM).
@@ -172,34 +154,29 @@ end
 #!
 #! Invocation: exec
 pub proc assert_psm_initialized
-    exec.is_psm_initialized
-    # => [is_psm_initialized]
+    exec.is_initialized
+    # => [is_initialized]
 
-    push.1 eq
     assert.err=ERR_PSM_NOT_INITIALIZED
     # => []
 end
 
 #! Updates the private state manager public key.
 #!
-#! Inputs:  []
-#! Advice stack inputs: [NEW_PSM_PUBLIC_KEY]
+#! Inputs:  [NEW_PSM_PUBLIC_KEY]
 #! Outputs: []
 #!
 #! Notes:
 #! - This procedure disables PSM signature requirement before updating the key.
-#! - Signature requirement is set back to ON by `verify_psm_signature` at the end of auth for
+#! - Signature requirement is set back to ON by `verify_signature` at the end of auth for
 #!   PSM-initialized accounts.
 #!
 #! Invocation: call
-pub proc update_psm_public_key
+pub proc update_psm_public_key(new_psm_public_key: BeWord)
     exec.assert_psm_initialized
-    # => []
+    # => [NEW_PSM_PUBLIC_KEY]
 
     exec.disable_psm_signature_requirement
-    # => []
-
-    adv_loadw
     # => [NEW_PSM_PUBLIC_KEY]
 
     push.PSM_MAP_KEY
@@ -230,14 +207,14 @@ end
 #! - At the end of the procedure, signature requirement is set to ON for initialized accounts.
 #!
 #! Invocation: exec
-pub proc verify_psm_signature(msg: BeWord)
-    exec.is_psm_initialized
-    # => [is_psm_initialized, MSG]
+pub proc verify_signature(msg: BeWord) -> BeWord
+    exec.is_initialized
+    # => [is_initialized, MSG]
 
     if.true
         # Use current config to apply temporary PSM changes in this tx.
         push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
-        # => [0, 0, is_psm_initialized, is_psm_signature_required, MSG]
+        # => [0, 0, is_initialized, is_psm_signature_required, MSG]
 
         drop drop drop
         # => [is_psm_signature_required, MSG]

@@ -173,7 +173,7 @@ impl AuthMultisigConfig {
 /// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
 /// - Slot 3(map): A map which stores executed transactions
 /// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
-/// - Slot 5(value): [is_psm_signature_required, is_psm_initialized, 0, 0]
+/// - Slot 5(value): [is_psm_signature_required, is_initialized, 0, 0]
 /// - Slot 6(map): A map with private state manager public key ([0, 0, 0, 0] -> pubkey)
 /// - Slot 7(map): A map with private state manager scheme id ([0, 0, 0, 0] -> scheme_id)
 ///
@@ -324,7 +324,7 @@ impl AuthMultisig {
                 "Private state manager config",
                 [
                     FeltSchema::u32("is_psm_signature_required").with_default(Felt::new(0)),
-                    FeltSchema::u32("is_psm_initialized").with_default(Felt::new(0)),
+                    FeltSchema::u32("is_initialized").with_default(Felt::new(0)),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -410,10 +410,10 @@ impl From<AuthMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        // Private state manager config slot (value: [is_psm_signature_required, is_psm_initialized,
+        // Private state manager config slot (value: [is_psm_signature_required, is_initialized,
         // 0, 0])
-        let is_psm_initialized = u32::from(multisig.config.psm().is_some());
-        let psm_config = if is_psm_initialized == 1 {
+        let is_initialized = u32::from(multisig.config.psm().is_some());
+        let psm_config = if is_initialized == 1 {
             AuthMultisig::psm_config_enabled_initialized()
         } else {
             AuthMultisig::psm_config_disabled_uninitialized()

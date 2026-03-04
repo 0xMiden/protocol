@@ -1732,18 +1732,17 @@ async fn test_multisig_update_psm_public_key(
         .build()
         .unwrap();
 
+    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
     let update_psm_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_library())?
-        .compile_tx_script("begin\n    call.::multisig::update_psm_public_key\nend")?;
-    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-    let update_psm_advice_inputs =
-        AdviceInputs::default().with_stack(new_psm_key_word.as_elements().iter().copied());
+        .compile_tx_script(format!(
+            "begin\n    push.{new_psm_key_word}\n    call.::multisig::update_psm_public_key\n    dropw\nend"
+        ))?;
 
     let update_salt = Word::from([Felt::new(991); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_psm_script.clone())
-        .extend_advice_inputs(update_psm_advice_inputs.clone())
         .auth_args(update_salt)
         .build()?;
 
@@ -1765,7 +1764,6 @@ async fn test_multisig_update_psm_public_key(
     let update_psm_tx = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_psm_script)
-        .extend_advice_inputs(update_psm_advice_inputs)
         .add_signature(public_keys[0].to_commitment(), update_msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), update_msg, sig_2)
         .auth_args(update_salt)
@@ -1905,18 +1903,17 @@ async fn test_multisig_update_psm_public_key_requires_capability(
 
     let new_psm_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
     let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
-    let update_psm_advice_inputs =
-        AdviceInputs::default().with_stack(new_psm_key_word.as_elements().iter().copied());
 
     let update_psm_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_library())?
-        .compile_tx_script("begin\n    call.::multisig::update_psm_public_key\nend")?;
+        .compile_tx_script(format!(
+            "begin\n    push.{new_psm_key_word}\n    call.::multisig::update_psm_public_key\n    dropw\nend"
+        ))?;
 
     let update_salt = Word::from([Felt::new(994); 4]);
     let update_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_psm_script)
-        .extend_advice_inputs(update_psm_advice_inputs)
         .auth_args(update_salt)
         .build()?
         .execute()
