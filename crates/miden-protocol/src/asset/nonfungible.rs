@@ -134,8 +134,16 @@ impl NonFungibleAsset {
 
 impl fmt::Display for NonFungibleAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: Replace with hex representation?
-        write!(f, "{self:?}")
+        let v = self.value;
+        write!(
+            f,
+            "NonFungibleAsset {{ issuer: {}, value: [0x{:016x}, 0x{:016x}, 0x{:016x}, 0x{:016x}] }}",
+            self.faucet_id,
+            v[0].as_canonical_u64(),
+            v[1].as_canonical_u64(),
+            v[2].as_canonical_u64(),
+            v[3].as_canonical_u64(),
+        )
     }
 }
 

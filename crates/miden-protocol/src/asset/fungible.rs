@@ -199,8 +199,7 @@ impl From<FungibleAsset> for Asset {
 
 impl fmt::Display for FungibleAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: Replace with hex representation?
-        write!(f, "{self:?}")
+        write!(f, "FungibleAsset {{ issuer: {}, amount: {} }}", self.faucet_id, self.amount)
     }
 }
 
