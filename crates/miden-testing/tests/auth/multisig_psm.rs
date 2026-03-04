@@ -17,8 +17,8 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::AuthMultisig;
-use miden_standards::account::components::multisig_library;
+use miden_standards::account::auth::{AuthMultisig, AuthMultisigPsm, AuthMultisigPsmConfig};
+use miden_standards::account::components::{multisig_library, multisig_psm_library};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -93,6 +93,34 @@ fn create_multisig_account(
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
+        .with_component(BasicWallet)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_assets(vec![FungibleAsset::mock(asset_amount)])
+        .build_existing()?;
+
+    Ok(multisig_account)
+}
+
+/// Creates a multisig account configured with a private state manager signer.
+fn create_multisig_account_with_psm(
+    threshold: u32,
+    approvers: &[(PublicKey, AuthScheme)],
+    psm: (PublicKey, AuthScheme),
+    asset_amount: u64,
+    proc_threshold_map: Vec<(Word, u32)>,
+) -> anyhow::Result<Account> {
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .collect();
+
+    let config = AuthMultisigPsmConfig::new(approvers, threshold)?
+        .with_proc_thresholds(proc_threshold_map)?
+        .with_psm((psm.0.to_commitment(), psm.1))?;
+
+    let multisig_account = AccountBuilder::new([0; 32])
+        .with_auth_component(AuthMultisigPsm::new(config)?)
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -201,6 +229,116 @@ async fn test_multisig_2_of_2_with_note_creation(
             .vault()
             .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
         multisig_starting_balance - output_note_asset.unwrap_fungible().amount()
+    );
+
+    Ok(())
+}
+
+/// Tests that multisig authentication requires an additional PSM signature when
+/// configured.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[tokio::test]
+async fn test_multisig_psm_signature_required(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let psm_public_key = psm_secret_key.public_key();
+    let psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&psm_secret_key));
+
+    let mut multisig_account = create_multisig_account_with_psm(
+        2,
+        &approvers,
+        (psm_public_key.clone(), AuthScheme::EcdsaK256Keccak),
+        10,
+        vec![],
+    )?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+    let output_note_asset = FungibleAsset::mock(0);
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[output_note_asset],
+        NoteType::Public,
+    )?;
+    let input_note = mock_chain_builder.add_spawn_note([&output_note])?;
+    let mut mock_chain = mock_chain_builder.build().unwrap();
+
+    let salt = Word::from([Felt::new(777); 4]);
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .auth_args(salt)
+        .build()?;
+
+    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    // Missing PSM signature must fail.
+    let without_psm_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+    assert!(matches!(without_psm_result, Err(TransactionExecutorError::Unauthorized(_))));
+
+    let psm_signature = psm_authenticator
+        .get_signature(psm_public_key.to_commitment(), &tx_summary_signing)
+        .await?;
+
+    // With PSM signature the transaction should succeed.
+    let tx_context_execute = mock_chain
+        .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .add_signature(psm_public_key.to_commitment(), msg, psm_signature)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(tx_context_execute.account_delta())?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
+    mock_chain.prove_next_block()?;
+
+    assert_eq!(
+        multisig_account
+            .vault()
+            .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
+        10 - output_note_asset.unwrap_fungible().amount()
     );
 
     Ok(())
@@ -1551,6 +1689,259 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
     };
 
     assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
+/// Tests that the PSM public key can be updated and then enforced.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[tokio::test]
+async fn test_multisig_update_psm_public_key(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let old_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let old_psm_public_key = old_psm_secret_key.public_key();
+    let old_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&old_psm_secret_key));
+
+    let new_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let new_psm_public_key = new_psm_secret_key.public_key();
+    let new_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&new_psm_secret_key));
+
+    let multisig_account = create_multisig_account_with_psm(
+        2,
+        &approvers,
+        (old_psm_public_key.clone(), AuthScheme::EcdsaK256Keccak),
+        10,
+        vec![],
+    )?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+    let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
+    let update_psm_script = CodeBuilder::new()
+        .with_dynamically_linked_library(multisig_psm_library())?
+        .compile_tx_script(format!(
+            "begin\n    push.{new_psm_key_word}\n    call.::multisig_psm::update_psm_public_key\n    dropw\nend"
+        ))?;
+
+    let update_salt = Word::from([Felt::new(991); 4]);
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_psm_script.clone())
+        .auth_args(update_salt)
+        .build()?;
+
+    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+
+    let update_msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    // PSM key rotation intentionally skips PSM signature for this update tx.
+    let update_psm_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_psm_script)
+        .add_signature(public_keys[0].to_commitment(), update_msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), update_msg, sig_2)
+        .auth_args(update_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    let mut updated_multisig_account = multisig_account.clone();
+    updated_multisig_account.apply_delta(update_psm_tx.account_delta())?;
+    let psm_config = updated_multisig_account
+        .storage()
+        .get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+    let updated_psm_public_key = updated_multisig_account
+        .storage()
+        .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))?;
+    assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
+
+    mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // Run one tx after key update to ensure the new PSM key is enforced in subsequent auth flows.
+    let reenable_salt = Word::from([Felt::new(992); 4]);
+    let tx_context_init_reenable = mock_chain
+        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+        .auth_args(reenable_salt)
+        .build()?;
+    let tx_summary_reenable = match tx_context_init_reenable.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+    let reenable_msg = tx_summary_reenable.as_ref().to_commitment();
+    let tx_summary_reenable_signing = SigningInputs::TransactionSummary(tx_summary_reenable);
+    let reenable_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_reenable_signing)
+        .await?;
+    let reenable_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_reenable_signing)
+        .await?;
+    let reenable_psm_sig = new_psm_authenticator
+        .get_signature(new_psm_public_key.to_commitment(), &tx_summary_reenable_signing)
+        .await?;
+
+    let reenable_tx = mock_chain
+        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+        .add_signature(public_keys[0].to_commitment(), reenable_msg, reenable_sig_1)
+        .add_signature(public_keys[1].to_commitment(), reenable_msg, reenable_sig_2)
+        .add_signature(new_psm_public_key.to_commitment(), reenable_msg, reenable_psm_sig)
+        .auth_args(reenable_salt)
+        .build()?
+        .execute()
+        .await?;
+    updated_multisig_account.apply_delta(reenable_tx.account_delta())?;
+    let psm_config = updated_multisig_account
+        .storage()
+        .get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+    mock_chain.add_pending_executed_transaction(&reenable_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // Build the next tx summary used for signature generation.
+    let next_salt = Word::from([Felt::new(993); 4]);
+    let tx_context_init_next = mock_chain
+        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+        .auth_args(next_salt)
+        .build()?;
+
+    let tx_summary_next = match tx_context_init_next.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+    let next_msg = tx_summary_next.as_ref().to_commitment();
+    let tx_summary_next_signing = SigningInputs::TransactionSummary(tx_summary_next);
+
+    let next_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_next_signing)
+        .await?;
+    let next_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_next_signing)
+        .await?;
+    let old_psm_sig_next = old_psm_authenticator
+        .get_signature(old_psm_public_key.to_commitment(), &tx_summary_next_signing)
+        .await?;
+    let new_psm_sig_next = new_psm_authenticator
+        .get_signature(new_psm_public_key.to_commitment(), &tx_summary_next_signing)
+        .await?;
+
+    // Old PSM signature must fail after key update.
+    let with_old_psm_result = mock_chain
+        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+        .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2.clone())
+        .add_signature(old_psm_public_key.to_commitment(), next_msg, old_psm_sig_next)
+        .auth_args(next_salt)
+        .build()?
+        .execute()
+        .await;
+    assert!(matches!(with_old_psm_result, Err(TransactionExecutorError::Unauthorized(_))));
+
+    // New PSM signature must pass.
+    mock_chain
+        .build_tx_context(updated_multisig_account.id(), &[], &[])?
+        .add_signature(public_keys[0].to_commitment(), next_msg, next_sig_1)
+        .add_signature(public_keys[1].to_commitment(), next_msg, next_sig_2)
+        .add_signature(new_psm_public_key.to_commitment(), next_msg, new_psm_sig_next)
+        .auth_args(next_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+/// Tests strict mode behavior: Accounts created without PSM support cannot initialize it later.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[tokio::test]
+async fn test_multisig_update_psm_public_key_requires_capability(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    // Create a multisig-psm account with PSM support but without an initialized manager key.
+    let approvers_for_builder = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| (Word::from(pub_key.to_commitment()), *auth_scheme))
+        .collect();
+    let multisig_account = AccountBuilder::new([0; 32])
+        .with_auth_component(Auth::MultisigPsm {
+            threshold: 2,
+            approvers: approvers_for_builder,
+            psm: None,
+            proc_threshold_map: vec![],
+        })
+        .with_component(BasicWallet)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_assets(vec![FungibleAsset::mock(10)])
+        .build_existing()?;
+    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
+    assert_eq!(psm_config, AuthMultisigPsm::psm_config_disabled_uninitialized());
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let new_psm_public_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key();
+    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
+
+    let update_psm_script = CodeBuilder::new()
+        .with_dynamically_linked_library(multisig_psm_library())?
+        .compile_tx_script(format!(
+            "begin\n    push.{new_psm_key_word}\n    call.::multisig_psm::update_psm_public_key\n    dropw\nend"
+        ))?;
+
+    let update_salt = Word::from([Felt::new(994); 4]);
+    let update_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_psm_script)
+        .auth_args(update_salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        update_result.is_err(),
+        "PSM key update should fail for accounts without initialized PSM configuration"
+    );
 
     Ok(())
 }

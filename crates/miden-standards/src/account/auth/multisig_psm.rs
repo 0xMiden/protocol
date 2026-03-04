@@ -1,7 +1,6 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
@@ -19,8 +18,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
-use crate::account::components::multisig_library;
+use crate::account::components::multisig_psm_library;
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
@@ -47,18 +47,34 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
         .expect("storage slot name should be valid")
 });
 
+static PSM_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::psm::config")
+        .expect("storage slot name should be valid")
+});
+
+static PSM_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::psm::pub_key")
+        .expect("storage slot name should be valid")
+});
+
+static PSM_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::psm::scheme")
+        .expect("storage slot name should be valid")
+});
+
 // MULTISIG AUTHENTICATION COMPONENT
 // ================================================================================================
 
-/// Configuration for [`AuthMultisig`] component.
+/// Configuration for [`AuthMultisigPsm`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthMultisigConfig {
+pub struct AuthMultisigPsmConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     proc_thresholds: Vec<(Word, u32)>,
+    psm: Option<(PublicKeyCommitment, AuthScheme)>,
 }
 
-impl AuthMultisigConfig {
+impl AuthMultisigPsmConfig {
     /// Creates a new configuration with the given approvers and a default threshold.
     ///
     /// The `default_threshold` must be at least 1 and at most the number of approvers.
@@ -86,6 +102,7 @@ impl AuthMultisigConfig {
             approvers,
             default_threshold,
             proc_thresholds: vec![],
+            psm: None,
         })
     }
 
@@ -108,6 +125,24 @@ impl AuthMultisigConfig {
         self.proc_thresholds = proc_thresholds;
         Ok(self)
     }
+
+    /// Enables additional signature verification by a private state manager.
+    ///
+    /// The private state manager public key must be different from all approver public keys.
+    pub fn with_psm(
+        mut self,
+        psm: (PublicKeyCommitment, AuthScheme),
+    ) -> Result<Self, AccountError> {
+        if self.approvers.iter().any(|(approver, _)| *approver == psm.0) {
+            return Err(AccountError::other(
+                "private state manager public key must be different from approvers",
+            ));
+        }
+
+        self.psm = Some(psm);
+        Ok(self)
+    }
+
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
         &self.approvers
     }
@@ -118,6 +153,10 @@ impl AuthMultisigConfig {
 
     pub fn proc_thresholds(&self) -> &[(Word, u32)] {
         &self.proc_thresholds
+    }
+
+    pub fn psm(&self) -> Option<(PublicKeyCommitment, AuthScheme)> {
+        self.psm
     }
 }
 
@@ -134,19 +173,22 @@ impl AuthMultisigConfig {
 /// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
 /// - Slot 3(map): A map which stores executed transactions
 /// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
+/// - Slot 5(value): [is_psm_signature_required, is_initialized, 0, 0]
+/// - Slot 6(map): A map with private state manager public key ([0, 0, 0, 0] -> pubkey)
+/// - Slot 7(map): A map with private state manager scheme id ([0, 0, 0, 0] -> scheme_id)
 ///
 /// This component supports all account types.
 #[derive(Debug)]
-pub struct AuthMultisig {
-    config: AuthMultisigConfig,
+pub struct AuthMultisigPsm {
+    config: AuthMultisigPsmConfig,
 }
 
-impl AuthMultisig {
+impl AuthMultisigPsm {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::multisig";
+    pub const NAME: &'static str = "miden::auth::multisig_psm";
 
-    /// Creates a new [`AuthMultisig`] component from the provided configuration.
-    pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
+    /// Creates a new [`AuthMultisigPsm`] component from the provided configuration.
+    pub fn new(config: AuthMultisigPsmConfig) -> Result<Self, AccountError> {
         Ok(Self { config })
     }
 
@@ -173,6 +215,41 @@ impl AuthMultisig {
     /// Returns the [`StorageSlotName`] where the procedure thresholds are stored.
     pub fn procedure_thresholds_slot() -> &'static StorageSlotName {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the private state manager config is stored.
+    pub fn psm_config_slot() -> &'static StorageSlotName {
+        &PSM_CONFIG_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the private state manager public key is stored.
+    pub fn psm_public_key_slot() -> &'static StorageSlotName {
+        &PSM_PUBKEY_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the private state manager scheme IDs are stored.
+    pub fn psm_scheme_id_slot() -> &'static StorageSlotName {
+        &PSM_SCHEME_ID_SLOT_NAME
+    }
+
+    /// Returns PSM config word for `enabled + initialized` state.
+    pub fn psm_config_enabled_initialized() -> Word {
+        Word::from([1u32, 1u32, 0, 0])
+    }
+
+    /// Returns PSM config word for `enabled + uninitialized` state.
+    pub fn psm_config_enabled_uninitialized() -> Word {
+        Word::from([1u32, 0u32, 0, 0])
+    }
+
+    /// Returns PSM config word for `disabled + initialized` state.
+    pub fn psm_config_disabled_initialized() -> Word {
+        Word::from([0u32, 1u32, 0, 0])
+    }
+
+    /// Returns PSM config word for `disabled + uninitialized` state.
+    pub fn psm_config_disabled_uninitialized() -> Word {
+        Word::from([0u32, 0u32, 0u32, 0u32])
     }
 
     /// Returns the storage slot schema for the threshold configuration slot.
@@ -238,16 +315,56 @@ impl AuthMultisig {
             ),
         )
     }
+
+    /// Returns the storage slot schema for the private state manager config slot.
+    pub fn psm_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::psm_config_slot().clone(),
+            StorageSlotSchema::value(
+                "Private state manager config",
+                [
+                    FeltSchema::u32("is_psm_signature_required").with_default(Felt::new(0)),
+                    FeltSchema::u32("is_initialized").with_default(Felt::new(0)),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the private state manager public key slot.
+    pub fn psm_public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::psm_public_key_slot().clone(),
+            StorageSlotSchema::map(
+                "Private state manager public keys",
+                SchemaType::u32(),
+                SchemaType::pub_key(),
+            ),
+        )
+    }
+
+    /// Returns the storage slot schema for the private state manager scheme IDs slot.
+    pub fn psm_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::psm_scheme_id_slot().clone(),
+            StorageSlotSchema::map(
+                "Private state manager scheme IDs",
+                SchemaType::u32(),
+                SchemaType::auth_scheme(),
+            ),
+        )
+    }
 }
 
-impl From<AuthMultisig> for AccountComponent {
-    fn from(multisig: AuthMultisig) -> Self {
-        let mut storage_slots = Vec::with_capacity(5);
+impl From<AuthMultisigPsm> for AccountComponent {
+    fn from(multisig: AuthMultisigPsm) -> Self {
+        let mut storage_slots = Vec::with_capacity(8);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
         storage_slots.push(StorageSlot::with_value(
-            AuthMultisig::threshold_config_slot().clone(),
+            AuthMultisigPsm::threshold_config_slot().clone(),
             Word::from([multisig.config.default_threshold(), num_approvers, 0, 0]),
         ));
 
@@ -259,7 +376,7 @@ impl From<AuthMultisig> for AccountComponent {
 
         // Safe to unwrap because we know that the map keys are unique.
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::approver_public_keys_slot().clone(),
+            AuthMultisigPsm::approver_public_keys_slot().clone(),
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
@@ -270,14 +387,14 @@ impl From<AuthMultisig> for AccountComponent {
             });
 
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::approver_scheme_ids_slot().clone(),
+            AuthMultisigPsm::approver_scheme_ids_slot().clone(),
             StorageMap::with_entries(scheme_id_entries).unwrap(),
         ));
 
         // Executed transactions slot (map)
         let executed_transactions = StorageMap::default();
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::executed_transactions_slot().clone(),
+            AuthMultisigPsm::executed_transactions_slot().clone(),
             executed_transactions,
         ));
 
@@ -289,25 +406,60 @@ impl From<AuthMultisig> for AccountComponent {
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::procedure_thresholds_slot().clone(),
+            AuthMultisigPsm::procedure_thresholds_slot().clone(),
             proc_threshold_roots,
         ));
 
+        // Private state manager config slot (value: [is_psm_signature_required, is_initialized,
+        // 0, 0])
+        let is_initialized = u32::from(multisig.config.psm().is_some());
+        let psm_config = if is_initialized == 1 {
+            AuthMultisigPsm::psm_config_enabled_initialized()
+        } else {
+            AuthMultisigPsm::psm_config_disabled_uninitialized()
+        };
+        storage_slots
+            .push(StorageSlot::with_value(AuthMultisigPsm::psm_config_slot().clone(), psm_config));
+
+        // Private state manager public key slot (map: [0, 0, 0, 0] -> pubkey)
+        let psm_public_key_entries = multisig.config.psm().into_iter().map(|(pub_key, _)| {
+            (StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])), Word::from(pub_key))
+        });
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigPsm::psm_public_key_slot().clone(),
+            StorageMap::with_entries(psm_public_key_entries).unwrap(),
+        ));
+
+        // Private state manager scheme IDs slot (map: [0, 0, 0, 0] -> [scheme_id, 0, 0, 0])
+        let psm_scheme_id_entries = multisig.config.psm().into_iter().map(|(_, auth_scheme)| {
+            (
+                StorageMapKey::from_raw(Word::from([0u32, 0, 0, 0])),
+                Word::from([auth_scheme as u32, 0, 0, 0]),
+            )
+        });
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigPsm::psm_scheme_id_slot().clone(),
+            StorageMap::with_entries(psm_scheme_id_entries).unwrap(),
+        ));
+
         let storage_schema = StorageSchema::new([
-            AuthMultisig::threshold_config_slot_schema(),
-            AuthMultisig::approver_public_keys_slot_schema(),
-            AuthMultisig::approver_auth_scheme_slot_schema(),
-            AuthMultisig::executed_transactions_slot_schema(),
-            AuthMultisig::procedure_thresholds_slot_schema(),
+            AuthMultisigPsm::threshold_config_slot_schema(),
+            AuthMultisigPsm::approver_public_keys_slot_schema(),
+            AuthMultisigPsm::approver_auth_scheme_slot_schema(),
+            AuthMultisigPsm::executed_transactions_slot_schema(),
+            AuthMultisigPsm::procedure_thresholds_slot_schema(),
+            AuthMultisigPsm::psm_config_slot_schema(),
+            AuthMultisigPsm::psm_public_key_slot_schema(),
+            AuthMultisigPsm::psm_auth_scheme_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
+        let metadata = AccountComponentMetadata::new(AuthMultisigPsm::NAME)
             .with_description("Multisig authentication component using hybrid signature schemes")
             .with_supports_all_types()
             .with_storage_schema(storage_schema);
 
-        AccountComponent::new(multisig_library(), storage_slots, metadata).expect(
+        AccountComponent::new(multisig_psm_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",
         )
     }
@@ -342,8 +494,9 @@ mod tests {
         let threshold = 2u32;
 
         // Create multisig component
-        let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
+        let multisig_component = AuthMultisigPsm::new(
+            AuthMultisigPsmConfig::new(approvers.clone(), threshold)
+                .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
 
@@ -357,7 +510,7 @@ mod tests {
         // Verify config slot: [threshold, num_approvers, 0, 0]
         let config_slot = account
             .storage()
-            .get_item(AuthMultisig::threshold_config_slot())
+            .get_item(AuthMultisigPsm::threshold_config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
@@ -366,7 +519,7 @@ mod tests {
             let stored_pub_key = account
                 .storage()
                 .get_map_item(
-                    AuthMultisig::approver_public_keys_slot(),
+                    AuthMultisigPsm::approver_public_keys_slot(),
                     Word::from([i as u32, 0, 0, 0]),
                 )
                 .expect("approver public key storage map access failed");
@@ -378,12 +531,32 @@ mod tests {
             let stored_scheme_id = account
                 .storage()
                 .get_map_item(
-                    AuthMultisig::approver_scheme_ids_slot(),
+                    AuthMultisigPsm::approver_scheme_ids_slot(),
                     Word::from([i as u32, 0, 0, 0]),
                 )
                 .expect("approver scheme ID storage map access failed");
             assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
         }
+
+        let psm_config = account
+            .storage()
+            .get_item(AuthMultisigPsm::psm_config_slot())
+            .expect("private state manager config storage slot access failed");
+        assert_eq!(psm_config, AuthMultisigPsm::psm_config_disabled_uninitialized());
+
+        // Verify no private state manager is configured by default.
+        // Missing storage-map entries read back as the map's empty value.
+        let psm_public_key = account
+            .storage()
+            .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager public key storage map access failed");
+        assert_eq!(psm_public_key, Word::from([0u32, 0, 0, 0]));
+
+        let psm_scheme_id = account
+            .storage()
+            .get_map_item(AuthMultisigPsm::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager scheme ID storage map access failed");
+        assert_eq!(psm_scheme_id, Word::from([0u32, 0, 0, 0]));
     }
 
     /// Test multisig component with minimum threshold (1 of 1)
@@ -393,8 +566,9 @@ mod tests {
         let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
         let threshold = 1u32;
 
-        let multisig_component = AuthMultisig::new(
-            AuthMultisigConfig::new(approvers.clone(), threshold).expect("invalid multisig config"),
+        let multisig_component = AuthMultisigPsm::new(
+            AuthMultisigPsmConfig::new(approvers.clone(), threshold)
+                .expect("invalid multisig config"),
         )
         .expect("multisig component creation failed");
 
@@ -407,24 +581,69 @@ mod tests {
         // Verify storage layout
         let config_slot = account
             .storage()
-            .get_item(AuthMultisig::threshold_config_slot())
+            .get_item(AuthMultisigPsm::threshold_config_slot())
             .expect("config storage slot access failed");
         assert_eq!(config_slot, Word::from([threshold, approvers.len() as u32, 0, 0]));
 
         let stored_pub_key = account
             .storage()
-            .get_map_item(AuthMultisig::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisigPsm::approver_public_keys_slot(), Word::from([0u32, 0, 0, 0]))
             .expect("approver pub keys storage map access failed");
         assert_eq!(stored_pub_key, Word::from(pub_key));
 
         let stored_scheme_id = account
             .storage()
-            .get_map_item(AuthMultisig::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
+            .get_map_item(AuthMultisigPsm::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
             .expect("approver scheme IDs storage map access failed");
         assert_eq!(
             stored_scheme_id,
             Word::from([auth::AuthScheme::EcdsaK256Keccak as u32, 0, 0, 0])
         );
+    }
+
+    /// Test multisig component setup with a private state manager.
+    #[test]
+    fn test_multisig_component_with_psm() {
+        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
+        let psm_key = AuthSecretKey::new_ecdsa_k256_keccak();
+
+        let approvers = vec![
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let multisig_component = AuthMultisigPsm::new(
+            AuthMultisigPsmConfig::new(approvers, 2)
+                .expect("invalid multisig config")
+                .with_psm((psm_key.public_key().to_commitment(), psm_key.auth_scheme()))
+                .expect("invalid private state manager config"),
+        )
+        .expect("multisig component creation failed");
+
+        let account = AccountBuilder::new([0; 32])
+            .with_auth_component(multisig_component)
+            .with_component(BasicWallet)
+            .build()
+            .expect("account building failed");
+
+        let psm_config = account
+            .storage()
+            .get_item(AuthMultisigPsm::psm_config_slot())
+            .expect("private state manager config storage slot access failed");
+        assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled_initialized());
+
+        let psm_public_key = account
+            .storage()
+            .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager public key storage map access failed");
+        assert_eq!(psm_public_key, Word::from(psm_key.public_key().to_commitment()));
+
+        let psm_scheme_id = account
+            .storage()
+            .get_map_item(AuthMultisigPsm::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]))
+            .expect("private state manager scheme ID storage map access failed");
+        assert_eq!(psm_scheme_id, Word::from([psm_key.auth_scheme() as u32, 0, 0, 0]));
     }
 
     /// Test multisig component error cases
@@ -434,11 +653,11 @@ mod tests {
         let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
 
         // Test threshold = 0 (should fail)
-        let result = AuthMultisigConfig::new(approvers.clone(), 0);
+        let result = AuthMultisigPsmConfig::new(approvers.clone(), 0);
         assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
 
         // Test threshold > number of approvers (should fail)
-        let result = AuthMultisigConfig::new(approvers, 2);
+        let result = AuthMultisigPsmConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()
@@ -461,12 +680,49 @@ mod tests {
             (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
         ];
 
-        let result = AuthMultisigConfig::new(approvers, 2);
+        let result = AuthMultisigPsmConfig::new(approvers, 2);
         assert!(
             result
                 .unwrap_err()
                 .to_string()
                 .contains("duplicate approver public keys are not allowed")
+        );
+    }
+
+    /// Test multisig component rejects a private state manager key which is already an approver.
+    #[test]
+    fn test_multisig_component_psm_not_approver() {
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+
+        let approvers = vec![
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let result = AuthMultisigPsmConfig::new(approvers, 2).and_then(|cfg| {
+            cfg.with_psm((sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()))
+        });
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("private state manager public key must be different from approvers")
+        );
+    }
+
+    #[test]
+    fn test_multisig_psm_config_state_constants() {
+        assert_eq!(AuthMultisigPsm::psm_config_enabled_initialized(), Word::from([1u32, 1, 0, 0]));
+        assert_eq!(
+            AuthMultisigPsm::psm_config_enabled_uninitialized(),
+            Word::from([1u32, 0, 0, 0])
+        );
+        assert_eq!(AuthMultisigPsm::psm_config_disabled_initialized(), Word::from([0u32, 1, 0, 0]));
+        assert_eq!(
+            AuthMultisigPsm::psm_config_disabled_uninitialized(),
+            Word::from([0u32, 0, 0, 0])
         );
     }
 }

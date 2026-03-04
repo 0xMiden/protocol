@@ -9,6 +9,8 @@ use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
     AuthMultisig,
     AuthMultisigConfig,
+    AuthMultisigPsm,
+    AuthMultisigPsmConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
@@ -32,6 +34,14 @@ pub enum Auth {
     Multisig {
         threshold: u32,
         approvers: Vec<(Word, AuthScheme)>,
+        proc_threshold_map: Vec<(Word, u32)>,
+    },
+
+    /// Multisig with optional private state manager.
+    MultisigPsm {
+        threshold: u32,
+        approvers: Vec<(Word, AuthScheme)>,
+        psm: Option<(Word, AuthScheme)>,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
@@ -89,6 +99,34 @@ impl Auth {
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
+
+                (component, None)
+            },
+            Auth::MultisigPsm {
+                threshold,
+                approvers,
+                psm,
+                proc_threshold_map,
+            } => {
+                let approvers = approvers
+                    .iter()
+                    .map(|(pub_key, auth_scheme)| {
+                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
+                    })
+                    .collect();
+
+                let config = AuthMultisigPsmConfig::new(approvers, *threshold)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .and_then(|cfg| match psm {
+                        Some((pub_key, auth_scheme)) => {
+                            cfg.with_psm((PublicKeyCommitment::from(*pub_key), *auth_scheme))
+                        },
+                        None => Ok(cfg),
+                    })
+                    .expect("invalid multisig psm config");
+                let component = AuthMultisigPsm::new(config)
+                    .expect("multisig psm component creation failed")
+                    .into();
 
                 (component, None)
             },
