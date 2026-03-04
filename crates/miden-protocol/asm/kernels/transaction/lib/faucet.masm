@@ -1,5 +1,4 @@
 use $kernel::account
-use $kernel::account_id
 use $kernel::asset
 use $kernel::asset_vault
 use $kernel::fungible_asset

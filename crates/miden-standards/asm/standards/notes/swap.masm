@@ -1,6 +1,5 @@
 use miden::protocol::active_note
 use miden::protocol::asset
-use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::protocol::output_note
 use miden::standards::wallets::basic->wallet
 

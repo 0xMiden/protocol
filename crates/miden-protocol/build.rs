@@ -295,6 +295,7 @@ fn build_assembler(kernel: Option<KernelLibrary>) -> Result<Assembler> {
     kernel
         .map(|kernel| Assembler::with_kernel(Arc::new(DefaultSourceManager::default()), kernel))
         .unwrap_or_default()
+        .with_warnings_as_errors(true)
         .with_dynamic_library(miden_core_lib::CoreLibrary::default())
 }
 

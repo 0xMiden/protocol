@@ -2,7 +2,6 @@ use $kernel::account
 use $kernel::account_delta
 use $kernel::asset
 use $kernel::asset::ASSET_SIZE
-use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use $kernel::asset_vault
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::fungible_asset

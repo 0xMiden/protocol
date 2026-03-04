@@ -1,4 +1,3 @@
-use miden::protocol::util::asset
 use miden::protocol::account_id
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
