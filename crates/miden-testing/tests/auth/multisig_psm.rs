@@ -55,7 +55,9 @@ fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Poseidon2 => AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng),
+            AuthScheme::Falcon512Poseidon2 => {
+                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
+            },
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
