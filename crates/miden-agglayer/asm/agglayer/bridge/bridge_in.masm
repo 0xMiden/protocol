@@ -305,7 +305,7 @@ end
 #! - the origin token address is not registered in the bridge's token registry.
 #!
 #! Invocation: call
-@locals(12) # 0-3: amount_lo, 4-7: amount_hi, 8: dest_prefix, 9: dest_suffix, 10: faucet_prefix, 11: faucet_suffix
+@locals(10) # 0-3: amount_lo, 4-7: amount_hi, 8: dest_prefix, 9: dest_suffix
 pub proc claim
     # Write output note faucet amount to memory
     movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
@@ -321,16 +321,6 @@ pub proc claim
 
     exec.get_raw_claim_amount
     loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
-    # => [pad(7)]
-
-    # Look up the faucet account ID from the origin token address in the leaf data
-    exec.get_origin_token_address
-    # => [origin_token_addr(5), pad(7)]
-
-    exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, pad(7)]
-
-    loc_store.BUILD_MINT_FAUCET_PREFIX_LOC loc_store.BUILD_MINT_FAUCET_SUFFIX_LOC
     # => [pad(7)]
 
     # VALIDATE CLAIM - call verify_leaf_bridge directly (bridge is the native account)
@@ -641,6 +631,16 @@ proc build_mint_output_note
 
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
+    # => [note_type, MINT_RECIPIENT, pad(16)]
+
+    # Look up the faucet account ID from the origin token address in the leaf data
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), note_type, MINT_RECIPIENT, pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_prefix, faucet_id_suffix, note_type, MINT_RECIPIENT, pad(16)]
+
+    loc_store.BUILD_MINT_FAUCET_PREFIX_LOC loc_store.BUILD_MINT_FAUCET_SUFFIX_LOC
     # => [note_type, MINT_RECIPIENT, pad(16)]
 
     # Compute note tag targeting the faucet account
