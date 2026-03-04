@@ -1,4 +1,3 @@
-use miden::core::collections::smt
 use miden::core::word
 use $kernel::memory
 

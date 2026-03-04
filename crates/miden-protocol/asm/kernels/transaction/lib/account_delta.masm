@@ -1,6 +1,5 @@
 use $kernel::account
 use $kernel::asset
-use $kernel::asset_vault
 use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::fungible_asset
 use $kernel::link_map

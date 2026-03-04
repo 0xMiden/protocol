@@ -43,11 +43,10 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    let mut assembler = TransactionKernel::assembler().with_warnings_as_errors(true);
     // compile standards library (includes note scripts)
-    let standards_lib =
-        compile_standards_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
+    let standards_lib = compile_standards_lib(&source_dir, &target_dir, assembler.clone())?;
 
-    let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(standards_lib)?;
 
     // compile account components
