@@ -632,11 +632,11 @@ Invocation: exec
 
 1. `assertz limb0` — the most-significant limb must be zero (error: `ERR_MSB_NONZERO`).
 2. Build `suffix` from `(limb4, limb3)`:
-   a. Validate both values are `u32` (error: `ERR_NOT_U32`).
-   b. Byte-swap each limb from little-endian to big-endian via `utils::swap_u32_bytes` (see [Section 5.5](#55-endianness-summary)).
-   c. Pack into a felt: `suffix = bswap(limb3) × 2^32 + bswap(limb4)`.
-   d. Verify no mod-p reduction: split the felt back via `u32split` and assert equality
-      with the original limbs (error: `ERR_FELT_OUT_OF_FIELD`).
+      - a. Validate both values are `u32` (error: `ERR_NOT_U32`).
+      - b. Byte-swap each limb from little-endian to big-endian via `utils::swap_u32_bytes` (see [Section 5.5](#55-endianness-summary)).
+      - c. Pack into a felt: `suffix = bswap(limb3) × 2^32 + bswap(limb4)`.
+      - d. Verify no mod-p reduction: split the felt back via `u32split` and assert equality
+        with the original limbs (error: `ERR_FELT_OUT_OF_FIELD
 3. Build `prefix` from `(limb2, limb1)` using the same `build_felt` procedure.
 4. Return `[prefix, suffix]` on the stack.
 
