@@ -119,9 +119,8 @@ fn create_multisig_account_with_psm(
         .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let config = AuthMultisigPsmConfig::new(approvers, threshold)?
-        .with_proc_thresholds(proc_threshold_map)?
-        .with_psm((psm.0.to_commitment(), psm.1))?;
+    let config = AuthMultisigPsmConfig::new(approvers, threshold, (psm.0.to_commitment(), psm.1))?
+        .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigPsm::new(config)?)
