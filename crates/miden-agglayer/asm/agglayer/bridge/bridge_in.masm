@@ -11,6 +11,7 @@ use miden::protocol::note
 use miden::protocol::output_note
 use miden::standards::note_tag
 use miden::standards::attachments::network_account_target
+use miden::standards::note::execution_hint::ALWAYS
 
 # TYPE ALIASES
 # =================================================================================================
@@ -658,7 +659,7 @@ proc build_mint_output_note
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
     # network_account_target::new expects [prefix, suffix, exec_hint]
     # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
-    push.1 # exec_hint = ALWAYS
+    push.ALWAYS # exec_hint = ALWAYS
     loc_load.BUILD_MINT_FAUCET_SUFFIX_LOC
     loc_load.BUILD_MINT_FAUCET_PREFIX_LOC
     # => [faucet_prefix, faucet_suffix, exec_hint, note_idx, pad(16)]
