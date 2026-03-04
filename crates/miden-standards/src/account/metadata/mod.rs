@@ -1,4 +1,4 @@
-//! Account / contract / faucet metadata (slots 0..23)
+//! Account / contract / faucet metadata (slots 0..25)
 //!
 //! All of the following are metadata of the account (or faucet): token_symbol, decimals,
 //! max_supply, owner, name, mutability_config, description, logo URI,
@@ -13,9 +13,9 @@
 //! | `metadata::name_0` | first 4 felts of name |
 //! | `metadata::name_1` | last 4 felts of name |
 //! | `metadata::mutability_config` | `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]` |
-//! | `metadata::description_0..5` | description (6 Words, ~192 bytes) |
-//! | `metadata::logo_uri_0..5` | logo URI (6 Words, ~192 bytes) |
-//! | `metadata::external_link_0..5` | external link (6 Words, ~192 bytes) |
+//! | `metadata::description_0..6` | description (7 Words, max 195 bytes) |
+//! | `metadata::logo_uri_0..6` | logo URI (7 Words, max 195 bytes) |
+//! | `metadata::external_link_0..6` | external link (7 Words, max 195 bytes) |
 //!
 //! Slot names use the `miden::standards::metadata::*` namespace, except for the
 //! owner which is defined by the ownable module
@@ -42,12 +42,15 @@
 //! `get_description`, `get_logo_uri`, `get_external_link`; for owner and mutable fields use a
 //! component that re-exports from fungible (e.g. network fungible faucet).
 //!
-//! ## Name encoding (UTF-8)
+//! ## String encoding (UTF-8)
 //!
-//! The name slots hold opaque words. This crate defines a **convention** for human-readable
-//! names: UTF-8 bytes, 4 bytes per felt, little-endian, up to 32 bytes (see [`name_from_utf8`],
-//! [`name_to_utf8`]). There is no Miden-wide standard for string→felt encoding; this convention
-//! ensures Rust and MASM (or other consumers) can interoperate when they all use these helpers.
+//! All string fields use **7-bytes-per-felt, length-prefixed** encoding. The N felts are
+//! serialized into a flat buffer of N × 7 bytes; byte 0 is the string length, followed by UTF-8
+//! content, zero-padded. Each 7-byte chunk is stored as a LE u64 with the high byte always zero,
+//! so it always fits in a Goldilocks field element.
+//!
+//! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32). See
+//! [`name_from_utf8`], [`name_to_utf8`] for convenience helpers.
 //!
 //! # Example
 //!
@@ -116,7 +119,8 @@ pub static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     ]
 });
 
-/// Maximum length of a name in bytes when using the UTF-8 encoding (2 Words = 8 felts × 4 bytes).
+/// Maximum length of a name in bytes when using the UTF-8 encoding (2 Words = 8 felts × 7 bytes
+/// = 56 byte buffer − 1 length byte = 55 capacity, capped at 32).
 pub const NAME_UTF8_MAX_BYTES: usize = 32;
 
 /// Errors when encoding or decoding the metadata name as UTF-8.
@@ -132,8 +136,8 @@ pub enum NameUtf8Error {
 
 /// Encodes a UTF-8 string into the 2-Word name format.
 ///
-/// Bytes are packed little-endian, 4 bytes per felt (8 felts total). The string is
-/// zero-padded to 32 bytes. Returns an error if the UTF-8 byte length exceeds 32.
+/// Bytes are packed 7-bytes-per-felt, length-prefixed, into 8 felts (2 Words).
+/// Returns an error if the UTF-8 byte length exceeds 32.
 ///
 /// Prefer using [`TokenName::new`] + [`TokenName::to_words`] directly.
 pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
@@ -143,8 +147,7 @@ pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
 
 /// Decodes the 2-Word name format as UTF-8.
 ///
-/// Assumes the name was encoded with [`name_from_utf8`] (little-endian, 4 bytes per felt).
-/// Trailing zero bytes are trimmed before UTF-8 validation.
+/// Assumes the name was encoded with [`name_from_utf8`] (7-bytes-per-felt, length-prefixed).
 ///
 /// Prefer using [`TokenName::try_from_words`] directly.
 pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
@@ -161,8 +164,8 @@ pub static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| 
 });
 
 /// Maximum length of a metadata field (description, logo_uri, external_link) in bytes.
-/// 6 Words = 24 felts × 8 bytes = 192 bytes.
-pub const FIELD_MAX_BYTES: usize = 192;
+/// 7 Words = 28 felts × 7 bytes = 196 byte buffer − 1 length byte = 195 bytes.
+pub const FIELD_MAX_BYTES: usize = 195;
 
 /// Errors when encoding or decoding metadata fields.
 #[derive(Debug, Clone, Error)]
@@ -175,21 +178,21 @@ pub enum FieldBytesError {
     InvalidUtf8,
 }
 
-/// Encodes a UTF-8 string into 6 Words (24 felts).
+/// Encodes a UTF-8 string into 7 Words (28 felts).
 ///
-/// Bytes are packed little-endian, 8 bytes per felt (24 felts total). The string is zero-padded
-/// to 192 bytes. Returns an error if the length exceeds 192.
+/// Bytes are packed 7-bytes-per-felt, length-prefixed, into 28 felts (7 Words).
+/// Returns an error if the length exceeds [`FIELD_MAX_BYTES`].
 ///
 /// Prefer using [`Description::new`] + [`Description::to_words`] (or `LogoURI` / `ExternalLink`)
 /// directly.
-pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 6], FieldBytesError> {
+pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 7], FieldBytesError> {
     use crate::account::faucets::Description;
     let s = core::str::from_utf8(bytes).map_err(|_| FieldBytesError::InvalidUtf8)?;
     Ok(Description::new(s)?.to_words())
 }
 
-/// Description (6 Words = 24 felts), split across 6 slots.
-pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| {
+/// Description (7 Words = 28 felts), split across 7 slots.
+pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::description_0").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::description_1").expect("valid slot name"),
@@ -197,11 +200,12 @@ pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| 
         StorageSlotName::new("miden::standards::metadata::description_3").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::description_4").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::description_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_6").expect("valid slot name"),
     ]
 });
 
-/// Logo URI (6 Words = 24 felts), split across 6 slots.
-pub static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| {
+/// Logo URI (7 Words = 28 felts), split across 7 slots.
+pub static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::logo_uri_0").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::logo_uri_1").expect("valid slot name"),
@@ -209,11 +213,12 @@ pub static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| {
         StorageSlotName::new("miden::standards::metadata::logo_uri_3").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::logo_uri_4").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::logo_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_6").expect("valid slot name"),
     ]
 });
 
-/// External link (6 Words = 24 felts), split across 6 slots.
-pub static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|| {
+/// External link (7 Words = 28 felts), split across 7 slots.
+pub static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::external_link_0")
             .expect("valid slot name"),
@@ -227,6 +232,8 @@ pub static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 6]> = LazyLock::new(|
             .expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::external_link_5")
             .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_6")
+            .expect("valid slot name"),
     ]
 });
 
@@ -236,18 +243,18 @@ pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::ne
         .expect("storage slot name should be valid")
 });
 
-/// The advice map key used by `optional_set_description` to read the 6 field words.
+/// The advice map key used by `optional_set_description` to read the 7 field words.
 ///
 /// Must match `DESCRIPTION_DATA_KEY` in `fungible.masm`. The value stored under this key
-/// should be 24 felts: `[FIELD_0, FIELD_1, FIELD_2, FIELD_3, FIELD_4, FIELD_5]`.
+/// should be 28 felts: `[FIELD_0, FIELD_1, FIELD_2, FIELD_3, FIELD_4, FIELD_5, FIELD_6]`.
 pub const DESCRIPTION_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)]);
 
-/// The advice map key used by `optional_set_logo_uri` to read the 6 field words.
+/// The advice map key used by `optional_set_logo_uri` to read the 7 field words.
 pub const LOGO_URI_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(2)]);
 
-/// The advice map key used by `optional_set_external_link` to read the 6 field words.
+/// The advice map key used by `optional_set_external_link` to read the 7 field words.
 pub const EXTERNAL_LINK_DATA_KEY: Word =
     Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(3)]);
 
@@ -278,9 +285,9 @@ pub fn mutability_config_slot() -> &'static StorageSlotName {
 ///
 /// - Slot 2–3: name (2 Words = 8 felts)
 /// - Slot 4: mutability_config `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
-/// - Slot 5–10: description (6 Words)
-/// - Slot 11–16: logo_uri (6 Words)
-/// - Slot 17–22: external_link (6 Words)
+/// - Slot 5–11: description (7 Words)
+/// - Slot 12–18: logo_uri (7 Words)
+/// - Slot 19–25: external_link (7 Words)
 #[derive(Debug, Clone, Default)]
 pub struct TokenMetadata {
     name: Option<TokenName>,
@@ -349,17 +356,17 @@ impl TokenMetadata {
         &NAME_SLOTS[1]
     }
 
-    /// Returns the slot name for a description chunk by index (0..6).
+    /// Returns the slot name for a description chunk by index (0..7).
     pub fn description_slot(index: usize) -> &'static StorageSlotName {
         &DESCRIPTION_SLOTS[index]
     }
 
-    /// Returns the slot name for a logo URI chunk by index (0..6).
+    /// Returns the slot name for a logo URI chunk by index (0..7).
     pub fn logo_uri_slot(index: usize) -> &'static StorageSlotName {
         &LOGO_URI_SLOTS[index]
     }
 
-    /// Returns the slot name for an external link chunk by index (0..6).
+    /// Returns the slot name for an external link chunk by index (0..7).
     pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_LINK_SLOTS[index]
     }
@@ -386,8 +393,8 @@ impl TokenMetadata {
             None
         };
 
-        let read_field = |slots: &[StorageSlotName; 6]| -> Option<[Word; 6]> {
-            let mut field = [Word::default(); 6];
+        let read_field = |slots: &[StorageSlotName; 7]| -> Option<[Word; 7]> {
+            let mut field = [Word::default(); 7];
             let mut any_set = false;
             for (i, slot) in field.iter_mut().enumerate() {
                 if let Ok(chunk) = storage.get_item(&slots[i]) {
@@ -439,19 +446,19 @@ impl TokenMetadata {
             mutability_config_word,
         ));
 
-        let desc_words: [Word; 6] =
+        let desc_words: [Word; 7] =
             self.description.as_ref().map(|d| d.to_words()).unwrap_or_default();
         for (i, word) in desc_words.iter().enumerate() {
             slots.push(StorageSlot::with_value(TokenMetadata::description_slot(i).clone(), *word));
         }
 
-        let logo_words: [Word; 6] =
+        let logo_words: [Word; 7] =
             self.logo_uri.as_ref().map(|l| l.to_words()).unwrap_or_default();
         for (i, word) in logo_words.iter().enumerate() {
             slots.push(StorageSlot::with_value(TokenMetadata::logo_uri_slot(i).clone(), *word));
         }
 
-        let link_words: [Word; 6] =
+        let link_words: [Word; 7] =
             self.external_link.as_ref().map(|e| e.to_words()).unwrap_or_default();
         for (i, word) in link_words.iter().enumerate() {
             slots
@@ -715,12 +722,12 @@ mod tests {
     fn description_max_bytes_accepted() {
         let s = "a".repeat(Description::MAX_BYTES);
         let desc = Description::new(&s).unwrap();
-        assert_eq!(desc.to_words().len(), 6);
+        assert_eq!(desc.to_words().len(), 7);
     }
 
     #[test]
     fn description_too_long_rejected() {
-        let s = "a".repeat(193);
+        let s = "a".repeat(super::FIELD_MAX_BYTES + 1);
         assert!(Description::new(&s).is_err());
     }
 
