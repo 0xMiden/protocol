@@ -506,8 +506,8 @@ end
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Look up the faucet, create the output note, and set the attachment.
 #!
-#! Inputs:  [prefix, suffix, pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [prefix, suffix]
+#! Outputs: []
 #!
 #! Where:
 #! - prefix, suffix: destination account ID
@@ -516,15 +516,15 @@ end
 proc build_mint_output_note
     # Step 1: Write all 18 MINT note storage items to global memory
     exec.write_mint_note_storage
-    # => [pad(16)]
+    # => []
 
     # Step 2: Build the MINT note recipient digest
     exec.build_mint_recipient
-    # => [MINT_RECIPIENT, pad(16)]
+    # => [MINT_RECIPIENT]
 
     # Step 3: Create the output note and set the faucet attachment
     exec.create_mint_note_with_attachment
-    # => [pad(16)]
+    # => []
 end
 
 #! Writes all 18 MINT note storage items to global memory.
@@ -540,68 +540,67 @@ end
 #! - [16]: account_id_suffix (destination account suffix)
 #! - [17]: account_id_prefix (destination account prefix)
 #!
-#! Inputs:  [prefix, suffix, pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [prefix, suffix]
+#! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
     # Write P2ID storage items first (before prefix is consumed): [16..17]
     # Write account_id_suffix [16]
     dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT
-    # => [prefix, suffix, pad(16)]
+    # => [prefix, suffix]
 
     # Write account_id_prefix [17]
     dup push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
-    # => [prefix, suffix, pad(16)]
+    # => [prefix, suffix]
+
+    swap drop
+    # => [prefix]
 
     # Get the native amount from the pre-computed miden_claim_amount
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [native_amount, prefix, suffix, pad(16)]
+    # => [native_amount, prefix]
 
     # Compute the note tag for the destination account (consumes prefix)
     swap
-    # => [prefix, native_amount, suffix, pad(16)]
+    # => [prefix, native_amount]
 
     exec.note_tag::create_account_target
-    # => [dest_tag, native_amount, suffix, pad(16)]
+    # => [dest_tag, native_amount]
 
     # Write tag to MINT note storage [0]
     mem_store.MINT_NOTE_STORAGE_DEST_TAG
-    # => [native_amount, suffix, pad(16)]
+    # => [native_amount]
 
     # Write amount to MINT note storage [1]
     mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
-    # => [suffix, pad(16)]
-
-    # suffix is no longer needed, drop it
-    drop
-    # => [pad(16)]
+    # => []
 
     # Write attachment_kind = 0 [2]
     push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
-    # => [pad(16)]
+    # => []
 
     # Write attachment_scheme = 0 [3]
     push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
-    # => [pad(16)]
+    # => []
 
     # Write ATTACHMENT = [0, 0, 0, 0] [4..7]
     padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
-    # => [pad(16)]
+    # => []
 
     # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
     procref.::miden::standards::notes::p2id::main
-    # => [P2ID_SCRIPT_ROOT, pad(16)]
+    # => [P2ID_SCRIPT_ROOT]
 
     mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
-    # => [pad(16)]
+    # => []
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [SERIAL_NUM, pad(16)]
+    # => [SERIAL_NUM]
 
     mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
-    # => [pad(16)]
+    # => []
 end
 
 #! Builds the MINT note recipient digest from the storage items already written to global memory.
@@ -609,28 +608,28 @@ end
 #! Uses the MINT note script root and PROOF_DATA_KEY as serial number, then calls
 #! `note::build_recipient` with the storage pointer and item count.
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [MINT_RECIPIENT, pad(16)]
+#! Inputs:  []
+#! Outputs: [MINT_RECIPIENT]
 #!
 #! Invocation: exec
 proc build_mint_recipient
     # Get the MINT note script root
     procref.::miden::standards::notes::mint::main
-    # => [MINT_SCRIPT_ROOT, pad(16)]
+    # => [MINT_SCRIPT_ROOT]
 
     # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
     swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
+    # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     # Build the MINT note recipient
     push.MINT_NOTE_NUM_STORAGE_ITEMS
-    # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
+    # => [num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     push.MINT_NOTE_STORAGE_MEM_ADDR_0
-    # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT, pad(16)]
+    # => [storage_ptr, num_storage_items, MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     exec.note::build_recipient
-    # => [MINT_RECIPIENT, pad(16)]
+    # => [MINT_RECIPIENT]
 end
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
@@ -639,36 +638,36 @@ end
 #! creates a public output note with no assets, and sets the attachment so only the
 #! target faucet can consume the note.
 #!
-#! Inputs:  [MINT_RECIPIENT, pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [MINT_RECIPIENT]
+#! Outputs: []
 #!
 #! Invocation: exec
 @locals(2) # 0: faucet_prefix, 1: faucet_suffix
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT, pad(16)]
+    # => [note_type, MINT_RECIPIENT]
 
     # Look up the faucet account ID from the origin token address in the leaf data
     exec.get_origin_token_address
-    # => [origin_token_addr(5), note_type, MINT_RECIPIENT, pad(16)]
+    # => [origin_token_addr(5), note_type, MINT_RECIPIENT]
 
     exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, note_type, MINT_RECIPIENT, pad(16)]
+    # => [faucet_id_prefix, faucet_id_suffix, note_type, MINT_RECIPIENT]
 
     loc_store.CREATE_MINT_FAUCET_PREFIX_LOC loc_store.CREATE_MINT_FAUCET_SUFFIX_LOC
-    # => [note_type, MINT_RECIPIENT, pad(16)]
+    # => [note_type, MINT_RECIPIENT]
 
     # Compute note tag targeting the faucet account
     loc_load.CREATE_MINT_FAUCET_PREFIX_LOC
-    # => [faucet_prefix, note_type, MINT_RECIPIENT, pad(16)]
+    # => [faucet_prefix, note_type, MINT_RECIPIENT]
 
     exec.note_tag::create_account_target
-    # => [faucet_tag, note_type, MINT_RECIPIENT, pad(16)]
+    # => [faucet_tag, note_type, MINT_RECIPIENT]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
-    # => [note_idx, pad(16)]
+    # => [note_idx]
 
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
@@ -677,17 +676,17 @@ proc create_mint_note_with_attachment
     push.ALWAYS # exec_hint = ALWAYS
     loc_load.CREATE_MINT_FAUCET_SUFFIX_LOC
     loc_load.CREATE_MINT_FAUCET_PREFIX_LOC
-    # => [faucet_prefix, faucet_suffix, exec_hint, note_idx, pad(16)]
+    # => [faucet_prefix, faucet_suffix, exec_hint, note_idx]
 
     exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx, pad(16)]
+    # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
 
     # Rearrange for set_attachment: [note_idx, attachment_scheme, attachment_kind, ATTACHMENT]
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4), pad(16)]
+    # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT(4)]
 
     exec.output_note::set_attachment
-    # => [pad(16)]
+    # => []
 end
 
 #! Computes the root of the SMT based on the provided Merkle path, leaf value and leaf index.
