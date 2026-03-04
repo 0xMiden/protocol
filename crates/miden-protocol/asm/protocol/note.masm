@@ -1,5 +1,5 @@
 use miden::protocol::account_id
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 # Re-export the max inputs per note constant.
@@ -39,7 +39,7 @@ pub proc compute_storage_commitment
     # => [storage_ptr, num_storage_items]
 
     # compute the storage commitment (over the unpadded values)
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [STORAGE_COMMITMENT]
 end
 
@@ -59,18 +59,18 @@ pub proc write_assets_to_memory
     # OS => [ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
-    # calculate number of assets rounded up to an even number
-    dup.4 dup is_odd add
-    # OS => [even_num_assets, ASSETS_COMMITMENT, num_assets, dest_ptr]
+    dup.5 dup.5
+    # OS => [num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
-    # prepare the stack for the `pipe_preimage_to_memory` procedure
-    dup.6 swap
-    # OS => [even_num_assets, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
+    # each asset takes up two words, so num_words = 2 * num_assets
+    # this also guarantees we pass an even number to pipe_double_words_preimage_to_memory
+    mul.2
+    # OS => [num_words, dest_ptr, ASSETS_COMMITMENT, num_assets, dest_ptr]
     # AS => [[ASSETS_DATA]]
 
     # write the data from the advice stack into memory
-    exec.mem::pipe_preimage_to_memory drop
+    exec.mem::pipe_double_words_preimage_to_memory drop
     # OS => [num_assets, dest_ptr]
     # AS => []
 end
@@ -135,17 +135,20 @@ pub proc build_recipient
     movdnw.2
     # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    padw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
+    padw swapw
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw adv.insert_hdword exec.rpo256::merge
-    # => [SERIAL_SCRIPT_HASH, STORAGE_COMMITMENT]
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw adv.insert_hdword exec.rpo256::merge
+    adv.insert_hdword exec.poseidon2::merge
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT]
+
+    adv.insert_hdword exec.poseidon2::merge
     # => [RECIPIENT]
 end
 
-#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT, and storage commitment.
+#! Returns the RECIPIENT for a specified SERIAL_NUM, SCRIPT_ROOT and STORAGE_COMMITMENT.
 #!
 #! Inputs:  [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 #! Outputs: [RECIPIENT]
@@ -158,39 +161,38 @@ end
 #!
 #! Invocation: exec
 pub proc build_recipient_hash
-    padw exec.rpo256::merge
+    padw swapw
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT]
+
+    exec.poseidon2::merge
     # => [SERIAL_NUM_HASH, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
-    swapw exec.rpo256::merge
+    exec.poseidon2::merge
     # => [MERGE_SCRIPT, STORAGE_COMMITMENT]
 
-    swapw exec.rpo256::merge
-    # [RECIPIENT]
+    exec.poseidon2::merge
+    # => [RECIPIENT]
 end
 
 #! Extracts the sender ID from the provided metadata header.
 #!
 #! Inputs:  [METADATA_HEADER]
-#! Outputs: [sender_id_prefix, sender_id_suffix]
+#! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
 #! - METADATA_HEADER is the metadata of a note.
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender ID of the note which
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the sender ID of the note which
 #!   metadata was provided.
 pub proc extract_sender_from_metadata
-    # => [attachment_kind_scheme, tag, sender_id_prefix, sender_id_suffix_and_note_type]
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
 
-    # drop attachment kind, attachment scheme and tag
-    drop drop swap
+    # drop tag and attachment_kind_scheme
+    movup.3 drop movup.2 drop
     # => [sender_id_suffix_and_note_type, sender_id_prefix]
 
     # extract suffix of sender from merged layout, which means clearing the least significant byte
     exec.account_id::shape_suffix
     # => [sender_id_suffix, sender_id_prefix]
-
-    # rearrange suffix and prefix
-    swap
-    # => [sender_id_prefix, sender_id_suffix]
 end
 
 #! Extracts the attachment kind and scheme from the provided metadata header.
@@ -205,13 +207,13 @@ end
 #!
 #! Invocation: exec
 pub proc extract_attachment_info_from_metadata
-    # => [attachment_kind_scheme, METADATA_HEADER[1..4]]
-    movdn.3 drop drop drop
+    # => [sender_id_suffix_and_note_type, sender_id_prefix, tag, attachment_kind_scheme]
+    drop drop drop
     # => [attachment_kind_scheme]
 
     # deconstruct the attachment_kind_scheme to extract the attachment_scheme
     # attachment_kind_scheme = [30 zero bits | attachment_kind (2 bits) | attachment_scheme (32 bits)]
-    # u32split splits into [high, low] where low is attachment_scheme
-    u32split
+    # u32split splits into [lo, hi] where lo is attachment_scheme
+    u32split swap
     # => [attachment_kind, attachment_scheme]
 end

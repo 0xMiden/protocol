@@ -1,6 +1,6 @@
 use miden_crypto::merkle::smt::Smt;
 #[cfg(not(target_family = "wasm"))]
-use winter_rand_utils::rand_value;
+use miden_crypto::rand::test_utils::rand_value;
 
 use crate::Word;
 use crate::account::Account;

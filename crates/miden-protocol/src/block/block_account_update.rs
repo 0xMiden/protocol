@@ -1,7 +1,13 @@
 use crate::Word;
 use crate::account::AccountId;
 use crate::account::delta::AccountUpdateDetails;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // BLOCK ACCOUNT UPDATE
 // ================================================================================================

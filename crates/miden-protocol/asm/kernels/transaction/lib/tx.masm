@@ -152,9 +152,9 @@ end
 #! account stack, which makes the foreign account the active account.
 #!
 #! Inputs:
-#!   Operand stack: [foreign_account_id_prefix, foreign_account_id_suffix]
+#!   Operand stack: [foreign_account_id_suffix, foreign_account_id_prefix]
 #!   Advice map: {
-#!     FOREIGN_ACCOUNT_ID: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
+#!     FOREIGN_ACCOUNT_ID_KEY: [[foreign_account_id_suffix, foreign_account_id_prefix, 0, account_nonce],
 #!                          VAULT_ROOT, STORAGE_ROOT, CODE_ROOT],
 #!     STORAGE_ROOT: [[STORAGE_SLOT_DATA]],
 #!     CODE_ROOT: [num_procs, [ACCOUNT_PROCEDURE_DATA]]
@@ -165,11 +165,8 @@ end
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-#! - FOREIGN_ACCOUNT_ID is the word constructed from the foreign_account_id as follows:
-#!   [0, 0, foreign_account_id_prefix, foreign_account_id_suffix]. Notice that the actual advice map
-#!   key is reversed: [foreign_account_id_suffix, foreign_account_id_prefix, 0, 0]. That is the 
-#!   specificity of the `adv.push_mapval` instruction which takes the top stack word in the 
-#!   big-endian (reversed) order.
+#! - FOREIGN_ACCOUNT_ID_KEY is the map key constructed from the foreign_account_id as done by
+#!   account::create_id_key.
 #! - account_nonce is the nonce of the foreign account.
 #! - VAULT_ROOT is the commitment of the foreign account's vault.
 #! - STORAGE_ROOT is the commitment of the foreign account's storage.
@@ -185,14 +182,14 @@ end
 pub proc start_foreign_context
     # get the memory address and a flag whether this account was already loaded.
     exec.account::get_account_data_ptr
-    # OS => [was_loaded, ptr, foreign_account_id_prefix, foreign_account_id_suffix]    
+    # OS => [was_loaded, ptr, foreign_account_id_suffix, foreign_account_id_prefix]
 
     if.true
         exec.memory::push_ptr_to_account_stack drop drop
         # OS => []
     else
         exec.memory::push_ptr_to_account_stack
-        # OS => [foreign_account_id_prefix, foreign_account_id_suffix]
+        # OS => [foreign_account_id_suffix, foreign_account_id_prefix]
 
         # load the advice data into the active account memory section
         exec.account::load_foreign_account

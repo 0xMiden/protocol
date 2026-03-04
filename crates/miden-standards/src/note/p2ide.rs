@@ -18,7 +18,7 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use crate::StandardsLib;
 // NOTE SCRIPT
@@ -179,14 +179,14 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             });
         }
 
-        let target = AccountId::try_from([note_storage[1], note_storage[0]])
-            .map_err(|e| NoteError::other_with_source("failed to create account id", e))?;
+        let target = AccountId::try_from_elements(note_storage[0], note_storage[1])
+            .map_err(|err| NoteError::other_with_source("failed to create account id", err))?;
 
         let reclaim_height = if note_storage[2] == Felt::ZERO {
             None
         } else {
             let height: u32 = note_storage[2]
-                .as_int()
+                .as_canonical_u64()
                 .try_into()
                 .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
@@ -197,7 +197,7 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
             None
         } else {
             let height: u32 = note_storage[3]
-                .as_int()
+                .as_canonical_u64()
                 .try_into()
                 .map_err(|e| NoteError::other_with_source("invalid note storage", e))?;
 
@@ -213,10 +213,10 @@ impl TryFrom<&[Felt]> for P2ideNoteStorage {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::block::BlockNumber;
     use miden_protocol::errors::NoteError;
-    use miden_protocol::{Felt, FieldElement};
 
     use super::*;
 

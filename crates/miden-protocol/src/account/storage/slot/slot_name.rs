@@ -5,7 +5,13 @@ use core::str::FromStr;
 
 use crate::account::storage::slot::StorageSlotId;
 use crate::errors::StorageSlotNameError;
-use crate::utils::serde::{ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// The name of an account storage slot.
 ///
@@ -100,7 +106,7 @@ impl StorageSlotName {
     /// We must check the validity of a slot name against the raw bytes of the UTF-8 string because
     /// typical character APIs are not available in a const version. We can do this because any byte
     /// in a UTF-8 string that is an ASCII character never represents anything other than such a
-    /// character, even though UTF-8 can contain multibyte sequences:
+    /// character, even though UTF-8 can contain multi-byte sequences:
     ///
     /// > UTF-8, the object of this memo, has a one-octet encoding unit. It uses all bits of an
     /// > octet, but has the quality of preserving the full US-ASCII range: US-ASCII characters
@@ -245,11 +251,9 @@ impl Serializable for StorageSlotName {
 }
 
 impl Deserializable for StorageSlotName {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let len = source.read_u8()?;
-        let name = source.read_many(len as usize)?;
+        let name = source.read_many_iter(len as usize)?.collect::<Result<_, _>>()?;
         String::from_utf8(name)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             .and_then(|name| {

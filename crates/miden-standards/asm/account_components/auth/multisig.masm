@@ -17,8 +17,6 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 # CONSTANTS
 # =================================================================================================
 
@@ -88,21 +86,21 @@ const ERR_SIGNER_INDEX_NOT_U32 = "signer index must be u32"
 #!
 #! Panics if:
 #! - the same transaction has already been executed
-proc assert_new_tx(msg: BeWord)
+proc assert_new_tx(msg: word)
     push.IS_EXECUTED_FLAG
-    # => [[0, 0, 0, is_executed], MSG]
+    # => [[is_executed, 0, 0, 0], MSG]
 
     swapw
     # => [MSG, IS_EXECUTED_FLAG]
 
     push.EXECUTED_TXS_SLOT[0..2]
-    # => [txs_slot_prefix, txs_slot_suffix, MSG, IS_EXECUTED_FLAG]
+    # => [txs_slot_suffix, txs_slot_prefix, MSG, IS_EXECUTED_FLAG]
 
     # Set the key value pair in the map to mark transaction as executed
     exec.native_account::set_map_item
-    # => [[0, 0, 0, is_executed]]
+    # => [[is_executed, 0, 0, 0]]
 
-    drop drop drop
+    movdn.3 drop drop drop
     # => [is_executed]
 
     assertz.err=ERR_TX_ALREADY_EXECUTED
@@ -145,7 +143,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+        # => [scheme_id_slot_suffix, scheme_id_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
@@ -161,7 +159,7 @@ proc cleanup_pubkey_and_scheme_id_mapping(init_num_of_approvers: u32, new_num_of
         # => [APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, EMPTY_WORD, i-1, new_num_of_approvers]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, new_num_of_approvers]
@@ -181,8 +179,9 @@ end
 #!
 #! Inputs: [key_index]
 #! Outputs: [APPROVER_MAP_KEY]
-proc create_approver_map_key(key_index: felt) -> BeWord
-    push.0.0.0
+proc create_approver_map_key
+    push.0.0.0 movup.3
+    # => [[key_index, 0, 0, 0]]
     # => [APPROVER_MAP_KEY]
 end
 
@@ -215,7 +214,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
-pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
+pub proc update_signers_and_threshold(multisig_config_hash: word)
     adv.push_mapval
     # => [MULTISIG_CONFIG_HASH, pad(12)]
 
@@ -223,10 +222,10 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # => [MULTISIG_CONFIG, pad(12)]
 
     # store new_num_of_approvers for later
-    dup.2 loc_store.NEW_NUM_OF_APPROVERS_LOC
+    dup.1 loc_store.NEW_NUM_OF_APPROVERS_LOC
     # => [MULTISIG_CONFIG, pad(12)]
 
-    dup.3 dup.3
+    dup dup.2
     # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
 
     # make sure that the threshold is smaller than the number of approvers
@@ -234,7 +233,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
     # => [MULTISIG_CONFIG, pad(12)]
 
-    dup.3 dup.3
+    dup dup.2
     # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
 
     # make sure that threshold or num_approvers are not zero
@@ -243,13 +242,13 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
     # => [MULTISIG_CONFIG, pad(12)]
 
     push.THRESHOLD_CONFIG_SLOT[0..2]
-    # => [config_slot_prefix, config_slot_suffix, MULTISIG_CONFIG, pad(12)]
+    # => [config_slot_suffix, config_slot_prefix, MULTISIG_CONFIG, pad(12)]
 
     exec.native_account::set_item
     # => [OLD_THRESHOLD_CONFIG, pad(12)]
 
     # store init_num_of_approvers for later
-    drop drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop
+    drop loc_store.INIT_NUM_OF_APPROVERS_LOC drop drop
     # => [pad(12)]
 
     loc_load.NEW_NUM_OF_APPROVERS_LOC
@@ -270,7 +269,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         # => [APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -287,7 +286,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: BeWord)
         # => [APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         push.APPROVER_SCHEME_ID_SLOT[0..2]
-        # => [scheme_id_slot_prefix, scheme_id_slot_suffix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
+        # => [scheme_id_slot_id_suffix, scheme_id_slot_id_prefix, APPROVER_MAP_KEY, SCHEME_ID_WORD, i-1, pad(12)]
 
         exec.native_account::set_map_item
         # => [OLD_VALUE, i-1, pad(12)]
@@ -360,14 +359,14 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
             # => [PROC_ROOT, num_procedures-1, transaction_threshold]
 
             push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-            # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, num_procedures-1, transaction_threshold]
+            # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, transaction_threshold]
 
             # 2b. get the override proc_threshold of that procedure
             # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
             exec.active_account::get_initial_map_item
-            # => [[0, 0, 0, proc_threshold], num_procedures-1, transaction_threshold]
+            # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
 
-            drop drop drop dup dup.3
+            movdn.3 drop drop drop dup dup.3
             # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
 
             u32assert2.err="transaction threshold or procedure threshold are not u32"
@@ -411,15 +410,10 @@ end
 #! Invocation: call
 pub proc get_threshold_and_num_approvers
     push.THRESHOLD_CONFIG_SLOT[0..2]
-    # => [THRESHOLD_CONFIG_SLOT]
-
     exec.active_account::get_initial_item
-    # => [0, 0, num_approvers, threshold]
+    # => [threshold, num_approvers, 0, 0]
 
-    drop drop
-    # => [num_approvers, threshold]
-
-    swap
+    movup.2 drop movup.2 drop
     # => [threshold, num_approvers]
 end
 
@@ -456,7 +450,7 @@ end
 #!
 #! Invocation: call
 @locals(2)
-pub proc is_signer(pub_key: BeWord) -> felt
+pub proc is_signer(pub_key: word) -> felt
     # initialize is_signer_found = false
     push.0 loc_store.IS_SIGNER_FOUND_LOC
     # => [PUB_KEY]
@@ -484,7 +478,7 @@ pub proc is_signer(pub_key: BeWord) -> felt
         # => [APPROVER_MAP_KEY, PUB_KEY]
 
         push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, APPROVER_MAP_KEY, PUB_KEY]
+        # => [pub_key_slot_suffix, pub_key_slot_prefix, APPROVER_MAP_KEY, PUB_KEY]
 
         exec.active_account::get_initial_map_item
         # => [CURRENT_PUB_KEY, PUB_KEY]
@@ -521,7 +515,7 @@ end
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! This procedure implements multi-signature authentication by:
 #! 1. Computing the transaction summary message that needs to be signed
@@ -552,19 +546,20 @@ end
 #! - the same transaction has already been executed (replay protection).
 #!
 #! Invocation: call
+@auth_script
 @locals(1)
-pub proc auth_tx_multisig(salt: BeWord)
+pub proc auth_tx_multisig(salt: word)
     exec.native_account::incr_nonce drop
     # => [SALT]
 
     # ------ Computing transaction summary ------
 
     exec.auth::create_tx_summary
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
-    # to build a tx_summary in the host, we need these four words in the advice provider
-    exec.auth::adv_insert_hqword
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+    # insert tx summary into advice provider for extraction by the host
+    adv.insert_hqword
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT]
 
     # the commitment to the tx summary is the message that is signed
     exec.auth::hash_tx_summary
@@ -572,23 +567,17 @@ pub proc auth_tx_multisig(salt: BeWord)
 
     # ------ Verifying approver signatures ------
 
-    push.THRESHOLD_CONFIG_SLOT[0..2]
-    # => [config_slot_prefix, config_slot_suffix, TX_SUMMARY_COMMITMENT]
+    exec.get_threshold_and_num_approvers
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
-    exec.active_account::get_initial_item
-    # => [0, 0, num_of_approvers, default_threshold, TX_SUMMARY_COMMITMENT]
-
-    drop drop
-    # => [num_of_approvers, default_threshold, TX_SUMMARY_COMMITMENT]
-
-    swap movdn.5
+    movdn.5
     # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+    # => [pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
     push.APPROVER_SCHEME_ID_SLOT[0..2]
-    # => [approver_scheme_id_slot_prefix, approver_scheme_id_slot_suffix, pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+    # => [scheme_id_slot_suffix, scheme_id_slot_prefix, pub_key_slot_suffix, pub_key_slot_prefix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
 
     exec.::miden::standards::auth::signature::verify_signatures
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]

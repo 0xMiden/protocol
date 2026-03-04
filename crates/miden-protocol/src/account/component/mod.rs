@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_mast_package::{MastArtifact, Package};
+use miden_processor::mast::MastNodeExt;
 
 mod metadata;
 pub use metadata::*;
@@ -16,6 +17,9 @@ use crate::account::{AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 use crate::{MastForest, Word};
+
+/// The attribute name used to mark the authentication procedure in an account component.
+const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
 // ACCOUNT COMPONENT
 // ================================================================================================
@@ -193,12 +197,21 @@ impl AccountComponent {
     }
 
     /// Returns a vector of tuples (digest, is_auth) for all procedures in this component.
+    ///
+    /// A procedure is considered an authentication procedure if it has the `@auth_script`
+    /// attribute.
     pub fn get_procedures(&self) -> Vec<(Word, bool)> {
+        let library = self.code.as_library();
         let mut procedures = Vec::new();
-        for module in self.code.as_library().module_infos() {
-            for (_, procedure_info) in module.procedures() {
-                let is_auth = procedure_info.name.starts_with("auth_");
-                procedures.push((procedure_info.digest, is_auth));
+        for export in library.exports() {
+            if let Some(proc_export) = export.as_procedure() {
+                let digest = library
+                    .mast_forest()
+                    .get_node_by_id(proc_export.node)
+                    .expect("export node not in the forest")
+                    .digest();
+                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+                procedures.push((digest, is_auth));
             }
         }
         procedures
@@ -223,7 +236,6 @@ mod tests {
     use alloc::sync::Arc;
 
     use miden_assembly::Assembler;
-    use miden_core::utils::Serializable;
     use miden_mast_package::{
         MastArtifact,
         Package,
@@ -236,6 +248,7 @@ mod tests {
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {

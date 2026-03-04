@@ -13,6 +13,7 @@
 - Implemented verification of AggLayer deposits (claims) against GER ([#2295](https://github.com/0xMiden/miden-base/pull/2295), [#2288](https://github.com/0xMiden/miden-base/pull/2288)).
 - Added `SignedBlock` struct ([#2355](https://github.com/0xMiden/miden-base/pull/2235)).
 - Added `PackageKind` and `ProcedureExport` ([#2358](https://github.com/0xMiden/miden-base/pull/2358)).
+- Added `AccountTargetNetworkNote` type and `NetworkNoteExt` trait with `is_network_note()` / `as_account_target_network_note()` helpers ([#2365](https://github.com/0xMiden/miden-base/pull/2365)).
 - Changed GER storage to a map ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
 - Implemented `assert_valid_ger` procedure for verifying GER against storage ([#2388](https://github.com/0xMiden/miden-base/pull/2388)).
 - Added `P2idNoteStorage` and `P2ideNoteStorage` ([#2389](https://github.com/0xMiden/miden-base/pull/2389)).
@@ -25,9 +26,12 @@
 - Added `DEFAULT_TAG` constant to `miden::standards::note_tag` MASM module ([#2482](https://github.com/0xMiden/miden-base/pull/2482)).
 - Added `NoteExecutionHint` variant constants (`NONE`, `ALWAYS`, `AFTER_BLOCK`, `ON_BLOCK_SLOT`) to `miden::standards::note::execution_hint` MASM module ([#2493](https://github.com/0xMiden/miden-base/pull/2493)).
 
-
 ### Changes
 
+- [BREAKING] Migrated to miden-vm 0.21 and miden-crypto 0.22 ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
+- [BREAKING] The stack orientation changed from big-endian to little-endian - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
+- [BREAKING] The native hash function changed from RPO256 to Poseidon2  - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
+- Introduced `StorageMapKey` and `StorageMapKeyHash` Word wrappers for type-safe storage map key handling ([#2431](https://github.com/0xMiden/miden-base/pull/2431)).
 - Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).
 - [BREAKING] Made `AccountComponentMetadata` a required parameter of `AccountComponent::new()`; removed `with_supported_type`, `with_supports_all_types`, and `with_metadata` methods from `AccountComponent`; simplified `AccountComponentMetadata::new()` to take just `name`; renamed `AccountComponentTemplateError` to `ComponentMetadataError` ([#2373](https://github.com/0xMiden/miden-base/pull/2373), [#2395](https://github.com/0xMiden/miden-base/pull/2395)).
@@ -49,6 +53,11 @@
 - [BREAKING] Updated note tag length to support up to 32 bits ([#2329](https://github.com/0xMiden/miden-base/pull/2329)).
 - [BREAKING] Moved standard note code into individual note modules ([#2363](https://github.com/0xMiden/miden-base/pull/2363)).
 - [BREAKING] Added `miden::standards::note_tag` module for account target note tags ([#2366](https://github.com/0xMiden/miden-base/pull/2366)).
+- [BREAKING] Refactored assets in the tx kernel and `miden::protocol` from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396), [#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Rename `miden::protocol::asset::build_fungible_asset` to `miden::protocol::asset::create_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Rename `miden::protocol::asset::build_non_fungible_asset` to `miden::protocol::asset::create_non_fungible_asset` ([#2410](https://github.com/0xMiden/miden-base/pull/2410)).
+- [BREAKING] Change the layout of fungible and non-fungible assets ([#2437](https://github.com/0xMiden/miden-base/pull/2437)).
+- [BREAKING] Refactored assets in the tx kernel from one to two words, i.e. `ASSET` becomes `ASSET_KEY` and `ASSET_VALUE` ([#2396](https://github.com/0xMiden/miden-base/pull/2396)).
 - Unified the underlying representation of `ExitRoot` and `SmtNode` and use type aliases ([#2387](https://github.com/0xMiden/miden-base/pull/2387)).
 - [BREAKING] Moved padding to the end of `CLAIM` `NoteStorage` layout ([#2405](https://github.com/0xMiden/miden-base/pull/2405)).
 - [BREAKING] Consolidated authentication components ([#2390] (https://github.com/0xMiden/miden-base/pull/2390))
@@ -58,6 +67,10 @@
 - [BREAKING] Remove `BlockSigner` trait ([#2447](https://github.com/0xMiden/miden-base/pull/2447)).
 - Updated account schema commitment construction to accept borrowed schema iterators; added extension trait to enable `AccountBuilder::with_schema_commitment()` helper ([#2419](https://github.com/0xMiden/miden-base/pull/2419)).
 - Introducing a dedicated AccountIdKey type to unify and centralize all AccountId → SMT and advice-map key conversions ([#2495](https://github.com/0xMiden/miden-base/pull/2495)).
+- [BREAKING] Renamed `SchemaTypeId` to `SchemaType` ([#2494](https://github.com/0xMiden/miden-base/pull/2494)).
+- Updated stale `miden-base` references to `protocol` across docs, READMEs, code comments, and Cargo.toml repository URL ([#2503](https://github.com/0xMiden/protocol/pull/2503)).
+- [BREAKING] Reverse the order of the transaction summary on the stack ([#2512](https://github.com/0xMiden/miden-base/pull/2512)).
+- Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
 
 ## 0.13.3 (2026-01-27)
 

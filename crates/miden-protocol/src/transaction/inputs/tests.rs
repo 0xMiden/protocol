@@ -1,9 +1,8 @@
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec;
 use std::collections::BTreeMap;
 use std::vec::Vec;
-
-use miden_core::utils::{Deserializable, Serializable};
 
 use crate::account::{
     AccountCode,
@@ -24,6 +23,7 @@ use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use crate::transaction::TransactionInputs;
+use crate::utils::serde::{Deserializable, Serializable};
 use crate::{Felt, Word};
 
 #[test]
@@ -244,7 +244,9 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 
     // Add the account leaf to the advice map (needed for witness verification).
     let leaf = foreign_witness.leaf();
-    advice_inputs.map.insert(leaf.hash(), leaf.to_elements());
+    advice_inputs
+        .map
+        .insert(leaf.hash(), leaf.to_elements().collect::<Arc<[Felt]>>());
 
     // Create block header with the account tree root.
     let block_header = crate::block::BlockHeader::mock(0, None, None, &[], account_tree_root);

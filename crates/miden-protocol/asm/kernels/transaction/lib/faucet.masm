@@ -1,14 +1,9 @@
 use $kernel::account
-use $kernel::account_id
 use $kernel::asset
 use $kernel::asset_vault
+use $kernel::fungible_asset
+use $kernel::non_fungible_asset
 use $kernel::memory
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-
-# ERRORS
-# =================================================================================================
-
-const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUCET="the burn_non_fungible_asset procedure can only be called on a non-fungible faucet"
 
 # FUNGIBLE ASSETS
 # ==================================================================================================
@@ -16,12 +11,13 @@ const ERR_FAUCET_BURN_NON_FUNGIBLE_ASSET_CAN_ONLY_BE_CALLED_ON_NON_FUNGIBLE_FAUC
 #! Mints a fungible asset associated with the fungible faucet the transaction is being executed
 #! against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [NEW_ASSET_VALUE]
 #!
 #! Where:
-#! - amount is the amount of the fungible asset to mint.
-#! - ASSET is the asset that was minted.
+#! - ASSET_KEY is the vault key of the asset to mint.
+#! - ASSET_VALUE is the value of the asset value to mint.
+#! - NEW_ASSET_VALUE is ASSET_VALUE merged with the existing vault asset value, if any.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a fungible faucet.
@@ -31,26 +27,27 @@ pub proc mint_fungible_asset
     # assert that the asset was issued by the faucet the transaction is being executed against and
     # that the asset is valid
     exec.account::get_id
-    exec.asset::validate_fungible_asset_origin
-    # => [ASSET]
+    exec.fungible_asset::validate_origin
+    # => [ASSET_KEY, ASSET_VALUE]
 
     exec.memory::get_input_vault_root_ptr
-    movdn.4
-    # => [ASSET, input_vault_root_ptr]
+    movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     # add the asset to the input vault for asset preservation
     exec.asset_vault::add_fungible_asset
-    # => [ASSET]
+    # => [NEW_ASSET_VALUE]
 end
 
 #! Burns a fungible asset associated with the fungible faucet the transaction is being executed
 #! against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset that was burned.
+#! - ASSET_KEY is the vault key of the asset to burn.
+#! - ASSET_VALUE is the value of the asset value to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a fungible faucet.
@@ -61,16 +58,16 @@ proc burn_fungible_asset
     # assert that the asset is associated with the faucet the transaction is being executed against
     # and that the asset is valid
     exec.account::get_id
-    exec.asset::validate_fungible_asset_origin
-    # => [ASSET]
+    exec.fungible_asset::validate_origin
+    # => [ASSET_KEY, ASSET_VALUE]
 
     exec.memory::get_input_vault_root_ptr
-    movdn.4
-    # => [ASSET, input_vault_root_ptr]
+    movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     # remove the asset from the input vault for asset preservation
     exec.asset_vault::remove_fungible_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
 # NON-FUNGIBLE ASSETS
@@ -79,11 +76,14 @@ end
 #! Mints a non-fungible asset associated with the non-fungible faucet the transaction is being
 #! executed against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [NEW_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset that was minted.
+#! - ASSET_KEY is the vault key of the asset to mint.
+#! - ASSET_VALUE is the value of the asset value to mint.
+#! - NEW_ASSET_VALUE is identical to ASSET_VALUE. This is to maintain API uniformity with
+#!   mint_fungible_asset.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a non-fungible faucet.
@@ -93,29 +93,27 @@ proc mint_non_fungible_asset
     # assert that the asset is associated with the faucet the transaction is being executed against
     # and that the asset is valid
     exec.account::get_id
-    swap drop
-    # => [faucet_id_prefix, ASSET]
-
-    exec.asset::validate_non_fungible_asset_origin
-    # => [ASSET]
+    exec.non_fungible_asset::validate_origin
+    # => [ASSET_KEY, ASSET_VALUE]
 
     exec.memory::get_input_vault_root_ptr
-    movdn.4
-    # => [ASSET, input_vault_root_ptr]
+    movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     # add the non-fungible asset to the input vault for asset preservation
     exec.asset_vault::add_non_fungible_asset
-    # => [ASSET]
+    # => [NEW_ASSET_VALUE]
 end
 
 #! Burns a non-fungible asset associated with the non-fungible faucet the transaction is being
 #! executed against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset that was burned.
+#! - ASSET_KEY is the vault key of the asset to burn.
+#! - ASSET_VALUE is the value of the asset value to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a non-fungible faucet.
@@ -125,19 +123,16 @@ proc burn_non_fungible_asset
     # assert that the asset was issued by the faucet the transaction is being executed against and
     # that the asset is valid
     exec.account::get_id
-    swap drop
-    # => [faucet_id_prefix, ASSET]
-
-    exec.asset::validate_non_fungible_asset_origin
-    # => [ASSET]
+    exec.non_fungible_asset::validate_origin
+    # => [ASSET_KEY, ASSET_VALUE]
 
     # remove the non-fungible asset from the input vault for asset preservation
     exec.memory::get_input_vault_root_ptr
-    movdn.4
-    # => [ASSET, input_vault_root_ptr]
+    movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr]
 
     exec.asset_vault::remove_non_fungible_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
 # PUBLIC INTERFACE
@@ -145,11 +140,15 @@ end
 
 #! Mint an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [NEW_ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset that was minted.
+#! - ASSET_KEY is the vault key of the asset to mint.
+#! - ASSET_VALUE is the value of the asset value to mint.
+#! - NEW_ASSET_VALUE is:
+#!   - For fungible assets: the ASSET_VALUE merged with the existing vault asset value, if any.
+#!   - For non-fungible assets: identical to ASSET_VALUE.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -161,27 +160,28 @@ end
 #! - For non-fungible faucets if the non-fungible asset being minted already exists.
 pub proc mint
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
-    # => [is_fungible_asset, ASSET]
+    exec.asset::is_fungible_asset_key
+    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true
         # mint the fungible asset
         exec.mint_fungible_asset
-        # => [ASSET]
+        # => [NEW_ASSET_VALUE]
     else
         # mint the non-fungible asset
         exec.mint_non_fungible_asset
-        # => [ASSET]
+        # => [NEW_ASSET_VALUE]
     end
 end
 
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
-#! - ASSET is the asset that was burned.
+#! - ASSET_KEY is the vault key of the asset to burn.
+#! - ASSET_VALUE is the value of the asset value to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -194,16 +194,16 @@ end
 #!   provided as input to the transaction via a note or the accounts vault.
 pub proc burn
     # check if the asset is a fungible asset
-    exec.asset::is_fungible_asset
-    # => [is_fungible_asset, ASSET]
+    exec.asset::is_fungible_asset_key
+    # => [is_fungible_asset, ASSET_KEY, ASSET_VALUE]
 
     if.true
         # burn the fungible asset
         exec.burn_fungible_asset
-        # => [ASSET]
+        # => [ASSET_VALUE]
     else
         # burn the non-fungible asset
         exec.burn_non_fungible_asset
-        # => [ASSET]
+        # => [ASSET_VALUE]
     end
 end

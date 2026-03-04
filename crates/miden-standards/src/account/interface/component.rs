@@ -186,9 +186,9 @@ impl AccountComponentInterface {
                     let asset =
                         partial_note.assets().iter().next().expect("note should contain an asset");
 
-                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                    if asset.faucet_id() != sender_account_id {
                         return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id_prefix(),
+                            asset.faucet_id(),
                         ));
                     }
 
@@ -214,13 +214,22 @@ impl AccountComponentInterface {
                     for asset in partial_note.assets().iter() {
                         body.push_str(&format!(
                             "
-                            push.{asset}
-                            # => [ASSET, note_idx, pad(16)]
+                            # duplicate note index
+                            padw push.0 push.0 push.0 dup.7
+                            # => [note_idx, pad(7), note_idx, pad(16)]
+
+                            push.{ASSET_VALUE}
+                            push.{ASSET_KEY}
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            dropw
+                            # => [pad(16), note_idx, pad(16)]
+
+                            dropw dropw dropw dropw
                             # => [note_idx, pad(16)]\n
                             ",
-                            asset = Word::from(*asset)
+                            ASSET_KEY = asset.to_key_word(),
+                            ASSET_VALUE = asset.to_value_word(),
                         ));
                     }
                 },
@@ -270,7 +279,7 @@ fn extract_singlesig_auth_method(
     let scheme_id = storage
         .get_item(scheme_id_slot)
         .expect("invalid storage index of the scheme id")[0]
-        .as_int() as u8;
+        .as_canonical_u64() as u8;
 
     let auth_scheme =
         AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
@@ -291,8 +300,8 @@ fn extract_multisig_auth_method(
         .get_item(config_slot)
         .expect("invalid slot name of the multisig configuration");
 
-    let threshold = config[0].as_int() as u32;
-    let num_approvers = config[1].as_int() as u8;
+    let threshold = config[0].as_canonical_u64() as u32;
+    let num_approvers = config[1].as_canonical_u64() as u8;
 
     let mut approvers = Vec::new();
 
@@ -322,7 +331,7 @@ fn extract_multisig_auth_method(
                 )
             });
 
-        let scheme_id = scheme_word[0].as_int() as u8;
+        let scheme_id = scheme_word[0].as_canonical_u64() as u8;
         let auth_scheme =
             AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
         approvers.push((pub_key, auth_scheme));
