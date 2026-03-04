@@ -420,9 +420,9 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
         max_supply_mutable: bool,
-        description: Option<([Word; 6], bool)>,
-        logo_uri: Option<([Word; 6], bool)>,
-        external_link: Option<([Word; 6], bool)>,
+        description: Option<([Word; 7], bool)>,
+        logo_uri: Option<([Word; 7], bool)>,
+        external_link: Option<([Word; 7], bool)>,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)
             .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;

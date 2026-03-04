@@ -273,9 +273,9 @@ fn name_33_bytes_rejected() {
     ));
 }
 
-/// Tests that description at full capacity (6 Words) is supported.
+/// Tests that description at full capacity (7 Words) is supported.
 #[test]
-fn description_6_words_full_capacity() {
+fn description_7_words_full_capacity() {
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description_typed = Description::new(&desc_text).unwrap();
     let description = description_typed.to_words();
@@ -292,13 +292,15 @@ fn description_6_words_full_capacity() {
     }
 }
 
-/// Tests that field longer than 192 bytes (193 bytes) is rejected.
+/// Tests that a field exceeding [`FIELD_MAX_BYTES`] is rejected.
 #[test]
-fn field_193_bytes_rejected() {
-    let long_string = "a".repeat(193);
+fn field_over_max_bytes_rejected() {
+    use miden_standards::account::metadata::FIELD_MAX_BYTES;
+    let over = FIELD_MAX_BYTES + 1;
+    let long_string = "a".repeat(over);
     let result = field_from_bytes(long_string.as_bytes());
     assert!(result.is_err());
-    assert!(matches!(result, Err(FieldBytesError::TooLong(193))));
+    assert!(matches!(result, Err(FieldBytesError::TooLong(n)) if n == over));
 }
 
 /// Tests that BasicFungibleFaucet with Info component (name/description) works correctly.
@@ -1180,8 +1182,8 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
 // =================================================================================================
 
 /// Builds the advice map value for field setters.
-fn field_advice_map_value(field: &[Word; 6]) -> Vec<Felt> {
-    let mut value = Vec::with_capacity(24);
+fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
+    let mut value = Vec::with_capacity(28);
     for word in field.iter() {
         value.extend(word.iter());
     }
@@ -1205,6 +1207,7 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
         "DSC",
@@ -1225,6 +1228,7 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let tx_script = r#"
@@ -1270,6 +1274,7 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_desc = [
         Word::from([100u32, 101, 102, 103]),
@@ -1278,6 +1283,7 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -1359,6 +1365,7 @@ async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_desc = [
         Word::from([100u32, 101, 102, 103]),
@@ -1367,6 +1374,7 @@ async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -1768,8 +1776,8 @@ async fn metadata_get_description_commitment_zero_field() -> anyhow::Result<()> 
         .with_component(build_faucet_with_info(extension))
         .build()?;
 
-    // Expected: RPO256 hash of 24 zero felts
-    let zero_felts = vec![Felt::new(0); 24];
+    // Expected: RPO256 hash of 28 zero felts (7 Words)
+    let zero_felts = vec![Felt::new(0); 28];
     let expected_commitment = Hasher::hash_elements(&zero_felts);
 
     let tx_script = format!(
@@ -1819,6 +1827,7 @@ async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
         "LGO",
@@ -1839,6 +1848,7 @@ async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let tx_script = r#"
@@ -1883,6 +1893,7 @@ async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_logo = [
         Word::from([100u32, 101, 102, 103]),
@@ -1891,6 +1902,7 @@ async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -1967,6 +1979,7 @@ async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_logo = [
         Word::from([100u32, 101, 102, 103]),
@@ -1975,6 +1988,7 @@ async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -2041,6 +2055,7 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
         "EXL",
@@ -2061,6 +2076,7 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let tx_script = r#"
@@ -2106,6 +2122,7 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_link = [
         Word::from([100u32, 101, 102, 103]),
@@ -2114,6 +2131,7 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
@@ -2191,6 +2209,7 @@ async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<
         Word::from([13u32, 14, 15, 16]),
         Word::from([17u32, 18, 19, 20]),
         Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
     ];
     let new_link = [
         Word::from([100u32, 101, 102, 103]),
@@ -2199,6 +2218,7 @@ async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<
         Word::from([112u32, 113, 114, 115]),
         Word::from([116u32, 117, 118, 119]),
         Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
     ];
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
