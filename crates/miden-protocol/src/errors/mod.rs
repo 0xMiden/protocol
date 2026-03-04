@@ -5,12 +5,11 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::Felt;
 use miden_core::mast::MastForestError;
-use miden_core::{EventId, Felt};
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
-use miden_processor::DeserializationError;
 use thiserror::Error;
 
 use super::account::AccountId;
@@ -34,6 +33,8 @@ use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
 use crate::transaction::{TransactionEventId, TransactionId};
+use crate::utils::serde::DeserializationError;
+use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
     MAX_ACCOUNTS_PER_BATCH,

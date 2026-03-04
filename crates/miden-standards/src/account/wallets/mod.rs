@@ -162,8 +162,8 @@ pub fn create_basic_wallet(
 
 #[cfg(test)]
 mod tests {
-    use miden_processor::utils::{Deserializable, Serializable};
     use miden_protocol::account::auth::{self, PublicKeyCommitment};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
     use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};

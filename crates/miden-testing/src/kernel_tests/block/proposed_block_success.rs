@@ -4,6 +4,7 @@ use std::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_protocol::Felt;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode};
 use miden_protocol::asset::FungibleAsset;
@@ -11,7 +12,6 @@ use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
-use miden_protocol::{Felt, FieldElement};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
@@ -333,11 +333,11 @@ async fn generate_conditional_tx(
     modify_storage: bool,
 ) -> ExecutedTransaction {
     let auth_args = [
+        Felt::new(97),
+        Felt::new(98),
+        Felt::new(99),
         // increment nonce if modify_storage is true
         if modify_storage { Felt::ONE } else { Felt::ZERO },
-        Felt::new(99),
-        Felt::new(98),
-        Felt::new(97),
     ];
 
     let tx_context = chain

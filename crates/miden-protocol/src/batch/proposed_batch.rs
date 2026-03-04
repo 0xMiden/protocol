@@ -17,7 +17,13 @@ use crate::transaction::{
     ProvenTransaction,
     TransactionHeader,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
 
 /// A proposed batch of transactions with all necessary data to validate it.
@@ -426,8 +432,8 @@ impl Deserializable for ProposedBatch {
 mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
+    use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
-    use winter_rand_utils::rand_value;
 
     use super::*;
     use crate::Word;

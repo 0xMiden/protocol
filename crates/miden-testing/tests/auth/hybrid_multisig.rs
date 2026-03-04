@@ -1,5 +1,5 @@
-use miden_processor::AdviceInputs;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::advice::AdviceInputs;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,

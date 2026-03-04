@@ -2,12 +2,12 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use anyhow::Context;
-use miden_processor::fast::ExecutionOutput;
+use miden_processor::ExecutionOutput;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::dsa::falcon512_rpo::SecretKey;
+use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
@@ -25,7 +25,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
 use miden_protocol::transaction::{OutputNote, TransactionArgs};
-use miden_protocol::{Felt, Word, ZERO};
+use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::note::NoteBuilder;
@@ -70,7 +70,7 @@ async fn test_note_setup() -> anyhow::Result<()> {
             exec.prologue::prepare_transaction
             exec.note::prepare_note
             # => [note_script_root_ptr, NOTE_ARGS, pad(11), pad(16)]
-            padw movup.4 mem_loadw_be
+            padw movup.4 mem_loadw_le
             # => [SCRIPT_ROOT, NOTE_ARGS, pad(11), pad(16)]
 
             # truncate the stack
@@ -155,22 +155,21 @@ async fn test_note_script_and_note_args() -> anyhow::Result<()> {
     tx_context.set_tx_args(tx_args);
     let exec_output = tx_context.execute_code(code).await.unwrap();
 
-    assert_eq!(exec_output.get_stack_word_be(0), note_args[0]);
-    assert_eq!(exec_output.get_stack_word_be(4), note_args[1]);
+    assert_eq!(exec_output.get_stack_word(0), note_args[0]);
+    assert_eq!(exec_output.get_stack_word(4), note_args[1]);
 
     Ok(())
 }
 
 fn note_setup_stack_assertions(exec_output: &ExecutionOutput, inputs: &TransactionContext) {
-    let mut expected_stack = [ZERO; 16];
-
-    // replace the top four elements with the tx script root
-    let mut note_script_root = *inputs.input_notes().get_note(0).note().script().root();
-    note_script_root.reverse();
-    expected_stack[..4].copy_from_slice(&note_script_root);
-
     // assert that the stack contains the note storage at the end of execution
-    assert_eq!(exec_output.stack.as_slice(), expected_stack.as_slice())
+    assert_eq!(
+        exec_output.get_stack_word(0),
+        inputs.input_notes().get_note(0).note().script().root()
+    );
+    assert_eq!(exec_output.get_stack_word(4), Word::empty());
+    assert_eq!(exec_output.get_stack_word(8), Word::empty());
+    assert_eq!(exec_output.get_stack_word(12), Word::empty());
 }
 
 fn note_setup_memory_assertions(exec_output: &ExecutionOutput) {
@@ -201,27 +200,27 @@ async fn test_build_recipient() -> anyhow::Result<()> {
 
         begin
             # put the values that will be hashed into the memory
-            push.{word_1} push.{base_addr} mem_storew_be dropw
-            push.{word_2} push.{addr_1} mem_storew_be dropw
+            push.{word_1} push.{base_addr} mem_storew_le dropw
+            push.{word_2} push.{addr_1} mem_storew_le dropw
 
             # Test with 4 values (needs padding to 8)
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
-            push.4.4000         # num_storage_items, storage_ptr
+            push.4.{base_addr}  # num_storage_items, storage_ptr
             exec.note::build_recipient
             # => [RECIPIENT_4]
 
             # Test with 5 values (needs padding to 8)
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
-            push.5.4000         # num_storage_items, storage_ptr
+            push.5.{base_addr}  # num_storage_items, storage_ptr
             exec.note::build_recipient
             # => [RECIPIENT_5, RECIPIENT_4]
 
             # Test with 8 values (no padding needed - exactly one rate block)
             push.{script_root}  # SCRIPT_ROOT
             push.{serial_num}   # SERIAL_NUM
-            push.8.4000         # num_storage_items, storage_ptr
+            push.8.{base_addr}  # num_storage_items, storage_ptr
             exec.note::build_recipient
             # => [RECIPIENT_8, RECIPIENT_5, RECIPIENT_4]
 
@@ -256,26 +255,23 @@ async fn test_build_recipient() -> anyhow::Result<()> {
     let recipient_5 = NoteRecipient::new(serial_num, note_script.clone(), note_storage_5.clone());
     let recipient_8 = NoteRecipient::new(serial_num, note_script.clone(), note_storage_8.clone());
 
-    for note_storage in [
+    for (note_storage, storage_elements) in [
         (note_storage_4, inputs_4.clone()),
         (note_storage_5, inputs_5.clone()),
         (note_storage_8, inputs_8.clone()),
     ] {
-        let inputs_advice_map_key = note_storage.0.commitment();
+        let inputs_advice_map_key = note_storage.commitment();
         assert_eq!(
             exec_output.advice.get_mapped_values(&inputs_advice_map_key).unwrap(),
-            note_storage.1,
+            storage_elements,
             "advice entry with note storage should contain the unpadded values"
         );
     }
 
-    let mut expected_stack = alloc::vec::Vec::new();
-    expected_stack.extend_from_slice(recipient_4.digest().as_elements());
-    expected_stack.extend_from_slice(recipient_5.digest().as_elements());
-    expected_stack.extend_from_slice(recipient_8.digest().as_elements());
-    expected_stack.reverse();
+    assert_eq!(exec_output.get_stack_word(0), recipient_8.digest());
+    assert_eq!(exec_output.get_stack_word(4), recipient_5.digest());
+    assert_eq!(exec_output.get_stack_word(8), recipient_4.digest());
 
-    assert_eq!(exec_output.stack[0..12], expected_stack);
     Ok(())
 }
 
@@ -298,28 +294,28 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
 
         begin
             # put the values that will be hashed into the memory
-            push.{word_1} push.{base_addr} mem_storew_be dropw
-            push.{word_2} push.{addr_1} mem_storew_be dropw
-            push.{word_3} push.{addr_2} mem_storew_be dropw
-            push.{word_4} push.{addr_3} mem_storew_be dropw
+            push.{word_1} push.{base_addr} mem_storew_le dropw
+            push.{word_2} push.{addr_1} mem_storew_le dropw
+            push.{word_3} push.{addr_2} mem_storew_le dropw
+            push.{word_4} push.{addr_3} mem_storew_le dropw
 
             # push the number of values and pointer to the storage on the stack
-            push.5.4000
+            push.5.{base_addr}
             # execute the `compute_storage_commitment` procedure for 5 values
             exec.note::compute_storage_commitment
             # => [HASH_5]
 
-            push.8.4000
+            push.8.{base_addr}
             # execute the `compute_storage_commitment` procedure for 8 values
             exec.note::compute_storage_commitment
             # => [HASH_8, HASH_5]
 
-            push.15.4000
+            push.15.{base_addr}
             # execute the `compute_storage_commitment` procedure for 15 values
             exec.note::compute_storage_commitment
             # => [HASH_15, HASH_8, HASH_5]
 
-            push.0.4000
+            push.0.{base_addr}
             # check that calling `compute_storage_commitment` procedure with 0 elements will result in an
             # empty word
             exec.note::compute_storage_commitment
@@ -355,15 +351,11 @@ async fn test_compute_storage_commitment() -> anyhow::Result<()> {
     inputs_15.extend_from_slice(&word_4[0..3]);
     let note_storage_15_hash = NoteStorage::new(inputs_15)?.commitment();
 
-    let mut expected_stack = alloc::vec::Vec::new();
+    assert_eq!(exec_output.get_stack_word(0), Word::empty());
+    assert_eq!(exec_output.get_stack_word(4), note_storage_15_hash);
+    assert_eq!(exec_output.get_stack_word(8), note_storage_8_hash);
+    assert_eq!(exec_output.get_stack_word(12), note_storage_5_hash);
 
-    expected_stack.extend_from_slice(note_storage_5_hash.as_elements());
-    expected_stack.extend_from_slice(note_storage_8_hash.as_elements());
-    expected_stack.extend_from_slice(note_storage_15_hash.as_elements());
-    expected_stack.extend_from_slice(Word::empty().as_elements());
-    expected_stack.reverse();
-
-    assert_eq!(exec_output.stack[0..16], expected_stack);
     Ok(())
 }
 
@@ -401,7 +393,7 @@ async fn test_build_metadata_header() -> anyhow::Result<()> {
 
         let exec_output = tx_context.execute_code(&code).await?;
 
-        let metadata_word = exec_output.get_stack_word_be(0);
+        let metadata_word = exec_output.get_stack_word(0);
 
         assert_eq!(
             test_metadata.to_header_word(),

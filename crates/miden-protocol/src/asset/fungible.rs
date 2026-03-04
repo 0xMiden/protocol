@@ -3,6 +3,7 @@ use core::fmt;
 
 use super::vault::AssetVaultKey;
 use super::{AccountType, Asset, AssetError, Word};
+use crate::Felt;
 use crate::account::AccountId;
 use crate::utils::serde::{
     ByteReader,
@@ -11,7 +12,6 @@ use crate::utils::serde::{
     DeserializationError,
     Serializable,
 };
-use crate::{Felt, FieldElement};
 
 // FUNGIBLE ASSET
 // ================================================================================================
@@ -80,7 +80,7 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        Self::new(key.faucet_id(), value[0].as_int())
+        Self::new(key.faucet_id(), value[0].as_canonical_u64())
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
         let invalid_key = AssetVaultKey::new(
-            AssetId::new(1u32.into(), 2u32.into()),
+            AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
         )?;
 
@@ -334,7 +334,7 @@ mod tests {
         let asset = FungibleAsset::mock(34);
 
         assert_eq!(asset.vault_key().faucet_id(), FungibleAsset::mock_issuer());
-        assert_eq!(asset.vault_key().asset_id().prefix().as_int(), 0);
-        assert_eq!(asset.vault_key().asset_id().suffix().as_int(), 0);
+        assert_eq!(asset.vault_key().asset_id().prefix().as_canonical_u64(), 0);
+        assert_eq!(asset.vault_key().asset_id().suffix().as_canonical_u64(), 0);
     }
 }

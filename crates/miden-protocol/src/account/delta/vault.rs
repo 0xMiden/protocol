@@ -363,10 +363,11 @@ impl Deserializable for FungibleAssetDelta {
         //   We should update this code (and serialization as well) once it support signeds
         // integers.
         let map = source
-            .read_many::<(AccountId, u64)>(num_fungible_assets)?
-            .into_iter()
-            .map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
-            .collect();
+            .read_many_iter::<(AccountId, u64)>(num_fungible_assets)?
+            .map(|result| {
+                result.map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
+            })
+            .collect::<Result<_, _>>()?;
 
         Self::new(map).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }

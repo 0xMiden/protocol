@@ -17,7 +17,7 @@ use miden_agglayer::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
+use miden_processor::{ExecutionOutput, FastProcessor};
 use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;

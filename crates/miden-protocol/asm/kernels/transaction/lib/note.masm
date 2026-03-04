@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 
 use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
@@ -113,7 +113,7 @@ pub proc compute_output_note_assets_commitment
         mul.ASSET_SIZE dup.1 add swap
         # => [assets_ptr, assets_end_ptr, note_data_ptr]
 
-        exec.rpo256::hash_double_words
+        exec.poseidon2::hash_double_words
         # => [ASSETS_COMMITMENT, note_data_ptr]
 
         # save the assets commitment to memory
@@ -146,24 +146,19 @@ end
 #! - note_data_ptr is a pointer to the data section of the output note.
 #! - NOTE_ID is the ID of the output note located at note_data_ptr.
 proc compute_output_note_id
-    # pad capacity elements of hasher
-    padw
-    # => [EMPTY_WORD, note_data_ptr]
+    # compute assets commitment
+    dup exec.compute_output_note_assets_commitment
+    # => [ASSETS_COMMITMENT, note_data_ptr]
 
-    # insert output note recipient into the first four elements of the hasher rate
     dup.4 exec.memory::get_output_note_recipient
-    # => [RECIPIENT, EMPTY_WORD, note_data_ptr]
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_data_ptr]
 
-    # populate the last four elements of the hasher rate with the output note's asset commitment
-    dup.8 exec.compute_output_note_assets_commitment
-    # => [ASSETS_COMMITMENT, RECIPIENT, EMPTY_WORD, note_data_ptr]
-
-    # compute output note commitment (which is also note ID) and extract digest
-    exec.rpo256::permute exec.rpo256::squeeze_digest
+    # compute output note ID
+    exec.poseidon2::merge
     # => [NOTE_ID, note_data_ptr]
 
     # save the output note commitment (note ID) to memory
-    movup.4 mem_storew_be
+    movup.4 mem_storew_le
     # => [NOTE_ID]
 end
 
@@ -201,22 +196,26 @@ pub proc compute_output_notes_commitment
         dup exec.compute_output_note_id
         # => [NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
 
-        dup.4 exec.memory::get_output_note_metadata_header
-        # => [NOTE_METADATA_HEADER, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        dup.4 exec.memory::get_output_note_attachment
+        # => [NOTE_ATTACHMENT, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
 
-        movup.8 exec.memory::get_output_note_attachment
-        # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        movup.8 exec.memory::get_output_note_metadata_header
+        # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, NOTE_ID, PERM, PERM, PERM, current_index, num_notes]
 
         # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
-        exec.rpo256::merge
-        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        exec.poseidon2::merge
+        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, PERM, PERM, PERM, current_index, num_notes]
 
         # replace rate words with note ID and metadata commitment
         swapdw dropw dropw
         # => [NOTE_METADATA_COMMITMENT, NOTE_ID, PERM, current_index, num_notes]
 
-        # permute over (note_id, note_metadata_commitment)
-        exec.rpo256::permute
+        # move note ID to the top of the stack
+        swapw
+        # => [NOTE_ID, NOTE_METADATA_COMMITMENT, PERM, current_index, num_notes]
+
+        # permute over (NOTE_ID, NOTE_METADATA_COMMITMENT)
+        exec.poseidon2::permute
         # => [PERM, PERM, PERM, current_index, num_notes]
 
         # increment current_index
@@ -230,7 +229,7 @@ pub proc compute_output_notes_commitment
     # => [PERM, PERM, PERM, current_index + 1, num_notes]
 
     # extract digest
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [OUTPUT_NOTES_COMMITMENT, current_index + 1, num_notes]
 
     # drop accessory variables from stack

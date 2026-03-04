@@ -326,8 +326,8 @@ pub fn create_basic_fungible_faucet(
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_protocol::Word;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
-    use miden_protocol::{FieldElement, ONE, Word};
 
     use super::{
         AccountBuilder,
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn faucet_contract_creation() {
-        let pub_key_word = Word::new([ONE; 4]);
+        let pub_key_word = Word::new([Felt::ONE; 4]);
         let auth_method: AuthMethod = AuthMethod::SingleSig {
             approver: (pub_key_word.into(), AuthScheme::Falcon512Rpo),
         };

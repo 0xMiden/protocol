@@ -26,9 +26,11 @@
 - Added `DEFAULT_TAG` constant to `miden::standards::note_tag` MASM module ([#2482](https://github.com/0xMiden/miden-base/pull/2482)).
 - Added `NoteExecutionHint` variant constants (`NONE`, `ALWAYS`, `AFTER_BLOCK`, `ON_BLOCK_SLOT`) to `miden::standards::note::execution_hint` MASM module ([#2493](https://github.com/0xMiden/miden-base/pull/2493)).
 
-
 ### Changes
 
+- [BREAKING] Migrated to miden-vm 0.21 and miden-crypto 0.22 ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
+- [BREAKING] The stack orientation changed from big-endian to little-endian - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
+- [BREAKING] The native hash function changed from RPO256 to Poseidon2  - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
 - Introduced `StorageMapKey` and `StorageMapKeyHash` Word wrappers for type-safe storage map key handling ([#2431](https://github.com/0xMiden/miden-base/pull/2431)).
 - Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).

@@ -3,14 +3,14 @@ use core::fmt;
 
 use miden_core::LexicographicWord;
 use miden_crypto::merkle::smt::LeafIndex;
-use miden_processor::SMT_DEPTH;
 
 use crate::account::AccountId;
 use crate::account::AccountType::{self};
 use crate::asset::vault::AssetId;
 use crate::asset::{Asset, FungibleAsset, NonFungibleAsset};
+use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
-use crate::{Felt, FieldElement, Word};
+use crate::{Felt, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
 ///

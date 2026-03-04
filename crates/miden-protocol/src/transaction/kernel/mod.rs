@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -162,7 +161,7 @@ impl TransactionKernel {
     ///     BLOCK_COMMITMENT,
     ///     INITIAL_ACCOUNT_COMMITMENT,
     ///     INPUT_NOTES_COMMITMENT,
-    ///     account_id_prefix, account_id_suffix, block_num
+    ///     account_id_suffix, account_id_prefix, block_num
     /// ]
     /// ```
     ///
@@ -183,15 +182,14 @@ impl TransactionKernel {
     ) -> StackInputs {
         // Note: Must be kept in sync with the transaction's kernel prepare_transaction procedure
         let mut inputs: Vec<Felt> = Vec::with_capacity(14);
-        inputs.push(Felt::from(block_num));
+        inputs.extend_from_slice(block_commitment.as_elements());
+        inputs.extend_from_slice(initial_account_commitment.as_elements());
+        inputs.extend(input_notes_commitment);
         inputs.push(account_id.suffix());
         inputs.push(account_id.prefix().as_felt());
-        inputs.extend(input_notes_commitment);
-        inputs.extend_from_slice(initial_account_commitment.as_elements());
-        inputs.extend_from_slice(block_commitment.as_elements());
-        StackInputs::new(inputs)
-            .map_err(|e| e.to_string())
-            .expect("Invalid stack input")
+        inputs.push(Felt::from(block_num));
+
+        StackInputs::new(&inputs).expect("number of stack inputs should be <= 16")
     }
 
     /// Builds the stack for expected transaction execution outputs.
@@ -201,8 +199,7 @@ impl TransactionKernel {
     /// [
     ///     OUTPUT_NOTES_COMMITMENT,
     ///     ACCOUNT_UPDATE_COMMITMENT,
-    ///     FEE_ASSET,
-    ///     expiration_block_num,
+    ///     native_asset_id_suffix, native_asset_id_prefix, fee_amount, expiration_block_num
     /// ]
     /// ```
     ///
@@ -223,17 +220,14 @@ impl TransactionKernel {
             Hasher::merge(&[final_account_commitment, account_delta_commitment]);
 
         let mut outputs: Vec<Felt> = Vec::with_capacity(12);
-        outputs.push(Felt::from(expiration_block_num));
-        outputs.push(Felt::try_from(fee.amount()).expect("amount should fit into felt"));
+        outputs.extend(output_notes_commitment);
+        outputs.extend(account_update_commitment);
         outputs.push(fee.faucet_id().suffix());
         outputs.push(fee.faucet_id().prefix().as_felt());
-        outputs.extend(account_update_commitment);
-        outputs.extend(output_notes_commitment);
-        outputs.reverse();
+        outputs.push(Felt::try_from(fee.amount()).expect("amount should fit into felt"));
+        outputs.push(Felt::from(expiration_block_num));
 
-        StackOutputs::new(outputs)
-            .map_err(|e| e.to_string())
-            .expect("Invalid stack output")
+        StackOutputs::new(&outputs).expect("number of stack inputs should be <= 16")
     }
 
     /// Extracts transaction output data from the provided stack outputs.
@@ -267,28 +261,28 @@ impl TransactionKernel {
         stack: &StackOutputs, // FIXME TODO add an extension trait for this one
     ) -> Result<(Word, Word, FungibleAsset, BlockNumber), TransactionOutputError> {
         let output_notes_commitment = stack
-            .get_stack_word_be(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX * 4)
+            .get_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX)
             .expect("output_notes_commitment (first word) missing");
 
         let account_update_commitment = stack
-            .get_stack_word_be(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX * 4)
+            .get_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX)
             .expect("account_update_commitment (second word) missing");
 
         let native_asset_id_prefix = stack
-            .get_stack_item(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX)
+            .get_element(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX)
             .expect("native_asset_id_prefix missing");
         let native_asset_id_suffix = stack
-            .get_stack_item(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX)
+            .get_element(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX)
             .expect("native_asset_id_suffix missing");
         let fee_amount = stack
-            .get_stack_item(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
+            .get_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
             .expect("fee_amount missing");
 
         let expiration_block_num = stack
-            .get_stack_item(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+            .get_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
             .expect("tx_expiration_block_num missing");
 
-        let expiration_block_num = u32::try_from(expiration_block_num.as_int())
+        let expiration_block_num = u32::try_from(expiration_block_num.as_canonical_u64())
             .map_err(|_| {
                 TransactionOutputError::OutputStackInvalid(
                     "expiration block number should be smaller than u32::MAX".into(),
@@ -298,7 +292,7 @@ impl TransactionKernel {
 
         // Make sure that indices 13, 14 and 15 are zeroes (i.e. the fourth word without the
         // expiration block number).
-        if stack.get_stack_word_be(12).expect("fourth word missing").as_elements()[..3]
+        if stack.get_word(12).expect("fourth word missing").as_elements()[..3]
             != Word::empty().as_elements()[..3]
         {
             return Err(TransactionOutputError::OutputStackInvalid(
@@ -308,7 +302,7 @@ impl TransactionKernel {
 
         let native_asset_id = AccountId::try_from([native_asset_id_prefix, native_asset_id_suffix])
             .expect("native asset ID should be validated by the tx kernel");
-        let fee = FungibleAsset::new(native_asset_id, fee_amount.as_int())
+        let fee = FungibleAsset::new(native_asset_id, fee_amount.as_canonical_u64())
             .map_err(TransactionOutputError::FeeAssetNotFungibleAsset)?;
 
         Ok((output_notes_commitment, account_update_commitment, fee, expiration_block_num))

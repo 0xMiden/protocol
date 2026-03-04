@@ -1,11 +1,11 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::AccountProcedureRoot;
 use miden_protocol::assembly::{Library, LibraryExport};
-use miden_protocol::utils::Deserializable;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::interface::AccountComponentInterface;

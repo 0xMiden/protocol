@@ -350,7 +350,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         "Validate the output note 2 attachment",
     );
 
-    assert_eq!(exec_output.get_stack_word_be(0), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
     Ok(())
 }
 
@@ -497,7 +497,7 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_kernel_mem_element(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_NUM_ASSETS_OFFSET)
-            .as_int(),
+            .as_canonical_u64(),
         3,
         "unexpected number of assets in output note",
     );
@@ -975,7 +975,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
             check_assets_code.push_str(&format!(
                 r#"
                     # load the asset stored in memory
-                    padw dup.4 mem_loadw_be
+                    padw dup.4 mem_loadw_le
                     # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
                     # assert the asset key matches
@@ -985,7 +985,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
                     # => [dest_ptr, note_index]
 
                     # load the asset stored in memory
-                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
                     # => [STORED_ASSET_VALUE, dest_ptr, note_index]
 
                     # assert the asset value matches

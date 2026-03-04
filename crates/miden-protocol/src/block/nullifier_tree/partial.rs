@@ -111,7 +111,7 @@ impl PartialNullifierTree {
 mod tests {
     use assert_matches::assert_matches;
     use miden_crypto::merkle::smt::Smt;
-    use winter_rand_utils::rand_value;
+    use miden_crypto::rand::test_utils::rand_value;
 
     use super::*;
     use crate::block::nullifier_tree::NullifierTree;

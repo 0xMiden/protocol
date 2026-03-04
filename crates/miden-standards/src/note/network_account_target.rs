@@ -104,7 +104,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
                 let target_id = AccountId::try_from([id_prefix, id_suffix])
                     .map_err(NetworkAccountTargetError::DecodeTargetId)?;
 
-                let exec_hint = NoteExecutionHint::try_from(exec_hint.as_int())
+                let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())
                     .map_err(NetworkAccountTargetError::DecodeExecutionHint)?;
 
                 NetworkAccountTarget::new(target_id, exec_hint)

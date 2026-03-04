@@ -48,19 +48,21 @@ impl TransactionOutputs {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
-    /// The index of the word at which the final account nonce is stored on the output stack.
+    /// The element index starting from which the output notes commitment is stored on the output
+    /// stack.
     pub const OUTPUT_NOTES_COMMITMENT_WORD_IDX: usize = 0;
 
-    /// The index of the word at which the account update commitment is stored on the output stack.
-    pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 1;
-
-    /// The index of the element at which the ID prefix of the faucet that issues the native asset
-    /// is stored on the output stack.
-    pub const NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX: usize = 8;
+    /// The element index starting from which the account update commitment word is stored on the
+    /// output stack.
+    pub const ACCOUNT_UPDATE_COMMITMENT_WORD_IDX: usize = 4;
 
     /// The index of the element at which the ID suffix of the faucet that issues the native asset
     /// is stored on the output stack.
-    pub const NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX: usize = 9;
+    pub const NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX: usize = 8;
+
+    /// The index of the element at which the ID prefix of the faucet that issues the native asset
+    /// is stored on the output stack.
+    pub const NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX: usize = 9;
 
     /// The index of the element at which the fee amount is stored on the output stack.
     pub const FEE_AMOUNT_ELEMENT_IDX: usize = 10;
@@ -209,7 +211,9 @@ impl Serializable for OutputNotes {
 impl Deserializable for OutputNotes {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_notes = source.read_u16()?;
-        let notes = source.read_many::<OutputNote>(num_notes.into())?;
+        let notes = source
+            .read_many_iter::<OutputNote>(num_notes.into())?
+            .collect::<Result<_, _>>()?;
         Self::new(notes).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }

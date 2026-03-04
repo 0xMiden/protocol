@@ -7,7 +7,13 @@ use crate::Word;
 use crate::account::AccountId;
 use crate::block::account_tree::{account_id_to_smt_key, smt_key_to_account_id};
 use crate::errors::AccountTreeError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT WITNESS
 // ================================================================================================

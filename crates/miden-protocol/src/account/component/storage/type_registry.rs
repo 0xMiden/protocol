@@ -4,13 +4,18 @@ use alloc::string::{String, ToString};
 use core::error::Error;
 use core::fmt::{self, Display};
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_core::{Felt, FieldElement, Word};
-use miden_processor::DeserializationError;
+use miden_core::{Felt, Word};
 use thiserror::Error;
 
 use crate::account::auth::{AuthScheme, PublicKey};
 use crate::asset::TokenSymbol;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::utils::sync::LazyLock;
 
 /// A global registry for schema type converters.
@@ -322,7 +327,7 @@ impl FeltType for u8 {
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u8::try_from(value.as_int()).map_err(|_| {
+        let native = u8::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u8", value))
         })?;
         Ok(native.to_string())
@@ -356,7 +361,7 @@ impl FeltType for AuthScheme {
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let scheme_id = u8::try_from(value.as_int()).map_err(|_| {
+        let scheme_id = u8::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!(
                 "value `{}` is out of range for auth scheme id",
                 value
@@ -384,7 +389,7 @@ impl FeltType for u16 {
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u16::try_from(value.as_int()).map_err(|_| {
+        let native = u16::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u16", value))
         })?;
         Ok(native.to_string())
@@ -404,7 +409,7 @@ impl FeltType for u32 {
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        let native = u32::try_from(value.as_int()).map_err(|_| {
+        let native = u32::try_from(value.as_canonical_u64()).map_err(|_| {
             SchemaTypeError::ConversionError(format!("value `{}` is out of range for u32", value))
         })?;
         Ok(native.to_string())
@@ -429,7 +434,7 @@ impl FeltType for Felt {
     }
 
     fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
-        Ok(format!("0x{:x}", value.as_int()))
+        Ok(format!("0x{:x}", value.as_canonical_u64()))
     }
 }
 
@@ -448,13 +453,13 @@ impl FeltType for TokenSymbol {
         let token = TokenSymbol::try_from(value).map_err(|err| {
             SchemaTypeError::ConversionError(format!(
                 "invalid token_symbol value `{}`: {err}",
-                value.as_int()
+                value.as_canonical_u64()
             ))
         })?;
         token.to_string().map_err(|err| {
             SchemaTypeError::ConversionError(format!(
                 "failed to display token_symbol value `{}`: {err}",
-                value.as_int()
+                value.as_canonical_u64()
             ))
         })
     }
@@ -667,7 +672,7 @@ impl SchemaTypeRegistry {
         self.felt_display
             .get(type_name)
             .and_then(|display| display(felt).ok())
-            .unwrap_or_else(|| format!("0x{:x}", felt.as_int()))
+            .unwrap_or_else(|| format!("0x{:x}", felt.as_canonical_u64()))
     }
 
     /// Converts a [`Word`] into a canonical string representation and reports how it was produced.

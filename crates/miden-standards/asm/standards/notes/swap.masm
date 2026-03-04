@@ -70,7 +70,7 @@ pub proc main
     drop
     # => []
 
-    padw mem_loadw_be.PAYBACK_RECIPIENT_ADDRESS
+    padw mem_loadw_le.PAYBACK_RECIPIENT_ADDRESS
     # => [PAYBACK_NOTE_RECIPIENT]
 
     # load payback P2ID details
@@ -93,7 +93,7 @@ pub proc main
     # => [pad(16), note_idx]
 
     dropw
-    mem_loadw_be.ATTACHMENT_ADDRESS
+    mem_loadw_le.ATTACHMENT_ADDRESS
     # => [ATTACHMENT, pad(8), note_idx]
 
     mem_load.ATTACHMENT_KIND_ADDRESS

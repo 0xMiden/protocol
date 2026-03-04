@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -43,13 +44,12 @@ use miden_protocol::testing::constants::{
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
-use miden_protocol::{EMPTY_WORD, Felt, FieldElement, LexicographicWord, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, LexicographicWord, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use winter_rand_utils::rand_value;
 
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TransactionContextBuilder};
@@ -153,37 +153,37 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
       begin
           push.{slot_0_tmp_value}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_0_final_value}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_1_final_value}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_2_final_value}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_tmp_value}
           push.SLOT_3_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_final_value}
           push.SLOT_3_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
       end
@@ -291,55 +291,55 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
       begin
           push.{key0_final_value} push.{key0}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_tmp_value} push.{key1}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_final_value} push.{key1}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key2_final_value} push.{key2}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key3_final_value} push.{key3}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_tmp_value} push.{key4}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_final_value} push.{key4}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_tmp_value} push.{key5}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_final_value} push.{key5}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
       end
@@ -696,7 +696,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # get the index of account storage slot
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix, 13, 11, 9, 7]
+            # => [slot_id_suffix, slot_id_prefix, 13, 11, 9, 7]
             # update the storage value
             call.account::set_item dropw
             # => []
@@ -713,7 +713,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # get the index of account storage slot
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, 14, 15, 16, 17, 18, 19, 20, 21]
+            # => [slot_id_suffix, slot_id_prefix, 14, 15, 16, 17, 18, 19, 20, 21]
 
             # update the storage value
             call.account::set_map_item dropw dropw dropw
@@ -877,7 +877,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
           push.{value0}
           push.{existing_key}
           push.MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           exec.::miden::core::sys::truncate_stack
@@ -1128,11 +1128,11 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
       use mock::util
       use miden::protocol::output_note
 
-      #! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
+      #! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE]
       #! Outputs: []
       proc set_item
           repeat.10 push.0 movdn.6 end
-          # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+          # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
           call.account::set_item
           # => [OLD_VALUE, pad(12)]
@@ -1140,7 +1140,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           dropw dropw dropw dropw
       end
 
-      #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+      #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, VALUE]
       #! Outputs: []
       proc set_map_item
           repeat.6 push.0 movdn.10 end

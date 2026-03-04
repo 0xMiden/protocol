@@ -134,7 +134,7 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
         executed_transaction.final_account().to_commitment(),
         target_account_after.to_commitment()
     );
-    prove_and_verify_transaction(executed_transaction)?;
+    prove_and_verify_transaction(executed_transaction).await?;
     Ok(())
 }
 
@@ -177,7 +177,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
         panic!("Resulting asset should be fungible");
     }
 
-    Ok(prove_and_verify_transaction(executed_transaction)?)
+    Ok(prove_and_verify_transaction(executed_transaction).await?)
 }
 
 /// Consumes two existing notes and creates two other notes in the same transaction
@@ -323,13 +323,12 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
 
         begin
             # Push inputs for p2id::new
-            # Inputs: [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
             push.{serial_num}
             push.{note_type}
             push.{tag}
-            push.{target_suffix}
             push.{target_prefix}
-            # => [target_id_prefix, target_id_suffix, tag, note_type, SERIAL_NUM]
+            push.{target_suffix}
+            # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
 
             exec.p2id::new
             # => [note_idx]

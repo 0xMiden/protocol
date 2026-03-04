@@ -8,6 +8,7 @@ use $kernel::asset
 # =================================================================================================
 
 pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
+pub use $kernel::util::asset::fungible_to_amount->to_amount
 
 # ERRORS
 # =================================================================================================
@@ -61,7 +62,7 @@ pub proc merge
     # => [merged_amount]
 
     # reconstruct the asset value
-    push.0.0.0
+    push.0.0.0 movup.3
     # => [MERGED_ASSET_VALUE]
 end
 
@@ -96,7 +97,7 @@ pub proc split
     # => [new_amount]
 
     # reconstruct the asset value
-    push.0.0.0
+    push.0.0.0 movup.3
     # => [NEW_ASSET_VALUE]
 end
 
@@ -135,17 +136,17 @@ pub proc validate
     # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
     # assuming the asset is valid, its layout is:
-    # => [0, 0, 0, amount, ASSET_KEY, ASSET_VALUE]
-
-    # assert the first three elements are zeros
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
-    # => [amount, ASSET_KEY, ASSET_VALUE]
+    # => [amount, 0, 0, 0, ASSET_KEY, ASSET_VALUE]
 
     # assert amount <= FUNGIBLE_ASSET_MAX_AMOUNT
     lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT
+    # => [0, 0, 0, ASSET_KEY, ASSET_VALUE]
+
+    # assert the last three elements are zeros
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
+    eq.0 assert.err=ERR_FUNGIBLE_ASSET_VALUE_MOST_SIGNIFICANT_ELEMENTS_MUST_BE_ZERO
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
@@ -170,7 +171,7 @@ pub proc validate_key
     # => [ASSET_KEY]
 
     exec.asset::key_to_asset_id
-    # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
     eq.0 assert.err=ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
@@ -179,27 +180,27 @@ end
 
 #! Validates that a fungible asset is associated with the provided faucet_id.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - faucet_id_prefix is the prefix of the faucet's account ID.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix of the faucet's account ID.
 #! - ASSET_KEY is the vault key of the asset to validate.
 #! - ASSET_VALUE is the value of the asset to validate.
 pub proc validate_origin
     movdn.9 movdn.9
-    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # assert the fungible asset key and value are valid
     exec.validate
-    # => [ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     # assert the origin of the asset is the faucet_id provided via the stack
     exec.asset::key_to_faucet_id
-    # => [key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE, faucet_id_prefix, faucet_id_suffix]
+    # => [key_faucet_id_suffix, key_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
 
     movup.11 movup.11
-    # => [faucet_id_prefix, faucet_id_suffix, key_faucet_id_prefix, key_faucet_id_suffix, ASSET_KEY, ASSET_VALUE]
+    # => [faucet_id_suffix, faucet_id_prefix, key_faucet_id_suffix, key_faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
 
     exec.account_id::is_equal assert.err=ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
     # => [ASSET_KEY, ASSET_VALUE]

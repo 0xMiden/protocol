@@ -24,10 +24,10 @@ async fn test_auth_procedure_args() -> anyhow::Result<()> {
         Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, ConditionalAuthComponent);
 
     let auth_args = [
-        ONE, // incr_nonce = true
-        Felt::new(99),
-        Felt::new(98),
         Felt::new(97),
+        Felt::new(98),
+        Felt::new(99),
+        ONE, // incr_nonce = true
     ];
 
     let tx_context = TransactionContextBuilder::new(account).auth_args(auth_args.into()).build()?;

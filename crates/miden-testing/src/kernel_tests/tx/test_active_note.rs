@@ -161,8 +161,8 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
-    assert_eq!(exec_output.stack[0], sender.prefix().as_felt());
-    assert_eq!(exec_output.stack[1], sender.suffix());
+    assert_eq!(exec_output.get_stack_element(0), sender.suffix());
+    assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
 
     Ok(())
 }
@@ -208,10 +208,10 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         for asset in note.assets().iter() {
             code += &format!(
                 r#"
-                dup padw movup.4 mem_loadw_be push.{ASSET_KEY}
+                dup padw movup.4 mem_loadw_le push.{ASSET_KEY}
                 assert_eqw.err="asset key mismatch"
 
-                dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_be push.{ASSET_VALUE}
+                dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le push.{ASSET_VALUE}
                 assert_eqw.err="asset value mismatch"
 
                 add.{ASSET_SIZE}
@@ -312,7 +312,7 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_active_note_get_inputs() -> anyhow::Result<()> {
+async fn test_active_note_get_storage() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
@@ -342,7 +342,7 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
                 r#"
                 # assert the storage items are correct
                 # => [dest_ptr]
-                dup padw movup.4 mem_loadw_be push.{storage_word} assert_eqw.err="storage items are incorrect"
+                dup padw movup.4 mem_loadw_le push.{storage_word} assert_eqw.err="storage items are incorrect"
                 # => [dest_ptr]
 
                 push.4 add
@@ -509,7 +509,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let serial_number = tx_context.input_notes().get_note(0).note().serial_num();
-    assert_eq!(exec_output.get_stack_word_be(0), serial_number);
+    assert_eq!(exec_output.get_stack_word(0), serial_number);
     Ok(())
 }
 
@@ -549,6 +549,6 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
-    assert_eq!(exec_output.get_stack_word_be(0), script_root);
+    assert_eq!(exec_output.get_stack_word(0), script_root);
     Ok(())
 }

@@ -3,7 +3,13 @@ use crate::account::{AccountCode, AccountId, PartialAccount, PartialStorage};
 use crate::asset::PartialVault;
 use crate::block::account_tree::AccountWitness;
 use crate::crypto::merkle::smt::{SmtProof, SmtProofError};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT INPUTS
 // ================================================================================================
@@ -97,15 +103,15 @@ mod tests {
     use alloc::vec::Vec;
 
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
     use miden_crypto::merkle::SparseMerklePath;
-    use miden_processor::SMT_DEPTH;
 
     use crate::account::{Account, AccountCode, AccountId, AccountStorage, PartialAccount};
     use crate::asset::AssetVault;
     use crate::block::account_tree::AccountWitness;
+    use crate::crypto::merkle::smt::SMT_DEPTH;
     use crate::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
     use crate::transaction::AccountInputs;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn serde_roundtrip() {

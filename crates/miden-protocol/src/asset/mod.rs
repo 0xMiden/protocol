@@ -18,8 +18,6 @@ mod nonfungible;
 
 pub use nonfungible::{NonFungibleAsset, NonFungibleAssetDetails};
 
-use crate::FieldElement;
-
 mod token_symbol;
 pub use token_symbol::TokenSymbol;
 

@@ -3,14 +3,18 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
-
 use super::super::{InitStorageData, StorageValueName};
 use super::{WordSchema, parse_storage_value_with_schema, validate_description_ascii};
 use crate::Word;
 use crate::account::{StorageMap, StorageMapKey, StorageSlotName};
 use crate::errors::ComponentMetadataError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // MAP SLOT SCHEMA
 // ================================================================================================
