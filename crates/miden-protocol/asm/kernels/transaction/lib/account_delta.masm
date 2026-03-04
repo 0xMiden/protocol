@@ -505,7 +505,7 @@ pub proc add_asset
         swapw
         # => [ASSET_VALUE, ASSET_KEY]
 
-        exec.fungible_asset::get_amount
+        exec.fungible_asset::value_into_amount
         movdn.4
         # => [ASSET_KEY, amount]
 
@@ -537,7 +537,7 @@ pub proc remove_asset
         swapw
         # => [ASSET_VALUE, ASSET_KEY]
 
-        exec.fungible_asset::get_amount
+        exec.fungible_asset::value_into_amount
         movdn.4
         # => [ASSET_KEY, amount]
 

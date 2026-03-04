@@ -9,6 +9,7 @@ use $kernel::asset
 
 pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
 pub use $kernel::util::asset::fungible_to_amount->to_amount
+pub use $kernel::util::asset::fungible_value_into_amount->value_into_amount
 
 # ERRORS
 # =================================================================================================
@@ -45,7 +46,7 @@ const ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW="failed to re
 #! - adding the two asset values would exceed FUNGIBLE_ASSET_MAX_AMOUNT.
 pub proc merge
     # extract amounts from assets
-    exec.get_amount movdn.4 exec.get_amount
+    exec.value_into_amount movdn.4 exec.value_into_amount
     # => [amount_1, amount_0]
 
     # compute max_add_amount = FUNGIBLE_ASSET_MAX_AMOUNT - amount_0
@@ -83,7 +84,7 @@ end
 #! - ASSET_VALUE_0 does not contain at least the amount of ASSET_VALUE_1.
 pub proc split
     # extract amounts from assets
-    exec.get_amount movdn.4 exec.get_amount swap
+    exec.value_into_amount movdn.4 exec.value_into_amount swap
     # => [amount_1, amount_0]
 
     # assert amount_1 <= amount_0 so we can safely subtract
@@ -99,20 +100,6 @@ pub proc split
     # reconstruct the asset value
     push.0.0.0 movup.3
     # => [NEW_ASSET_VALUE]
-end
-
-#! Extracts the amount of a fungible asset.
-#!
-#! WARNING: This procedure assumes the asset has been validated.
-#!
-#! Inputs:  [ASSET_VALUE]
-#! Outputs: [amount]
-#!
-#! Where:
-#! - ASSET_VALUE are the asset from which to extract the amount.
-#! - amount is the amount of the fungible asset.
-pub proc get_amount
-    exec.::$kernel::util::asset::get_balance_from_fungible_asset
 end
 
 #! Validates that a fungible asset is well formed.

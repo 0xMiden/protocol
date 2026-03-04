@@ -160,7 +160,7 @@ pub proc add_fungible_asset
     # check if amount of new asset is zero
     # if it is zero, insert EMPTY_WORD to keep the merkle tree sparse
     dupw.1
-    exec.fungible_asset::get_amount
+    exec.fungible_asset::value_into_amount
     eq.0
     # => [is_amount_zero, EMPTY_WORD, MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
 
@@ -308,7 +308,7 @@ pub proc remove_fungible_asset
     exec.fungible_asset::split
     # => [NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    padw dupw.1 exec.fungible_asset::get_amount
+    padw dupw.1 exec.fungible_asset::value_into_amount
     # => [new_amount, EMPTY_WORD, NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     eq.0

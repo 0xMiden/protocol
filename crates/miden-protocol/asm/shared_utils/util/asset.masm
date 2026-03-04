@@ -58,7 +58,6 @@ pub proc load
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
-# TODO(bele): Rename to fungible_into_amount
 #! Returns the balance of the given fungible asset and consumes it.
 #!
 #! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
@@ -69,7 +68,7 @@ end
 #! Where:
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
-pub proc get_balance_from_fungible_asset
+pub proc fungible_value_into_amount
     movdn.3 drop drop drop
     # => [balance]
 end
