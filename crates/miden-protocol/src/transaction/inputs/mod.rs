@@ -176,7 +176,6 @@ impl TransactionInputs {
     pub fn set_advice_inputs(&mut self, new_advice_inputs: AdviceInputs) {
         let AdviceInputs { map, store, .. } = new_advice_inputs;
         self.advice_inputs = AdviceInputs { stack: Default::default(), map, store };
-        self.tx_args.extend_advice_inputs(self.advice_inputs.clone());
     }
 
     /// Updates the transaction arguments of the inputs.

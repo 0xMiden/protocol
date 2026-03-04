@@ -826,6 +826,8 @@ async fn inputs_created_correctly() -> anyhow::Result<()> {
 /// execution is present during re-execution.
 #[tokio::test]
 async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
+    use miden_tx::utils::serde::{Deserializable, Serializable};
+
     let mut builder = MockChain::builder();
     // Use basic auth so the tx requires a signature for successful execution.
     let account = builder.add_existing_mock_account(Auth::BasicAuth {
@@ -845,10 +847,24 @@ async fn tx_can_be_reexecuted() -> anyhow::Result<()> {
         .execute()
         .await?;
 
+    // Re-execute directly from the in-memory tx_inputs.
     let _reexecuted_tx = chain
         .build_tx_context(account.id(), &[note.id()], &[])?
         .authenticator(None)
         .tx_inputs(tx.tx_inputs().clone())
+        .build()?
+        .execute()
+        .await?;
+
+    // Re-execute after a serialization round-trip of tx_inputs to ensure signatures survive.
+    let tx_inputs_bytes = tx.tx_inputs().to_bytes();
+    let deserialized_tx_inputs =
+        miden_protocol::transaction::TransactionInputs::read_from_bytes(&tx_inputs_bytes)?;
+
+    let _reexecuted_tx = chain
+        .build_tx_context(account.id(), &[note.id()], &[])?
+        .authenticator(None)
+        .tx_inputs(deserialized_tx_inputs)
         .build()?
         .execute()
         .await?;
