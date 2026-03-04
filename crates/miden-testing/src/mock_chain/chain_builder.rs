@@ -318,9 +318,16 @@ impl MockChainBuilder {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
         let max_supply_felt = Felt::try_from(max_supply)?;
-        let basic_faucet =
-            BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply_felt, name, None, None, None)
-                .context("failed to create BasicFungibleFaucet")?;
+        let basic_faucet = BasicFungibleFaucet::new(
+            token_symbol,
+            DEFAULT_FAUCET_DECIMALS,
+            max_supply_felt,
+            name,
+            None,
+            None,
+            None,
+        )
+        .context("failed to create BasicFungibleFaucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
