@@ -11,7 +11,8 @@ on:
   push:
     branches: [main, next]
   pull_request:
-    types: [opened, reopened, synchronize] 
+    types: [opened, reopened, synchronize]
+  merge_group:
 
 permissions:
   contents: read
