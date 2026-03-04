@@ -46,7 +46,6 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 # [4-7]: ATTACHMENT, [8-11]: P2ID_SCRIPT_ROOT, [12-15]: SERIAL_NUM,
 # [16]: account_id_suffix, [17]: account_id_prefix
 const MINT_NOTE_NUM_STORAGE_ITEMS = 18
-const MINT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID output note constants
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
@@ -641,7 +640,7 @@ proc build_mint_output_note
     # => [MINT_RECIPIENT, pad(16)]
 
     # Create the MINT output note targeting the faucet
-    push.MINT_NOTE_TYPE_PUBLIC
+    push.OUTPUT_NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, pad(16)]
 
     # Compute note tag targeting the faucet account
