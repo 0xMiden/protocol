@@ -45,7 +45,7 @@ impl AccountIdKey {
     ///
     /// Validates structure before converting.
     pub fn from_word(word: Word) -> AccountId {
-        AccountId::try_from([word[KEY_PREFIX_IDX], word[KEY_SUFFIX_IDX]])
+        AccountId::try_from_elements(word[KEY_SUFFIX_IDX], word[KEY_PREFIX_IDX])
             .expect("account tree should only contain valid IDs")
     }
 

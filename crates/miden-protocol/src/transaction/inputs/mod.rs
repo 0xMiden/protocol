@@ -25,7 +25,7 @@ use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
-use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
+use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,

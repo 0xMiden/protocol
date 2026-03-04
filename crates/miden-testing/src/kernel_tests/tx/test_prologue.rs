@@ -14,8 +14,8 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
