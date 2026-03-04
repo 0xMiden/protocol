@@ -347,7 +347,7 @@ mod tests {
     fn faucet_contract_creation() {
         let pub_key_word = Word::new([Felt::ONE; 4]);
         let auth_method: AuthMethod = AuthMethod::SingleSig {
-            approver: (pub_key_word.into(), AuthScheme::Falcon512Rpo),
+            approver: (pub_key_word.into(), AuthScheme::Falcon512Poseidon2),
         };
 
         // we need to use an initial seed to create the wallet account
@@ -435,7 +435,10 @@ mod tests {
                 BasicFungibleFaucet::new(token_symbol, 10, Felt::new(100))
                     .expect("failed to create a fungible faucet component"),
             )
-            .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Rpo))
+            .with_auth_component(AuthSingleSig::new(
+                mock_public_key,
+                AuthScheme::Falcon512Poseidon2,
+            ))
             .build_existing()
             .expect("failed to create wallet account");
 
@@ -449,7 +452,7 @@ mod tests {
         // invalid account: basic fungible faucet component is missing
         let invalid_faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Rpo))
+            .with_auth_component(AuthSingleSig::new(mock_public_key, AuthScheme::Falcon512Poseidon2))
             // we need to add some other component so the builder doesn't fail
             .with_component(BasicWallet)
             .build_existing()

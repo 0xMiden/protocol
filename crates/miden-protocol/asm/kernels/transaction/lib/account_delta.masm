@@ -64,7 +64,7 @@ pub proc compute_commitment
     # => [RATE0, RATE1, CAPACITY]
 
     # save the ID and nonce digest (RATE0 word) for a later check
-    dupw movdnw.3
+    exec.poseidon2::copy_digest movdnw.3
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.update_fungible_asset_delta
@@ -505,7 +505,7 @@ pub proc add_asset
         swapw
         # => [ASSET_VALUE, ASSET_KEY]
 
-        exec.fungible_asset::get_amount
+        exec.fungible_asset::value_into_amount
         movdn.4
         # => [ASSET_KEY, amount]
 
@@ -537,7 +537,7 @@ pub proc remove_asset
         swapw
         # => [ASSET_VALUE, ASSET_KEY]
 
-        exec.fungible_asset::get_amount
+        exec.fungible_asset::value_into_amount
         movdn.4
         # => [ASSET_KEY, amount]
 

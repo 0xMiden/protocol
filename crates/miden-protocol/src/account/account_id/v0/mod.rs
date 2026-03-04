@@ -37,8 +37,8 @@ use crate::{EMPTY_WORD, Felt, Hasher, Word};
 /// See the [`AccountId`](super::AccountId) type's documentation for details.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct AccountIdV0 {
-    prefix: Felt,
     suffix: Felt,
+    prefix: Felt,
 }
 
 impl Hash for AccountIdV0 {
@@ -67,6 +67,12 @@ impl AccountIdV0 {
     pub(crate) const STORAGE_MODE_MASK: u8 = 0b11 << Self::STORAGE_MODE_SHIFT;
     pub(crate) const STORAGE_MODE_SHIFT: u64 = 6;
 
+    /// The element index in the seed digest that becomes the account ID suffix (after
+    /// [`shape_suffix`]).
+    pub(crate) const SEED_DIGEST_SUFFIX_ELEMENT_IDX: usize = 0;
+    /// The element index in the seed digest that becomes the account ID prefix.
+    pub(crate) const SEED_DIGEST_PREFIX_ELEMENT_IDX: usize = 1;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -78,13 +84,14 @@ impl AccountIdV0 {
     ) -> Result<Self, AccountIdError> {
         let seed_digest = compute_digest(seed, code_commitment, storage_commitment);
 
-        let mut felts: [Felt; 2] = seed_digest.as_elements()[0..2]
-            .try_into()
-            .expect("we should have sliced off 2 elements");
+        // Use the first half-word of the seed digest as the account ID, where the prefix is the
+        // most significant element.
+        let mut suffix = seed_digest[Self::SEED_DIGEST_SUFFIX_ELEMENT_IDX];
+        let prefix = seed_digest[Self::SEED_DIGEST_PREFIX_ELEMENT_IDX];
 
-        felts[1] = shape_suffix(felts[1]);
+        suffix = shape_suffix(suffix);
 
-        account_id_from_felts(felts)
+        Self::try_from_elements(suffix, prefix)
     }
 
     /// See [`AccountId::new_unchecked`](super::AccountId::new_unchecked) for details.
@@ -99,6 +106,14 @@ impl AccountIdV0 {
         }
 
         Self { prefix, suffix }
+    }
+
+    /// See [`AccountId::try_from_elements`](super::AccountId::try_from_elements) for details.
+    pub fn try_from_elements(suffix: Felt, prefix: Felt) -> Result<Self, AccountIdError> {
+        validate_suffix(suffix)?;
+        validate_prefix(prefix)?;
+
+        Ok(AccountIdV0 { suffix, prefix })
     }
 
     /// See [`AccountId::dummy`](super::AccountId::dummy) for details.
@@ -138,7 +153,7 @@ impl AccountIdV0 {
 
         suffix = shape_suffix(suffix);
 
-        let account_id = account_id_from_felts([prefix, suffix])
+        let account_id = Self::try_from_elements(suffix, prefix)
             .expect("we should have shaped the felts to produce a valid id");
 
         debug_assert_eq!(account_id.account_type(), account_type);
@@ -342,16 +357,6 @@ impl From<AccountIdV0> for u128 {
 // CONVERSIONS TO ACCOUNT ID
 // ================================================================================================
 
-impl TryFrom<[Felt; 2]> for AccountIdV0 {
-    type Error = AccountIdError;
-
-    /// See [`TryFrom<[Felt; 2]> for
-    /// AccountId`](super::AccountId#impl-TryFrom<%5BFelt;+2%5D>-for-AccountId) for details.
-    fn try_from(elements: [Felt; 2]) -> Result<Self, Self::Error> {
-        account_id_from_felts(elements)
-    }
-}
-
 impl TryFrom<[u8; 15]> for AccountIdV0 {
     type Error = AccountIdError;
 
@@ -387,7 +392,7 @@ impl TryFrom<[u8; 15]> for AccountIdV0 {
             ))
         })?;
 
-        Self::try_from([prefix, suffix])
+        Self::try_from_elements(suffix, prefix)
     }
 }
 
@@ -428,19 +433,6 @@ impl Deserializable for AccountIdV0 {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-/// Returns an [AccountId] instantiated with the provided field elements.
-///
-/// # Errors
-///
-/// Returns an error if any of the ID constraints are not met. See the [constraints
-/// documentation](AccountId#constraints) for details.
-fn account_id_from_felts(elements: [Felt; 2]) -> Result<AccountIdV0, AccountIdError> {
-    validate_prefix(elements[0])?;
-    validate_suffix(elements[1])?;
-
-    Ok(AccountIdV0 { prefix: elements[0], suffix: elements[1] })
-}
 
 /// Checks that the prefix:
 /// - has known values for metadata (storage mode, type and version).

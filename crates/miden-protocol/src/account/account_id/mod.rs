@@ -154,6 +154,22 @@ impl AccountId {
         }
     }
 
+    /// Decodes an [`AccountId`] from the provided suffix and prefix felts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the ID constraints are not met. See the [constraints
+    /// documentation](AccountId#constraints) for details.
+    pub fn try_from_elements(suffix: Felt, prefix: Felt) -> Result<Self, AccountIdError> {
+        // The prefix contains the metadata.
+        // If we add more versions in the future, we may need to generalize this.
+        match v0::extract_version(prefix.as_canonical_u64())? {
+            AccountIdVersion::Version0 => {
+                AccountIdV0::try_from_elements(suffix, prefix).map(Self::V0)
+            },
+        }
+    }
+
     /// Constructs an [`AccountId`] for testing purposes with the given account type, storage
     /// mode.
     ///
@@ -400,25 +416,6 @@ impl From<AccountId> for u128 {
 impl From<AccountIdV0> for AccountId {
     fn from(id: AccountIdV0) -> Self {
         Self::V0(id)
-    }
-}
-
-impl TryFrom<[Felt; 2]> for AccountId {
-    type Error = AccountIdError;
-
-    /// Returns an [`AccountId`] instantiated with the provided field elements where `elements[0]`
-    /// is taken as the prefix and `elements[1]` is taken as the suffix.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the ID constraints are not met. See the [constraints
-    /// documentation](AccountId#constraints) for details.
-    fn try_from(elements: [Felt; 2]) -> Result<Self, Self::Error> {
-        // The prefix contains the metadata.
-        // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(elements[0].as_canonical_u64())? {
-            AccountIdVersion::Version0 => AccountIdV0::try_from(elements).map(Self::V0),
-        }
     }
 }
 

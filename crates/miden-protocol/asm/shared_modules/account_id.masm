@@ -150,13 +150,31 @@ end
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
 pub proc validate
+    # Validate lower 8 bits of suffix are zero.
+    # ---------------------------------------------------------------------------------------------
+
+    u32split
+    # => [account_id_suffix_lo, account_id_suffix_hi, account_id_prefix]
+    u32and.0xff eq.0
+    # => [is_least_significant_byte_zero, account_id_suffix_hi, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+    # => [account_id_suffix_hi, account_id_prefix]
+
+    # Validate most significant bit in suffix is zero.
+    # ---------------------------------------------------------------------------------------------
+
+    u32shr.31 eq.0
+    # => [is_most_significant_bit_zero, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
+    # => [account_id_prefix]
+
     # Validate version in prefix. For now only version 0 is supported.
     # ---------------------------------------------------------------------------------------------
 
-    swap dup exec.id_version
-    # => [id_version, account_id_prefix, account_id_suffix]
+    dup exec.id_version
+    # => [id_version, account_id_prefix]
     assertz.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
-    # => [account_id_prefix, account_id_suffix]
+    # => [account_id_prefix]
 
     # Validate storage mode in prefix.
     # ---------------------------------------------------------------------------------------------
@@ -165,29 +183,12 @@ pub proc validate
     # instead of checking the presence of any of the valid modes, we check the absence of the
     # invalid mode
     u32split swap drop
-    # => [account_id_prefix_lo, account_id_suffix]
+    # => [account_id_prefix_lo]
     u32and.ACCOUNT_ID_STORAGE_MODE_MASK_U32
-    # => [id_storage_mode_masked, account_id_suffix]
+    # => [id_storage_mode_masked]
     eq.ACCOUNT_ID_STORAGE_MODE_INVALID_U32
-    # => [is_storage_mode_invalid, account_id_suffix]
+    # => [is_storage_mode_invalid]
     assertz.err=ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE
-    # => [account_id_suffix]
-
-    # Validate most significant bit in suffix is zero.
-    # ---------------------------------------------------------------------------------------------
-
-    u32split swap
-    # => [account_id_suffix_hi, account_id_suffix_lo]
-    u32shr.31 eq.0
-    # => [is_most_significant_bit_zero, account_id_suffix_lo]
-    assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
-
-    # Validate lower 8 bits of suffix are zero.
-    # ---------------------------------------------------------------------------------------------
-
-    u32and.0xff eq.0
-    # => [is_least_significant_byte_zero]
-    assert.err=ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
     # => []
 end
 

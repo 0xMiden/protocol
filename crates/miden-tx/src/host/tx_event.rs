@@ -190,7 +190,7 @@ impl TransactionEvent {
                 // Expected stack state: [event, account_id_suffix, account_id_prefix]
                 let account_id_suffix = process.get_stack_item(1);
                 let account_id_prefix = process.get_stack_item(2);
-                let account_id = AccountId::try_from([account_id_prefix, account_id_suffix])
+                let account_id = AccountId::try_from_elements(account_id_suffix, account_id_prefix)
                     .map_err(|err| {
                         TransactionKernelError::other_with_source(
                             "failed to convert account ID word into account ID",
@@ -687,16 +687,16 @@ fn extract_tx_summary<'store, STORE>(
         ));
     }
 
-    let salt = extract_word(commitments, 0);
-    let output_notes_commitment = extract_word(commitments, 4);
-    let input_notes_commitment = extract_word(commitments, 8);
-    let account_delta_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 0);
+    let input_notes_commitment = extract_word(commitments, 4);
+    let output_notes_commitment = extract_word(commitments, 8);
+    let salt = extract_word(commitments, 12);
 
     let tx_summary = base_host.build_tx_summary(
-        salt,
-        output_notes_commitment,
-        input_notes_commitment,
         account_delta_commitment,
+        input_notes_commitment,
+        output_notes_commitment,
+        salt,
     )?;
 
     if tx_summary.to_commitment() != message {

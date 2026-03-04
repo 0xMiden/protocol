@@ -519,7 +519,7 @@ pub proc get_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
+    exec.::miden::protocol::util::asset::fungible_value_into_amount
     # => [balance]
 end
 
@@ -551,7 +551,7 @@ pub proc get_initial_balance
     # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
+    exec.::miden::protocol::util::asset::fungible_value_into_amount
     # => [balance]
 end
 

@@ -10,11 +10,12 @@ pub enum AuthMethod {
     /// execution, avoiding unnecessary nonce increments for transactions that don't modify the
     /// account state.
     NoAuth,
-    /// A single-key authentication method which relies on either ECDSA or Falcon512Rpo signatures.
+    /// A single-key authentication method which relies on either ECDSA or Falcon512Poseidon2
+    /// signatures.
     SingleSig {
         approver: (PublicKeyCommitment, AuthScheme),
     },
-    /// A multi-signature authentication method using either ECDSA or Falcon512Rpo signatures.
+    /// A multi-signature authentication method using either ECDSA or Falcon512Poseidon2 signatures.
     ///
     /// Requires a threshold number of signatures from the provided public keys.
     Multisig {

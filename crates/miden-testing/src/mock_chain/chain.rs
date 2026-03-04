@@ -77,9 +77,10 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Rpo (scheme_id: 2) auth scheme.
-/// let receiver =
-///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -142,16 +143,20 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// let faucet = builder.create_new_faucet(
-///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+///     Auth::BasicAuth {
+///         auth_scheme: AuthScheme::Falcon512Poseidon2,
+///     },
 ///     "USDT",
 ///     100_000,
 /// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-/// let target =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -1244,7 +1249,9 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+                    Auth::BasicAuth {
+                        auth_scheme: AuthScheme::Falcon512Poseidon2,
+                    },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

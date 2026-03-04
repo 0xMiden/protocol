@@ -19,7 +19,7 @@ use crate::{Felt, Hasher, MAX_NOTE_STORAGE_ITEMS, Word};
 /// field element. Thus, note storage can contain up to ~8 KB of data.
 ///
 /// All storage items associated with a note can be reduced to a single commitment which is
-/// computed as an RPO256 hash over the storage elements.
+/// computed as sequential hash over the storage elements.
 #[derive(Clone, Debug)]
 pub struct NoteStorage {
     items: Vec<Felt>,

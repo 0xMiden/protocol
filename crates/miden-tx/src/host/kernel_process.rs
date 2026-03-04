@@ -96,10 +96,10 @@ impl<'a> TransactionKernelProcess for ProcessorState<'a> {
                 TransactionKernelError::other("active account id should be initialized")
             })?;
 
-        AccountId::try_from([
-            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+        AccountId::try_from_elements(
             active_account_id_and_nonce[ACCT_ID_SUFFIX_IDX],
-        ])
+            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+        )
         .map_err(|_| {
             TransactionKernelError::other(
                 "active account id ptr should point to a valid account ID",

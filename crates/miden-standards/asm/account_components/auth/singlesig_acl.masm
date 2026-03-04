@@ -31,7 +31,7 @@ const ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC = 1
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! This authentication procedure checks:
 #! 1. If any of the trigger procedures were called during the transaction

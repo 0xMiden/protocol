@@ -75,10 +75,10 @@ impl AccountHeader {
             });
         }
 
-        let id = AccountId::try_from([
-            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        let id = AccountId::try_from_elements(
             elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_SUFFIX_IDX],
-        ])
+            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        )
         .map_err(AccountError::FinalAccountHeaderIdParsingFailed)?;
         let nonce = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_NONCE_IDX];
         let vault_root = parse_word(elements, ACCT_VAULT_ROOT_OFFSET)

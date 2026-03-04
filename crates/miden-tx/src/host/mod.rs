@@ -401,10 +401,10 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
     /// provided commitments.
     pub(crate) fn build_tx_summary(
         &self,
-        salt: Word,
-        output_notes_commitment: Word,
-        input_notes_commitment: Word,
         account_delta_commitment: Word,
+        input_notes_commitment: Word,
+        output_notes_commitment: Word,
+        salt: Word,
     ) -> Result<TransactionSummary, TransactionKernelError> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();

@@ -738,7 +738,9 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
     );
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset_0, fungible_asset_1],
     )?;
 
@@ -866,7 +868,9 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [FungibleAsset::mock(2000)],
     )?;
 

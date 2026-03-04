@@ -101,7 +101,7 @@ impl TryFrom<&NoteAttachment> for NetworkAccountTarget {
                 let id_prefix = word[1];
                 let exec_hint = word[2];
 
-                let target_id = AccountId::try_from([id_prefix, id_suffix])
+                let target_id = AccountId::try_from_elements(id_suffix, id_prefix)
                     .map_err(NetworkAccountTargetError::DecodeTargetId)?;
 
                 let exec_hint = NoteExecutionHint::try_from(exec_hint.as_canonical_u64())

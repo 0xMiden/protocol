@@ -12,7 +12,7 @@ use miden::standards::auth
 
 # Auth Scheme ID Structure
 const ECDSA_K256_KECCAK_SCHEME_ID=1
-const FALCON_512_RPO_SCHEME_ID=2
+const FALCON_512_POSEIDON2_SCHEME_ID=2
 
 # Local Memory Addresses for multisig operations
 const NUM_OF_APPROVERS_LOC=0
@@ -26,14 +26,14 @@ const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=17
 
 # ERRORS
 # =================================================================================================
-const ERR_INVALID_SCHEME_ID = "invalid signature scheme id: expected 2 for falcon512_rpo, 1 for ecdsa_k256_keccak"
+const ERR_INVALID_SCHEME_ID = "invalid signature scheme id: expected 2 for falcon512_poseidon2, 1 for ecdsa_k256_keccak"
 const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three zero values followed by the scheme ID"
 
 #! Authenticate a transaction using the signature scheme specified by scheme_id.
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
 #! changed or not. Then it computes and signs the following message (in memory order):
@@ -60,9 +60,11 @@ pub proc authenticate_transaction
     # Compute the message that is signed.
     # ---------------------------------------------------------------------------------------------
     exec.auth::create_tx_summary
-    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT, PUB_KEY, scheme_id]
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
 
-    exec.auth::adv_insert_hqword
+    # insert tx summary into advice provider for extraction by the host
+    adv.insert_hqword
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
 
     # The commitment to the tx summary is the message that is signed
     exec.auth::hash_tx_summary
@@ -95,7 +97,7 @@ end
 
 # Verify signature using scheme_id:
 #   1 => ECDSA (ecdsa_k256_keccak)
-#   2 => Falcon (falcon512_rpo)
+#   2 => Falcon (falcon512_poseidon2)
 #
 # Inputs:  [scheme_id, PUB_KEY, MSG]
 # Outputs: []
@@ -111,7 +113,7 @@ proc verify_signature_by_scheme
         # OS => []
         # AS => []
     else
-        dup eq.FALCON_512_RPO_SCHEME_ID
+        dup eq.FALCON_512_POSEIDON2_SCHEME_ID
         # => [is_2, scheme_id, PUB_KEY, MESSAGE]
 
         if.true
@@ -135,7 +137,7 @@ pub proc is_supported_scheme
     dup eq.ECDSA_K256_KECCAK_SCHEME_ID
     # => [is_1, scheme_id]
 
-    swap eq.FALCON_512_RPO_SCHEME_ID
+    swap eq.FALCON_512_POSEIDON2_SCHEME_ID
     # => [is_2, is_1]
 
     or

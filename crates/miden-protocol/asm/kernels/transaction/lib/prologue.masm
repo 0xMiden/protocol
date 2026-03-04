@@ -660,7 +660,7 @@ proc process_note_assets
     # => [assets_ptr, assets_end_ptr, note_ptr]
 
     exec.poseidon2::init_no_padding
-    # => [PERM, PERM, PERM, assets_ptr, assets_end_ptr, note_ptr]
+    # => [RATE0, RATE1, CAPACITY, assets_ptr, assets_end_ptr, note_ptr]
 
     # Compute assets commitment and validate.
     # ---------------------------------------------------------------------------------------------
@@ -710,7 +710,7 @@ proc add_input_note_assets_to_vault
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # load asset key and value
-        dup.1 exec.asset::mem_load
+        dup.1 exec.asset::load
         # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so
@@ -780,7 +780,7 @@ end
 #! commitment can be extracted.
 #!
 #! Inputs:
-#!   Operand stack: [idx, HASHER_CAPACITY]
+#!   Operand stack: [idx, CAPACITY]
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
@@ -799,13 +799,12 @@ end
 #!      )?
 #!   ]
 #! Outputs:
-#!   Operand stack: [PERM, PERM, PERM]
+#!   Operand stack: [RATE0, RATE1, CAPACITY]
 #!   Advice stack: []
 #!
 #! Where:
 #! - idx is the index of the input note.
-#! - HASHER_CAPACITY is the state of the hasher capacity word, with the commitment to the previous
-#!   notes.
+#! - CAPACITY is the state of the hasher capacity word, with the commitment to the previous notes.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
 #! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
@@ -825,81 +824,81 @@ proc process_input_note
     # ---------------------------------------------------------------------------------------------
 
     dup exec.memory::get_input_note_ptr dup
-    # => [note_ptr, note_ptr, idx, HASHER_CAPACITY]
+    # => [note_ptr, note_ptr, idx, CAPACITY]
 
     exec.process_input_note_details
-    # => [NULLIFIER, note_ptr, idx, HASHER_CAPACITY]
+    # => [NULLIFIER, note_ptr, idx, CAPACITY]
 
     # save NULLIFIER to memory
     movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_le
-    # => [NULLIFIER, note_ptr, HASHER_CAPACITY]
+    # => [NULLIFIER, note_ptr, CAPACITY]
 
     # note metadata & args
     # ---------------------------------------------------------------------------------------------
 
     movup.4
-    # => [note_ptr, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NULLIFIER, CAPACITY]
 
     dup exec.process_note_args_and_metadata
-    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
     exec.poseidon2::merge
-    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     movup.4
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note number of storage items
     # ---------------------------------------------------------------------------------------------
 
     exec.process_note_num_storage_items
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note assets
     # ---------------------------------------------------------------------------------------------
 
     dup exec.process_note_assets
     dup exec.add_input_note_assets_to_vault
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note id
     # ---------------------------------------------------------------------------------------------
 
     dup exec.compute_input_note_id
-    # => [NOTE_ID, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_ID, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # save note id to memory
     movup.4 exec.memory::set_input_note_id
-    # => [NOTE_ID, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_ID, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note authentication
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_COMMITMENT: `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`
     exec.poseidon2::merge
-    # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
     adv_push.1
-    # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
     if.true
-        # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+        # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
         exec.authenticate_note
-        # => [NULLIFIER, HASHER_CAPACITY]
+        # => [NULLIFIER, CAPACITY]
 
         padw
-        # => [EMPTY_WORD, NULLIFIER, HASHER_CAPACITY]
+        # => [EMPTY_WORD, NULLIFIER, CAPACITY]
     end
-    # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
     swapw
-    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT, HASHER_CAPACITY]
+    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT, CAPACITY]
 
     # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_COMMITMENT)
     exec.poseidon2::permute
-    # => [PERM, PERM, PERM]
+    # => [RATE0, RATE1, CAPACITY]
 end
 
 #! Process the input notes data provided via the advice provider. This involves reading the data
@@ -967,11 +966,11 @@ proc process_input_notes_data
     # start at note index 0
     push.0
     exec.poseidon2::init_no_padding
-    # => [PERM, PERM, PERM, idx, num_notes]
+    # => [RATE0, RATE1, CAPACITY, idx, num_notes]
 
     # loop condition: idx != num_notes
     dup.13 dup.13 neq
-    # => [has_more_notes, PERM, PERM, PERM, idx, num_notes]
+    # => [has_more_notes, RATE0, RATE1, CAPACITY, idx, num_notes]
 
     while.true
         # the hasher operates in overwrite mode, so discard the rate words, and keep the capacity
@@ -980,15 +979,15 @@ proc process_input_notes_data
 
         # process the note
         dup.4 exec.process_input_note
-        # => [PERM, PERM, PERM, idx, num_notes]
+        # => [RATE0, RATE1, CAPACITY, idx, num_notes]
 
         # update the idx counter
         swapw.3 add.1 swapw.3
-        # => [PERM, PERM, PERM, idx+1, num_notes]
+        # => [RATE0, RATE1, CAPACITY, idx+1, num_notes]
 
         # loop condition: idx != num_notes
         dup.13 dup.13 neq
-        # => [has_more_notes, PERM, PERM, PERM, idx+1, num_notes]
+        # => [has_more_notes, RATE0, RATE1, CAPACITY, idx+1, num_notes]
     end
 
     exec.poseidon2::squeeze_digest
