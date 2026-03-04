@@ -1,4 +1,3 @@
-use miden::protocol::active_note
 use miden::standards::faucets
 use miden::standards::access::ownable
 
