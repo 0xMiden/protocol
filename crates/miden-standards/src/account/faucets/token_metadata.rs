@@ -238,7 +238,7 @@ fn decode_felts_to_utf8<const N: usize>(felts: &[Felt; N]) -> Result<String, Fie
     let buf_len = N * BYTES_PER_FELT;
     let mut buf = [0u8; 256];
     for (i, felt) in felts.iter().enumerate() {
-        let v = felt.as_int();
+        let v = felt.as_canonical_u64();
         let le = v.to_le_bytes();
         // Reject values that use the high byte (> 7 bytes of data).
         if le[BYTES_PER_FELT] != 0 {

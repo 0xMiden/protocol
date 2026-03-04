@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use miden_crypto::hash::rpo::Rpo256 as Hasher;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_crypto::rand::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
     AccountId,
@@ -572,7 +572,7 @@ async fn faucet_get_decimals_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_decimals = Felt::from(decimals).as_int();
+    let expected_decimals = Felt::from(decimals).as_canonical_u64();
 
     let tx_script = format!(
         r#"
@@ -629,7 +629,7 @@ async fn faucet_get_token_symbol_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_symbol = Felt::from(token_symbol).as_int();
+    let expected_symbol = Felt::from(token_symbol).as_canonical_u64();
 
     let tx_script = format!(
         r#"
@@ -687,7 +687,7 @@ async fn faucet_get_token_supply_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_token_supply = token_supply.as_int();
+    let expected_token_supply = token_supply.as_canonical_u64();
 
     let tx_script = format!(
         r#"
@@ -744,9 +744,9 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_symbol = Felt::from(token_symbol).as_int();
-    let expected_decimals = Felt::from(decimals).as_int();
-    let expected_max_supply = max_supply.as_int();
+    let expected_symbol = Felt::from(token_symbol).as_canonical_u64();
+    let expected_decimals = Felt::from(decimals).as_canonical_u64();
+    let expected_max_supply = max_supply.as_canonical_u64();
     let expected_token_supply = 0u64;
 
     let tx_script = format!(
@@ -940,8 +940,8 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_prefix = owner_account_id.prefix().as_felt().as_int();
-    let expected_suffix = owner_account_id.suffix().as_int();
+    let expected_prefix = owner_account_id.prefix().as_felt().as_canonical_u64();
+    let expected_suffix = owner_account_id.suffix().as_canonical_u64();
 
     let tx_script = format!(
         r#"
@@ -1001,7 +1001,7 @@ async fn faucet_get_max_supply_only() -> anyhow::Result<()> {
         .with_component(faucet)
         .build()?;
 
-    let expected_max_supply = max_supply.as_int();
+    let expected_max_supply = max_supply.as_canonical_u64();
 
     let tx_script = format!(
         r#"
@@ -1059,9 +1059,9 @@ async fn faucet_get_decimals_and_symbol_from_masm() -> anyhow::Result<()> {
         .build()?;
 
     // Compute expected felt values
-    let expected_decimals = Felt::from(decimals).as_int();
-    let expected_symbol = Felt::from(token_symbol).as_int();
-    let expected_max_supply = max_supply.as_int();
+    let expected_decimals = Felt::from(decimals).as_canonical_u64();
+    let expected_symbol = Felt::from(token_symbol).as_canonical_u64();
+    let expected_max_supply = max_supply.as_canonical_u64();
 
     let tx_script = format!(
         r#"
