@@ -64,7 +64,7 @@ pub proc compute_commitment
     # => [RATE0, RATE1, CAPACITY]
 
     # save the ID and nonce digest (RATE0 word) for a later check
-    dupw movdnw.3
+    exec.poseidon2::copy_digest movdnw.3
     # => [RATE0, RATE1, CAPACITY, ID_AND_NONCE_DIGEST]
 
     exec.update_fungible_asset_delta
