@@ -68,7 +68,8 @@ const EXTERNAL_LINK_DATA_KEY = [0, 0, 0, 3]
 # PRIVATE HELPERS — single source of truth for slot access
 # =================================================================================================
 
-#! Loads token metadata word from storage. Output: [token_symbol, decimals, max_supply, token_supply].
+#! Loads token metadata word from storage.
+#! Output: [token_supply, max_supply, decimals, token_symbol] (word[0] on top, little-endian).
 proc get_token_metadata_word
     push.TOKEN_METADATA_SLOT[0..2]
     exec.active_account::get_item
@@ -87,8 +88,8 @@ proc get_name_chunk_1
 end
 
 #! Loads the mutability config word.
-#! Output: [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)].
-#! (word[3] on top after get_item)
+#! Output: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)].
+#! (word[0] on top after get_item, little-endian)
 proc get_mutability_config_word
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
@@ -191,24 +192,24 @@ end
 #! Returns the full token metadata word.
 #!
 #! The word is stored as [token_supply, max_supply, decimals, token_symbol] and
-#! loaded onto the stack with word[3] on top.
+#! loaded onto the stack with word[0] on top (little-endian).
 #!
 #! Inputs:  []
-#! Outputs: [token_symbol, decimals, max_supply, token_supply, pad(12)] (word[3] on top)
+#! Outputs: [token_supply, max_supply, decimals, token_symbol, pad(12)] (word[0] on top)
 #!
 #! Invocation: call
 pub proc get_token_metadata
     exec.get_token_metadata_word
     swapw dropw
-    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
+    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
 end
 
 #! Returns the maximum supply.
 #! Inputs:  [pad(16)]  Outputs: [max_supply, pad(15)]  Invocation: call
 pub proc get_max_supply
     exec.get_token_metadata
-    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
-    drop drop swap drop
+    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    drop movdn.2 drop drop
     # => [max_supply, pad(15)]
 end
 
@@ -216,8 +217,8 @@ end
 #! Inputs:  [pad(16)]  Outputs: [decimals, pad(15)]  Invocation: call
 pub proc get_decimals
     exec.get_token_metadata
-    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
-    drop movdn.2 drop drop
+    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    drop drop swap drop
     # => [decimals, pad(15)]
 end
 
@@ -225,8 +226,8 @@ end
 #! Inputs:  [pad(16)]  Outputs: [token_symbol, pad(15)]  Invocation: call
 pub proc get_token_symbol
     exec.get_token_metadata
-    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
-    movdn.3 drop drop drop
+    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    drop drop drop
     # => [token_symbol, pad(15)]
 end
 
@@ -234,8 +235,8 @@ end
 #! Inputs:  [pad(16)]  Outputs: [token_supply, pad(15)]  Invocation: call
 pub proc get_token_supply
     exec.get_token_metadata
-    # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
-    drop drop drop
+    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    movdn.3 drop drop drop
     # => [token_supply, pad(15)]
 end
 
@@ -252,14 +253,14 @@ end
 @locals(8)
 pub proc get_name
     exec.get_name_chunk_1
-    loc_storew_be.CHUNK_1_LOC dropw
+    loc_storew_le.CHUNK_1_LOC dropw
 
     exec.get_name_chunk_0
-    loc_storew_be.CHUNK_0_LOC dropw
+    loc_storew_le.CHUNK_0_LOC dropw
 
-    loc_loadw_be.CHUNK_1_LOC
+    loc_loadw_le.CHUNK_1_LOC
     swapw
-    loc_loadw_be.CHUNK_0_LOC
+    loc_loadw_le.CHUNK_0_LOC
     # => [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
 end
 
@@ -269,17 +270,17 @@ end
 
 #! Returns the mutability config word.
 #!
-#! After get_item, stack has word[3] on top:
-#! [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+#! After get_item, stack has word[0] on top (little-endian):
+#! [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
+#! Outputs: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
 #!
 #! Invocation: call
 pub proc get_mutability_config
     exec.get_mutability_config_word
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
 end
 
 # =================================================================================================
@@ -288,15 +289,15 @@ end
 
 #! Returns whether max supply is mutable (single felt: 0 or 1).
 #!
-#! Reads mutability_config word felt[3] (max_supply_mutable), which is on top after get_item.
+#! Reads mutability_config word felt[3] (max_supply_mutable).
 #!
 #! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
 pub proc is_max_supply_mutable
     exec.get_mutability_config_word
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    movdn.3 drop drop drop
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    drop drop drop
     # => [max_supply_mutable, pad(15)]
 end
 
@@ -307,13 +308,13 @@ end
 #! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
 pub proc is_description_mutable
     exec.get_mutability_config_word
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    drop drop drop
-    # => [desc_mutable, pad(12)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    movdn.3 drop drop drop
+    # => [desc_mutable, pad(15)]
     push.1 eq
-    # => [is_mutable, pad(12)]
+    # => [is_mutable, pad(15)]
 end
 
 #! Returns whether logo URI is mutable (flag == 1).
@@ -323,13 +324,13 @@ end
 #! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
 pub proc is_logo_uri_mutable
     exec.get_mutability_config_word
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    drop drop swap drop
-    # => [logo_mutable, pad(12)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    drop movdn.2 drop drop
+    # => [logo_mutable, pad(15)]
     push.1 eq
-    # => [is_mutable, pad(12)]
+    # => [is_mutable, pad(15)]
 end
 
 #! Returns whether external link is mutable (flag == 1).
@@ -339,13 +340,13 @@ end
 #! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
 pub proc is_external_link_mutable
     exec.get_mutability_config_word
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    drop movdn.2 drop drop
-    # => [extlink_mutable, pad(12)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    drop drop swap drop
+    # => [extlink_mutable, pad(15)]
     push.1 eq
-    # => [is_mutable, pad(12)]
+    # => [is_mutable, pad(15)]
 end
 
 # =================================================================================================
@@ -377,19 +378,19 @@ pub use ownable::get_owner
 @locals(28)
 pub proc get_description_commitment
     exec.get_description_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_description_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_description_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_description_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_description_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_description_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_description_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
     # => [pad(16)]
 
     # Hash the 7 words (28 felts) in local memory via RPO256.
@@ -422,19 +423,19 @@ end
 @locals(28)
 pub proc get_description
     exec.get_description_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_description_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_description_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_description_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_description_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_description_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_description_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
     # => [dest_ptr, pad(15)]  depth=16
 
     # Hash the 7 words (28 felts) in local memory.
@@ -478,19 +479,19 @@ end
 @locals(28)
 pub proc get_logo_uri_commitment
     exec.get_logo_uri_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_logo_uri_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_logo_uri_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_logo_uri_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_logo_uri_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_logo_uri_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_logo_uri_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
     exec.poseidon2::hash_elements
@@ -512,19 +513,19 @@ end
 @locals(28)
 pub proc get_logo_uri
     exec.get_logo_uri_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_logo_uri_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_logo_uri_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_logo_uri_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_logo_uri_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_logo_uri_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_logo_uri_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
     exec.poseidon2::hash_elements
@@ -552,19 +553,19 @@ end
 @locals(28)
 pub proc get_external_link_commitment
     exec.get_external_link_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_external_link_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_external_link_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_external_link_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_external_link_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_external_link_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_external_link_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
     exec.poseidon2::hash_elements
@@ -586,19 +587,19 @@ end
 @locals(28)
 pub proc get_external_link
     exec.get_external_link_chunk_0
-    loc_storew_be.FIELD_0_LOC dropw
+    loc_storew_le.FIELD_0_LOC dropw
     exec.get_external_link_chunk_1
-    loc_storew_be.FIELD_1_LOC dropw
+    loc_storew_le.FIELD_1_LOC dropw
     exec.get_external_link_chunk_2
-    loc_storew_be.FIELD_2_LOC dropw
+    loc_storew_le.FIELD_2_LOC dropw
     exec.get_external_link_chunk_3
-    loc_storew_be.FIELD_3_LOC dropw
+    loc_storew_le.FIELD_3_LOC dropw
     exec.get_external_link_chunk_4
-    loc_storew_be.FIELD_4_LOC dropw
+    loc_storew_le.FIELD_4_LOC dropw
     exec.get_external_link_chunk_5
-    loc_storew_be.FIELD_5_LOC dropw
+    loc_storew_le.FIELD_5_LOC dropw
     exec.get_external_link_chunk_6
-    loc_storew_be.FIELD_6_LOC dropw
+    loc_storew_le.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
     exec.poseidon2::hash_elements
@@ -633,12 +634,12 @@ end
 #!
 #! Invocation: call (from note script context)
 pub proc optional_set_description
-    # Read mutability config word: [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    # desc_mutable is at bottom of the 4 elements; drop the top 3
-    drop drop drop
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # desc_mutable is on top (word[0]); drop the other 3
+    movdn.3 drop drop drop
     # => [desc_mutable, pad(15)]
     push.1 eq
     assert.err=ERR_DESCRIPTION_NOT_MUTABLE
@@ -703,14 +704,12 @@ end
 #!
 #! Invocation: call (from note script context)
 pub proc optional_set_logo_uri
-    # Read mutability config word: [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    # logo_mutable is word[1]; drop top 2 (max_supply_mutable, extlink_mutable), then swap+drop
-    drop drop
-    # => [logo_mutable, desc_mutable, pad(14)]
-    swap drop
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # logo_mutable is word[1]; drop desc_mutable, then keep logo and drop rest
+    drop movdn.2 drop drop
     # => [logo_mutable, pad(15)]
     push.1 eq
     assert.err=ERR_LOGO_URI_NOT_MUTABLE
@@ -771,14 +770,12 @@ end
 #!
 #! Invocation: call (from note script context)
 pub proc optional_set_external_link
-    # Read mutability config word: [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(16)]
+    # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-    # extlink_mutable is word[2]; drop top 1 (max_supply_mutable), then move down and drop
-    drop
-    # => [extlink_mutable, logo_mutable, desc_mutable, pad(13)]
-    movdn.2 drop drop
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # extlink_mutable is word[2]; drop top 2, swap+drop to get it
+    drop drop swap drop
     # => [extlink_mutable, pad(15)]
     push.1 eq
     assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
@@ -838,10 +835,13 @@ end
 pub proc optional_set_max_supply
     # 1. Check mutable flag from mutability config word
     exec.get_mutability_config_word
-    # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, new_max_supply, pad(15)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, new_max_supply, pad(15)]
+    # max_supply_mutable is word[3]; bring it to top
+    movup.3
+    # => [max_supply_mutable, desc_mutable, logo_mutable, extlink_mutable, new_max_supply, pad(15)]
     push.1 eq
     assert.err=ERR_MAX_SUPPLY_IMMUTABLE
-    # => [extlink_mutable, logo_mutable, desc_mutable, new_max_supply, pad(15)]
+    # => [desc_mutable, logo_mutable, extlink_mutable, new_max_supply, pad(15)]
     drop drop drop
     # => [new_max_supply, pad(15)]
 
@@ -851,22 +851,23 @@ pub proc optional_set_max_supply
 
     # 3. Read current metadata word
     exec.get_token_metadata_word
-    # => [token_symbol, decimals, max_supply, token_supply, new_max_supply, pad(15)]
+    # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
     # 4. Validate: new_max_supply >= token_supply (i.e. token_supply <= new_max_supply)
-    dup.3       # copy token_supply to top
+    dup         # copy token_supply (index 0) to top
     dup.5       # copy new_max_supply to top
-    # => [new_max_supply, token_supply, token_symbol, decimals, max_supply, token_supply, new_max_supply, ...]
+    # => [new_max_supply, token_supply, token_supply, max_supply, decimals, token_symbol, new_max_supply, ...]
     lte         # token_supply <= new_max_supply
     assert.err=ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY
-    # => [token_symbol, decimals, max_supply, token_supply, new_max_supply, pad(15)]
+    # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
-    # 5. Replace max_supply with new_max_supply in the metadata word
+    # 5. Replace max_supply (word[1]) with new_max_supply in the metadata word
     movup.4     # bring new_max_supply to top
-    movdn.2     # => [token_symbol, decimals, new_max_supply, max_supply, token_supply, pad(15)]
-    movup.3     # bring old max_supply to top
+    # => [new_max_supply, token_supply, max_supply, decimals, token_symbol, pad(15)]
+    swap        # => [token_supply, new_max_supply, max_supply, decimals, token_symbol, pad(15)]
+    movup.2     # => [max_supply, token_supply, new_max_supply, decimals, token_symbol, pad(15)]
     drop        # discard old max_supply
-    # => [token_symbol, decimals, new_max_supply, token_supply, pad(15)]
+    # => [token_supply, new_max_supply, decimals, token_symbol, pad(15)]
 
     # 6. Write updated metadata word back to storage
     push.TOKEN_METADATA_SLOT[0..2]

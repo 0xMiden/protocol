@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_crypto::hash::rpo::Rpo256 as Hasher;
+use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 use miden_crypto::rand::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
@@ -753,11 +753,11 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
         r#"
         begin
             call.::miden::standards::metadata::fungible::get_token_metadata
-            # => [token_symbol, decimals, max_supply, token_supply, pad(12)]
-            push.{expected_symbol} assert_eq.err="token_symbol does not match"
-            push.{expected_decimals} assert_eq.err="decimals does not match"
-            push.{expected_max_supply} assert_eq.err="max_supply does not match"
+            # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
             push.{expected_token_supply} assert_eq.err="token_supply does not match"
+            push.{expected_max_supply} assert_eq.err="max_supply does not match"
+            push.{expected_decimals} assert_eq.err="decimals does not match"
+            push.{expected_symbol} assert_eq.err="token_symbol does not match"
         end
         "#,
     );
@@ -877,15 +877,15 @@ async fn metadata_get_config_only() -> anyhow::Result<()> {
         begin
             # Check mutability config
             call.::miden::standards::metadata::fungible::get_mutability_config
-            # => [max_supply_mutable, extlink_mutable, logo_mutable, desc_mutable, pad(12)]
-            push.1
-            assert_eq.err="max_supply_mutable should be 1"
-            push.0
-            assert_eq.err="extlink_mutable should be 0"
-            push.0
-            assert_eq.err="logo_mutable should be 0"
+            # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
             push.1
             assert_eq.err="desc_mutable should be 1"
+            push.0
+            assert_eq.err="logo_mutable should be 0"
+            push.0
+            assert_eq.err="extlink_mutable should be 0"
+            push.1
+            assert_eq.err="max_supply_mutable should be 1"
         end
         "#;
 
@@ -947,11 +947,11 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
         r#"
         begin
             call.::miden::standards::metadata::fungible::get_owner
-            # => [owner_prefix, owner_suffix, pad(14)]
-            push.{expected_prefix}
-            assert_eq.err="owner prefix does not match"
+            # => [owner_suffix, owner_prefix, pad(14)]
             push.{expected_suffix}
             assert_eq.err="owner suffix does not match"
+            push.{expected_prefix}
+            assert_eq.err="owner prefix does not match"
             push.0
             assert_eq.err="clean stack: pad must be 0"
         end
