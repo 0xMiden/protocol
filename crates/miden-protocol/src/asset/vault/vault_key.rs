@@ -43,12 +43,18 @@ impl AssetVaultKey {
     /// - the provided ID is not of type
     ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet) or
     ///   [`AccountType::NonFungibleFaucet`](crate::account::AccountType::NonFungibleFaucet)
+    /// - the asset ID limbs are not zero when `faucet_id` is of type
+    ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet).
     pub fn new(asset_id: AssetId, faucet_id: AccountId) -> Result<Self, AssetError> {
         if !faucet_id.is_faucet() {
             return Err(AssetError::InvalidFaucetAccountId(Box::from(format!(
                 "expected account ID of type faucet, found account type {}",
                 faucet_id.account_type()
             ))));
+        }
+
+        if matches!(faucet_id.account_type(), AccountType::FungibleFaucet) && !asset_id.is_empty() {
+            return Err(AssetError::FungibleAssetIdMustBeZero(asset_id));
         }
 
         Ok(Self { asset_id, faucet_id })
@@ -124,7 +130,9 @@ impl TryFrom<Word> for AssetVaultKey {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the faucet ID in the key is invalid.
+    /// - the faucet ID in the key is invalid or not of a faucet type.
+    /// - the asset ID limbs are not zero when `faucet_id` is of type
+    ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet).
     fn try_from(key: Word) -> Result<Self, Self::Error> {
         let asset_id_suffix = key[0];
         let asset_id_prefix = key[1];

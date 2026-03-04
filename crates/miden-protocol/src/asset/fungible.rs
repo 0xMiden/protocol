@@ -249,7 +249,6 @@ mod tests {
 
     use super::*;
     use crate::account::AccountId;
-    use crate::asset::AssetId;
     use crate::testing::account_id::{
         ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET,
@@ -260,15 +259,20 @@ mod tests {
     };
 
     #[test]
-    fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
-        let invalid_key = AssetVaultKey::new(
-            AssetId::new(Felt::from(1u32), Felt::from(2u32)),
-            ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?,
-        )?;
+    fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
+        let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
+        let invalid_key = Word::from([
+            Felt::from(1u32),
+            Felt::from(2u32),
+            faucet_id.suffix(),
+            faucet_id.prefix().as_felt(),
+        ]);
 
-        let err =
-            FungibleAsset::from_key_value(invalid_key, FungibleAsset::mock(5).to_value_word())
-                .unwrap_err();
+        let err = FungibleAsset::from_key_value_words(
+            invalid_key,
+            FungibleAsset::mock(5).to_value_word(),
+        )
+        .unwrap_err();
         assert_matches!(err, AssetError::FungibleAssetIdMustBeZero(_));
 
         Ok(())
