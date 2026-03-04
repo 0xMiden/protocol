@@ -14,4 +14,5 @@ pub mod partial_blockchain;
 pub mod random_secret_key;
 pub mod slot_name;
 pub mod storage;
+pub mod storage_map_key;
 pub mod tx;

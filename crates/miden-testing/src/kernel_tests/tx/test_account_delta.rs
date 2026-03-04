@@ -13,6 +13,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageMap,
+    StorageMapKey,
     StorageSlot,
     StorageSlotDelta,
     StorageSlotName,
@@ -223,12 +224,12 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
 async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
     // Test with random keys to make sure the ordering in the MASM and Rust implementations
     // matches.
-    let key0 = rand_value::<Word>();
-    let key1 = rand_value::<Word>();
-    let key2 = rand_value::<Word>();
-    let key3 = rand_value::<Word>();
-    let key4 = rand_value::<Word>();
-    let key5 = rand_value::<Word>();
+    let key0 = StorageMapKey::from_raw(rand_value::<Word>());
+    let key1 = StorageMapKey::from_raw(rand_value::<Word>());
+    let key2 = StorageMapKey::from_raw(rand_value::<Word>());
+    let key3 = StorageMapKey::from_raw(rand_value::<Word>());
+    let key4 = StorageMapKey::from_raw(rand_value::<Word>());
+    let key5 = StorageMapKey::from_raw(rand_value::<Word>());
 
     let key0_init_value = EMPTY_WORD;
     let key1_init_value = EMPTY_WORD;
@@ -583,7 +584,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
     let updated_slot_value = Word::from([7, 9, 11, 13u32]);
 
     // updated storage map
-    let updated_map_key = Word::from([14, 15, 16, 17u32]);
+    let updated_map_key = StorageMapKey::from_array([14, 15, 16, 17u32]);
     let updated_map_value = Word::from([18, 19, 20, 21u32]);
 
     // removed assets
@@ -794,13 +795,13 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow::Result<()> {
     // Use two identical maps to test that they are properly handled
     // (see also https://github.com/0xMiden/protocol/issues/2037).
-    let map0 = StorageMap::with_entries([(rand_value(), rand_value())])?;
+    let map0 = StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?;
     let map1 = map0.clone();
     let mut map2 = StorageMap::with_entries([
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
-        (rand_value(), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
+        (StorageMapKey::from_raw(rand_value()), rand_value()),
     ])?;
 
     let map0_slot_name = StorageSlotName::mock(1);
