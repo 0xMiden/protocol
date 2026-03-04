@@ -51,6 +51,10 @@ const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
+# P2ID attachment constants (the P2ID note created by the faucet has no attachment)
+const P2ID_ATTACHMENT_KIND_NONE = 0
+const P2ID_ATTACHMENT_SCHEME_NONE = 0
+
 # Global memory pointers
 # -------------------------------------------------------------------------------------------------
 
@@ -576,15 +580,16 @@ proc write_mint_note_storage
     mem_store.MINT_NOTE_STORAGE_NATIVE_AMOUNT
     # => []
 
-    # Write attachment_kind = 0 [2]
-    push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
+    # Write P2ID attachment fields (the P2ID note has no attachment)
+    # attachment_kind = NONE [2]
+    push.P2ID_ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
     # => []
 
-    # Write attachment_scheme = 0 [3]
-    push.0 mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
+    # attachment_scheme = NONE [3]
+    push.P2ID_ATTACHMENT_SCHEME_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_SCHEME
     # => []
 
-    # Write ATTACHMENT = [0, 0, 0, 0] [4..7]
+    # ATTACHMENT = empty word [4..7]
     padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
     # => []
 
