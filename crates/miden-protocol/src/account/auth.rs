@@ -330,9 +330,6 @@ impl Signature {
 
     /// Converts this signature to a sequence of field elements in the format expected by the
     /// native verification procedure in the VM.
-    ///
-    /// The order of elements in the returned vector is reversed because it is expected that the
-    /// data will be pushed into the advice stack
     pub fn to_prepared_signature(&self, msg: Word) -> Vec<Felt> {
         // TODO: the `expect()` should be changed to an error; but that will be a part of a bigger
         // refactoring
