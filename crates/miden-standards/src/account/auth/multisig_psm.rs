@@ -341,9 +341,9 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_3 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
         let psm_key = AuthSecretKey::new_ecdsa_k256_keccak();
 
         // Create approvers list for multisig config
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let psm_key = AuthSecretKey::new_falcon512_rpo();
+        let psm_key = AuthSecretKey::new_falcon512_poseidon2();
         let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
         let threshold = 1u32;
 
@@ -474,8 +474,8 @@ mod tests {
     /// Test multisig component setup with a private state manager.
     #[test]
     fn test_multisig_component_with_psm() {
-        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
         let psm_key = AuthSecretKey::new_ecdsa_k256_keccak();
 
         let approvers = vec![
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn test_multisig_component_error_cases() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
-        let psm_key = AuthSecretKey::new_falcon512_rpo();
+        let psm_key = AuthSecretKey::new_falcon512_poseidon2();
         let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
 
         // Test threshold = 0 (should fail)
@@ -553,7 +553,7 @@ mod tests {
         // Create secret keys for approvers
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
         let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
-        let psm_key = AuthSecretKey::new_falcon512_rpo();
+        let psm_key = AuthSecretKey::new_falcon512_poseidon2();
 
         // Create approvers list with duplicate public keys
         let approvers = vec![

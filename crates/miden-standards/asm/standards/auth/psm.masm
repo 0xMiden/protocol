@@ -10,8 +10,6 @@ use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth::signature
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
 # - The `is_psm_signature_required` selector in `PSM_CONFIG_SLOT` controls whether the extra PSM signature
@@ -81,7 +79,8 @@ const ERR_INVALID_PSM_SIGNATURE = "invalid private state manager signature"
 #! Invocation: exec
 proc set_psm_signature_requirement(is_psm_signature_required: felt)
     push.0.0.0
-    # => [0, 0, 0, is_psm_signature_required]
+    movup.3
+    # => [is_psm_signature_required, 0, 0, 0]
 
     push.PSM_CONFIG_SLOT[0..2]
     # => [config_slot_prefix, config_slot_suffix, NEW_PSM_CONFIG_WORD]
@@ -134,7 +133,7 @@ end
 #! - Signature requirement is set back to ON by `verify_signature` at the end of auth.
 #!
 #! Invocation: call
-pub proc update_psm_public_key(new_psm_public_key: BeWord)
+pub proc update_psm_public_key(new_psm_public_key: word)
     exec.disable_psm_signature_requirement
     # => [NEW_PSM_PUBLIC_KEY]
 
@@ -165,12 +164,12 @@ end
 #! - If the initial signature requirement was enabled, it is set back to ON at the end of auth.
 #!
 #! Invocation: exec
-pub proc verify_signature(msg: BeWord) -> BeWord
+pub proc verify_signature(msg: word) -> word
     # Use current config to apply temporary PSM changes in this tx.
     push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [0, 0, 0, is_psm_signature_required, MSG]
+    # => [is_psm_signature_required, 0, 0, 0, MSG]
 
-    drop drop drop
+    movdn.4 drop drop drop swap
     # => [is_psm_signature_required, MSG]
 
     # Verify exactly one signature from the configured private state manager signer.

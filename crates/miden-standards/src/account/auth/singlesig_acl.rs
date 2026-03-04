@@ -336,7 +336,7 @@ mod tests {
     /// Parametrized test helper for ACL component testing
     fn test_acl_component(config: AclTestConfig) {
         let public_key = PublicKeyCommitment::from(Word::empty());
-        let auth_scheme = AuthScheme::Falcon512Rpo;
+        let auth_scheme = AuthScheme::Falcon512Poseidon2;
 
         // Build the configuration
         let mut acl_config = AuthSingleSigAclConfig::new()

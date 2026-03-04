@@ -8,7 +8,7 @@ use super::StorageValueName;
 use super::value_name::StorageValueNameError;
 use crate::account::StorageSlotName;
 use crate::errors::StorageSlotNameError;
-use crate::{Felt, FieldElement, Word};
+use crate::{Felt, Word};
 
 /// A word value provided via [`InitStorageData`].
 ///

@@ -8,7 +8,13 @@ use crate::account::{AccountId, AccountIdPrefix};
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{MutationSet, SMT_DEPTH, Smt, SmtLeaf};
 use crate::errors::AccountTreeError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 mod partial;
 pub use partial::PartialAccountTree;
@@ -44,7 +50,7 @@ pub fn account_id_to_smt_key(account_id: AccountId) -> Word {
 /// Panics if the key does not represent a valid account ID. This should never happen when used
 /// with keys from account trees, as the tree only stores valid IDs.
 pub fn smt_key_to_account_id(key: Word) -> AccountId {
-    AccountId::try_from([key[KEY_PREFIX_IDX], key[KEY_SUFFIX_IDX]])
+    AccountId::try_from_elements(key[KEY_SUFFIX_IDX], key[KEY_PREFIX_IDX])
         .expect("account tree should only contain valid IDs")
 }
 
@@ -201,7 +207,7 @@ where
 
             (
                 // SAFETY: By construction, the tree only contains valid IDs.
-                AccountId::try_from([key[Self::KEY_PREFIX_IDX], key[Self::KEY_SUFFIX_IDX]])
+                AccountId::try_from_elements(key[Self::KEY_SUFFIX_IDX], key[Self::KEY_PREFIX_IDX])
                     .expect("account tree should only contain valid IDs"),
                 commitment,
             )

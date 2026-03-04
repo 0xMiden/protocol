@@ -5,8 +5,6 @@
 use miden::standards::auth::multisig
 use miden::standards::auth::psm
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 #! Update threshold config, add / remove approvers,
 #! and update the approver scheme ids
 #! 
@@ -104,7 +102,8 @@ pub use psm::update_psm_public_key
 #!   Operand stack: []
 #!
 #! Invocation: call
-pub proc auth_tx_multisig_psm(salt: BeWord)
+@auth_script
+pub proc auth_tx_multisig_psm(salt: word)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 

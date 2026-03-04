@@ -1,5 +1,5 @@
-use miden_processor::AdviceInputs;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::advice::AdviceInputs;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -63,7 +63,7 @@ fn setup_keys_and_authenticators(
 
     for index in 0..num_approvers {
         let sec_key = if index % 2 == 0 {
-            AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng)
+            AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
         } else {
             AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng)
         };
@@ -74,7 +74,7 @@ fn setup_keys_and_authenticators(
 
         // Alternate scheme IDs between Falcon (2) and ECDSA (1)
         if index % 2 == 0 {
-            auth_schemes.push(AuthScheme::Falcon512Rpo);
+            auth_schemes.push(AuthScheme::Falcon512Poseidon2);
         } else {
             auth_schemes.push(AuthScheme::EcdsaK256Keccak);
         }

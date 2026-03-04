@@ -3,8 +3,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_processor::mast::MastForest;
+use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -90,7 +90,7 @@ impl TransactionContext {
             .iter()
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
-        let fee_asset_vault_key = AssetVaultKey::from_account_id(
+        let fee_asset_vault_key = AssetVaultKey::new_fungible(
             self.tx_inputs().block_header().fee_parameters().native_asset_id(),
         )
         .expect("fee asset should be a fungible asset");
@@ -107,7 +107,7 @@ impl TransactionContext {
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
         let fee_asset_vault_key =
-            AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
         asset_vault_keys.insert(fee_asset_vault_key);
 

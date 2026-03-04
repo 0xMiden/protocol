@@ -2,7 +2,7 @@
 members = [
   "bin/bench-note-checker",
   "bin/bench-transaction",
-  "crates/miden-agglayer",
+  # "crates/miden-agglayer",
   "crates/miden-block-prover",
   "crates/miden-protocol",
   "crates/miden-protocol-macros",
@@ -21,7 +21,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/protocol"
 rust-version = "1.90"
-version      = "0.14.0"
+version      = "0.14.0-alpha.1"
 
 [profile.release]
 codegen-units = 1
@@ -31,38 +31,32 @@ lto           = true
 inherits  = "dev"
 opt-level = 1
 
-# Avoid running the expensive debug assertion in winter-prover
-# https://github.com/facebook/winterfell/blob/cd32dce2fd4986c94516113568eefd938fafe31c/prover/src/lib.rs#L355C1-L356
-[profile.test-dev.package.winter-prover]
-debug-assertions = false
-
 [profile.bench]
 codegen-units = 1
 lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.14" }
-miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.14" }
-miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.14" }
-miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.14" }
-miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.14" }
-miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.14" }
-miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.14" }
-miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.14" }
+miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "=0.14.0-alpha.1" }
+miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "=0.14.0-alpha.1" }
+miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "=0.14.0-alpha.1" }
+miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "=0.14.0-alpha.1" }
+miden-standards       = { default-features = false, path = "crates/miden-standards", version = "=0.14.0-alpha.1" }
+miden-testing         = { default-features = false, path = "crates/miden-testing", version = "=0.14.0-alpha.1" }
+miden-tx              = { default-features = false, path = "crates/miden-tx", version = "=0.14.0-alpha.1" }
+miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "=0.14.0-alpha.1" }
 
 # Miden dependencies
-miden-air             = { default-features = false, version = "0.20" }
-miden-assembly        = { default-features = false, version = "0.20" }
-miden-assembly-syntax = { default-features = false, version = "0.20" }
-miden-core            = { default-features = false, version = "0.20" }
-miden-core-lib        = { default-features = false, version = "0.20" }
-miden-crypto          = { default-features = false, version = "0.19" }
-miden-mast-package    = { default-features = false, version = "0.20" }
-miden-processor       = { default-features = false, version = "0.20" }
-miden-prover          = { default-features = false, version = "0.20" }
-miden-utils-sync      = { default-features = false, version = "0.20" }
-miden-verifier        = { default-features = false, version = "0.20" }
+miden-assembly        = { default-features = false, version = "0.21" }
+miden-assembly-syntax = { default-features = false, version = "0.21" }
+miden-core            = { default-features = false, version = "0.21" }
+miden-core-lib        = { default-features = false, version = "0.21" }
+miden-crypto          = { default-features = false, version = "0.22" }
+miden-mast-package    = { default-features = false, version = "0.21" }
+miden-processor       = { default-features = false, version = "0.21" }
+miden-prover          = { default-features = false, version = "0.21" }
+miden-utils-sync      = { default-features = false, version = "0.21" }
+miden-verifier        = { default-features = false, version = "0.21" }
 
 # External dependencies
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }

@@ -55,7 +55,7 @@ fn setup_keys_and_authenticators_with_scheme(
     for _ in 0..num_approvers {
         let sec_key = match auth_scheme {
             AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
-            AuthScheme::Falcon512Rpo => AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng),
+            AuthScheme::Falcon512Poseidon2 => AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng),
             _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
         };
         let pub_key = sec_key.public_key();
@@ -113,7 +113,7 @@ fn create_multisig_account_with_psm(
 /// configured.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_psm_signature_required(
     #[case] auth_scheme: AuthScheme,
@@ -225,7 +225,7 @@ async fn test_multisig_psm_signature_required(
 /// Tests that the PSM public key can be updated and then enforced.
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
-#[case::falcon(AuthScheme::Falcon512Rpo)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 async fn test_multisig_update_psm_public_key(
     #[case] auth_scheme: AuthScheme,

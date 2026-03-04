@@ -4,8 +4,6 @@
 
 use miden::standards::auth::multisig
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 #! Update threshold config, add / remove approvers,
 #! and update the approver scheme ids
 #! 
@@ -91,7 +89,8 @@ pub use multisig::is_signer
 #!   Operand stack: []
 #!
 #! Invocation: call
-pub proc auth_tx_multisig(salt: BeWord)
+@auth_script
+pub proc auth_tx_multisig(salt: word)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 

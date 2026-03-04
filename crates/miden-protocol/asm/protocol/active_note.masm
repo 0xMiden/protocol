@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
@@ -169,10 +169,10 @@ end
 #! Returns the sender of the active note.
 #!
 #! Inputs:  []
-#! Outputs: [sender_id_prefix, sender_id_suffix]
+#! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the sender of the active note.
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the sender of the active note.
 #!
 #! Panics if:
 #! - no note is currently active.
@@ -185,7 +185,7 @@ pub proc get_sender
 
     # extract the sender ID from the metadata header
     exec.note::extract_sender_from_metadata
-    # => [sender_id_prefix, sender_id_suffix]
+    # => [sender_id_suffix, sender_id_prefix]
 end
 
 #! Returns the serial number of the active note.
@@ -301,7 +301,7 @@ proc write_storage_to_memory
 
     # prepare the stack for the `pipe_double_words_to_memory` procedure.
     #
-    # To match `rpo256::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
+    # To match `poseidon2::hash_elements` (used for NOTE_STORAGE_COMMITMENT), we set the first capacity
     # element to `num_storage_items % 8`.
     dup.6 dup.6
     # OS => [num_storage_items, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
@@ -311,21 +311,21 @@ proc write_storage_to_memory
     # OS => [num_storage_items_mod_8, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
-    push.0.0.0
-    # OS => [A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr], where A = [0, 0, 0, num_storage_items_mod_8]
+    push.0.0.0 movup.3
+    # OS => [CAPACITY = [num_storage_items_mod_8, 0, 0, 0], write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     padw padw
-    # OS => [PAD, PAD, A, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, write_ptr, end_ptr, NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => [[INPUT_VALUES]]
 
     # write the inputs from the advice stack into memory
     exec.mem::pipe_double_words_to_memory
-    # OS => [PERM, PERM, PERM, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
+    # OS => [RATE0, RATE1, CAPACITY, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
     # AS => []
 
     # extract the computed commitment from the hasher state
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [COMPUTED_COMMITMENT, end_ptr', NOTE_STORAGE_COMMITMENT, num_storage_items, dest_ptr]
 
     # drop end_ptr'

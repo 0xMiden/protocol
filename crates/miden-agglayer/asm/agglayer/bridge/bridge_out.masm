@@ -1,5 +1,6 @@
 use miden::protocol::active_note
 use miden::protocol::active_account
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::note
 use miden::protocol::tx
@@ -54,18 +55,18 @@ const PADDING_OFFSET=29
 
 # bridge_out memory locals
 const BRIDGE_OUT_BURN_ASSET_LOC=0
-const DESTINATION_ADDRESS_0_LOC=4
-const DESTINATION_ADDRESS_1_LOC=5
-const DESTINATION_ADDRESS_2_LOC=6
-const DESTINATION_ADDRESS_3_LOC=7
-const DESTINATION_ADDRESS_4_LOC=8
-const DESTINATION_NETWORK_LOC=9
+const DESTINATION_ADDRESS_0_LOC=8
+const DESTINATION_ADDRESS_1_LOC=9
+const DESTINATION_ADDRESS_2_LOC=10
+const DESTINATION_ADDRESS_3_LOC=11
+const DESTINATION_ADDRESS_4_LOC=12
+const DESTINATION_NETWORK_LOC=13
 
 # create_burn_note memory locals
 const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
-const ATTACHMENT_LOC=4
-const ATTACHMENT_SCHEME_LOC=8
-const ATTACHMENT_KIND_LOC=9
+const ATTACHMENT_LOC=8
+const ATTACHMENT_SCHEME_LOC=12
+const ATTACHMENT_KIND_LOC=13
 
 # Other constants
 const LEAF_TYPE_ASSET=0
@@ -84,19 +85,23 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 4. Computes Keccak hash and adds it to the MMR frontier
 #! 5. Creates a BURN note with the bridged out asset
 #!
-#! Inputs:  [ASSET, dest_network_id, dest_address(5), pad(4)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(4)]
 #! Outputs: []
 #!
 #! Where:
-#! - ASSET is the asset to be bridged out (layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]).
+#! - ASSET_KEY is the vault key of the asset to be bridged out.
+#! - ASSET_VALUE is the value of the asset to be bridged out.
 #! - dest_network_id is the u32 destination network/chain ID.
 #! - dest_address(5) are 5 u32 values representing a 20-byte Ethereum address.
 #!
 #! Invocation: call
-@locals(10)
+@locals(14)
 pub proc bridge_out
-    # Save ASSET to memory for later BURN note creation
-    loc_storew_be.BRIDGE_OUT_BURN_ASSET_LOC dropw
+    # Save ASSET to local memory for later BURN note creation
+    locaddr.BRIDGE_OUT_BURN_ASSET_LOC
+    exec.asset::mem_store
+    # => [dest_network_id, dest_address(5)]
+
     loc_store.DESTINATION_NETWORK_LOC
     loc_store.DESTINATION_ADDRESS_0_LOC
     loc_store.DESTINATION_ADDRESS_1_LOC
@@ -106,7 +111,10 @@ pub proc bridge_out
     # => []
 
     # --- 1. Validate faucet registration and convert asset via FPI ---
-    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
+    locaddr.BRIDGE_OUT_BURN_ASSET_LOC
+    exec.asset::mem_load
+    # => [ASSET_KEY, ASSET_VALUE]
+
     exec.convert_asset
     # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, dest_network_id, dest_address(5)]
 
@@ -178,7 +186,9 @@ pub proc bridge_out
     exec.add_leaf_bridge
 
     # --- 4. Create BURN output note for ASSET ---
-    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
+    locaddr.BRIDGE_OUT_BURN_ASSET_LOC
+    exec.asset::mem_load
+    # => [ASSET_KEY, ASSET_VALUE]
     exec.create_burn_note
 end
 
@@ -189,11 +199,12 @@ end
 #! an FPI call to the faucet's `asset_to_origin_asset` procedure to obtain the scaled
 #! amount, origin token address, and origin network.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
 #!
 #! Where:
-#! - ASSET layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]
+#! - ASSET_KEY is the vault key of the asset to be bridged out.
+#! - ASSET_VALUE is the value of the asset to be bridged out.
 #! - AMOUNT_U256: scaled amount as 8 u32 limbs (little-endian)
 #! - origin_addr: origin token address (5 u32 felts)
 #! - origin_network: origin network identifier
@@ -204,18 +215,20 @@ end
 #!
 #! Invocation: exec
 proc convert_asset
-    # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
-
     # --- Step 1: Assert faucet is registered ---
+    swapw
+    exec.asset::fungible_value_into_amount
+    movdn.4
+    # => [ASSET_KEY, amount]
+
+    exec.asset::key_into_faucet_id
+    # => [faucet_id_prefix, faucet_id_suffix, amount]
+
     dup.1 dup.1
     exec.bridge_config::assert_faucet_registered
-    # => [faucet_id_prefix, faucet_id_suffix, 0, amount]
+    # => [faucet_id_prefix, faucet_id_suffix, amount]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
-
-    # Drop the zero padding between faucet_id and amount.
-    movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix, amount]
 
     procref.agglayer_faucet::asset_to_origin_asset
     # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, amount]
@@ -412,19 +425,19 @@ end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
 #!
-#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET).
+#! The serial number is computed as hash(B2AGG_SERIAL_NUM, ASSET_KEY).
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY]
 #! Outputs: [SERIAL_NUM]
 #!
 #! Where:
-#! - ASSET is the asset for which to compute the burn note serial number.
+#! - ASSET_KEY is the vault key from which to compute the burn note serial number.
 #! - SERIAL_NUM is the computed serial number for the BURN note.
 #!
 #! Invocation: exec
 proc compute_burn_note_serial_num
     exec.active_note::get_serial_number
-    # => [B2AGG_SERIAL_NUM, ASSET]
+    # => [B2AGG_SERIAL_NUM, ASSET_KEY]
 
     exec.rpo256::merge
     # => [SERIAL_NUM]
@@ -435,34 +448,39 @@ end
 #! This procedure creates an output note that represents a burn operation for the given asset.
 #! The note targets the faucet account via a NetworkAccountTarget attachment.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: []
 #!
 #! Where:
-#! - ASSET is the asset to be burned.
+#! - ASSET_KEY is the vault key of the asset to be burnt.
+#! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
-@locals(10)
+@locals(14)
 proc create_burn_note
-    loc_storew_be.CREATE_BURN_NOTE_BURN_ASSET_LOC dupw
-    # => [ASSET, ASSET]
+    swapw dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
 
-    movup.2 drop movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix, ASSET]
+    locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
+    exec.asset::mem_store
+    # => [ASSET_KEY]
+
+    dupw exec.asset::key_to_faucet_id
+    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
 
     # Create NetworkAccountTarget attachment for the faucet
     # new expects [account_id_prefix, account_id_suffix, exec_hint]
     push.ALWAYS movdn.2
-    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, ASSET]
+    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, ASSET_KEY]
     
     exec.network_account_target::new
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, ASSET]
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, ASSET_KEY]
 
     # Save attachment data to locals
     loc_store.ATTACHMENT_SCHEME_LOC
     loc_store.ATTACHMENT_KIND_LOC
     loc_storew_be.ATTACHMENT_LOC dropw
-    # => [ASSET]
+    # => [ASSET_KEY]
 
     exec.compute_burn_note_serial_num
     # => [SERIAL_NUM]
@@ -502,9 +520,15 @@ proc create_burn_note
     # => [note_idx]
 
     # Add the asset to the note
-    loc_loadw_be.CREATE_BURN_NOTE_BURN_ASSET_LOC
-    # => [ASSET, note_idx]
+    locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
+    exec.asset::mem_load
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
+    # => []
+
+    # TODO: Check where the extra elements are coming from by adding pad comments throughout the
+    # procedure.
+    dropw drop
     # => []
 end

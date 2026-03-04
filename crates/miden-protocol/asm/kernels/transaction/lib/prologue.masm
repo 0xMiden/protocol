@@ -1,19 +1,18 @@
 use miden::core::mem
 use miden::core::collections::mmr
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::word
 
 use $kernel::account
-use $kernel::account_delta
 use $kernel::account_id
 use $kernel::asset_vault
+use $kernel::asset::ASSET_SIZE
+use $kernel::asset
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::MAX_INPUT_NOTES_PER_TX
 use $kernel::constants::MAX_NOTE_STORAGE_ITEMS
 use $kernel::constants::NOTE_TREE_DEPTH
-use $kernel::constants::STORAGE_SLOT_TYPE_MAP
-use $kernel::constants::STORAGE_SLOT_TYPE_VALUE
 use $kernel::memory
 
 # CONSTS
@@ -145,7 +144,7 @@ proc process_kernel_data
     # AS => []
 
     # extract the resulting hash
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # OS => [SEQ_KERNEL_PROC_HASH, kernel_procs_ptr', TX_KERNEL_COMMITMENT]
     # AS => []
 
@@ -201,22 +200,25 @@ proc process_block_data
 
     # read block data and compute its sub commitment
     # see `Advice stack` above for details.
-    padw padw padw
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
     # => [SUB_COMMITMENT, block_data_ptr', block_num]
 
-    # store the note root in memory
-    padw adv_loadw
-    dupw exec.memory::set_note_root dropw
+    # load and store the note root
+    padw adv_loadw exec.memory::set_note_root
     # => [NOTE_ROOT, SUB_COMMITMENT, block_data_ptr', block_num]
 
+    # move the note root to the top of the stack for merging
+    swapw
+    # => [SUB_COMMITMENT, NOTE_ROOT, block_data_ptr', block_num]
+
     # merge the note root with the sub commitment to get the block commitment
-    exec.rpo256::merge
+    exec.poseidon2::merge
     # => [BLOCK_COMMITMENT, block_data_ptr', block_num]
 
     # assert that the block commitment matches the commitment in global inputs
@@ -363,10 +365,10 @@ proc process_account_data
     # => [acct_data_ptr]
 
     # read account details and compute its digest. See `Advice stack` above for details.
-    padw padw padw
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
     # => [ACCOUNT_COMMITMENT, acct_data_ptr']
 
     movup.4 drop
@@ -490,23 +492,21 @@ proc authenticate_note
     # ---------------------------------------------------------------------------------------------
 
     # read data from advice and compute hash(BLOCK_SUB_COMMITMENT || NOTE_ROOT)
-    padw padw padw
-    adv_pipe exec.rpo256::permute
-    # => [PERM, COMPUTED_BLOCK_COMMITMENT, PERM, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
-
-    dropw
-    # => [COMPUTED_BLOCK_COMMITMENT, PERM, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
+    exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
+    # => [COMPUTED_BLOCK_COMMITMENT, mem_ptr', BLOCK_COMMITMENT, NOTE_COMMITMENT]
 
     # assert the computed block commitment matches
-    movup.8 drop movupw.2
+    movup.4 drop
     assert_eqw.err=ERR_PROLOGUE_MISMATCH_OF_REFERENCE_BLOCK_MMR_AND_NOTE_AUTHENTICATION_MMR
-    # => [PERM, NOTE_COMMITMENT]
+    # => [NOTE_COMMITMENT]
 
     # Authenticate the NOTE_COMMITMENT
     # ---------------------------------------------------------------------------------------------
 
     # load the note root from memory
-    loc_loadw_be.4 swapw
+    padw loc_loadw_le.4 swapw
     # => [NOTE_COMMITMENT, NOTE_ROOT]
 
     # load the index of the note
@@ -552,10 +552,10 @@ proc process_input_note_details
     # => [note_data_ptr]
 
     # read input note's data and compute its digest. See `Advice stack` above for details.
-    padw padw padw
-    adv_pipe exec.rpo256::permute
-    adv_pipe exec.rpo256::permute
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::init_no_padding
+    adv_pipe exec.poseidon2::permute
+    adv_pipe exec.poseidon2::permute
+    exec.poseidon2::squeeze_digest
     # => [NULLIFIER, note_data_ptr + 16]
 
     movup.4 drop
@@ -577,24 +577,25 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [NOTE_ARGS, NOTE_METADATA_HEADER, NOTE_ATTACHMENT]
+#!   Advice stack: [NOTE_ARGS, NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
 #! Outputs:
-#!   Operand stack: [NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
+#!   Operand stack: [NOTE_METADATA_HEADER, NOTE_ATTACHMENT]
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - NOTE_METADATA_HEADER is the note's metadata.
+#! - NOTE_METADATA_HEADER is the note's metadata header.
+#! - NOTE_ATTACHMENT is the note's attachment.
 proc process_note_args_and_metadata
     padw adv_loadw dup.4 exec.memory::set_input_note_args dropw
     # => [note_ptr]
 
-    padw adv_loadw dup.4 exec.memory::set_input_note_metadata_header
-    # => [NOTE_METADATA_HEADER, note_ptr]
+    padw adv_loadw dup.4 exec.memory::set_input_note_attachment
+    # => [NOTE_ATTACHMENT]
 
-    padw adv_loadw movup.8 exec.memory::set_input_note_attachment
-    # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER]
+    padw adv_loadw movup.8 exec.memory::set_input_note_metadata_header
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr]
 end
 
 #! Checks that the number of note storage is within limit and stores it to memory.
@@ -628,83 +629,51 @@ end
 #!
 #! Inputs:
 #!   Operand stack: [note_ptr]
-#!   Advice stack: [assets_count, ASSET_0, ..., ASSET_N]
+#!   Advice stack: [num_assets, ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N]
 #! Outputs:
 #!   Operand stack: []
 #!   Advice stack: []
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - assets_count is the note's assets count.
-#! - ASSET_0, ..., ASSET_N are the padded note's assets.
+#! - num_assets is the number of note assets.
+#! - ASSET_KEY_0, ASSET_VALUE_0, ..., ASSET_KEY_N, ASSET_VALUE_N are the note's assets.
 proc process_note_assets
-    # verify and save the assets count
+    # Validate num_assets and setup commitment computation.
     # ---------------------------------------------------------------------------------------------
 
     adv_push.1
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
-    dup push.MAX_ASSETS_PER_NOTE lte
+    dup lte.MAX_ASSETS_PER_NOTE
     assert.err=ERR_PROLOGUE_NUMBER_OF_NOTE_ASSETS_EXCEEDS_LIMIT
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
     dup dup.2 exec.memory::set_input_note_num_assets
-    # => [assets_count, note_ptr]
+    # => [num_assets, note_ptr]
 
-    # round up the number of assets, to the its padded length
-    dup u32and.1 add
-    # => [rounded_num_assets, note_ptr]
+    dup.1 exec.memory::get_input_note_assets_ptr swap
+    # => [num_assets, assets_ptr, note_ptr]
 
-    # read the note's assets
+    mul.ASSET_SIZE dup.1 add swap
+    # => [assets_ptr, assets_end_ptr, note_ptr]
+
+    exec.poseidon2::init_no_padding
+    # => [RATE0, RATE1, CAPACITY, assets_ptr, assets_end_ptr, note_ptr]
+
+    # Compute assets commitment and validate.
     # ---------------------------------------------------------------------------------------------
 
-    # Stack organization:
-    # - Top of the stack contains the hash state. The complete state is needed to extract the final
-    #   hash.
-    # - Followed by the assets_ptr, with the target address used to pipe data from the advice
-    #   provider.
-    # - Followed by a copy of the note_ptr for later use.
-    # - Followed by the loop variables, the current counter and rounded_num_assets, laid at this
-    #   depth because dup.15 is an efficient operation.
+    exec.mem::pipe_double_words_to_memory
+    exec.poseidon2::squeeze_digest
+    # => [COMPUTED_ASSETS_COMMITMENT, assets_ptr, note_ptr]
 
-    push.0 movup.2
-    # => [note_ptr, counter, rounded_num_assets]
-
-    dup exec.memory::get_input_note_assets_ptr
-    # => [assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    padw padw padw
-    # => [PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop condition: counter != rounded_num_assets
-    dup.15 dup.15 neq
-    # => [should_loop, PERM, PERM, PERM, assets_ptr, note_ptr, counter, rounded_num_assets]
-
-    # loop and read assets from the advice provider
-    while.true
-        # read data and compute its digest. See `Advice stack` above for details.
-        adv_pipe exec.rpo256::permute
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter, rounded_num_assets]
-
-        # update counter
-        swapw.3 movup.2 add.2 movdn.2 swapw.3
-        # => [PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-
-        # loop condition: counter != rounded_num_assets
-        dup.15 dup.15 neq
-        # => [should_loop, PERM, PERM, PERM, assets_ptr+8, note_ptr, counter+2, rounded_num_assets]
-    end
-    # => [PERM, PERM, PERM, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
-
-    exec.rpo256::squeeze_digest
-    # => [ASSET_COMMITMENT_COMPUTED, assets_ptr+8n, note_ptr, counter+2n, rounded_num_assets]
-
-    swapw drop movdn.2 drop drop
-    # => [note_ptr, ASSET_COMMITMENT_COMPUTED]
-
-    # VERIFY: computed ASSET_COMMITMENT matches the provided hash
-    exec.memory::get_input_note_assets_commitment
+    # assert COMPUTED_ASSETS_COMMITMENT matches the provided commitment
+    movup.6 exec.memory::get_input_note_assets_commitment
     assert_eqw.err=ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT
+    # => [assets_ptr]
+
+    drop
     # => []
 end
 
@@ -725,7 +694,7 @@ proc add_input_note_assets_to_vault
     dup.1 exec.memory::get_input_note_assets_ptr
     # => [assets_start_ptr, input_vault_root_ptr, note_ptr]
 
-    dup movup.3 exec.memory::get_input_note_num_assets mul.4 add swap
+    dup movup.3 exec.memory::get_input_note_num_assets mul.ASSET_SIZE add swap
     # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
     # add input note's assets to input vault
@@ -739,20 +708,21 @@ proc add_input_note_assets_to_vault
         dup.2
         # => [input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        padw dup.5 mem_loadw_be
-        # => [ASSET, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
+        # load asset key and value
+        dup.1 exec.asset::load
+        # => [ASSET_KEY, ASSET_VALUE, input_vault_root_ptr, assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
         # the witnesses for the note assets should be added prior to transaction execution and so
         # there should be no need to fetch them lazily via an event.
         exec.asset_vault::add_asset dropw
         # => [assets_start_ptr, assets_end_ptr, input_vault_root_ptr]
 
-        add.4
-        # => [assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        add.ASSET_SIZE
+        # => [assets_start_ptr+ASSET_SIZE, assets_end_ptr, input_vault_root_ptr]
 
         # loop condition: assets_start_ptr != assets_end_ptr
         dup.1 dup.1 neq
-        # => [should_loop, assets_start_ptr+4, assets_end_ptr, input_vault_root_ptr]
+        # => [should_loop, assets_start_ptr+ASSET_SIZE, assets_end_ptr, input_vault_root_ptr]
     end
 
     drop drop drop
@@ -766,26 +736,38 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory location for the input note.
-#! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSET_COMMITMENT)`.
+#! - NOTE_ID is the note's id, i.e. `hash(RECIPIENT || ASSETS_COMMITMENT)`.
 proc compute_input_note_id
+    # load all inputs on the stack
+    dup exec.memory::get_input_note_assets_commitment
+    dup.4 exec.memory::get_input_note_storage_commitment
+    dup.8 exec.memory::get_input_note_script_root
+    # => [SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
+    dup.12 padw
+    # => [EMPTY_WORD, note_ptr, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
+    movup.4 exec.memory::get_input_note_serial_num
+    # => [SERIAL_NUM, EMPTY_WORD, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
+
     # compute SERIAL_COMMITMENT: hash(SERIAL_NUMBER || EMPTY_WORD)
-    dup exec.memory::get_input_note_serial_num padw exec.rpo256::merge
-    # => [SERIAL_COMMITMENT, note_ptr]
+    exec.poseidon2::merge
+    # => [SERIAL_COMMITMENT, SCRIPT_ROOT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
 
-    # compute MERGE_SCRIPT: hash(SERIAL_COMMITMENT || SCRIPT_ROOT)
-    dup.4 exec.memory::get_input_note_script_root exec.rpo256::merge
-    # => [MERGE_SCRIPT, note_ptr]
+    # compute SERIAL_SCRIPT_COMMITMENT: hash(SERIAL_COMMITMENT || SCRIPT_ROOT)
+    exec.poseidon2::merge
+    # => [SERIAL_SCRIPT_COMMITMENT, STORAGE_COMMITMENT, ASSETS_COMMITMENT, note_ptr]
 
-    # compute RECIPIENT: hash(MERGE_SCRIPT || STORAGE_COMMITMENT)
-    dup.4 exec.memory::get_input_note_storage_commitment exec.rpo256::merge
-    # => [RECIPIENT, note_ptr]
+    # compute RECIPIENT: hash(SERIAL_SCRIPT_COMMITMENT || STORAGE_COMMITMENT)
+    exec.poseidon2::merge
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_ptr]
 
     # store the recipient in memory
-    dup.4 exec.memory::set_input_note_recipient
-    # => [RECIPIENT, note_ptr]
+    movup.8 exec.memory::set_input_note_recipient
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_ptr]
 
-    # compute NOTE_ID: hash(RECIPIENT || ASSET_COMMITMENT)
-    movup.4 exec.memory::get_input_note_assets_commitment exec.rpo256::merge
+    # compute NOTE_ID: hash(RECIPIENT || ASSETS_COMMITMENT)
+    exec.poseidon2::merge
     # => [NOTE_ID]
 end
 
@@ -797,16 +779,16 @@ end
 #! commitment can be extracted.
 #!
 #! Inputs:
-#!   Operand stack: [idx, HASHER_CAPACITY]
+#!   Operand stack: [idx, CAPACITY]
 #!   Advice stack: [
 #!      SERIAL_NUMBER,
 #!      SCRIPT_ROOT,
 #!      STORAGE_COMMITMENT,
 #!      ASSETS_COMMITMENT,
 #!      NOTE_ARGS,
-#!      NOTE_METADATA_HEADER,
 #!      NOTE_ATTACHMENT,
-#!      assets_count,
+#!      NOTE_METADATA_HEADER,
+#!      num_assets,
 #!      ASSET_0, ..., ASSET_N,
 #!      is_authenticated,
 #!      (
@@ -816,13 +798,12 @@ end
 #!      )?
 #!   ]
 #! Outputs:
-#!   Operand stack: [PERM, PERM, PERM]
+#!   Operand stack: [RATE0, RATE1, CAPACITY]
 #!   Advice stack: []
 #!
 #! Where:
 #! - idx is the index of the input note.
-#! - HASHER_CAPACITY is the state of the hasher capacity word, with the commitment to the previous
-#!   notes.
+#! - CAPACITY is the state of the hasher capacity word, with the commitment to the previous notes.
 #! - SERIAL_NUMBER is the note's serial.
 #! - SCRIPT_ROOT is the note's script root.
 #! - STORAGE_COMMITMENT is the sequential hash of the padded note's storage.
@@ -830,7 +811,7 @@ end
 #! - NOTE_METADATA_HEADER is the note's metadata header.
 #! - NOTE_ATTACHMENT is the note's attachment.
 #! - NOTE_ARGS are the user arguments passed to the note.
-#! - assets_count is the note's assets count.
+#! - num_assets is the number of note assets.
 #! - ASSET_0, ..., ASSET_N are the padded note's assets.
 #! - is_authenticated is the boolean indicating if the note contains an authentication proof.
 #! - optional values, required if `is_authenticated` is true:
@@ -842,78 +823,81 @@ proc process_input_note
     # ---------------------------------------------------------------------------------------------
 
     dup exec.memory::get_input_note_ptr dup
-    # => [note_ptr, note_ptr, idx, HASHER_CAPACITY]
+    # => [note_ptr, note_ptr, idx, CAPACITY]
 
     exec.process_input_note_details
-    # => [NULLIFIER, note_ptr, idx, HASHER_CAPACITY]
+    # => [NULLIFIER, note_ptr, idx, CAPACITY]
 
     # save NULLIFIER to memory
-    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_be
-    # => [NULLIFIER, note_ptr, HASHER_CAPACITY]
+    movup.5 exec.memory::get_input_note_nullifier_ptr mem_storew_le
+    # => [NULLIFIER, note_ptr, CAPACITY]
 
     # note metadata & args
     # ---------------------------------------------------------------------------------------------
 
     movup.4
-    # => [note_ptr, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NULLIFIER, CAPACITY]
 
     dup exec.process_note_args_and_metadata
-    # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER, note_ptr, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, note_ptr, NULLIFIER, CAPACITY]
 
     # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
-    exec.rpo256::merge
-    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, HASHER_CAPACITY]
+    exec.poseidon2::merge
+    # => [NOTE_METADATA_COMMITMENT, note_ptr, NULLIFIER, CAPACITY]
 
     movup.4
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note number of storage items
     # ---------------------------------------------------------------------------------------------
 
     exec.process_note_num_storage_items
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note assets
     # ---------------------------------------------------------------------------------------------
 
     dup exec.process_note_assets
     dup exec.add_input_note_assets_to_vault
-    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note id
     # ---------------------------------------------------------------------------------------------
 
     dup exec.compute_input_note_id
-    # => [NOTE_ID, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_ID, note_ptr, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # save note id to memory
     movup.4 exec.memory::set_input_note_id
-    # => [NOTE_ID, NOTE_METADATA_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [NOTE_ID, NOTE_METADATA_COMMITMENT, NULLIFIER, CAPACITY]
 
     # note authentication
     # ---------------------------------------------------------------------------------------------
 
     # NOTE_COMMITMENT: `hash(NOTE_ID || NOTE_METADATA_COMMITMENT)`
-    swapw exec.rpo256::merge
-    # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    exec.poseidon2::merge
+    # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
     adv_push.1
-    # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [is_authenticated, NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
     if.true
-        # => [NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+        # => [NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
         exec.authenticate_note
-        # => [NULLIFIER, HASHER_CAPACITY]
+        # => [NULLIFIER, CAPACITY]
 
         padw
-        # => [EMPTY_WORD, NULLIFIER, HASHER_CAPACITY]
+        # => [EMPTY_WORD, NULLIFIER, CAPACITY]
     end
-    # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, HASHER_CAPACITY]
+    # => [EMPTY_WORD_OR_NOTE_COMMITMENT, NULLIFIER, CAPACITY]
 
-    # update the input note commitment
-    exec.rpo256::permute
-    # => [PERM, PERM, PERM]
+    swapw
+    # => [NULLIFIER, EMPTY_WORD_OR_NOTE_COMMITMENT, CAPACITY]
+
+    # update the input notes commitment with hash(NULLIFIER || EMPTY_WORD_OR_NOTE_COMMITMENT)
+    exec.poseidon2::permute
+    # => [RATE0, RATE1, CAPACITY]
 end
 
 #! Process the input notes data provided via the advice provider. This involves reading the data
@@ -978,12 +962,14 @@ proc process_input_notes_data
     # - The [idx, num_notes] pair is kept in a word boundary, so that its word can be swapped with a
     #   cheap swapw.3 instruction to update the `idx` counter.
 
-    push.0 padw padw padw
-    # => [PERM, PERM, PERM, idx, num_notes]
+    # start at note index 0
+    push.0
+    exec.poseidon2::init_no_padding
+    # => [RATE0, RATE1, CAPACITY, idx, num_notes]
 
     # loop condition: idx != num_notes
     dup.13 dup.13 neq
-    # => [has_more_notes, PERM, PERM, PERM, idx, num_notes]
+    # => [has_more_notes, RATE0, RATE1, CAPACITY, idx, num_notes]
 
     while.true
         # the hasher operates in overwrite mode, so discard the rate words, and keep the capacity
@@ -992,18 +978,18 @@ proc process_input_notes_data
 
         # process the note
         dup.4 exec.process_input_note
-        # => [PERM, PERM, PERM, idx, num_notes]
+        # => [RATE0, RATE1, CAPACITY, idx, num_notes]
 
         # update the idx counter
         swapw.3 add.1 swapw.3
-        # => [PERM, PERM, PERM, idx+1, num_notes]
+        # => [RATE0, RATE1, CAPACITY, idx+1, num_notes]
 
         # loop condition: idx != num_notes
         dup.13 dup.13 neq
-        # => [has_more_notes, PERM, PERM, PERM, idx+1, num_notes]
+        # => [has_more_notes, RATE0, RATE1, CAPACITY, idx+1, num_notes]
     end
 
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [INPUT_NOTES_COMMITMENT, idx+1, num_notes]
 
     # assert the input notes and the commitment matches
