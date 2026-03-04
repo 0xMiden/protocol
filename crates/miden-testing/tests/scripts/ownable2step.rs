@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -19,7 +19,7 @@ use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NO_NOMINATED_OWNER,
@@ -53,10 +53,10 @@ fn create_ownable_account(
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
 
     let ownership_word: Word = [
-        Felt::ZERO,               // word[0] → stack[3] = nominated_suffix
-        Felt::ZERO,               // word[1] → stack[2] = nominated_prefix
-        owner.suffix(),           // word[2] → stack[1] = owner_suffix
-        owner.prefix().as_felt(), // word[3] → stack[0] = owner_prefix
+        Felt::ZERO,               // word[0] = nominated_suffix
+        Felt::ZERO,               // word[1] = nominated_prefix
+        owner.suffix(),           // word[2] = owner_suffix
+        owner.prefix().as_felt(), // word[3] = owner_prefix
     ]
     .into();
 
@@ -81,7 +81,7 @@ fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>
     if prefix == Felt::ZERO && suffix == Felt::ZERO {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from([prefix, suffix])?))
+        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
     }
 }
 
@@ -92,7 +92,7 @@ fn get_nominated_owner_from_storage(account: &Account) -> anyhow::Result<Option<
     if prefix == Felt::ZERO && suffix == Felt::ZERO {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from([prefix, suffix])?))
+        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
     }
 }
 
@@ -107,13 +107,13 @@ fn create_transfer_note(
         use miden::standards::access::ownable2step->test_account
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix} push.{new_owner_prefix}
+            push.{new_owner_prefix} push.{new_owner_suffix}
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end
     "#,
-        new_owner_suffix = new_owner.suffix(),
         new_owner_prefix = new_owner.prefix().as_felt(),
+        new_owner_suffix = new_owner.suffix(),
     );
 
     let note = NoteBuilder::new(sender, rng)
@@ -482,8 +482,8 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
         use miden::standards::access::ownable2step->test_account
         begin
             repeat.14 push.0 end
-            push.{invalid_suffix}
             push.{invalid_prefix}
+            push.{invalid_suffix}
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end
