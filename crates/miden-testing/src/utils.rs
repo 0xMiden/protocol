@@ -1,8 +1,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_crypto::Word;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
@@ -21,7 +21,7 @@ use rand::rngs::SmallRng;
 macro_rules! assert_execution_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
-            Err($crate::ExecError(miden_processor::ExecutionError::FailedAssertion { label: _, source_file: _, clk: _, err_code, err_msg, err: _ })) => {
+            Err($crate::ExecError(miden_processor::ExecutionError::OperationError { label: _, source_file: _, err: miden_processor::operation::OperationError::FailedAssertion { err_code, err_msg } })) => {
                 if let Some(ref msg) = err_msg {
                   assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
                 }
@@ -43,13 +43,13 @@ macro_rules! assert_transaction_executor_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
             Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
-                miden_processor::ExecutionError::FailedAssertion {
+                miden_processor::ExecutionError::OperationError {
                     label: _,
                     source_file: _,
-                    clk: _,
-                    err_code,
-                    err_msg,
-                    err: _,
+                    err: miden_processor::operation::OperationError::FailedAssertion {
+                        err_code,
+                        err_msg,
+                    },
                 },
             )) => {
                 if let Some(ref msg) = err_msg {
@@ -108,10 +108,10 @@ pub fn create_p2any_note(
                 dup push.ASSET_SIZE mul.{asset_idx}
                 # => [current_asset_ptr, dest_ptr]
 
-                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
                 # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
 
-                padw movup.8 mem_loadw_be
+                padw movup.8 mem_loadw_le
                 # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
 
                 padw padw swapdw
@@ -212,10 +212,10 @@ fn note_script_that_creates_notes<'note>(
         // Make sure that the transaction's native account matches the note sender.
         out.push_str(&format!(
             r#"exec.::miden::protocol::native_account::get_id
-             # => [native_account_id_prefix, native_account_id_suffix]
-             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
-             # => [native_account_id_suffix]
+             # => [native_account_id_suffix, native_account_id_prefix]
              push.{sender_suffix} assert_eq.err="sender ID suffix does not match native account ID's suffix"
+             # => [native_account_id_prefix]
+             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
              # => []
         "#,
           sender_prefix = sender_id.prefix().as_felt(),

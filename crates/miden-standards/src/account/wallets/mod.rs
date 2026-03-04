@@ -162,8 +162,8 @@ pub fn create_basic_wallet(
 
 #[cfg(test)]
 mod tests {
-    use miden_processor::utils::{Deserializable, Serializable};
     use miden_protocol::account::auth::{self, PublicKeyCommitment};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
     use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_create_basic_wallet() {
         let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let auth_scheme = auth::AuthScheme::Falcon512Rpo;
+        let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },

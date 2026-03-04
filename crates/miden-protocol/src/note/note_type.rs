@@ -85,7 +85,7 @@ impl TryFrom<Felt> for NoteType {
     type Error = NoteError;
 
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        value.as_int().try_into()
+        value.as_canonical_u64().try_into()
     }
 }
 

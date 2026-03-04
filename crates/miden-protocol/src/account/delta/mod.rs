@@ -12,7 +12,13 @@ use crate::account::{
 use crate::asset::AssetVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::{AccountDeltaError, AccountError};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word, ZERO};
 
 mod storage;
@@ -96,7 +102,7 @@ impl AccountDelta {
     pub fn merge(&mut self, other: Self) -> Result<(), AccountDeltaError> {
         let new_nonce_delta = self.nonce_delta + other.nonce_delta;
 
-        if new_nonce_delta.as_int() < self.nonce_delta.as_int() {
+        if new_nonce_delta.as_canonical_u64() < self.nonce_delta.as_canonical_u64() {
             return Err(AccountDeltaError::NonceIncrementOverflow {
                 current: self.nonce_delta,
                 increment: other.nonce_delta,
@@ -589,8 +595,7 @@ fn validate_nonce(
 mod tests {
 
     use assert_matches::assert_matches;
-    use miden_core::utils::Serializable;
-    use miden_core::{Felt, FieldElement};
+    use miden_core::Felt;
 
     use super::{AccountDelta, AccountStorageDelta, AccountVaultDelta};
     use crate::account::delta::AccountUpdateDetails;
@@ -618,6 +623,7 @@ mod tests {
         ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
         AccountIdBuilder,
     };
+    use crate::utils::serde::Serializable;
     use crate::{ONE, Word, ZERO};
 
     #[test]
@@ -739,13 +745,8 @@ mod tests {
         let account_code = AccountCode::mock();
         assert_eq!(account_code.to_bytes().len(), account_code.get_size_hint());
 
-        let account = Account::new_existing(
-            account_id,
-            asset_vault,
-            account_storage,
-            account_code,
-            Felt::ONE,
-        );
+        let account =
+            Account::new_existing(account_id, asset_vault, account_storage, account_code, ONE);
         assert_eq!(account.to_bytes().len(), account.get_size_hint());
 
         // AccountUpdateDetails

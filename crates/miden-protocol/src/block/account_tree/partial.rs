@@ -195,6 +195,7 @@ mod tests {
     use super::*;
     use crate::block::account_tree::AccountTree;
     use crate::block::account_tree::tests::setup_duplicate_prefix_ids;
+    use crate::testing::account_id::AccountIdBuilder;
 
     #[test]
     fn insert_fails_on_duplicate_prefix() -> anyhow::Result<()> {
@@ -252,15 +253,26 @@ mod tests {
         assert_eq!(partial_tree.get(id0).unwrap(), commitment1);
     }
 
+    /// Check that updating an account ID in the partial account tree fails if that ID is not
+    /// tracked.
     #[test]
-    fn upsert_state_commitments_fails_on_untracked_key() {
-        let mut partial_tree = PartialAccountTree::default();
-        let [update, _] = setup_duplicate_prefix_ids();
+    fn upsert_state_commitments_fails_on_untracked_key() -> anyhow::Result<()> {
+        let id0 = AccountIdBuilder::default().build_with_seed([5; 32]);
+        let id2 = AccountIdBuilder::default().build_with_seed([6; 32]);
 
-        let err = partial_tree.upsert_state_commitments([update]).unwrap_err();
+        let commitment0 = Word::from([1, 2, 3, 4u32]);
+        let commitment2 = Word::from([2, 3, 4, 5u32]);
+
+        let account_tree = AccountTree::with_entries([(id0, commitment0), (id2, commitment2)])?;
+        // Let the partial account tree only track id0, not id2.
+        let mut partial_tree = PartialAccountTree::with_witnesses([account_tree.open(id0)])?;
+
+        let err = partial_tree.upsert_state_commitments([(id2, commitment0)]).unwrap_err();
         assert_matches!(err, AccountTreeError::UntrackedAccountId { id, .. }
-          if id == update.0
-        )
+            if id == id2
+        );
+
+        Ok(())
     }
 
     #[test]

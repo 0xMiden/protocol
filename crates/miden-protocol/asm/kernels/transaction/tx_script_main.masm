@@ -24,7 +24,7 @@ const ERR_TX_TRANSACTION_SCRIPT_IS_MISSING="the transaction script is missing"
 #!   BLOCK_COMMITMENT,
 #!   INITIAL_ACCOUNT_COMMITMENT,
 #!   INPUT_NOTES_COMMITMENT,
-#!   account_id_prefix, account_id_suffix, block_num,
+#!   account_id_suffix, account_id_prefix, block_num,
 #! ]
 #! Outputs: [<values returned from the provided script>]
 #!
@@ -46,7 +46,7 @@ proc main
 
     # get the memory address of the transaction script root and load it to the stack
     exec.memory::get_tx_script_root_ptr
-    padw dup.4 mem_loadw_be
+    padw dup.4 mem_loadw_le
     # => [TX_SCRIPT_ROOT, tx_script_root_ptr]
 
     # return an error if the transaction script was not specified

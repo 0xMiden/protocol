@@ -114,10 +114,9 @@ impl Deserializable for StorageSlotType {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::utils::{Deserializable, Serializable};
-
+    use crate::Felt;
     use crate::account::StorageSlotType;
-    use crate::{Felt, FieldElement};
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage_slot_type() {

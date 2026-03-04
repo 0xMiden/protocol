@@ -1,8 +1,7 @@
 use core::fmt;
 
-use miden_core::EventId;
-
 use crate::errors::TransactionEventError;
+use crate::vm::EventId;
 
 // CONSTANTS
 // ================================================================================================
@@ -104,7 +103,7 @@ impl TryFrom<EventId> for TransactionEventId {
     type Error = TransactionEventError;
 
     fn try_from(event_id: EventId) -> Result<Self, Self::Error> {
-        let raw = event_id.as_felt().as_int();
+        let raw = event_id.as_felt().as_canonical_u64();
 
         let name = EVENT_NAME_LUT.get(&raw).copied();
 

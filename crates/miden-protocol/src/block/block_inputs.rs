@@ -6,7 +6,13 @@ use crate::block::account_tree::AccountWitness;
 use crate::block::nullifier_tree::NullifierWitness;
 use crate::note::{NoteId, NoteInclusionProof, Nullifier};
 use crate::transaction::PartialBlockchain;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // BLOCK INPUTS
 // ================================================================================================

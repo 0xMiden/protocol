@@ -1,8 +1,8 @@
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_crypto::merkle::smt::{LeafIndex, SmtLeaf, SmtProof};
 use miden_crypto::merkle::{MerkleError, NodeIndex};
 
@@ -26,6 +26,13 @@ use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
 use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 #[cfg(test)]
@@ -35,8 +42,10 @@ mod account;
 pub use account::AccountInputs;
 
 mod notes;
-use miden_processor::{AdviceInputs, SMT_DEPTH};
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
+
+use crate::crypto::merkle::smt::SMT_DEPTH;
+use crate::vm::AdviceInputs;
 
 // TRANSACTION INPUTS
 // ================================================================================================
@@ -117,9 +126,10 @@ impl TransactionInputs {
         for witness in witnesses {
             self.advice_inputs.store.extend(witness.authenticated_nodes());
             let smt_proof = SmtProof::from(witness);
-            self.advice_inputs
-                .map
-                .extend([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements())]);
+            self.advice_inputs.map.extend([(
+                smt_proof.leaf().hash(),
+                smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
+            )]);
         }
 
         self
@@ -487,7 +497,7 @@ impl TransactionInputs {
 // ================================================================================================
 
 impl Serializable for TransactionInputs {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
         self.blockchain.write_into(target);
@@ -500,9 +510,7 @@ impl Serializable for TransactionInputs {
 }
 
 impl Deserializable for TransactionInputs {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_core::utils::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;

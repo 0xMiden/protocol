@@ -87,8 +87,8 @@ impl TryFrom<Felt> for TokenSymbol {
 
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
         // Check if the felt value is within the valid range
-        if felt.as_int() > Self::MAX_ENCODED_VALUE {
-            return Err(TokenSymbolError::ValueTooLarge(felt.as_int()));
+        if felt.as_canonical_u64() > Self::MAX_ENCODED_VALUE {
+            return Err(TokenSymbolError::ValueTooLarge(felt.as_canonical_u64()));
         }
         Ok(TokenSymbol(felt))
     }
@@ -165,7 +165,7 @@ const fn encode_symbol_to_felt(s: &str) -> Result<Felt, TokenSymbolError> {
 /// - The encoded token string length is less than 1 or greater than 12.
 /// - The encoded token string length is less than the actual string length.
 fn decode_felt_to_symbol(encoded_felt: Felt) -> Result<String, TokenSymbolError> {
-    let encoded_value = encoded_felt.as_int();
+    let encoded_value = encoded_felt.as_canonical_u64();
 
     // Check if the encoded value is within the valid range
     if encoded_value > TokenSymbol::MAX_ENCODED_VALUE {
@@ -262,7 +262,7 @@ mod test {
         let encoded_symbol = TokenSymbol::try_from("ABCDEF").unwrap();
 
         // decrease encoded length by, for example, `3`
-        let invalid_encoded_symbol_u64 = Felt::from(encoded_symbol).as_int() - 3;
+        let invalid_encoded_symbol_u64 = Felt::from(encoded_symbol).as_canonical_u64() - 3;
 
         // check that `decode_felt_to_symbol()` procedure returns an error in attempt to create a
         // token from encoded token with invalid length
@@ -275,7 +275,7 @@ mod test {
     #[test]
     fn test_token_symbol_max_value() {
         let token_symbol = TokenSymbol::try_from("ZZZZZZZZZZZZ").unwrap();
-        assert_eq!(Felt::from(token_symbol).as_int(), TokenSymbol::MAX_ENCODED_VALUE);
+        assert_eq!(Felt::from(token_symbol).as_canonical_u64(), TokenSymbol::MAX_ENCODED_VALUE);
     }
 
     // Const function tests

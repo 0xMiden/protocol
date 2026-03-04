@@ -329,9 +329,9 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_3 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
 
         // Create approvers list for multisig config
         let approvers = vec![
