@@ -44,6 +44,7 @@ const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::singlesig_acl:
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
+@auth_script
 @locals(2)
 pub proc auth_tx_acl(auth_args: BeWord)
     dropw

@@ -600,6 +600,7 @@ mod tests {
         AccountStorageMode,
         AccountType,
         StorageMapDelta,
+        StorageMapKey,
         StorageSlotName,
     };
     use crate::asset::{
@@ -684,8 +685,11 @@ mod tests {
             [(
                 StorageSlotName::mock(4),
                 StorageMapDelta::from_iters(
-                    [Word::from([1, 1, 1, 0u32]), Word::from([0, 1, 1, 1u32])],
-                    [(Word::from([1, 1, 1, 1u32]), Word::from([1, 1, 1, 1u32]))],
+                    [
+                        StorageMapKey::from_array([1, 1, 1, 0]),
+                        StorageMapKey::from_array([0, 1, 1, 1]),
+                    ],
+                    [(StorageMapKey::from_array([1, 1, 1, 1]), Word::from([1, 1, 1, 1u32]))],
                 ),
             )],
         );
