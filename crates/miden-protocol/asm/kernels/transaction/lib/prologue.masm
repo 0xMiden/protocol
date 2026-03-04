@@ -7,7 +7,6 @@ use $kernel::account
 use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::asset::ASSET_SIZE
-use $kernel::asset::ASSET_VALUE_MEMORY_OFFSET
 use $kernel::asset
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::MAX_ASSETS_PER_NOTE

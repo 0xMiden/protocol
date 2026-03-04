@@ -1,12 +1,10 @@
 use $kernel::asset
-use $kernel::asset_vault
 use $kernel::account
 use $kernel::account_delta
 use $kernel::account_id
 use $kernel::faucet
 use $kernel::input_note
 use $kernel::memory
-use $kernel::note
 use $kernel::output_note
 use $kernel::tx
 

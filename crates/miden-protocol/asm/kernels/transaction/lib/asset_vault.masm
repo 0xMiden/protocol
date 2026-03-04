@@ -1,12 +1,8 @@
 use miden::core::collections::smt
-use miden::core::word
 
-use $kernel::account_id
 use $kernel::asset
 use $kernel::fungible_asset
-use $kernel::memory
 use $kernel::non_fungible_asset
-use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # ERRORS
 # =================================================================================================
