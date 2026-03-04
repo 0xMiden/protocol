@@ -7,7 +7,7 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 # =================================================================================================
@@ -395,7 +395,7 @@ pub proc get_description_commitment
     # Hash the 7 words (28 felts) in local memory via RPO256.
     # hash_elements expects [ptr, num_felts].
     push.28 locaddr.FIELD_0_LOC
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [COMMITMENT, pad(16)]  depth=20
 
     # Insert the 7-word preimage into the advice map keyed by COMMITMENT.
@@ -440,7 +440,7 @@ pub proc get_description
     # Hash the 7 words (28 felts) in local memory.
     push.28 locaddr.FIELD_0_LOC
     # => [start_ptr, 28, dest_ptr, pad(15)]  depth=18
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [COMMITMENT, dest_ptr, pad(15)]  depth=20
 
     # Insert preimage into advice map keyed by COMMITMENT.
@@ -493,7 +493,7 @@ pub proc get_logo_uri_commitment
     loc_storew_be.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
 
     locaddr.FIELD_0_LOC dup add.28
     movdn.5 movdn.4
@@ -527,7 +527,7 @@ pub proc get_logo_uri
     loc_storew_be.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
 
     locaddr.FIELD_0_LOC dup add.28
     movdn.5 movdn.4
@@ -567,7 +567,7 @@ pub proc get_external_link_commitment
     loc_storew_be.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
 
     locaddr.FIELD_0_LOC dup add.28
     movdn.5 movdn.4
@@ -601,7 +601,7 @@ pub proc get_external_link
     loc_storew_be.FIELD_6_LOC dropw
 
     push.28 locaddr.FIELD_0_LOC
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
 
     locaddr.FIELD_0_LOC dup add.28
     movdn.5 movdn.4
