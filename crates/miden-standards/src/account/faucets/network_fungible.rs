@@ -322,10 +322,12 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(NetworkFungibleFaucet::NAME)
-            .with_description("Network fungible faucet component for minting and burning tokens")
-            .with_supported_type(AccountType::FungibleFaucet)
-            .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(
+            NetworkFungibleFaucet::NAME,
+            [AccountType::FungibleFaucet],
+        )
+        .with_description("Network fungible faucet component for minting and burning tokens")
+        .with_storage_schema(storage_schema);
 
         AccountComponent::new(network_fungible_faucet_library(), slots, metadata)
             .expect("network fungible faucet component should satisfy the requirements of a valid account component")
