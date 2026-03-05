@@ -526,6 +526,6 @@ proc create_burn_note
     # => [pad(16)]
 
     # Clean up residual stack elements from call boundaries
-    dropw dropw dropw drop drop
+    dropw dropw dropw dropw
     # => []
 end
