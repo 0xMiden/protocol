@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use miden_assembly::Library;
 use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_core::{Felt, FieldElement, ONE, Program, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -20,10 +20,12 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::crypto::hash::rpo::Rpo256;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
 use miden_utils_sync::LazyLock;
+use thiserror::Error;
 
 pub mod b2agg_note;
 pub mod claim_note;
@@ -172,10 +174,21 @@ pub struct AggLayerBridge {
 }
 
 impl AggLayerBridge {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
+
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
     /// Creates a new AggLayer bridge component with the standard configuration.
     pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId) -> Self {
         Self { bridge_admin_id, ger_manager_id }
     }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Storage slot name for the GERs map.
     pub fn ger_map_slot_name() -> &'static StorageSlotName {
@@ -215,6 +228,139 @@ impl AggLayerBridge {
     /// Storage slot name for the GER manager account ID.
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
+    }
+
+    /// Returns a boolean indicating whether the provided GER is present in storage of the provided
+    /// bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
+    ///   all AggLayer Bridge specific storage slots).
+    pub fn is_ger_registered(
+        ger: ExitRoot,
+        bridge_account: Account,
+    ) -> Result<bool, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_storage_slots(&bridge_account)?;
+
+        // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
+        let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
+        let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
+        // Elements are reversed: rpo256::merge treats stack as if loaded BE from memory
+        // The following will produce matching hashes:
+        // Rust
+        // Hasher::merge(&[a, b, c, d], &[e, f, g, h])
+        // MASM
+        // rpo256::merge(h, g, f, e, d, c, b, a)
+        ger_lower.reverse();
+        ger_upper.reverse();
+        let ger_hash = Rpo256::merge(&[ger_upper.into(), ger_lower.into()]);
+
+        // Get the value stored by the GER hash. If this GER was registered, the value would be
+        // equal to [1, 0, 0, 0]
+        let stored_value = bridge_account
+            .storage()
+            .get_map_item(AggLayerBridge::ger_map_slot_name(), ger_hash)
+            .expect("provided account should have AggLayer Bridge specific storage slots");
+
+        if stored_value == Self::REGISTERED_GER_MAP_VALUE {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Reads the Local Exit Root (double-word) from the bridge account's storage.
+    ///
+    /// The Local Exit Root is stored in two dedicated value slots:
+    /// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
+    /// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
+    ///
+    /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
+    /// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
+    /// reverse of their storage order). For an empty/uninitialized tree, all elements are
+    /// zeros.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
+    ///   all AggLayer Bridge specific storage slots).
+    pub fn read_local_exit_root(account: &Account) -> Result<Vec<Felt>, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_storage_slots(account)?;
+
+        let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
+        let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
+
+        let root_lo = account
+            .storage()
+            .get_item(root_lo_slot)
+            .expect("should be able to read LET root lo");
+        let root_hi = account
+            .storage()
+            .get_item(root_hi_slot)
+            .expect("should be able to read LET root hi");
+
+        let mut root = Vec::with_capacity(8);
+        root.extend(root_lo.to_vec().into_iter().rev());
+        root.extend(root_hi.to_vec().into_iter().rev());
+
+        Ok(root)
+    }
+
+    pub fn read_let_num_leaves(account: &Account) -> u64 {
+        let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
+        let value = account
+            .storage()
+            .get_item(num_leaves_slot)
+            .expect("should be able to read LET num leaves");
+        value.to_vec()[0].as_int()
+    }
+
+    // HELPER FUNCTIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Checks that the provided account has all storage slots required for the [`AggLayerBridge`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
+    ///   all AggLayer Bridge specific storage slots).
+    fn assert_storage_slots(account: &Account) -> Result<(), AgglayerBridgeError> {
+        // get the storage slot names of the provided account
+        let account_storage_slot_names = account
+            .storage()
+            .slots()
+            .iter()
+            .map(|storage_slot| storage_slot.name())
+            .collect::<Vec<&StorageSlotName>>();
+
+        let are_slots_presented = Self::slot_names_vec()
+            .iter()
+            .all(|slot_name| account_storage_slot_names.contains(slot_name));
+        if !are_slots_presented {
+            return Err(AgglayerBridgeError::ProvidedAccountIsNotAggLayerBridge);
+        }
+
+        Ok(())
+    }
+
+    /// Returns a vector of all [`AggLayerBridge`] storage slot names.
+    fn slot_names_vec() -> Vec<&'static StorageSlotName> {
+        vec![
+            &*GER_MAP_SLOT_NAME,
+            &*LET_FRONTIER_SLOT_NAME,
+            &*LET_ROOT_LO_SLOT_NAME,
+            &*LET_ROOT_HI_SLOT_NAME,
+            &*LET_NUM_LEAVES_SLOT_NAME,
+            &*FAUCET_REGISTRY_SLOT_NAME,
+            &*BRIDGE_ADMIN_SLOT_NAME,
+            &*GER_MANAGER_SLOT_NAME,
+        ]
     }
 }
 
@@ -261,6 +407,16 @@ fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponen
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
     )
+}
+
+// AGGLAYER BRIDGE ERROR
+// ================================================================================================
+
+/// AggLayer Bridge related errors.
+#[derive(Debug, Error)]
+pub enum AgglayerBridgeError {
+    #[error("provided account does not have storage slots required for the AggLayerBridge account")]
+    ProvidedAccountIsNotAggLayerBridge,
 }
 
 // FAUCET CONVERSION STORAGE HELPERS

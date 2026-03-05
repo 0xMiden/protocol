@@ -13,13 +13,7 @@ use miden_agglayer::{
 use miden_crypto::rand::FeltRng;
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
-use miden_protocol::account::{
-    Account,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageMode,
-    AccountType,
-};
+use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::OutputNote;
@@ -29,44 +23,6 @@ use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
 use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
-
-/// Reads the Local Exit Root (double-word) from the bridge account's storage.
-///
-/// The Local Exit Root is stored in two dedicated value slots:
-/// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
-/// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
-///
-/// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
-/// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
-/// reverse of their storage order). For an empty/uninitialized tree, all elements are
-/// zeros.
-fn read_local_exit_root(account: &Account) -> Vec<Felt> {
-    let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
-    let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
-
-    let root_lo = account
-        .storage()
-        .get_item(root_lo_slot)
-        .expect("should be able to read LET root lo");
-    let root_hi = account
-        .storage()
-        .get_item(root_hi_slot)
-        .expect("should be able to read LET root hi");
-
-    let mut root = Vec::with_capacity(8);
-    root.extend(root_lo.to_vec().into_iter().rev());
-    root.extend(root_hi.to_vec().into_iter().rev());
-    root
-}
-
-fn read_let_num_leaves(account: &Account) -> u64 {
-    let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
-    let value = account
-        .storage()
-        .get_item(num_leaves_slot)
-        .expect("should be able to read LET num leaves");
-    value.to_vec()[0].as_int()
-}
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
 ///
@@ -242,7 +198,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
         bridge_account.apply_delta(executed_tx.account_delta())?;
         assert_eq!(
-            read_let_num_leaves(&bridge_account),
+            AggLayerBridge::read_let_num_leaves(&bridge_account),
             (i + 1) as u64,
             "LET leaf count should match consumed notes"
         );
@@ -250,7 +206,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         let expected_ler =
             ExitRoot::new(hex_to_bytes(&vectors.roots[i]).expect("valid root hex")).to_elements();
         assert_eq!(
-            read_local_exit_root(&bridge_account),
+            AggLayerBridge::read_local_exit_root(&bridge_account)?,
             expected_ler,
             "Local Exit Root after {} leaves should match the Solidity-generated root",
             i + 1
