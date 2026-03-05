@@ -294,9 +294,7 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 }
 
 /// Creates a new faucet account with basic fungible faucet interface,
-/// account storage type, specified authentication scheme, and provided meta data (token symbol,
-/// decimals, max supply). Optional `name`, `description`, `logo_uri`, and `external_link` are
-/// stored in the faucet's metadata storage slots when provided.
+/// account storage type, specified authentication scheme, and provided metadata.
 ///
 /// The basic faucet interface exposes two procedures:
 /// - `distribute`, which mints an assets and create a note for the provided recipient.
@@ -311,18 +309,11 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - [`BasicFungibleFaucet`]
 /// - [`AuthSingleSigAcl`]
 /// - Token metadata (name, description, etc.) when provided via [`BasicFungibleFaucet::with_info`]
-#[allow(clippy::too_many_arguments)]
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
-    symbol: TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
+    metadata: FungibleTokenMetadata,
     account_storage_mode: AccountStorageMode,
     auth_method: AuthMethod,
-    name: TokenName,
-    description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
 ) -> Result<Account, FungibleFaucetError> {
     let distribute_proc_root = BasicFungibleFaucet::distribute_digest();
 
@@ -354,27 +345,18 @@ pub fn create_basic_fungible_faucet(
         },
     };
 
-    let mut info = TokenMetadataInfo::new().with_name(name.clone());
-    if let Some(d) = &description {
+    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone());
+    if let Some(d) = metadata.description() {
         info = info.with_description(d.clone(), false);
     }
-    if let Some(l) = &logo_uri {
+    if let Some(l) = metadata.logo_uri() {
         info = info.with_logo_uri(l.clone(), false);
     }
-    if let Some(e) = &external_link {
+    if let Some(e) = metadata.external_link() {
         info = info.with_external_link(e.clone(), false);
     }
 
-    let faucet = BasicFungibleFaucet::new(
-        symbol,
-        decimals,
-        max_supply,
-        name,
-        description,
-        logo_uri,
-        external_link,
-    )?
-    .with_info(info);
+    let faucet = BasicFungibleFaucet::from_metadata(metadata).with_info(info);
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -405,6 +387,7 @@ mod tests {
         Description,
         Felt,
         FungibleFaucetError,
+        FungibleTokenMetadata,
         TokenName,
         TokenSymbol,
         create_basic_fungible_faucet,
@@ -436,19 +419,18 @@ mod tests {
 
         let token_name = TokenName::new(token_name_string).unwrap();
         let description = Description::new(description_string).unwrap();
-        let faucet_account = create_basic_fungible_faucet(
-            init_seed,
+        let metadata = FungibleTokenMetadata::new(
             token_symbol,
             decimals,
             max_supply,
-            storage_mode,
-            auth_method,
             token_name,
             Some(description),
             None,
             None,
         )
         .unwrap();
+        let faucet_account =
+            create_basic_fungible_faucet(init_seed, metadata, storage_mode, auth_method).unwrap();
 
         // The falcon auth component's public key should be present.
         assert_eq!(

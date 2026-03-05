@@ -352,10 +352,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
     }
 }
 
-/// Creates a new faucet account with network fungible faucet interface and provided metadata
-/// (token symbol, decimals, max supply, owner account ID). Optional `name`, `description`,
-/// `logo_uri`, and `external_link` are stored in the faucet's metadata storage slots when
-/// provided.
+/// Creates a new faucet account with network fungible faucet interface and provided metadata.
 ///
 /// The network faucet interface exposes two procedures:
 /// - `distribute`, which mints an assets and create a note for the provided recipient.
@@ -371,42 +368,25 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] type and
 /// contains no additional storage slots for its auth ([`NoAuth`]).
-#[allow(clippy::too_many_arguments)]
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
-    symbol: TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
-    owner_account_id: AccountId,
-    name: TokenName,
-    description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
+    metadata: FungibleTokenMetadata,
+    owner: AccountId,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let mut info = TokenMetadataInfo::new().with_name(name.clone());
-    if let Some(d) = &description {
+    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone());
+    if let Some(d) = metadata.description() {
         info = info.with_description(d.clone(), false);
     }
-    if let Some(l) = &logo_uri {
+    if let Some(l) = metadata.logo_uri() {
         info = info.with_logo_uri(l.clone(), false);
     }
-    if let Some(e) = &external_link {
+    if let Some(e) = metadata.external_link() {
         info = info.with_external_link(e.clone(), false);
     }
 
-    let faucet = NetworkFungibleFaucet::new(
-        symbol,
-        decimals,
-        max_supply,
-        owner_account_id,
-        name,
-        description,
-        logo_uri,
-        external_link,
-    )?
-    .with_info(info);
+    let faucet = NetworkFungibleFaucet::from_metadata(metadata, owner).with_info(info);
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
