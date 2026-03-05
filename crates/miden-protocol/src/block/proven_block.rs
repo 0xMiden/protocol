@@ -61,7 +61,7 @@ impl ProvenBlock {
     /// Returns a new [`ProvenBlock`] instantiated from the provided components.
     ///
     /// Validates that the provided components correspond to each other by verifying the signature,
-    /// and checking for matching commitments and note roots.
+    /// and checking for matching transaction commitments and note roots.
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
     /// necessary.
@@ -94,7 +94,7 @@ impl ProvenBlock {
     }
 
     /// Validates that the components of the proven block correspond to each other by verifying the
-    /// signature, and checking for matching commitments and note roots.
+    /// signature, and checking for matching transaction commitments and note roots.
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
     /// necessary.
