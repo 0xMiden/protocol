@@ -1,5 +1,3 @@
-use std::string::ToString;
-
 use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
@@ -75,14 +73,7 @@ impl ProvenBlock {
     ) -> Result<Self, ProvenBlockError> {
         let proven_block = Self { header, signature, body, proof };
 
-        // Verify signature.
-        proven_block.validate_signature()?;
-
-        // Validate that header / body transaction commitments match.
-        proven_block.validate_tx_commitment()?;
-
-        // Validate that header / body note roots match.
-        proven_block.validate_note_root()?;
+        proven_block.validate()?;
 
         Ok(proven_block)
     }
@@ -100,6 +91,24 @@ impl ProvenBlock {
         proof: BlockProof,
     ) -> Self {
         Self { header, signature, body, proof }
+    }
+
+    /// Validates that the components of the proven block correspond to each other by verifying the
+    /// signature, and checking for matching commitments and note roots.
+    ///
+    /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
+    /// necessary.
+    pub fn validate(&self) -> Result<(), ProvenBlockError> {
+        // Verify signature.
+        self.validate_signature()?;
+
+        // Validate that header / body transaction commitments match.
+        self.validate_tx_commitment()?;
+
+        // Validate that header / body note roots match.
+        self.validate_note_root()?;
+
+        Ok(())
     }
 
     /// Returns the proof security level of the block.
@@ -183,12 +192,13 @@ impl Serializable for ProvenBlock {
 
 impl Deserializable for ProvenBlock {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let header = BlockHeader::read_from(source)?;
-        let body = BlockBody::read_from(source)?;
-        let signature = Signature::read_from(source)?;
-        let proof = BlockProof::read_from(source)?;
+        let block = Self {
+            header: BlockHeader::read_from(source)?,
+            body: BlockBody::read_from(source)?,
+            signature: Signature::read_from(source)?,
+            proof: BlockProof::read_from(source)?,
+        };
 
-        Self::new(header, body, signature, proof)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        Ok(block)
     }
 }
