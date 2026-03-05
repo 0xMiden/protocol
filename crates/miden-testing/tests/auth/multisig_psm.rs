@@ -231,8 +231,9 @@ async fn test_multisig_update_psm_public_key(
     let old_psm_public_key = old_psm_secret_key.public_key();
     let old_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&old_psm_secret_key));
 
-    let new_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let new_psm_secret_key = AuthSecretKey::new_falcon512_poseidon2();
     let new_psm_public_key = new_psm_secret_key.public_key();
+    let new_psm_auth_scheme = new_psm_secret_key.auth_scheme();
     let new_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&new_psm_secret_key));
 
     let multisig_account = create_multisig_account_with_psm(
@@ -251,10 +252,11 @@ async fn test_multisig_update_psm_public_key(
         .unwrap();
 
     let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
+    let new_psm_scheme_id = new_psm_auth_scheme as u32;
     let update_psm_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_psm_library())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    call.::multisig_psm::update_psm_public_key\n    dropw\nend"
+            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let update_salt = Word::from([Felt::new(991); 4]);
@@ -300,6 +302,13 @@ async fn test_multisig_update_psm_public_key(
         .storage()
         .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))?;
     assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
+    let updated_psm_scheme_id = updated_multisig_account
+        .storage()
+        .get_map_item(AuthMultisigPsm::psm_scheme_id_slot(), Word::from([0u32, 0, 0, 0]))?;
+    assert_eq!(
+        updated_psm_scheme_id,
+        Word::from([new_psm_auth_scheme as u32, 0u32, 0u32, 0u32])
+    );
 
     mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
     mock_chain.prove_next_block()?;

@@ -23,7 +23,7 @@ use miden::standards::auth::signature
 # - `enable_psm_signature_requirement` / `disable_psm_signature_requirement` procedures allow explicit control over PSM state.
 #
 # - `update_psm_public_key`:
-#     * Rotates the PSM public key at `PSM_PUBLIC_KEYS_SLOT` using the fixed map key `PSM_MAP_KEY`.
+#     * Rotates the PSM public key and corresponding scheme id using the fixed map key `PSM_MAP_KEY`.
 #     * Performs storage update only and does not require signature by a PSM signer
 #     * Temporarily disables PSM signature requirement so key rotation can proceed without a PSM signature.
 
@@ -125,15 +125,24 @@ end
 
 #! Updates the private state manager public key.
 #!
-#! Inputs:  [NEW_PSM_PUBLIC_KEY]
+#! Inputs:  [new_psm_scheme_id, NEW_PSM_PUBLIC_KEY]
 #! Outputs: []
 #!
 #! Notes:
 #! - This procedure disables PSM signature requirement before updating the key.
+#! - This procedure also updates the PSM signature scheme id.
 #! - Signature requirement is set back to ON by `verify_signature` at the end of auth.
 #!
 #! Invocation: call
-pub proc update_psm_public_key(new_psm_public_key: word)
+@locals(1)
+pub proc update_psm_public_key(new_psm_scheme_id: felt, new_psm_public_key: word)
+    # Validate supported signature scheme before committing it to storage.
+    dup exec.signature::assert_supported_scheme
+    # => [new_psm_scheme_id, NEW_PSM_PUBLIC_KEY]
+
+    loc_store.0
+    # => [NEW_PSM_PUBLIC_KEY]
+
     exec.disable_psm_signature_requirement
     # => [NEW_PSM_PUBLIC_KEY]
 
@@ -145,6 +154,25 @@ pub proc update_psm_public_key(new_psm_public_key: word)
 
     exec.native_account::set_map_item
     # => [OLD_PSM_PUBLIC_KEY]
+
+    dropw
+    # => []
+
+    # Store new scheme id as [scheme_id, 0, 0, 0] in the single-entry map.
+    loc_load.0
+    # => [scheme_id]
+    
+    push.0.0.0 movup.3
+    # => [NEW_PSM_SCHEME_ID_WORD]
+
+    push.PSM_MAP_KEY
+    # => [PSM_MAP_KEY, NEW_PSM_SCHEME_ID_WORD]
+
+    push.PSM_SCHEME_ID_SLOT[0..2]
+    # => [psm_scheme_slot_prefix, psm_scheme_slot_suffix, PSM_MAP_KEY, NEW_PSM_SCHEME_ID_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_PSM_SCHEME_ID_WORD]
 
     dropw
     # => []

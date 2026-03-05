@@ -85,11 +85,12 @@ pub use multisig::is_signer
 
 #! Updates the private state manager public key.
 #!
-#! Inputs:  [NEW_PSM_PUBLIC_KEY]
+#! Inputs:  [new_psm_scheme_id, NEW_PSM_PUBLIC_KEY]
 #! Outputs: []
 #!
 #! Notes:
 #! - This procedure disables PSM signature requirement before updating the key.
+#! - This procedure also updates the PSM signature scheme id.
 #! - Signature requirement is set back to ON by `verify_signature` at the end of auth.
 #!
 #! Invocation: call
