@@ -7,7 +7,7 @@ use miden_agglayer::errors::{
     ERR_X_TOO_LARGE,
 };
 use miden_agglayer::eth_types::amount::EthAmount;
-use miden_agglayer::utils;
+use miden_processor::utils::packed_u32_elements_to_bytes;
 use miden_protocol::Felt;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
@@ -367,7 +367,7 @@ fn test_felts_to_u256_bytes_sequential_values() {
         Felt::new(7),
         Felt::new(8),
     ];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
 
     // Verify the byte layout: limbs are processed in little-endian order, each as little-endian u32
@@ -382,13 +382,13 @@ fn test_felts_to_u256_bytes_sequential_values() {
 fn test_felts_to_u256_bytes_edge_cases() {
     // Test case 1: All zeros (minimum)
     let limbs = [Felt::new(0); 8];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 0));
 
     // Test case 2: All max u32 values (maximum)
     let limbs = [Felt::new(u32::MAX as u64); 8];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 255));
 }

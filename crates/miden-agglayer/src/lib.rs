@@ -32,7 +32,6 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod update_ger_note;
-pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
@@ -419,11 +418,6 @@ impl From<AggLayerFaucet> for AccountComponent {
 /// This is the standard layout for storing account IDs in MASM storage slots and map keys.
 pub fn create_id_key(id: AccountId) -> Word {
     Word::new([id.suffix(), id.prefix().as_felt(), Felt::ZERO, Felt::ZERO])
-}
-
-/// Creates a faucet registry map key from a faucet account ID.
-pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    create_id_key(faucet_id)
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

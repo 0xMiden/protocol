@@ -4,7 +4,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::utils::felts_to_bytes;
 use miden_agglayer::{
     AggLayerBridge,
     ExitRoot,
@@ -17,7 +16,7 @@ use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
 use miden_crypto::hash::poseidon2::Poseidon2;
-use miden_processor::utils::bytes_to_packed_u32_elements;
+use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
@@ -232,7 +231,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
     let expected_ger_felts: [Felt; 8] = expected_ger_preimage.digest().as_ref().try_into().unwrap();
 
-    let ger_bytes: [u8; 32] = felts_to_bytes(&expected_ger_felts).try_into().unwrap();
+    let ger_bytes: [u8; 32] = packed_u32_elements_to_bytes(&expected_ger_felts).try_into().unwrap();
 
     let ger = ExitRoot::from(ger_bytes);
     // sanity check
