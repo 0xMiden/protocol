@@ -914,7 +914,7 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - any of the following conditions is false, except if the map is empty:
+#! - any of the following conditions is false:
 #!   - LINK_MAP_MEMORY_START_PTR <= entry_ptr < LINK_MAP_MEMORY_END_PTR.
 #!   - entry ptr is "link map entry"-aligned, i.e. entry_ptr % LINK_MAP_ENTRY_SIZE == 0. This
 #!     works because every entry ptr is a multiple of LINK_MAP_ENTRY_SIZE.
@@ -944,16 +944,8 @@ pub proc assert_entry_ptr_is_valid
     u32lt and
     # => [is_entry_ptr_in_valid_range, entry_ptr, map_ptr]
 
-    # we have to skip the assertion if the map is empty
-    dup.2 exec.is_empty
-    # => [is_empty_map, is_entry_ptr_in_valid_range, entry_ptr, map_ptr]
-
-    dup movdn.4
-    # => [is_empty_map, is_entry_ptr_in_valid_range, entry_ptr, map_ptr, is_empty_map]
-
-    # this assertion is always true if is_empty_map is true
-    or assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
-    # => [entry_ptr, map_ptr, is_empty_map]
+    assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
+    # => [entry_ptr, map_ptr]
 
     # Check that the entry pointer is aligned to link map entries.
     # -------------------------------------------------------------------------------------------------
@@ -963,19 +955,18 @@ pub proc assert_entry_ptr_is_valid
     # we assert that entry_ptr % LINK_MAP_ENTRY_SIZE == 0.
     # note: we previously asserted that entry_ptr fits in a u32
     dup exec.memory::get_link_map_entry_size u32mod eq.0
-    # => [is_entry_ptr_aligned, entry_ptr, map_ptr, is_empty_map]
+    # => [is_entry_ptr_aligned, entry_ptr, map_ptr]
 
-    # this assertion is always true if is_empty_map is true
-    dup.3 or assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED
-    # => [entry_ptr, map_ptr, is_empty_map]
+    assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED
+    # => [entry_ptr, map_ptr]
 
     # Check entry pointer's map ptr is equal to map_ptr.
     # -------------------------------------------------------------------------------------------------
 
     # check if entry_ptr.map_ptr == map_ptr
     exec.get_map_ptr eq
-    # => [entry_contains_map_ptr, is_empty_map]
+    # => [entry_contains_map_ptr]
 
-    # this assertion is always true if is_empty_map is true
-    or assert.err=ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR
+    assert.err=ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR
+    # => []
 end
