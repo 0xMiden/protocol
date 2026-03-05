@@ -4,7 +4,7 @@ use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
-use crate::block::{BlockBody, BlockHeader, BlockNumber, BlockProof};
+use crate::block::{BlockBody, BlockHeader, BlockProof};
 use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
 
 // PROVEN BLOCK ERROR
@@ -24,20 +24,9 @@ pub enum ProvenBlockError {
         body_tx_commitment: Word,
     },
     #[error(
-        "proven block previous block commitment ({expected}) does not match expected parent's block commitment ({parent})"
-    )]
-    ParentCommitmentMismatch { expected: Word, parent: Word },
-    #[error("parent block number ({parent}) is not proven block number - 1 ({expected})")]
-    ParentNumberMismatch {
-        expected: BlockNumber,
-        parent: BlockNumber,
-    },
-    #[error(
         "proven block header note root ({header_root}) does not match the corresponding body's note root ({body_root})"
     )]
     NoteRootMismatch { header_root: Word, body_root: Word },
-    #[error("supplied parent block ({parent}) cannot be parent to genesis block")]
-    GenesisBlockHasNoParent { parent: BlockNumber },
 }
 
 // PROVEN BLOCK
