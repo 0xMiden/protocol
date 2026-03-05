@@ -89,6 +89,17 @@ impl NoteMetadata {
         }
     }
 
+    /// Reconstructs a [`NoteMetadata`] from a [`NoteMetadataHeader`] and a
+    /// [`NoteAttachment`].
+    pub fn from_header(header: NoteMetadataHeader, attachment: NoteAttachment) -> Self {
+        Self {
+            sender: header.sender,
+            note_type: header.note_type,
+            tag: header.tag,
+            attachment,
+        }
+    }
+
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -120,7 +131,7 @@ impl NoteMetadata {
     /// Returns the header of a [`NoteMetadata`] as a [`Word`].
     ///
     /// See [`NoteMetadata`] docs for more details.
-    fn to_header(&self) -> NoteMetadataHeader {
+    pub fn to_header(&self) -> NoteMetadataHeader {
         NoteMetadataHeader {
             sender: self.sender,
             note_type: self.note_type,
@@ -212,15 +223,43 @@ impl Deserializable for NoteMetadata {
 /// The header representation of [`NoteMetadata`].
 ///
 /// See the metadata's type for details on this type's [`Word`] layout.
-///
-/// This is intended to be a private type meant for encapsulating the conversion from and to words.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct NoteMetadataHeader {
+pub struct NoteMetadataHeader {
     sender: AccountId,
     note_type: NoteType,
     tag: NoteTag,
     attachment_kind: NoteAttachmentKind,
     attachment_scheme: NoteAttachmentScheme,
+}
+
+impl NoteMetadataHeader {
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the account which created the note.
+    pub fn sender(&self) -> AccountId {
+        self.sender
+    }
+
+    /// Returns the note's type.
+    pub fn note_type(&self) -> NoteType {
+        self.note_type
+    }
+
+    /// Returns the tag associated with the note.
+    pub fn tag(&self) -> NoteTag {
+        self.tag
+    }
+
+    /// Returns the attachment kind.
+    pub fn attachment_kind(&self) -> NoteAttachmentKind {
+        self.attachment_kind
+    }
+
+    /// Returns the attachment scheme.
+    pub fn attachment_scheme(&self) -> NoteAttachmentScheme {
+        self.attachment_scheme
+    }
 }
 
 impl From<NoteMetadataHeader> for Word {
