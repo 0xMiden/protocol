@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
-use miden_protocol::account::{AccountId, PartialAccount, StorageMapWitness};
+use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::NoteScript;
@@ -67,7 +67,7 @@ pub trait DataStore: MastForestStore {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>>;
 
     /// Returns a note script with the specified root, or `None` if not found.

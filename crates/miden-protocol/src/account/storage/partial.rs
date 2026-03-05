@@ -1,6 +1,5 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_crypto::Word;
 use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtLeaf;
@@ -8,6 +7,13 @@ use miden_crypto::merkle::smt::SmtLeaf;
 use super::{AccountStorage, AccountStorageHeader, StorageSlotContent};
 use crate::account::PartialStorageMap;
 use crate::errors::AccountError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A partial representation of an account storage, containing only a subset of the storage data.
 ///
@@ -133,16 +139,14 @@ impl PartialStorage {
 }
 
 impl Serializable for PartialStorage {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(&self.header);
         target.write(&self.maps);
     }
 }
 
 impl Deserializable for PartialStorage {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let header: AccountStorageHeader = source.read()?;
         let map_smts: BTreeMap<Word, PartialStorageMap> = source.read()?;
 
@@ -163,14 +167,15 @@ mod tests {
         PartialStorage,
         PartialStorageMap,
         StorageMap,
+        StorageMapKey,
         StorageSlot,
         StorageSlotName,
     };
 
     #[test]
     pub fn new_partial_storage() -> anyhow::Result<()> {
-        let map_key_present: Word = [1u64, 2, 3, 4].try_into()?;
-        let map_key_absent: Word = [9u64, 12, 18, 3].try_into()?;
+        let map_key_present = StorageMapKey::from_array([1, 2, 3, 4]);
+        let map_key_absent = StorageMapKey::from_array([9, 12, 18, 3]);
 
         let mut map_1 = StorageMap::new();
         map_1.insert(map_key_absent, Word::try_from([1u64, 2, 3, 2])?).unwrap();

@@ -5,7 +5,13 @@ use miden_protocol_macros::WordWrapper;
 
 use crate::account::AccountId;
 use crate::transaction::{ProvenTransaction, TransactionId};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Hasher, Word, ZERO};
 
 // BATCH ID

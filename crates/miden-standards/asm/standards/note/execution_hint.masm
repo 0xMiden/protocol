@@ -1,0 +1,22 @@
+# CONSTANTS
+# =================================================================================================
+
+#! Unspecified execution hint. The conditions under which the note is consumable are not known.
+#!
+#! Felt encoding: `0`
+pub const NONE = 0
+
+#! The note's script can be executed at any time.
+#!
+#! Felt encoding: `1`
+pub const ALWAYS = 1
+
+#! The note's script can be executed after the specified block number.
+#!
+#! This constant encodes only the tag bits. The block number must be encoded in the payload.
+pub const AFTER_BLOCK = 2
+
+#! The note's script can be executed in a specified slot within a specified round.
+#!
+#! This constant encodes only the tag bits. The slot parameters must be encoded in the payload.
+pub const ON_BLOCK_SLOT = 3

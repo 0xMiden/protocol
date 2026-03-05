@@ -1,8 +1,12 @@
-use miden_processor::DeserializationError;
-
 use super::{NoteAssets, NoteId, NoteRecipient, NoteScript, NoteStorage, Nullifier};
 use crate::Word;
-use crate::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // NOTE DETAILS
 // ================================================================================================

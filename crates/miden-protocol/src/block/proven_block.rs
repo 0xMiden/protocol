@@ -5,7 +5,13 @@ use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::MIN_PROOF_SECURITY_LEVEL;
 use crate::block::{BlockBody, BlockHeader, BlockProof};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // PROVEN BLOCK ERROR
 // ================================================================================================

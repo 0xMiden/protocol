@@ -10,29 +10,27 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 # PROCEDURES
 # =================================================================================================
 
 #! Sets a word in the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index, VALUE]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index, VALUE]
 #! Outputs: [OLD_VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
 #! - index is the index at which to store the value (0 to 2^64 - 2^32).
 #! - VALUE is the word to store at the specified index.
 #!
 #! Invocation: exec
-pub proc set(slot_id_prefix: felt, slot_id_suffix: felt, index: felt, value: BeWord) -> BeWord
-    # Build KEY = [index, 0, 0, 0]
-    push.0.0.0 movup.5
-    # => [index, 0, 0, 0, slot_id_prefix, slot_id_suffix, VALUE]
+pub proc set(slot_id_suffix: felt, slot_id_prefix: felt, index: felt, value: word) -> word
+    # Build KEY = [0, 0, 0, index]
+    movup.2 push.0.0.0
+    # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix, VALUE]
 
     movup.5 movup.5
-    # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+    # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
 
     exec.native_account::set_map_item
     # => [OLD_VALUE]
@@ -40,22 +38,22 @@ end
 
 #! Gets a word from the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index]
 #! Outputs: [VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
 #! - index is the index of the element to retrieve (0 to 2^64 - 2^32).
 #! - VALUE is the word stored at the specified index (zero if not set).
 #!
 #! Invocation: exec
-pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeWord
-    # Build KEY = [index, 0, 0, 0]
-    push.0.0.0 movup.5
-    # => [index, 0, 0, 0, slot_id_prefix, slot_id_suffix]
+pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> word
+    # Build KEY = [0, 0, 0, index]
+    movup.2 push.0.0.0
+    # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix]
 
     movup.5 movup.5
-    # => [slot_id_prefix, slot_id_suffix, KEY]
+    # => [slot_id_suffix, slot_id_prefix, KEY]
 
     exec.active_account::get_map_item
     # => [VALUE]

@@ -2,13 +2,18 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use core::str::FromStr;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_mast_package::{Package, SectionId};
-use miden_processor::DeserializationError;
 use semver::Version;
 
 use super::{AccountType, SchemaRequirement, StorageSchema, StorageValueName};
 use crate::errors::AccountError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT COMPONENT METADATA
 // ================================================================================================
@@ -41,7 +46,7 @@ use crate::errors::AccountError;
 ///     AccountComponentMetadata,
 ///     FeltSchema,
 ///     InitStorageData,
-///     SchemaTypeId,
+///     SchemaType,
 ///     StorageSchema,
 ///     StorageSlotSchema,
 ///     StorageValueName,

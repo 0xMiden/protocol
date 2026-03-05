@@ -2,12 +2,17 @@ use alloc::string::ToString;
 
 use bech32::Bech32m;
 use bech32::primitives::decode::CheckedHrpstring;
-use miden_processor::DeserializationError;
 
 use crate::account::AccountId;
 use crate::address::{AddressType, NetworkId};
 use crate::errors::{AddressError, Bech32Error};
-use crate::utils::serde::{ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// The identifier of an [`Address`](super::Address).
 ///
@@ -82,9 +87,7 @@ impl Serializable for AddressId {
 }
 
 impl Deserializable for AddressId {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let address_type: u8 = source.read_u8()?;
         let address_type = AddressType::try_from(address_type)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;

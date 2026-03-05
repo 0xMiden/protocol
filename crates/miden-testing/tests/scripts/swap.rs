@@ -1,17 +1,17 @@
 use anyhow::Context;
+use miden_protocol::Felt;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode, AccountType};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::errors::NoteError;
-use miden_protocol::note::{Note, NoteAssets, NoteDetails, NoteMetadata, NoteTag, NoteType};
+use miden_protocol::note::{Note, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     AccountIdBuilder,
 };
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::P2idNote;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain};
 
 use crate::prove_and_verify_transaction;
@@ -40,7 +40,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
             push.{tag}
             exec.output_note::create
 
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
             dropw dropw dropw dropw
         end
@@ -48,7 +49,8 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         recipient = swap_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = Felt::from(swap_note.metadata().tag()),
-        asset = Word::from(offered_asset),
+        ASSET_KEY = offered_asset.to_key_word(),
+        ASSET_VALUE = offered_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -80,7 +82,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
 
     let swap_output_note = create_swap_note_tx.output_notes().iter().next().unwrap();
     assert_eq!(swap_output_note.assets().unwrap().iter().next().unwrap(), &offered_asset);
-    assert!(prove_and_verify_transaction(create_swap_note_tx).is_ok());
+    assert!(prove_and_verify_transaction(create_swap_note_tx).await.is_ok());
 
     Ok(())
 }
@@ -146,9 +148,11 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
     assert!(sender_account.vault().assets().any(|asset| asset == requested_asset));
 
     prove_and_verify_transaction(consume_swap_note_tx)
+        .await
         .context("failed to prove/verify consume_swap_note_tx")?;
 
     prove_and_verify_transaction(consume_payback_tx)
+        .await
         .context("failed to prove/verify consume_payback_tx")?;
 
     Ok(())
@@ -237,7 +241,12 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // CREATE ACCOUNT 1: Has asset A, wants asset B
     // --------------------------------------------------------------------------------------------
-    let account_1 = builder.add_existing_wallet_with_assets(Auth::BasicAuth, vec![asset_a])?;
+    let account_1 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        vec![asset_a],
+    )?;
 
     let payback_note_type = NoteType::Private;
     let (swap_note_1, payback_note_1) =
@@ -245,8 +254,12 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
 
     // CREATE ACCOUNT 2: Has asset B, wants asset A
     // --------------------------------------------------------------------------------------------
-    let account_2 = builder.add_existing_wallet_with_assets(Auth::BasicAuth, vec![asset_b])?;
-
+    let account_2 = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        vec![asset_b],
+    )?;
     let (swap_note_2, payback_note_2) =
         builder.add_swap_note(account_2.id(), asset_b, asset_a, payback_note_type)?;
 
@@ -254,8 +267,12 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
     // --------------------------------------------------------------------------------------------
 
     // TODO: matcher account should be able to fill both SWAP notes without holding assets A & B
-    let matcher_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, vec![asset_a, asset_b])?;
+    let matcher_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        vec![asset_a, asset_b],
+    )?;
     // Initial matching account balance should have two assets.
     assert_eq!(matcher_account.vault().assets().count(), 2);
 
@@ -313,10 +330,18 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
     let requested_asset = NonFungibleAsset::mock(&[1, 2, 3, 4]);
 
     let mut builder = MockChain::builder();
-    let sender_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, vec![offered_asset])?;
-    let target_account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, vec![requested_asset])?;
+    let sender_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        vec![offered_asset],
+    )?;
+    let target_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        vec![requested_asset],
+    )?;
 
     let (swap_note, payback_note) = builder
         .add_swap_note(sender_account.id(), offered_asset, requested_asset, payback_note_type)
@@ -334,22 +359,4 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
         swap_note,
         payback_note,
     })
-}
-
-/// Generates a P2ID note - Pay-to-ID note with an exact serial number
-pub fn create_p2id_note_exact(
-    sender: AccountId,
-    target: AccountId,
-    assets: Vec<Asset>,
-    note_type: NoteType,
-    serial_num: Word,
-) -> Result<Note, NoteError> {
-    let recipient = P2idNote::build_recipient(target, serial_num)?;
-
-    let tag = NoteTag::with_account_target(target);
-
-    let metadata = NoteMetadata::new(sender, note_type).with_tag(tag);
-    let vault = NoteAssets::new(assets)?;
-
-    Ok(Note::new(vault, metadata, recipient))
 }
