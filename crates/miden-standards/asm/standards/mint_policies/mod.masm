@@ -7,6 +7,8 @@ use miden::standards::access::ownable
 # ================================================================================================
 
 const MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policies::proc_root")
+const MINT_POLICY_PARAMS_SLOT=word("miden::standards::mint_policies::params")
+const MINT_POLICY_ALLOWED_ROOTS_SLOT=word("miden::standards::mint_policies::allowed_roots")
 const MINT_POLICY_PROC_ROOT_PTR=0
 
 # ERRORS
@@ -14,6 +16,8 @@ const MINT_POLICY_PROC_ROOT_PTR=0
 
 const ERR_MINT_POLICY_ROOT_IS_ZERO="mint policy root is zero"
 const ERR_MINT_POLICY_ROOT_NOT_IN_ACCOUNT="mint policy root is not a procedure of this account"
+const ERR_MINT_POLICY_ROOT_NOT_ALLOWED="mint policy root is not allowed"
+const ERR_MINT_POLICY_AMOUNT_EXCEEDS_PER_CALL_CAP="mint amount exceeds per-call cap"
 
 # INTERNAL PROCEDURES
 # ================================================================================================
@@ -49,6 +53,29 @@ proc assert_valid_policy_root
     # => [MINT_POLICY_ROOT]
 end
 
+#! Validates that the policy root is one of the allowed policy roots configured for this account.
+#!
+#! Inputs:  [MINT_POLICY_ROOT]
+#! Outputs: [MINT_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is not in the allowed policy roots map.
+#!
+#! Invocation: exec
+proc assert_allowed_policy_root
+    dupw
+    push.MINT_POLICY_ALLOWED_ROOTS_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
+
+    dupw exec.word::eqz not
+    assert.err=ERR_MINT_POLICY_ROOT_NOT_ALLOWED
+    # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
+
+    dropw
+    # => [MINT_POLICY_ROOT]
+end
+
 # POLICY PROCEDURES
 # ================================================================================================
 
@@ -63,6 +90,37 @@ end
 #! Invocation: dynexec
 pub proc mint_policy_owner_only
     exec.ownable::verify_owner
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+end
+
+#! Owner-only mint policy with per-call cap.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#!
+#! Panics if:
+#! - note sender is not owner.
+#! - amount is greater than configured `per_call_cap`.
+#!
+#! Invocation: dynexec
+@locals(1)
+pub proc mint_policy_owner_per_call_cap
+    exec.ownable::verify_owner
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+
+    push.MINT_POLICY_PARAMS_SLOT[0..2] exec.active_account::get_item
+    # => [per_call_cap, 0, 0, 0, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    loc_store.0
+    # => [0, 0, 0, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    drop drop drop
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+
+    dup loc_load.0
+    # => [per_call_cap, amount, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    lte assert.err=ERR_MINT_POLICY_AMOUNT_EXCEEDS_PER_CALL_CAP
     # => [amount, tag, note_type, RECIPIENT, pad(9)]
 end
 
@@ -84,6 +142,9 @@ pub proc enforce_mint_policy
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
 
     exec.assert_valid_policy_root
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    exec.assert_allowed_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
 
     mem_storew_le.MINT_POLICY_PROC_ROOT_PTR dropw
@@ -125,6 +186,29 @@ pub proc set_mint_policy
     exec.assert_valid_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
+    exec.assert_allowed_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
     push.MINT_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end
+
+#! Sets the per-call cap used by `mint_policy_owner_per_call_cap`.
+#!
+#! Inputs:  [PER_CALL_CAP, pad(15)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - note sender is not owner.
+#!
+#! Invocation: call
+pub proc set_per_call_cap
+    exec.ownable::verify_owner
+    # => [PER_CALL_CAP, pad(15)]
+
+    padw movup.4
+    # => [PER_CALL_CAP, 0, 0, 0, pad(16)]
+
+    push.MINT_POLICY_PARAMS_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end
