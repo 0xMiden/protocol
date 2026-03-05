@@ -503,27 +503,27 @@ proc create_burn_note
 
     # Duplicate note_idx and use padw to protect it from loc_loadw_le overwrite
     dup
-    # => [note_idx, note_idx, pad(14)]
+    # => [note_idx, note_idx, pad(15)]
 
     padw loc_loadw_le.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(14)]
+    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
 
     loc_load.ATTACHMENT_KIND_LOC
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(14)]
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
 
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(14)]
+    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(15)]
 
     exec.output_note::set_attachment
-    # => [note_idx, pad(14)]
+    # => [note_idx, pad(15)]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(14)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(15)]
 
     exec.output_note::add_asset
-    # => [pad(14)]
+    # => [pad(16)]
 
     # Clean up residual stack elements from call boundaries
     dropw dropw dropw drop drop
