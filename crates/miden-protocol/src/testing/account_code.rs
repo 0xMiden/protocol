@@ -23,8 +23,7 @@ impl AccountCode {
         let library = Assembler::default()
             .assemble_library([CODE])
             .expect("mock account component should assemble");
-        let metadata =
-            AccountComponentMetadata::new("miden::testing::mock").with_supports_all_types();
+        let metadata = AccountComponentMetadata::new("miden::testing::mock", AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         Self::from_components(

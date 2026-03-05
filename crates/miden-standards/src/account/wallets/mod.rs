@@ -78,9 +78,8 @@ impl BasicWallet {
 
 impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
-        let metadata = AccountComponentMetadata::new(BasicWallet::NAME)
-            .with_description("Basic wallet component for receiving and sending assets")
-            .with_supports_all_types();
+        let metadata = AccountComponentMetadata::new(BasicWallet::NAME, AccountType::all())
+            .with_description("Basic wallet component for receiving and sending assets");
 
         AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
             "basic wallet component should satisfy the requirements of a valid account component",
