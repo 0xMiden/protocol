@@ -215,8 +215,8 @@ pub proc set
     # => [is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
     if.true
-        # drop is_insert_update_op and the unvalidated entry ptr since we can load the head
-        # securely from map_ptr
+        # drop is_insert_update_op and the unvalidated entry ptr since we can load the entry ptr
+        # at the head of the map securely from map_ptr
         drop drop
         # => [map_ptr, KEY, VALUE0, VALUE1]
 
@@ -275,46 +275,57 @@ end
 #!
 #! Panics if:
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
-#!   get_existing_value, assert_absent_at_head, assert_absent_after_entry.
+#!   get_existing_value, assert_absent_at_head, assert_absent_after_entry and
+#!   assert_empty_map_op_is_at_head.
 pub proc get
     emit.LINK_MAP_GET_EVENT
     adv_push.2
     # => [get_operation, entry_ptr, map_ptr, KEY]
 
-    dup.2 dup.2
-    # => [entry_ptr, map_ptr, get_operation, entry_ptr, map_ptr, KEY]
+    dup eq.GET_OPERATION_FOUND swap eq.GET_OPERATION_ABSENT_AT_HEAD
+    # => [is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
-    exec.assert_entry_ptr_is_valid
-    # => [get_operation, entry_ptr, map_ptr, KEY]
+    dup dup.4
+    # => [map_ptr, is_absent_at_head, is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
-    dup eq.GET_OPERATION_ABSENT_AT_HEAD swap eq.GET_OPERATION_FOUND
-    # => [is_found, is_absent_at_head, entry_ptr, map_ptr, KEY]
+    exec.assert_empty_map_op_is_at_head
+    # => [is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
     if.true
-        # drop is_absent_at_head and map_ptr from stack
-        drop swap drop
-        # => [entry_ptr, KEY]
+        # drop is_found and the unvalidated entry ptr since we can load the entry ptr
+        # at the head of the map securely from map_ptr
+        drop drop
+        # => [map_ptr, KEY]
 
-        exec.get_existing_value
-        # => [VALUE0, VALUE1]
+        exec.assert_absent_at_head
+        # => []
 
-        push.1
-        # => [contains_key, VALUE0, VALUE1]
+        padw padw push.0
+        # => [contains_key, EMPTY_WORD, EMPTY_WORD]
     else
-        # assert absence of the entry
+        # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
+
+        dup.2 dup.2
+        # => [entry_ptr, map_ptr, is_absent_at_head, entry_ptr, map_ptr, KEY]
+
+        # validate the entry pointer
+        # this can be skipped for assert_absent_at_head because the entry_ptr is not used in that
+        # branch
+        exec.assert_entry_ptr_is_valid
         # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
 
         # note: the flag and empty word logic is duplicated rather than appended after the if-else
         # branch to avoid introducing an extra MAST node
         if.true
-            drop
-            # => [map_ptr, KEY]
+            # drop unused map_ptr
+            swap drop
+            # => [entry_ptr, KEY]
 
-            exec.assert_absent_at_head
-            # => []
+            exec.get_existing_value
+            # => [VALUE0, VALUE1]
 
-            padw padw push.0
-            # => [contains_key, EMPTY_WORD, EMPTY_WORD]
+            push.1
+            # => [contains_key, VALUE0, VALUE1]
         else
             exec.assert_absent_after_entry
             # => []
