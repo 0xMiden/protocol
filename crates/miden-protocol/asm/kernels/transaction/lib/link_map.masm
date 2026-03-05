@@ -121,8 +121,6 @@ use $kernel::memory
 
 const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION="empty map requires operation InsertAtHead for set or AbsentAtHead for get"
 
-const ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY="map cannot be empty when proving absence after an entry"
-
 const ERR_LINK_MAP_PROVIDED_KEY_NOT_EQUAL_TO_ENTRY_KEY="provided key does not match key in map entry"
 
 const ERR_LINK_MAP_PROVIDED_KEY_NOT_GREATER_THAN_ENTRY_KEY="provided key is not greater than the entry key"
@@ -314,11 +312,13 @@ pub proc get
         exec.assert_entry_ptr_is_valid
         # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
 
+        # drop unused map_ptr
+        movup.2 drop
+        # => [is_absent_at_head, entry_ptr, KEY]
+
         # note: the flag and empty word logic is duplicated rather than appended after the if-else
         # branch to avoid introducing an extra MAST node
         if.true
-            # drop unused map_ptr
-            swap drop
             # => [entry_ptr, KEY]
 
             exec.get_existing_value
@@ -327,6 +327,8 @@ pub proc get
             push.1
             # => [contains_key, VALUE0, VALUE1]
         else
+            # => [entry_ptr, KEY]
+
             exec.assert_absent_after_entry
             # => []
 
@@ -642,17 +644,13 @@ end
 #! If KEY is greater than the key in the entry and less than the key in entry's next entry, then
 #! that proves the absence of the key.
 #!
-#! Inputs:  [entry_ptr, map_ptr, KEY]
+#! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the map is empty.
 #! - the KEY is not greater than the key in the entry.
 #! - the KEY is not less than the key in entry.next_entry, unless the entry is the last one in the map.
 proc assert_absent_after_entry
-    swap exec.is_empty assertz.err=ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY
-    # => [entry_ptr, KEY]
-
     movdn.4 dupw
     # => [KEY, KEY, entry_ptr]
 
