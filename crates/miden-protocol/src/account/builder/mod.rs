@@ -344,7 +344,7 @@ mod tests {
             value[0] = Felt::new(custom.slot0);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component1").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -366,7 +366,7 @@ mod tests {
             value1[3] = Felt::new(custom.slot1);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component2").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![
