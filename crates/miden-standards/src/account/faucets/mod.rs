@@ -5,10 +5,12 @@ use miden_protocol::errors::{AccountError, TokenSymbolError};
 use thiserror::Error;
 
 mod basic_fungible;
+mod mint_policies;
 mod network_fungible;
 mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
+pub use mint_policies::{MintPolicies, MintPolicyConfig};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use token_metadata::TokenMetadata;
 

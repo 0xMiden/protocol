@@ -23,7 +23,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::OutputNote;
-use miden_standards::account::faucets::TokenMetadata;
+use miden_standards::account::faucets::{MintPolicyConfig, TokenMetadata};
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
@@ -403,8 +403,13 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     );
 
     // Create a network faucet to provide assets for the B2AGG note
-    let faucet =
-        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
+    let faucet = builder.add_existing_network_faucet(
+        "AGG",
+        1000,
+        faucet_owner_account_id,
+        Some(100),
+        MintPolicyConfig::OwnerOnly,
+    )?;
 
     // Create a bridge admin account
     let bridge_admin =
@@ -514,8 +519,13 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     );
 
     // Create a network faucet to provide assets for the B2AGG note
-    let faucet =
-        builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
+    let faucet = builder.add_existing_network_faucet(
+        "AGG",
+        1000,
+        faucet_owner_account_id,
+        Some(100),
+        MintPolicyConfig::OwnerOnly,
+    )?;
 
     // Create a bridge admin account
     let bridge_admin =

@@ -23,6 +23,7 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
+use crate::account::faucets::{MintPolicies, MintPolicyConfig};
 
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
@@ -341,14 +342,16 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`AccountStorageMode::Network`] for storage
 /// - [`NoAuth`] for authentication
 ///
-/// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] type and
-/// contains no additional storage slots for its auth ([`NoAuth`]).
+/// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
+/// [`MintPolicies`] component types and contains no additional storage slots for its auth
+/// ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,
     decimals: u8,
     max_supply: Felt,
     owner_account_id: AccountId,
+    mint_policy_config: MintPolicyConfig,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
@@ -357,6 +360,7 @@ pub fn create_network_fungible_faucet(
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(auth_component)
         .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply, owner_account_id)?)
+        .with_component(MintPolicies::new(mint_policy_config))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

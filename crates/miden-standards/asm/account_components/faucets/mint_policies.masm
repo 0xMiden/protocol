@@ -1,0 +1,7 @@
+# The MASM code of the Mint Policies Faucet Account Component.
+#
+# See the `MintPolicies` Rust type's documentation for more details.
+
+pub use ::miden::standards::mint_policies::mint_policy_owner_only
+pub use ::miden::standards::mint_policies::set_mint_policy
+pub use ::miden::standards::mint_policies::get_mint_policy

@@ -46,7 +46,12 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
-use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
+    MintPolicies,
+    MintPolicyConfig,
+    NetworkFungibleFaucet,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -358,6 +363,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
+        mint_policy_config: MintPolicyConfig,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
@@ -376,6 +382,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
+            .with_component(MintPolicies::new(mint_policy_config))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

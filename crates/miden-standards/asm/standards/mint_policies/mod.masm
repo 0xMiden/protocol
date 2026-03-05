@@ -1,0 +1,130 @@
+use miden::core::word
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::standards::access::ownable
+
+# CONSTANTS
+# ================================================================================================
+
+const MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policies::proc_root")
+const MINT_POLICY_PROC_ROOT_PTR=0
+
+# ERRORS
+# ================================================================================================
+
+const ERR_MINT_POLICY_ROOT_IS_ZERO="mint policy root is zero"
+const ERR_MINT_POLICY_ROOT_NOT_IN_ACCOUNT="mint policy root is not a procedure of this account"
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Reads active mint policy root from storage.
+#!
+#! Inputs:  []
+#! Outputs: [MINT_POLICY_ROOT]
+#!
+#! Invocation: exec
+proc get_mint_policy_root
+    push.MINT_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    # => [MINT_POLICY_ROOT]
+end
+
+#! Validates policy root before use.
+#!
+#! Inputs:  [MINT_POLICY_ROOT]
+#! Outputs: [MINT_POLICY_ROOT]
+#!
+#! Panics if:
+#! - policy root is zero.
+#! - policy root is not present in this account's procedures.
+#!
+#! Invocation: exec
+proc assert_valid_policy_root
+    dupw exec.word::eqz
+    assertz.err=ERR_MINT_POLICY_ROOT_IS_ZERO
+    # => [MINT_POLICY_ROOT]
+
+    dupw exec.active_account::has_procedure
+    assert.err=ERR_MINT_POLICY_ROOT_NOT_IN_ACCOUNT
+    # => [MINT_POLICY_ROOT]
+end
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Owner-only mint predicate.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#!
+#! Panics if:
+#! - note sender is not owner.
+#!
+#! Invocation: dynexec
+pub proc mint_policy_owner_only
+    exec.ownable::verify_owner
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Enforces active mint policy by dynamic execution.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#!
+#! Panics if:
+#! - mint policy root is invalid.
+#! - active policy predicate fails.
+#!
+#! Invocation: exec
+pub proc enforce_mint_policy
+    exec.get_mint_policy_root
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    exec.assert_valid_policy_root
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    mem_storew_le.MINT_POLICY_PROC_ROOT_PTR dropw
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+
+    push.MINT_POLICY_PROC_ROOT_PTR
+    # => [policy_root_ptr, amount, tag, note_type, RECIPIENT, pad(9)]
+
+    dynexec
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+end
+
+#! Returns active mint policy root.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [MINT_POLICY_ROOT, pad(12)]
+#!
+#! Invocation: call
+pub proc get_mint_policy
+    exec.get_mint_policy_root
+    # => [MINT_POLICY_ROOT, pad(12)]
+end
+
+#! Sets active mint policy root.
+#!
+#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - note sender is not owner.
+#! - NEW_POLICY_ROOT is zero.
+#! - NEW_POLICY_ROOT is not a procedure of this account.
+#!
+#! Invocation: call
+pub proc set_mint_policy
+    exec.ownable::verify_owner
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    exec.assert_valid_policy_root
+    # => [NEW_POLICY_ROOT, pad(12)]
+
+    push.MINT_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    # => [pad(16)]
+end

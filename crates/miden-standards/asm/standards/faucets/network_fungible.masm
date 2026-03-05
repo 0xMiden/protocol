@@ -1,5 +1,6 @@
 use miden::standards::faucets
 use miden::standards::access::ownable
+use miden::standards::mint_policies
 
 # PUBLIC INTERFACE
 # ================================================================================================
@@ -49,8 +50,9 @@ pub use ownable::renounce_ownership
 
 #! Distributes freshly minted fungible assets to the provided recipient.
 #!
-#! This procedure first checks if the note sender is the owner of the faucet, and then
-#! mints the asset and creates an output note with that asset for the recipient.
+#! This procedure first enforces the active mint policy configured via
+#! `mint_policy_proc_root`, and then mints the asset and creates an output note
+#! with that asset for the recipient.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
@@ -63,12 +65,12 @@ pub use ownable::renounce_ownership
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
-#! - the note sender is not the owner of this faucet.
+#! - active mint policy validation fails.
 #! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
 pub proc distribute
-    exec.ownable::verify_owner
+    exec.mint_policies::enforce_mint_policy
     # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
 
     exec.faucets::distribute
