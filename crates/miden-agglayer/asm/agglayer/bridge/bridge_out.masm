@@ -85,8 +85,8 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 4. Computes Keccak hash and adds it to the MMR frontier
 #! 5. Creates a BURN note with the bridged out asset
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(4)]
-#! Outputs: []
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to be bridged out.
@@ -97,10 +97,12 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! Invocation: call
 @locals(14)
 pub proc bridge_out
+    # => [ASSET_KEY(4), ASSET_VALUE(4), dest_network_id, dest_address(5), pad(2)]
+
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::store
-    # => [dest_network_id, dest_address(5)]
+    # => [dest_network_id, dest_address(5), pad(10)]
 
     loc_store.DESTINATION_NETWORK_LOC
     loc_store.DESTINATION_ADDRESS_0_LOC
@@ -108,15 +110,15 @@ pub proc bridge_out
     loc_store.DESTINATION_ADDRESS_2_LOC
     loc_store.DESTINATION_ADDRESS_3_LOC
     loc_store.DESTINATION_ADDRESS_4_LOC
-    # => []
+    # => [pad(16)]
 
     # --- 1. Validate faucet registration and convert asset via FPI ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY(4), ASSET_VALUE(4), pad(16)]
 
     exec.convert_asset
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, dest_network_id, dest_address(5)]
+    # => [AMOUNT_U256(8), origin_addr(5), origin_network, pad(16)]
 
     # --- 2. Write all leaf data fields to memory ---
 
@@ -124,23 +126,23 @@ pub proc bridge_out
     push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
     movdn.8
     exec.utils::mem_store_double_word_unaligned
-    # => [origin_addr(5), origin_network, dest_network_id, dest_address(5)]
+    # => [origin_addr(5), origin_network, pad(16)]
 
     # Store origin_token_address (5 felts)
     push.LEAF_DATA_START_PTR push.ORIGIN_TOKEN_ADDRESS_OFFSET add
     exec.write_address_to_memory
-    # => [origin_network, dest_network_id, dest_address(5)]
+    # => [origin_network, pad(16)]
 
     # Store origin_network
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     mem_store
-    # => [dest_network_id, dest_address(5)]
+    # => [pad(16)]
 
     # Store destination_network
     loc_load.DESTINATION_NETWORK_LOC
     push.LEAF_DATA_START_PTR push.DESTINATION_NETWORK_OFFSET add
     mem_store
-    # => [dest_address(5)]
+    # => [pad(16)]
 
     # Store destination_address
     loc_load.DESTINATION_ADDRESS_4_LOC
@@ -150,14 +152,14 @@ pub proc bridge_out
     loc_load.DESTINATION_ADDRESS_0_LOC
     push.LEAF_DATA_START_PTR push.DESTINATION_ADDRESS_OFFSET add
     exec.write_address_to_memory
-    # => []
+    # => [pad(16)]
 
     # TODO construct metadata hash
     padw padw
-    # => [METADATA_HASH[8]]
+    # => [METADATA_HASH(8), pad(16)]
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
-    # => [METADATA_HASH[8], metadata_hash_ptr]
+    # => [METADATA_HASH(8), metadata_hash_ptr, pad(16)]
     exec.utils::mem_store_double_word_unaligned
 
     # Explicitly zero the 3 padding felts after METADATA_HASH for
@@ -173,23 +175,26 @@ pub proc bridge_out
     push.0
     push.LEAF_DATA_START_PTR push.PADDING_OFFSET add.2 add
     mem_store
+    # => [pad(16)]
 
     # Leaf type
     push.LEAF_TYPE_ASSET
     exec.utils::swap_u32_bytes
     push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
-    # => [leaf_type_ptr, leaf_type]
+    # => [leaf_type_ptr, leaf_type, pad(16)]
     mem_store
 
     # --- 3. Compute leaf value and add to MMR frontier ---
     push.LEAF_DATA_START_PTR
     exec.add_leaf_bridge
+    # => [pad(16)]
 
     # --- 4. Create BURN output note for ASSET ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY(4), ASSET_VALUE(4), pad(16)]
     exec.create_burn_note
+    # => [pad(16)]
 end
 
 # HELPER PROCEDURES
@@ -498,34 +503,35 @@ proc create_burn_note
     push.DEFAULT_TAG
     # => [tag, note_type, RECIPIENT]
 
+    # pad the stack before the call invocation
+    push.0 movdn.6 push.0 movdn.6 padw padw swapdw
+    # => [tag, note_type, RECIPIENT, pad(10)]
+
     call.output_note::create
     # => [note_idx, pad(15)]
 
-    # Duplicate note_idx and use padw to protect it from loc_loadw_le overwrite
+    # duplicate note_idx: one for set_attachment, one for add_asset
     dup
-    # => [note_idx, note_idx, pad(15)]
+    swapw loc_loadw_le.ATTACHMENT_LOC
+    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
 
-    padw loc_loadw_le.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
-
-    loc_load.ATTACHMENT_KIND_LOC
+    movup.2 loc_load.ATTACHMENT_KIND_LOC
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(15)]
+    # => [scheme, kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(11)]
 
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(15)]
+    # => [note_idx, scheme, kind, NOTE_ATTACHMENT, note_idx, pad(11)]
 
     exec.output_note::set_attachment
-    # => [note_idx, pad(15)]
+    # => [note_idx, pad(11)]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(15)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(11)]
 
     exec.output_note::add_asset
-    # => [pad(16)]
+    # => [pad(11)]
 
-    # Clean up residual stack elements from call boundaries
-    dropw dropw dropw dropw
+    dropw dropw drop drop drop
     # => []
 end
