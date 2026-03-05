@@ -221,18 +221,8 @@ impl AggLayerBridge {
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = Word::new([
-            bridge.bridge_admin_id.suffix(),
-            bridge.bridge_admin_id.prefix().as_felt(),
-            Felt::ZERO,
-            Felt::ZERO,
-        ]);
-        let ger_manager_word = Word::new([
-            bridge.ger_manager_id.suffix(),
-            bridge.ger_manager_id.prefix().as_felt(),
-            Felt::ZERO,
-            Felt::ZERO,
-        ]);
+        let bridge_admin_word = create_id_key(bridge.bridge_admin_id);
+        let ger_manager_word = create_id_key(bridge.ger_manager_id);
 
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
@@ -401,12 +391,7 @@ impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
         let metadata_slot = StorageSlot::from(faucet.metadata);
 
-        let bridge_account_id_word = Word::new([
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-            Felt::ZERO,
-            Felt::ZERO,
-        ]);
+        let bridge_account_id_word = create_id_key(faucet.bridge_account_id);
         let bridge_slot =
             StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
 
@@ -429,11 +414,16 @@ impl From<AggLayerFaucet> for AccountComponent {
 // FAUCET REGISTRY HELPERS
 // ================================================================================================
 
-/// Creates a faucet registry map key from a faucet account ID.
+/// Creates a Word key from an account ID: `[suffix, prefix, 0, 0]`.
 ///
-/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+/// This is the standard layout for storing account IDs in MASM storage slots and map keys.
+pub fn create_id_key(id: AccountId) -> Word {
+    Word::new([id.suffix(), id.prefix().as_felt(), Felt::ZERO, Felt::ZERO])
+}
+
+/// Creates a faucet registry map key from a faucet account ID.
 pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    Word::new([faucet_id.suffix(), faucet_id.prefix().as_felt(), Felt::ZERO, Felt::ZERO])
+    create_id_key(faucet_id)
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

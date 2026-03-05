@@ -67,7 +67,6 @@ const CREATE_BURN_NOTE_BURN_ASSET_LOC=0
 const ATTACHMENT_LOC=8
 const ATTACHMENT_SCHEME_LOC=12
 const ATTACHMENT_KIND_LOC=13
-const NOTE_IDX_LOC=14
 
 # Other constants
 const LEAF_TYPE_ASSET=0
@@ -457,7 +456,7 @@ end
 #! - ASSET_VALUE is the value of the asset to be burnt.
 #!
 #! Invocation: exec
-@locals(15)
+@locals(14)
 proc create_burn_note
     swapw dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
@@ -480,7 +479,7 @@ proc create_burn_note
     # Save attachment data to locals
     loc_store.ATTACHMENT_SCHEME_LOC
     loc_store.ATTACHMENT_KIND_LOC
-    loc_storew_be.ATTACHMENT_LOC dropw
+    loc_storew_le.ATTACHMENT_LOC dropw
     # => [ASSET_KEY]
 
     exec.compute_burn_note_serial_num
@@ -502,40 +501,31 @@ proc create_burn_note
     call.output_note::create
     # => [note_idx, pad(15)]
 
-    # Save note_idx to a local so it survives loc_loadw_be (which overwrites top 4)
-    loc_store.NOTE_IDX_LOC
-    # => [pad(15)]
+    # Duplicate note_idx and use padw to protect it from loc_loadw_le overwrite
+    dup
+    # => [note_idx, note_idx, pad(14)]
 
-    # Set the NetworkAccountTarget attachment
-    loc_loadw_be.ATTACHMENT_LOC
-    # => [NOTE_ATTACHMENT, pad(11)]
+    padw loc_loadw_le.ATTACHMENT_LOC
+    # => [NOTE_ATTACHMENT, note_idx, note_idx, pad(14)]
 
     loc_load.ATTACHMENT_KIND_LOC
     loc_load.ATTACHMENT_SCHEME_LOC
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, pad(11)]
-
-    loc_load.NOTE_IDX_LOC
-    movdn.6
-    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(10)]
+    # => [attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, note_idx, pad(14)]
 
     movup.6
-    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, pad(10)]
+    # => [note_idx, attachment_scheme, attachment_kind, NOTE_ATTACHMENT, note_idx, pad(14)]
 
     exec.output_note::set_attachment
-    # => []
-
-    # Add the asset to the note
-    loc_load.NOTE_IDX_LOC
-    # => [note_idx]
+    # => [note_idx, pad(14)]
 
     locaddr.CREATE_BURN_NOTE_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(14)]
 
     exec.output_note::add_asset
-    # => [residual_padding...]
+    # => [pad(14)]
 
     # Clean up residual stack elements from call boundaries
-    dropw drop
+    dropw dropw dropw drop drop
     # => []
 end

@@ -174,9 +174,13 @@ proc u128_sub_no_underflow
     # ---------------------------------------------------------------------------------------------
     # Apply propagated borrow from low 64-bit subtraction:
     #   (t0,t1) - borrow_low
+    # Arrange args (LE convention) as:
+    #   [borrow_low, 0, t0, t1]
     # ---------------------------------------------------------------------------------------------
     swap.3
+    # => [borrow_low, t0, t1, underflow_high_raw, z0, z1]
     push.0 swap
+    # => [borrow_low, 0, t0, t1, underflow_high_raw, z0, z1]
     exec.u64::overflowing_sub
     # => [underflow_high_borrow, z2, z3, underflow_high_raw, z0, z1]
 

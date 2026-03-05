@@ -83,7 +83,9 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     updated_bridge.apply_delta(executed_transaction.account_delta())?;
 
     let value_after = updated_bridge.storage().get_map_item(registry_slot_name, key)?;
-    let expected_value = [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(1)].into();
+    // TODO: use a getter helper on AggLayerBridge once available
+    // (see https://github.com/0xMiden/protocol/issues/2548)
+    let expected_value = [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE].into();
     assert_eq!(
         value_after, expected_value,
         "Faucet should be registered with value [0, 0, 0, 1]"

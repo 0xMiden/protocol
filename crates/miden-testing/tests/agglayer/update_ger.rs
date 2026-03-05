@@ -108,7 +108,8 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
 
     let ger_hash = Poseidon2::merge(&[ger_lower.into(), ger_upper.into()]);
-    // Look up the GER hash in the map storage
+    // TODO: use a helper getter on AggLayerBridge once available
+    // (see https://github.com/0xMiden/protocol/issues/2548)
     let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
     let stored_value = updated_bridge_account
         .storage()
