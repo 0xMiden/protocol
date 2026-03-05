@@ -11,4 +11,4 @@ mod multisig;
 pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
 mod multisig_psm;
-pub use multisig_psm::{AuthMultisigPsm, AuthMultisigPsmConfig};
+pub use multisig_psm::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};

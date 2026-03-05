@@ -14,6 +14,7 @@ use miden_standards::account::auth::{
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
+    PsmConfig,
 };
 use miden_standards::testing::account_component::{
     ConditionalAuthComponent,
@@ -121,7 +122,7 @@ impl Auth {
                 let config = AuthMultisigPsmConfig::new(
                     approvers,
                     *threshold,
-                    (PublicKeyCommitment::from(psm_pub_key), psm_auth_scheme),
+                    PsmConfig::new(PublicKeyCommitment::from(psm_pub_key), psm_auth_scheme),
                 )
                 .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                 .expect("invalid multisig psm config");

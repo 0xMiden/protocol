@@ -209,8 +209,7 @@ proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     # => []
 end
 
-#! Update threshold config, add / remove approvers,
-#! and update the approver scheme ids
+#! Update threshold config, add & remove approvers, and update the approver scheme ids
 #! 
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
@@ -435,6 +434,7 @@ proc compute_transaction_threshold(default_threshold: u32) -> u32
 end
 
 #! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
+#!
 #! Inputs: []
 #! Outputs: [threshold, num_approvers]
 #!
@@ -498,7 +498,7 @@ end
 #! Returns signer public key at index i
 #!
 #! Inputs: [index]
-#! Outputs: [PUB_KEY]
+#! Outputs: [PUB_KEY, scheme_id]
 #!
 #! Panics if:
 #! - index is not a u32 value.
@@ -508,18 +508,40 @@ pub proc get_signer_at
     u32assert.err=ERR_SIGNER_INDEX_NOT_U32
     # => [index]
 
+    dup
+    # => [index, index]
+
     exec.create_approver_map_key
-    # => [APPROVER_MAP_KEY]
+    # => [APPROVER_MAP_KEY, index]
 
     push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-    # => [APPROVER_PUBLIC_KEYS_SLOT, APPROVER_MAP_KEY]
+    # => [APPROVER_PUBLIC_KEYS_SLOT, APPROVER_MAP_KEY, index]
 
     exec.active_account::get_initial_map_item
-    # => [PUB_KEY]
+    # => [PUB_KEY, index]
+
+    movup.4
+    # => [index, PUB_KEY]
+
+    exec.create_approver_map_key
+    # => [APPROVER_MAP_KEY, PUB_KEY]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [APPROVER_SCHEME_ID_SLOT, APPROVER_MAP_KEY, PUB_KEY]
+
+    exec.active_account::get_initial_map_item
+    # => [SCHEME_ID_WORD, PUB_KEY]
+
+    movdn.3 drop drop drop
+    # => [scheme_id, PUB_KEY]
+
+    movdn.4
+    # => [PUB_KEY, scheme_id]
 end
 
 
 #! Returns 1 if PUB_KEY is a current signer, else 0.
+#!
 #! Inputs: [PUB_KEY]
 #! Outputs: [is_signer]
 #! Locals:

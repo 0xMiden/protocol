@@ -5,8 +5,7 @@
 use miden::standards::auth::multisig
 use miden::standards::auth::psm
 
-#! Update threshold config, add / remove approvers,
-#! and update the approver scheme ids
+#! Update threshold config, add & remove approvers, and update the approver scheme ids
 #! 
 #! Inputs:
 #!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
@@ -36,6 +35,7 @@ use miden::standards::auth::psm
 pub use multisig::update_signers_and_threshold
 
 #! Returns current num_approvers and the threshold `THRESHOLD_CONFIG_SLOT`
+#!
 #! Inputs: []
 #! Outputs: [threshold, num_approvers]
 #!
@@ -64,7 +64,7 @@ pub use multisig::set_procedure_threshold
 #! Returns signer public key at index i
 #!
 #! Inputs: [index]
-#! Outputs: [PUB_KEY]
+#! Outputs: [PUB_KEY, scheme_id]
 #!
 #! Panics if:
 #! - index is not a u32 value.
@@ -73,6 +73,7 @@ pub use multisig::set_procedure_threshold
 pub use multisig::get_signer_at
 
 #! Returns 1 if PUB_KEY is a current signer, else 0.
+#!
 #! Inputs: [PUB_KEY]
 #! Outputs: [is_signer]
 #! Locals:

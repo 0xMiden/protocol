@@ -17,7 +17,12 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::{AuthMultisig, AuthMultisigPsm, AuthMultisigPsmConfig};
+use miden_standards::account::auth::{
+    AuthMultisig,
+    AuthMultisigPsm,
+    AuthMultisigPsmConfig,
+    PsmConfig,
+};
 use miden_standards::account::components::{multisig_library, multisig_psm_library};
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
@@ -41,12 +46,6 @@ use rand_chacha::ChaCha20Rng;
 
 type MultisigTestSetup =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
-
-#[derive(Clone)]
-struct PsmSigner {
-    pub_key: PublicKey,
-    auth_scheme: AuthScheme,
-}
 
 /// Sets up secret keys, public keys, and authenticators for multisig testing
 fn setup_keys_and_authenticators(
@@ -116,7 +115,7 @@ fn create_multisig_account(
 fn create_multisig_account_with_psm(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
-    psm: PsmSigner,
+    psm: PsmConfig,
     asset_amount: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
@@ -125,12 +124,8 @@ fn create_multisig_account_with_psm(
         .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
         .collect();
 
-    let config = AuthMultisigPsmConfig::new(
-        approvers,
-        threshold,
-        (psm.pub_key.to_commitment(), psm.auth_scheme),
-    )?
-    .with_proc_thresholds(proc_threshold_map)?;
+    let config = AuthMultisigPsmConfig::new(approvers, threshold, psm)?
+        .with_proc_thresholds(proc_threshold_map)?;
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigPsm::new(config)?)
@@ -1570,10 +1565,7 @@ async fn test_hybrid_multisig_psm_signature_required() -> anyhow::Result<()> {
     let mut multisig_account = create_multisig_account_with_psm(
         2,
         &approvers,
-        PsmSigner {
-            pub_key: psm_public_key.clone(),
-            auth_scheme: AuthScheme::EcdsaK256Keccak,
-        },
+        PsmConfig::new(psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
@@ -1681,10 +1673,7 @@ async fn test_hybrid_multisig_update_psm_public_key() -> anyhow::Result<()> {
     let multisig_account = create_multisig_account_with_psm(
         2,
         &approvers,
-        PsmSigner {
-            pub_key: old_psm_public_key.clone(),
-            auth_scheme: AuthScheme::EcdsaK256Keccak,
-        },
+        PsmConfig::new(old_psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
         10,
         vec![],
     )?;
