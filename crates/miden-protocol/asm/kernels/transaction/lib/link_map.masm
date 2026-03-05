@@ -119,6 +119,8 @@ use $kernel::memory
 # ERRORS
 # =================================================================================================
 
+const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION="empty map requires operation InsertAtHead for set or AbsentAtHead for get"
+
 const ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY="map cannot be empty when proving absence after an entry"
 
 const ERR_LINK_MAP_PROVIDED_KEY_NOT_EQUAL_TO_ENTRY_KEY="provided key does not match key in map entry"
@@ -197,47 +199,56 @@ const LINK_MAP_GET_EVENT=event("miden::link_map::get")
 #!
 #! Panics if:
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
-#!   update_entry, insert_at_head, insert_after_entry.
+#!   update_entry, insert_at_head, insert_after_entry and assert_empty_map_op_is_at_head.
 pub proc set
     emit.LINK_MAP_SET_EVENT
     adv_push.2
     # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    dup.2 dup.2
-    # => [entry_ptr, map_ptr, operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    dup eq.INSERT_OPERATION_UPDATE swap eq.INSERT_OPERATION_AT_HEAD
+    # => [is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    exec.assert_entry_ptr_is_valid
-    # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    dup dup.4
+    # => [map_ptr, is_insert_at_head_op, is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    dup eq.INSERT_OPERATION_AT_HEAD swap eq.INSERT_OPERATION_UPDATE
-    # => [is_insert_update_op, is_insert_at_head_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    exec.assert_empty_map_op_is_at_head
+    # => [is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
     if.true
-        # update existing entry
-        # drop is_insert_at_head_op and map_ptr from stack
-        drop swap drop
-        # => [entry_ptr, KEY, VALUE0, VALUE1]
+        # drop is_insert_update_op and the unvalidated entry ptr since we can load the head
+        # securely from map_ptr
+        drop drop
+        # => [map_ptr, KEY, VALUE0, VALUE1]
 
-        exec.update_entry
+        exec.insert_at_head
         # => []
 
-        push.0
+        push.1
         # => [is_new_key]
     else
         # insert new entry
-        # => [is_insert_at_head_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+        # => [is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+
+        dup.2 dup.2
+        # => [entry_ptr, map_ptr, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+
+        # validate the entry pointer
+        # this can be skipped for insert_at_head because the entry_ptr is not used in that branch
+        exec.assert_entry_ptr_is_valid
+        # => [is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
         # note: the is_new_key flag logic is duplicated rather than appended after the if-else branch
         # to avoid introducing an extra MAST node
         if.true
-            # drop the entry ptr since we can load the head from map_ptr
-            drop
-            # => [map_ptr, KEY, VALUE0, VALUE1]
+            # update existing entry
+            # drop unused map_ptr
+            swap drop
+            # => [entry_ptr, KEY, VALUE0, VALUE1]
 
-            exec.insert_at_head
+            exec.update_entry
             # => []
 
-            push.1
+            push.0
             # => [is_new_key]
         else
             # insert after existing entry
@@ -853,6 +864,36 @@ proc assert_key_is_less
     # => [ENTRY_KEY, KEY]
 
     exec.word::lt assert.err=ERR_LINK_MAP_PROVIDED_KEY_NOT_LESS_THAN_ENTRY_KEY
+    # => []
+end
+
+#! Asserts that if the map is empty, the host-provided operation is the `*AT_HEAD` variant:
+#! - INSERT_OPERATION_AT_HEAD for link_map::set
+#! - GET_OPERATION_ABSENT_AT_HEAD for link_map::get
+#!
+#! This ensures the other operations never have to consider the empty map case to reduce
+#! complexity.
+#!
+#! What we want is:
+#! is_empty_map | !is_at_head_op | outcome
+#! true         | true           | panic
+#! true         | false          | ok
+#! false        | true           | ok
+#! false        | false          | ok
+#!
+#! Inputs:  [map_ptr, is_at_head_op]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the map is empty and the provided operation is not the *AT_HEAD variant.
+proc assert_empty_map_op_is_at_head
+    exec.is_empty
+    # => [is_empty_map, is_at_head_op]
+
+    swap not
+    # => [!is_at_head_op, is_empty_map]
+
+    and assertz.err=ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION
     # => []
 end
 
