@@ -193,6 +193,13 @@ impl Serializable for NoteMetadata {
         self.tag().write_into(target);
         self.attachment().write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.note_type().get_size_hint()
+            + self.sender().get_size_hint()
+            + self.tag().get_size_hint()
+            + self.attachment().get_size_hint()
+    }
 }
 
 impl Deserializable for NoteMetadata {

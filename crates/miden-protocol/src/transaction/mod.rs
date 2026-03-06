@@ -19,7 +19,15 @@ pub use executed_tx::{ExecutedTransaction, TransactionMeasurements};
 pub use inputs::{AccountInputs, InputNote, InputNotes, ToInputNoteCommitments, TransactionInputs};
 pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel, memory};
 pub use ordered_transactions::OrderedTransactionHeaders;
-pub use outputs::{OutputNote, OutputNotes, TransactionOutputs};
+pub use outputs::{
+    OutputNote,
+    OutputNotes,
+    ProvenOutputNote,
+    ProvenOutputNotes,
+    PublicOutputNote,
+    RawOutputNotes,
+    TransactionOutputs,
+};
 pub use partial_blockchain::PartialBlockchain;
 pub use proven_tx::{
     InputNoteCommitment,

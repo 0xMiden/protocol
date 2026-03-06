@@ -4,6 +4,7 @@
 
 ### Features
 
+- Introduce NOTE_MAX_SIZE (32 KiB) and enforce it on individual output notes ([#2205](https://github.com/0xMiden/miden-base/pull/2205))
 - Added AggLayer faucet registry to bridge account with conversion metadata, `CONFIG_AGG_BRIDGE` note for faucet registration, and FPI-based asset conversion in `bridge_out` ([#2426](https://github.com/0xMiden/miden-base/pull/2426)).
 - Added metadata extension (`Info`) with name and content URI slots, and MASM procedures `get_token_metadata`, `get_max_supply`, `get_decimals`, and `get_token_symbol` for the token metadata standard. Aligned fungible faucet token metadata with the metadata standard: faucet now uses the canonical slot `miden::standards::metadata::token_metadata` so MASM metadata getters work with faucet storage.([#2439](https://github.com/0xMiden/miden-base/pull/2439))
 

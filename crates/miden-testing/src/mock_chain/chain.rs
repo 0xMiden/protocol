@@ -25,8 +25,8 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     ProvenTransaction,
     TransactionInputs,
 };
@@ -236,6 +236,7 @@ impl MockChain {
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_key: SecretKey,
+        genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
             chain: Blockchain::default(),
@@ -254,6 +255,20 @@ impl MockChain {
         chain
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
+
+        // Update committed_notes with full note details for genesis notes.
+        // This is needed because apply_block only stores headers for private notes,
+        // but tests need full note details to create input notes.
+        for note in genesis_notes {
+            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
+                chain.committed_notes.get(&note.id())
+            {
+                chain.committed_notes.insert(
+                    note.id(),
+                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
+                );
+            }
+        }
 
         debug_assert_eq!(chain.blocks.len(), 1);
         debug_assert_eq!(chain.committed_accounts.len(), chain.account_tree.num_accounts());
@@ -917,9 +932,11 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Full(note) = created_note {
-                self.committed_notes
-                    .insert(note.id(), MockChainNote::Public(note.clone(), note_inclusion_proof));
+            if let ProvenOutputNote::Public(public_note) = created_note {
+                self.committed_notes.insert(
+                    public_note.id(),
+                    MockChainNote::Public(public_note.note().clone(), note_inclusion_proof),
+                );
             } else {
                 self.committed_notes.insert(
                     created_note.id(),

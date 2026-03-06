@@ -43,4 +43,4 @@ pub use note_tree::{BlockNoteIndex, BlockNoteTree};
 /// output notes of a batch. This means the indices here may not be contiguous, i.e. any missing
 /// index belongs to an erased note. To correctly build the [`BlockNoteTree`] of a block, this index
 /// is required.
-pub type OutputNoteBatch = alloc::vec::Vec<(usize, crate::transaction::OutputNote)>;
+pub type OutputNoteBatch = alloc::vec::Vec<(usize, crate::transaction::ProvenOutputNote)>;
