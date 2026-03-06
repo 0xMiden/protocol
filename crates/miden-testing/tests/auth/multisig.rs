@@ -356,12 +356,12 @@ async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> any
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
         .auth_args(salt)
-        .build()?;
-
-    let executed_tx = tx_context_execute.execute().await.expect("First transaction should succeed");
+        .build()?
+        .execute()
+        .await?;
 
     // Apply the transaction to the mock chain
-    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
 
     // Attempt to execute the same transaction again - should fail due to replay protection
@@ -518,8 +518,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
-        .await
-        .unwrap();
+        .await?;
 
     // Verify the transaction executed successfully
     assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));
@@ -781,8 +780,7 @@ async fn test_multisig_update_signers_remove_owner(
         .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
-        .await
-        .unwrap();
+        .await?;
 
     // Verify transaction success
     assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));

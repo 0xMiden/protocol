@@ -9,8 +9,8 @@ use crate::errors::{ProposedBatchError, ProposedBlockError};
 use crate::note::{NoteHeader, NoteId, NoteInclusionProof, Nullifier};
 use crate::transaction::{
     InputNoteCommitment,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     ProvenTransaction,
     TransactionId,
 };
@@ -18,8 +18,8 @@ use crate::transaction::{
 type BatchInputNotes = Vec<InputNoteCommitment>;
 type BlockInputNotes = Vec<InputNoteCommitment>;
 type ErasedNotes = Vec<Nullifier>;
-type BlockOutputNotes = BTreeMap<NoteId, (BatchId, OutputNote)>;
-type BatchOutputNotes = Vec<OutputNote>;
+type BlockOutputNotes = BTreeMap<NoteId, (BatchId, ProvenOutputNote)>;
+type BatchOutputNotes = Vec<ProvenOutputNote>;
 
 // INPUT OUTPUT NOTE TRACKER
 // ================================================================================================
@@ -49,7 +49,7 @@ pub(crate) struct InputOutputNoteTracker<ContainerId> {
     /// An index from [`NoteId`]s to the transaction that creates the note and the note itself.
     /// The transaction ID is tracked to produce better errors when a duplicate note is
     /// encountered.
-    output_notes: BTreeMap<NoteId, (ContainerId, OutputNote)>,
+    output_notes: BTreeMap<NoteId, (ContainerId, ProvenOutputNote)>,
 }
 
 impl InputOutputNoteTracker<TransactionId> {
@@ -136,7 +136,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
     /// authenticating any unauthenticated notes for which proofs are provided.
     fn from_iter(
         input_notes_iter: impl Iterator<Item = (InputNoteCommitment, ContainerId)>,
-        output_notes_iter: impl Iterator<Item = (OutputNote, ContainerId)>,
+        output_notes_iter: impl Iterator<Item = (ProvenOutputNote, ContainerId)>,
         unauthenticated_note_proofs: &BTreeMap<NoteId, NoteInclusionProof>,
         partial_blockchain: &PartialBlockchain,
         reference_block: &BlockHeader,
@@ -199,7 +199,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
         (
             Vec<InputNoteCommitment>,
             ErasedNotes,
-            BTreeMap<NoteId, (ContainerId, OutputNote)>,
+            BTreeMap<NoteId, (ContainerId, ProvenOutputNote)>,
         ),
         InputOutputNoteTrackerError<ContainerId>,
     > {
@@ -242,7 +242,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
     ///   but their hashes differ (i.e. their metadata is different).
     fn remove_output_note(
         input_note_header: &NoteHeader,
-        output_notes: &mut BTreeMap<NoteId, (ContainerId, OutputNote)>,
+        output_notes: &mut BTreeMap<NoteId, (ContainerId, ProvenOutputNote)>,
     ) -> Result<bool, InputOutputNoteTrackerError<ContainerId>> {
         let id = input_note_header.id();
         if let Some((_, output_note)) = output_notes.remove(&id) {
@@ -250,7 +250,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             // This could happen if the metadata of the notes is different, which we consider an
             // error.
             let input_commitment = input_note_header.commitment();
-            let output_commitment = output_note.commitment();
+            let output_commitment = output_note.to_commitment();
             if output_commitment != input_commitment {
                 return Err(InputOutputNoteTrackerError::NoteCommitmentMismatch {
                     id,

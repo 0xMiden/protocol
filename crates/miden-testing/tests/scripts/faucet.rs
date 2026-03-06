@@ -1299,7 +1299,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
             // For public notes, we get OutputNote::Full and can compare key properties
             let created_note = match output_note {
                 OutputNote::Full(note) => note,
-                _ => panic!("Expected OutputNote::Full variant for public note"),
+                _ => panic!("Expected OutputNote::Full variant"),
             };
 
             assert_eq!(created_note, &p2id_mint_output_note);
