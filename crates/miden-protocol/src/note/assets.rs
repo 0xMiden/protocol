@@ -18,7 +18,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 /// An asset container for a note.
 ///
-/// A note can contain between 0 and 256 assets. No duplicates are allowed, but the order of assets
+/// A note can contain between 0 and 255 assets. No duplicates are allowed, but the order of assets
 /// is unspecified.
 ///
 /// All the assets in a note can be reduced to a single commitment which is computed by
@@ -196,6 +196,15 @@ impl Serializable for NoteAssets {
         debug_assert!(self.assets.len() <= NoteAssets::MAX_NUM_ASSETS);
         target.write_u8(self.assets.len().try_into().expect("Asset number must fit into `u8`"));
         target.write_many(&self.assets);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        // Size of the serialized asset count prefix.
+        let u8_size = 0u8.get_size_hint();
+
+        let assets_size: usize = self.assets.iter().map(|asset| asset.get_size_hint()).sum();
+
+        u8_size + assets_size
     }
 }
 

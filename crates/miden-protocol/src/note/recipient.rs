@@ -60,6 +60,11 @@ impl NoteRecipient {
     pub fn digest(&self) -> Word {
         self.digest
     }
+
+    /// Consumes self and returns the underlying parts of the [`NoteRecipient`].
+    pub fn into_parts(self) -> (Word, NoteScript, NoteStorage) {
+        (self.serial_num, self.script, self.storage)
+    }
 }
 
 fn compute_recipient_digest(serial_num: Word, script: &NoteScript, storage: &NoteStorage) -> Word {
@@ -86,6 +91,10 @@ impl Serializable for NoteRecipient {
         script.write_into(target);
         storage.write_into(target);
         serial_num.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.script.get_size_hint() + self.storage.get_size_hint() + Word::SERIALIZED_SIZE
     }
 }
 
