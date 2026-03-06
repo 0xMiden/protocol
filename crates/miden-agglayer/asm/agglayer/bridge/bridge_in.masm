@@ -194,30 +194,12 @@ pub proc verify_leaf_bridge
     exec.verify_leaf
     # => [pad(16)]
 
-    # compute the claimed global index hash chain
-    #
-    # this hash is computed as:
-    # NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
-
-    # load the old CGI chain hash
-    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
-    exec.active_account::get_item
-    # => [OLD_CGI_CHAIN_HASH_HI, pad(16)]
-
-    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
-    exec.active_account::get_item
-    # => [OLD_CGI_CHAIN_HASH[8], pad(16)]
-
-    # load the pointer to the leaf value onto the stack
+    # load the pointer to the leaf value back to the stack
     locaddr.0
-    # => [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8], pad(16)]
+    # => [leaf_value_ptr, pad(16)]
 
-    # compute the claimed global index chain hash
-    exec.compute_cgi_hash_chain
-    # => [NEW_CGI_CHAIN_HASH[8], pad(16)]
-
-    # store the computed CGI chain hash
-    exec.store_cgi_hash_chain
+    # update the CGI chain hash
+    exec.update_cgi_chain_hash
     # => [pad(16)]
 end
 
@@ -811,31 +793,58 @@ proc calculate_root(
     # => [ROOT_LO, ROOT_HI]
 end
 
-#! Computes the claimed global index (CGI) chain hash.
+#! Updates the claimed global index (CGI) chain hash by recomputing it and storing into the
+#! corresponding storage slot.
 #!
 #! The resulting hash is computed as a sequential hash of leaf value, global index, and previous 
 #! value of the CGI chain hash:
 #! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
 #!
-#! Inputs: [leaf_value_ptr, OLD_CGI_CHAIN_HASH[8]]
-#! Outputs: [NEW_CGI_CHAIN_HASH[8]]
+#! Inputs:  [leaf_value_ptr]
+#! Outputs: []
 #!
 #! Invocation: exec
-pub proc compute_cgi_hash_chain
+proc update_cgi_chain_hash
+    # load the required CGI chain data values onto the stack
+    exec.load_cgi_chain_hash_data
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # compute the new CGI chain hash
+    exec.keccak256::merge swapdw
+    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
+
+    exec.keccak256::merge
+    # => [NEW_CGI_CHAIN_HASH[8]]
+
+    # store the new CGI chain hash
+    exec.store_cgi_chain_hash
+    # => []
+end
+
+#! Loads the old CGI chain hash, the leaf value, and the global index onto the stack as a
+#! preparation for the new CGI chain hash computation.
+#!
+#! Inputs: [leaf_value_ptr]
+#! Outputs: [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+#!
+#! Invocation: exec
+proc load_cgi_chain_hash_data
+    # load the old CGI chain hash onto the stack
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH_HI, leaf_value_ptr]
+
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH[8], leaf_value_ptr]
+
     # load the leaf value onto the stack
-    exec.utils::mem_load_double_word
+    movup.8 exec.utils::mem_load_double_word
     # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
 
     # load the global index onto the stack
     push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
-
-    exec.keccak256::merge swapdw
-    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
-
-    # compute the new CGI chain hash
-    exec.keccak256::merge
-    # => [NEW_CGI_CHAIN_HASH[8]]
 end
 
 #! Stores the computed global index (CGI) chain hash into the corresponding storage slots.
@@ -844,7 +853,7 @@ end
 #! Outputs: []
 #!
 #! Invocation: exec
-proc store_cgi_hash_chain
+proc store_cgi_chain_hash
     push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
     exec.native_account::set_item dropw
     # => [NEW_CGI_CHAIN_HASH_HI]

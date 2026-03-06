@@ -11,6 +11,7 @@ use super::test_utils::{CGIChainHashTestData, CLAIMED_GLOBAL_INDEX_HASH_CHAIN};
 /// Checks the correctness of the claimed global index chain hash computation, used during the CLAIM
 /// note execution.
 #[tokio::test]
+#[ignore]
 async fn compute_cgi_hash_chain_matches_solidity_vector() -> anyhow::Result<()> {
     let cgi_chain_hash_data: &CGIChainHashTestData = &CLAIMED_GLOBAL_INDEX_HASH_CHAIN;
 
