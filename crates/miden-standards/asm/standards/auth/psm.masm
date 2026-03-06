@@ -181,7 +181,7 @@ end
 #! Conditionally verifies a private state manager signature.
 #!
 #! Inputs:  [MSG]
-#! Outputs: [MSG]
+#! Outputs: []
 #!
 #! Panics if:
 #! - signature requirement is ON and a valid PSM signature is missing or invalid.
@@ -192,7 +192,7 @@ end
 #! - If the initial signature requirement was enabled, it is set back to ON at the end of auth.
 #!
 #! Invocation: exec
-pub proc verify_signature(msg: word) -> word
+pub proc verify_signature(msg: word)
     # Use current config to apply temporary PSM changes in this tx.
     push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
     # => [is_psm_signature_required, 0, 0, 0, MSG]
@@ -214,7 +214,7 @@ pub proc verify_signature(msg: word) -> word
         exec.signature::verify_signatures
         # => [num_verified_signatures, MSG]
 
-        push.1 neq
+        neq.1
         # => [is_not_exactly_one, MSG]
 
         if.true
@@ -224,6 +224,8 @@ pub proc verify_signature(msg: word) -> word
         # => [MSG]
     end
     # => [MSG]
+
+    dropw
 
     exec.enable_psm_signature_requirement
 end

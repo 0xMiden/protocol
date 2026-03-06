@@ -1570,7 +1570,7 @@ async fn test_hybrid_multisig_psm_signature_required() -> anyhow::Result<()> {
         vec![],
     )?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
+    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     let output_note_asset = FungibleAsset::mock(0);
     let mut mock_chain_builder =
@@ -1636,7 +1636,7 @@ async fn test_hybrid_multisig_psm_signature_required() -> anyhow::Result<()> {
 
     multisig_account.apply_delta(tx_context_execute.account_delta())?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
+    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -1679,7 +1679,7 @@ async fn test_hybrid_multisig_update_psm_public_key() -> anyhow::Result<()> {
         vec![],
     )?;
     let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
+    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1731,7 +1731,7 @@ async fn test_hybrid_multisig_update_psm_public_key() -> anyhow::Result<()> {
     let psm_config = updated_multisig_account
         .storage()
         .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
+    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     let updated_psm_public_key = updated_multisig_account
         .storage()
@@ -1783,7 +1783,7 @@ async fn test_hybrid_multisig_update_psm_public_key() -> anyhow::Result<()> {
     let psm_config = updated_multisig_account
         .storage()
         .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, AuthMultisigPsm::psm_config_enabled());
+    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     mock_chain.add_pending_executed_transaction(&reenable_tx)?;
     mock_chain.prove_next_block()?;

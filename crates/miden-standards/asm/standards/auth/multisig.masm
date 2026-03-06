@@ -611,7 +611,6 @@ end
 
 #! Check if transaction has already been executed and add it to executed transactions for replay protection, and
 #! finalizes multisig authentication.
-#! for replay protection.
 #!
 #! Inputs:  [MSG]
 #! Outputs: []
