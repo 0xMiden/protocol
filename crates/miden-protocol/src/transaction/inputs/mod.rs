@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_crypto::merkle::smt::{LeafIndex, SmtLeaf, SmtProof};
+use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 use miden_crypto::merkle::{MerkleError, NodeIndex};
 
 use super::PartialBlockchain;
@@ -44,7 +44,6 @@ pub use account::AccountInputs;
 mod notes;
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
 
-use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::vm::AdviceInputs;
 
 // TRANSACTION INPUTS
@@ -262,7 +261,7 @@ impl TransactionInputs {
             .map
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, leaf_index)?;
+        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, leaf_index)?;
 
         // Construct SMT proof and witness.
         let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
@@ -297,7 +296,7 @@ impl TransactionInputs {
                 .map
                 .get(&merkle_node)
                 .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-            let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, smt_index)?;
+            let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
             // Construct SMT proof and witness.
             let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
@@ -352,7 +351,7 @@ impl TransactionInputs {
             .map
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, smt_index)?;
+        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
         // Find the asset in the SMT leaf
         let asset = smt_leaf
@@ -536,58 +535,6 @@ impl Deserializable for TransactionInputs {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-// TODO(sergerad): Move this fn to crypto SmtLeaf::try_from_elements.
-pub fn smt_leaf_from_elements(
-    elements: &[Felt],
-    leaf_index: LeafIndex<SMT_DEPTH>,
-) -> Result<SmtLeaf, TransactionInputsExtractionError> {
-    use miden_crypto::merkle::smt::SmtLeaf;
-
-    // Based on the miden-crypto SMT leaf serialization format.
-
-    if elements.is_empty() {
-        return Ok(SmtLeaf::new_empty(leaf_index));
-    }
-
-    // Elements should be organized into a contiguous array of K/V Words (4 Felts each).
-    if !elements.len().is_multiple_of(8) {
-        return Err(TransactionInputsExtractionError::LeafConversionError(
-            "invalid SMT leaf format: elements length must be divisible by 8".into(),
-        ));
-    }
-
-    let num_entries = elements.len() / 8;
-
-    if num_entries == 1 {
-        // Single entry.
-        let key = Word::new([elements[0], elements[1], elements[2], elements[3]]);
-        let value = Word::new([elements[4], elements[5], elements[6], elements[7]]);
-        Ok(SmtLeaf::new_single(key, value))
-    } else {
-        // Multiple entries.
-        let mut entries = Vec::with_capacity(num_entries);
-        // Read k/v pairs from each entry.
-        for i in 0..num_entries {
-            let base_idx = i * 8;
-            let key = Word::new([
-                elements[base_idx],
-                elements[base_idx + 1],
-                elements[base_idx + 2],
-                elements[base_idx + 3],
-            ]);
-            let value = Word::new([
-                elements[base_idx + 4],
-                elements[base_idx + 5],
-                elements[base_idx + 6],
-                elements[base_idx + 7],
-            ]);
-            entries.push((key, value));
-        }
-        let leaf = SmtLeaf::new_multiple(entries)?;
-        Ok(leaf)
-    }
-}
 
 /// Validates whether the provided note belongs to the note tree of the specified block.
 fn validate_is_in_block(
