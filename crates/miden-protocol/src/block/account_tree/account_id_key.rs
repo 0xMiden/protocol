@@ -55,7 +55,6 @@ impl AccountIdKey {
 
     /// Converts to SMT leaf index used by AccountTree
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
-        // identical logic previously used by account_id_to_smt_index
         LeafIndex::from(self.as_word())
     }
 
