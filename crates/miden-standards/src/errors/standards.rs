@@ -34,6 +34,9 @@ pub const ERR_NOTE_TAG_MAX_ACCOUNT_TARGET_LENGTH_EXCEEDED: MasmError = MasmError
 /// Error Message: "attachment is not a valid network account target"
 pub const ERR_NOT_NETWORK_ACCOUNT_TARGET: MasmError = MasmError::from_static_str("attachment is not a valid network account target");
 
+/// Error Message: "no nominated ownership transfer exists"
+pub const ERR_NO_NOMINATED_OWNER: MasmError = MasmError::from_static_str("no nominated ownership transfer exists");
+
 /// Error Message: "failed to reclaim P2IDE note because the reclaiming account is not the sender"
 pub const ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER: MasmError = MasmError::from_static_str("failed to reclaim P2IDE note because the reclaiming account is not the sender");
 /// Error Message: "P2IDE reclaim is disabled"
@@ -50,6 +53,8 @@ pub const ERR_P2ID_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str(
 /// Error Message: "P2ID note expects exactly 2 note storage items"
 pub const ERR_P2ID_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::from_static_str("P2ID note expects exactly 2 note storage items");
 
+/// Error Message: "note sender is not the nominated owner"
+pub const ERR_SENDER_NOT_NOMINATED_OWNER: MasmError = MasmError::from_static_str("note sender is not the nominated owner");
 /// Error Message: "note sender is not the owner"
 pub const ERR_SENDER_NOT_OWNER: MasmError = MasmError::from_static_str("note sender is not the owner");
 

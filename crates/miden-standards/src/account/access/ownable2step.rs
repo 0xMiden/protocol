@@ -21,7 +21,14 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// ```text
 /// Rust Word:  [nominated_owner_suffix, nominated_owner_prefix, owner_suffix, owner_prefix]
-///              word[0]                  word[1]                  word[2]       word[3]
+///              word[0]                  word[1]                 word[2]       word[3]
+/// ```
+///
+/// After `get_item` (which reverses the word onto the MASM stack), the stack is:
+///
+/// ```text
+/// Stack: [owner_prefix, owner_suffix, nominated_owner_prefix, nominated_owner_suffix]
+///         (word[3])     (word[2])      (word[1])               (word[0])
 /// ```
 pub struct Ownable2Step {
     owner: Option<AccountId>,

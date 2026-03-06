@@ -1,49 +1,18 @@
 use miden::protocol::active_note
 use miden::standards::faucets
-use miden::standards::access::ownable
+use miden::standards::access::ownable2step
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-# OWNER MANAGEMENT
+# OWNER MANAGEMENT (re-exported from ownable2step)
 # ------------------------------------------------------------------------------------------------
 
-#! Returns the owner AccountId.
-#!
-#! Inputs:  []
-#! Outputs: [owner_prefix, owner_suffix, pad(14)]
-#!
-#! Invocation: call
-pub use ownable::get_owner
-
-#! Transfers ownership to a new account.
-#!
-#! Can only be called by the current owner.
-#!
-#! Inputs:  [new_owner_prefix, new_owner_suffix, pad(14)]
-#! Outputs: [pad(16)]
-#!
-#! Where:
-#! - new_owner_{prefix, suffix} are the prefix and suffix felts of the new owner AccountId.
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: call
-pub use ownable::transfer_ownership
-
-#! Renounces ownership, leaving the component without an owner.
-#!
-#! Can only be called by the current owner.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the note sender is not the owner.
-#!
-#! Invocation: call
-pub use ownable::renounce_ownership
+pub use ownable2step::owner
+pub use ownable2step::nominated_owner
+pub use ownable2step::transfer_ownership
+pub use ownable2step::accept_ownership
+pub use ownable2step::renounce_ownership
 
 # ASSET DISTRIBUTION
 # ------------------------------------------------------------------------------------------------
@@ -69,7 +38,7 @@ pub use ownable::renounce_ownership
 #!
 #! Invocation: call
 pub proc distribute
-    exec.ownable::verify_owner
+    exec.ownable2step::assert_sender_is_owner
     # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
 
     exec.faucets::distribute

@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::RpoRandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -43,8 +43,8 @@ fn create_ownable_account(
 ) -> anyhow::Result<Account> {
     let component_code = r#"
         use miden::standards::access::ownable2step
-        pub use ownable2step::get_owner
-        pub use ownable2step::get_nominated_owner
+        pub use ownable2step::owner
+        pub use ownable2step::nominated_owner
         pub use ownable2step::transfer_ownership
         pub use ownable2step::accept_ownership
         pub use ownable2step::renounce_ownership
@@ -53,8 +53,8 @@ fn create_ownable_account(
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
 
     let ownership_word: Word = [
-        Felt::ZERO,               // word[0] = nominated_suffix
-        Felt::ZERO,               // word[1] = nominated_prefix
+        Felt::new(0),             // word[0] = nominated_suffix
+        Felt::new(0),             // word[1] = nominated_prefix
         owner.suffix(),           // word[2] = owner_suffix
         owner.prefix().as_felt(), // word[3] = owner_prefix
     ]
@@ -78,10 +78,10 @@ fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>
     let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
     let prefix = word[3];
     let suffix = word[2];
-    if prefix == Felt::ZERO && suffix == Felt::ZERO {
+    if prefix == Felt::new(0) && suffix == Felt::new(0) {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
+        Ok(Some(AccountId::try_from([prefix, suffix])?))
     }
 }
 
@@ -89,10 +89,10 @@ fn get_nominated_owner_from_storage(account: &Account) -> anyhow::Result<Option<
     let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
     let prefix = word[1];
     let suffix = word[0];
-    if prefix == Felt::ZERO && suffix == Felt::ZERO {
+    if prefix == Felt::new(0) && suffix == Felt::new(0) {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
+        Ok(Some(AccountId::try_from([prefix, suffix])?))
     }
 }
 
@@ -107,7 +107,7 @@ fn create_transfer_note(
         use miden::standards::access::ownable2step->test_account
         begin
             repeat.14 push.0 end
-            push.{new_owner_prefix} push.{new_owner_suffix}
+            push.{new_owner_suffix} push.{new_owner_prefix}
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end
@@ -482,8 +482,8 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
         use miden::standards::access::ownable2step->test_account
         begin
             repeat.14 push.0 end
-            push.{invalid_prefix}
             push.{invalid_suffix}
+            push.{invalid_prefix}
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end
