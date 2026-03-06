@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_crypto::merkle::smt::{LeafIndex, SmtLeaf, SmtProof};
+use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 use miden_crypto::merkle::{MerkleError, NodeIndex};
 
 use super::PartialBlockchain;
@@ -44,7 +44,6 @@ pub use account::AccountInputs;
 mod notes;
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
 
-use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::vm::AdviceInputs;
 
 // TRANSACTION INPUTS
@@ -352,7 +351,7 @@ impl TransactionInputs {
             .map
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, smt_index)?;
+        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
         // Find the asset in the SMT leaf
         let asset = smt_leaf
