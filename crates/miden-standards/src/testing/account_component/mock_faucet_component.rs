@@ -1,3 +1,4 @@
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{AccountCode, AccountComponent, AccountType};
 
 use crate::testing::mock_account_code::MockAccountCodeExt;
@@ -18,9 +19,14 @@ pub struct MockFaucetComponent;
 
 impl From<MockFaucetComponent> for AccountComponent {
     fn from(_: MockFaucetComponent) -> Self {
-        AccountComponent::new(AccountCode::mock_faucet_library(), vec![])
-          .expect("mock faucet component should satisfy the requirements of a valid account component")
-          .with_supported_type(AccountType::FungibleFaucet)
-          .with_supported_type(AccountType::NonFungibleFaucet)
+        let metadata = AccountComponentMetadata::new(
+            "miden::testing::mock_faucet",
+            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
+        )
+        .with_description("Mock faucet component for testing");
+
+        AccountComponent::new(AccountCode::mock_faucet_library(), vec![], metadata).expect(
+            "mock faucet component should satisfy the requirements of a valid account component",
+        )
     }
 }

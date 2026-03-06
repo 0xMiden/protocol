@@ -6,8 +6,8 @@ use miden::standards::faucets::network_fungible->network_faucet
 # CONSTANTS
 # =================================================================================================
 
-const MINT_NOTE_STORAGE_LENGTH_PRIVATE=12
-const MINT_NOTE_MIN_STORAGE_LENGTH_PUBLIC=16
+const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=12
+const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
 
 const OUTPUT_NOTE_TYPE_PUBLIC=1
 const OUTPUT_NOTE_TYPE_PRIVATE=2
@@ -22,7 +22,7 @@ const OUTPUT_PUBLIC_NOTE_STORAGE_ADDR=16
 # ERRORS
 # =================================================================================================
 
-const ERR_MINT_UNEXPECTED_STORAGE_LENGTH="MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
+const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 
 #! Network Faucet MINT script: mints assets by calling the network faucet's distribute function.
 #! This note is intended to be executed against a network fungible faucet account.
@@ -58,35 +58,36 @@ const ERR_MINT_UNEXPECTED_STORAGE_LENGTH="MINT script expects exactly 12 storage
 #! Panics if:
 #! - account does not expose distribute procedure.
 #! - the number of storage items is not exactly 12 for private or less than 16 for public output notes.
+@note_script
 pub proc main
     dropw
     # => [pad(16)]
     # Load note storage into memory starting at address 0
     push.0 exec.active_note::get_storage
-    # => [storage_len, storage_ptr, pad(16)]
+    # => [num_storage_items, storage_ptr, pad(16)]
 
     dup
-    # => [storage_len, storage_len, storage_ptr, pad(16)]
+    # => [num_storage_items, num_storage_items, storage_ptr, pad(16)]
 
-    u32assert2.err=ERR_MINT_UNEXPECTED_STORAGE_LENGTH
-    u32gte.MINT_NOTE_MIN_STORAGE_LENGTH_PUBLIC
-    # => [is_public_output_note, storage_len, storage_ptr, pad(16)]
+    u32assert2.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+    u32gte.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
+    # => [is_public_output_note, num_storage_items, storage_ptr, pad(16)]
 
     if.true
         # public output note creation
-        # => [storage_len, storage_ptr, pad(16)]
+        # => [num_storage_items, storage_ptr, pad(16)]
 
         movdn.9 drop
-        # => [EMPTY_WORD, EMPTY_WORD, storage_len, pad(8)]
+        # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
 
-        mem_loadw_be.8
-        # => [SCRIPT_ROOT, EMPTY_WORD, storage_len, pad(8)]
+        mem_loadw_le.8
+        # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
 
-        swapw mem_loadw_be.12
-        # => [SERIAL_NUM, SCRIPT_ROOT, storage_len, pad(8)]
+        swapw mem_loadw_le.12
+        # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
 
         # compute variable length note storage for the output note
-        movup.8 sub.MINT_NOTE_MIN_STORAGE_LENGTH_PUBLIC
+        movup.8 sub.MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC
         # => [num_output_note_storage, SERIAL_NUM, SCRIPT_ROOT, pad(8)]
 
         push.OUTPUT_PUBLIC_NOTE_STORAGE_ADDR
@@ -102,13 +103,13 @@ pub proc main
     else
         # private output note creation
 
-        eq.MINT_NOTE_STORAGE_LENGTH_PRIVATE assert.err=ERR_MINT_UNEXPECTED_STORAGE_LENGTH drop
+        eq.MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE assert.err=ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
         # => [storage_ptr, pad(16)]
 
         drop
         # => [pad(16)]
 
-        mem_loadw_be.8
+        mem_loadw_le.8
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
@@ -123,7 +124,7 @@ pub proc main
     call.network_faucet::distribute
     # => [note_idx, pad(18))]
 
-    padw mem_loadw_be.ATTACHMENT_ADDRESS
+    padw mem_loadw_le.ATTACHMENT_ADDRESS
     # => [ATTACHMENT, note_idx, pad(18))]
 
     mem_load.ATTACHMENT_KIND_ADDRESS

@@ -30,6 +30,9 @@ impl BlockNumber {
     /// The block height of the genesis block.
     pub const GENESIS: Self = Self(0);
 
+    /// The maximum block number.
+    pub const MAX: Self = Self(u32::MAX);
+
     /// Returns the previous block number
     pub fn parent(self) -> Option<BlockNumber> {
         self.checked_sub(1)
@@ -96,8 +99,8 @@ impl Deserializable for BlockNumber {
 }
 
 impl From<BlockNumber> for Felt {
-    fn from(value: BlockNumber) -> Self {
-        Felt::from(value.as_u32())
+    fn from(block_num: BlockNumber) -> Self {
+        Felt::from(block_num.as_u32())
     }
 }
 

@@ -1,23 +1,38 @@
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::faucet
+use miden::protocol::native_account
 use miden::protocol::output_note
+use miden::protocol::asset
+use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
 # ERRORS
 # =================================================================================================
-const ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED="distribute would cause the maximum supply to be exceeded"
+
+const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
+
+const ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT="max supply exceeds maximum representable fungible asset amount"
+
+const ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY="token_supply plus the amount passed to distribute would exceed the maximum supply"
+
+const ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY="asset amount to burn exceeds the existing token supply"
 
 const ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
 # CONSTANTS
 # =================================================================================================
 
+# The local memory address at which the metadata slot content is stored.
+const METADATA_SLOT_LOCAL=0
+
 # The standard slot where fungible faucet metadata like token symbol or decimals are stored.
+# Layout: [token_supply, max_supply, decimals, token_symbol]
 const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 
 #! Distributes freshly minted fungible assets to the provided recipient by creating a note.
@@ -30,49 +45,112 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #! - tag is the tag to be included in the note.
 #! - note_type is the type of the note that holds the asset.
 #! - RECIPIENT is the recipient of the asset, i.e.,
-#!   hash(hash(hash(serial_num, [0; 4]), script_root), input_commitment).
+#!   hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment).
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
 #! - the transaction is being executed against an account that is not a fungible asset faucet.
-#! - the total issuance after minting is greater than the maximum allowed supply.
+#! - the token supply exceeds the maximum supply.
+#! - the maximum supply exceeds the maximum representable fungible asset amount.
+#! - the token supply after minting is greater than the maximum allowed supply.
 #!
 #! Invocation: exec
+@locals(4)
 pub proc distribute
-    # get max supply of this faucet. We assume it is stored at pos 3 of slot 0
-    push.METADATA_SLOT[0..2] exec.active_account::get_item drop drop drop
-    # => [max_supply, amount, tag, note_type, RECIPIENT]
+    # Get the configured max supply and the token supply (= current supply).
+    # ---------------------------------------------------------------------------------------------
 
-    # get total issuance of this faucet so far and add amount to be minted
-    exec.faucet::get_total_issuance
-    # => [total_issuance, max_supply, amount, tag, note_type, RECIPIENT]
+    push.METADATA_SLOT[0..2] exec.active_account::get_item
+    # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
 
-    # compute maximum amount that can be minted, max_mint_amount = max_supply - total_issuance
+    # store a copy of the current slot content for the token_supply update later
+    loc_storew_le.METADATA_SLOT_LOCAL
+    swap movup.2 drop movup.2 drop
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # Assert that minting does not violate any supply constraints.
+    #
+    # To make sure we cannot mint more than intended, we need to check:
+    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
+    # 2) amount + token_supply does not exceed max_supply
+    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
+    #
+    # This is done with the following concrete assertions:
+    # - assert token_supply <= max_supply which ensures 1)
+    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
+    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
+    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
+    #     max_supply and we already asserted that max_supply does not exceed
+    #     FUNGIBLE_ASSET_MAX_AMOUNT
+    # ---------------------------------------------------------------------------------------------
+
+    dup.1 dup.1
+    # => [max_supply, token_supply, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # assert that token_supply <= max_supply
+    lte assert.err=ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
+    dup lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    assert.err=ERR_FUNGIBLE_ASSET_MAX_SUPPLY_EXCEEDS_FUNGIBLE_ASSET_MAX_AMOUNT
+    # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+
+    dup.2 swap dup.2
+    # => [token_supply, max_supply, amount, token_supply, amount, tag, note_type, RECIPIENT]
+
+    # compute maximum amount that can be minted, max_mint_amount = max_supply - token_supply
     sub
-    # => [max_supply - total_issuance, amount, tag, note_type, RECIPIENT]
+    # => [max_mint_amount, amount, token_supply, amount, tag, note_type, RECIPIENT]
 
-    # check that amount =< max_supply - total_issuance, fails if otherwise
-    dup.1 gte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED
+    # assert amount <= max_mint_amount
+    lte assert.err=ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY
+    # => [token_supply, amount, tag, note_type, RECIPIENT]
+
+    # Compute the new token_supply and update in storage.
+    # ---------------------------------------------------------------------------------------------
+
+    dup.1 add
+    # => [new_token_supply, amount, tag, note_type, RECIPIENT]
+
+    padw loc_loadw_le.METADATA_SLOT_LOCAL
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, amount, tag, note_type, RECIPIENT]
+
+    drop movup.3
+    # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
+
+    # update the metadata slot with the new supply
+    push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [amount, tag, note_type, RECIPIENT]
+
+    # Create a new note.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.6 exec.output_note::create
+    # => [note_idx, amount]
+
+    dup movup.2
+    # => [amount, note_idx, note_idx]
+
+    # Mint the asset.
+    # ---------------------------------------------------------------------------------------------
 
     # creating the asset
     exec.faucet::create_fungible_asset
-    # => [ASSET, tag, note_type, RECIPIENT]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     # mint the asset; this is needed to satisfy asset preservation logic.
+    # this ensures that the asset's faucet ID matches the native account's ID.
+    # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
-    # => [ASSET, tag, note_type, RECIPIENT]
+    dropw
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    movdn.9 movdn.9 movdn.9 movdn.9
-    # => [tag, note_type, RECIPIENT, ASSET]
-
-    # create a note
-    exec.output_note::create
-    # => [note_idx, ASSET]
-
-    # load the ASSET and add it to the note
-    dup movdn.5 movdn.5
-    # => [ASSET, note_idx, note_idx]
+    # Add the asset to the note.
+    # ---------------------------------------------------------------------------------------------
 
     exec.output_note::add_asset
     # => [note_idx]
@@ -80,39 +158,70 @@ end
 
 #! Burns the fungible asset from the active note.
 #!
+#! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
+#!
 #! This procedure retrieves the asset from the active note and burns it. The note must contain
 #! exactly one asset, which must be a fungible asset issued by this faucet.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
-#! Where:
-#! - ASSET is the fungible asset that was burned.
-#!
 #! Panics if:
 #! - the procedure is not called from a note context (active_note::get_assets will fail).
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
 #! - the transaction is executed against a faucet which is not the origin of the specified asset.
-#! - the amount about to be burned is greater than the outstanding supply of the asset.
+#! - the amount about to be burned is greater than the token_supply of the faucet.
 #!
 #! Invocation: call
 pub proc burn
-    # Get the assets from the note. This will fail if not called from a note context.
-    push.0 exec.active_note::get_assets
+    # Get the asset from the note.
+    # ---------------------------------------------------------------------------------------------
+
+    # this will fail if not called from a note context.
+    push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
 
     # Verify we have exactly one asset
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    mem_loadw_be
-    # => [ASSET, pad(16)]
+    exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
-    # burning the asset
-    exec.faucet::burn
-    # => [ASSET, pad(16)]
+    # Burn the asset from the transaction vault
+    # ---------------------------------------------------------------------------------------------
 
-    dropw
+    exec.asset::fungible_to_amount movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
+
+    # burn the asset
+    # this ensures we only burn assets that were issued by this faucet (which implies they are
+    # fungible)
+    exec.faucet::burn dropw
+    # => [amount, pad(16)]
+
+    # Subtract burnt amount from current token_supply in storage.
+    # ---------------------------------------------------------------------------------------------
+
+    push.METADATA_SLOT[0..2] exec.active_account::get_item
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    dup.4 dup.1
+    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    # assert that amount <= token_supply
+    lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
+
+    movup.4
+    # => [amount, token_supply, max_supply, decimals, token_symbol, pad(16)]
+
+    # compute new_token_supply = token_supply - amount
+    sub
+    # => [new_token_supply, max_supply, decimals, token_symbol, pad(16)]
+
+    # update the metadata slot with the new supply
+    push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

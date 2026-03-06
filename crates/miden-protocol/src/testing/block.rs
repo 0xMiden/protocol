@@ -1,14 +1,13 @@
 use miden_crypto::merkle::smt::Smt;
 #[cfg(not(target_family = "wasm"))]
-use winter_rand_utils::rand_value;
+use miden_crypto::rand::test_utils::rand_value;
 
 use crate::Word;
 use crate::account::Account;
-use crate::block::account_tree::{AccountTree, account_id_to_smt_key};
+use crate::block::account_tree::{AccountIdKey, AccountTree};
 use crate::block::{BlockHeader, BlockNumber, FeeParameters};
-use crate::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
-use crate::testing::random_signer::RandomBlockSigner;
+use crate::testing::random_secret_key::random_secret_key;
 
 impl BlockHeader {
     /// Creates a mock block. The account tree is formed from the provided `accounts`,
@@ -27,7 +26,7 @@ impl BlockHeader {
         let smt = Smt::with_entries(
             accounts
                 .iter()
-                .map(|acct| (account_id_to_smt_key(acct.id()), acct.commitment())),
+                .map(|acct| (AccountIdKey::from(acct.id()).as_word(), acct.to_commitment())),
         )
         .expect("failed to create account db");
         let acct_db = AccountTree::new(smt).expect("failed to create account tree");
@@ -35,7 +34,7 @@ impl BlockHeader {
         let fee_parameters =
             FeeParameters::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 500)
                 .expect("native asset ID should be a fungible faucet ID");
-        let validator_key = SecretKey::random().public_key();
+        let validator_key = random_secret_key();
 
         #[cfg(not(target_family = "wasm"))]
         let (
@@ -92,7 +91,7 @@ impl BlockHeader {
             note_root,
             tx_commitment,
             tx_kernel_commitment,
-            validator_key,
+            validator_key.public_key(),
             fee_parameters,
             timestamp,
         )

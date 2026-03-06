@@ -1,7 +1,6 @@
 use alloc::string::String;
-use alloc::vec::Vec;
 
-use anyhow::Context;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
@@ -11,10 +10,8 @@ use miden_protocol::errors::tx_kernel::{
 };
 use miden_protocol::note::{
     Note,
-    NoteAssets,
     NoteAttachment,
     NoteAttachmentScheme,
-    NoteExecutionHint,
     NoteMetadata,
     NoteRecipient,
     NoteStorage,
@@ -34,18 +31,27 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::NON_FUNGIBLE_ASSET_DATA_2;
 use miden_protocol::transaction::memory::{
+    ASSET_SIZE,
+    ASSET_VALUE_OFFSET,
     NOTE_MEM_SIZE,
     NUM_OUTPUT_NOTES_PTR,
     OUTPUT_NOTE_ASSETS_OFFSET,
     OUTPUT_NOTE_ATTACHMENT_OFFSET,
     OUTPUT_NOTE_METADATA_HEADER_OFFSET,
+    OUTPUT_NOTE_NUM_ASSETS_OFFSET,
     OUTPUT_NOTE_RECIPIENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
 use miden_protocol::transaction::{OutputNote, OutputNotes};
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::note::{NetworkAccountTarget, create_p2id_note};
+use miden_standards::note::{
+    AccountTargetNetworkNote,
+    NetworkAccountTarget,
+    NetworkNoteExt,
+    NoteExecutionHint,
+    P2idNote,
+};
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
@@ -89,8 +95,8 @@ async fn test_create_note() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -100,7 +106,7 @@ async fn test_create_note() -> anyhow::Result<()> {
         "recipient must be stored at the correct memory location",
     );
 
-    let metadata = NoteMetadata::new(account_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(account_id, NoteType::Public).with_tag(tag);
     let expected_metadata_header = metadata.to_header_word();
     let expected_note_attachment = metadata.to_attachment_word();
 
@@ -201,75 +207,40 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
-    let tx_context = {
-        let account =
-            Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
+    let mut rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
-        let output_note_1 =
-            create_public_p2any_note(ACCOUNT_ID_SENDER.try_into()?, [FungibleAsset::mock(100)]);
+    let asset_1 = FungibleAsset::mock(100);
+    let asset_2 = FungibleAsset::mock(200);
 
-        let input_note_1 = create_public_p2any_note(
-            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
-            [FungibleAsset::mock(100)],
-        );
-
-        let input_note_2 = create_public_p2any_note(
-            ACCOUNT_ID_PRIVATE_SENDER.try_into()?,
-            [FungibleAsset::mock(200)],
-        );
-
-        TransactionContextBuilder::new(account)
-            .extend_input_notes(vec![input_note_1, input_note_2])
-            .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
-            .build()?
-    };
-
-    // extract input note data
-    let input_note_1 = tx_context.tx_inputs().input_notes().get_note(0).note();
-    let input_asset_1 = **input_note_1
-        .assets()
-        .iter()
-        .take(1)
-        .collect::<Vec<_>>()
-        .first()
-        .context("getting first expected input asset")?;
-    let input_note_2 = tx_context.tx_inputs().input_notes().get_note(1).note();
-    let input_asset_2 = **input_note_2
-        .assets()
-        .iter()
-        .take(1)
-        .collect::<Vec<_>>()
-        .first()
-        .context("getting second expected input asset")?;
-
-    // Choose random accounts as the target for the note tag.
-    let network_account = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
-    let local_account = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET)?;
+    let input_note_1 = create_public_p2any_note(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, [asset_1]);
+    let input_note_2 = create_public_p2any_note(ACCOUNT_ID_PRIVATE_SENDER.try_into()?, [asset_2]);
 
     // create output note 1
-    let output_serial_no_1 = Word::from([8u32; 4]);
-    let output_tag_1 = NoteTag::with_account_target(network_account);
-    let assets = NoteAssets::new(vec![input_asset_1])?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public, output_tag_1);
-    let inputs = NoteStorage::new(vec![])?;
-    let recipient = NoteRecipient::new(output_serial_no_1, input_note_1.script().clone(), inputs);
-    let output_note_1 = Note::new(assets, metadata, recipient);
+    let output_note_1 = NoteBuilder::new(account.id(), &mut rng)
+        .tag(NoteTag::with_account_target(account.id()).as_u32())
+        .note_type(NoteType::Public)
+        .add_assets([asset_1])
+        .build()?;
 
     // create output note 2
-    let output_serial_no_2 = Word::from([11u32; 4]);
-    let output_tag_2 = NoteTag::with_account_target(local_account);
-    let assets = NoteAssets::new(vec![input_asset_2])?;
-    let attachment = NoteAttachment::new_array(
-        NoteAttachmentScheme::new(5),
-        [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
-    )?;
-    let metadata =
-        NoteMetadata::new(tx_context.tx_inputs().account().id(), NoteType::Public, output_tag_2)
-            .with_attachment(attachment);
-    let inputs = NoteStorage::new(vec![])?;
-    let recipient = NoteRecipient::new(output_serial_no_2, input_note_2.script().clone(), inputs);
-    let output_note_2 = Note::new(assets, metadata, recipient);
+    let output_note_2 = NoteBuilder::new(account.id(), &mut rng)
+        .tag(NoteTag::with_custom_account_target(account.id(), 2)?.as_u32())
+        .note_type(NoteType::Public)
+        .add_assets([asset_2])
+        .attachment(NoteAttachment::new_array(
+            NoteAttachmentScheme::new(5),
+            [42, 43, 44, 45, 46u32].map(Felt::from).to_vec(),
+        )?)
+        .build()?;
+
+    let tx_context = TransactionContextBuilder::new(account)
+        .extend_input_notes(vec![input_note_1.clone(), input_note_2.clone()])
+        .extend_expected_output_notes(vec![
+            OutputNote::Full(output_note_1.clone()),
+            OutputNote::Full(output_note_2.clone()),
+        ])
+        .build()?;
 
     // compute expected output notes commitment
     let expected_output_notes_commitment = OutputNotes::new(vec![
@@ -298,7 +269,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{asset_1}
+            push.{ASSET_1_VALUE}
+            push.{ASSET_1_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -309,7 +281,9 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            dup push.{asset_2}
+            dup
+            push.{ASSET_2_VALUE}
+            push.{ASSET_2_KEY}
             exec.output_note::add_asset
             # => [note_idx]
 
@@ -332,14 +306,12 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         PUBLIC_NOTE = NoteType::Public as u8,
         recipient_1 = output_note_1.recipient().digest(),
         tag_1 = output_note_1.metadata().tag(),
-        asset_1 = Word::from(
-            **output_note_1.assets().iter().take(1).collect::<Vec<_>>().first().unwrap()
-        ),
+        ASSET_1_KEY = asset_1.to_key_word(),
+        ASSET_1_VALUE = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         tag_2 = output_note_2.metadata().tag(),
-        asset_2 = Word::from(
-            **output_note_2.assets().iter().take(1).collect::<Vec<_>>().first().unwrap()
-        ),
+        ASSET_2_KEY = asset_2.to_key_word(),
+        ASSET_2_VALUE = asset_2.to_value_word(),
         ATTACHMENT2 = output_note_2.metadata().to_attachment_word(),
         attachment_scheme2 = output_note_2.metadata().attachment().attachment_scheme().as_u32(),
     );
@@ -347,8 +319,8 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([2u32, 0, 0, 0]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(2u32),
         "The test creates two notes",
     );
     assert_eq!(
@@ -378,7 +350,7 @@ async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
         "Validate the output note 2 attachment",
     );
 
-    assert_eq!(exec_output.get_stack_word_be(0), expected_output_notes_commitment);
+    assert_eq!(exec_output.get_stack_word(0), expected_output_notes_commitment);
     Ok(())
 }
 
@@ -389,7 +361,7 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_id);
-    let asset = Word::from(FungibleAsset::new(faucet_id, 10)?);
+    let asset = FungibleAsset::new(faucet_id, 10)?;
 
     let code = format!(
         "
@@ -411,8 +383,9 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
             dup assertz.err=\"index of the created note should be zero\"
             # => [note_idx]
 
-            push.{asset}
-            # => [ASSET, note_idx]
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
             call.output_note::add_asset
             # => []
@@ -424,15 +397,21 @@ async fn test_create_note_and_add_asset() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        asset = asset,
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset,
-        "asset must be stored at the correct memory location",
+        asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 4),
+        asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     Ok(())
@@ -448,13 +427,12 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::with_account_target(faucet_2);
 
-    let asset = Word::from(FungibleAsset::new(faucet, 10)?);
-    let asset_2 = Word::from(FungibleAsset::new(faucet_2, 20)?);
-    let asset_3 = Word::from(FungibleAsset::new(faucet_2, 30)?);
-    let asset_2_and_3 = Word::from(FungibleAsset::new(faucet_2, 50)?);
+    let asset = FungibleAsset::new(faucet, 10)?;
+    let asset_2 = FungibleAsset::new(faucet_2, 20)?;
+    let asset_3 = FungibleAsset::new(faucet_2, 30)?;
+    let asset_2_plus_3 = FungibleAsset::new(faucet_2, 50)?;
 
     let non_fungible_asset = NonFungibleAsset::mock(&NON_FUNGIBLE_ASSET_DATA_2);
-    let non_fungible_asset_encoded = Word::from(non_fungible_asset);
 
     let code = format!(
         "
@@ -474,20 +452,27 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
             dup assertz.err=\"index of the created note should be zero\"
             # => [note_idx]
 
-            dup push.{asset}
-            call.output_note::add_asset
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            exec.output_note::add_asset
             # => [note_idx]
 
-            dup push.{asset_2}
-            call.output_note::add_asset
+            dup
+            push.{ASSET2_VALUE}
+            push.{ASSET2_KEY}
+            exec.output_note::add_asset
             # => [note_idx]
 
-            dup push.{asset_3}
-            call.output_note::add_asset
+            dup
+            push.{ASSET3_VALUE}
+            push.{ASSET3_KEY}
+            exec.output_note::add_asset
             # => [note_idx]
 
-            push.{nft}
-            call.output_note::add_asset
+            push.{ASSET4_VALUE}
+            push.{ASSET4_KEY}
+            exec.output_note::add_asset
             # => []
 
             # truncate the stack
@@ -497,30 +482,73 @@ async fn test_create_note_and_add_multiple_assets() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        asset = asset,
-        asset_2 = asset_2,
-        asset_3 = asset_3,
-        nft = non_fungible_asset_encoded,
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
+        ASSET2_KEY = asset_2.to_key_word(),
+        ASSET2_VALUE = asset_2.to_value_word(),
+        ASSET3_KEY = asset_3.to_key_word(),
+        ASSET3_VALUE = asset_3.to_value_word(),
+        ASSET4_KEY = non_fungible_asset.to_key_word(),
+        ASSET4_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
+        exec_output
+            .get_kernel_mem_element(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_NUM_ASSETS_OFFSET)
+            .as_canonical_u64(),
+        3,
+        "unexpected number of assets in output note",
+    );
+
+    assert_eq!(
         exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET),
-        asset,
-        "asset must be stored at the correct memory location",
+        asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_VALUE_OFFSET
+        ),
+        asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 4),
-        asset_2_and_3,
-        "asset_2 and asset_3 must be stored at the same correct memory location",
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE
+        ),
+        asset_2_plus_3.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET
+                + OUTPUT_NOTE_ASSETS_OFFSET
+                + ASSET_SIZE
+                + ASSET_VALUE_OFFSET
+        ),
+        asset_2_plus_3.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + 8),
-        non_fungible_asset_encoded,
-        "non_fungible_asset must be stored at the correct memory location",
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET + OUTPUT_NOTE_ASSETS_OFFSET + ASSET_SIZE * 2
+        ),
+        non_fungible_asset.to_key_word(),
+        "asset key must be stored at the correct memory location",
+    );
+    assert_eq!(
+        exec_output.get_kernel_mem_word(
+            OUTPUT_NOTE_SECTION_OFFSET
+                + OUTPUT_NOTE_ASSETS_OFFSET
+                + ASSET_SIZE * 2
+                + ASSET_VALUE_OFFSET
+        ),
+        non_fungible_asset.to_value_word(),
+        "asset value must be stored at the correct memory location",
     );
 
     Ok(())
@@ -533,7 +561,6 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
     let recipient = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(999 << 16 | 777);
     let non_fungible_asset = NonFungibleAsset::mock(&[1, 2, 3]);
-    let encoded = Word::from(non_fungible_asset);
 
     let code = format!(
         "
@@ -550,13 +577,16 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            dup push.{nft}
-            # => [NFT, note_idx, note_idx]
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
             exec.output_note::add_asset
             # => [note_idx]
 
-            push.{nft}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => []
         end
@@ -564,7 +594,8 @@ async fn test_create_note_and_add_same_nft_twice() -> anyhow::Result<()> {
         recipient = recipient,
         PUBLIC_NOTE = NoteType::Public as u8,
         tag = tag,
-        nft = encoded,
+        ASSET_KEY = non_fungible_asset.to_key_word(),
+        ASSET_VALUE = non_fungible_asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await;
@@ -616,10 +647,10 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let output_serial_no = Word::from([0, 1, 2, 3u32]);
     let tag = NoteTag::new(42 << 16 | 42);
     let single_input = 2;
-    let inputs = NoteStorage::new(vec![Felt::new(single_input)]).unwrap();
-    let input_commitment = inputs.commitment();
+    let storage = NoteStorage::new(vec![Felt::new(single_input)]).unwrap();
+    let storage_commitment = storage.commitment();
 
-    let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), inputs);
+    let recipient = NoteRecipient::new(output_serial_no, input_note_1.script().clone(), storage);
     let code = format!(
         "
         use $kernel::prologue
@@ -630,13 +661,13 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            # input
-            push.{input_commitment}
+            # storage
+            push.{storage_commitment}
             # SCRIPT_ROOT
             push.{script_root}
             # SERIAL_NUM
             push.{output_serial_no}
-            # => [SERIAL_NUM, SCRIPT_ROOT, INPUT_COMMITMENT]
+            # => [SERIAL_NUM, SCRIPT_ROOT, STORAGE_COMMITMENT]
 
             exec.note::build_recipient_hash
             # => [RECIPIENT, pad(12)]
@@ -661,8 +692,8 @@ async fn test_build_recipient_hash() -> anyhow::Result<()> {
     let exec_output = &tx_context.execute_code(&code).await?;
 
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_OUTPUT_NOTES_PTR),
-        Word::from([1, 0, 0, 0u32]),
+        exec_output.get_kernel_mem_element(NUM_OUTPUT_NOTES_PTR),
+        Felt::from(1u32),
         "number of output notes must increment by 1",
     );
 
@@ -706,12 +737,16 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         .expect("asset is invalid"),
     );
 
-    let account = builder
-        .add_existing_wallet_with_assets(Auth::BasicAuth, [fungible_asset_0, fungible_asset_1])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [fungible_asset_0, fungible_asset_1],
+    )?;
 
     let mock_chain = builder.build()?;
 
-    let output_note_0 = create_p2id_note(
+    let output_note_0 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0],
@@ -720,7 +755,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
-    let output_note_1 = create_p2id_note(
+    let output_note_1 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![fungible_asset_0, fungible_asset_1],
@@ -743,9 +778,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             # => [note_idx]
 
             # move the asset 0 to the note
-            push.{asset_0}
+            dup
+            push.{ASSET_0_VALUE}
+            push.{ASSET_0_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having only asset_0
@@ -772,9 +808,10 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
             # => [note_idx]
 
             # add asset_1 to the note
-            push.{asset_1}
+            dup
+            push.{ASSET_1_VALUE}
+            push.{ASSET_1_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # get the assets hash and assets number of the note having asset_0 and asset_1
@@ -799,12 +836,14 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         RECIPIENT = output_note_1.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note_1.metadata().tag(),
-        asset_0 = Word::from(fungible_asset_0),
+        ASSET_0_VALUE = fungible_asset_0.to_value_word(),
+        ASSET_0_KEY = fungible_asset_0.to_key_word(),
         // first data request
         COMPUTED_ASSETS_COMMITMENT_0 = output_note_0.assets().commitment(),
         assets_number_0 = output_note_0.assets().num_assets(),
         // second data request
-        asset_1 = Word::from(fungible_asset_1),
+        ASSET_1_VALUE = fungible_asset_1.to_value_word(),
+        ASSET_1_KEY = fungible_asset_1.to_key_word(),
         COMPUTED_ASSETS_COMMITMENT_1 = output_note_1.assets().commitment(),
         assets_number_1 = output_note_1.assets().num_assets(),
     );
@@ -828,12 +867,16 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
 async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(2000)])?;
+    let account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [FungibleAsset::mock(2000)],
+    )?;
 
     let mock_chain = builder.build()?;
 
-    let output_note = create_p2id_note(
+    let output_note = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
         vec![FungibleAsset::mock(5)],
@@ -917,13 +960,13 @@ async fn test_get_assets() -> anyhow::Result<()> {
             push.{note_idx} push.{dest_ptr}
             # => [dest_ptr, note_index]
 
-            # write the assets to the memory
+            # write the assets to memory
             exec.output_note::get_assets
             # => [num_assets, dest_ptr, note_index]
 
             # assert the number of note assets
             push.{assets_number}
-            assert_eq.err="note {note_index} has incorrect assets number"
+            assert_eq.err="expected note {note_index} to have {assets_number} assets"
             # => [dest_ptr, note_index]
         "#,
             note_idx = note_index,
@@ -936,19 +979,31 @@ async fn test_get_assets() -> anyhow::Result<()> {
             check_assets_code.push_str(&format!(
                 r#"
                     # load the asset stored in memory
-                    padw dup.4 mem_loadw_be
-                    # => [STORED_ASSET, dest_ptr, note_index]
+                    padw dup.4 mem_loadw_le
+                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
-                    # assert the asset
-                    push.{NOTE_ASSET}
-                    assert_eqw.err="asset {asset_index} of the note {note_index} is incorrect"
+                    # assert the asset key matches
+                    push.{NOTE_ASSET_KEY}
+                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # => [dest_ptr, note_index]
+
+                    # load the asset stored in memory
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
+                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+
+                    # assert the asset value matches
+                    push.{NOTE_ASSET_VALUE}
+                    assert_eqw.err="expected asset value at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_VALUE}"
                     # => [dest_ptr, note_index]
 
                     # move the pointer
-                    add.4
-                    # => [dest_ptr+4, note_index]
+                    add.{ASSET_SIZE}
+                    # => [dest_ptr+ASSET_SIZE, note_index]
                 "#,
-                NOTE_ASSET = Word::from(*asset),
+                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
             ));
@@ -982,9 +1037,9 @@ async fn test_get_assets() -> anyhow::Result<()> {
         create_note_0 = create_output_note(&p2id_note_0_assets),
         check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
         create_note_1 = create_output_note(&p2id_note_1_asset),
-        check_note_1 = check_assets_code(1, 4, &p2id_note_1_asset),
+        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
         create_note_2 = create_output_note(&p2id_note_2_assets),
-        check_note_2 = check_assets_code(2, 8, &p2id_note_2_assets),
+        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -1200,6 +1255,75 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_network_note() -> anyhow::Result<()> {
+    let sender = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
+    let mut rng = RpoRandomCoin::new(Word::from([9, 8, 7, 6u32]));
+
+    // --- Valid network note ---
+    let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;
+    let attachment = NetworkAccountTarget::new(target_id, NoteExecutionHint::Always)?;
+
+    let note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(attachment)
+        .build()?;
+
+    // is_network_note() returns true for a note with a valid NetworkAccountTarget attachment.
+    assert!(note.is_network_note());
+
+    // into_account_target_network_note() succeeds and accessors return correct values.
+    let expected_note_type = note.metadata().note_type();
+    let network_note = note.into_account_target_network_note()?;
+    assert_eq!(network_note.target_account_id(), target_id);
+    assert_eq!(network_note.execution_hint(), NoteExecutionHint::Always);
+    assert_eq!(network_note.note_type(), expected_note_type);
+
+    // TryFrom<Note> succeeds for a valid network note.
+    let valid_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Public)
+        .attachment(attachment)
+        .build()?;
+    let try_from_note = AccountTargetNetworkNote::try_from(valid_note)?;
+    assert_eq!(try_from_note.target_account_id(), target_id);
+
+    // --- Invalid: note with default (empty) attachment ---
+    let non_network_note =
+        NoteBuilder::new(sender.id(), &mut rng).note_type(NoteType::Public).build()?;
+
+    // is_network_note() returns false for a note without a NetworkAccountTarget attachment.
+    assert!(!non_network_note.is_network_note());
+
+    // AccountTargetNetworkNote::new() fails for an invalid attachment.
+    assert!(AccountTargetNetworkNote::new(non_network_note.clone()).is_err());
+
+    // into_account_target_network_note() fails for a non-network note.
+    assert!(non_network_note.clone().into_account_target_network_note().is_err());
+
+    // TryFrom<Note> fails for a non-network note.
+    assert!(AccountTargetNetworkNote::try_from(non_network_note).is_err());
+
+    // --- Invalid: private note with valid NetworkAccountTarget attachment ---
+    let private_network_note = NoteBuilder::new(sender.id(), &mut rng)
+        .note_type(NoteType::Private)
+        .attachment(attachment)
+        .build()?;
+
+    // is_network_note() returns false for a private note even with a valid attachment.
+    assert!(!private_network_note.is_network_note());
+
+    // AccountTargetNetworkNote::new() fails for a private note.
+    assert!(AccountTargetNetworkNote::new(private_network_note.clone()).is_err());
+
+    // into_account_target_network_note() fails for a private note.
+    assert!(private_network_note.clone().into_account_target_network_note().is_err());
+
+    // TryFrom<Note> fails for a private note.
+    assert!(AccountTargetNetworkNote::try_from(private_network_note).is_err());
+
+    Ok(())
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -1225,12 +1349,15 @@ fn create_output_note(note: &Note) -> String {
         create_note_code.push_str(&format!(
             "
             # move the asset to the note
-            push.{asset}
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
         ",
-            asset = Word::from(*asset)
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word()
         ));
     }
 

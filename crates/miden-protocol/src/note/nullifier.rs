@@ -1,6 +1,7 @@
 use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
+use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
 use miden_protocol_macros::WordWrapper;
 
@@ -13,7 +14,6 @@ use super::{
     Hasher,
     NoteDetails,
     Serializable,
-    WORD_SIZE,
     Word,
     ZERO,
 };
@@ -30,13 +30,13 @@ const NULLIFIER_PREFIX_SHIFT: u8 = 48;
 ///
 /// A note's nullifier is computed as:
 ///
-/// > hash(serial_num, script_root, input_commitment, asset_commitment).
+/// > hash(serial_num, script_root, storage_commitment, asset_commitment).
 ///
 /// This achieves the following properties:
 /// - Every note can be reduced to a single unique nullifier.
 /// - We cannot derive a note's commitment from its nullifier, or a note's nullifier from its hash.
 /// - To compute the nullifier we must know all components of the note: serial_num, script_root,
-///   input_commitment and asset_commitment.
+///   storage_commitment and asset_commitment.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, WordWrapper)]
 pub struct Nullifier(Word);
 
@@ -44,14 +44,14 @@ impl Nullifier {
     /// Returns a new note [Nullifier] instantiated from the provided digest.
     pub fn new(
         script_root: Word,
-        inputs_commitment: Word,
+        storage_commitment: Word,
         asset_commitment: Word,
         serial_num: Word,
     ) -> Self {
         let mut elements = [ZERO; 4 * WORD_SIZE];
         elements[..4].copy_from_slice(serial_num.as_elements());
         elements[4..8].copy_from_slice(script_root.as_elements());
-        elements[8..12].copy_from_slice(inputs_commitment.as_elements());
+        elements[8..12].copy_from_slice(storage_commitment.as_elements());
         elements[12..].copy_from_slice(asset_commitment.as_elements());
         Self(Hasher::hash_elements(&elements))
     }
@@ -65,7 +65,7 @@ impl Nullifier {
     ///
     /// Nullifier prefix is defined as the 16 most significant bits of the nullifier value.
     pub fn prefix(&self) -> u16 {
-        (self.as_word()[3].as_int() >> NULLIFIER_PREFIX_SHIFT) as u16
+        (self.as_word()[3].as_canonical_u64() >> NULLIFIER_PREFIX_SHIFT) as u16
     }
 
     /// Creates a Nullifier from a hex string. Assumes that the string starts with "0x" and
@@ -78,8 +78,6 @@ impl Nullifier {
 
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(n: u64) -> Self {
-        use miden_core::FieldElement;
-
         Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]))
     }
 }
@@ -116,6 +114,10 @@ impl From<&NoteDetails> for Nullifier {
 impl Serializable for Nullifier {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
     }
 }
 

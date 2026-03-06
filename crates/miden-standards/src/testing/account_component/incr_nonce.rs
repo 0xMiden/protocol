@@ -1,4 +1,5 @@
-use miden_protocol::account::AccountComponent;
+use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::account::{AccountComponent, AccountType};
 use miden_protocol::assembly::Library;
 use miden_protocol::utils::sync::LazyLock;
 
@@ -7,6 +8,7 @@ use crate::code_builder::CodeBuilder;
 const INCR_NONCE_AUTH_CODE: &str = "
     use miden::protocol::native_account
 
+    @auth_script
     pub proc auth_incr_nonce
         exec.native_account::incr_nonce drop
     end
@@ -27,8 +29,11 @@ pub struct IncrNonceAuthComponent;
 
 impl From<IncrNonceAuthComponent> for AccountComponent {
     fn from(_: IncrNonceAuthComponent) -> Self {
-        AccountComponent::new(INCR_NONCE_AUTH_LIBRARY.clone(), vec![])
+        let metadata =
+            AccountComponentMetadata::new("miden::testing::incr_nonce_auth", AccountType::all())
+                .with_description("Testing auth component that always increments nonce");
+
+        AccountComponent::new(INCR_NONCE_AUTH_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")
-            .with_supports_all_types()
     }
 }

@@ -3,6 +3,12 @@ use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
 use miden::core::mem
 
+# TYPE ALIASES
+# =================================================================================================
+
+type AccountID = struct { suffix: felt, prefix: felt }
+type MemoryAddress = u32
+
 # ERRORS
 # =================================================================================================
 
@@ -25,36 +31,51 @@ const ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED="number of link map entries exceeds maxi
 # -------------------------------------------------------------------------------------------------
 
 # The memory address at which a pointer to the currently active input note is stored.
-const ACTIVE_INPUT_NOTE_PTR=0
+const ACTIVE_INPUT_NOTE_PTR = 0
 
 # The memory address at which the number of output notes is stored.
-const NUM_OUTPUT_NOTES_PTR=4
+const NUM_OUTPUT_NOTES_PTR = 1
 
-# The memory address at which the input vault root is stored.
-const INPUT_VAULT_ROOT_PTR=8
-
-# The memory address at which the output vault root is stored.
-const OUTPUT_VAULT_ROOT_PTR=12
+# The memory address at which the absolute expiration block number is stored.
+const TX_EXPIRATION_BLOCK_NUM_PTR = 2
 
 # The memory address at which the dirty flag of the storage commitment of the native account is
 # stored.
 #
 # This binary flag specifies whether the commitment is outdated: it holds 1 if some changes were
 # made to the account storage since the last re-computation, and 0 otherwise.
-const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR=16
+const NATIVE_ACCT_STORAGE_COMMITMENT_DIRTY_FLAG_PTR = 3
 
-# The memory address at which the absolute expiration block number is stored.
-const TX_EXPIRATION_BLOCK_NUM_PTR=20
+# The memory address at which the input vault root is stored.
+const INPUT_VAULT_ROOT_PTR = 4
+
+# The memory address at which the output vault root is stored.
+const OUTPUT_VAULT_ROOT_PTR = 8
+
+# Pointer to the prefix and suffix of the ID of the foreign account which will be loaded during the
+# upcoming FPI call. This ID is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR = 12
+const UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR = UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR + 1
+
+# Pointer to the 16th input value (with index 15) of the foreign procedure which will be loaded
+# during the upcoming FPI call. This "buffer" value helps to work around the 15 value limitation of
+# the `exec_kernel_proc` kernel procedure, so that any account procedure, even if it has 16 input
+# values, could be executed as foreign.
+const UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR = 14
+
+# Pointer to the root of the foreign procedure which will be executed during the upcoming FPI call.
+# This root is updated during the `prepare_fpi_call` kernel procedure.
+const UPCOMING_FOREIGN_PROCEDURE_PTR = 16
 
 # The memory address at which the pointer to the account stack element containing the pointer to the
 # currently accessing account (active account) data is stored.
-const ACCOUNT_STACK_TOP_PTR=24
+const ACCOUNT_STACK_TOP_PTR=20
 
 # Pointer to the first element on the account stack.
-const MIN_ACCOUNT_STACK_PTR=25
+const MIN_ACCOUNT_STACK_PTR=21
 
 # Pointer to the last element on the account stack.
-const MAX_ACCOUNT_STACK_PTR=88
+const MAX_ACCOUNT_STACK_PTR=84
 
 # GLOBAL INPUTS
 # -------------------------------------------------------------------------------------------------
@@ -65,8 +86,10 @@ const GLOBAL_INPUTS_SECTION_OFFSET=400
 # The memory address at which the transaction reference block's commitment is stored.
 const BLOCK_COMMITMENT_PTR=400
 
-# The memory address at which the native account ID is stored.
-const NATIVE_ACCT_ID_PTR=404
+# The memory address at which the native account ID provided as a global transaction input is
+# stored.
+const GLOBAL_ACCOUNT_ID_SUFFIX_PTR = 404
+const GLOBAL_ACCOUNT_ID_PREFIX_PTR = GLOBAL_ACCOUNT_ID_SUFFIX_PTR + 1
 
 # The memory address at which the initial account commitment is stored.
 const INIT_ACCOUNT_COMMITMENT_PTR=408
@@ -123,12 +146,16 @@ const VALIDATOR_KEY_COMMITMENT_PTR=824
 const BLOCK_METADATA_PTR=828
 
 # The memory address at which the fee parameters are stored. These occupy a double word.
-# [native_asset_id_suffix, native_asset_id_prefix, verification_base_fee, 0]
+# [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
 # [0, 0, 0, 0]
 const FEE_PARAMETERS_PTR=832
 
 # The memory address at which the verification base fee is stored.
-const VERIFICATION_BASE_FEE_PTR=FEE_PARAMETERS_PTR+2
+const VERIFICATION_BASE_FEE_PTR = FEE_PARAMETERS_PTR + 1
+
+# The memory address at which the native asset ID is stored.
+const NATIVE_ASSET_ID_SUFFIX_PTR = FEE_PARAMETERS_PTR + 2
+const NATIVE_ASSET_ID_PREFIX_PTR = FEE_PARAMETERS_PTR + 3
 
 # The memory address at which the note root is stored
 const NOTE_ROOT_PTR=840
@@ -164,13 +191,17 @@ const MAX_FOREIGN_ACCOUNT_PTR=524288
 
 # The memory address at which the native account data is stored.
 const NATIVE_ACCOUNT_DATA_PTR=8192
+const NATIVE_ACCOUNT_ID_SUFFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_SUFFIX_OFFSET
+const NATIVE_ACCOUNT_ID_PREFIX_PTR = NATIVE_ACCOUNT_DATA_PTR + ACCT_ID_PREFIX_OFFSET
 
 # The length of the memory interval that the account data occupies.
 const ACCOUNT_DATA_LENGTH=8192
 
 # The offsets at which the account data is stored relative to the start of the account data segment.
+const ACCT_NONCE_OFFSET=0
 const ACCT_ID_AND_NONCE_OFFSET=0
-const ACCT_NONCE_OFFSET=3
+const ACCT_ID_SUFFIX_OFFSET=2
+const ACCT_ID_PREFIX_OFFSET=3
 const ACCT_VAULT_ROOT_OFFSET=4
 const ACCT_STORAGE_COMMITMENT_OFFSET=8
 const ACCT_CODE_COMMITMENT_OFFSET=12
@@ -191,10 +222,10 @@ const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=2340
 # -------------------------------------------------------------------------------------------------
 
 # The link map pointer at which the delta of the fungible asset vault is stored.
-const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
+pub const ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR=532480
 
 # The link map pointer at which the delta of the non-fungible asset vault is stored.
-const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
+pub const ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR=ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR+4
 
 # The section of link map pointers where storage map deltas are stored.
 # This section is offset by `slot index` to get the link map ptr for the storage map
@@ -227,7 +258,7 @@ const INPUT_NOTE_RECIPIENT_OFFSET=20
 const INPUT_NOTE_METADATA_HEADER_OFFSET=24
 const INPUT_NOTE_ATTACHMENT_OFFSET=28
 const INPUT_NOTE_ARGS_OFFSET=32
-const INPUT_NOTE_STORAGE_LENGTH_OFFSET=36
+const INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET=36
 const INPUT_NOTE_NUM_ASSETS_OFFSET=40
 const INPUT_NOTE_ASSETS_OFFSET=44
 
@@ -340,7 +371,7 @@ end
 #! Where:
 #! - INPUT_VAULT_ROOT is the input vault root.
 pub proc get_input_vault_root
-    padw mem_loadw_be.INPUT_VAULT_ROOT_PTR
+    padw mem_loadw_le.INPUT_VAULT_ROOT_PTR
 end
 
 #! Sets the input vault root.
@@ -351,7 +382,7 @@ end
 #! Where:
 #! - INPUT_VAULT_ROOT is the input vault root.
 pub proc set_input_vault_root
-    mem_storew_be.INPUT_VAULT_ROOT_PTR
+    mem_storew_le.INPUT_VAULT_ROOT_PTR
 end
 
 #! Returns the pointer to the memory address at which the output vault root is stored.
@@ -374,7 +405,7 @@ end
 #! Where:
 #! - OUTPUT_VAULT_ROOT is the output vault root.
 pub proc get_output_vault_root
-    padw mem_loadw_be.OUTPUT_VAULT_ROOT_PTR
+    padw mem_loadw_le.OUTPUT_VAULT_ROOT_PTR
 end
 
 #! Sets the output vault root.
@@ -385,7 +416,53 @@ end
 #! Where:
 #! - OUTPUT_VAULT_ROOT is the output vault root.
 pub proc set_output_vault_root
-    mem_storew_be.OUTPUT_VAULT_ROOT_PTR
+    mem_storew_le.OUTPUT_VAULT_ROOT_PTR
+end
+
+#! Sets the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [foreign_account_id_suffix, foreign_account_id_prefix]
+#! Outputs: []
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc set_fpi_account_id(foreign_account_id: AccountID)
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => [foreign_account_id_prefix]
+
+    mem_store.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => []
+end
+
+#! Returns the ID of the foreign account which is going to be loaded during the upcoming FPI call.
+#!
+#! WARNING: The ID felts may be zero.
+#!
+#! Inputs:  []
+#! Outputs: [foreign_account_id_suffix, foreign_account_id_prefix]
+#!
+#! Where:
+#! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
+#!   account whose procedure is going to be executed.
+pub proc get_fpi_account_id() -> (AccountID)
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
+    # => [foreign_account_id_prefix]
+
+    mem_load.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
+    # => [foreign_account_id_suffix, foreign_account_id_prefix]
+end
+
+#! Sets the root of the foreign procedure which is going to be loaded during the upcoming FPI call.
+#!
+#! Inputs:  [FOREIGN_PROC_ROOT]
+#! Outputs: [FOREIGN_PROC_ROOT]
+#!
+#! Where:
+#! - FOREIGN_PROC_ROOT is the root of the foreign procedure which will be executed during the FPI
+#!   call.
+pub proc set_fpi_procedure_root(foreign_proc_root: word) -> word
+    mem_storew_le.UPCOMING_FOREIGN_PROCEDURE_PTR
 end
 
 # GLOBAL INPUTS
@@ -399,7 +476,7 @@ end
 #! Where:
 #! - BLOCK_COMMITMENT is the commitment of the transaction reference block.
 pub proc set_block_commitment
-    mem_storew_be.BLOCK_COMMITMENT_PTR
+    mem_storew_le.BLOCK_COMMITMENT_PTR
 end
 
 #! Returns the block commitment of the reference block.
@@ -410,35 +487,33 @@ end
 #! Where:
 #! - BLOCK_COMMITMENT is the commitment of the transaction reference block.
 pub proc get_block_commitment
-    padw mem_loadw_be.BLOCK_COMMITMENT_PTR
+    padw mem_loadw_le.BLOCK_COMMITMENT_PTR
 end
 
-#! Sets the ID of the native account.
+#! Sets the global ID of the native account.
 #!
-#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc set_global_account_id
-    push.0.0
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    mem_storew_be.NATIVE_ACCT_ID_PTR
-    dropw
+    mem_store.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
+    mem_store.GLOBAL_ACCOUNT_ID_PREFIX_PTR
     # => []
 end
 
-#! Returns the ID of the native account.
+#! Returns the global ID of the native account.
 #!
 #! Inputs:  []
-#! Outputs: [account_id_prefix, account_id_suffix]
+#! Outputs: [account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
 pub proc get_global_account_id
-    padw mem_loadw_be.NATIVE_ACCT_ID_PTR
-    # => [0, 0, account_id_prefix, account_id_suffix]
-    drop drop
+    mem_load.GLOBAL_ACCOUNT_ID_PREFIX_PTR
+    mem_load.GLOBAL_ACCOUNT_ID_SUFFIX_PTR
+    # => [account_id_suffix, account_id_prefix]
 end
 
 #! Sets the native account commitment at the beginning of the transaction.
@@ -449,7 +524,7 @@ end
 #! Where:
 #! - INIT_ACCOUNT_COMMITMENT is the initial account commitment.
 pub proc set_init_account_commitment
-    mem_storew_be.INIT_ACCOUNT_COMMITMENT_PTR
+    mem_storew_le.INIT_ACCOUNT_COMMITMENT_PTR
 end
 
 #! Returns the native account commitment at the beginning of the transaction.
@@ -460,7 +535,7 @@ end
 #! Where:
 #! - INIT_ACCOUNT_COMMITMENT is the initial account commitment.
 pub proc get_init_account_commitment
-    padw mem_loadw_be.INIT_ACCOUNT_COMMITMENT_PTR
+    padw mem_loadw_le.INIT_ACCOUNT_COMMITMENT_PTR
 end
 
 #! Sets the initial account nonce.
@@ -493,7 +568,7 @@ end
 #! Where:
 #! - INIT_NATIVE_ACCOUNT_VAULT_ROOT is the initial vault root of the native account.
 pub proc set_init_native_account_vault_root
-    mem_storew_be.INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR
+    mem_storew_le.INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR
 end
 
 #! Returns the vault root of the native account at the beginning of the transaction.
@@ -504,7 +579,7 @@ end
 #! Where:
 #! - INIT_NATIVE_ACCOUNT_VAULT_ROOT is the initial vault root of the native account.
 pub proc get_init_native_account_vault_root
-    padw mem_loadw_be.INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR
+    padw mem_loadw_le.INIT_NATIVE_ACCOUNT_VAULT_ROOT_PTR
 end
 
 #! Returns the memory address of the vault root of the native account at the beginning of the
@@ -528,7 +603,7 @@ end
 #! Where:
 #! - INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT is the initial storage commitment of the native account.
 pub proc set_init_account_storage_commitment
-    mem_storew_be.INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR
+    mem_storew_le.INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR
 end
 
 #! Returns the storage commitment of the native account at the beginning of the transaction.
@@ -539,7 +614,7 @@ end
 #! Where:
 #! - INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT is the initial storage commitment of the native account.
 pub proc get_init_account_storage_commitment
-    padw mem_loadw_be.INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR
+    padw mem_loadw_le.INIT_NATIVE_ACCOUNT_STORAGE_COMMITMENT_PTR
 end
 
 #! Returns the input notes commitment.
@@ -552,7 +627,7 @@ end
 #! Where:
 #! - INPUT_NOTES_COMMITMENT is the input notes commitment.
 pub proc get_input_notes_commitment
-    padw mem_loadw_be.INPUT_NOTES_COMMITMENT_PTR
+    padw mem_loadw_le.INPUT_NOTES_COMMITMENT_PTR
 end
 
 #! Sets the input notes' commitment.
@@ -563,7 +638,7 @@ end
 #! Where:
 #! - INPUT_NOTES_COMMITMENT is the notes' commitment.
 pub proc set_nullifier_commitment
-    mem_storew_be.INPUT_NOTES_COMMITMENT_PTR
+    mem_storew_le.INPUT_NOTES_COMMITMENT_PTR
 end
 
 #! Returns the memory address of the transaction script root.
@@ -585,7 +660,7 @@ end
 #! Where:
 #! - TX_SCRIPT_ROOT is the transaction script root.
 pub proc set_tx_script_root
-    mem_storew_be.TX_SCRIPT_ROOT_PTR
+    mem_storew_le.TX_SCRIPT_ROOT_PTR
 end
 
 #! Returns the transaction script arguments.
@@ -597,7 +672,7 @@ end
 #! - TX_SCRIPT_ARGS is the word of values which could be used directly or could be used to obtain
 #!   some values associated with it from the advice map.
 pub proc get_tx_script_args
-    padw mem_loadw_be.TX_SCRIPT_ARGS_PTR
+    padw mem_loadw_le.TX_SCRIPT_ARGS_PTR
 end
 
 #! Sets the transaction script arguments.
@@ -609,7 +684,7 @@ end
 #! - TX_SCRIPT_ARGS is the word of values which could be used directly or could be used to obtain
 #!   some values associated with it from the advice map.
 pub proc set_tx_script_args
-    mem_storew_be.TX_SCRIPT_ARGS_PTR
+    mem_storew_le.TX_SCRIPT_ARGS_PTR
 end
 
 #! Returns the auth procedure arguments.
@@ -620,7 +695,7 @@ end
 #! Where:
 #! - AUTH_ARGS is the argument passed to the auth procedure.
 pub proc get_auth_args
-    padw mem_loadw_be.AUTH_ARGS_PTR
+    padw mem_loadw_le.AUTH_ARGS_PTR
 end
 
 #! Sets the auth procedure arguments.
@@ -631,7 +706,7 @@ end
 #! Where:
 #! - AUTH_ARGS is the argument passed to the auth procedure.
 pub proc set_auth_args
-    mem_storew_be.AUTH_ARGS_PTR
+    mem_storew_le.AUTH_ARGS_PTR
 end
 
 # BLOCK DATA
@@ -656,7 +731,7 @@ end
 #! Where:
 #! - PREV_BLOCK_COMMITMENT_PTR is the block commitment of the transaction reference block.
 pub proc get_prev_block_commitment
-    padw mem_loadw_be.PREV_BLOCK_COMMITMENT_PTR
+    padw mem_loadw_le.PREV_BLOCK_COMMITMENT_PTR
 end
 
 #! Returns the block number of the transaction reference block.
@@ -697,14 +772,15 @@ end
 #! Returns the faucet ID of the native asset as defined in the transaction's reference block.
 #!
 #! Inputs:  []
-#! Outputs: [native_asset_id_prefix, native_asset_id_suffix]
+#! Outputs: [native_asset_id_suffix, native_asset_id_prefix]
 #!
 #! Where:
 #! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 pub proc get_native_asset_id
-    padw mem_loadw_be.FEE_PARAMETERS_PTR drop drop
-    # => [native_asset_id_prefix, native_asset_id_suffix]
+    mem_load.NATIVE_ASSET_ID_PREFIX_PTR
+    mem_load.NATIVE_ASSET_ID_SUFFIX_PTR
+    # => [native_asset_id_suffix, native_asset_id_prefix]
 end
 
 #! Returns the verification base fee from the transaction's reference block.
@@ -727,7 +803,7 @@ end
 #! Where:
 #! - CHAIN_COMMITMENT is the chain commitment of the transaction reference block.
 pub proc get_chain_commitment
-    padw mem_loadw_be.CHAIN_COMMITMENT_PTR
+    padw mem_loadw_le.CHAIN_COMMITMENT_PTR
 end
 
 #! Returns the account db root of the transaction reference block.
@@ -738,7 +814,7 @@ end
 #! Where:
 #! - ACCT_DB_ROOT is the account database root of the transaction reference block.
 pub proc get_account_db_root
-    padw mem_loadw_be.ACCT_DB_ROOT_PTR
+    padw mem_loadw_le.ACCT_DB_ROOT_PTR
 end
 
 #! Returns the nullifier db root of the transaction reference block.
@@ -749,7 +825,7 @@ end
 #! Where:
 #! - NULLIFIER_ROOT is the nullifier root of the transaction reference block.
 pub proc get_nullifier_db_root
-    padw mem_loadw_be.NULLIFIER_ROOT_PTR
+    padw mem_loadw_le.NULLIFIER_ROOT_PTR
 end
 
 #! Returns the tx commitment of the transaction reference block.
@@ -760,7 +836,7 @@ end
 #! Where:
 #! - TX_COMMITMENT is the tx commitment of the transaction reference block.
 pub proc get_tx_commitment
-    padw mem_loadw_be.TX_COMMITMENT_PTR
+    padw mem_loadw_le.TX_COMMITMENT_PTR
 end
 
 #! Returns the transaction kernel commitment of the transaction reference block.
@@ -771,7 +847,7 @@ end
 #! Where:
 #! - TX_KERNEL_COMMITMENT is the sequential hash of the kernel procedures.
 pub proc get_tx_kernel_commitment
-    padw mem_loadw_be.TX_KERNEL_COMMITMENT_PTR
+    padw mem_loadw_le.TX_KERNEL_COMMITMENT_PTR
 end
 
 #! Returns the validator key commitment of the transaction reference block.
@@ -782,7 +858,7 @@ end
 #! Where:
 #! - VALIDATOR_KEY_COMMITMENT is the public key commitment of the transaction reference block.
 pub proc get_validator_key_commitment
-    padw mem_loadw_be.VALIDATOR_KEY_COMMITMENT_PTR
+    padw mem_loadw_le.VALIDATOR_KEY_COMMITMENT_PTR
 end
 
 #! Returns the note root of the transaction reference block.
@@ -793,7 +869,7 @@ end
 #! Where:
 #! - NOTE_ROOT is the note root of the transaction reference block.
 pub proc get_note_root
-    padw mem_loadw_be.NOTE_ROOT_PTR
+    padw mem_loadw_le.NOTE_ROOT_PTR
 end
 
 #! Sets the note root of the transaction reference block.
@@ -804,7 +880,7 @@ end
 #! Where:
 #! - NOTE_ROOT is the note root of the transaction reference block.
 pub proc set_note_root
-    mem_storew_be.NOTE_ROOT_PTR
+    mem_storew_le.NOTE_ROOT_PTR
 end
 
 # CHAIN DATA
@@ -1019,43 +1095,46 @@ end
 #! Returns the ID of the active account.
 #!
 #! Inputs:  []
-#! Outputs: [account_id_prefix, account_id_suffix]
+#! Outputs: [account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 pub proc get_account_id
-    padw exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
-    # => [account_id_prefix, account_id_suffix]
+    exec.get_active_account_data_ptr
+    # => [active_account_data_ptr]
+
+    dup add.ACCT_ID_PREFIX_OFFSET mem_load
+    # => [account_id_prefix, active_account_data_ptr]
+
+    swap add.ACCT_ID_SUFFIX_OFFSET mem_load
+    # => [account_id_suffix, account_id_prefix]
 end
 
 #! Returns the ID of the native account of the transaction.
 #!
 #! Inputs:  []
-#! Outputs: [account_id_prefix, account_id_suffix]
+#! Outputs: [account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the native account
 #!   of the transaction.
 pub proc get_native_account_id
-    padw push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_ID_AND_NONCE_OFFSET mem_loadw_be
-    # => [nonce, 0, account_id_prefix, account_id_suffix]
-    drop drop
-    # => [account_id_prefix, account_id_suffix]
+    mem_load.NATIVE_ACCOUNT_ID_PREFIX_PTR
+    mem_load.NATIVE_ACCOUNT_ID_SUFFIX_PTR
+    # => [account_id_suffix, account_id_prefix]
 end
 
 #! Sets the account ID and nonce.
 #!
-#! Inputs:  [nonce, 0, account_id_prefix, account_id_suffix]
-#! Outputs: [nonce, 0, account_id_prefix, account_id_suffix]
+#! Inputs:  [nonce, 0, account_id_suffix, account_id_prefix]
+#! Outputs: [nonce, 0, account_id_suffix, account_id_prefix]
 #!
 #! Where:
 #! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
 #! - nonce is the nonce of the active account.
 pub proc set_account_id_and_nonce
     exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the nonce of the active account.
@@ -1082,20 +1161,16 @@ pub proc get_native_account_nonce
     mem_load
 end
 
-#! Sets the nonce of the active account.
+#! Sets the nonce of the native account.
 #!
 #! Inputs:  [nonce]
 #! Outputs: []
 #!
 #! Where:
-#! - nonce is the nonce of the active account.
-pub proc set_account_nonce
-    exec.get_active_account_data_ptr add.ACCT_ID_AND_NONCE_OFFSET padw
-    # => [0, 0, 0, 0, account_id_and_nonce_ptr, new_nonce]
-    dup.4 mem_loadw_be
-    # => [old_nonce, 0, old_id_prefix, old_id_suffix, account_id_and_nonce_ptr, new_nonce]
-    drop movup.4 movup.4 mem_storew_be dropw
-    # => []
+#! - nonce is the new nonce of the native account.
+pub proc set_native_account_nonce
+    push.NATIVE_ACCOUNT_DATA_PTR add.ACCT_NONCE_OFFSET
+    mem_store
 end
 
 ### ACCOUNT VAULT #################################################
@@ -1121,7 +1196,7 @@ end
 pub proc get_account_vault_root
     padw
     exec.get_active_account_data_ptr add.ACCT_VAULT_ROOT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the account vault root.
@@ -1133,7 +1208,7 @@ end
 #! - ACCT_VAULT_ROOT is the account vault root to be set.
 pub proc set_account_vault_root
     exec.get_active_account_data_ptr add.ACCT_VAULT_ROOT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the memory pointer to the initial vault root of the active account.
@@ -1148,12 +1223,12 @@ end
 #! Where:
 #! - account_initial_vault_root_ptr is the memory pointer to the initial vault root.
 pub proc get_account_initial_vault_root_ptr
-    # For foreign account, use the regular vault root pointer since foreign accounts are read-only
+    # for foreign account, use the regular vault root pointer since foreign accounts are read-only
     # and initial == current
     exec.get_account_vault_root_ptr
     # => [account_vault_root_ptr]
 
-    # For native account, use the initial vault root pointer
+    # for native account, use the initial vault root pointer
     exec.get_init_native_account_vault_root_ptr
     # => [native_account_initial_vault_root_ptr, account_vault_root_ptr]
 
@@ -1178,7 +1253,7 @@ end
 pub proc get_account_code_commitment
     padw
     exec.get_active_account_data_ptr add.ACCT_CODE_COMMITMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the code commitment of the account.
@@ -1190,7 +1265,7 @@ end
 #! - CODE_COMMITMENT is the code commitment to be set.
 pub proc set_account_code_commitment
     exec.get_active_account_data_ptr add.ACCT_CODE_COMMITMENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Sets the transaction expiration block number.
@@ -1285,7 +1360,7 @@ end
 pub proc get_account_storage_commitment
     padw
     exec.get_active_account_data_ptr add.ACCT_STORAGE_COMMITMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the account storage commitment.
@@ -1297,7 +1372,7 @@ end
 #! - STORAGE_COMMITMENT is the account storage commitment.
 pub proc set_account_storage_commitment
     exec.get_active_account_data_ptr add.ACCT_STORAGE_COMMITMENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Sets the dirty flag for the native account storage commitment.
@@ -1408,12 +1483,12 @@ end
 #! Where:
 #! - account_initial_storage_slots_ptr is the memory pointer to the initial storage slot values.
 pub proc get_account_initial_storage_slots_ptr
-    # For foreign account, use the regular storage slots pointer since foreign accounts are
+    # for foreign account, use the regular storage slots pointer since foreign accounts are
     # read-only and initial == current
     exec.get_account_active_storage_slots_section_ptr
     # => [account_storage_slots_ptr]
 
-    # For native account, use the initial storage slots pointer
+    # for native account, use the initial storage slots pointer
     exec.get_native_account_initial_storage_slots_ptr
     # => [native_account_initial_storage_slots_ptr, account_storage_slots_ptr]
 
@@ -1427,28 +1502,6 @@ pub proc get_account_initial_storage_slots_ptr
 end
 
 ### ACCOUNT DELTA #################################################
-
-#! Returns the link map pointer to the fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_fungible_asset_ptr is the link map pointer to the fungible asset vault delta.
-pub proc get_account_delta_fungible_asset_ptr
-    push.ACCOUNT_DELTA_FUNGIBLE_ASSET_PTR
-end
-
-#! Returns the link map pointer to the non-fungible asset vault delta.
-#!
-#! Inputs:  []
-#! Outputs: [account_delta_non_fungible_asset_ptr]
-#!
-#! Where:
-#! - account_delta_non_fungible_asset_ptr is the link map pointer to the non-fungible asset vault delta.
-pub proc get_account_delta_non_fungible_asset_ptr
-    push.ACCOUNT_DELTA_NON_FUNGIBLE_ASSET_PTR
-end
 
 #! Returns the link map pointer to the storage map delta of the storage map in the given slot index.
 #!
@@ -1526,7 +1579,7 @@ end
 #! - note_ptr is the input note's the memory address.
 #! - NOTE_ID is the note's id.
 pub proc set_input_note_id
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Computes a pointer to the memory address at which the nullifier associated a note with `idx` is
@@ -1551,7 +1604,7 @@ end
 #! - idx is the index of the input note.
 #! - nullifier is the nullifier of the input note.
 pub proc get_input_note_nullifier
-    mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_be
+    mul.4 padw movup.4 add.INPUT_NOTE_NULLIFIER_SECTION_PTR mem_loadw_le
 end
 
 #! Returns a pointer to the start of the input note core data segment for the note located at the
@@ -1578,7 +1631,7 @@ end
 pub proc get_input_note_script_root
     padw
     movup.4 add.INPUT_NOTE_SCRIPT_ROOT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Returns the memory address of the script root of an input note.
@@ -1604,7 +1657,7 @@ end
 pub proc get_input_note_storage_commitment
     padw
     movup.4 add.INPUT_NOTE_STORAGE_COMMITMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Returns the metadata of an input note located at the specified memory address.
@@ -1618,7 +1671,7 @@ end
 pub proc get_input_note_metadata_header
     padw
     movup.4 add.INPUT_NOTE_METADATA_HEADER_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the metadata for an input note located at the specified memory address.
@@ -1631,7 +1684,7 @@ end
 #! - NOTE_METADATA_HEADER is the metadata header of the input note.
 pub proc set_input_note_metadata_header
     add.INPUT_NOTE_METADATA_HEADER_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the attachment of an input note located at the specified memory address.
@@ -1645,7 +1698,7 @@ end
 pub proc get_input_note_attachment
     padw
     movup.4 add.INPUT_NOTE_ATTACHMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the attachment for an input note located at the specified memory address.
@@ -1658,7 +1711,7 @@ end
 #! - NOTE_ATTACHMENT is the attachment of the input note.
 pub proc set_input_note_attachment
     add.INPUT_NOTE_ATTACHMENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the note's args.
@@ -1672,7 +1725,7 @@ end
 pub proc get_input_note_args
     padw
     movup.4 add.INPUT_NOTE_ARGS_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the note args for an input note located at the specified memory address.
@@ -1685,32 +1738,32 @@ end
 #! - NOTE_ARGS are optional note args of the input note.
 pub proc set_input_note_args
     add.INPUT_NOTE_ARGS_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the number of inputs of the note located at the specified memory address.
 #!
 #! Inputs:  [note_ptr]
-#! Outputs: [storage_len]
+#! Outputs: [num_storage_items]
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - storage_len is the number of storage items of the input note.
-pub proc get_input_note_storage_len
-    add.INPUT_NOTE_STORAGE_LENGTH_OFFSET
+#! - num_storage_items is the number of storage items of the input note.
+pub proc get_input_note_num_storage_items
+    add.INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET
     mem_load
 end
 
 #! Sets the number of inputs for an input note located at the specified memory address.
 #!
-#! Inputs:  [note_ptr, storage_len]
+#! Inputs:  [note_ptr, num_storage_items]
 #! Outputs: []
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - storage_len is the number of storage items of the input note.
-pub proc set_input_note_storage_len
-    add.INPUT_NOTE_STORAGE_LENGTH_OFFSET
+#! - num_storage_items is the number of storage items of the input note.
+pub proc set_input_note_num_storage_items
+    add.INPUT_NOTE_NUM_STORAGE_ITEMS_OFFSET
     mem_store
 end
 
@@ -1760,11 +1813,11 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the input note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc get_input_note_recipient
     padw
     movup.4 add.INPUT_NOTE_RECIPIENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the input note's recipient.
@@ -1774,10 +1827,10 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc set_input_note_recipient
     add.INPUT_NOTE_RECIPIENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the assets commitment for the input note located at the specified memory address.
@@ -1791,7 +1844,7 @@ end
 pub proc get_input_note_assets_commitment
     padw
     movup.4 add.INPUT_NOTE_ASSETS_COMMITMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Returns the serial number for the input note located at the specified memory address.
@@ -1805,7 +1858,7 @@ end
 pub proc get_input_note_serial_num
     padw
     movup.4 add.INPUT_NOTE_SERIAL_NUM_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 # OUTPUT NOTES
@@ -1842,11 +1895,11 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc get_output_note_recipient
     padw
     movup.4 add.OUTPUT_NOTE_RECIPIENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the output note's recipient.
@@ -1856,10 +1909,10 @@ end
 #!
 #! Where:
 #! - note_ptr is the memory address at which the output note data begins.
-#! - RECIPIENT is the commitment to the note's script, inputs and the serial number.
+#! - RECIPIENT is the commitment to the note's script, storage and the serial number.
 pub proc set_output_note_recipient
     add.OUTPUT_NOTE_RECIPIENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Returns the output note's metadata.
@@ -1875,7 +1928,7 @@ pub proc get_output_note_metadata_header
     # => [0, 0, 0, 0, note_ptr]
     movup.4 add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
     # => [(note_ptr + offset), 0, 0, 0, 0]
-    mem_loadw_be
+    mem_loadw_le
     # => [METADATA_HEADER]
 end
 
@@ -1889,7 +1942,7 @@ end
 #! - note_ptr is the memory address at which the output note data begins.
 pub proc set_output_note_metadata_header
     add.OUTPUT_NOTE_METADATA_HEADER_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 #! Sets the output note's attachment kind and scheme in the metadata header.
@@ -1916,7 +1969,7 @@ end
 pub proc get_output_note_attachment
     padw
     movup.4 add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
     # => [ATTACHMENT]
 end
 
@@ -1930,7 +1983,7 @@ end
 #! - note_ptr is the memory address at which the output note data begins.
 pub proc set_output_note_attachment
     add.OUTPUT_NOTE_ATTACHMENT_OFFSET
-    mem_storew_be
+    mem_storew_le
     dropw
 end
 
@@ -1965,6 +2018,24 @@ pub proc set_output_note_num_assets
     dup.1 push.MAX_ASSETS_PER_NOTE lt assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
 
     mem_store
+end
+
+#! Increments the number of assets in the output note by 1.
+#!
+#! Inputs:  [note_ptr]
+#! Outputs: []
+#!
+#! Where:
+#! - note_ptr is the memory address at which the output note data begins.
+#!
+#! Panics if:
+#! - the number of assets exceeds the maximum allowed number of assets per note.
+pub proc increment_output_note_num_assets
+    dup exec.get_output_note_num_assets add.1
+    # => [num_assets + 1, note_ptr]
+
+    swap exec.set_output_note_num_assets
+    # => []
 end
 
 #! Returns the dirty flag for the assets commitment.
@@ -2020,7 +2091,7 @@ end
 pub proc get_output_note_assets_commitment
     padw
     movup.4 add.OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET
-    mem_loadw_be
+    mem_loadw_le
 end
 
 #! Sets the output note assets commitment for the output note located at the specified memory
@@ -2034,7 +2105,7 @@ end
 #! - ASSETS_COMMITMENT is the sequential hash of the padded assets of an output note.
 pub proc set_output_note_assets_commitment
     add.OUTPUT_NOTE_ASSETS_COMMITMENT_OFFSET
-    mem_storew_be
+    mem_storew_le
 end
 
 # KERNEL DATA
@@ -2123,9 +2194,9 @@ pub proc link_map_malloc
     add.LINK_MAP_REGION_START_PTR
     # => [entry_ptr]
 
-    # If entry_ptr is the end_ptr the entry would be allocated in the next memory region so
+    # if entry_ptr is the end_ptr the entry would be allocated in the next memory region so
     # we must abort.
-    # We can use neq because of how the end ptr is chosen. See its docs for details.
+    # we can use neq because of how the end ptr is chosen. See its docs for details.
     dup neq.LINK_MAP_REGION_END_PTR assert.err=ERR_LINK_MAP_MAX_ENTRIES_EXCEEDED
     # => [entry_ptr]
 end

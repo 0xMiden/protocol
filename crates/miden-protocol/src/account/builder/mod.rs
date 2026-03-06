@@ -1,8 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_core::FieldElement;
-
 use crate::account::component::StorageSchema;
 use crate::account::{
     Account,
@@ -51,9 +49,6 @@ use crate::{Felt, Word};
 /// that the auth procedure must be at procedure index 0 within an [`AccountCode`]. That also
 /// affects the storage slot order and means the auth component's storage comes first, if it has any
 /// storage.
-///
-/// Faucet accounts have a protocol-reserved storage slot which is at index 0. This means
-/// user-defined storage slots start at index 1.
 #[derive(Debug, Clone)]
 pub struct AccountBuilder {
     #[cfg(any(feature = "testing", test))]
@@ -118,7 +113,7 @@ impl AccountBuilder {
     /// Adds a designated authentication [`AccountComponent`] to the builder.
     ///
     /// This component may contain multiple procedures, but is expected to contain exactly one
-    /// authentication procedure (named `auth_*`).
+    /// authentication procedure (marked with the `@auth_script` attribute).
     /// Calling this method multiple times will override the previous auth component.
     ///
     /// Procedures from this component will be placed at the beginning of the account procedure
@@ -128,14 +123,12 @@ impl AccountBuilder {
         self
     }
 
-    /// Returns an iterator of storage schemas attached to the builder's components, if any.
-    ///
-    /// Components constructed without metadata will not contribute a schema.
+    /// Returns an iterator of storage schemas attached to the builder's components.
     pub fn storage_schemas(&self) -> impl Iterator<Item = &StorageSchema> + '_ {
         self.auth_component
             .iter()
             .chain(self.components.iter())
-            .filter_map(|component| component.storage_schema())
+            .map(|component| component.storage_schema())
     }
 
     /// Builds the common parts of testing and non-testing code.
@@ -203,7 +196,8 @@ impl AccountBuilder {
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on the given components.
+    /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
+    ///   components.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {
@@ -299,10 +293,10 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
-    use miden_core::FieldElement;
-    use miden_processor::MastNodeExt;
+    use miden_core::mast::MastNodeExt;
 
     use super::*;
+    use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
     use crate::testing::noop_auth_component::NoopAuthComponent;
 
@@ -349,12 +343,14 @@ mod tests {
             let mut value = Word::empty();
             value[0] = Felt::new(custom.slot0);
 
+            let metadata =
+                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
+                metadata,
             )
             .expect("component should be valid")
-            .with_supports_all_types()
         }
     }
 
@@ -369,15 +365,17 @@ mod tests {
             let mut value1 = Word::empty();
             value1[3] = Felt::new(custom.slot1);
 
+            let metadata =
+                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME0.clone(), value0),
                     StorageSlot::with_value(CUSTOM_COMPONENT2_SLOT_NAME1.clone(), value1),
                 ],
+                metadata,
             )
             .expect("component should be valid")
-            .with_supports_all_types()
         }
     }
 

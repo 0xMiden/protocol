@@ -1,10 +1,15 @@
 use miden_core::EMPTY_WORD;
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
 
 use crate::account::StorageSlotType;
 use crate::account::storage::map::EMPTY_STORAGE_MAP_ROOT;
 use crate::account::storage::{StorageMap, Word};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // STORAGE SLOT CONTENT
 // ================================================================================================
@@ -116,9 +121,8 @@ impl Deserializable for StorageSlotContent {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::utils::{Deserializable, Serializable};
-
     use crate::account::AccountStorage;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_storage_slot_content() {

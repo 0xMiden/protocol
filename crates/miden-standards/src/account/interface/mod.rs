@@ -1,12 +1,12 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountId, AccountIdPrefix, AccountType};
-use miden_protocol::note::PartialNote;
+use miden_protocol::account::{AccountId, AccountType};
+use miden_protocol::note::{NoteAttachmentContent, PartialNote};
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
 
-use crate::AuthScheme;
+use crate::AuthMethod;
 use crate::code_builder::CodeBuilder;
 use crate::errors::CodeBuilderError;
 
@@ -28,7 +28,7 @@ pub use extension::{AccountComponentInterfaceExt, AccountInterfaceExt};
 /// result in a successful execution against this account.
 pub struct AccountInterface {
     account_id: AccountId,
-    auth: Vec<AuthScheme>,
+    auth: Vec<AuthMethod>,
     components: Vec<AccountComponentInterface>,
 }
 
@@ -42,7 +42,7 @@ impl AccountInterface {
     /// schemes and account component interfaces.
     pub fn new(
         account_id: AccountId,
-        auth: Vec<AuthScheme>,
+        auth: Vec<AuthMethod>,
         components: Vec<AccountComponentInterface>,
     ) -> Self {
         Self { account_id, auth, components }
@@ -94,8 +94,8 @@ impl AccountInterface {
         self.account_id.is_network()
     }
 
-    /// Returns a reference to the vector of used authentication schemes.
-    pub fn auth(&self) -> &Vec<AuthScheme> {
+    /// Returns a reference to the vector of used authentication methods.
+    pub fn auth(&self) -> &Vec<AuthMethod> {
         &self.auth
     }
 
@@ -161,7 +161,17 @@ impl AccountInterface {
             note_creation_source,
         );
 
-        let tx_script = CodeBuilder::new()
+        // Add attachment array entries to the code builder's advice map.
+        // For NoteAttachmentContent::Array, the commitment (to_word) is used as key
+        // and the array elements as value.
+        let mut code_builder = CodeBuilder::new();
+        for note in output_notes {
+            if let NoteAttachmentContent::Array(array) = note.metadata().attachment().content() {
+                code_builder.add_advice_map_entry(array.commitment(), array.as_slice().to_vec());
+            }
+        }
+
+        let tx_script = code_builder
             .compile_tx_script(script)
             .map_err(AccountInterfaceError::InvalidTransactionScript)?;
 
@@ -239,8 +249,8 @@ pub enum NoteAccountCompatibility {
 /// Account interface related errors.
 #[derive(Debug, Error)]
 pub enum AccountInterfaceError {
-    #[error("note asset is not issued by this faucet: {0}")]
-    IssuanceFaucetMismatch(AccountIdPrefix),
+    #[error("note asset is not issued by faucet {0}")]
+    IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
     FaucetNoteWithoutAsset,
     #[error("invalid transaction script")]

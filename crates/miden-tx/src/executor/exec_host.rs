@@ -3,21 +3,17 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    AsyncHost,
-    BaseHost,
-    EventError,
-    FutureMaybeSend,
-    MastForest,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::EventError;
+use miden_processor::mast::MastForest;
+use miden_processor::{FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
     AccountDelta,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageSlotId,
     StorageSlotName,
 };
@@ -26,7 +22,7 @@ use miden_protocol::assembly::{SourceFile, SourceManagerSync, SourceSpan};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness, FungibleAsset};
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::smt::SmtProof;
-use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteStorage};
+use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
@@ -36,6 +32,7 @@ use miden_protocol::transaction::{
 };
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::note::StandardNote;
 
 use crate::auth::{SigningInputs, TransactionAuthenticator};
 use crate::errors::TransactionKernelError;
@@ -282,7 +279,7 @@ where
         &self,
         active_account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
         let storage_map_witness = self
             .base_host
@@ -302,7 +299,7 @@ where
         let smt_proof = SmtProof::from(storage_map_witness);
         let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
             smt_proof.leaf().hash(),
-            smt_proof.leaf().to_elements(),
+            smt_proof.leaf().to_elements().collect::<Vec<_>>(),
         )]));
 
         Ok(vec![merkle_store_ext, map_ext])
@@ -364,11 +361,22 @@ where
         Ok(asset_witnesses.into_iter().flat_map(asset_witness_to_advice_mutation).collect())
     }
 
-    /// Handles a request for a [`NoteScript`] by querying the [`DataStore`].
+    /// Handles a request for a [`NoteScript`] during transaction execution when the script is not
+    /// already in the advice provider.
     ///
-    /// The script is fetched from the data store and used to build a [`NoteRecipient`], which is
-    /// then used to create an [`OutputNoteBuilder`]. This function is only called for public notes
-    /// where the script is not already available in the advice provider.
+    /// Standard note scripts (P2ID, etc.) are resolved directly from [`StandardNote`], avoiding a
+    /// data store round-trip. Non-standard scripts are fetched from the [`DataStore`].
+    ///
+    /// The resolved script is used to build a [`NoteRecipient`], which is then used to create
+    /// an [`OutputNoteBuilder`]. This function is only called for notes where the script is not
+    /// already in the advice provider.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The note is public and the script is not found in the data store.
+    /// - Constructing the recipient with the fetched script does not match the expected recipient
+    ///   digest.
+    /// - The data store returns an error when fetching the script.
     async fn on_note_script_requested(
         &mut self,
         note_idx: usize,
@@ -378,10 +386,21 @@ where
         note_storage: NoteStorage,
         serial_num: Word,
     ) -> Result<Vec<AdviceMutation>, TransactionKernelError> {
-        let note_script_result = self.base_host.store().get_note_script(script_root).await;
+        // Resolve standard note scripts directly, avoiding a data store round-trip.
+        let note_script: Option<NoteScript> =
+            if let Some(standard_note) = StandardNote::from_script_root(script_root) {
+                Some(standard_note.script())
+            } else {
+                self.base_host.store().get_note_script(script_root).await.map_err(|err| {
+                    TransactionKernelError::other_with_source(
+                        "failed to retrieve note script from data store",
+                        err,
+                    )
+                })?
+            };
 
-        match note_script_result {
-            Ok(Some(note_script)) => {
+        match note_script {
+            Some(note_script) => {
                 let script_felts: Vec<Felt> = (&note_script).into();
                 let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
@@ -399,7 +418,7 @@ where
                     script_felts,
                 )]))])
             },
-            Ok(None) if metadata.is_private() => {
+            None if metadata.is_private() => {
                 self.base_host.output_note_from_recipient_digest(
                     note_idx,
                     metadata,
@@ -408,13 +427,9 @@ where
 
                 Ok(Vec::new())
             },
-            Ok(None) => Err(TransactionKernelError::other(format!(
+            None => Err(TransactionKernelError::other(format!(
                 "note script with root {script_root} not found in data store for public note"
             ))),
-            Err(err) => Err(TransactionKernelError::other_with_source(
-                "failed to retrieve note script from data store",
-                err,
-            )),
         }
     }
 
@@ -449,10 +464,10 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE, AUTH> BaseHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
+impl<STORE, AUTH> Host for TransactionExecutorHost<'_, '_, STORE, AUTH>
 where
-    STORE: DataStore,
-    AUTH: TransactionAuthenticator,
+    STORE: DataStore + Sync,
+    AUTH: TransactionAuthenticator + Sync,
 {
     fn get_label_and_source_file(
         &self,
@@ -463,13 +478,7 @@ where
         let span = source_manager.location_to_span(location.clone()).unwrap_or_default();
         (span, maybe_file)
     }
-}
 
-impl<STORE, AUTH> AsyncHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
-where
-    STORE: DataStore + Sync,
-    AUTH: TransactionAuthenticator + Sync,
-{
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
@@ -477,7 +486,7 @@ where
 
     fn on_event(
         &mut self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let core_lib_event_result = self.base_host.handle_core_lib_events(process);
 
@@ -697,7 +706,7 @@ fn asset_witness_to_advice_mutation(asset_witness: AssetWitness) -> [AdviceMutat
     let smt_proof = SmtProof::from(asset_witness);
     let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
         smt_proof.leaf().hash(),
-        smt_proof.leaf().to_elements(),
+        smt_proof.leaf().to_elements().collect::<Vec<_>>(),
     )]));
 
     [merkle_store_ext, map_ext]

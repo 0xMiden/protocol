@@ -1,8 +1,8 @@
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
-use miden_processor::fast::FastProcessor;
-use miden_processor::{AdviceInputs, ExecutionError, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{ExecutionError, FastProcessor, StackInputs};
 pub use miden_processor::{ExecutionOptions, MastForestStore};
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::DefaultSourceManager;
@@ -80,6 +80,7 @@ where
             exec_options: ExecutionOptions::new(
                 Some(MAX_TX_EXECUTION_CYCLES),
                 MIN_TX_EXECUTION_CYCLES,
+                ExecutionOptions::DEFAULT_CORE_TRACE_FRAGMENT_SIZE,
                 false,
                 false,
             )
@@ -148,7 +149,7 @@ where
     /// stages of transaction execution take.
     #[must_use]
     pub fn with_tracing(mut self) -> Self {
-        self.exec_options = self.exec_options.with_tracing();
+        self.exec_options = self.exec_options.with_tracing(true);
         self
     }
 
@@ -183,7 +184,11 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+        // instantiate the processor in debug mode only when debug mode is specified via execution
+        // options; this is important because in debug mode execution is almost 100x slower
+        let processor =
+            FastProcessor::new_with_options(stack_inputs, advice_inputs, self.exec_options);
+
         let output = processor
             .execute(&TransactionKernel::main(), &mut host)
             .await
@@ -228,8 +233,7 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor =
-            FastProcessor::new_with_advice_inputs(stack_inputs.as_slice(), advice_inputs);
+        let processor = FastProcessor::new(stack_inputs).with_advice(advice_inputs);
         let output = processor
             .execute(&TransactionKernel::tx_script_main(), &mut host)
             .await
@@ -265,7 +269,7 @@ where
 
         let native_account_vault_root = account.vault().root();
         let fee_asset_vault_key =
-            AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
 
         let mut tx_inputs = TransactionInputs::new(account, block_header, blockchain, input_notes)
@@ -307,14 +311,6 @@ where
         TransactionExecutorError,
     > {
         let (stack_inputs, tx_advice_inputs) = TransactionKernel::prepare_inputs(tx_inputs);
-
-        // This reverses the stack inputs (even though it doesn't look like it does) because the
-        // fast processor expects the reverse order.
-        //
-        // Once we use the FastProcessor for execution and proving, we can change the way these
-        // inputs are constructed in TransactionKernel::prepare_inputs.
-        let stack_inputs = StackInputs::new(stack_inputs.iter().copied().collect()).unwrap();
-
         let input_notes = tx_inputs.input_notes();
 
         let script_mast_store = ScriptMastForestStore::new(
@@ -330,7 +326,7 @@ where
         let initial_fee_asset_balance = {
             let vault_root = tx_inputs.account().vault().root();
             let native_asset_id = tx_inputs.block_header().fee_parameters().native_asset_id();
-            let fee_asset_vault_key = AssetVaultKey::from_account_id(native_asset_id)
+            let fee_asset_vault_key = AssetVaultKey::new_fungible(native_asset_id)
                 .expect("fee asset should be a fungible asset");
 
             let fee_asset = tx_inputs

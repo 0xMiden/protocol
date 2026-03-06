@@ -77,6 +77,10 @@ impl Serializable for NoteHeader {
         self.note_id.write_into(target);
         self.note_metadata.write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.note_id.get_size_hint() + self.note_metadata.get_size_hint()
+    }
 }
 
 impl Deserializable for NoteHeader {

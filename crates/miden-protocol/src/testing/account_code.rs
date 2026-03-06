@@ -3,6 +3,7 @@
 
 use miden_assembly::Assembler;
 
+use crate::account::component::AccountComponentMetadata;
 use crate::account::{AccountCode, AccountComponent, AccountType};
 use crate::testing::noop_auth_component::NoopAuthComponent;
 
@@ -22,7 +23,8 @@ impl AccountCode {
         let library = Assembler::default()
             .assemble_library([CODE])
             .expect("mock account component should assemble");
-        let component = AccountComponent::new(library, vec![]).unwrap().with_supports_all_types();
+        let metadata = AccountComponentMetadata::new("miden::testing::mock", AccountType::all());
+        let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         Self::from_components(
             &[NoopAuthComponent.into(), component],

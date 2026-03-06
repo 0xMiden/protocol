@@ -1,8 +1,12 @@
-use miden_processor::DeserializationError;
-
 use super::{NoteAssets, NoteId, NoteRecipient, NoteScript, NoteStorage, Nullifier};
 use crate::Word;
-use crate::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // NOTE DETAILS
 // ================================================================================================
@@ -91,6 +95,10 @@ impl Serializable for NoteDetails {
 
         assets.write_into(target);
         recipient.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.assets.get_size_hint() + self.recipient.get_size_hint()
     }
 }
 

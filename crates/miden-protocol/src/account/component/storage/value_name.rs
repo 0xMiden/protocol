@@ -3,12 +3,17 @@ use core::cmp::Ordering;
 use core::fmt::{self, Display};
 use core::str::FromStr;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
 use thiserror::Error;
 
 use crate::account::StorageSlotName;
 use crate::errors::StorageSlotNameError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A simple wrapper type around a string key that identifies init-provided values.
 ///
@@ -154,6 +159,14 @@ impl TryFrom<String> for StorageValueName {
     type Error = StorageValueNameError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<&str> for StorageValueName {
+    type Error = StorageValueNameError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.parse()
     }
 }

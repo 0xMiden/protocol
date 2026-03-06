@@ -2,15 +2,10 @@ use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    AsyncHost,
-    BaseHost,
-    EventError,
-    FutureMaybeSend,
-    MastForest,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::EventError;
+use miden_processor::mast::MastForest;
+use miden_processor::{FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::transaction::TransactionEventId;
 use miden_protocol::vm::EventId;
 use miden_protocol::{CoreLibrary, Word};
@@ -64,7 +59,7 @@ impl<'store> MockHost<'store> {
                 &TransactionEventId::LinkMapSet,
                 &TransactionEventId::LinkMapGet,
                 // TODO: It should be possible to remove this after implementing
-                // https://github.com/0xMiden/miden-base/issues/1852.
+                // https://github.com/0xMiden/protocol/issues/1852.
                 &TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount,
             ]
             .map(TransactionEventId::event_id),
@@ -78,8 +73,7 @@ impl<'store> MockHost<'store> {
         self.handled_events.extend(
             [
                 &TransactionEventId::AccountBeforeForeignLoad,
-                &TransactionEventId::AccountVaultBeforeGetBalance,
-                &TransactionEventId::AccountVaultBeforeHasNonFungibleAsset,
+                &TransactionEventId::AccountVaultBeforeGetAsset,
                 &TransactionEventId::AccountVaultBeforeAddAsset,
                 &TransactionEventId::AccountVaultBeforeRemoveAsset,
                 &TransactionEventId::AccountStorageBeforeSetMapItem,
@@ -90,7 +84,7 @@ impl<'store> MockHost<'store> {
     }
 }
 
-impl<'store> BaseHost for MockHost<'store> {
+impl<'store> Host for MockHost<'store> {
     fn get_label_and_source_file(
         &self,
         location: &miden_protocol::assembly::debuginfo::Location,
@@ -100,16 +94,14 @@ impl<'store> BaseHost for MockHost<'store> {
     ) {
         self.exec_host.get_label_and_source_file(location)
     }
-}
 
-impl<'store> AsyncHost for MockHost<'store> {
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         self.exec_host.get_mast_forest(node_digest)
     }
 
     fn on_event(
         &mut self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
 

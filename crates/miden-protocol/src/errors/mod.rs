@@ -5,12 +5,11 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::Felt;
 use miden_core::mast::MastForestError;
-use miden_core::{EventId, Felt};
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
-use miden_processor::DeserializationError;
 use thiserror::Error;
 
 use super::account::AccountId;
@@ -24,25 +23,26 @@ use crate::account::{
     AccountIdPrefix,
     AccountStorage,
     AccountType,
+    StorageMapKey,
     StorageSlotId,
-    // StorageValueName,
-    // StorageValueNameError,
-    // TemplateTypeError,
     StorageSlotName,
 };
 use crate::address::AddressType;
-use crate::asset::AssetVaultKey;
+use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
 use crate::note::{
     NoteAssets,
     NoteAttachmentArray,
-    NoteExecutionHint,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
     NoteTag,
     NoteType,
     Nullifier,
 };
 use crate::transaction::{TransactionEventId, TransactionId};
+use crate::utils::serde::DeserializationError;
+use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
     MAX_ACCOUNTS_PER_BATCH,
@@ -50,6 +50,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -59,19 +60,21 @@ pub use masm_error::MasmError;
 
 /// The errors from the MASM code of the transaction kernel.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod tx_kernel;
+pub mod tx_kernel {
+    include!(concat!(env!("OUT_DIR"), "/tx_kernel_errors.rs"));
+}
 
 /// The errors from the MASM code of the Miden protocol library.
 #[cfg(any(feature = "testing", test))]
-#[rustfmt::skip]
-pub mod protocol;
+pub mod protocol {
+    include!(concat!(env!("OUT_DIR"), "/protocol_errors.rs"));
+}
 
 // ACCOUNT COMPONENT TEMPLATE ERROR
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum AccountComponentTemplateError {
+pub enum ComponentMetadataError {
     #[error("storage slot name `{0}` is duplicate")]
     DuplicateSlotName(StorageSlotName),
     #[error("storage init value name `{0}` is duplicate")]
@@ -88,10 +91,6 @@ pub enum AccountComponentTemplateError {
     InitValueNotProvided(StorageValueName),
     #[error("invalid init storage value for `{0}`: {1}")]
     InvalidInitStorageValue(StorageValueName, String),
-    #[error(
-        "account component storage schema cannot contain a slot with name `{0}` as it is reserved by the protocol"
-    )]
-    ReservedSlotName(StorageSlotName),
     #[error("error converting value into expected type: {0}")]
     StorageValueParsingError(#[source] SchemaTypeError),
     #[error("storage map contains duplicate keys")]
@@ -123,8 +122,6 @@ pub enum AccountError {
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
     AccountComponentMastForestMergeError(#[source] MastForestError),
-    // #[error("failed to create account component")]
-    // AccountComponentTemplateInstantiationError(#[source] AccountComponentTemplateError),
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
     #[error("failed to update asset vault")]
@@ -165,11 +162,6 @@ pub enum AccountError {
     StorageSlotNotValue(StorageSlotName),
     #[error("storage slot name {0} is assigned to more than one slot")]
     DuplicateStorageSlotName(StorageSlotName),
-    #[error(
-        "account storage cannot contain a user-provided slot with name {} as it is reserved by the protocol",
-        AccountStorage::faucet_sysdata_slot()
-    )]
-    StorageSlotNameMustNotBeFaucetSysdata,
     #[error("storage does not contain a slot with name {slot_name}")]
     StorageSlotNameNotFound { slot_name: StorageSlotName },
     #[error("storage does not contain a slot with ID {slot_id}")]
@@ -290,6 +282,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
@@ -301,10 +295,6 @@ pub enum AccountTreeError {
 
 #[derive(Debug, Error)]
 pub enum AddressError {
-    #[error("tag length {0} should be {expected} bits for network accounts",
-        expected = NoteTag::DEFAULT_NETWORK_ACCOUNT_TARGET_TAG_LENGTH
-    )]
-    CustomTagLengthNotAllowedForNetworkAccounts(u8),
     #[error("tag length {0} is too large, must be less than or equal to {max}",
         max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH
     )]
@@ -320,7 +310,7 @@ pub enum AddressError {
     #[error("{error_msg}")]
     DecodeError {
         error_msg: Box<str>,
-        // thiserror will return this when calling Error::source on NoteError.
+        // thiserror will return this when calling Error::source on AddressError.
         source: Option<Box<dyn Error + Send + Sync + 'static>>,
     },
     #[error("found unknown routing parameter key {0}")]
@@ -423,9 +413,13 @@ pub enum AccountDeltaError {
 #[derive(Debug, Error)]
 pub enum StorageMapError {
     #[error("map entries contain key {key} twice with values {value0} and {value1}")]
-    DuplicateKey { key: Word, value0: Word, value1: Word },
-    #[error("map key {raw_key} is not present in provided SMT proof")]
-    MissingKey { raw_key: Word },
+    DuplicateKey {
+        key: StorageMapKey,
+        value0: Word,
+        value1: Word,
+    },
+    #[error("map key {key} is not present in provided SMT proof")]
+    MissingKey { key: StorageMapKey },
 }
 
 // BATCH ACCOUNT UPDATE ERROR
@@ -461,8 +455,6 @@ pub enum AssetError {
     FungibleAssetAmountTooBig(u64),
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
-    #[error("fungible asset word {0} does not contain expected ZERO at word index 1")]
-    FungibleAssetExpectedZero(Word),
     #[error(
         "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
     )]
@@ -472,8 +464,6 @@ pub enum AssetError {
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
-    #[error("faucet account ID in asset has a non-faucet prefix: {}", .0)]
-    InvalidFaucetAccountIdPrefix(AccountIdPrefix),
     #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for fungible assets",
       id_type = .0.account_type(),
@@ -481,13 +471,23 @@ pub enum AssetError {
     )]
     FungibleFaucetIdTypeMismatch(AccountId),
     #[error(
+        "asset ID prefix and suffix in a non-fungible asset's vault key must match indices 0 and 1 in the value, but asset ID was {asset_id} and value was {value}"
+    )]
+    NonFungibleAssetIdMustMatchValue { asset_id: AssetId, value: Word },
+    #[error("asset ID prefix and suffix in a fungible asset's vault key must be zero but was {0}")]
+    FungibleAssetIdMustBeZero(AssetId),
+    #[error(
+        "the three most significant elements in a fungible asset's value must be zero but provided value was {0}"
+    )]
+    FungibleAssetValueMostSignificantElementsMustBeZero(Word),
+    #[error(
       "faucet id {0} of type {id_type} must be of type {expected_ty} for non fungible assets",
       id_type = .0.account_type(),
       expected_ty = AccountType::NonFungibleFaucet
     )]
-    NonFungibleFaucetIdTypeMismatch(AccountIdPrefix),
-    #[error("asset vault key {actual} does not match expected asset vault key {expected}")]
-    AssetVaultKeyMismatch { actual: Word, expected: Word },
+    NonFungibleFaucetIdTypeMismatch(AccountId),
+    #[error("smt proof in asset witness contains invalid key or value")]
+    AssetWitnessInvalid(#[source] Box<AssetError>),
 }
 
 // TOKEN SYMBOL ERROR
@@ -497,7 +497,7 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
-    #[error("token symbol should have length between 1 and 6 characters, but {0} was provided")]
+    #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
     InvalidCharacter,
@@ -535,8 +535,6 @@ pub enum AssetVaultError {
 pub enum PartialAssetVaultError {
     #[error("provided SMT entry {entry} is not a valid asset")]
     InvalidAssetInSmt { entry: Word, source: AssetError },
-    #[error("expected asset vault key to be {expected} but it was {actual}")]
-    AssetVaultKeyMismatch { expected: AssetVaultKey, actual: Word },
     #[error("failed to add asset proof")]
     FailedToAddProof(#[source] MerkleError),
     #[error("asset is not tracked in the partial vault")]
@@ -548,6 +546,14 @@ pub enum PartialAssetVaultError {
 
 #[derive(Debug, Error)]
 pub enum NoteError {
+    #[error("library does not contain a procedure with @note_script attribute")]
+    NoteScriptNoProcedureWithAttribute,
+    #[error("library contains multiple procedures with @note_script attribute")]
+    NoteScriptMultipleProceduresWithAttribute,
+    #[error("procedure at path '{0}' not found in library")]
+    NoteScriptProcedureNotFound(Box<str>),
+    #[error("procedure at path '{0}' does not have @note_script attribute")]
+    NoteScriptProcedureMissingAttribute(Box<str>),
     #[error("note tag length {0} exceeds the maximum of {max}", max = NoteTag::MAX_ACCOUNT_TARGET_TAG_LENGTH)]
     NoteTagLengthTooLarge(u8),
     #[error("duplicate fungible asset from issuer {0} in note")]
@@ -560,12 +566,6 @@ pub enum NoteError {
     AddFungibleAssetBalanceError(#[source] AssetError),
     #[error("note sender is not a valid account ID")]
     NoteSenderInvalidAccountId(#[source] AccountIdError),
-    #[error(
-        "note execution hint tag {0} must be in range {from}..={to}",
-        from = NoteExecutionHint::NONE_TAG,
-        to = NoteExecutionHint::ON_BLOCK_SLOT_TAG,
-    )]
-    NoteExecutionHintTagOutOfRange(u8),
     #[error("note execution hint after block variant cannot contain u32::MAX")]
     NoteExecutionHintAfterBlockCannotBeU32Max,
     #[error("invalid note execution hint payload {1} for tag {0}")]
@@ -591,6 +591,8 @@ pub enum NoteError {
     TooManyAssets(usize),
     #[error("note contains {0} storage items which exceeds the maximum of {max}", max = MAX_NOTE_STORAGE_ITEMS)]
     TooManyStorageItems(usize),
+    #[error("invalid note storage length: expected {expected} items, got {actual}")]
+    InvalidNoteStorageLength { expected: usize, actual: usize },
     #[error("note tag requires a public note but the note is of type {0}")]
     PublicNoteRequired(NoteType),
     #[error(
@@ -602,6 +604,20 @@ pub enum NoteError {
     UnknownNoteAttachmentKind(u8),
     #[error("note attachment of kind None must have attachment scheme None")]
     AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    #[error(
+        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+    )]
+    AttachmentKindMismatch {
+        header_kind: NoteAttachmentKind,
+        attachment_kind: NoteAttachmentKind,
+    },
+    #[error(
+        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+    )]
+    AttachmentSchemeMismatch {
+        header_scheme: NoteAttachmentScheme,
+        attachment_scheme: NoteAttachmentScheme,
+    },
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -769,6 +785,25 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
+    #[error(
+        "output note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    OutputNoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
+// PUBLIC OUTPUT NOTE ERROR
+// ================================================================================================
+
+/// Errors that can occur when creating a
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote).
+#[derive(Debug, Error)]
+pub enum PublicOutputNoteError {
+    #[error("note with id {0} is private but PublicOutputNote requires a public note")]
+    NoteIsPrivate(NoteId),
+    #[error(
+        "note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR
@@ -825,7 +860,7 @@ pub enum ProvenTransactionError {
     )]
     ExistingPublicStateAccountRequiresDeltaDetails(AccountId),
     #[error("failed to construct output notes for proven transaction")]
-    OutputNotesError(TransactionOutputError),
+    OutputNotesError(#[source] TransactionOutputError),
     #[error(
         "account update of size {update_size} for account {account_id} exceeds maximum update size of {ACCOUNT_UPDATE_MAX_SIZE}"
     )]
@@ -1176,5 +1211,5 @@ pub enum NullifierTreeError {
 #[derive(Debug, Error)]
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
-    InvalidAuthSchemeIdentifier(u8),
+    InvalidAuthSchemeIdentifier(String),
 }

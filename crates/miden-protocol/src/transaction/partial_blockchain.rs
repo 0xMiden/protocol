@@ -2,6 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
+use miden_crypto::merkle::mmr::MmrProof;
+
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
@@ -67,11 +69,13 @@ impl PartialBlockchain {
         for (block_num, block) in partial_chain.blocks.iter() {
             // SAFETY: new_unchecked returns an error if a block is not tracked in the MMR, so
             // retrieving a proof here should succeed.
-            let proof = partial_chain
+            let path = partial_chain
                 .mmr
                 .open(block_num.as_usize())
                 .expect("block should not exceed chain length")
                 .expect("block should be tracked in the partial MMR");
+            // This should go away again once https://github.com/0xMiden/crypto/pull/787 is propagated here.
+            let proof = MmrProof::new(path, block.commitment());
 
             partial_chain.mmr.peaks().verify(block.commitment(), proof).map_err(|source| {
                 PartialBlockchainError::BlockHeaderCommitmentMismatch {
@@ -178,7 +182,8 @@ impl PartialBlockchain {
     /// provided block header is for the next block in the chain.
     ///
     /// If `track` parameter is set to true, the authentication path for the provided block header
-    /// will be added to this partial blockchain.
+    /// will be added to this partial blockchain, and the block header will be stored for later
+    /// retrieval.
     ///
     /// # Panics
     /// Panics if the `block_header.block_num` is not equal to the current chain length (i.e., the
@@ -186,6 +191,9 @@ impl PartialBlockchain {
     pub fn add_block(&mut self, block_header: &BlockHeader, track: bool) {
         assert_eq!(block_header.block_num(), self.chain_length());
         self.mmr.add(block_header.commitment(), track);
+        if track {
+            self.blocks.insert(block_header.block_num(), block_header.clone());
+        }
     }
 
     /// Drop every block header whose number is strictly less than `to.end`.
@@ -277,7 +285,6 @@ impl Default for PartialBlockchain {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_core::utils::{Deserializable, Serializable};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -289,6 +296,7 @@ mod tests {
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -308,7 +316,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -319,7 +327,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -330,7 +338,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
     }
@@ -349,7 +357,7 @@ mod tests {
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         for i in 0..3 {
             partial_mmr
-                .track(i, mmr.get(i).unwrap(), &mmr.open(i).unwrap().merkle_path)
+                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
 
@@ -399,7 +407,7 @@ mod tests {
 
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         partial_mmr
-            .track(1, block_header1.commitment(), &mmr.open(1).unwrap().merkle_path)
+            .track(1, block_header1.commitment(), mmr.open(1).unwrap().merkle_path())
             .unwrap();
 
         let error =
@@ -466,7 +474,7 @@ mod tests {
         for i in 0..total_blocks {
             let i: usize = i as usize;
             partial_mmr
-                .track(i, full_mmr.get(i).unwrap(), &full_mmr.open(i).unwrap().merkle_path)
+                .track(i, full_mmr.get(i).unwrap(), full_mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
         let mut chain = PartialBlockchain::new(partial_mmr, headers).unwrap();
@@ -490,6 +498,53 @@ mod tests {
         for block_num in 0u32..remove_before {
             assert!(!chain.contains_block(block_num.into()));
             assert!(!chain.mmr().is_tracked(block_num as usize));
+        }
+    }
+
+    #[test]
+    fn add_block_with_track_adds_to_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        let header = int_to_block_header(0);
+
+        blockchain.add_block(&header, true);
+
+        assert!(blockchain.contains_block(0.into()));
+        assert_eq!(blockchain.num_tracked_blocks(), 1);
+    }
+
+    #[test]
+    fn add_block_without_track_does_not_add_to_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        let header = int_to_block_header(0);
+
+        blockchain.add_block(&header, false);
+
+        assert!(!blockchain.contains_block(0.into()));
+        assert_eq!(blockchain.num_tracked_blocks(), 0);
+    }
+
+    #[test]
+    fn prune_to_removes_tracked_blocks() {
+        let mut blockchain = PartialBlockchain::default();
+        // Add 10 blocks with tracking
+        for i in 0..10u32 {
+            let header = int_to_block_header(i);
+            blockchain.add_block(&header, true);
+        }
+        assert_eq!(blockchain.num_tracked_blocks(), 10);
+
+        // Prune to keep only last 4
+        blockchain.prune_to(..6.into());
+
+        assert_eq!(blockchain.num_tracked_blocks(), 4);
+        for i in 0u32..6 {
+            assert!(!blockchain.contains_block(i.into()));
+            // Verify the underlying MMR also untracked the block
+            assert!(!blockchain.mmr().is_tracked(i as usize));
+        }
+        for i in 6u32..10 {
+            assert!(blockchain.contains_block(i.into()));
+            assert!(blockchain.mmr().is_tracked(i as usize));
         }
     }
 }

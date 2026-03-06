@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_processor::{FutureMaybeSend, MastForestStore, Word};
-use miden_protocol::account::{AccountId, PartialAccount, StorageMapWitness};
+use miden_protocol::account::{AccountId, PartialAccount, StorageMapKey, StorageMapWitness};
 use miden_protocol::asset::{AssetVaultKey, AssetWitness};
 use miden_protocol::block::{BlockHeader, BlockNumber};
 use miden_protocol::note::NoteScript;
@@ -67,7 +67,7 @@ pub trait DataStore: MastForestStore {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>>;
 
     /// Returns a note script with the specified root, or `None` if not found.
@@ -75,6 +75,9 @@ pub trait DataStore: MastForestStore {
     /// This method will try to find a note script with the specified root in the data store.
     /// If the script is not found, it returns `Ok(None)` rather than an error, as "not found"
     /// is a valid, expected outcome.
+    ///
+    /// **Note:** Data store implementers do not need to handle standard note scripts (e.g. P2ID).
+    /// These are resolved directly by the transaction executor and will not trigger this method.
     ///
     /// # Errors
     /// Returns an error if the data store encountered an internal error while attempting to

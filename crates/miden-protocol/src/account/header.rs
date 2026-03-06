@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
-use super::{Account, AccountId, Felt, PartialAccount, ZERO, hash_account};
+use super::{Account, AccountId, Felt, PartialAccount};
+use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
 use crate::transaction::memory::{
     ACCT_CODE_COMMITMENT_OFFSET,
@@ -13,7 +14,13 @@ use crate::transaction::memory::{
     ACCT_VAULT_ROOT_OFFSET,
     MemoryOffset,
 };
-use crate::utils::serde::{Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{WORD_SIZE, Word, WordError};
 
 // ACCOUNT HEADER
@@ -68,10 +75,10 @@ impl AccountHeader {
             });
         }
 
-        let id = AccountId::try_from([
-            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        let id = AccountId::try_from_elements(
             elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_SUFFIX_IDX],
-        ])
+            elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_ID_PREFIX_IDX],
+        )
         .map_err(AccountError::FinalAccountHeaderIdParsingFailed)?;
         let nonce = elements[ACCT_ID_AND_NONCE_OFFSET as usize + ACCT_NONCE_IDX];
         let vault_root = parse_word(elements, ACCT_VAULT_ROOT_OFFSET)
@@ -89,17 +96,11 @@ impl AccountHeader {
 
     /// Returns the commitment of this account.
     ///
-    /// The commitment of an account is computed as hash(id, nonce, vault_root, storage_commitment,
-    /// code_commitment). Computing the account commitment requires 2 permutations of the hash
-    /// function.
-    pub fn commitment(&self) -> Word {
-        hash_account(
-            self.id,
-            self.nonce,
-            self.vault_root,
-            self.storage_commitment,
-            self.code_commitment,
-        )
+    /// The commitment of an account is computed as a hash over the account header elements returned
+    /// by [`Self::to_elements`]. Computing the account commitment requires 2 permutations of the
+    /// hash function.
+    pub fn to_commitment(&self) -> Word {
+        <Self as SequentialCommit>::to_commitment(self)
     }
 
     /// Returns the id of this account.
@@ -127,26 +128,19 @@ impl AccountHeader {
         self.code_commitment
     }
 
-    /// Converts the account header into a vector of field elements.
+    /// Returns the account header encoded to a vector of field elements.
     ///
-    /// This is done by first converting the account header data into an array of Words as follows:
+    /// This is a vector of the following field elements:
     /// ```text
     /// [
-    ///     [account_id_suffix, account_id_prefix, 0, account_nonce]
-    ///     [VAULT_ROOT]
-    ///     [STORAGE_COMMITMENT]
-    ///     [CODE_COMMITMENT]
+    ///     [account_nonce, 0, account_id_suffix, account_id_prefix],
+    ///     VAULT_ROOT,
+    ///     STORAGE_COMMITMENT,
+    ///     CODE_COMMITMENT,
     /// ]
     /// ```
-    /// And then concatenating the resulting elements into a single vector.
-    pub fn as_elements(&self) -> Vec<Felt> {
-        [
-            &[self.id.suffix(), self.id.prefix().as_felt(), ZERO, self.nonce],
-            self.vault_root.as_elements(),
-            self.storage_commitment.as_elements(),
-            self.code_commitment.as_elements(),
-        ]
-        .concat()
+    pub fn to_elements(&self) -> Vec<Felt> {
+        <Self as SequentialCommit>::to_elements(self)
     }
 }
 
@@ -186,8 +180,30 @@ impl From<&Account> for AccountHeader {
     }
 }
 
+impl SequentialCommit for AccountHeader {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        let mut id_nonce = Word::empty();
+        id_nonce[ACCT_NONCE_IDX] = self.nonce;
+        id_nonce[ACCT_ID_SUFFIX_IDX] = self.id.suffix();
+        id_nonce[ACCT_ID_PREFIX_IDX] = self.id.prefix().as_felt();
+
+        [
+            id_nonce.as_elements(),
+            self.vault_root.as_elements(),
+            self.storage_commitment.as_elements(),
+            self.code_commitment.as_elements(),
+        ]
+        .concat()
+    }
+}
+
+// SERIALIZATION
+// ================================================================================================
+
 impl Serializable for AccountHeader {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.id.write_into(target);
         self.nonce.write_into(target);
         self.vault_root.write_into(target);
@@ -197,9 +213,7 @@ impl Serializable for AccountHeader {
 }
 
 impl Deserializable for AccountHeader {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let id = AccountId::read_from(source)?;
         let nonce = Felt::read_from(source)?;
         let vault_root = Word::read_from(source)?;
@@ -230,13 +244,13 @@ fn parse_word(data: &[Felt], offset: MemoryOffset) -> Result<Word, WordError> {
 #[cfg(test)]
 mod tests {
     use miden_core::Felt;
-    use miden_core::utils::{Deserializable, Serializable};
 
     use super::AccountHeader;
     use crate::Word;
     use crate::account::StorageSlotContent;
     use crate::account::tests::build_account;
     use crate::asset::FungibleAsset;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_serde_account_storage() {

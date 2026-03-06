@@ -1,4 +1,3 @@
-use miden::protocol::active_note
 use miden::standards::faucets
 use miden::standards::access::ownable
 
@@ -11,7 +10,7 @@ use miden::standards::access::ownable
 #! Returns the owner AccountId.
 #!
 #! Inputs:  []
-#! Outputs: [owner_prefix, owner_suffix, pad(14)]
+#! Outputs: [owner_suffix, owner_prefix, pad(14)]
 #!
 #! Invocation: call
 pub use ownable::get_owner
@@ -20,11 +19,11 @@ pub use ownable::get_owner
 #!
 #! Can only be called by the current owner.
 #!
-#! Inputs:  [new_owner_prefix, new_owner_suffix, pad(14)]
+#! Inputs:  [new_owner_suffix, new_owner_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - new_owner_{prefix, suffix} are the prefix and suffix felts of the new owner AccountId.
+#! - new_owner_{suffix, prefix} are the suffix and prefix felts of the new owner AccountId.
 #!
 #! Panics if:
 #! - the note sender is not the owner.

@@ -2,6 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_mast_package::{MastArtifact, Package};
+use miden_processor::mast::MastNodeExt;
 
 mod metadata;
 pub use metadata::*;
@@ -16,6 +17,9 @@ use crate::account::{AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 use crate::{MastForest, Word};
+
+/// The attribute name used to mark the authentication procedure in an account component.
+const AUTH_SCRIPT_ATTRIBUTE: &str = "auth_script";
 
 // ACCOUNT COMPONENT
 // ================================================================================================
@@ -39,16 +43,15 @@ use crate::{MastForest, Word};
 pub struct AccountComponent {
     pub(super) code: AccountComponentCode,
     pub(super) storage_slots: Vec<StorageSlot>,
-    pub(super) metadata: Option<AccountComponentMetadata>,
-    pub(super) supported_types: BTreeSet<AccountType>,
+    pub(super) metadata: AccountComponentMetadata,
 }
 
 impl AccountComponent {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a new [`AccountComponent`] constructed from the provided `library` and
-    /// `storage_slots`.
+    /// Returns a new [`AccountComponent`] constructed from the provided `library`,
+    /// `storage_slots`, and `metadata`.
     ///
     /// All procedures exported from the provided code will become members of the account's public
     /// interface when added to an [`AccountCode`](crate::account::AccountCode).
@@ -64,6 +67,7 @@ impl AccountComponent {
     pub fn new(
         code: impl Into<AccountComponentCode>,
         storage_slots: Vec<StorageSlot>,
+        metadata: AccountComponentMetadata,
     ) -> Result<Self, AccountError> {
         // Check that we have less than 256 storage slots.
         u8::try_from(storage_slots.len())
@@ -72,8 +76,7 @@ impl AccountComponent {
         Ok(Self {
             code: code.into(),
             storage_slots,
-            metadata: None,
-            supported_types: BTreeSet::new(),
+            metadata,
         })
     }
 
@@ -123,8 +126,7 @@ impl AccountComponent {
     /// # Arguments
     ///
     /// * `library` - The component's assembled code
-    /// * `account_component_metadata` - The component's metadata, which describes the storage
-    ///   layout
+    /// * `metadata` - The component's metadata, which describes the storage layout
     /// * `init_storage_data` - The initialization data for storage slots
     ///
     /// # Errors
@@ -137,18 +139,17 @@ impl AccountComponent {
     /// - The component creation fails
     pub fn from_library(
         library: &AccountComponentCode,
-        account_component_metadata: &AccountComponentMetadata,
+        metadata: &AccountComponentMetadata,
         init_storage_data: &InitStorageData,
     ) -> Result<Self, AccountError> {
-        let storage_slots = account_component_metadata
+        let storage_slots = metadata
             .storage_schema()
             .build_storage_slots(init_storage_data)
             .map_err(|err| {
                 AccountError::other_with_source("failed to instantiate account component", err)
             })?;
 
-        Ok(AccountComponent::new(library.clone(), storage_slots)?
-            .with_metadata(account_component_metadata.clone()))
+        AccountComponent::new(library.clone(), storage_slots, metadata.clone())
     }
 
     // ACCESSORS
@@ -175,33 +176,42 @@ impl AccountComponent {
         self.storage_slots.as_slice()
     }
 
-    /// Returns the component metadata, if any.
-    pub fn metadata(&self) -> Option<&AccountComponentMetadata> {
-        self.metadata.as_ref()
+    /// Returns the component metadata.
+    pub fn metadata(&self) -> &AccountComponentMetadata {
+        &self.metadata
     }
 
-    /// Returns the storage schema associated with this component, if any.
-    pub fn storage_schema(&self) -> Option<&StorageSchema> {
-        self.metadata.as_ref().map(AccountComponentMetadata::storage_schema)
+    /// Returns the storage schema associated with this component.
+    pub fn storage_schema(&self) -> &StorageSchema {
+        self.metadata.storage_schema()
     }
 
     /// Returns a reference to the supported [`AccountType`]s.
     pub fn supported_types(&self) -> &BTreeSet<AccountType> {
-        &self.supported_types
+        self.metadata.supported_types()
     }
 
     /// Returns `true` if this component supports the given `account_type`, `false` otherwise.
     pub fn supports_type(&self, account_type: AccountType) -> bool {
-        self.supported_types.contains(&account_type)
+        self.metadata.supported_types().contains(&account_type)
     }
 
     /// Returns a vector of tuples (digest, is_auth) for all procedures in this component.
+    ///
+    /// A procedure is considered an authentication procedure if it has the `@auth_script`
+    /// attribute.
     pub fn get_procedures(&self) -> Vec<(Word, bool)> {
+        let library = self.code.as_library();
         let mut procedures = Vec::new();
-        for module in self.code.as_library().module_infos() {
-            for (_, procedure_info) in module.procedures() {
-                let is_auth = procedure_info.name.starts_with("auth_");
-                procedures.push((procedure_info.digest, is_auth));
+        for export in library.exports() {
+            if let Some(proc_export) = export.as_procedure() {
+                let digest = library
+                    .mast_forest()
+                    .get_node_by_id(proc_export.node)
+                    .expect("export node not in the forest")
+                    .digest();
+                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+                procedures.push((digest, is_auth));
             }
         }
         procedures
@@ -211,45 +221,6 @@ impl AccountComponent {
     /// in this component's library or its library path is malformed.
     pub fn get_procedure_root_by_path(&self, proc_name: impl AsRef<Path>) -> Option<Word> {
         self.code.as_library().get_procedure_root_by_path(proc_name)
-    }
-
-    // MUTATORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Adds `supported_type` to the set of [`AccountType`]s supported by this component.
-    ///
-    /// This function has the semantics of [`BTreeSet::insert`], i.e. adding a type twice is fine
-    /// and it can be called multiple times with different account types.
-    pub fn with_supported_type(mut self, supported_type: AccountType) -> Self {
-        self.supported_types.insert(supported_type);
-        self
-    }
-
-    /// Overwrites any previously set supported types with the given set.
-    ///
-    /// This can be used to reset the supported types of a component to a chosen set, which may be
-    /// useful after cloning an existing component.
-    pub fn with_supported_types(mut self, supported_types: BTreeSet<AccountType>) -> Self {
-        self.supported_types = supported_types;
-        self
-    }
-
-    /// Attaches metadata to this component for downstream schema commitments and introspection.
-    pub fn with_metadata(mut self, metadata: AccountComponentMetadata) -> Self {
-        self.supported_types = metadata.supported_types().clone();
-        self.metadata = Some(metadata);
-        self
-    }
-
-    /// Sets the [`AccountType`]s supported by this component to all account types.
-    pub fn with_supports_all_types(mut self) -> Self {
-        self.supported_types.extend([
-            AccountType::FungibleFaucet,
-            AccountType::NonFungibleFaucet,
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]);
-        self
     }
 }
 
@@ -261,12 +232,10 @@ impl From<AccountComponent> for AccountComponentCode {
 
 #[cfg(test)]
 mod tests {
-    use alloc::collections::BTreeSet;
     use alloc::string::ToString;
     use alloc::sync::Arc;
 
     use miden_assembly::Assembler;
-    use miden_core::utils::Serializable;
     use miden_mast_package::{
         MastArtifact,
         Package,
@@ -279,6 +248,7 @@ mod tests {
 
     use super::*;
     use crate::testing::account_code::CODE;
+    use crate::utils::serde::Serializable;
 
     #[test]
     fn test_extract_metadata_from_package() {
@@ -287,12 +257,11 @@ mod tests {
 
         // Test with metadata
         let metadata = AccountComponentMetadata::new(
-            "test_component".to_string(),
-            "A test component".to_string(),
-            Version::new(1, 0, 0),
-            BTreeSet::from_iter([AccountType::RegularAccountImmutableCode]),
-            StorageSchema::default(),
-        );
+            "test_component",
+            [AccountType::RegularAccountImmutableCode],
+        )
+        .with_description("A test component")
+        .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
@@ -341,16 +310,9 @@ mod tests {
         let component_code = AccountComponentCode::from(library.clone());
 
         // Create metadata for the component
-        let metadata = AccountComponentMetadata::new(
-            "test_component".to_string(),
-            "A test component".to_string(),
-            Version::new(1, 0, 0),
-            BTreeSet::from_iter([
-                AccountType::RegularAccountImmutableCode,
-                AccountType::RegularAccountUpdatableCode,
-            ]),
-            StorageSchema::default(),
-        );
+        let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
+            .with_description("A test component")
+            .with_version(Version::new(1, 0, 0));
 
         // Test with empty init data - this tests the complete workflow:
         // Library + Metadata -> AccountComponent

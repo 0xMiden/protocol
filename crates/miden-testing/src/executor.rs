@@ -1,9 +1,11 @@
 #[cfg(test)]
 use miden_processor::DefaultHost;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, AsyncHost, ExecutionError, Program, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{ExecutionOutput, FastProcessor, Host, Program, StackInputs};
 #[cfg(test)]
 use miden_protocol::assembly::Assembler;
+
+use crate::ExecError;
 
 // CODE EXECUTOR
 // ================================================================================================
@@ -15,7 +17,7 @@ pub(crate) struct CodeExecutor<H> {
     advice_inputs: AdviceInputs,
 }
 
-impl<H: AsyncHost> CodeExecutor<H> {
+impl<H: Host> CodeExecutor<H> {
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
     pub(crate) fn new(host: H) -> Self {
@@ -37,11 +39,8 @@ impl<H: AsyncHost> CodeExecutor<H> {
     }
 
     /// Compiles and runs the desired code in the host and returns the [`Process`] state.
-    ///
-    /// To improve the error message quality, convert the returned [`ExecutionError`] into a
-    /// [`Report`](miden_protocol::assembly::diagnostics::Report).
     #[cfg(test)]
-    pub async fn run(self, code: &str) -> Result<ExecutionOutput, ExecutionError> {
+    pub async fn run(self, code: &str) -> Result<ExecutionOutput, ExecError> {
         use alloc::borrow::ToOwned;
         use alloc::sync::Arc;
 
@@ -64,22 +63,15 @@ impl<H: AsyncHost> CodeExecutor<H> {
     ///
     /// To improve the error message quality, convert the returned [`ExecutionError`] into a
     /// [`Report`](miden_protocol::assembly::diagnostics::Report).
-    pub async fn execute_program(
-        mut self,
-        program: Program,
-    ) -> Result<ExecutionOutput, ExecutionError> {
-        // This reverses the stack inputs (even though it doesn't look like it does) because the
-        // fast processor expects the reverse order.
-        //
-        // Once we use the FastProcessor for execution and proving, we can change the way these
-        // inputs are constructed in TransactionKernel::prepare_inputs.
-        let stack_inputs =
-            StackInputs::new(self.stack_inputs.unwrap_or_default().iter().copied().collect())
-                .unwrap();
+    pub async fn execute_program(mut self, program: Program) -> Result<ExecutionOutput, ExecError> {
+        let stack_inputs = self.stack_inputs.unwrap_or_default();
 
-        let processor = FastProcessor::new_debug(stack_inputs.as_slice(), self.advice_inputs);
+        let processor = FastProcessor::new(stack_inputs)
+            .with_advice(self.advice_inputs)
+            .with_debugging(true);
 
-        let execution_output = processor.execute(&program, &mut self.host).await?;
+        let execution_output =
+            processor.execute(&program, &mut self.host).await.map_err(ExecError::new)?;
 
         Ok(execution_output)
     }
@@ -88,12 +80,24 @@ impl<H: AsyncHost> CodeExecutor<H> {
 #[cfg(test)]
 impl CodeExecutor<DefaultHost> {
     pub fn with_default_host() -> Self {
+        use miden_core_lib::CoreLibrary;
+        use miden_protocol::ProtocolLib;
         use miden_protocol::transaction::TransactionKernel;
+        use miden_standards::StandardsLib;
 
         let mut host = DefaultHost::default();
 
-        let test_lib = TransactionKernel::library();
-        host.load_library(test_lib.mast_forest()).unwrap();
+        let core_lib = CoreLibrary::default();
+        host.load_library(core_lib.mast_forest()).unwrap();
+
+        let standards_lib = StandardsLib::default();
+        host.load_library(standards_lib.mast_forest()).unwrap();
+
+        let protocol_lib = ProtocolLib::default();
+        host.load_library(protocol_lib.mast_forest()).unwrap();
+
+        let kernel_lib = TransactionKernel::library();
+        host.load_library(kernel_lib.mast_forest()).unwrap();
 
         CodeExecutor::new(host)
     }

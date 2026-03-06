@@ -29,7 +29,7 @@ use crate::code_builder::CodeBuilder;
 #[derive(Debug, Clone)]
 pub struct NoteBuilder {
     sender: AccountId,
-    inputs: Vec<Felt>,
+    storage: Vec<Felt>,
     assets: Vec<Asset>,
     note_type: NoteType,
     serial_num: Word,
@@ -51,7 +51,7 @@ impl NoteBuilder {
 
         Self {
             sender,
-            inputs: vec![],
+            storage: vec![],
             assets: vec![],
             note_type: NoteType::Public,
             serial_num,
@@ -64,15 +64,15 @@ impl NoteBuilder {
         }
     }
 
-    /// Set the note's input to `inputs`.
+    /// Set the note's storage to `storage`.
     ///
     /// Note: This overwrite the inputs, the previous input values are discarded.
     pub fn note_storage(
         mut self,
-        inputs: impl IntoIterator<Item = Felt>,
+        storage: impl IntoIterator<Item = Felt>,
     ) -> Result<Self, NoteError> {
-        let validate = NoteStorage::new(inputs.into_iter().collect())?;
-        self.inputs = validate.into();
+        let validate = NoteStorage::new(storage.into_iter().collect())?;
+        self.storage = validate.into();
         Ok(self)
     }
 
@@ -132,8 +132,8 @@ impl NoteBuilder {
             SourceLanguage::Masm,
             Uri::new(format!(
                 "note_{:x}{:x}",
-                self.serial_num[0].as_int(),
-                self.serial_num[1].as_int()
+                self.serial_num[0].as_canonical_u64(),
+                self.serial_num[1].as_canonical_u64()
             )),
             self.code,
         );
@@ -149,10 +149,11 @@ impl NoteBuilder {
             .compile_note_script(virtual_source_file)
             .expect("note script should compile");
         let vault = NoteAssets::new(self.assets)?;
-        let metadata = NoteMetadata::new(self.sender, self.note_type, self.tag)
+        let metadata = NoteMetadata::new(self.sender, self.note_type)
+            .with_tag(self.tag)
             .with_attachment(self.attachment);
-        let inputs = NoteStorage::new(self.inputs)?;
-        let recipient = NoteRecipient::new(self.serial_num, note_script, inputs);
+        let storage = NoteStorage::new(self.storage)?;
+        let recipient = NoteRecipient::new(self.serial_num, note_script, storage);
 
         Ok(Note::new(vault, metadata, recipient))
     }

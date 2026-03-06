@@ -2,6 +2,7 @@ use alloc::string::String;
 
 use anyhow::Context;
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
@@ -19,6 +20,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
+use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_protocol::{EMPTY_WORD, Felt, ONE, WORD_SIZE, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -37,7 +39,9 @@ use crate::{
 async fn test_active_note_get_sender_fails_from_tx_script() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note
     let mut builder = MockChain::builder();
-    let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let p2id_note = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into().unwrap(),
         account.id(),
@@ -158,8 +162,8 @@ async fn test_active_note_get_sender() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let sender = tx_context.input_notes().get_note(0).note().metadata().sender();
-    assert_eq!(exec_output.stack[0], sender.prefix().as_felt());
-    assert_eq!(exec_output.stack[1], sender.suffix());
+    assert_eq!(exec_output.get_stack_element(0), sender.suffix());
+    assert_eq!(exec_output.get_stack_element(1), sender.prefix().as_felt());
 
     Ok(())
 }
@@ -169,7 +173,9 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -204,10 +210,16 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
         for asset in note.assets().iter() {
             code += &format!(
                 r#"
-                # assert the asset is correct
-                dup padw movup.4 mem_loadw_be push.{asset} assert_eqw.err="asset mismatch" push.4 add
+                dup padw movup.4 mem_loadw_le push.{ASSET_KEY}
+                assert_eqw.err="asset key mismatch"
+
+                dup padw movup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le push.{ASSET_VALUE}
+                assert_eqw.err="asset value mismatch"
+
+                add.{ASSET_SIZE}
                 "#,
-                asset = Word::from(asset)
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             );
         }
         code
@@ -302,11 +314,13 @@ async fn test_active_note_get_assets() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_active_note_get_inputs() -> anyhow::Result<()> {
+async fn test_active_note_get_storage() -> anyhow::Result<()> {
     // Creates a mockchain with an account and a note that it can consume
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -321,17 +335,17 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             .build()?
     };
 
-    fn construct_inputs_assertions(note: &Note) -> String {
+    fn construct_storage_assertions(note: &Note) -> String {
         let mut code = String::new();
-        for inputs_chunk in note.storage().items().chunks(WORD_SIZE) {
-            let mut inputs_word = EMPTY_WORD;
-            inputs_word.as_mut_slice()[..inputs_chunk.len()].copy_from_slice(inputs_chunk);
+        for storage_chunk in note.storage().items().chunks(WORD_SIZE) {
+            let mut storage_word = EMPTY_WORD;
+            storage_word.as_mut_slice()[..storage_chunk.len()].copy_from_slice(storage_chunk);
 
             code += &format!(
                 r#"
-                # assert the inputs are correct
+                # assert the storage items are correct
                 # => [dest_ptr]
-                dup padw movup.4 mem_loadw_be push.{inputs_word} assert_eqw.err="inputs are incorrect"
+                dup padw movup.4 mem_loadw_le push.{storage_word} assert_eqw.err="storage items are incorrect"
                 # => [dest_ptr]
 
                 push.4 add
@@ -363,16 +377,16 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             # => []
 
             push.{NOTE_0_PTR} exec.active_note::get_storage
-            # => [num_inputs, dest_ptr]
+            # => [num_storage_items, dest_ptr]
 
-            eq.{num_inputs} assert.err="unexpected num inputs"
+            eq.{num_storage_items} assert.err="unexpected num_storage_items"
             # => [dest_ptr]
 
             dup eq.{NOTE_0_PTR} assert.err="unexpected dest ptr"
             # => [dest_ptr]
 
-            # apply note 1 inputs assertions
-            {inputs_assertions}
+            # apply note 1 storage assertions
+            {storage_assertions}
             # => [dest_ptr]
 
             # clear the stack
@@ -380,8 +394,8 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
             # => []
         end
         "#,
-        num_inputs = note0.storage().len(),
-        inputs_assertions = construct_inputs_assertions(note0),
+        num_storage_items = note0.storage().num_items(),
+        storage_assertions = construct_storage_assertions(note0),
         NOTE_0_PTR = 100000000,
     );
 
@@ -394,7 +408,7 @@ async fn test_active_note_get_inputs() -> anyhow::Result<()> {
 /// `miden::protocol::active_note::get_inputs` procedure.
 ///
 /// Previously this setup was leading to the incorrect number of note storage items computed during
-/// the `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/miden-base/issues/1363)
+/// the `get_inputs` procedure, see the [issue #1363](https://github.com/0xMiden/protocol/issues/1363)
 /// for more details.
 #[tokio::test]
 async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
@@ -408,7 +422,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     // prepare note data
     let serial_num = RpoRandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
-    let metadata = NoteMetadata::new(sender_id, NoteType::Public, tag);
+    let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;
     let note_script = CodeBuilder::default()
         .compile_note_script("begin nop end")
@@ -445,11 +459,11 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
             begin
                 exec.prologue::prepare_transaction
 
-                # execute the `get_storage` procedure to trigger note storage length assertion
+                # execute the `get_storage` procedure to trigger note number of storage items assertion
                 push.0 exec.active_note::get_storage
-                # => [storage_length, 0]
+                # => [num_storage_items, 0]
 
-                # assert that the storage length is 8
+                # assert that the number of storage items is 8
                 push.8 assert_eq.err=\"number of storage values should be equal to 8\"
 
                 # clean the stack
@@ -466,7 +480,9 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
 async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -497,7 +513,7 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let serial_number = tx_context.input_notes().get_note(0).note().serial_num();
-    assert_eq!(exec_output.get_stack_word_be(0), serial_number);
+    assert_eq!(exec_output.get_stack_word(0), serial_number);
     Ok(())
 }
 
@@ -505,7 +521,9 @@ async fn test_active_note_get_serial_number() -> anyhow::Result<()> {
 async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let tx_context = {
         let mut builder = MockChain::builder();
-        let account = builder.add_existing_wallet(Auth::BasicAuth)?;
+        let account = builder.add_existing_wallet(Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        })?;
         let p2id_note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
             account.id(),
@@ -536,6 +554,6 @@ async fn test_active_note_get_script_root() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(code).await?;
 
     let script_root = tx_context.input_notes().get_note(0).note().script().root();
-    assert_eq!(exec_output.get_stack_word_be(0), script_root);
+    assert_eq!(exec_output.get_stack_word(0), script_root);
     Ok(())
 }

@@ -2,13 +2,18 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use core::str::FromStr;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_mast_package::{Package, SectionId};
-use miden_processor::DeserializationError;
 use semver::Version;
 
 use super::{AccountType, SchemaRequirement, StorageSchema, StorageValueName};
 use crate::errors::AccountError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT COMPONENT METADATA
 // ================================================================================================
@@ -26,7 +31,6 @@ use crate::errors::AccountError;
 /// # Guarantees
 ///
 /// - The metadata's storage schema does not contain duplicate slot names.
-/// - The schema cannot contain protocol-reserved slot names.
 /// - Each init-time value name uniquely identifies a single value. The expected init-time metadata
 ///   can be retrieved with [AccountComponentMetadata::schema_requirements()], which returns a map
 ///   from keys to [SchemaRequirement] (which indicates the expected value type and optional
@@ -35,14 +39,13 @@ use crate::errors::AccountError;
 /// # Example
 ///
 /// ```
-/// use std::collections::{BTreeMap, BTreeSet};
+/// use std::collections::BTreeMap;
 ///
-/// use miden_protocol::account::StorageSlotName;
 /// use miden_protocol::account::component::{
 ///     AccountComponentMetadata,
 ///     FeltSchema,
 ///     InitStorageData,
-///     SchemaTypeId,
+///     SchemaType,
 ///     StorageSchema,
 ///     StorageSlotSchema,
 ///     StorageValueName,
@@ -50,7 +53,7 @@ use crate::errors::AccountError;
 ///     WordSchema,
 ///     WordValue,
 /// };
-/// use semver::Version;
+/// use miden_protocol::account::{AccountType, StorageSlotName};
 ///
 /// let slot_name = StorageSlotName::new("demo::test_value")?;
 ///
@@ -58,7 +61,7 @@ use crate::errors::AccountError;
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
 ///     FeltSchema::new_void(),
-///     FeltSchema::new_typed(SchemaTypeId::native_felt(), "foo"),
+///     FeltSchema::felt("foo"),
 /// ]);
 ///
 /// let storage_schema = StorageSchema::new([(
@@ -66,13 +69,9 @@ use crate::errors::AccountError;
 ///     StorageSlotSchema::Value(ValueSlotSchema::new(Some("demo slot".into()), word)),
 /// )])?;
 ///
-/// let metadata = AccountComponentMetadata::new(
-///     "test name".into(),
-///     "description of the component".into(),
-///     Version::parse("0.1.0")?,
-///     BTreeSet::new(),
-///     storage_schema,
-/// );
+/// let metadata = AccountComponentMetadata::new("test name", AccountType::all())
+///     .with_description("description of the component")
+///     .with_storage_schema(storage_schema);
 ///
 /// // Init value keys are derived from slot name: `demo::test_value.foo`.
 /// let value_name = StorageValueName::from_slot_name_with_suffix(&slot_name, "foo")?;
@@ -106,21 +105,43 @@ pub struct AccountComponentMetadata {
 }
 
 impl AccountComponentMetadata {
-    /// Create a new [AccountComponentMetadata].
+    /// Create a new [AccountComponentMetadata] with the given name and supported account types.
+    ///
+    /// Other fields are initialized to sensible defaults:
+    /// - `description`: empty string
+    /// - `version`: 1.0.0
+    /// - `storage_schema`: default (empty)
+    ///
+    /// Use the `with_*` mutator methods to customize these fields.
     pub fn new(
-        name: String,
-        description: String,
-        version: Version,
-        targets: BTreeSet<AccountType>,
-        storage_schema: StorageSchema,
+        name: impl Into<String>,
+        supported_types: impl IntoIterator<Item = AccountType>,
     ) -> Self {
         Self {
-            name,
-            description,
-            version,
-            supported_types: targets,
-            storage_schema,
+            name: name.into(),
+            description: String::new(),
+            version: Version::new(1, 0, 0),
+            supported_types: supported_types.into_iter().collect(),
+            storage_schema: StorageSchema::default(),
         }
+    }
+
+    /// Sets the description of the component.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    /// Sets the version of the component.
+    pub fn with_version(mut self, version: Version) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Sets the storage schema of the component.
+    pub fn with_storage_schema(mut self, schema: StorageSchema) -> Self {
+        self.storage_schema = schema;
+        self
     }
 
     /// Returns the init-time values requirements for this schema.

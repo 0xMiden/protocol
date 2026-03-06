@@ -24,7 +24,7 @@ use crate::utils::serde::{
 ///
 /// where `recipient` is defined as:
 ///
-/// > hash(hash(hash(serial_num, ZERO), script_root), input_commitment)
+/// > hash(hash(hash(serial_num, ZERO), script_root), storage_commitment)
 ///
 /// This achieves the following properties:
 /// - Every note can be reduced to a single unique ID.
@@ -70,6 +70,10 @@ impl NoteId {
 impl Serializable for NoteId {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
     }
 }
 

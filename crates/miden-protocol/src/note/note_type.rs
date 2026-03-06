@@ -11,13 +11,6 @@ use crate::utils::serde::{
     Serializable,
 };
 
-// CONSTANTS
-// ================================================================================================
-
-// Keep these masks in sync with `miden-lib/asm/miden/kernels/tx/tx.masm`
-const PUBLIC: u8 = 0b01;
-const PRIVATE: u8 = 0b10;
-
 // NOTE TYPE
 // ================================================================================================
 
@@ -25,10 +18,16 @@ const PRIVATE: u8 = 0b10;
 #[repr(u8)]
 pub enum NoteType {
     /// Notes with this type have only their hash published to the network.
-    Private = PRIVATE,
+    Private = Self::PRIVATE,
 
     /// Notes with this type are fully shared with the network.
-    Public = PUBLIC,
+    Public = Self::PUBLIC,
+}
+
+impl NoteType {
+    // Keep these masks in sync with `miden-lib/asm/miden/kernels/tx/tx.masm`
+    pub const PUBLIC: u8 = 0b01;
+    pub const PRIVATE: u8 = 0b10;
 }
 
 // CONVERSIONS FROM NOTE TYPE
@@ -48,8 +47,8 @@ impl TryFrom<u8> for NoteType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            PRIVATE => Ok(NoteType::Private),
-            PUBLIC => Ok(NoteType::Public),
+            Self::PRIVATE => Ok(NoteType::Private),
+            Self::PUBLIC => Ok(NoteType::Public),
             _ => Err(NoteError::UnknownNoteType(format!("0b{value:b}").into())),
         }
     }
@@ -86,7 +85,7 @@ impl TryFrom<Felt> for NoteType {
     type Error = NoteError;
 
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        value.as_int().try_into()
+        value.as_canonical_u64().try_into()
     }
 }
 
@@ -109,6 +108,10 @@ impl Serializable for NoteType {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         (*self as u8).write_into(target)
     }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u8>()
+    }
 }
 
 impl Deserializable for NoteType {
@@ -116,8 +119,8 @@ impl Deserializable for NoteType {
         let discriminant = u8::read_from(source)?;
 
         let note_type = match discriminant {
-            PRIVATE => NoteType::Private,
-            PUBLIC => NoteType::Public,
+            NoteType::PRIVATE => NoteType::Private,
+            NoteType::PUBLIC => NoteType::Public,
             discriminant => {
                 return Err(DeserializationError::InvalidValue(format!(
                     "discriminant {discriminant} is not a valid NoteType"

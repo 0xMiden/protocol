@@ -1,5 +1,6 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 
+use $kernel::asset::ASSET_SIZE
 use $kernel::constants::NOTE_MEM_SIZE
 use $kernel::memory
 
@@ -102,52 +103,20 @@ pub proc compute_output_note_assets_commitment
         # => [note_data_ptr]
 
         # duplicate note pointer and fetch num_assets
-        dup dup exec.memory::get_output_note_num_assets
-        # => [num_assets, note_data_ptr, note_data_ptr]
+        dup exec.memory::get_output_note_asset_data_ptr
+        # => [assets_ptr, note_data_ptr]
 
-        # calculate the number of pairs of assets (takes ceiling if we have an odd number)
-        add.1
-        u32assert.err=ERR_NOTE_NUM_OF_ASSETS_EXCEED_LIMIT
-        u32div.2
-        # => [num_asset_pairs, note_data_ptr, note_data_ptr]
+        dup.1 exec.memory::get_output_note_num_assets
+        # => [num_assets, assets_ptr, note_data_ptr]
 
-        # initiate counter for assets
-        push.0
-        # => [asset_counter, num_asset_pairs, note_data_ptr, note_data_ptr]
+        # compute the asset_end_ptr
+        mul.ASSET_SIZE dup.1 add swap
+        # => [assets_ptr, assets_end_ptr, note_data_ptr]
 
-        # prepare address and stack for reading assets
-        movup.2 exec.memory::get_output_note_asset_data_ptr padw padw padw
-        # => [PAD, PAD, PAD, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # check if we should loop
-        dup.14 dup.14 neq
-        # => [should_loop, PAD, PAD, PAD, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # loop and read assets from memory
-        while.true
-            # read assets from memory.
-            # if this is the last permutation of the loop and we have an odd number of assets then we
-            # implicitly pad the last word of the hasher rate with zeros by reading from empty memory.
-            mem_stream exec.rpo256::permute
-            # => [PERM, PERM, PERM, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-            # check if we should loop again
-            movup.13 add.1 dup movdn.14 dup.15 neq
-            # => [should_loop, PERM, PERM, PERM, asset_data_ptr, asset_counter, num_asset_pairs,
-            #     note_data_ptr]
-        end
-
-        # extract digest
-        exec.rpo256::squeeze_digest
-        # => [ASSETS_COMMITMENT, asset_data_ptr, asset_counter, num_asset_pairs, note_data_ptr]
-
-        # drop accessory variables from stack
-        movup.4 drop
-        movup.4 drop
-        movup.4 drop
+        exec.poseidon2::hash_double_words
         # => [ASSETS_COMMITMENT, note_data_ptr]
 
-        # save the assets hash to memory
+        # save the assets commitment to memory
         dup.4 exec.memory::set_output_note_assets_commitment
         # => [ASSETS_COMMITMENT, note_data_ptr]
 
@@ -166,7 +135,7 @@ end
 #!
 #! The note ID is computed as follows:
 #! - we define, recipient =
-#!       hash(hash(hash(serial_num, [0; 4]), script_root), input_commitment)
+#!       hash(hash(hash(serial_num, [0; 4]), script_root), storage_commitment)
 #! - we then compute the output note ID as:
 #!       hash(recipient, assets_commitment)
 #!
@@ -177,24 +146,19 @@ end
 #! - note_data_ptr is a pointer to the data section of the output note.
 #! - NOTE_ID is the ID of the output note located at note_data_ptr.
 proc compute_output_note_id
-    # pad capacity elements of hasher
-    padw
-    # => [EMPTY_WORD, note_data_ptr]
+    # compute assets commitment
+    dup exec.compute_output_note_assets_commitment
+    # => [ASSETS_COMMITMENT, note_data_ptr]
 
-    # insert output note recipient into the first four elements of the hasher rate
     dup.4 exec.memory::get_output_note_recipient
-    # => [RECIPIENT, EMPTY_WORD, note_data_ptr]
+    # => [RECIPIENT, ASSETS_COMMITMENT, note_data_ptr]
 
-    # populate the last four elements of the hasher rate with the output note's asset commitment
-    dup.8 exec.compute_output_note_assets_commitment
-    # => [ASSETS_COMMITMENT, RECIPIENT, EMPTY_WORD, note_data_ptr]
-
-    # compute output note commitment (which is also note ID) and extract digest
-    exec.rpo256::permute exec.rpo256::squeeze_digest
+    # compute output note ID
+    exec.poseidon2::merge
     # => [NOTE_ID, note_data_ptr]
 
     # save the output note commitment (note ID) to memory
-    movup.4 mem_storew_be
+    movup.4 mem_storew_le
     # => [NOTE_ID]
 end
 
@@ -216,52 +180,56 @@ pub proc compute_output_notes_commitment
     # => [current_index = 0, num_notes]
 
     # prepare stack for hashing
-    padw padw padw
-    # => [PERM, PERM, PERM, current_index, num_notes]
+    exec.poseidon2::init_no_padding
+    # => [RATE0, RATE1, CAPACITY, current_index, num_notes]
 
     # starting looping if num_notes != 0
     dup.13 neq.0
-    # => [should_loop, PERM, PERM, PERM, current_index, num_notes]
+    # => [should_loop, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
     # loop and hash output notes
     while.true
         dup.12 exec.memory::get_output_note_ptr
-        # => [current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        # => [current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         # compute and save output note ID to memory (this also computes the note's asset commitment)
         dup exec.compute_output_note_id
-        # => [NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        # => [NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        dup.4 exec.memory::get_output_note_metadata_header
-        # => [NOTE_METADATA_HEADER, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        dup.4 exec.memory::get_output_note_attachment
+        # => [NOTE_ATTACHMENT, NOTE_ID, current_note_ptr, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
-        movup.8 exec.memory::get_output_note_attachment
-        # => [NOTE_ATTACHMENT, NOTE_METADATA_HEADER, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        movup.8 exec.memory::get_output_note_metadata_header
+        # => [NOTE_METADATA_HEADER, NOTE_ATTACHMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         # compute hash(NOTE_METADATA_HEADER || NOTE_ATTACHMENT)
-        exec.rpo256::merge
-        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, current_note_ptr, PERM, PERM, PERM, current_index, num_notes]
+        exec.poseidon2::merge
+        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         # replace rate words with note ID and metadata commitment
         swapdw dropw dropw
-        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, PERM, current_index, num_notes]
+        # => [NOTE_METADATA_COMMITMENT, NOTE_ID, CAPACITY, current_index, num_notes]
 
-        # permute over (note_id, note_metadata_commitment)
-        exec.rpo256::permute
-        # => [PERM, PERM, PERM, current_index, num_notes]
+        # move note ID to the top of the stack
+        swapw
+        # => [NOTE_ID, NOTE_METADATA_COMMITMENT, CAPACITY, current_index, num_notes]
+
+        # permute over (NOTE_ID, NOTE_METADATA_COMMITMENT)
+        exec.poseidon2::permute
+        # => [RATE0, RATE1, CAPACITY, current_index, num_notes]
 
         # increment current_index
         movup.12 add.1 movdn.12
-        # => [PERM, PERM, PERM, current_index + 1, num_notes]
+        # => [RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
 
         # continue looping if current_index != num_notes
         dup.13 dup.13 neq
-        # => [should_loop, PERM, PERM, PERM, current_index + 1, num_notes]
+        # => [should_loop, RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
     end
-    # => [PERM, PERM, PERM, current_index + 1, num_notes]
+    # => [RATE0, RATE1, CAPACITY, current_index + 1, num_notes]
 
     # extract digest
-    exec.rpo256::squeeze_digest
+    exec.poseidon2::squeeze_digest
     # => [OUTPUT_NOTES_COMMITMENT, current_index + 1, num_notes]
 
     # drop accessory variables from stack

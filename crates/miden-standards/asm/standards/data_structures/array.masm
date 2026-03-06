@@ -1,0 +1,60 @@
+# The MASM code for the Array abstraction.
+#
+# It provides an abstraction layer over a storage map, treating it as an array,
+# with "set" and "get" for storing and retrieving words by (slot_id, index).
+# The array can store up to 2^64 - 2^32 + 1 elements (indices 0 to 2^64 - 2^32).
+#
+# Using this Array utility requires that the underlying storage map is already created and 
+# initialized as part of an account component, under the given slot ID.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+
+# PROCEDURES
+# =================================================================================================
+
+#! Sets a word in the array at the specified index.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index, VALUE]
+#! Outputs: [OLD_VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
+#! - index is the index at which to store the value (0 to 2^64 - 2^32).
+#! - VALUE is the word to store at the specified index.
+#!
+#! Invocation: exec
+pub proc set(slot_id_suffix: felt, slot_id_prefix: felt, index: felt, value: word) -> word
+    # Build KEY = [0, 0, 0, index]
+    movup.2 push.0.0.0
+    # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix, VALUE]
+
+    movup.5 movup.5
+    # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+end
+
+#! Gets a word from the array at the specified index.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index]
+#! Outputs: [VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
+#! - index is the index of the element to retrieve (0 to 2^64 - 2^32).
+#! - VALUE is the word stored at the specified index (zero if not set).
+#!
+#! Invocation: exec
+pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> word
+    # Build KEY = [0, 0, 0, index]
+    movup.2 push.0.0.0
+    # => [0, 0, 0, index, slot_id_suffix, slot_id_prefix]
+
+    movup.5 movup.5
+    # => [slot_id_suffix, slot_id_prefix, KEY]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+end

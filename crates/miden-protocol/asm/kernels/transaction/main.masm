@@ -9,29 +9,29 @@ use $kernel::prologue
 # =================================================================================================
 
 # Event emitted to signal that an execution of the transaction prologue has started.
-const PROLOGUE_START_EVENT=event("miden::tx::prologue_start")
+const PROLOGUE_START_EVENT=event("miden::protocol::tx::prologue_start")
 # Event emitted to signal that an execution of the transaction prologue has ended.
-const PROLOGUE_END_EVENT=event("miden::tx::prologue_end")
+const PROLOGUE_END_EVENT=event("miden::protocol::tx::prologue_end")
 
 # Event emitted to signal that the notes processing has started.
-const NOTES_PROCESSING_START_EVENT=event("miden::tx::notes_processing_start")
+const NOTES_PROCESSING_START_EVENT=event("miden::protocol::tx::notes_processing_start")
 # Event emitted to signal that the notes processing has ended.
-const NOTES_PROCESSING_END_EVENT=event("miden::tx::notes_processing_end")
+const NOTES_PROCESSING_END_EVENT=event("miden::protocol::tx::notes_processing_end")
 
 # Event emitted to signal that the note consuming has started.
-const NOTE_EXECUTION_START_EVENT=event("miden::tx::note_execution_start")
+const NOTE_EXECUTION_START_EVENT=event("miden::protocol::tx::note_execution_start")
 # Event emitted to signal that the note consuming has ended.
-const NOTE_EXECUTION_END_EVENT=event("miden::tx::note_execution_end")
+const NOTE_EXECUTION_END_EVENT=event("miden::protocol::tx::note_execution_end")
 
 # Event emitted to signal that the transaction script processing has started.
-const TX_SCRIPT_PROCESSING_START_EVENT=event("miden::tx::tx_script_processing_start")
+const TX_SCRIPT_PROCESSING_START_EVENT=event("miden::protocol::tx::tx_script_processing_start")
 # Event emitted to signal that the transaction script processing has ended.
-const TX_SCRIPT_PROCESSING_END_EVENT=event("miden::tx::tx_script_processing_end")
+const TX_SCRIPT_PROCESSING_END_EVENT=event("miden::protocol::tx::tx_script_processing_end")
 
 # Event emitted to signal that an execution of the transaction epilogue has started.
-const EPILOGUE_START_EVENT=event("miden::tx::epilogue_start")
+const EPILOGUE_START_EVENT=event("miden::protocol::tx::epilogue_start")
 # Event emitted to signal that an execution of the transaction epilogue has ended.
-const EPILOGUE_END_EVENT=event("miden::tx::epilogue_end")
+const EPILOGUE_END_EVENT=event("miden::protocol::tx::epilogue_end")
 
 # MAIN
 # =================================================================================================
@@ -52,9 +52,13 @@ const EPILOGUE_END_EVENT=event("miden::tx::epilogue_end")
 #!   BLOCK_COMMITMENT,
 #!   INITIAL_ACCOUNT_COMMITMENT,
 #!   INPUT_NOTES_COMMITMENT,
-#!   account_id_prefix, account_id_suffix, block_num, pad(1)
+#!   account_id_suffix, account_id_prefix, block_num, pad(1)
 #! ]
-#! Outputs: [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(3)]
+#! Outputs: [
+#!   OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+#!   native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num,
+#!   pad(4)
+#! ]
 #!
 #! Where:
 #! - BLOCK_COMMITMENT is the reference block for the transaction execution.
@@ -65,7 +69,10 @@ const EPILOGUE_END_EVENT=event("miden::tx::epilogue_end")
 #! - OUTPUT_NOTES_COMMITMENT is the commitment to the notes created by the transaction.
 #! - ACCOUNT_UPDATE_COMMITMENT is the hash of the the final account commitment and account
 #!   delta commitment.
-#! - FEE_ASSET is the fungible asset used as the transaction fee.
+#! - fee_amount is the computed fee amount of the transaction denominated in the native asset.
+#! - native_asset_id_{prefix,suffix} are the prefix and suffix felts of the faucet that issues the
+#!   native asset.
+#! - tx_expiration_block_num is the transaction expiration block number.
 @locals(1)
 proc main
     # Prologue
@@ -130,7 +137,7 @@ proc main
 
     # get the memory address of the transaction script root and load it to the stack
     exec.memory::get_tx_script_root_ptr
-    padw dup.4 mem_loadw_be
+    padw dup.4 mem_loadw_le
     # => [TX_SCRIPT_ROOT, tx_script_root_ptr, pad(16)]
 
     exec.word::eqz not
@@ -167,11 +174,13 @@ proc main
 
     # execute the transaction epilogue
     exec.epilogue::finalize_transaction
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(16)]
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+    #     native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num, pad(16)]
 
     # truncate the stack to contain 16 elements in total
-    repeat.13 movup.13 drop end
-    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT, FEE_ASSET, tx_expiration_block_num, pad(3)]
+    repeat.3 movupw.3 dropw end
+    # => [OUTPUT_NOTES_COMMITMENT, ACCOUNT_UPDATE_COMMITMENT,
+    #     native_asset_id_suffix, native_asset_id_prefix, fee_amount, tx_expiration_block_num, pad(4)]
 
     emit.EPILOGUE_END_EVENT
 end

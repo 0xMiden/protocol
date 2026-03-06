@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::MastNodeExt;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
@@ -175,10 +175,6 @@ impl TransactionArgs {
             (sn_script_hash, concat_words(sn_hash, script.root())),
             (note_recipient.digest(), concat_words(sn_script_hash, storage.commitment())),
             (storage.commitment(), storage.to_elements()),
-            (
-                Hasher::hash_elements(storage.commitment().as_elements()),
-                vec![Felt::from(storage.len())],
-            ),
             (script.root(), script_encoded),
         ];
 
@@ -324,6 +320,24 @@ impl TransactionScript {
     pub fn root(&self) -> Word {
         self.mast[self.entrypoint].digest()
     }
+
+    /// Returns a new [TransactionScript] with the provided advice map entries merged into the
+    /// underlying [MastForest].
+    ///
+    /// This allows adding advice map entries to an already-compiled transaction script,
+    /// which is useful when the entries are determined after script compilation.
+    pub fn with_advice_map(self, advice_map: AdviceMap) -> Self {
+        if advice_map.is_empty() {
+            return self;
+        }
+
+        let mut mast = (*self.mast).clone();
+        mast.advice_map_mut().extend(advice_map);
+        Self {
+            mast: Arc::new(mast),
+            entrypoint: self.entrypoint,
+        }
+    }
 }
 
 // SERIALIZATION
@@ -347,10 +361,10 @@ impl Deserializable for TransactionScript {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::AdviceMap;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_core::advice::AdviceMap;
 
     use crate::transaction::TransactionArgs;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_tx_args_serialization() {
@@ -359,5 +373,36 @@ mod tests {
         let decoded = TransactionArgs::read_from_bytes(&bytes).unwrap();
 
         assert_eq!(tx_args, decoded);
+    }
+
+    #[test]
+    fn test_transaction_script_with_advice_map() {
+        use miden_core::{Felt, Word};
+
+        use super::TransactionScript;
+        use crate::assembly::Assembler;
+
+        let assembler = Assembler::default();
+        let program = assembler.assemble_program("begin nop end").unwrap();
+        let script = TransactionScript::new(program);
+
+        assert!(script.mast().advice_map().is_empty());
+
+        // Empty advice map should be a no-op
+        let original_root = script.root();
+        let script = script.with_advice_map(AdviceMap::default());
+        assert_eq!(original_root, script.root());
+
+        // Non-empty advice map should add entries
+        let key = Word::from([1u32, 2, 3, 4]);
+        let value = vec![Felt::new(42), Felt::new(43)];
+        let mut advice_map = AdviceMap::default();
+        advice_map.insert(key, value.clone());
+
+        let script = script.with_advice_map(advice_map);
+
+        let mast = script.mast();
+        let stored = mast.advice_map().get(&key).expect("entry should be present");
+        assert_eq!(stored.as_ref(), value.as_slice());
     }
 }

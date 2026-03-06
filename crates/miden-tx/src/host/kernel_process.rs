@@ -1,9 +1,12 @@
-use miden_processor::{ExecutionError, Felt, ProcessState};
+use miden_processor::{ExecutionError, Felt, ProcessorState};
+use miden_protocol::Word;
 use miden_protocol::account::{AccountId, StorageSlotId, StorageSlotType};
 use miden_protocol::note::{NoteId, NoteStorage};
 use miden_protocol::transaction::memory::{
     ACCOUNT_STACK_TOP_PTR,
     ACCT_CODE_COMMITMENT_OFFSET,
+    ACCT_ID_PREFIX_IDX,
+    ACCT_ID_SUFFIX_IDX,
     ACCT_STORAGE_SLOT_ID_PREFIX_OFFSET,
     ACCT_STORAGE_SLOT_ID_SUFFIX_OFFSET,
     ACCT_STORAGE_SLOT_TYPE_OFFSET,
@@ -12,7 +15,6 @@ use miden_protocol::transaction::memory::{
     NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
     NUM_OUTPUT_NOTES_PTR,
 };
-use miden_protocol::{Hasher, Word};
 
 use crate::errors::TransactionKernelError;
 
@@ -65,20 +67,21 @@ pub(super) trait TransactionKernelProcess {
     ) -> Result<bool, TransactionKernelError>;
 }
 
-impl<'a> TransactionKernelProcess for ProcessState<'a> {
+impl<'a> TransactionKernelProcess for ProcessorState<'a> {
     fn get_active_account_ptr(&self) -> Result<u32, TransactionKernelError> {
         let account_stack_top_ptr =
             self.get_mem_value(self.ctx(), ACCOUNT_STACK_TOP_PTR).ok_or_else(|| {
                 TransactionKernelError::other("account stack top ptr should be initialized")
             })?;
-        let account_stack_top_ptr = u32::try_from(account_stack_top_ptr).map_err(|_| {
-            TransactionKernelError::other("account stack top ptr should fit into a u32")
-        })?;
+        let account_stack_top_ptr = u32::try_from(account_stack_top_ptr.as_canonical_u64())
+            .map_err(|_| {
+                TransactionKernelError::other("account stack top ptr should fit into a u32")
+            })?;
 
         let active_account_ptr = self
             .get_mem_value(self.ctx(), account_stack_top_ptr)
             .ok_or_else(|| TransactionKernelError::other("account id should be initialized"))?;
-        u32::try_from(active_account_ptr)
+        u32::try_from(active_account_ptr.as_canonical_u64())
             .map_err(|_| TransactionKernelError::other("active account ptr should fit into a u32"))
     }
 
@@ -93,12 +96,15 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 TransactionKernelError::other("active account id should be initialized")
             })?;
 
-        AccountId::try_from([active_account_id_and_nonce[1], active_account_id_and_nonce[0]])
-            .map_err(|_| {
-                TransactionKernelError::other(
-                    "active account id ptr should point to a valid account ID",
-                )
-            })
+        AccountId::try_from_elements(
+            active_account_id_and_nonce[ACCT_ID_SUFFIX_IDX],
+            active_account_id_and_nonce[ACCT_ID_PREFIX_IDX],
+        )
+        .map_err(|_| {
+            TransactionKernelError::other(
+                "active account id ptr should point to a valid account ID",
+            )
+        })
     }
 
     fn get_active_account_code_commitment(&self) -> Result<Word, TransactionKernelError> {
@@ -130,14 +136,14 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 NATIVE_NUM_ACCT_STORAGE_SLOTS_PTR,
             ))?;
 
-        Ok(num_storage_slots_felt.as_int())
+        Ok(num_storage_slots_felt.as_canonical_u64())
     }
 
     fn get_num_output_notes(&self) -> u64 {
         // Read the number from memory or default to 0 if the location hasn't been accessed
         // previously (e.g. when no notes have been created yet).
         self.get_mem_value(self.ctx(), NUM_OUTPUT_NOTES_PTR)
-            .map(|num_output_notes| num_output_notes.as_int())
+            .map(|num_output_notes| num_output_notes.as_canonical_u64())
             .unwrap_or(0)
     }
 
@@ -155,7 +161,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
             None => return Ok(None),
         };
         // convert note address into u32
-        let note_address = u32::try_from(note_address_felt).map_err(|_| {
+        let note_address = u32::try_from(note_address_felt.as_canonical_u64()).map_err(|_| {
             TransactionKernelError::other(format!(
                 "failed to convert {note_address_felt} into a memory address (u32)"
             ))
@@ -169,7 +175,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
                 .map_err(|err| {
                     TransactionKernelError::other_with_source(
                         "failed to read note address",
-                        ExecutionError::MemoryError(err),
+                        ExecutionError::MemoryErrorNoCtx(err),
                     )
                 })?
                 .map(NoteId::from_raw))
@@ -178,7 +184,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
 
     /// Returns the vault root at the provided pointer.
     fn get_vault_root(&self, vault_root_ptr: Felt) -> Result<Word, TransactionKernelError> {
-        let vault_root_ptr = u32::try_from(vault_root_ptr).map_err(|_err| {
+        let vault_root_ptr = u32::try_from(vault_root_ptr.as_canonical_u64()).map_err(|_err| {
             TransactionKernelError::other(format!(
                 "vault root ptr should fit into a u32, but was {vault_root_ptr}"
             ))
@@ -200,7 +206,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         &self,
         slot_ptr: Felt,
     ) -> Result<(StorageSlotId, StorageSlotType, Word), TransactionKernelError> {
-        let slot_ptr = u32::try_from(slot_ptr).map_err(|_err| {
+        let slot_ptr = u32::try_from(slot_ptr.as_canonical_u64()).map_err(|_err| {
             TransactionKernelError::other(format!(
                 "slot ptr should fit into a u32, but was {slot_ptr}"
             ))
@@ -234,7 +240,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
             })?;
 
         let slot_type = slot_metadata[ACCT_STORAGE_SLOT_TYPE_OFFSET as usize];
-        let slot_type = u8::try_from(slot_type).map_err(|err| {
+        let slot_type = u8::try_from(slot_type.as_canonical_u64()).map_err(|err| {
             TransactionKernelError::other(format!("failed to convert {slot_type} into u8: {err}"))
         })?;
         let slot_type = StorageSlotType::try_from(slot_type).map_err(|err| {
@@ -255,12 +261,12 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
         &self,
         recipient_digest: Word,
     ) -> Result<(NoteStorage, Word, Word), TransactionKernelError> {
-        let (sn_script_hash, inputs_commitment) =
+        let (sn_script_hash, storage_commitment) =
             read_double_word_from_adv_map(self, recipient_digest)?;
         let (sn_hash, script_root) = read_double_word_from_adv_map(self, sn_script_hash)?;
         let (serial_num, _) = read_double_word_from_adv_map(self, sn_hash)?;
 
-        let inputs = self.read_note_storage_from_adv_map(&inputs_commitment)?;
+        let inputs = self.read_note_storage_from_adv_map(&storage_commitment)?;
 
         Ok((inputs, script_root, serial_num))
     }
@@ -268,37 +274,21 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
     /// Extracts and validates note storage from the advice provider.
     fn read_note_storage_from_adv_map(
         &self,
-        inputs_commitment: &Word,
+        storage_commitment: &Word,
     ) -> Result<NoteStorage, TransactionKernelError> {
-        let inputs_data = self.advice_provider().get_mapped_values(inputs_commitment);
+        let inputs_data = self.advice_provider().get_mapped_values(storage_commitment);
 
         match inputs_data {
             None => Ok(NoteStorage::default()),
-            Some(inputs) => {
-                let inputs_commitment_hash = Hasher::hash_elements(inputs_commitment.as_elements());
-                let num_inputs = self
-                    .advice_provider()
-                    .get_mapped_values(&inputs_commitment_hash)
-                    .ok_or_else(|| {
-                        TransactionKernelError::other(
-                            "expected num_inputs to be present in advice provider",
-                        )
-                    })?;
-                if num_inputs.len() != 1 {
-                    return Err(TransactionKernelError::other(
-                        "expected num_inputs advice entry to contain exactly one element",
-                    ));
-                }
-                let num_inputs = num_inputs[0].as_int() as usize;
-
-                let note_storage = NoteStorage::new(inputs[0..num_inputs].to_vec())
+            Some(storage_items) => {
+                let note_storage = NoteStorage::new(storage_items.to_vec())
                     .map_err(TransactionKernelError::MalformedNoteStorage)?;
 
-                if &note_storage.commitment() == inputs_commitment {
+                if &note_storage.commitment() == storage_commitment {
                     Ok(note_storage)
                 } else {
                     Err(TransactionKernelError::InvalidNoteStorage {
-                        expected: *inputs_commitment,
+                        expected: *storage_commitment,
                         actual: note_storage.commitment(),
                     })
                 }
@@ -335,7 +325,7 @@ impl<'a> TransactionKernelProcess for ProcessState<'a> {
 /// Returns an error if the key is not present in the advice map or if the data is malformed
 /// (not exactly 8 elements).
 fn read_double_word_from_adv_map(
-    process: &ProcessState,
+    process: &ProcessorState,
     key: Word,
 ) -> Result<(Word, Word), TransactionKernelError> {
     let data = process

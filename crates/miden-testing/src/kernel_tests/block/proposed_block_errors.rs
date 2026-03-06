@@ -3,14 +3,14 @@ use std::collections::BTreeMap;
 use std::vec::Vec;
 
 use assert_matches::assert_matches;
-use miden_processor::crypto::MerklePath;
+use miden_processor::crypto::merkle::MerklePath;
 use miden_protocol::MAX_BATCHES_PER_BLOCK;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::errors::ProposedBlockError;
 use miden_protocol::note::{NoteAttachment, NoteInclusionProof, NoteType};
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::P2idNote;
 use miden_tx::LocalTransactionProver;
 
 use crate::kernel_tests::block::utils::MockChainBlockExt;
@@ -348,7 +348,7 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     let mut builder = MockChain::builder();
     let account0 = builder.add_existing_mock_account(Auth::IncrNonce)?;
     let account1 = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    let p2id_note = create_p2id_note(
+    let p2id_note = P2idNote::create(
         account0.id(),
         account1.id(),
         vec![],
@@ -652,8 +652,8 @@ async fn proposed_block_fails_on_inconsistent_account_state_transition() -> anyh
       state_commitment,
       remaining_state_commitments
     } if account_id == account.id() &&
-      state_commitment == executed_tx0.final_account().commitment() &&
-      remaining_state_commitments == [executed_tx2.initial_account().commitment()]
+      state_commitment == executed_tx0.final_account().to_commitment() &&
+      remaining_state_commitments == [executed_tx2.initial_account().to_commitment()]
     );
 
     Ok(())

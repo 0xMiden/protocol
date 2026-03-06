@@ -1,7 +1,8 @@
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
 use miden_protocol::crypto::rand::RpoRandomCoin;
-use miden_protocol::note::{NoteAttachment, NoteType};
+use miden_protocol::note::{NoteAttachment, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2,
@@ -13,7 +14,7 @@ use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
-use miden_standards::note::create_p2id_note;
+use miden_standards::note::{P2idNote, P2idNoteStorage};
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 use crate::prove_and_verify_transaction;
@@ -30,9 +31,15 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.create_new_wallet(Auth::BasicAuth)?;
-    let target_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let sender_account = builder.create_new_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let malicious_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -63,8 +70,8 @@ async fn p2id_script_multiple_assets() -> anyhow::Result<()> {
     );
 
     assert_eq!(
-        executed_transaction.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
 
     // CONSTRUCT AND EXECUTE TX (Failure)
@@ -92,8 +99,12 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // Create accounts
-    let sender_account = builder.add_existing_wallet(Auth::BasicAuth)?;
-    let target_account = builder.create_new_wallet(Auth::BasicAuth)?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create the note
     let note = builder.add_p2id_note(
@@ -125,10 +136,10 @@ async fn prove_consume_note_with_new_account() -> anyhow::Result<()> {
     );
 
     assert_eq!(
-        executed_transaction.final_account().commitment(),
-        target_account_after.commitment()
+        executed_transaction.final_account().to_commitment(),
+        target_account_after.to_commitment()
     );
-    prove_and_verify_transaction(executed_transaction)?;
+    prove_and_verify_transaction(executed_transaction).await?;
     Ok(())
 }
 
@@ -140,7 +151,9 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
     let mut builder = MockChain::builder();
-    let mut account = builder.add_existing_wallet(Auth::BasicAuth)?;
+    let mut account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let note_1 = builder.add_p2id_note(
         ACCOUNT_ID_SENDER.try_into()?,
         account.id(),
@@ -170,7 +183,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
         panic!("Resulting asset should be fungible");
     }
 
-    Ok(prove_and_verify_transaction(executed_transaction)?)
+    Ok(prove_and_verify_transaction(executed_transaction).await?)
 }
 
 /// Consumes two existing notes and creates two other notes in the same transaction
@@ -178,8 +191,12 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
 async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let mut account =
-        builder.add_existing_wallet_with_assets(Auth::BasicAuth, [FungibleAsset::mock(20)])?;
+    let mut account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [FungibleAsset::mock(20)],
+    )?;
 
     let input_note_faucet_id = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
     let input_note_asset_1: Asset = FungibleAsset::new(input_note_faucet_id, 11)?.into();
@@ -202,19 +219,22 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     let mock_chain = builder.build()?;
 
-    let output_note_1 = create_p2id_note(
+    let asset_1 = FungibleAsset::mock(10);
+    let asset_2 = FungibleAsset::mock(5);
+
+    let output_note_1 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2.try_into()?,
-        vec![FungibleAsset::mock(10)],
+        vec![asset_1],
         NoteType::Public,
         NoteAttachment::default(),
         &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
-    let output_note_2 = create_p2id_note(
+    let output_note_2 = P2idNote::create(
         account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE.try_into()?,
-        vec![FungibleAsset::mock(5)],
+        vec![asset_2],
         NoteType::Public,
         NoteAttachment::default(),
         &mut RpoRandomCoin::new(Word::from([4, 3, 2, 1u32])),
@@ -229,7 +249,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{tag_1}
                 exec.output_note::create
 
-                push.{asset_1}
+                push.{ASSET_VALUE_1}
+                push.{ASSET_KEY_1}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
 
@@ -238,7 +259,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
                 push.{tag_2}
                 exec.output_note::create
 
-                push.{asset_2}
+                push.{ASSET_VALUE_2}
+                push.{ASSET_KEY_2}
                 call.::miden::standards::wallets::basic::move_asset_to_note
                 dropw dropw dropw dropw
             end
@@ -246,11 +268,13 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         recipient_1 = output_note_1.recipient().digest(),
         note_type_1 = NoteType::Public as u8,
         tag_1 = Felt::from(output_note_1.metadata().tag()),
-        asset_1 = Word::from(FungibleAsset::mock(10)),
+        ASSET_KEY_1 = asset_1.to_key_word(),
+        ASSET_VALUE_1 = asset_1.to_value_word(),
         recipient_2 = output_note_2.recipient().digest(),
         note_type_2 = NoteType::Public as u8,
         tag_2 = Felt::from(output_note_2.metadata().tag()),
-        asset_2 = Word::from(FungibleAsset::mock(5)),
+        ASSET_KEY_2 = asset_2.to_key_word(),
+        ASSET_VALUE_2 = asset_2.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_script_src)?;
@@ -272,5 +296,105 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
 
     assert_eq!(account.vault().get_balance(input_note_faucet_id)?, 111);
     assert_eq!(account.vault().get_balance(FungibleAsset::mock_issuer())?, 5);
+    Ok(())
+}
+
+/// Tests the P2ID `new` MASM constructor procedure.
+/// This test verifies that calling `p2id::new` from a transaction script creates an output note
+/// with the same recipient as `P2idNote::build_recipient` would create.
+#[tokio::test]
+async fn test_p2id_new_constructor() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let sender_account = builder.add_existing_wallet_with_assets(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        [FungibleAsset::mock(100)],
+    )?;
+    let target_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+
+    let mock_chain = builder.build()?;
+
+    // Create a serial number for the note
+    let serial_num = Word::from([1u32, 2u32, 3u32, 4u32]);
+
+    // Build the expected recipient using the Rust implementation
+    let expected_recipient = P2idNoteStorage::new(target_account.id()).into_recipient(serial_num);
+
+    // Create a note tag for the target account
+    let tag = NoteTag::with_account_target(target_account.id());
+
+    // Build a transaction script that uses p2id::new to create a note
+    let tx_script_src = format!(
+        r#"
+        use miden::standards::notes::p2id
+
+        begin
+            # Push inputs for p2id::new
+            push.{serial_num}
+            push.{note_type}
+            push.{tag}
+            push.{target_prefix}
+            push.{target_suffix}
+            # => [target_id_suffix, target_id_prefix, tag, note_type, SERIAL_NUM]
+
+            exec.p2id::new
+            # => [note_idx]
+
+            # Add an asset to the created note
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
+            call.::miden::standards::wallets::basic::move_asset_to_note
+
+            # Clean up stack
+            dropw dropw dropw dropw
+        end
+        "#,
+        target_prefix = target_account.id().prefix().as_felt(),
+        target_suffix = target_account.id().suffix(),
+        tag = Felt::from(tag),
+        note_type = NoteType::Public as u8,
+        serial_num = serial_num,
+        ASSET_KEY = FungibleAsset::mock(50).to_key_word(),
+        ASSET_VALUE = FungibleAsset::mock(50).to_value_word(),
+    );
+
+    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_src)?;
+
+    // Build expected output note
+    let expected_output_note = P2idNote::create(
+        sender_account.id(),
+        target_account.id(),
+        vec![FungibleAsset::mock(50)],
+        NoteType::Public,
+        NoteAttachment::default(),
+        &mut RpoRandomCoin::new(serial_num),
+    )?;
+
+    let tx_context = mock_chain
+        .build_tx_context(sender_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .tx_script(tx_script)
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify that one note was created
+    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
+
+    // Get the created note's recipient and verify it matches
+    let output_note = executed_transaction.output_notes().get_note(0);
+    let created_recipient = output_note.recipient().expect("output note should have recipient");
+
+    // Verify the recipient matches what we expected
+    assert_eq!(
+        created_recipient.digest(),
+        expected_recipient.digest(),
+        "The recipient created by p2id::new should match P2idNote::build_recipient"
+    );
+
     Ok(())
 }

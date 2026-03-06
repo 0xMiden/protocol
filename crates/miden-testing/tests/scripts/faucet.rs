@@ -3,7 +3,8 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::slice;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
     AccountId,
@@ -29,19 +30,20 @@ use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    FungibleFaucetExt,
     NetworkFungibleFaucet,
+    TokenMetadata,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
-    ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED,
+    ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
+    ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_SENDER_NOT_OWNER,
 };
-use miden_standards::note::{MintNoteStorage, WellKnownNote, create_burn_note, create_mint_note};
+use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
 use miden_standards::testing::note::NoteBuilder;
+use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
-use crate::scripts::swap::create_p2id_note_exact;
 use crate::{get_note_with_fungible_asset_and_script, prove_and_verify_transaction};
 
 // Shared test utilities for faucet tests
@@ -108,7 +110,8 @@ pub fn verify_minted_output_note(
     faucet: &Account,
     params: &FaucetTestParams,
 ) -> anyhow::Result<()> {
-    let fungible_asset: Asset = FungibleAsset::new(faucet.id(), params.amount.into())?.into();
+    let fungible_asset: Asset =
+        FungibleAsset::new(faucet.id(), params.amount.as_canonical_u64())?.into();
 
     let output_note = executed_transaction.output_notes().get_note(0).clone();
     let assets = NoteAssets::new(vec![fungible_asset])?;
@@ -117,7 +120,7 @@ pub fn verify_minted_output_note(
     assert_eq!(output_note.id(), id);
     assert_eq!(
         output_note.metadata(),
-        &NoteMetadata::new(faucet.id(), params.note_type, params.tag)
+        &NoteMetadata::new(faucet.id(), params.note_type).with_tag(params.tag)
     );
 
     Ok(())
@@ -130,7 +133,14 @@ pub fn verify_minted_output_note(
 #[tokio::test]
 async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -147,12 +157,20 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
     Ok(())
 }
 
+/// Tests that distribute fails when the minted amount would exceed the max supply.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyhow::Result<()> {
     // CONSTRUCT AND EXECUTE TX (Failure)
     // --------------------------------------------------------------------------------------------
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
     let mock_chain = builder.build()?;
 
     let recipient = Word::from([0, 1, 2, 3u32]);
@@ -191,11 +209,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
         .execute()
         .await;
 
-    // Execute the transaction and get the witness
-    assert_transaction_executor_error!(
-        tx,
-        ERR_FUNGIBLE_ASSET_DISTRIBUTE_WOULD_CAUSE_MAX_SUPPLY_TO_BE_EXCEEDED
-    );
+    assert_transaction_executor_error!(tx, ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY);
     Ok(())
 }
 
@@ -206,7 +220,13 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
 #[tokio::test]
 async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.create_new_faucet(Auth::BasicAuth, "TST", 200)?;
+    let faucet = builder.create_new_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+    )?;
     let mut mock_chain = builder.build()?;
 
     let params = FaucetTestParams {
@@ -229,8 +249,18 @@ async fn minting_fungible_asset_on_new_faucet_succeeds() -> anyhow::Result<()> {
 /// Tests that burning a fungible asset on an existing faucet succeeds and proves the transaction.
 #[tokio::test]
 async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<()> {
+    let max_supply = 200u32;
+    let token_supply = 100u32;
+
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, Some(100))?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        max_supply.into(),
+        Some(token_supply.into()),
+    )?;
 
     let fungible_asset = FungibleAsset::new(faucet.id(), 100).unwrap();
 
@@ -242,7 +272,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
             # => []
 
             call.::miden::standards::faucets::basic_fungible::burn
-            # => [ASSET]
+            # => [ASSET_VALUE]
 
             # truncate the stack
             dropw
@@ -254,16 +284,15 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
     builder.add_output_note(OutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
+    let token_metadata = TokenMetadata::try_from(faucet.storage())?;
+
     // Check that max_supply at the word's index 0 is 200. The remainder of the word is initialized
     // with the metadata of the faucet which we don't need to check.
-    assert_eq!(
-        faucet.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap()[0],
-        Felt::new(200)
-    );
+    assert_eq!(token_metadata.max_supply(), Felt::from(max_supply));
 
-    // Check that the faucet reserved slot has been correctly initialized.
+    // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 100.
-    assert_eq!(faucet.get_token_issuance().unwrap(), Felt::new(100));
+    assert_eq!(token_metadata.token_supply(), Felt::from(token_supply));
 
     // CONSTRUCT AND EXECUTE TX (Success)
     // --------------------------------------------------------------------------------------------
@@ -275,10 +304,59 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
         .await?;
 
     // Prove, serialize/deserialize and verify the transaction
-    prove_and_verify_transaction(executed_transaction.clone())?;
+    prove_and_verify_transaction(executed_transaction.clone()).await?;
 
     assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
     assert_eq!(executed_transaction.input_notes().get_note(0).id(), note.id());
+    Ok(())
+}
+
+/// Tests that burning a fungible asset fails when the amount exceeds the token supply.
+#[tokio::test]
+async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyhow::Result<()> {
+    let max_supply = 200u32;
+    let token_supply = 50u32;
+
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        max_supply.into(),
+        Some(token_supply.into()),
+    )?;
+
+    // Try to burn 100 tokens when only 50 have been issued
+    let burn_amount = 100u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+
+    let burn_note_script_code = "
+        # burn the asset
+        begin
+            dropw
+            # => []
+
+            call.::miden::standards::faucets::basic_fungible::burn
+            # => [ASSET_VALUE]
+
+            # truncate the stack
+            dropw
+        end
+        ";
+
+    let note = get_note_with_fungible_asset_and_script(fungible_asset, burn_note_script_code);
+
+    builder.add_output_note(OutputNote::Full(note.clone()));
+    let mock_chain = builder.build()?;
+
+    let tx = mock_chain
+        .build_tx_context(faucet.id(), &[note.id()], &[])?
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(tx, ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY);
     Ok(())
 }
 
@@ -293,7 +371,14 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
-    let faucet = builder.add_existing_basic_faucet(Auth::BasicAuth, "TST", 200, None)?;
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        200,
+        None,
+    )?;
 
     // Parameters for the PUBLIC note that will be created by the faucet
     let recipient_account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER)?;
@@ -328,8 +413,8 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     let output_script_root = note_recipient.script().root();
 
-    let asset = FungibleAsset::new(faucet.id(), amount.into())?;
-    let metadata = NoteMetadata::new(faucet.id(), note_type, tag);
+    let asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
+    let metadata = NoteMetadata::new(faucet.id(), note_type).with_tag(tag);
     let expected_note = Note::new(NoteAssets::new(vec![asset.into()])?, metadata, note_recipient);
 
     let trigger_note_script_code = format!(
@@ -354,7 +439,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{input6} mem_store.6
 
                 push.7 push.0
-                # => [storage_ptr, storage_length = 7, SERIAL_NUM, SCRIPT_ROOT]
+                # => [storage_ptr, num_storage_items = 7, SERIAL_NUM, SCRIPT_ROOT]
 
                 exec.note::build_recipient
                 # => [RECIPIENT]
@@ -423,7 +508,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     assert_eq!(full_note.metadata().note_type(), NoteType::Public);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let expected_asset_obj = Asset::from(expected_asset);
     assert!(full_note.assets().iter().any(|asset| asset == &expected_asset_obj));
 
@@ -437,9 +522,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         "Output note storage commitment should match expected storage commitment"
     );
     assert_eq!(
-        full_note.recipient().storage().len(),
-        note_storage.len(),
-        "Output note storage length should match expected storage length"
+        full_note.recipient().storage().num_items(),
+        note_storage.num_items(),
+        "Output note number of storage items should match expected number of storage items"
     );
 
     // Verify the output note ID matches the expected note ID
@@ -457,6 +542,9 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 /// Tests minting on network faucet
 #[tokio::test]
 async fn network_faucet_mint() -> anyhow::Result<()> {
+    let max_supply = 1000u64;
+    let token_supply = 50u64;
+
     let mut builder = MockChain::builder();
 
     let faucet_owner_account_id = AccountId::dummy(
@@ -466,35 +554,41 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet =
-        builder.add_existing_network_faucet("NET", 1000, faucet_owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        max_supply,
+        faucet_owner_account_id,
+        Some(token_supply),
+    )?;
 
     // Create a target account to consume the minted note
     let mut target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    // The Network Fungible Faucet component is added as the second component after auth, so its
-    // storage slot offset will be 2. Check that max_supply at the word's index 0 is 200.
-    assert_eq!(
-        faucet.storage().get_item(NetworkFungibleFaucet::metadata_slot()).unwrap()[0],
-        Felt::new(1000)
-    );
+    // Check the Network Fungible Faucet's max supply.
+    let actual_max_supply = TokenMetadata::try_from(faucet.storage())?.max_supply();
+    assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
 
     // Check that the creator account ID is stored in slot 2 (second storage slot of the component)
     // The owner_account_id is stored as Word [0, 0, suffix, prefix]
     let stored_owner_id =
         faucet.storage().get_item(NetworkFungibleFaucet::owner_config_slot()).unwrap();
     assert_eq!(stored_owner_id[3], faucet_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_id[2], Felt::new(faucet_owner_account_id.suffix().as_int()));
+    assert_eq!(
+        stored_owner_id[2],
+        Felt::new(faucet_owner_account_id.suffix().as_canonical_u64())
+    );
 
-    // Check that the faucet reserved slot has been correctly initialized.
+    // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
-    assert_eq!(faucet.get_token_issuance().unwrap(), Felt::new(50));
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    assert_eq!(initial_token_supply.as_canonical_u64(), token_supply);
 
     // CREATE MINT NOTE USING STANDARD NOTE
     // --------------------------------------------------------------------------------------------
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -512,7 +606,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
         mint_storage,
@@ -534,7 +628,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     let output_note = executed_transaction.output_notes().get_note(0);
 
     // Verify the output note contains the minted fungible asset
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let assets = NoteAssets::new(vec![expected_asset.into()])?;
     let expected_note_id = NoteId::new(recipient, assets.commitment());
 
@@ -583,7 +677,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -598,7 +692,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         owner_account_id,
         mint_inputs,
@@ -638,7 +732,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mock_chain = builder.build()?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -654,7 +748,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
 
     // Create mint note from NON-OWNER
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         non_owner_account_id,
         mint_inputs,
@@ -692,7 +786,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
 
     // Storage format: [0, 0, suffix, prefix]
     assert_eq!(stored_owner[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(owner_account_id.suffix().as_int()));
+    assert_eq!(stored_owner[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
     assert_eq!(stored_owner[1], Felt::new(0));
     assert_eq!(stored_owner[0], Felt::new(0));
 
@@ -724,7 +818,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into())?.into();
+    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
     let p2id_note = create_p2id_note_exact(
@@ -740,7 +834,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
@@ -755,14 +849,14 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -808,7 +902,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Validation 1: Try to mint using the old owner - should fail
     let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
-    let mint_note_old_owner = create_mint_note(
+    let mint_note_old_owner = MintNote::create(
         updated_faucet.id(),
         initial_owner_account_id,
         mint_inputs.clone(),
@@ -829,7 +923,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Validation 2: Try to mint using the new owner - should succeed
     let mut rng = RpoRandomCoin::new([Felt::from(400u32); 4].into());
-    let mint_note_new_owner = create_mint_note(
+    let mint_note_new_owner = MintNote::create(
         updated_faucet.id(),
         new_owner_account_id,
         mint_inputs,
@@ -884,14 +978,14 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -946,7 +1040,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let stored_owner_before =
         faucet.storage().get_item(NetworkFungibleFaucet::owner_config_slot())?;
     assert_eq!(stored_owner_before[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_before[2], Felt::new(owner_account_id.suffix().as_int()));
+    assert_eq!(stored_owner_before[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
@@ -970,14 +1064,14 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix}
             push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.network_faucet::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
         new_owner_prefix = new_owner_account_id.prefix().as_felt(),
-        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_int()),
+        new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
     let transfer_note_script = CodeBuilder::with_source_manager(source_manager.clone())
@@ -1081,7 +1175,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
     let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
-    let note = create_burn_note(
+    let note = BurnNote::create(
         faucet_owner_account_id,
         faucet.id(),
         fungible_asset.into(),
@@ -1094,8 +1188,8 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     // Check the initial token issuance before burning
-    let initial_issuance = faucet.get_token_issuance().unwrap();
-    assert_eq!(initial_issuance, Felt::new(100));
+    let initial_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    assert_eq!(initial_token_supply, Felt::new(100));
 
     // EXECUTE BURN NOTE AGAINST NETWORK FAUCET
     // --------------------------------------------------------------------------------------------
@@ -1111,8 +1205,11 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // Apply the delta to the faucet account and verify the token issuance decreased
     faucet.apply_delta(executed_transaction.account_delta())?;
-    let final_issuance = faucet.get_token_issuance().unwrap();
-    assert_eq!(final_issuance, Felt::new(initial_issuance.as_int() - burn_amount));
+    let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
+    assert_eq!(
+        final_token_supply,
+        Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
+    );
 
     Ok(())
 }
@@ -1141,7 +1238,8 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::from([1, 2, 3, 4u32]);
 
     // Create the expected P2ID output note
@@ -1163,7 +1261,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
         NoteType::Public => {
             let output_note_tag = NoteTag::with_account_target(target_account.id());
-            let p2id_script = WellKnownNote::P2ID.script();
+            let p2id_script = StandardNote::P2ID.script();
             let p2id_storage =
                 vec![target_account.id().suffix(), target_account.id().prefix().as_felt()];
             let note_storage = NoteStorage::new(p2id_storage)?;
@@ -1173,7 +1271,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     };
 
     let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-    let mint_note = create_mint_note(
+    let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
         mint_storage.clone(),
@@ -1184,15 +1282,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     builder.add_output_note(OutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
 
-    let mut tx_context_builder =
-        mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?;
-
-    if note_type == NoteType::Public {
-        let p2id_script = WellKnownNote::P2ID.script();
-        tx_context_builder = tx_context_builder.add_note_script(p2id_script);
-    }
-
-    let tx_context = tx_context_builder.build()?;
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
     let executed_transaction = tx_context.execute().await?;
 
     assert_eq!(executed_transaction.output_notes().num_notes(), 1);
@@ -1209,7 +1299,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
             // For public notes, we get OutputNote::Full and can compare key properties
             let created_note = match output_note {
                 OutputNote::Full(note) => note,
-                _ => panic!("Expected OutputNote::Full variant for public note"),
+                _ => panic!("Expected OutputNote::Full variant"),
             };
 
             assert_eq!(created_note, &p2id_mint_output_note);
@@ -1228,9 +1318,100 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     target_account_mut.apply_delta(consume_executed_transaction.account_delta())?;
 
-    let expected_asset = FungibleAsset::new(faucet.id(), amount.into())?;
+    let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let balance = target_account_mut.vault().get_balance(faucet.id())?;
     assert_eq!(balance, expected_asset.amount());
+
+    Ok(())
+}
+
+/// Tests that calling distribute multiple times in a single transaction produces output notes
+/// with the correct individual amounts, not the cumulative vault totals.
+#[tokio::test]
+async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let faucet = builder.add_existing_basic_faucet(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        "TST",
+        300,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let recipient_1 = Word::from([0, 1, 2, 3u32]);
+    let recipient_2 = Word::from([4, 5, 6, 7u32]);
+    let tag = NoteTag::default();
+    let note_type = NoteType::Private;
+    let amount_1: u64 = 100;
+    let amount_2: u64 = 50;
+
+    let tx_script_code = format!(
+        "
+            begin
+                # --- First distribute: mint {amount_1} tokens to recipient_1 ---
+                padw padw push.0
+
+                push.{recipient_1}
+                push.{note_type}
+                push.{tag}
+                push.{amount_1}
+                # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
+
+                call.::miden::standards::faucets::basic_fungible::distribute
+                # => [note_idx, pad(15)]
+
+                # clean up the stack before the second call
+                dropw dropw dropw dropw
+
+                # --- Second distribute: mint {amount_2} tokens to recipient_2 ---
+                padw padw push.0
+
+                push.{recipient_2}
+                push.{note_type}
+                push.{tag}
+                push.{amount_2}
+                # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
+
+                call.::miden::standards::faucets::basic_fungible::distribute
+                # => [note_idx, pad(15)]
+
+                # truncate the stack
+                dropw dropw dropw dropw
+            end
+            ",
+        note_type = note_type as u8,
+        tag = u32::from(tag),
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_tx_script(tx_script_code)?;
+    let tx_context = mock_chain
+        .build_tx_context(faucet.clone(), &[], &[])?
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed_transaction = tx_context.execute().await?;
+
+    // Verify two output notes were created
+    assert_eq!(executed_transaction.output_notes().num_notes(), 2);
+
+    // Verify first note has exactly amount_1 tokens.
+    let expected_asset_1: Asset = FungibleAsset::new(faucet.id(), amount_1)?.into();
+    let output_note_1 = executed_transaction.output_notes().get_note(0);
+    let assets_1 = NoteAssets::new(vec![expected_asset_1])?;
+    let expected_id_1 = NoteId::new(recipient_1, assets_1.commitment());
+    assert_eq!(output_note_1.id(), expected_id_1);
+
+    // Verify second note has exactly amount_2 tokens.
+    let expected_asset_2: Asset = FungibleAsset::new(faucet.id(), amount_2)?.into();
+    let output_note_2 = executed_transaction.output_notes().get_note(1);
+    let assets_2 = NoteAssets::new(vec![expected_asset_2])?;
+    let expected_id_2 = NoteId::new(recipient_2, assets_2.commitment());
+    assert_eq!(output_note_2.id(), expected_id_2);
 
     Ok(())
 }

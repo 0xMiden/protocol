@@ -1,43 +1,56 @@
-use miden::agglayer::bridge_out
+use miden::agglayer::bridge::bridge_out
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
+use miden::protocol::asset
+use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
+use miden::protocol::note
+use miden::standards::attachments::network_account_target
 use miden::standards::wallets::basic->basic_wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const B2AGG_NOTE_STORAGE_LEN=6
+const ASSET_PTR=0
+const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
+
+const STORAGE_START_PTR=8
+const STORAGE_END_PTR=STORAGE_START_PTR + 8
 
 # ERRORS
 # =================================================================================================
 const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS="B2AGG script requires exactly 1 note asset"
+const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="B2AGG script expects exactly 6 note storage items"
+const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account does not match consuming account"
 
-const ERR_B2AGG_UNEXPECTED_STORAGE_LENGTH="B2AGG script expects exactly 6 note storage items"
+# NOTE SCRIPT
+# =================================================================================================
 
 #! Bridge-to-AggLayer (B2AGG) note script: bridges assets from Miden to an AggLayer-connected chain.
 #!
 #! This note can be consumed in two ways:
 #! - If the consuming account is the sender (reclaim): the note's assets are added back to the consuming account.
-#! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note, 
+#! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note,
 #!   and the note details are hashed into a leaf and appended to the Local Exit Tree.
-#!   global exit root (GER) merkle tree structure.
 #!
 #! Inputs:  []
 #! Outputs: []
 #!
-#! Note storage is assumed to be as follows:
-#! - destination_network: u32 value representing the target chain ID
-#! - destination_address: split into 5 u32 values representing a 20-byte Ethereum address:
-#!   - destination_address_0: bytes 0-3
-#!   - destination_address_1: bytes 4-7
-#!   - destination_address_2: bytes 8-11
-#!   - destination_address_3: bytes 12-15
-#!   - destination_address_4: bytes 16-19
+#! Note storage layout (6 felts total):
+#! - destination_network [0]     : 1 felt
+#! - destination_address [1..5]  : 5 felts
+#!
+#! Where:
+#! - destination_network: Destination network identifier (uint32)
+#! - destination_address: 20-byte Ethereum address as 5 u32 felts
+#!
+#! Note attachment is constructed from a NetworkAccountTarget standard:
+#! - [0, exec_hint_tag, target_id_prefix, target_id_suffix]
 #!
 #! Panics if:
-#! - The note does not contain exactly 6 inputs.
+#! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
+#! - The note attachment does not target the consuming account.
 #!
 begin
     dropw
@@ -58,30 +71,38 @@ begin
         exec.basic_wallet::add_assets_to_account
         # => [pad(16)]
     else
-        # Store note storage -> mem[8..14]
-        push.8 exec.active_note::get_storage
-        # => [storage_length, dest_ptr, pad(16)]
-
-        push.B2AGG_NOTE_STORAGE_LEN assert_eq.err=ERR_B2AGG_UNEXPECTED_STORAGE_LENGTH drop
+        # Ensure note attachment targets the consuming bridge account.
+        exec.network_account_target::active_account_matches_target_account
+        assert.err=ERR_B2AGG_TARGET_ACCOUNT_MISMATCH
         # => [pad(16)]
 
-        # Store note assets -> mem[0..4]
-        push.0 exec.active_note::get_assets
+        # Store note storage -> mem[8..14]
+        push.STORAGE_START_PTR exec.active_note::get_storage
+        # => [num_storage_items, dest_ptr, pad(16)]
+
+        push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
+        # => [pad(16)]
+
+        # Store note assets -> mem[0..8]
+        push.ASSET_PTR exec.active_note::get_assets
         # => [num_assets, ptr, pad(16)]
 
         # Must be exactly 1 asset
         push.1 assert_eq.err=ERR_B2AGG_WRONG_NUMBER_OF_ASSETS drop
         # => [pad(16)]
 
-        # load the 6 B2AGG note input felts as two words
-        mem_loadw_be.12 swapw.2 mem_loadw_be.8 swapw
-        # => [EMPTY_WORD, dest_network, dest_address(5), pad(6)]
+        # load the 6 B2AGG felts from note storage as two words
+        push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
+        # => [dest_network, dest_address(5), pad(10)]
 
-        # Load ASSET onto the stack
-        mem_loadw_be.0
-        # => [ASSET, dest_network, dest_address(5), pad(6)]
+        # Load asset onto the stack from ASSET_PTR
+        push.ASSET_PTR exec.asset::mem_load
+        # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out
+        # => [pad(24)]
+
+        dropw dropw
         # => [pad(16)]
     end
     # => [pad(16)]

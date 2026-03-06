@@ -3,12 +3,13 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{FutureMaybeSend, MastForest, MastForestStore, Word};
+use miden_processor::mast::MastForest;
+use miden_processor::{ExecutionOutput, FutureMaybeSend, MastForestStore, Word};
 use miden_protocol::account::{
     Account,
     AccountId,
     PartialAccount,
+    StorageMapKey,
     StorageMapWitness,
     StorageSlotContent,
 };
@@ -60,8 +61,9 @@ pub struct TransactionContext {
     pub(super) mast_store: TransactionMastStore,
     pub(super) authenticator: Option<BasicAuthenticator>,
     pub(super) source_manager: Arc<dyn SourceManagerSync>,
-    pub(super) is_lazy_loading_enabled: bool,
     pub(super) note_scripts: BTreeMap<Word, NoteScript>,
+    pub(super) is_lazy_loading_enabled: bool,
+    pub(super) is_debug_mode_enabled: bool,
 }
 
 impl TransactionContext {
@@ -88,7 +90,7 @@ impl TransactionContext {
             .iter()
             .flat_map(|note| note.note().assets().iter().map(Asset::vault_key))
             .collect::<BTreeSet<_>>();
-        let fee_asset_vault_key = AssetVaultKey::from_account_id(
+        let fee_asset_vault_key = AssetVaultKey::new_fungible(
             self.tx_inputs().block_header().fee_parameters().native_asset_id(),
         )
         .expect("fee asset should be a fungible asset");
@@ -105,7 +107,7 @@ impl TransactionContext {
         // Add the vault key for the fee asset to the list of asset vault keys which may need to be
         // accessed at the end of the transaction.
         let fee_asset_vault_key =
-            AssetVaultKey::from_account_id(block_header.fee_parameters().native_asset_id())
+            AssetVaultKey::new_fungible(block_header.fee_parameters().native_asset_id())
                 .expect("fee asset should be a fungible asset");
         asset_vault_keys.insert(fee_asset_vault_key);
 
@@ -174,7 +176,6 @@ impl TransactionContext {
             .extend_advice_inputs(advice_inputs)
             .execute_program(program)
             .await
-            .map_err(ExecError::new)
     }
 
     /// Executes the transaction through a [TransactionExecutor]
@@ -184,9 +185,13 @@ impl TransactionContext {
         let notes = self.tx_inputs().input_notes().clone();
         let tx_args = self.tx_args().clone();
 
-        let mut tx_executor = TransactionExecutor::new(&self)
-            .with_source_manager(self.source_manager.clone())
-            .with_debug_mode();
+        let mut tx_executor =
+            TransactionExecutor::new(&self).with_source_manager(self.source_manager.clone());
+
+        if self.is_debug_mode_enabled {
+            tx_executor = tx_executor.with_debug_mode();
+        }
+
         if let Some(authenticator) = self.authenticator() {
             tx_executor = tx_executor.with_authenticator(authenticator);
         }
@@ -323,7 +328,7 @@ impl DataStore for TransactionContext {
         &self,
         account_id: AccountId,
         map_root: Word,
-        map_key: Word,
+        map_key: StorageMapKey,
     ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
         async move {
             if account_id == self.account().id() {
