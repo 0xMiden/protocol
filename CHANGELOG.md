@@ -74,7 +74,8 @@
 - [BREAKING] Renamed `SchemaTypeId` to `SchemaType` ([#2494](https://github.com/0xMiden/miden-base/pull/2494)).
 - Updated stale `miden-base` references to `protocol` across docs, READMEs, code comments, and Cargo.toml repository URL ([#2503](https://github.com/0xMiden/protocol/pull/2503)).
 - [BREAKING] Reverse the order of the transaction summary on the stack ([#2512](https://github.com/0xMiden/miden-base/pull/2512)).
-- Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
+- [BREAKING] Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
+- [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents.
 
 ## 0.13.3 (2026-01-27)
 
