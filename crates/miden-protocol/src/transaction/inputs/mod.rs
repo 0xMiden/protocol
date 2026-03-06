@@ -20,12 +20,12 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
-use crate::block::account_tree::{AccountWitness, account_id_to_smt_index};
+use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
-use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
+use crate::transaction::{TransactionArgs, TransactionScript};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -365,12 +365,12 @@ impl TransactionInputs {
         Ok(asset)
     }
 
-    /// Reads AccountInputs for a foreign account from the advice inputs.
+    /// Reads `AccountInputs` for a foreign account from the advice inputs.
     ///
-    /// This function reverses the process of [`TransactionAdviceInputs::add_foreign_accounts`] by:
+    /// This function reverses the process of `TransactionAdviceInputs::add_foreign_accounts` by:
     /// 1. Reading the account header from the advice map using the account_id_key.
-    /// 2. Building a PartialAccount from the header and foreign account code.
-    /// 3. Creating an AccountWitness.
+    /// 2. Building a `PartialAccount` from the header and foreign account code.
+    /// 3. Creating an `AccountWitness`.
     pub fn read_foreign_account_inputs(
         &self,
         account_id: AccountId,
@@ -380,11 +380,11 @@ impl TransactionInputs {
         }
 
         // Read the account header elements from the advice map.
-        let account_id_key = TransactionAdviceInputs::account_id_map_key(account_id);
+        let account_id_key = AccountIdKey::from(account_id);
         let header_elements = self
             .advice_inputs
             .map
-            .get(&account_id_key)
+            .get(&account_id_key.as_word())
             .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
 
         // Parse the header from elements.
@@ -450,7 +450,7 @@ impl TransactionInputs {
     ) -> Result<AccountWitness, TransactionInputsExtractionError> {
         // Get the account tree root from the block header.
         let account_tree_root = self.block_header.account_root();
-        let leaf_index: NodeIndex = account_id_to_smt_index(header.id()).into();
+        let leaf_index = AccountIdKey::from(header.id()).to_leaf_index().into();
 
         // Get the Merkle path from the merkle store.
         let merkle_path = self.advice_inputs.store.get_path(account_tree_root, leaf_index)?;
