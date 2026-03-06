@@ -24,7 +24,7 @@ mod storage;
 pub use storage::NoteStorage;
 
 mod metadata;
-pub use metadata::NoteMetadata;
+pub use metadata::{NoteMetadata, NoteMetadataHeader};
 
 mod attachment;
 pub use attachment::{
