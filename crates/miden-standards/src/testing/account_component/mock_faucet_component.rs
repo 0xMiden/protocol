@@ -19,10 +19,11 @@ pub struct MockFaucetComponent;
 
 impl From<MockFaucetComponent> for AccountComponent {
     fn from(_: MockFaucetComponent) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::testing::mock_faucet")
-            .with_description("Mock faucet component for testing")
-            .with_supported_type(AccountType::FungibleFaucet)
-            .with_supported_type(AccountType::NonFungibleFaucet);
+        let metadata = AccountComponentMetadata::new(
+            "miden::testing::mock_faucet",
+            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
+        )
+        .with_description("Mock faucet component for testing");
 
         AccountComponent::new(AccountCode::mock_faucet_library(), vec![], metadata).expect(
             "mock faucet component should satisfy the requirements of a valid account component",

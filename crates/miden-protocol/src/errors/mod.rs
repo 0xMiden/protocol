@@ -50,6 +50,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -281,6 +282,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
@@ -782,6 +785,25 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
+    #[error(
+        "output note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    OutputNoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
+// PUBLIC OUTPUT NOTE ERROR
+// ================================================================================================
+
+/// Errors that can occur when creating a
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote).
+#[derive(Debug, Error)]
+pub enum PublicOutputNoteError {
+    #[error("note with id {0} is private but PublicOutputNote requires a public note")]
+    NoteIsPrivate(NoteId),
+    #[error(
+        "note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR
