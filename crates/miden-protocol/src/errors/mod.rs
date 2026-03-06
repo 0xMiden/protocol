@@ -274,6 +274,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
