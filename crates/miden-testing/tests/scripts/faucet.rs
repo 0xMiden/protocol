@@ -570,16 +570,15 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     assert_eq!(actual_max_supply.as_canonical_u64(), max_supply);
 
     // Check that the creator account ID is stored in the ownership slot.
-    // Rust Word: [nominated_suffix, nominated_prefix, owner_suffix, owner_prefix]
-    let stored_owner_id =
-        faucet.storage().get_item(Ownable2Step::slot_name()).unwrap();
-    assert_eq!(stored_owner_id[3], faucet_owner_account_id.prefix().as_felt());
+    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
+    let stored_owner_id = faucet.storage().get_item(Ownable2Step::slot_name()).unwrap();
     assert_eq!(
-        stored_owner_id[2],
+        stored_owner_id[0],
         Felt::new(faucet_owner_account_id.suffix().as_canonical_u64())
     );
-    assert_eq!(stored_owner_id[1], Felt::new(0)); // no nominated owner
-    assert_eq!(stored_owner_id[0], Felt::new(0));
+    assert_eq!(stored_owner_id[1], faucet_owner_account_id.prefix().as_felt());
+    assert_eq!(stored_owner_id[2], Felt::new(0)); // no nominated owner
+    assert_eq!(stored_owner_id[3], Felt::new(0));
 
     // Check that the faucet's token supply has been correctly initialized.
     // The already issued amount should be 50.
@@ -787,11 +786,11 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
     // Verify owner is stored correctly
     let stored_owner = faucet.storage().get_item(Ownable2Step::slot_name())?;
 
-    // Rust Word: [nominated_suffix, nominated_prefix, owner_suffix, owner_prefix]
-    assert_eq!(stored_owner[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
-    assert_eq!(stored_owner[1], Felt::new(0)); // no nominated owner
-    assert_eq!(stored_owner[0], Felt::new(0));
+    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
+    assert_eq!(stored_owner[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(stored_owner[1], owner_account_id.prefix().as_felt());
+    assert_eq!(stored_owner[2], Felt::new(0)); // no nominated owner
+    assert_eq!(stored_owner[3], Felt::new(0));
 
     Ok(())
 }
@@ -930,11 +929,12 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     final_faucet.apply_delta(executed_transaction.account_delta())?;
 
     // Verify that owner changed to new_owner and nominated was cleared
+    // Word: [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]
     let stored_owner = final_faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner[3], new_owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner[2], Felt::new(new_owner_account_id.suffix().as_int()));
-    assert_eq!(stored_owner[1], Felt::new(0)); // nominated cleared
-    assert_eq!(stored_owner[0], Felt::new(0));
+    assert_eq!(stored_owner[0], Felt::new(new_owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(stored_owner[1], new_owner_account_id.prefix().as_felt());
+    assert_eq!(stored_owner[2], Felt::new(0)); // nominated cleared
+    assert_eq!(stored_owner[3], Felt::new(0));
 
     Ok(())
 }
@@ -1029,10 +1029,9 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
 
     // Check stored value before renouncing
-    let stored_owner_before =
-        faucet.storage().get_item(Ownable2Step::slot_name())?;
-    assert_eq!(stored_owner_before[3], owner_account_id.prefix().as_felt());
-    assert_eq!(stored_owner_before[2], Felt::new(owner_account_id.suffix().as_canonical_u64()));
+    let stored_owner_before = faucet.storage().get_item(Ownable2Step::slot_name())?;
+    assert_eq!(stored_owner_before[0], Felt::new(owner_account_id.suffix().as_canonical_u64()));
+    assert_eq!(stored_owner_before[1], owner_account_id.prefix().as_felt());
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
@@ -1099,8 +1098,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed_transaction.account_delta())?;
 
     // Check stored value after renouncing - should be zero
-    let stored_owner_after =
-        updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
+    let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
     assert_eq!(stored_owner_after[0], Felt::new(0));
     assert_eq!(stored_owner_after[1], Felt::new(0));
     assert_eq!(stored_owner_after[2], Felt::new(0));

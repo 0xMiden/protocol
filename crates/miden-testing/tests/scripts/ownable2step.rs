@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -10,6 +10,7 @@ use miden_protocol::account::{
     AccountComponent,
     AccountId,
     AccountStorageMode,
+    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -53,10 +54,10 @@ fn create_ownable_account(
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
 
     let ownership_word: Word = [
-        Felt::new(0),             // word[0] = nominated_suffix
-        Felt::new(0),             // word[1] = nominated_prefix
-        owner.suffix(),           // word[2] = owner_suffix
-        owner.prefix().as_felt(), // word[3] = owner_prefix
+        owner.suffix(),           // word[0] = owner_suffix
+        owner.prefix().as_felt(), // word[1] = owner_prefix
+        Felt::new(0),             // word[2] = nominated_suffix
+        Felt::new(0),             // word[3] = nominated_prefix
     ]
     .into();
 
@@ -67,7 +68,7 @@ fn create_ownable_account(
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(Auth::IncrNonce)
         .with_component({
-            let metadata = AccountComponentMetadata::new("test::ownable").with_supports_all_types();
+            let metadata = AccountComponentMetadata::new("test::ownable", AccountType::all());
             AccountComponent::new(component_code_obj, storage_slots, metadata)?
         })
         .build_existing()?;
@@ -76,23 +77,23 @@ fn create_ownable_account(
 
 fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
     let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
-    let prefix = word[3];
-    let suffix = word[2];
-    if prefix == Felt::new(0) && suffix == Felt::new(0) {
+    let suffix = word[0];
+    let prefix = word[1];
+    if suffix == Felt::new(0) && prefix == Felt::new(0) {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from([prefix, suffix])?))
+        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
     }
 }
 
 fn get_nominated_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
     let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
-    let prefix = word[1];
-    let suffix = word[0];
-    if prefix == Felt::new(0) && suffix == Felt::new(0) {
+    let suffix = word[2];
+    let prefix = word[3];
+    if suffix == Felt::new(0) && prefix == Felt::new(0) {
         Ok(None)
     } else {
-        Ok(Some(AccountId::try_from([prefix, suffix])?))
+        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
     }
 }
 
@@ -107,13 +108,14 @@ fn create_transfer_note(
         use miden::standards::access::ownable2step->test_account
         begin
             repeat.14 push.0 end
-            push.{new_owner_suffix} push.{new_owner_prefix}
+            push.{new_owner_prefix}
+            push.{new_owner_suffix}
             call.test_account::transfer_ownership
             dropw dropw dropw dropw
         end
     "#,
         new_owner_prefix = new_owner.prefix().as_felt(),
-        new_owner_suffix = new_owner.suffix(),
+        new_owner_suffix = Felt::new(new_owner.suffix().as_canonical_u64()),
     );
 
     let note = NoteBuilder::new(sender, rng)

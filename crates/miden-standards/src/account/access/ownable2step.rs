@@ -2,7 +2,7 @@ use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
 use miden_protocol::account::{AccountId, AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
@@ -20,15 +20,8 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The ownership data is stored in a single word:
 ///
 /// ```text
-/// Rust Word:  [nominated_owner_suffix, nominated_owner_prefix, owner_suffix, owner_prefix]
-///              word[0]                  word[1]                 word[2]       word[3]
-/// ```
-///
-/// After `get_item` (which reverses the word onto the MASM stack), the stack is:
-///
-/// ```text
-/// Stack: [owner_prefix, owner_suffix, nominated_owner_prefix, nominated_owner_suffix]
-///         (word[3])     (word[2])      (word[1])               (word[0])
+/// Word:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+///         word[0]       word[1]        word[2]                  word[3]
 /// ```
 pub struct Ownable2Step {
     owner: Option<AccountId>,
@@ -61,12 +54,12 @@ impl Ownable2Step {
 
     /// Reconstructs an [`Ownable2Step`] from a raw storage word.
     ///
-    /// Format: `[nominated_suffix, nominated_prefix, owner_suffix, owner_prefix]`
+    /// Format: `[owner_suffix, owner_prefix, nominated_suffix, nominated_prefix]`
     pub fn try_from_word(word: Word) -> Result<Self, Ownable2StepError> {
-        let owner = account_id_from_felt_pair(word[3], word[2])
+        let owner = account_id_from_felt_pair(word[0], word[1])
             .map_err(Ownable2StepError::InvalidOwnerId)?;
 
-        let nominated_owner = account_id_from_felt_pair(word[1], word[0])
+        let nominated_owner = account_id_from_felt_pair(word[2], word[3])
             .map_err(Ownable2StepError::InvalidNominatedOwnerId)?;
 
         Ok(Self { owner, nominated_owner })
@@ -87,10 +80,10 @@ impl Ownable2Step {
             StorageSlotSchema::value(
                 "Ownership data (owner and nominated owner)",
                 [
-                    FeltSchema::felt("nominated_suffix"),
-                    FeltSchema::felt("nominated_prefix"),
                     FeltSchema::felt("owner_suffix"),
                     FeltSchema::felt("owner_prefix"),
+                    FeltSchema::felt("nominated_suffix"),
+                    FeltSchema::felt("nominated_prefix"),
                 ],
             ),
         )
@@ -113,15 +106,15 @@ impl Ownable2Step {
 
     /// Converts this ownership data into a raw [`Word`].
     pub fn to_word(&self) -> Word {
-        let (owner_prefix, owner_suffix) = match self.owner {
-            Some(id) => (id.prefix().as_felt(), id.suffix()),
+        let (owner_suffix, owner_prefix) = match self.owner {
+            Some(id) => (id.suffix(), id.prefix().as_felt()),
             None => (Felt::ZERO, Felt::ZERO),
         };
-        let (nominated_prefix, nominated_suffix) = match self.nominated_owner {
-            Some(id) => (id.prefix().as_felt(), id.suffix()),
+        let (nominated_suffix, nominated_prefix) = match self.nominated_owner {
+            Some(id) => (id.suffix(), id.prefix().as_felt()),
             None => (Felt::ZERO, Felt::ZERO),
         };
-        [nominated_suffix, nominated_prefix, owner_suffix, owner_prefix].into()
+        [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix].into()
     }
 }
 
@@ -142,15 +135,15 @@ pub enum Ownable2StepError {
 // HELPERS
 // ================================================================================================
 
-/// Constructs an `Option<AccountId>` from a prefix/suffix felt pair.
+/// Constructs an `Option<AccountId>` from a suffix/prefix felt pair.
 /// Returns `Ok(None)` when both felts are zero (renounced / no nomination).
 fn account_id_from_felt_pair(
-    prefix: Felt,
     suffix: Felt,
+    prefix: Felt,
 ) -> Result<Option<AccountId>, AccountIdError> {
-    if prefix == Felt::ZERO && suffix == Felt::ZERO {
+    if suffix == Felt::ZERO && prefix == Felt::ZERO {
         Ok(None)
     } else {
-        AccountId::try_from([prefix, suffix]).map(Some)
+        AccountId::try_from_elements(suffix, prefix).map(Some)
     }
 }

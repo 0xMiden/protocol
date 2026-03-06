@@ -144,8 +144,8 @@ impl NetworkFungibleFaucet {
         let metadata = TokenMetadata::try_from(storage)?;
 
         // Read ownership data from storage
-        let ownership = Ownable2Step::try_from_storage(storage)
-            .map_err(|err| FungibleFaucetError::OwnershipError(err))?;
+        let ownership =
+            Ownable2Step::try_from_storage(storage).map_err(FungibleFaucetError::OwnershipError)?;
 
         Ok(Self { metadata, ownership })
     }
