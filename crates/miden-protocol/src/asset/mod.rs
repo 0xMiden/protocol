@@ -21,6 +21,9 @@ pub use nonfungible::{NonFungibleAsset, NonFungibleAssetDetails};
 mod token_symbol;
 pub use token_symbol::TokenSymbol;
 
+mod asset_callbacks;
+pub use asset_callbacks::AssetCallbacks;
+
 mod vault;
 pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 
