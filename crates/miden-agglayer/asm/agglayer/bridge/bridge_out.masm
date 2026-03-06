@@ -97,7 +97,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! Invocation: call
 @locals(14)
 pub proc bridge_out
-    # => [ASSET_KEY(4), ASSET_VALUE(4), dest_network_id, dest_address(5), pad(2)]
+    # => [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
 
     # Save ASSET to local memory for later BURN note creation
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
@@ -115,7 +115,7 @@ pub proc bridge_out
     # --- 1. Validate faucet registration and convert asset via FPI ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY(4), ASSET_VALUE(4), pad(16)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     exec.convert_asset
     # => [AMOUNT_U256(8), origin_addr(5), origin_network, pad(16)]
@@ -192,7 +192,7 @@ pub proc bridge_out
     # --- 4. Create BURN output note for ASSET ---
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
-    # => [ASSET_KEY(4), ASSET_VALUE(4), pad(16)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
     exec.create_burn_note
     # => [pad(16)]
 end
@@ -236,11 +236,11 @@ proc convert_asset
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
 
     procref.agglayer_faucet::asset_to_origin_asset
-    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, amount]
+    # => [PROC_MAST_ROOT, faucet_id_prefix, faucet_id_suffix, amount]
 
     # Move faucet_id above PROC_MAST_ROOT
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), amount]
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT, amount]
 
     exec.tx::execute_foreign_procedure
     # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2)]
