@@ -91,13 +91,34 @@ impl NoteMetadata {
 
     /// Reconstructs a [`NoteMetadata`] from a [`NoteMetadataHeader`] and a
     /// [`NoteAttachment`].
-    pub fn from_header(header: NoteMetadataHeader, attachment: NoteAttachment) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the attachment's kind or scheme do not match those in the header.
+    pub fn try_from_header(
+        header: NoteMetadataHeader,
+        attachment: NoteAttachment,
+    ) -> Result<Self, NoteError> {
+        if header.attachment_kind != attachment.attachment_kind() {
+            return Err(NoteError::AttachmentKindMismatch {
+                header_kind: header.attachment_kind,
+                attachment_kind: attachment.attachment_kind(),
+            });
+        }
+
+        if header.attachment_scheme != attachment.attachment_scheme() {
+            return Err(NoteError::AttachmentSchemeMismatch {
+                header_scheme: header.attachment_scheme,
+                attachment_scheme: attachment.attachment_scheme(),
+            });
+        }
+
+        Ok(Self {
             sender: header.sender,
             note_type: header.note_type,
             tag: header.tag,
             attachment,
-        }
+        })
     }
 
     // ACCESSORS
