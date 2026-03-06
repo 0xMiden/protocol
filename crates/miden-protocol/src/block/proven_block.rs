@@ -65,6 +65,24 @@ impl ProvenBlock {
     ///
     /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
     /// necessary.
+    ///
+    /// Note: this does not fully validate the consistency of provided components. Specifically,
+    /// we cannot validate that:
+    /// - That applying the account updates in the block body to the account tree represented by the
+    ///   root from the previous block header would actually result in the account root in the
+    ///   provided header.
+    /// - That inserting the created nullifiers in the block body to the nullifier tree represented
+    ///   by the root from the previous block header would actually result in the nullifier root in
+    ///   the provided header.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - If the validator signature does not verify against the block header commitment and the
+    ///   validator key.
+    /// - If the transaction commitment in the block header is inconsistent with the transactions
+    ///   included in the block body.
+    /// - If the note root in the block header is inconsistent with the notes included in the block
+    ///   body.
     pub fn new(
         header: BlockHeader,
         body: BlockBody,
@@ -96,8 +114,26 @@ impl ProvenBlock {
     /// Validates that the components of the proven block correspond to each other by verifying the
     /// signature, and checking for matching transaction commitments and note roots.
     ///
-    /// Involves non-trivial computation. Use [`Self::new_unchecked`] if the validation is not
-    /// necessary.
+    /// Validation involves non-trivial computation, and depending on the size of the block may
+    /// take non-negligible amount of time.
+    ///
+    /// Note: this does not fully validate the consistency of internal components. Specifically,
+    /// we cannot validate that:
+    /// - That applying the account updates in the block body to the account tree represented by the
+    ///   root from the previous block header would actually result in the account root in the
+    ///   provided header.
+    /// - That inserting the created nullifiers in the block body to the nullifier tree represented
+    ///   by the root from the previous block header would actually result in the nullifier root in
+    ///   the provided header.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - If the validator signature does not verify against the block header commitment and the
+    ///   validator key.
+    /// - If the transaction commitment in the block header is inconsistent with the transactions
+    ///   included in the block body.
+    /// - If the note root in the block header is inconsistent with the notes included in the block
+    ///   body.
     pub fn validate(&self) -> Result<(), ProvenBlockError> {
         // Verify signature.
         self.validate_signature()?;
@@ -140,6 +176,9 @@ impl ProvenBlock {
     pub fn into_parts(self) -> (BlockHeader, BlockBody, Signature, BlockProof) {
         (self.header, self.body, self.signature, self.proof)
     }
+
+    // HELPER METHODS
+    // --------------------------------------------------------------------------------------------
 
     /// Performs ECDSA signature verification against the header commitment and validator key.
     fn validate_signature(&self) -> Result<(), ProvenBlockError> {
