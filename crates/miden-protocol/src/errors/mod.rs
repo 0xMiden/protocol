@@ -31,7 +31,15 @@ use crate::address::AddressType;
 use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
-use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
+use crate::note::{
+    NoteAssets,
+    NoteAttachmentArray,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteTag,
+    NoteType,
+    Nullifier,
+};
 use crate::transaction::{TransactionEventId, TransactionId};
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -596,6 +604,20 @@ pub enum NoteError {
     UnknownNoteAttachmentKind(u8),
     #[error("note attachment of kind None must have attachment scheme None")]
     AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    #[error(
+        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+    )]
+    AttachmentKindMismatch {
+        header_kind: NoteAttachmentKind,
+        attachment_kind: NoteAttachmentKind,
+    },
+    #[error(
+        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+    )]
+    AttachmentSchemeMismatch {
+        header_scheme: NoteAttachmentScheme,
+        attachment_scheme: NoteAttachmentScheme,
+    },
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,

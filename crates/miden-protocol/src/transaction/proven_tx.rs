@@ -218,6 +218,7 @@ impl Deserializable for ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
+            fee,
         );
 
         let proven_transaction = Self {
@@ -378,6 +379,7 @@ impl ProvenTransactionBuilder {
             self.final_account_commitment,
             input_notes.commitment(),
             output_notes.commitment(),
+            self.fee,
         );
         let account_update = TxAccountUpdate::new(
             self.account_id,

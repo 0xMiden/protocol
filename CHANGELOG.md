@@ -4,6 +4,7 @@
 
 ### Features
 
+- Made `NoteMetadataHeader` and `NoteMetadata::to_header()` public, added `NoteMetadata::from_header()` constructor, and exported `NoteMetadataHeader` from the `note` module ([#2561](https://github.com/0xMiden/protocol/pull/2561)).
 - Introduce NOTE_MAX_SIZE (32 KiB) and enforce it on individual output notes ([#2205](https://github.com/0xMiden/miden-base/pull/2205))
 - Added AggLayer faucet registry to bridge account with conversion metadata, `CONFIG_AGG_BRIDGE` note for faucet registration, and FPI-based asset conversion in `bridge_out` ([#2426](https://github.com/0xMiden/miden-base/pull/2426)).
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
@@ -74,7 +75,8 @@
 - [BREAKING] Renamed `SchemaTypeId` to `SchemaType` ([#2494](https://github.com/0xMiden/miden-base/pull/2494)).
 - Updated stale `miden-base` references to `protocol` across docs, READMEs, code comments, and Cargo.toml repository URL ([#2503](https://github.com/0xMiden/protocol/pull/2503)).
 - [BREAKING] Reverse the order of the transaction summary on the stack ([#2512](https://github.com/0xMiden/miden-base/pull/2512)).
-- Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
+- [BREAKING] Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
+- [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents.
 
 ## 0.13.3 (2026-01-27)
 
