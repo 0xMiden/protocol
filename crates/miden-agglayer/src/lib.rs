@@ -97,9 +97,8 @@ fn agglayer_faucet_component_library() -> Library {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer")
-        .with_supports_all_types();
+    let metadata = AccountComponentMetadata::new("agglayer::bridge", AccountType::all())
+        .with_description("Bridge component for AggLayer");
 
     AccountComponent::new(library, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
@@ -244,9 +243,8 @@ impl From<AggLayerBridge> for AccountComponent {
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet")
-        .with_description("AggLayer faucet component with bridge validation")
-        .with_supported_type(AccountType::FungibleFaucet);
+    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
+        .with_description("AggLayer faucet component with bridge validation");
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",

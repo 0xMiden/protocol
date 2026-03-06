@@ -256,10 +256,12 @@ mod tests {
         let library = Assembler::default().assemble_library([CODE]).unwrap();
 
         // Test with metadata
-        let metadata = AccountComponentMetadata::new("test_component")
-            .with_description("A test component")
-            .with_version(Version::new(1, 0, 0))
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let metadata = AccountComponentMetadata::new(
+            "test_component",
+            [AccountType::RegularAccountImmutableCode],
+        )
+        .with_description("A test component")
+        .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
@@ -308,10 +310,9 @@ mod tests {
         let component_code = AccountComponentCode::from(library.clone());
 
         // Create metadata for the component
-        let metadata = AccountComponentMetadata::new("test_component")
+        let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
             .with_description("A test component")
-            .with_version(Version::new(1, 0, 0))
-            .with_supports_regular_types();
+            .with_version(Version::new(1, 0, 0));
 
         // Test with empty init data - this tests the complete workflow:
         // Library + Metadata -> AccountComponent
