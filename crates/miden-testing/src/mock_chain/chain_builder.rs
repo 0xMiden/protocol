@@ -196,7 +196,22 @@ impl MockChainBuilder {
         )
         .context("failed to create genesis account tree")?;
 
-        let note_chunks = self.notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
+        // Extract full notes before shrinking for later use in MockChain
+        let full_notes: Vec<Note> = self
+            .notes
+            .iter()
+            .filter_map(|note| match note {
+                OutputNote::Full(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let proven_notes: Vec<_> = self
+            .notes
+            .into_iter()
+            .map(|note| note.to_proven_output_note().expect("genesis note should be valid"))
+            .collect();
+        let note_chunks = proven_notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
         let output_note_batches: Vec<OutputNoteBatch> = note_chunks
             .into_iter()
             .map(|batch_notes| batch_notes.into_iter().enumerate().collect::<Vec<_>>())
@@ -254,6 +269,7 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_key,
+            full_notes,
         )
     }
 

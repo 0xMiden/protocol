@@ -8,7 +8,6 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    OutputNote,
     ProvenTransaction,
     ProvenTransactionBuilder,
     TransactionInputs,
@@ -56,7 +55,12 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         // erase private note information (convert private full notes to just headers)
-        let output_notes: Vec<_> = tx_outputs.output_notes.iter().map(OutputNote::shrink).collect();
+        let output_notes: Vec<_> = tx_outputs
+            .output_notes
+            .iter()
+            .map(|note| note.to_proven_output_note())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 
         // Compute the commitment of the pre-fee delta, which goes into the proven transaction,
         // since it is the output of the transaction and so is needed for proof verification.

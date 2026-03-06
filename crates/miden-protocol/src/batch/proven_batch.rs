@@ -7,7 +7,12 @@ use crate::batch::{BatchAccountUpdate, BatchId};
 use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
 use crate::note::Nullifier;
-use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
+use crate::transaction::{
+    InputNoteCommitment,
+    InputNotes,
+    OrderedTransactionHeaders,
+    ProvenOutputNote,
+};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -27,7 +32,7 @@ pub struct ProvenBatch {
     reference_block_num: BlockNumber,
     account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
     input_notes: InputNotes<InputNoteCommitment>,
-    output_notes: Vec<OutputNote>,
+    output_notes: Vec<ProvenOutputNote>,
     batch_expiration_block_num: BlockNumber,
     transactions: OrderedTransactionHeaders,
 }
@@ -48,7 +53,7 @@ impl ProvenBatch {
         reference_block_num: BlockNumber,
         account_updates: BTreeMap<AccountId, BatchAccountUpdate>,
         input_notes: InputNotes<InputNoteCommitment>,
-        output_notes: Vec<OutputNote>,
+        output_notes: Vec<ProvenOutputNote>,
         batch_expiration_block_num: BlockNumber,
         transactions: OrderedTransactionHeaders,
     ) -> Result<Self, ProvenBatchError> {
@@ -132,7 +137,7 @@ impl ProvenBatch {
     ///
     /// This is the aggregation of all output notes by the transactions in the batch, except the
     /// ones that were consumed within the batch itself.
-    pub fn output_notes(&self) -> &[OutputNote] {
+    pub fn output_notes(&self) -> &[ProvenOutputNote] {
         &self.output_notes
     }
 
@@ -173,7 +178,7 @@ impl Deserializable for ProvenBatch {
         let reference_block_num = BlockNumber::read_from(source)?;
         let account_updates = BTreeMap::read_from(source)?;
         let input_notes = InputNotes::<InputNoteCommitment>::read_from(source)?;
-        let output_notes = Vec::<OutputNote>::read_from(source)?;
+        let output_notes = Vec::<ProvenOutputNote>::read_from(source)?;
         let batch_expiration_block_num = BlockNumber::read_from(source)?;
         let transactions = OrderedTransactionHeaders::read_from(source)?;
 

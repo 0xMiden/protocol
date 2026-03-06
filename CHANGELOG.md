@@ -4,6 +4,7 @@
 
 ### Features
 
+- Introduce NOTE_MAX_SIZE (32 KiB) and enforce it on individual output notes ([#2205](https://github.com/0xMiden/miden-base/pull/2205))
 - Added AggLayer faucet registry to bridge account with conversion metadata, `CONFIG_AGG_BRIDGE` note for faucet registration, and FPI-based asset conversion in `bridge_out` ([#2426](https://github.com/0xMiden/miden-base/pull/2426)).
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
@@ -25,9 +26,11 @@
 - Resolve standard note scripts directly in `TransactionExecutorHost` instead of querying the data store ([#2417](https://github.com/0xMiden/miden-base/pull/2417)).
 - Added `DEFAULT_TAG` constant to `miden::standards::note_tag` MASM module ([#2482](https://github.com/0xMiden/miden-base/pull/2482)).
 - Added `NoteExecutionHint` variant constants (`NONE`, `ALWAYS`, `AFTER_BLOCK`, `ON_BLOCK_SLOT`) to `miden::standards::note::execution_hint` MASM module ([#2493](https://github.com/0xMiden/miden-base/pull/2493)).
+- Added `CodeBuilder::with_warnings_as_errors()` to promote assembler warning diagnostics to errors ([#2558](https://github.com/0xMiden/protocol/pull/2558)).
 
 ### Changes
 
+- [BREAKING] Made `supported_types` a required parameter of `AccountComponentMetadata::new()`; removed `with_supported_type`, `with_supported_types`, `with_supports_all_types`, and `with_supports_regular_types` builder methods; added `AccountType::all()` and `AccountType::regular()` helpers ([#2554](https://github.com/0xMiden/protocol/pull/2554)).
 - [BREAKING] Migrated to miden-vm 0.21 and miden-crypto 0.22 ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
 - [BREAKING] The stack orientation changed from big-endian to little-endian - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
 - [BREAKING] The native hash function changed from RPO256 to Poseidon2  - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
@@ -66,6 +69,7 @@
 - [BREAKING] Renamed `AccountHeader::commitment`, `Account::commitment` and `PartialAccount::commitment` to `to_commitment` ([#2442](https://github.com/0xMiden/miden-base/pull/2442)).
 - [BREAKING] Remove `BlockSigner` trait ([#2447](https://github.com/0xMiden/miden-base/pull/2447)).
 - Updated account schema commitment construction to accept borrowed schema iterators; added extension trait to enable `AccountBuilder::with_schema_commitment()` helper ([#2419](https://github.com/0xMiden/miden-base/pull/2419)).
+- Introducing a dedicated AccountIdKey type to unify and centralize all AccountId → SMT and advice-map key conversions ([#2495](https://github.com/0xMiden/miden-base/pull/2495)).
 - [BREAKING] Renamed `SchemaTypeId` to `SchemaType` ([#2494](https://github.com/0xMiden/miden-base/pull/2494)).
 - Updated stale `miden-base` references to `protocol` across docs, READMEs, code comments, and Cargo.toml repository URL ([#2503](https://github.com/0xMiden/protocol/pull/2503)).
 - [BREAKING] Reverse the order of the transaction summary on the stack ([#2512](https://github.com/0xMiden/miden-base/pull/2512)).

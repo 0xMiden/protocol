@@ -17,6 +17,7 @@ use miden_protocol::errors::{
     AssetError,
     NoteError,
     ProvenTransactionError,
+    PublicOutputNoteError,
     TransactionInputError,
     TransactionInputsExtractionError,
     TransactionOutputError,
@@ -149,6 +150,8 @@ pub enum TransactionProverError {
     RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
+    #[error("failed to shrink output note")]
+    OutputNoteShrinkFailed(#[source] PublicOutputNoteError),
     #[error("failed to build proven transaction")]
     ProvenTransactionBuildFailed(#[source] ProvenTransactionError),
     // Print the diagnostic directly instead of returning the source error. In the source error
