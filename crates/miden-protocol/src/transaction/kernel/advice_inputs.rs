@@ -56,8 +56,8 @@ impl TransactionAdviceInputs {
         // If a seed was provided, extend the map appropriately.
         if let Some(seed) = tx_inputs.account().seed() {
             // ACCOUNT_ID |-> ACCOUNT_SEED
-            let account_id_key = AccountIdKey::from(partial_native_acc.id()).as_word();
-            inputs.add_map_entry(account_id_key, seed.to_vec());
+            let account_id_key = AccountIdKey::from(partial_native_acc.id());
+            inputs.add_map_entry(account_id_key.as_word(), seed.to_vec());
         }
 
         // if the account is new, insert the storage map entries into the advice provider.
@@ -123,11 +123,11 @@ impl TransactionAdviceInputs {
 
             // for foreign accounts, we need to insert the id to state mapping
             // NOTE: keep this in sync with the account::load_from_advice procedure
-            let account_id_key = AccountIdKey::from(foreign_acc.id()).as_word();
+            let account_id_key = AccountIdKey::from(foreign_acc.id());
             let header = AccountHeader::from(foreign_acc.account());
 
             // ACCOUNT_ID |-> [ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
-            self.add_map_entry(account_id_key, header.to_elements());
+            self.add_map_entry(account_id_key.as_word(), header.to_elements());
         }
     }
 

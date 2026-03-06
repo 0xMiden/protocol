@@ -120,8 +120,10 @@ fn test_read_foreign_account_inputs_with_storage_data() {
 
     // Create advice inputs with both account header and storage header.
     let mut advice_inputs = crate::vm::AdviceInputs::default();
-    let account_id_key = AccountIdKey::from(foreign_account_id).as_word();
-    advice_inputs.map.insert(account_id_key, foreign_header.to_elements().to_vec());
+    let account_id_key = AccountIdKey::from(foreign_account_id);
+    advice_inputs
+        .map
+        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
     advice_inputs
         .map
         .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
@@ -232,8 +234,10 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let mut advice_inputs = crate::vm::AdviceInputs::default();
 
     // Add account header to advice map.
-    let account_id_key = AccountIdKey::from(foreign_account_id).as_word();
-    advice_inputs.map.insert(account_id_key, foreign_header.to_elements().to_vec());
+    let account_id_key = AccountIdKey::from(foreign_account_id);
+    advice_inputs
+        .map
+        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
     // Add storage header to advice map.
     advice_inputs
         .map

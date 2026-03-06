@@ -1,8 +1,6 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_crypto::merkle::smt::LeafIndex;
-
 use crate::Word;
 use crate::account::{AccountId, AccountIdPrefix};
 use crate::crypto::merkle::MerkleError;
@@ -27,11 +25,6 @@ pub use backend::AccountTreeBackend;
 
 pub mod account_id_key;
 pub use account_id_key::AccountIdKey;
-
-/// Converts an AccountId to an SMT leaf index for use with MerkleStore operations.
-pub fn account_id_to_smt_index(account_id: AccountId) -> LeafIndex<SMT_DEPTH> {
-    AccountIdKey::from(account_id).as_word().into()
-}
 
 // ACCOUNT TREE
 // ================================================================================================
@@ -94,13 +87,14 @@ where
                 },
                 SmtLeaf::Single((key, _)) => {
                     // Single entry is good - verify it's a valid account ID
-                    let _ = AccountIdKey::from_word(key);
+                    let _ = AccountIdKey::try_from_word(key);
                 },
                 SmtLeaf::Multiple(entries) => {
                     // Multiple entries means duplicate prefixes
                     // Extract one of the keys to identify the duplicate prefix
                     if let Some((key, _)) = entries.first() {
-                        let account_id = AccountIdKey::from_word(*key);
+                        let account_id = AccountIdKey::try_from_word(*key)
+                            .expect("account tree should only contain valid IDs");
                         return Err(AccountTreeError::DuplicateIdPrefix {
                             duplicate_prefix: account_id.prefix(),
                         });
@@ -228,7 +222,9 @@ where
                     // valid. If it does not match, then we would insert a duplicate.
                     if existing_key != *id_key {
                         return Err(AccountTreeError::DuplicateIdPrefix {
-                            duplicate_prefix: AccountIdKey::from_word(*id_key).prefix(),
+                            duplicate_prefix: AccountIdKey::try_from_word(*id_key)
+                                .expect("account tree should only contain valid IDs")
+                                .prefix(),
                         });
                     }
                 },

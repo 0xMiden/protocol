@@ -1,6 +1,6 @@
 use alloc::string::ToString;
 
-use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH, SmtLeaf, SmtProof, SmtProofError};
+use miden_crypto::merkle::smt::{SMT_DEPTH, SmtLeaf, SmtProof, SmtProofError};
 use miden_crypto::merkle::{InnerNodeInfo, SparseMerklePath};
 
 use crate::Word;
@@ -89,7 +89,8 @@ impl AccountWitness {
             SmtLeaf::Empty(_) => requested_account_id,
             SmtLeaf::Single((key_in_leaf, _)) => {
                 // SAFETY: By construction, the tree only contains valid IDs.
-                AccountIdKey::from_word(*key_in_leaf)
+                AccountIdKey::try_from_word(*key_in_leaf)
+                    .expect("account tree should only contain valid IDs")
             },
             SmtLeaf::Multiple(_) => {
                 unreachable!("account tree should only contain zero or one entry per ID prefix")
@@ -138,7 +139,7 @@ impl AccountWitness {
     /// Returns the [`SmtLeaf`] of the account witness.
     pub fn leaf(&self) -> SmtLeaf {
         if self.commitment == Word::empty() {
-            let leaf_idx = LeafIndex::from(AccountIdKey::from(self.id).as_word());
+            let leaf_idx = AccountIdKey::from(self.id).to_leaf_index();
             SmtLeaf::new_empty(leaf_idx)
         } else {
             let key = AccountIdKey::from(self.id).as_word();
