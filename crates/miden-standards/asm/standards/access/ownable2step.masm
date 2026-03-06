@@ -192,7 +192,7 @@ end
 #! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
 #!
 #! Invocation: call
-pub proc owner
+pub proc get_owner
     exec.get_owner_internal
     # => [owner_suffix, owner_prefix, pad(16)]
 
@@ -210,7 +210,7 @@ end
 #!   owner account ID. Both are zero if no nominated transfer exists.
 #!
 #! Invocation: call
-pub proc nominated_owner
+pub proc get_nominated_owner
     exec.get_nominated_owner_internal
     # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
 

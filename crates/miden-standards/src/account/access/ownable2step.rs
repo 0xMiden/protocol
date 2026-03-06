@@ -24,6 +24,7 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///         word[0]       word[1]        word[2]                  word[3]
 /// ```
 pub struct Ownable2Step {
+    /// The current owner of the component. `None` when ownership has been renounced.
     owner: Option<AccountId>,
     nominated_owner: Option<AccountId>,
 }

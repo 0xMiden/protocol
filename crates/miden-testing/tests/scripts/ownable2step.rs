@@ -44,8 +44,8 @@ fn create_ownable_account(
 ) -> anyhow::Result<Account> {
     let component_code = r#"
         use miden::standards::access::ownable2step
-        pub use ownable2step::owner
-        pub use ownable2step::nominated_owner
+        pub use ownable2step::get_owner
+        pub use ownable2step::get_nominated_owner
         pub use ownable2step::transfer_ownership
         pub use ownable2step::accept_ownership
         pub use ownable2step::renounce_ownership
