@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ONE, ZERO};
-use miden_protocol::{EMPTY_WORD, LexicographicWord, Word};
+use miden_protocol::{EMPTY_WORD, Felt, LexicographicWord, Word};
 use miden_tx::{LinkMap, MemoryViewer};
 use rand::seq::IteratorRandom;
-use winter_rand_utils::rand_value;
 
 use crate::TransactionContextBuilder;
 
@@ -176,7 +176,7 @@ async fn insertion() -> anyhow::Result<()> {
     let exec_output = tx_context.execute_code(&code).await.context("failed to execute code")?;
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
-    let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+    let map = LinkMap::new(Felt::from(map_ptr), &mem_viewer);
     let mut map_iter = map.iter();
 
     let entry0 = map_iter.next().expect("map should have four entries");
@@ -546,7 +546,7 @@ async fn execute_link_map_test(operations: Vec<TestOperation>) -> anyhow::Result
     let mem_viewer = MemoryViewer::ExecutionOutputs(&exec_output);
 
     for (map_ptr, control_map) in control_maps {
-        let map = LinkMap::new(map_ptr.into(), &mem_viewer);
+        let map = LinkMap::new(Felt::from(map_ptr), &mem_viewer);
         let actual_map_len = map.iter().count();
         assert_eq!(
             actual_map_len,

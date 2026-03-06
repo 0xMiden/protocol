@@ -1,7 +1,7 @@
 use miden_protocol::account::component::{
     AccountComponentMetadata,
     FeltSchema,
-    SchemaTypeId,
+    SchemaType,
     StorageSchema,
     StorageSlotSchema,
 };
@@ -25,6 +25,9 @@ use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
+/// The schema type for token symbols.
+const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
+
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
@@ -41,9 +44,6 @@ procedure_digest!(
     NetworkFungibleFaucet::BURN_PROC_NAME,
     network_fungible_faucet_library
 );
-
-/// The schema type ID for token symbols.
-const TOKEN_SYMBOL_TYPE_ID: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 
 /// An [`AccountComponent`] implementing a network fungible faucet.
 ///
@@ -160,7 +160,7 @@ impl NetworkFungibleFaucet {
 
     /// Returns the storage slot schema for the metadata slot.
     pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        let token_symbol_type = SchemaTypeId::new(TOKEN_SYMBOL_TYPE_ID).expect("valid type id");
+        let token_symbol_type = SchemaType::new(TOKEN_SYMBOL_TYPE).expect("valid type");
         (
             Self::metadata_slot().clone(),
             StorageSlotSchema::value(
@@ -256,10 +256,12 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(NetworkFungibleFaucet::NAME)
-            .with_description("Network fungible faucet component for minting and burning tokens")
-            .with_supported_type(AccountType::FungibleFaucet)
-            .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(
+            NetworkFungibleFaucet::NAME,
+            [AccountType::FungibleFaucet],
+        )
+        .with_description("Network fungible faucet component for minting and burning tokens")
+        .with_storage_schema(storage_schema);
 
         AccountComponent::new(
             network_fungible_faucet_library(),

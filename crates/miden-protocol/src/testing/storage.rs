@@ -1,4 +1,3 @@
-use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
@@ -8,11 +7,11 @@ use crate::account::{
     AccountStorageDelta,
     StorageMap,
     StorageMapDelta,
+    StorageMapKey,
     StorageSlot,
     StorageSlotDelta,
     StorageSlotName,
 };
-use crate::note::NoteAssets;
 use crate::utils::sync::LazyLock;
 
 // ACCOUNT STORAGE DELTA
@@ -132,19 +131,9 @@ impl AccountStorage {
     }
 
     pub fn mock_map() -> StorageMap {
-        StorageMap::with_entries(STORAGE_LEAVES_2).unwrap()
+        StorageMap::with_entries(
+            STORAGE_LEAVES_2.map(|(key, value)| (StorageMapKey::from_raw(key), value)),
+        )
+        .unwrap()
     }
-}
-
-// UTILITIES
-// --------------------------------------------------------------------------------------------
-
-/// Returns a list of strings, one for each note asset.
-pub fn prepare_assets(note_assets: &NoteAssets) -> Vec<String> {
-    let mut assets = Vec::new();
-    for &asset in note_assets.iter() {
-        let asset_word = Word::from(asset);
-        assets.push(asset_word.to_string());
-    }
-    assets
 }

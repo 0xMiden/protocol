@@ -6,7 +6,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::{AdviceInputs, Felt, Word};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{Account, AccountHeader, AccountId};
@@ -43,7 +44,7 @@ use crate::{MockChain, MockChainNote};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_testing::TransactionContextBuilder;
-/// # use miden_protocol::{account::AccountBuilder,Felt, FieldElement};
+/// # use miden_protocol::{account::AccountBuilder, Felt};
 /// # use miden_protocol::transaction::TransactionKernel;
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
@@ -62,7 +63,7 @@ use crate::{MockChain, MockChainNote};
 /// ";
 ///
 /// let exec_output = tx_context.execute_code(code).await?;
-/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::new(5));
+/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::from(5u32));
 /// # Ok(())
 /// # }
 /// ```
@@ -103,7 +104,7 @@ impl TransactionContextBuilder {
             signatures: Vec::new(),
             note_scripts: BTreeMap::new(),
             is_lazy_loading_enabled: true,
-            is_debug_mode_enabled: true,
+            is_debug_mode_enabled: cfg!(feature = "tx_context_debug"),
         }
     }
 

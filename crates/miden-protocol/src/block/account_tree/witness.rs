@@ -7,15 +7,21 @@ use crate::Word;
 use crate::account::AccountId;
 use crate::block::account_tree::{account_id_to_smt_key, smt_key_to_account_id};
 use crate::errors::AccountTreeError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT WITNESS
 // ================================================================================================
 
 /// A specialized version of an [`SmtProof`] for use in [`AccountTree`](super::AccountTree) and
 /// [`PartialAccountTree`](super::PartialAccountTree). It proves the inclusion of an account
-/// ID at a certain state (i.e. [`Account::commitment`](crate::account::Account::commitment)) in the
-/// [`AccountTree`](super::AccountTree).
+/// ID at a certain state (i.e. [`Account::to_commitment`](crate::account::Account::to_commitment))
+/// in the [`AccountTree`](super::AccountTree).
 ///
 /// By construction the witness can only represent the equivalent of an [`SmtLeaf`] with zero or one
 /// entries, which guarantees that the account ID prefix it represents is unique in the tree.

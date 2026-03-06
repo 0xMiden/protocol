@@ -19,7 +19,7 @@ use crate::{Felt, Hasher, MAX_NOTE_STORAGE_ITEMS, Word};
 /// field element. Thus, note storage can contain up to ~8 KB of data.
 ///
 /// All storage items associated with a note can be reduced to a single commitment which is
-/// computed as an RPO256 hash over the storage elements.
+/// computed as sequential hash over the storage elements.
 #[derive(Clone, Debug)]
 pub struct NoteStorage {
     items: Vec<Felt>,
@@ -121,12 +121,17 @@ impl Serializable for NoteStorage {
         target.write_u16(items.len().try_into().expect("storage items len is not a u16 value"));
         target.write_many(items);
     }
+
+    fn get_size_hint(&self) -> usize {
+        // 2 bytes for u16 length + 8 bytes per Felt
+        2 + self.items.len() * 8
+    }
 }
 
 impl Deserializable for NoteStorage {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let len = source.read_u16()? as usize;
-        let items = source.read_many::<Felt>(len)?;
+        let items = source.read_many_iter(len)?.collect::<Result<Vec<Felt>, _>>()?;
         Self::new(items).map_err(|v| DeserializationError::InvalidValue(format!("{v}")))
     }
 }

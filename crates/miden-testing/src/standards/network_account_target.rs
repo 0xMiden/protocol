@@ -40,7 +40,7 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
             # => [NOTE_ATTACHMENT]
             exec.network_account_target::get_id
-            # => [account_id_prefix, account_id_suffix]
+            # => [account_id_suffix, account_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop
         end
@@ -51,8 +51,8 @@ async fn network_account_target_get_id() -> anyhow::Result<()> {
 
     let exec_output = CodeExecutor::with_default_host().run(&source).await?;
 
-    assert_eq!(exec_output.stack[0], target_id.prefix().as_felt());
-    assert_eq!(exec_output.stack[1], target_id.suffix());
+    assert_eq!(exec_output.stack[0], target_id.suffix());
+    assert_eq!(exec_output.stack[1], target_id.prefix().as_felt());
 
     Ok(())
 }
@@ -74,9 +74,9 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
 
         begin
             push.{exec_hint}
-            push.{target_id_suffix}
             push.{target_id_prefix}
-            # => [target_id_prefix, target_id_suffix, exec_hint]
+            push.{target_id_suffix}
+            # => [target_id_suffix, target_id_prefix, exec_hint]
             exec.network_account_target::new
             # => [attachment_scheme, attachment_kind, ATTACHMENT, pad(16)]
 
@@ -97,7 +97,8 @@ async fn network_account_target_new_attachment() -> anyhow::Result<()> {
         Felt::from(NetworkAccountTarget::ATTACHMENT_SCHEME.as_u32())
     );
 
-    assert_eq!(exec_output.stack.get_stack_word_be(2).unwrap(), attachment_word);
+    let word = exec_output.stack.get_word(2).unwrap();
+    assert_eq!(word, attachment_word);
 
     Ok(())
 }
@@ -117,9 +118,9 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
 
         begin
             push.{exec_hint}
-            push.{target_id_suffix}
             push.{target_id_prefix}
-            # => [target_id_prefix, target_id_suffix, exec_hint]
+            push.{target_id_suffix}
+            # => [target_id_suffix, target_id_prefix, exec_hint]
             exec.network_account_target::new
             # => [attachment_scheme, attachment_kind, ATTACHMENT]
             exec.network_account_target::is_network_account_target
@@ -127,7 +128,7 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
             assert.err=ERR_NOT_NETWORK_ACCOUNT_TARGET
             # => [ATTACHMENT]
             exec.network_account_target::get_id
-            # => [target_id_prefix, target_id_suffix]
+            # => [target_id_suffix, target_id_prefix]
             # cleanup stack
             movup.2 drop movup.2 drop
         end
@@ -139,8 +140,8 @@ async fn network_account_target_attachment_round_trip() -> anyhow::Result<()> {
 
     let exec_output = CodeExecutor::with_default_host().run(&source).await?;
 
-    assert_eq!(exec_output.stack[0], target_id.prefix().as_felt());
-    assert_eq!(exec_output.stack[1], target_id.suffix());
+    assert_eq!(exec_output.stack[0], target_id.suffix());
+    assert_eq!(exec_output.stack[1], target_id.prefix().as_felt());
 
     Ok(())
 }

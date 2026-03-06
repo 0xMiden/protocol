@@ -13,7 +13,7 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -39,17 +39,16 @@ use miden_protocol::block::{
     OutputNoteBatch,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
-use miden_protocol::testing::random_signer::RandomBlockSigner;
+use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -181,7 +180,7 @@ impl MockChainBuilder {
             .into_values()
             .map(|account| {
                 let account_id = account.id();
-                let account_commitment = account.commitment();
+                let account_commitment = account.to_commitment();
                 let account_delta = AccountDelta::try_from(account)
                     .expect("chain builder should only store existing accounts without seeds");
                 let update_details = AccountUpdateDetails::Delta(account_delta);
@@ -197,7 +196,22 @@ impl MockChainBuilder {
         )
         .context("failed to create genesis account tree")?;
 
-        let note_chunks = self.notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
+        // Extract full notes before shrinking for later use in MockChain
+        let full_notes: Vec<Note> = self
+            .notes
+            .iter()
+            .filter_map(|note| match note {
+                OutputNote::Full(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let proven_notes: Vec<_> = self
+            .notes
+            .into_iter()
+            .map(|note| note.to_proven_output_note().expect("genesis note should be valid"))
+            .collect();
+        let note_chunks = proven_notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
         let output_note_batches: Vec<OutputNoteBatch> = note_chunks
             .into_iter()
             .map(|batch_notes| batch_notes.into_iter().enumerate().collect::<Vec<_>>())
@@ -221,7 +235,7 @@ impl MockChainBuilder {
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.native_asset_id, self.verification_base_fee)
             .context("failed to construct fee parameters")?;
-        let validator_secret_key = SecretKey::random();
+        let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
         let header = BlockHeader::new(
@@ -255,6 +269,7 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_key,
+            full_notes,
         )
     }
 
@@ -308,9 +323,7 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let max_supply_felt = max_supply.try_into().map_err(|_| {
-            anyhow::anyhow!("max supply value cannot be converted to Felt: {max_supply}")
-        })?;
+        let max_supply_felt = Felt::try_from(max_supply)?;
         let basic_faucet =
             BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply_felt)
                 .context("failed to create BasicFungibleFaucet")?;
@@ -334,10 +347,8 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)
-            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
-            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let max_supply = Felt::try_from(max_supply)?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -364,10 +375,8 @@ impl MockChainBuilder {
         owner_account_id: AccountId,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)
-            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
-            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let max_supply = Felt::try_from(max_supply)?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -557,12 +566,12 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
+        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
+
         let note = P2ideNote::create(
             sender_account_id,
-            target_account_id,
+            storage,
             asset.to_vec(),
-            reclaim_height,
-            timelock_height,
             note_type,
             Default::default(),
             &mut self.rng,

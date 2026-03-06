@@ -1,14 +1,21 @@
 use alloc::string::ToString;
+use alloc::vec::Vec;
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_core::{Felt, ZERO};
 
 use super::{Account, AccountCode, AccountId, PartialStorage};
 use crate::Word;
-use crate::account::{hash_account, validate_account_seed};
+use crate::account::{AccountHeader, validate_account_seed};
 use crate::asset::PartialVault;
+use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::utils::serde::DeserializationError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A partial representation of an account.
 ///
@@ -115,26 +122,16 @@ impl PartialAccount {
 
     /// Returns the commitment of this account.
     ///
-    /// The commitment of an account is computed as:
-    ///
-    /// ```text
-    /// hash(id, nonce, vault_root, storage_commitment, code_commitment).
-    /// ```
-    pub fn commitment(&self) -> Word {
-        hash_account(
-            self.id,
-            self.nonce,
-            self.vault().root(),
-            self.storage().commitment(),
-            self.code().commitment(),
-        )
+    /// See [`AccountHeader::to_commitment`] for details on how it is computed.
+    pub fn to_commitment(&self) -> Word {
+        AccountHeader::from(self).to_commitment()
     }
 
     /// Returns the commitment of this account as used for the initial account state commitment in
     /// transaction proofs.
     ///
-    /// For existing accounts, this is exactly the same as [Account::commitment()], however, for new
-    /// accounts this value is set to [`Word::empty`]. This is because when a transaction is
+    /// For existing accounts, this is exactly the same as [Account::to_commitment], however, for
+    /// new accounts this value is set to [`Word::empty`]. This is because when a transaction is
     /// executed against a new account, public input for the initial account state is set to
     /// [`Word::empty`] to distinguish new accounts from existing accounts. The actual
     /// commitment of the initial account state (and the initial state itself), are provided to
@@ -143,7 +140,7 @@ impl PartialAccount {
         if self.is_new() {
             Word::empty()
         } else {
-            self.commitment()
+            self.to_commitment()
         }
     }
 
@@ -202,8 +199,22 @@ impl From<&Account> for PartialAccount {
     }
 }
 
+impl SequentialCommit for PartialAccount {
+    type Commitment = Word;
+
+    fn to_elements(&self) -> Vec<Felt> {
+        AccountHeader::from(self).to_elements()
+    }
+
+    fn to_commitment(&self) -> Self::Commitment {
+        AccountHeader::from(self).to_commitment()
+    }
+}
+// SERIALIZATION
+// ================================================================================================
+
 impl Serializable for PartialAccount {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(self.id);
         target.write(self.nonce);
         target.write(&self.code);
@@ -214,9 +225,7 @@ impl Serializable for PartialAccount {
 }
 
 impl Deserializable for PartialAccount {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account_id = source.read()?;
         let nonce = source.read()?;
         let account_code = source.read()?;

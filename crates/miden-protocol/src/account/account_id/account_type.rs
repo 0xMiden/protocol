@@ -2,7 +2,13 @@ use core::fmt;
 use core::str::FromStr;
 
 use crate::errors::AccountIdError;
-use crate::utils::serde::{ByteReader, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT TYPE
 // ================================================================================================
@@ -23,6 +29,24 @@ pub enum AccountType {
 }
 
 impl AccountType {
+    /// Returns all account types.
+    pub fn all() -> [AccountType; 4] {
+        [
+            AccountType::FungibleFaucet,
+            AccountType::NonFungibleFaucet,
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]
+    }
+
+    /// Returns the regular account types (immutable and updatable code).
+    pub fn regular() -> [AccountType; 2] {
+        [
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]
+    }
+
     /// Returns `true` if the account is a faucet.
     pub fn is_faucet(&self) -> bool {
         matches!(self, Self::FungibleFaucet | Self::NonFungibleFaucet)
@@ -62,7 +86,7 @@ impl rand::distr::Distribution<AccountType> for rand::distr::StandardUniform {
 // ================================================================================================
 
 impl Serializable for AccountType {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_u8(*self as u8);
     }
 }
