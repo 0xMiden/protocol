@@ -2,7 +2,6 @@ use miden_crypto::merkle::smt::LeafIndex;
 
 use super::AccountId;
 use crate::Word;
-use crate::block::account_tree::AccountIdPrefix;
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AccountIdError;
 
@@ -57,7 +56,6 @@ impl AccountIdKey {
     pub fn to_leaf_index(&self) -> LeafIndex<SMT_DEPTH> {
         LeafIndex::from(self.as_word())
     }
-
 }
 
 impl From<AccountId> for AccountIdKey {
