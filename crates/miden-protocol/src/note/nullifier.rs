@@ -1,6 +1,7 @@
 use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
+use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
 use miden_protocol_macros::WordWrapper;
 
@@ -13,7 +14,6 @@ use super::{
     Hasher,
     NoteDetails,
     Serializable,
-    WORD_SIZE,
     Word,
     ZERO,
 };
@@ -114,6 +114,10 @@ impl From<&NoteDetails> for Nullifier {
 impl Serializable for Nullifier {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
     }
 }
 

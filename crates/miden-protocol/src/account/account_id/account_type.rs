@@ -29,6 +29,24 @@ pub enum AccountType {
 }
 
 impl AccountType {
+    /// Returns all account types.
+    pub fn all() -> [AccountType; 4] {
+        [
+            AccountType::FungibleFaucet,
+            AccountType::NonFungibleFaucet,
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]
+    }
+
+    /// Returns the regular account types (immutable and updatable code).
+    pub fn regular() -> [AccountType; 2] {
+        [
+            AccountType::RegularAccountImmutableCode,
+            AccountType::RegularAccountUpdatableCode,
+        ]
+    }
+
     /// Returns `true` if the account is a faucet.
     pub fn is_faucet(&self) -> bool {
         matches!(self, Self::FungibleFaucet | Self::NonFungibleFaucet)

@@ -11,7 +11,13 @@ use miden_protocol::crypto::merkle::MerkleError;
 use miden_protocol::errors::{BatchAccountUpdateError, ProposedBatchError};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::transaction::{InputNote, InputNoteCommitment, OutputNote, PartialBlockchain};
+use miden_protocol::transaction::{
+    InputNote,
+    InputNoteCommitment,
+    OutputNote,
+    PartialBlockchain,
+    ProvenOutputNote,
+};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use rand::rngs::SmallRng;
@@ -30,8 +36,8 @@ pub fn mock_note(num: u8) -> Note {
     NoteBuilder::new(sender, SmallRng::from_seed([num; 32])).build().unwrap()
 }
 
-pub fn mock_output_note(num: u8) -> OutputNote {
-    OutputNote::Full(mock_note(num))
+pub fn mock_output_note(num: u8) -> ProvenOutputNote {
+    OutputNote::Full(mock_note(num)).to_proven_output_note().unwrap()
 }
 
 struct TestSetup {
@@ -91,7 +97,7 @@ fn note_created_and_consumed_in_same_batch() -> anyhow::Result<()> {
     let tx1 =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
-            .output_notes(vec![OutputNote::Full(note.clone())])
+            .output_notes(vec![OutputNote::Full(note.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
         MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
@@ -303,14 +309,14 @@ async fn unauthenticated_note_converted_to_authenticated() -> anyhow::Result<()>
         block1
             .body()
             .output_notes()
-            .any(|(_, note)| note.commitment() == note1.commitment()),
+            .any(|(_, note)| note.to_commitment() == note1.commitment()),
         "block 1 should contain note1"
     );
     assert!(
         block1
             .body()
             .output_notes()
-            .any(|(_, note)| note.commitment() == note2.commitment()),
+            .any(|(_, note)| note.to_commitment() == note2.commitment()),
         "block 1 should contain note2"
     );
 
@@ -427,7 +433,7 @@ fn authenticated_note_created_in_same_batch() -> anyhow::Result<()> {
     let tx1 =
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
-            .output_notes(vec![OutputNote::Full(note0.clone())])
+            .output_notes(vec![OutputNote::Full(note0.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
         MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
@@ -550,7 +556,11 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
         MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note4.clone(), note6.clone()])
-            .output_notes(vec![OutputNote::Full(note1.clone()), note2.clone(), note3.clone()])
+            .output_notes(vec![
+                OutputNote::Full(note1.clone()).to_proven_output_note().unwrap(),
+                note2.clone(),
+                note3.clone(),
+            ])
             .build()?;
 
     let batch = ProposedBatch::new(
@@ -563,8 +573,8 @@ fn input_and_output_notes_commitment() -> anyhow::Result<()> {
     // We expect note1 to be erased from the input/output notes as it is created and consumed
     // in the batch.
     let mut expected_output_notes = [note0, note2, note3];
-    // We expect a vector sorted by NoteId (since InputOutputNoteTracker is set up that way).
-    expected_output_notes.sort_unstable_by_key(OutputNote::id);
+    // We expect a vector sorted by NoteId.
+    expected_output_notes.sort_unstable_by_key(ProvenOutputNote::id);
 
     assert_eq!(batch.output_notes().len(), 3);
     assert_eq!(batch.output_notes(), expected_output_notes);
@@ -655,13 +665,13 @@ fn circular_note_dependency() -> anyhow::Result<()> {
         MockProvenTxBuilder::with_account(account1.id(), Word::empty(), account1.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note_x.clone()])
-            .output_notes(vec![OutputNote::Full(note_y.clone())])
+            .output_notes(vec![OutputNote::Full(note_y.clone()).to_proven_output_note().unwrap()])
             .build()?;
     let tx2 =
         MockProvenTxBuilder::with_account(account2.id(), Word::empty(), account2.to_commitment())
             .ref_block_commitment(block1.commitment())
             .unauthenticated_notes(vec![note_y.clone()])
-            .output_notes(vec![OutputNote::Full(note_x.clone())])
+            .output_notes(vec![OutputNote::Full(note_x.clone()).to_proven_output_note().unwrap()])
             .build()?;
 
     let batch = ProposedBatch::new(
@@ -736,7 +746,7 @@ fn noop_tx_before_state_updating_tx_against_same_account() -> anyhow::Result<()>
     )
     .ref_block_commitment(block1.commitment())
     .authenticated_notes(vec![note1])
-    .output_notes(vec![OutputNote::Full(note.clone())])
+    .output_notes(vec![OutputNote::Full(note.clone()).to_proven_output_note().unwrap()])
     .build()?;
 
     // sanity check
@@ -797,7 +807,7 @@ fn noop_tx_after_state_updating_tx_against_same_account() -> anyhow::Result<()> 
     )
     .ref_block_commitment(block1.commitment())
     .authenticated_notes(vec![note1])
-    .output_notes(vec![OutputNote::Full(note.clone())])
+    .output_notes(vec![OutputNote::Full(note.clone()).to_proven_output_note().unwrap()])
     .build()?;
 
     // sanity check

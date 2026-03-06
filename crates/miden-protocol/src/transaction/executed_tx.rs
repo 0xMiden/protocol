@@ -71,6 +71,7 @@ impl ExecutedTransaction {
             tx_outputs.account.to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes.commitment(),
+            tx_outputs.fee,
         );
 
         Self {

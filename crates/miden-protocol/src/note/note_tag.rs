@@ -156,6 +156,10 @@ impl Serializable for NoteTag {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.as_u32().write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u32>()
+    }
 }
 
 impl Deserializable for NoteTag {
