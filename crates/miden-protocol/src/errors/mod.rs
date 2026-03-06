@@ -31,7 +31,15 @@ use crate::address::AddressType;
 use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
-use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
+use crate::note::{
+    NoteAssets,
+    NoteAttachmentArray,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteTag,
+    NoteType,
+    Nullifier,
+};
 use crate::transaction::{TransactionEventId, TransactionId};
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
@@ -42,6 +50,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -273,6 +282,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
@@ -593,6 +604,20 @@ pub enum NoteError {
     UnknownNoteAttachmentKind(u8),
     #[error("note attachment of kind None must have attachment scheme None")]
     AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    #[error(
+        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+    )]
+    AttachmentKindMismatch {
+        header_kind: NoteAttachmentKind,
+        attachment_kind: NoteAttachmentKind,
+    },
+    #[error(
+        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+    )]
+    AttachmentSchemeMismatch {
+        header_scheme: NoteAttachmentScheme,
+        attachment_scheme: NoteAttachmentScheme,
+    },
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -760,6 +785,25 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
+    #[error(
+        "output note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    OutputNoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
+}
+
+// PUBLIC OUTPUT NOTE ERROR
+// ================================================================================================
+
+/// Errors that can occur when creating a
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote).
+#[derive(Debug, Error)]
+pub enum PublicOutputNoteError {
+    #[error("note with id {0} is private but PublicOutputNote requires a public note")]
+    NoteIsPrivate(NoteId),
+    #[error(
+        "note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR

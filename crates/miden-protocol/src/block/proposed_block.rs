@@ -27,8 +27,8 @@ use crate::errors::ProposedBlockError;
 use crate::note::{NoteId, Nullifier};
 use crate::transaction::{
     InputNoteCommitment,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     TransactionHeader,
     TransactionKernel,
 };
@@ -729,7 +729,7 @@ fn check_batch_reference_blocks(
 /// Returns the set of [`OutputNoteBatch`]es that each batch creates.
 fn compute_block_output_notes(
     batches: &[ProvenBatch],
-    mut block_output_notes: BTreeMap<NoteId, (BatchId, OutputNote)>,
+    mut block_output_notes: BTreeMap<NoteId, (BatchId, ProvenOutputNote)>,
 ) -> Vec<OutputNoteBatch> {
     let mut block_output_note_batches = Vec::with_capacity(batches.len());
 
@@ -751,7 +751,7 @@ fn compute_block_output_notes(
 /// The output note set is returned.
 fn compute_batch_output_notes(
     batch: &ProvenBatch,
-    block_output_notes: &mut BTreeMap<NoteId, (BatchId, OutputNote)>,
+    block_output_notes: &mut BTreeMap<NoteId, (BatchId, ProvenOutputNote)>,
 ) -> OutputNoteBatch {
     // The len of the batch output notes is an upper bound of how many notes the batch could've
     // produced so we reserve that much space to avoid reallocation.

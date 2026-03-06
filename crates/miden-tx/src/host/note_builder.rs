@@ -91,8 +91,8 @@ impl OutputNoteBuilder {
 
     /// Converts this builder to an [OutputNote].
     ///
-    /// Depending on the available information, this may result in [OutputNote::Full] or
-    /// [OutputNote::Partial] notes.
+    /// Depending on the available information, this may result in [`OutputNote::Full`] or
+    /// [`OutputNote::Partial`] notes.
     pub fn build(self) -> OutputNote {
         match self.recipient {
             Some(recipient) => {

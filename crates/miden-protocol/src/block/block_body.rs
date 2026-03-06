@@ -10,7 +10,7 @@ use crate::block::{
     ProposedBlock,
 };
 use crate::note::Nullifier;
-use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::transaction::{OrderedTransactionHeaders, ProvenOutputNote};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -91,11 +91,11 @@ impl BlockBody {
         self.transactions.commitment()
     }
 
-    /// Returns an iterator over all [`OutputNote`]s created in this block.
+    /// Returns an iterator over all [`ProvenOutputNote`]s created in this block.
     ///
     /// Each note is accompanied by a corresponding index specifying where the note is located
     /// in the block's [`BlockNoteTree`].
-    pub fn output_notes(&self) -> impl Iterator<Item = (BlockNoteIndex, &OutputNote)> {
+    pub fn output_notes(&self) -> impl Iterator<Item = (BlockNoteIndex, &ProvenOutputNote)> {
         self.output_note_batches.iter().enumerate().flat_map(|(batch_idx, notes)| {
             notes.iter().map(move |(note_idx_in_batch, note)| {
                 (
@@ -110,7 +110,7 @@ impl BlockBody {
         })
     }
 
-    /// Computes the [`BlockNoteTree`] containing all [`OutputNote`]s created in this block.
+    /// Computes the [`BlockNoteTree`] containing all [`ProvenOutputNote`]s created in this block.
     pub fn compute_block_note_tree(&self) -> BlockNoteTree {
         let entries = self
             .output_notes()
