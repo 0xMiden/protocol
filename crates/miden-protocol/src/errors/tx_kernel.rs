@@ -94,6 +94,8 @@ pub const ERR_FAUCET_TOTAL_ISSUANCE_PROC_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_FAUCET: 
 pub const ERR_FOREIGN_ACCOUNT_CONTEXT_AGAINST_NATIVE_ACCOUNT: MasmError = MasmError::from_static_str("creation of a foreign context against the native account is forbidden");
 /// Error Message: "ID of the provided foreign account equals zero"
 pub const ERR_FOREIGN_ACCOUNT_ID_IS_ZERO: MasmError = MasmError::from_static_str("ID of the provided foreign account equals zero");
+/// Error Message: "foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
+pub const ERR_FOREIGN_ACCOUNT_ID_MISMATCH: MasmError = MasmError::from_static_str("foreign account ID provided with advice map doesn't match the ID provided by the operand stack");
 /// Error Message: "commitment of the foreign account in the advice provider does not match the commitment in the account tree"
 pub const ERR_FOREIGN_ACCOUNT_INVALID_COMMITMENT: MasmError = MasmError::from_static_str("commitment of the foreign account in the advice provider does not match the commitment in the account tree");
 /// Error Message: "maximum allowed number of foreign account to be loaded (64) was exceeded"
