@@ -59,13 +59,6 @@ impl AccountIdKey {
         LeafIndex::from(self.as_word())
     }
 
-    // ADVICE MAP KEY
-    //---------------------------------------------------------------------------------------------------
-
-    // Return the prefix of the account ID.
-    pub fn prefix(&self) -> AccountIdPrefix {
-        self.0.prefix()
-    }
 }
 
 impl From<AccountId> for AccountIdKey {
