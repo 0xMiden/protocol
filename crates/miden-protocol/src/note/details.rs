@@ -96,6 +96,10 @@ impl Serializable for NoteDetails {
         assets.write_into(target);
         recipient.write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.assets.get_size_hint() + self.recipient.get_size_hint()
+    }
 }
 
 impl Deserializable for NoteDetails {

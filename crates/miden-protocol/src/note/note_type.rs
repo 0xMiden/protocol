@@ -108,6 +108,10 @@ impl Serializable for NoteType {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         (*self as u8).write_into(target)
     }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u8>()
+    }
 }
 
 impl Deserializable for NoteType {

@@ -9,7 +9,7 @@ use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     InputNote,
-    OutputNote,
+    ProvenOutputNote,
     ProvenTransaction,
     ProvenTransactionBuilder,
 };
@@ -23,7 +23,7 @@ pub struct MockProvenTxBuilder {
     ref_block_commitment: Option<Word>,
     fee: FungibleAsset,
     expiration_block_num: BlockNumber,
-    output_notes: Option<Vec<OutputNote>>,
+    output_notes: Option<Vec<ProvenOutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
 }
@@ -86,7 +86,7 @@ impl MockProvenTxBuilder {
 
     /// Adds notes to the transaction's output notes.
     #[must_use]
-    pub fn output_notes(mut self, notes: Vec<OutputNote>) -> Self {
+    pub fn output_notes(mut self, notes: Vec<ProvenOutputNote>) -> Self {
         self.output_notes = Some(notes);
 
         self

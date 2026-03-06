@@ -8,7 +8,6 @@ use crate::transaction::{
     ExecutedTransaction,
     InputNoteCommitment,
     InputNotes,
-    OutputNote,
     OutputNotes,
     ProvenTransaction,
     TransactionId,
@@ -171,7 +170,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().initial_state_commitment(),
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(<&NoteHeader>::from).cloned().collect(),
             tx.fee(),
         )
     }
@@ -186,7 +185,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.initial_account().initial_commitment(),
             tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(|n| n.header().clone()).collect(),
             tx.fee(),
         )
     }

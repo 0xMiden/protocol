@@ -1,5 +1,5 @@
-use crate::account::AccountComponent;
 use crate::account::component::AccountComponentMetadata;
+use crate::account::{AccountComponent, AccountType};
 use crate::assembly::{Assembler, Library};
 use crate::utils::sync::LazyLock;
 
@@ -26,9 +26,9 @@ pub struct NoopAuthComponent;
 
 impl From<NoopAuthComponent> for AccountComponent {
     fn from(_: NoopAuthComponent) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::testing::noop_auth")
-            .with_description("No-op auth component for testing")
-            .with_supports_all_types();
+        let metadata =
+            AccountComponentMetadata::new("miden::testing::noop_auth", AccountType::all())
+                .with_description("No-op auth component for testing");
 
         AccountComponent::new(NOOP_AUTH_LIBRARY.clone(), vec![], metadata)
             .expect("component should be valid")
