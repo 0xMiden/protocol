@@ -64,6 +64,8 @@ const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in accou
 
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
 
+const ERR_FOREIGN_ACCOUNT_ID_MISMATCH="foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -1080,24 +1082,38 @@ end
 #! - the computed account code commitment does not match the provided account code commitment.
 #! - the number of account storage slots exceeded the maximum limit of 255.
 #! - the computed account storage commitment does not match the provided account storage commitment.
+#! - the foreign account ID obtained from the advice map doesn't match the ID provided to the
+#!   procedure.
 pub proc load_foreign_account
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_suffix, account_id_prefix]
 
     # construct the advice map key from the account ID to load the core account data
-    exec.create_id_key
-    # OS => [ACCOUNT_ID_KEY]
+    dup.1 dup.1 exec.create_id_key
+    # OS => [ACCOUNT_ID_KEY, account_id_suffix, account_id_prefix]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [ACCOUNT_ID_KEY]
+    # OS => [ACCOUNT_ID_KEY, account_id_suffix, account_id_prefix]
     # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # store the id and nonce of the foreign account to memory
+    # load the id and nonce of the foreign account from the advice stack overwriting the ID key
     adv_loadw
+    # OS => [account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix, account_id_suffix, account_id_prefix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    movup.5 movup.5
+    # OS => [account_id_suffix, account_id_prefix, account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    # check that the account ID provided by the advice map matches the one provided by the operand
+    # stack
+    dup.5 dup.5
+    exec.account_id::is_equal assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
+    # store the id and nonce of the foreign account to memory
     exec.memory::set_account_id_and_nonce
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
