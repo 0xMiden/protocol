@@ -44,7 +44,7 @@ impl TransactionId {
         fee_asset: FungibleAsset,
     ) -> Self {
         let fee_asset_word: Word = fee_asset.into();
-            let mut elements = [ZERO; 6 * WORD_SIZE];
+        let mut elements = [ZERO; 6 * WORD_SIZE];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
