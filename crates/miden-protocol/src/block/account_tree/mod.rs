@@ -77,7 +77,8 @@ where
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The SMT contains duplicate account ID prefixes
+    /// - The SMT contains invalid account IDs.
+    /// - The SMT contains duplicate account ID prefixes.
     pub fn new(smt: S) -> Result<Self, AccountTreeError> {
         for (_leaf_idx, leaf) in smt.leaves() {
             match leaf {
@@ -87,14 +88,19 @@ where
                 },
                 SmtLeaf::Single((key, _)) => {
                     // Single entry is good - verify it's a valid account ID
-                    let _ = AccountIdKey::try_from_word(key);
+                    AccountIdKey::try_from_word(key).map_err(|err| {
+                        AccountTreeError::InvalidAccountIdKey { key, source: err }
+                    })?;
                 },
                 SmtLeaf::Multiple(entries) => {
                     // Multiple entries means duplicate prefixes
                     // Extract one of the keys to identify the duplicate prefix
                     if let Some((key, _)) = entries.first() {
-                        let account_id = AccountIdKey::try_from_word(*key)
-                            .expect("account tree should only contain valid IDs");
+                        let key = *key;
+                        let account_id = AccountIdKey::try_from_word(key).map_err(|err| {
+                            AccountTreeError::InvalidAccountIdKey { key, source: err }
+                        })?;
+
                         return Err(AccountTreeError::DuplicateIdPrefix {
                             duplicate_prefix: account_id.prefix(),
                         });

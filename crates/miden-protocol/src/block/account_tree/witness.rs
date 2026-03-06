@@ -74,6 +74,7 @@ impl AccountWitness {
     /// # Panics
     ///
     /// Panics if:
+    /// - the proof contains an entry whose key contains an invalid account ID.
     /// - the merkle path in the proof does not have depth equal to [`SMT_DEPTH`].
     /// - the proof contains an SmtLeaf::Multiple.
     pub(super) fn from_smt_proof(requested_account_id: AccountId, proof: SmtProof) -> Self {
