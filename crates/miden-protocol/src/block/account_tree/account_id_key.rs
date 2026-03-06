@@ -17,8 +17,8 @@ pub struct AccountIdKey(AccountId);
 
 impl AccountIdKey {
     // Indices in the word layout where the prefix and suffix are stored.
-    const KEY_PREFIX_IDX: usize = 3;
     const KEY_SUFFIX_IDX: usize = 2;
+    const KEY_PREFIX_IDX: usize = 3;
 
     /// Create from AccountId
     pub fn new(id: AccountId) -> Self {

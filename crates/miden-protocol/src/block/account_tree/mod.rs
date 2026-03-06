@@ -23,7 +23,7 @@ pub use witness::AccountWitness;
 mod backend;
 pub use backend::AccountTreeBackend;
 
-pub mod account_id_key;
+mod account_id_key;
 pub use account_id_key::AccountIdKey;
 
 // ACCOUNT TREE
