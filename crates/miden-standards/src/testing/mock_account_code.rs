@@ -7,18 +7,18 @@ use crate::code_builder::CodeBuilder;
 const MOCK_FAUCET_CODE: &str = "
     use miden::protocol::faucet
 
-    #! Inputs:  [ASSET, pad(12)]
-    #! Outputs: [ASSET, pad(12)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [NEW_ASSET_VALUE, pad(12)]
     pub proc mint
         exec.faucet::mint
-        # => [ASSET, pad(12)]
+        # => [NEW_ASSET_VALUE, pad(12)]
     end
 
-    #! Inputs:  [ASSET, pad(12)]
-    #! Outputs: [ASSET, pad(12)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
     pub proc burn
         exec.faucet::burn
-        # => [ASSET, pad(12)]
+        # => [ASSET_VALUE, pad(12)]
     end
 ";
 
@@ -105,18 +105,18 @@ const MOCK_ACCOUNT_CODE: &str = "
         # => [STORAGE_COMMITMENT, pad(12)]
     end
 
-    #! Inputs:  [ASSET, pad(12)]
-    #! Outputs: [ASSET', pad(12)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [ASSET_VALUE', pad(12)]
     pub proc add_asset
         exec.native_account::add_asset
-        # => [ASSET', pad(12)]
+        # => [ASSET_VALUE', pad(12)]
     end
 
-    #! Inputs:  [ASSET, pad(12)]
-    #! Outputs: [ASSET, pad(12)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
     pub proc remove_asset
         exec.native_account::remove_asset
-        # => [ASSET, pad(12)]
+        # => [ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [pad(16)]

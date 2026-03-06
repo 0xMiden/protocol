@@ -55,6 +55,8 @@ pub use storage::{
     PartialStorage,
     PartialStorageMap,
     StorageMap,
+    StorageMapKey,
+    StorageMapKeyHash,
     StorageMapWitness,
     StorageSlot,
     StorageSlotContent,
@@ -344,7 +346,7 @@ impl Account {
     pub fn increment_nonce(&mut self, nonce_delta: Felt) -> Result<(), AccountError> {
         let new_nonce = self.nonce + nonce_delta;
 
-        if new_nonce.as_int() < self.nonce.as_int() {
+        if new_nonce.as_canonical_u64() < self.nonce.as_canonical_u64() {
             return Err(AccountError::NonceOverflow {
                 current: self.nonce,
                 increment: nonce_delta,
@@ -551,7 +553,6 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::Assembler;
-    use miden_core::FieldElement;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
@@ -574,6 +575,7 @@ mod tests {
         PartialAccount,
         StorageMap,
         StorageMapDelta,
+        StorageMapKey,
         StorageSlot,
         StorageSlotContent,
         StorageSlotName,
@@ -635,7 +637,7 @@ mod tests {
         let storage_slot_value_1 = StorageSlotContent::Value(Word::from([5, 6, 7, 8u32]));
         let mut storage_map = StorageMap::with_entries([
             (
-                Word::new([Felt::new(101), Felt::new(102), Felt::new(103), Felt::new(104)]),
+                StorageMapKey::from_array([101, 102, 103, 104]),
                 Word::from([
                     Felt::new(1_u64),
                     Felt::new(2_u64),
@@ -644,7 +646,7 @@ mod tests {
                 ]),
             ),
             (
-                Word::new([Felt::new(105), Felt::new(106), Felt::new(107), Felt::new(108)]),
+                StorageMapKey::from_array([105, 106, 107, 108]),
                 Word::new([Felt::new(5_u64), Felt::new(6_u64), Felt::new(7_u64), Felt::new(8_u64)]),
             ),
         ])
@@ -658,14 +660,11 @@ mod tests {
         );
 
         // update storage map
-        let new_map_entry = (
-            Word::new([Felt::new(101), Felt::new(102), Felt::new(103), Felt::new(104)]),
-            [Felt::new(9_u64), Felt::new(10_u64), Felt::new(11_u64), Felt::new(12_u64)],
-        );
+        let key = StorageMapKey::from_array([101, 102, 103, 104]);
+        let value = Word::from([9, 10, 11, 12u32]);
 
-        let updated_map =
-            StorageMapDelta::from_iters([], [(new_map_entry.0, new_map_entry.1.into())]);
-        storage_map.insert(new_map_entry.0, new_map_entry.1.into()).unwrap();
+        let updated_map = StorageMapDelta::from_iters([], [(key, value)]);
+        storage_map.insert(key, value).unwrap();
 
         // build account delta
         let final_nonce = Felt::new(2);
@@ -804,10 +803,14 @@ mod tests {
         let library1 = Assembler::default().assemble_library([code1]).unwrap();
 
         // This component support all account types except the regular account with updatable code.
-        let metadata = AccountComponentMetadata::new("test::component1")
-            .with_supported_type(AccountType::FungibleFaucet)
-            .with_supported_type(AccountType::NonFungibleFaucet)
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let metadata = AccountComponentMetadata::new(
+            "test::component1",
+            [
+                AccountType::FungibleFaucet,
+                AccountType::NonFungibleFaucet,
+                AccountType::RegularAccountImmutableCode,
+            ],
+        );
         let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
 
         let err = Account::initialize_from_components(

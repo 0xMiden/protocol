@@ -12,12 +12,18 @@ use crate::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     ProvenTransaction,
     TransactionHeader,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
 
 /// A proposed batch of transactions with all necessary data to validate it.
@@ -52,8 +58,9 @@ pub struct ProposedBatch {
     /// [`InputNoteCommitment::nullifier`].
     input_notes: InputNotes<InputNoteCommitment>,
     /// The output notes of this batch. This consists of all notes created by transactions in the
-    /// batch that are not consumed within the same batch. These are sorted by [`OutputNote::id`].
-    output_notes: Vec<OutputNote>,
+    /// batch that are not consumed within the same batch. These are sorted by
+    /// [`ProvenOutputNote::id`].
+    output_notes: Vec<ProvenOutputNote>,
 }
 
 impl ProposedBatch {
@@ -348,7 +355,7 @@ impl ProposedBatch {
     ///
     /// This is the aggregation of all output notes by the transactions in the batch, except the
     /// ones that were consumed within the batch itself.
-    pub fn output_notes(&self) -> &[OutputNote] {
+    pub fn output_notes(&self) -> &[ProvenOutputNote] {
         &self.output_notes
     }
 
@@ -364,7 +371,7 @@ impl ProposedBatch {
         BatchId,
         BTreeMap<AccountId, BatchAccountUpdate>,
         InputNotes<InputNoteCommitment>,
-        Vec<OutputNote>,
+        Vec<ProvenOutputNote>,
         BlockNumber,
     ) {
         (
@@ -426,8 +433,8 @@ impl Deserializable for ProposedBatch {
 mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
+    use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
-    use winter_rand_utils::rand_value;
 
     use super::*;
     use crate::Word;

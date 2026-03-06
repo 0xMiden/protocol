@@ -1,7 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_processor::DeserializationError;
-
 use crate::Word;
 use crate::asset::FungibleAsset;
 use crate::note::NoteHeader;
@@ -10,12 +8,17 @@ use crate::transaction::{
     ExecutedTransaction,
     InputNoteCommitment,
     InputNotes,
-    OutputNote,
     OutputNotes,
     ProvenTransaction,
     TransactionId,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A transaction header derived from a
 /// [`ProvenTransaction`](crate::transaction::ProvenTransaction).
@@ -170,7 +173,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().initial_state_commitment(),
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(<&NoteHeader>::from).cloned().collect(),
             tx.fee(),
         )
     }
@@ -185,7 +188,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.initial_account().initial_commitment(),
             tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(|n| n.header().clone()).collect(),
             tx.fee(),
         )
     }

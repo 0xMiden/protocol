@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
-use miden_processor::DeserializationError;
+use miden_processor::serde::DeserializationError;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -25,16 +25,15 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     ProvenTransaction,
     TransactionInputs,
 };
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::utils::{ByteReader, Deserializable, Serializable};
+use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_tx_batch_prover::LocalBatchProver;
-use winterfell::ByteWriter;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, TransactionContextBuilder};
@@ -64,6 +63,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_protocol::{
+/// #    account::auth::AuthScheme,
 /// #    asset::{Asset, FungibleAsset},
 /// #    note::NoteType,
 /// # };
@@ -76,8 +76,11 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// let mut builder = MockChain::builder();
 ///
-/// // Add a recipient wallet.
-/// let receiver = builder.add_existing_wallet(Auth::BasicAuth)?;
+/// // Add a recipient wallet with basic authentication.
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -127,18 +130,33 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///
 /// ```
 /// # use anyhow::Result;
-/// # use miden_protocol::{Felt, asset::{Asset, FungibleAsset}, note::NoteType};
+/// # use miden_protocol::{
+/// #    Felt,
+/// #    account::auth::AuthScheme,
+/// #    asset::{Asset, FungibleAsset},
+/// #    note::NoteType
+/// # };
 /// # use miden_testing::{Auth, MockChain, TransactionContextBuilder};
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<()> {
 /// let mut builder = MockChain::builder();
 ///
-/// let faucet = builder.create_new_faucet(Auth::BasicAuth, "USDT", 100_000)?;
+/// let faucet = builder.create_new_faucet(
+///     Auth::BasicAuth {
+///         auth_scheme: AuthScheme::Falcon512Poseidon2,
+///     },
+///     "USDT",
+///     100_000,
+/// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender = builder.create_new_wallet(Auth::BasicAuth)?;
-/// let target = builder.create_new_wallet(Auth::BasicAuth)?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -218,6 +236,7 @@ impl MockChain {
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_key: SecretKey,
+        genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
             chain: Blockchain::default(),
@@ -236,6 +255,20 @@ impl MockChain {
         chain
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
+
+        // Update committed_notes with full note details for genesis notes.
+        // This is needed because apply_block only stores headers for private notes,
+        // but tests need full note details to create input notes.
+        for note in genesis_notes {
+            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
+                chain.committed_notes.get(&note.id())
+            {
+                chain.committed_notes.insert(
+                    note.id(),
+                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
+                );
+            }
+        }
 
         debug_assert_eq!(chain.blocks.len(), 1);
         debug_assert_eq!(chain.committed_accounts.len(), chain.account_tree.num_accounts());
@@ -899,9 +932,11 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Full(note) = created_note {
-                self.committed_notes
-                    .insert(note.id(), MockChainNote::Public(note.clone(), note_inclusion_proof));
+            if let ProvenOutputNote::Public(public_note) = created_note {
+                self.committed_notes.insert(
+                    public_note.id(),
+                    MockChainNote::Public(public_note.note().clone(), note_inclusion_proof),
+                );
             } else {
                 self.committed_notes.insert(
                     created_note.id(),
@@ -1153,6 +1188,7 @@ impl From<Account> for TxContextInput {
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::account::auth::AuthScheme;
     use miden_protocol::account::{AccountBuilder, AccountStorageMode};
     use miden_protocol::asset::{Asset, FungibleAsset};
     use miden_protocol::note::NoteType;
@@ -1184,14 +1220,15 @@ mod tests {
             .with_component(BasicWallet);
 
         let mut builder = MockChain::builder();
+        let auth_scheme = AuthScheme::EcdsaK256Keccak;
         let account = builder.add_account_from_builder(
-            Auth::BasicAuth,
+            Auth::BasicAuth { auth_scheme },
             account_builder,
             AccountState::New,
         )?;
 
         let account_id = account.id();
-        assert_eq!(account.nonce().as_int(), 0);
+        assert_eq!(account.nonce().as_canonical_u64(), 0);
 
         let note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -1212,7 +1249,7 @@ mod tests {
         mock_chain.add_pending_executed_transaction(&tx)?;
         mock_chain.prove_next_block()?;
 
-        assert!(tx.final_account().nonce().as_int() > 0);
+        assert!(tx.final_account().nonce().as_canonical_u64() > 0);
         assert_eq!(
             tx.final_account().to_commitment(),
             mock_chain.account_tree.open(account_id).state_commitment()
@@ -1229,7 +1266,9 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth,
+                    Auth::BasicAuth {
+                        auth_scheme: AuthScheme::Falcon512Poseidon2,
+                    },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )

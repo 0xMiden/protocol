@@ -80,10 +80,10 @@ pub proc main
         movdn.9 drop
         # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
 
-        mem_loadw_be.8
+        mem_loadw_le.8
         # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
 
-        swapw mem_loadw_be.12
+        swapw mem_loadw_le.12
         # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
 
         # compute variable length note storage for the output note
@@ -109,7 +109,7 @@ pub proc main
         drop
         # => [pad(16)]
 
-        mem_loadw_be.8
+        mem_loadw_le.8
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
@@ -124,7 +124,7 @@ pub proc main
     call.network_faucet::distribute
     # => [note_idx, pad(18))]
 
-    padw mem_loadw_be.ATTACHMENT_ADDRESS
+    padw mem_loadw_le.ATTACHMENT_ADDRESS
     # => [ATTACHMENT, note_idx, pad(18))]
 
     mem_load.ATTACHMENT_KIND_ADDRESS
