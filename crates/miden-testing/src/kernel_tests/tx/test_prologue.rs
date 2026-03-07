@@ -15,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
@@ -75,12 +76,7 @@ use miden_protocol::transaction::memory::{
     VALIDATOR_KEY_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
-use miden_protocol::transaction::{
-    ExecutedTransaction,
-    TransactionAdviceInputs,
-    TransactionArgs,
-    TransactionKernel,
-};
+use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
 use miden_protocol::{EMPTY_WORD, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -637,7 +633,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
-    let account_seed_key = TransactionAdviceInputs::account_id_map_key(account.id());
+    let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
     let tx_context = TransactionContextBuilder::new(account)

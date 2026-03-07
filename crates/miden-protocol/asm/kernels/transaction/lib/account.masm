@@ -487,7 +487,7 @@ pub proc get_initial_item
     # => [INIT_VALUE]
 end
 
-#! Sets an item in the account storage.
+#! Sets an item in the account storage of the native account.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE]
 #! Outputs: [OLD_VALUE]
@@ -505,7 +505,7 @@ pub proc set_item
     emit.ACCOUNT_STORAGE_BEFORE_SET_ITEM_EVENT
     # => [slot_id_suffix, slot_id_prefix, VALUE]
 
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, VALUE]
 
     exec.find_storage_slot
@@ -580,7 +580,8 @@ pub proc get_initial_map_item
     exec.get_map_item_raw
 end
 
-#! Stores NEW_VALUE under the specified KEY within the map contained in the given account storage slot.
+#! Stores NEW_VALUE under the specified KEY within the map contained in the specified storage slot
+#! of the native account.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 #! Outputs: [OLD_VALUE]
@@ -598,7 +599,7 @@ end
 #! - the storage slot type is not map.
 #! - no map with the root of the slot is found.
 pub proc set_map_item
-    exec.memory::get_account_active_storage_slots_section_ptr
+    exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
@@ -618,7 +619,7 @@ pub proc set_map_item
     # => [OLD_VALUE]
 end
 
-#! Returns the type of the storage slot at the provided index.
+#! Returns the type of the storage slot at the provided index for the native account.
 #!
 #! WARNING: The index must be in bounds.
 #!
@@ -628,7 +629,7 @@ end
 #! Where:
 #! - index is the location in memory of the storage slot.
 #! - slot_type is the type of the storage slot.
-pub proc get_storage_slot_type
+pub proc get_native_storage_slot_type
     # convert the index into a memory offset
     mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH
     # => [offset]
@@ -1249,7 +1250,7 @@ pub proc insert_new_storage
         sub.1
         # => [slot_idx]
 
-        dup exec.get_storage_slot_type
+        dup exec.get_native_storage_slot_type
         # => [slot_type, slot_idx]
 
         push.STORAGE_SLOT_TYPE_MAP eq
