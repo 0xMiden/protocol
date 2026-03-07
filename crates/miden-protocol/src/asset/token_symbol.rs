@@ -1,3 +1,4 @@
+use alloc::fmt;
 use alloc::string::String;
 
 use super::{Felt, TokenSymbolError};
@@ -5,7 +6,7 @@ use super::{Felt, TokenSymbolError};
 /// Represents a string token symbol (e.g. "POL", "ETH") as a single [`Felt`] value.
 ///
 /// Token Symbols can consists of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TokenSymbol(Felt);
 
 impl TokenSymbol {
@@ -14,6 +15,11 @@ impl TokenSymbol {
 
     /// The length of the set of characters that can be used in a token's name.
     pub const ALPHABET_LENGTH: u64 = 26;
+
+    /// The minimum integer value of an encoded [`TokenSymbol`].
+    ///
+    /// This value encodes the "A" token symbol.
+    pub const MIN_ENCODED_VALUE: u64 = 1;
 
     /// The maximum integer value of an encoded [`TokenSymbol`].
     ///
@@ -55,16 +61,13 @@ impl TokenSymbol {
         let felt = encode_symbol_to_felt(symbol)?;
         Ok(Self(felt))
     }
+}
 
-    /// Returns the token name string from the encoded [`TokenSymbol`] value.
-    ///     
-    /// # Errors
-    /// Returns an error if:
-    /// - The encoded value exceeds the maximum value of [`Self::MAX_ENCODED_VALUE`].
-    /// - The encoded token string length is less than 1 or greater than 12.
-    /// - The encoded token string length is less than the actual string length.
-    pub fn to_string(&self) -> Result<String, TokenSymbolError> {
-        decode_felt_to_symbol(self.0)
+impl fmt::Display for TokenSymbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let symbol =
+            decode_felt_to_symbol(self.0).expect("a valid TokenSymbol should always be decodable");
+        f.write_str(&symbol)
     }
 }
 
@@ -86,9 +89,12 @@ impl TryFrom<Felt> for TokenSymbol {
     type Error = TokenSymbolError;
 
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        // Check if the felt value is within the valid range
-        if felt.as_canonical_u64() > Self::MAX_ENCODED_VALUE {
-            return Err(TokenSymbolError::ValueTooLarge(felt.as_canonical_u64()));
+        let value = felt.as_canonical_u64();
+        if value < Self::MIN_ENCODED_VALUE {
+            return Err(TokenSymbolError::ValueTooSmall(value));
+        }
+        if value > Self::MAX_ENCODED_VALUE {
+            return Err(TokenSymbolError::ValueTooLarge(value));
         }
         Ok(TokenSymbol(felt))
     }
@@ -206,11 +212,7 @@ mod test {
     use assert_matches::assert_matches;
 
     use super::{
-        Felt,
-        TokenSymbol,
-        TokenSymbolError,
-        decode_felt_to_symbol,
-        encode_symbol_to_felt,
+        Felt, TokenSymbol, TokenSymbolError, decode_felt_to_symbol, encode_symbol_to_felt,
     };
 
     #[test]
@@ -230,7 +232,7 @@ mod test {
         ];
         for symbol in symbols {
             let token_symbol = TokenSymbol::try_from(symbol).unwrap();
-            let decoded_symbol = TokenSymbol::to_string(&token_symbol).unwrap();
+            let decoded_symbol = token_symbol.to_string();
             assert_eq!(symbol, decoded_symbol);
         }
 
@@ -276,6 +278,21 @@ mod test {
     fn test_token_symbol_max_value() {
         let token_symbol = TokenSymbol::try_from("ZZZZZZZZZZZZ").unwrap();
         assert_eq!(Felt::from(token_symbol).as_canonical_u64(), TokenSymbol::MAX_ENCODED_VALUE);
+    }
+
+    /// Utility test to make sure that the [TokenSymbol::MIN_ENCODED_VALUE] constant still
+    /// represents the minimum possible encoded value.
+    #[test]
+    fn test_token_symbol_min_value() {
+        let token_symbol = TokenSymbol::try_from("A").unwrap();
+        assert_eq!(Felt::from(token_symbol).as_canonical_u64(), TokenSymbol::MIN_ENCODED_VALUE);
+    }
+
+    /// Checks that [TokenSymbol::try_from(Felt)] returns an error for values below the minimum.
+    #[test]
+    fn test_token_symbol_underflow() {
+        let err = TokenSymbol::try_from(Felt::ZERO).unwrap_err();
+        assert_matches!(err, TokenSymbolError::ValueTooSmall(0));
     }
 
     // Const function tests
