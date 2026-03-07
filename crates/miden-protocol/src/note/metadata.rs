@@ -43,8 +43,8 @@ use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 /// The felt validity of each part of the layout is guaranteed:
 /// - 1st felt: The lower 8 bits of the account ID suffix are `0` by construction, so that they can
 ///   be overwritten with other data. The suffix' most significant bit must be zero such that the
-///   entire felt retains its validity even if all of its lower 8 bits are be set to `1`. So the
-///   note type can be comfortably encoded.
+///   entire felt retains its validity even if all of its lower 8 bits are set to `1`. So the note
+///   type can be comfortably encoded.
 /// - 2nd felt: Is equivalent to the prefix of the account ID so it inherits its validity.
 /// - 3rd felt: The upper 32 bits are always zero.
 /// - 4th felt: The upper 30 bits are always zero.
