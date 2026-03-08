@@ -595,6 +595,7 @@ impl Deserializable for InputNoteCommitment {
 #[cfg(test)]
 mod tests {
     use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
 
     use anyhow::Context;
     use miden_crypto::rand::test_utils::rand_value;

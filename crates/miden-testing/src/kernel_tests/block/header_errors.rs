@@ -17,7 +17,12 @@ use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
-use miden_protocol::transaction::{InputNoteCommitment, ProvenOutputNote, ProvenTransaction, TxAccountUpdate};
+use miden_protocol::transaction::{
+    InputNoteCommitment,
+    ProvenOutputNote,
+    ProvenTransaction,
+    TxAccountUpdate,
+};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;

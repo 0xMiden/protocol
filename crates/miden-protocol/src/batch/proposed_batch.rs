@@ -441,7 +441,12 @@ mod tests {
     use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use crate::asset::FungibleAsset;
-    use crate::transaction::{InputNoteCommitment, ProvenOutputNote, ProvenTransaction, TxAccountUpdate};
+    use crate::transaction::{
+        InputNoteCommitment,
+        ProvenOutputNote,
+        ProvenTransaction,
+        TxAccountUpdate,
+    };
 
     #[test]
     fn proposed_batch_serialization() -> anyhow::Result<()> {
