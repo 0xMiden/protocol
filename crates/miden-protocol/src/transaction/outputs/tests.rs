@@ -1,11 +1,11 @@
 use assert_matches::assert_matches;
 
-use super::{OutputNote, OutputNotes, PublicOutputNote, PublicOutputNoteError};
+use super::{OutputNote, OutputNotes, PublicOutputNote};
 use crate::account::AccountId;
 use crate::assembly::Assembler;
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
-use crate::errors::TransactionOutputError;
+use crate::errors::{PublicOutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
