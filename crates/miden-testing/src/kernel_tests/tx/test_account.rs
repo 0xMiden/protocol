@@ -467,7 +467,7 @@ async fn test_get_map_item() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_get_storage_slot_type() -> anyhow::Result<()> {
+async fn test_get_native_storage_slot_type() -> anyhow::Result<()> {
     for slot_name in [
         AccountStorage::mock_value_slot0().name(),
         AccountStorage::mock_value_slot1().name(),
@@ -495,7 +495,7 @@ async fn test_get_storage_slot_type() -> anyhow::Result<()> {
                 push.{slot_idx}
 
                 # get the type of the respective storage slot
-                exec.account::get_storage_slot_type
+                exec.account::get_native_storage_slot_type
 
                 # truncate the stack
                 swap drop

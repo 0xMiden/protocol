@@ -157,6 +157,16 @@ impl NoteScript {
         self.entrypoint
     }
 
+    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
+    /// procedure names.
+    ///
+    /// See [`MastForest::clear_debug_info`] for more details.
+    pub fn clear_debug_info(&mut self) {
+        let mut mast = self.mast.clone();
+        Arc::make_mut(&mut mast).clear_debug_info();
+        self.mast = mast;
+    }
+
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
     /// underlying [MastForest].
     ///
@@ -272,6 +282,16 @@ impl Serializable for NoteScript {
         self.mast.write_into(target);
         target.write_u32(u32::from(self.entrypoint));
     }
+
+    fn get_size_hint(&self) -> usize {
+        // TODO: this is a temporary workaround. Replace mast.to_bytes().len() with
+        // MastForest::get_size_hint() (or a similar size-hint API) once it becomes
+        // available.
+        let mast_size = self.mast.to_bytes().len();
+        let u32_size = 0u32.get_size_hint();
+
+        mast_size + u32_size
+    }
 }
 
 impl Deserializable for NoteScript {
@@ -330,8 +350,8 @@ mod tests {
     #[test]
     fn test_note_script_to_from_felt() {
         let assembler = Assembler::default();
-        let tx_script_src = DEFAULT_NOTE_CODE;
-        let program = assembler.assemble_program(tx_script_src).unwrap();
+        let script_src = DEFAULT_NOTE_CODE;
+        let program = assembler.assemble_program(script_src).unwrap();
         let note_script = NoteScript::new(program);
 
         let encoded: Vec<Felt> = (&note_script).into();

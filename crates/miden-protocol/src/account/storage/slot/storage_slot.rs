@@ -108,18 +108,6 @@ impl StorageSlot {
     }
 }
 
-impl Ord for StorageSlot {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.name().cmp(&other.name)
-    }
-}
-
-impl PartialOrd for StorageSlot {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 // SERIALIZATION
 // ================================================================================================
 

@@ -4,6 +4,7 @@ use core::fmt::{Debug, Display};
 use miden_protocol_macros::WordWrapper;
 
 use super::{Felt, Hasher, ProvenTransaction, WORD_SIZE, Word, ZERO};
+use crate::asset::{Asset, FungibleAsset};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -19,8 +20,13 @@ use crate::utils::serde::{
 ///
 /// Transaction ID is computed as:
 ///
-/// hash(init_account_commitment, final_account_commitment, input_notes_commitment,
-/// output_notes_commitment)
+/// hash(
+///     INIT_ACCOUNT_COMMITMENT,
+///     FINAL_ACCOUNT_COMMITMENT,
+///     INPUT_NOTES_COMMITMENT,
+///     OUTPUT_NOTES_COMMITMENT,
+///     FEE_ASSET,
+/// )
 ///
 /// This achieves the following properties:
 /// - Transactions are identical if and only if they have the same ID.
@@ -35,12 +41,14 @@ impl TransactionId {
         final_account_commitment: Word,
         input_notes_commitment: Word,
         output_notes_commitment: Word,
+        fee_asset: FungibleAsset,
     ) -> Self {
-        let mut elements = [ZERO; 4 * WORD_SIZE];
+        let mut elements = [ZERO; 6 * WORD_SIZE];
         elements[..4].copy_from_slice(init_account_commitment.as_elements());
         elements[4..8].copy_from_slice(final_account_commitment.as_elements());
         elements[8..12].copy_from_slice(input_notes_commitment.as_elements());
-        elements[12..].copy_from_slice(output_notes_commitment.as_elements());
+        elements[12..16].copy_from_slice(output_notes_commitment.as_elements());
+        elements[16..].copy_from_slice(&Asset::from(fee_asset).as_elements());
         Self(Hasher::hash_elements(&elements))
     }
 }
@@ -67,6 +75,7 @@ impl From<&ProvenTransaction> for TransactionId {
             tx.account_update().final_state_commitment(),
             tx.input_notes().commitment(),
             tx.output_notes().commitment(),
+            tx.fee(),
         )
     }
 }

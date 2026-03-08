@@ -12,6 +12,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -300,9 +301,8 @@ impl From<AuthMultisig> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
+        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME, AccountType::all())
             .with_description("Multisig authentication component using hybrid signature schemes")
-            .with_supports_all_types()
             .with_storage_schema(storage_schema);
 
         AccountComponent::new(multisig_library(), storage_slots, metadata).expect(

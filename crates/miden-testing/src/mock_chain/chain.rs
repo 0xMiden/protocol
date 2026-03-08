@@ -25,8 +25,8 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
-    OutputNote,
     PartialBlockchain,
+    ProvenOutputNote,
     ProvenTransaction,
     TransactionInputs,
 };
@@ -187,6 +187,9 @@ pub struct MockChain {
     /// block.
     pending_transactions: Vec<ProvenTransaction>,
 
+    /// Batches that have been submitted to the chain but have not yet been included in a block.
+    pending_batches: Vec<ProvenBatch>,
+
     /// NoteID |-> MockChainNote mapping to simplify note retrieval.
     committed_notes: BTreeMap<NoteId, MockChainNote>,
 
@@ -236,6 +239,7 @@ impl MockChain {
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_key: SecretKey,
+        genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
             chain: Blockchain::default(),
@@ -243,6 +247,7 @@ impl MockChain {
             nullifier_tree: NullifierTree::default(),
             account_tree,
             pending_transactions: Vec::new(),
+            pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
             committed_accounts: BTreeMap::new(),
             account_authenticators,
@@ -254,6 +259,20 @@ impl MockChain {
         chain
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
+
+        // Update committed_notes with full note details for genesis notes.
+        // This is needed because apply_block only stores headers for private notes,
+        // but tests need full note details to create input notes.
+        for note in genesis_notes {
+            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
+                chain.committed_notes.get(&note.id())
+            {
+                chain.committed_notes.insert(
+                    note.id(),
+                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
+                );
+            }
+        }
 
         debug_assert_eq!(chain.blocks.len(), 1);
         debug_assert_eq!(chain.committed_accounts.len(), chain.account_tree.num_accounts());
@@ -855,6 +874,14 @@ impl MockChain {
         self.pending_transactions.push(transaction);
     }
 
+    /// Adds the given [`ProvenBatch`] to the list of pending batches.
+    ///
+    /// A block has to be created to apply the batch effects to the chain state, e.g. using
+    /// [`MockChain::prove_next_block`].
+    pub fn add_pending_batch(&mut self, batch: ProvenBatch) {
+        self.pending_batches.push(batch);
+    }
+
     // PRIVATE HELPERS
     // ----------------------------------------------------------------------------------------
 
@@ -917,9 +944,11 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Full(note) = created_note {
-                self.committed_notes
-                    .insert(note.id(), MockChainNote::Public(note.clone(), note_inclusion_proof));
+            if let ProvenOutputNote::Public(public_note) = created_note {
+                self.committed_notes.insert(
+                    public_note.id(),
+                    MockChainNote::Public(public_note.note().clone(), note_inclusion_proof),
+                );
             } else {
                 self.committed_notes.insert(
                     created_note.id(),
@@ -979,7 +1008,8 @@ impl MockChain {
         // Create batches from pending transactions.
         // ----------------------------------------------------------------------------------------
 
-        let batches = self.pending_transactions_to_batches()?;
+        let mut batches = self.pending_transactions_to_batches()?;
+        batches.extend(core::mem::take(&mut self.pending_batches));
 
         // Create block.
         // ----------------------------------------------------------------------------------------
@@ -1056,6 +1086,7 @@ impl Deserializable for MockChain {
             nullifier_tree,
             account_tree,
             pending_transactions,
+            pending_batches: Vec::new(),
             committed_notes,
             committed_accounts,
             account_authenticators,
@@ -1329,6 +1360,28 @@ mod tests {
 
         // Public keys should be carried through from the genesis header to the next.
         assert_eq!(next_block.header().validator_key(), next_block.header().validator_key());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_pending_batch() -> anyhow::Result<()> {
+        let mut builder = MockChain::builder();
+        let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+        let mut chain = builder.build()?;
+
+        // Execute a noop transaction and create a batch from it.
+        let tx = chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await?;
+        let proven_tx = LocalTransactionProver::default().prove_dummy(tx)?;
+        let proposed_batch = chain.propose_transaction_batch(vec![proven_tx])?;
+        let proven_batch = chain.prove_transaction_batch(proposed_batch)?;
+
+        // Submit the batch directly and prove the block.
+        let num_blocks_before = chain.proven_blocks().len();
+        chain.add_pending_batch(proven_batch);
+        chain.prove_next_block()?;
+
+        assert_eq!(chain.proven_blocks().len(), num_blocks_before + 1);
 
         Ok(())
     }
