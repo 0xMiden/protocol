@@ -58,7 +58,7 @@ impl LocalTransactionProver {
         let output_notes: Vec<_> = tx_outputs
             .output_notes
             .iter()
-            .map(|note| note.to_proven_output_note())
+            .map(|note| note.to_output_note())
             .collect::<Result<Vec<_>, _>>()
             .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 

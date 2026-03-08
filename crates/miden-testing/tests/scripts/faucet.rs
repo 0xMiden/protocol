@@ -26,7 +26,7 @@ use miden_protocol::note::{
     NoteType,
 };
 use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
@@ -281,7 +281,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
 
     let note = get_note_with_fungible_asset_and_script(fungible_asset, burn_note_script_code);
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
     let token_metadata = TokenMetadata::try_from(faucet.storage())?;
@@ -347,7 +347,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 
     let note = get_note_with_fungible_asset_and_script(fungible_asset, burn_note_script_code);
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mock_chain = builder.build()?;
 
     let tx = mock_chain
@@ -480,7 +480,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         .code(trigger_note_script_code)
         .build()?;
 
-    builder.add_output_note(OutputNote::Full(trigger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(trigger_note.clone()));
     let mock_chain = builder.build()?;
 
     // Execute the transaction - this should fetch the output note script from the data store.
@@ -500,7 +500,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
 
     // Extract the full note from the OutputNote enum
     let full_note = match output_note {
-        OutputNote::Full(note) => note,
+        RawOutputNote::Full(note) => note,
         _ => panic!("Expected OutputNote::Full variant"),
     };
 
@@ -615,7 +615,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     )?;
 
     // Add the MINT note to the mock chain
-    builder.add_output_note(OutputNote::Full(mint_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
 
     // EXECUTE MINT NOTE AGAINST NETWORK FAUCET
@@ -873,7 +873,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         .build()?;
 
     // Add the transfer note to the builder before building the chain
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
 
     // Prove the block to make the transfer note exist on-chain
@@ -1093,8 +1093,8 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         .code(transfer_note_script_code.clone())
         .build()?;
 
-    builder.add_output_note(OutputNote::Full(renounce_note.clone()));
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(renounce_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -1183,7 +1183,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         &mut rng,
     )?;
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -1279,7 +1279,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         &mut rng,
     )?;
 
-    builder.add_output_note(OutputNote::Full(mint_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(mint_note.clone()));
     let mut mock_chain = builder.build()?;
 
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[mint_note.id()], &[])?.build()?;
@@ -1298,7 +1298,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         NoteType::Public => {
             // For public notes, we get OutputNote::Full and can compare key properties
             let created_note = match output_note {
-                OutputNote::Full(note) => note,
+                RawOutputNote::Full(note) => note,
                 _ => panic!("Expected OutputNote::Full variant"),
             };
 

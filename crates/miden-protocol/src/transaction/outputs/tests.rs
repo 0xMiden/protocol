@@ -1,11 +1,11 @@
 use assert_matches::assert_matches;
 
-use super::{OutputNote, OutputNotes, PublicOutputNote};
+use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
 use crate::assembly::Assembler;
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
-use crate::errors::{PublicOutputNoteError, TransactionOutputError};
+use crate::errors::{OutputNoteError, TransactionOutputError};
 use crate::note::{
     Note,
     NoteAssets,
@@ -30,9 +30,11 @@ fn test_duplicate_output_notes() -> anyhow::Result<()> {
     let mock_note_id = mock_note.id();
     let mock_note_clone = mock_note.clone();
 
-    let error =
-        OutputNotes::new(vec![OutputNote::Full(mock_note), OutputNote::Full(mock_note_clone)])
-            .expect_err("input notes creation should fail");
+    let error = RawOutputNotes::new(vec![
+        RawOutputNote::Full(mock_note),
+        RawOutputNote::Full(mock_note_clone),
+    ])
+    .expect_err("input notes creation should fail");
 
     assert_matches!(error, TransactionOutputError::DuplicateOutputNote(note_id) if note_id == mock_note_id);
 
@@ -64,7 +66,7 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     let recipient = NoteRecipient::new(serial_num, script, storage);
 
     let note = Note::new(assets, metadata, recipient);
-    let output_note = OutputNote::Full(note);
+    let output_note = RawOutputNote::Full(note);
 
     let bytes = output_note.to_bytes();
 
@@ -118,17 +120,17 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
 
     assert_matches!(
         result,
-        Err(PublicOutputNoteError::NoteSizeLimitExceeded { note_id: _, note_size })
+        Err(OutputNoteError::NoteSizeLimitExceeded { note_id: _, note_size })
             if note_size > NOTE_MAX_SIZE as usize
     );
 
-    // to_proven_output_note() should also fail
-    let output_note = OutputNote::Full(oversized_note);
-    let result = output_note.to_proven_output_note();
+    // to_output_note() should also fail
+    let output_note = RawOutputNote::Full(oversized_note);
+    let result = output_note.to_output_note();
 
     assert_matches!(
         result,
-        Err(PublicOutputNoteError::NoteSizeLimitExceeded { note_id: _, note_size })
+        Err(OutputNoteError::NoteSizeLimitExceeded { note_id: _, note_size })
             if note_size > NOTE_MAX_SIZE as usize
     );
 

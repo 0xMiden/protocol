@@ -24,7 +24,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
+use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, Word};
 use miden_standards::note::{
     NoteConsumptionStatus,
@@ -354,7 +354,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let fail_epilogue_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .add_assets([Asset::from(note_asset)])
         .build()?;
-    builder.add_output_note(OutputNote::Full(fail_epilogue_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(fail_epilogue_note.clone()));
 
     let mock_chain = builder.build()?;
     let notes = vec![
@@ -675,7 +675,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
@@ -765,7 +765,7 @@ async fn test_check_note_consumability_static_analysis_sender(
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;

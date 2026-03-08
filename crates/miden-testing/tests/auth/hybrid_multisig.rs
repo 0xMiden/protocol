@@ -14,7 +14,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisig;
@@ -156,7 +156,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     // Execute transaction without signatures - should fail
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt)
         .build()?;
 
@@ -179,7 +179,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     // Execute transaction with signatures - should succeed
     let tx_context_execute = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)
@@ -601,13 +601,13 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Build the new mock chain with the updated account and notes
     let mut new_mock_chain_builder =
         MockChainBuilder::with_accounts([updated_multisig_account.clone()]).unwrap();
-    new_mock_chain_builder.add_output_note(OutputNote::Full(input_note_new.clone()));
+    new_mock_chain_builder.add_output_note(RawOutputNote::Full(input_note_new.clone()));
     let new_mock_chain = new_mock_chain_builder.build().unwrap();
 
     // Execute transaction without signatures first to get tx summary
     let tx_context_init_new = new_mock_chain
         .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt_new)
         .build()?;
 
@@ -636,7 +636,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Execute transaction with new signatures - should succeed
     let tx_context_execute_new = new_mock_chain
         .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note_new)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_new)])
         .add_signature(new_public_keys[0].to_commitment(), msg_new, sig_1_new)
         .add_signature(new_public_keys[1].to_commitment(), msg_new, sig_2_new)
         .add_signature(new_public_keys[2].to_commitment(), msg_new, sig_3_new)
@@ -1092,7 +1092,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Execute transaction without signatures to get tx summary
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .tx_script(send_note_transaction_script.clone())
         .auth_args(salt2)
         .build()?;
@@ -1112,7 +1112,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Try to execute with only 1 signature - should FAIL
     let tx_context_one_sig = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .tx_script(send_note_transaction_script.clone())
         .auth_args(salt2)
@@ -1139,7 +1139,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Execute with 2 signatures - should SUCCEED
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg2, sig_2)
         .auth_args(salt2)

@@ -15,10 +15,11 @@ use crate::utils::serde::{
 mod notes;
 pub use notes::{
     OutputNote,
+    OutputNoteCollection,
     OutputNotes,
-    ProvenOutputNote,
-    ProvenOutputNotes,
+    PrivateNoteHeader,
     PublicOutputNote,
+    RawOutputNote,
     RawOutputNotes,
 };
 
@@ -36,7 +37,7 @@ pub struct TransactionOutputs {
     /// The commitment to the delta computed by the transaction kernel.
     pub account_delta_commitment: Word,
     /// Set of output notes created by the transaction.
-    pub output_notes: OutputNotes,
+    pub output_notes: RawOutputNotes,
     /// The fee of the transaction.
     pub fee: FungibleAsset,
     /// Defines up to which block the transaction is considered valid.
@@ -84,7 +85,7 @@ impl Deserializable for TransactionOutputs {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = AccountHeader::read_from(source)?;
         let account_delta_commitment = Word::read_from(source)?;
-        let output_notes = OutputNotes::read_from(source)?;
+        let output_notes = RawOutputNotes::read_from(source)?;
         let fee = FungibleAsset::read_from(source)?;
         let expiration_block_num = BlockNumber::read_from(source)?;
 

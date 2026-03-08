@@ -61,6 +61,14 @@ impl NoteRecipient {
         self.digest
     }
 
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Reduces the size of the note script by stripping all debug info from it.
+    pub fn minify_script(&mut self) {
+        self.script.clear_debug_info();
+    }
+
     /// Consumes self and returns the underlying parts of the [`NoteRecipient`].
     pub fn into_parts(self) -> (Word, NoteScript, NoteStorage) {
         (self.serial_num, self.script, self.storage)

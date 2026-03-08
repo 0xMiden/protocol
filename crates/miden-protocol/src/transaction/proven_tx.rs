@@ -13,8 +13,8 @@ use crate::transaction::{
     AccountId,
     InputNotes,
     Nullifier,
-    ProvenOutputNote,
-    ProvenOutputNotes,
+    OutputNote,
+    OutputNotes,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -52,7 +52,7 @@ pub struct ProvenTransaction {
 
     /// Notes created by the transaction. For private notes, this will contain only note headers,
     /// while for public notes this will also contain full note details.
-    output_notes: ProvenOutputNotes,
+    output_notes: OutputNotes,
 
     /// [`BlockNumber`] of the transaction's reference block.
     ref_block_num: BlockNumber,
@@ -92,7 +92,7 @@ impl ProvenTransaction {
     }
 
     /// Returns a reference to the notes produced by the transaction.
-    pub fn output_notes(&self) -> &ProvenOutputNotes {
+    pub fn output_notes(&self) -> &OutputNotes {
         &self.output_notes
     }
 
@@ -205,7 +205,7 @@ impl Deserializable for ProvenTransaction {
         let account_update = TxAccountUpdate::read_from(source)?;
 
         let input_notes = <InputNotes<InputNoteCommitment>>::read_from(source)?;
-        let output_notes = ProvenOutputNotes::read_from(source)?;
+        let output_notes = OutputNotes::read_from(source)?;
 
         let ref_block_num = BlockNumber::read_from(source)?;
         let ref_block_commitment = Word::read_from(source)?;
@@ -263,8 +263,8 @@ pub struct ProvenTransactionBuilder {
     /// List of [InputNoteCommitment]s of all consumed notes by the transaction.
     input_notes: Vec<InputNoteCommitment>,
 
-    /// List of [`ProvenOutputNote`]s of all notes created by the transaction.
-    output_notes: Vec<ProvenOutputNote>,
+    /// List of [`OutputNote`]s of all notes created by the transaction.
+    output_notes: Vec<OutputNote>,
 
     /// [`BlockNumber`] of the transaction's reference block.
     ref_block_num: BlockNumber,
@@ -337,7 +337,7 @@ impl ProvenTransactionBuilder {
     /// Add notes produced by the transaction.
     pub fn add_output_notes<T>(mut self, notes: T) -> Self
     where
-        T: IntoIterator<Item = ProvenOutputNote>,
+        T: IntoIterator<Item = OutputNote>,
     {
         self.output_notes.extend(notes);
         self
@@ -372,7 +372,7 @@ impl ProvenTransactionBuilder {
     pub fn build(self) -> Result<ProvenTransaction, ProvenTransactionError> {
         let input_notes =
             InputNotes::new(self.input_notes).map_err(ProvenTransactionError::InputNotesError)?;
-        let output_notes = ProvenOutputNotes::new(self.output_notes)
+        let output_notes = OutputNotes::new(self.output_notes)
             .map_err(ProvenTransactionError::OutputNotesError)?;
         let id = TransactionId::new(
             self.initial_account_commitment,
