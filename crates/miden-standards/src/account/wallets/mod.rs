@@ -23,7 +23,6 @@ use crate::procedure_digest;
 // Initialize the digest of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_digest!(
     BASIC_WALLET_RECEIVE_ASSET,
-    BasicWallet::NAME,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
     basic_wallet_library
 );
@@ -31,7 +30,6 @@ procedure_digest!(
 // Initialize the digest of the `move_asset_to_note` procedure of the Basic Wallet only once.
 procedure_digest!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
-    BasicWallet::NAME,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
     basic_wallet_library
 );
@@ -61,8 +59,8 @@ impl BasicWallet {
     /// The name of the component.
     pub const NAME: &'static str = "miden::standards::components::wallets::basic_wallet";
 
-    const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
-    const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
+    const RECEIVE_ASSET_PROC_NAME: &str = "basic_wallet::receive_asset";
+    const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "basic_wallet::move_asset_to_note";
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
