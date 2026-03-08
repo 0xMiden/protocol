@@ -78,6 +78,7 @@
 - [BREAKING] Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
 - [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents.
 - Explicitly use `get_native_account_active_storage_slots_ptr` in `account::set_item` and `account::set_map_item`.
+- [BREAKING] Introduced `PrivateNoteHeader` for output notes and removed `RawOutputNote::Header` variant ([#2569](https://github.com/0xMiden/protocol/pull/2569)).
 
 ## 0.13.3 (2026-01-27)
 

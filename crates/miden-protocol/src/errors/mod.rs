@@ -787,7 +787,7 @@ pub enum TransactionOutputError {
     AccountUpdateCommitment(Box<str>),
 }
 
-// PUBLIC OUTPUT NOTE ERROR
+// OUTPUT NOTE ERROR
 // ================================================================================================
 
 /// Errors that can occur when creating a
