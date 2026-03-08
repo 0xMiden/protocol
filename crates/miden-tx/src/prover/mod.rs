@@ -7,7 +7,6 @@ use miden_protocol::asset::Asset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     InputNote,
-    InputNoteCommitment,
     InputNotes,
     ProvenTransaction,
     TransactionInputs,
@@ -89,12 +88,9 @@ impl LocalTransactionProver {
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)?;
 
-        let input_note_commitments: Vec<InputNoteCommitment> =
-            input_notes.iter().map(InputNoteCommitment::from).collect();
-
         ProvenTransaction::new(
             account_update,
-            input_note_commitments,
+            input_notes.iter(),
             output_notes,
             ref_block_num,
             ref_block_commitment,

@@ -441,7 +441,7 @@ mod tests {
     use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use crate::asset::FungibleAsset;
-    use crate::transaction::{ProvenTransaction, TxAccountUpdate};
+    use crate::transaction::{InputNoteCommitment, ProvenOutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
     fn proposed_batch_serialization() -> anyhow::Result<()> {
@@ -493,8 +493,8 @@ mod tests {
 
         let tx = ProvenTransaction::new(
             account_update,
-            vec![],
-            vec![],
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<ProvenOutputNote>::new(),
             block_num,
             block_ref,
             FungibleAsset::mock(100).unwrap_fungible(),

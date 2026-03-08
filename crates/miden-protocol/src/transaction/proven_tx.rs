@@ -100,17 +100,21 @@ impl ProvenTransaction {
     ///   type [`AccountUpdateDetails::Private`].
     /// - The transaction was executed against an account with public state and the update is of
     ///   type [`AccountUpdateDetails::Private`].
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_update: TxAccountUpdate,
-        input_notes: Vec<InputNoteCommitment>,
-        output_notes: Vec<ProvenOutputNote>,
+        input_notes: impl IntoIterator<Item = impl Into<InputNoteCommitment>>,
+        output_notes: impl IntoIterator<Item = impl Into<ProvenOutputNote>>,
         ref_block_num: BlockNumber,
         ref_block_commitment: Word,
         fee: FungibleAsset,
         expiration_block_num: BlockNumber,
         proof: ExecutionProof,
     ) -> Result<Self, ProvenTransactionError> {
+        let input_notes: Vec<InputNoteCommitment> =
+            input_notes.into_iter().map(Into::into).collect();
+        let output_notes: Vec<ProvenOutputNote> =
+            output_notes.into_iter().map(Into::into).collect();
+
         let input_notes =
             InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
         let output_notes = ProvenOutputNotes::new(output_notes)
@@ -620,7 +624,7 @@ mod tests {
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-    use crate::transaction::TxAccountUpdate;
+    use crate::transaction::{InputNoteCommitment, ProvenOutputNote, TxAccountUpdate};
     use crate::utils::serde::{Deserializable, Serializable};
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, LexicographicWord, ONE, Word};
 
@@ -733,8 +737,8 @@ mod tests {
 
         let tx = ProvenTransaction::new(
             account_update,
-            vec![],
-            vec![],
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<ProvenOutputNote>::new(),
             ref_block_num,
             ref_block_commitment,
             FungibleAsset::mock(42).unwrap_fungible(),

@@ -17,7 +17,7 @@ use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
-use miden_protocol::transaction::{ProvenTransaction, TxAccountUpdate};
+use miden_protocol::transaction::{InputNoteCommitment, ProvenOutputNote, ProvenTransaction, TxAccountUpdate};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -394,8 +394,8 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
             .unwrap();
             ProvenTransaction::new(
                 account_update,
-                vec![],
-                vec![],
+                Vec::<InputNoteCommitment>::new(),
+                Vec::<ProvenOutputNote>::new(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
                 FungibleAsset::mock(500).unwrap_fungible(),
