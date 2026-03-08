@@ -283,7 +283,6 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 /// Tests multisig signer update functionality.
 ///
 /// This test verifies that a multisig account can:

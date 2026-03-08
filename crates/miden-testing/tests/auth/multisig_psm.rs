@@ -129,8 +129,6 @@ async fn test_multisig_psm_signature_required(
         10,
         vec![],
     )?;
-    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     let output_note_asset = FungibleAsset::mock(0);
     let mut mock_chain_builder =
@@ -195,8 +193,6 @@ async fn test_multisig_psm_signature_required(
         .await?;
 
     multisig_account.apply_delta(tx_context_execute.account_delta())?;
-    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
@@ -243,8 +239,6 @@ async fn test_multisig_update_psm_public_key(
         10,
         vec![],
     )?;
-    let psm_config = multisig_account.storage().get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -293,11 +287,6 @@ async fn test_multisig_update_psm_public_key(
 
     let mut updated_multisig_account = multisig_account.clone();
     updated_multisig_account.apply_delta(update_psm_tx.account_delta())?;
-    let psm_config = updated_multisig_account
-        .storage()
-        .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
-
     let updated_psm_public_key = updated_multisig_account
         .storage()
         .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::empty())?;

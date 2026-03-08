@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 
+use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
     AccountComponentMetadata,
-    FeltSchema,
     SchemaType,
     StorageSchema,
     StorageSlotSchema,
@@ -17,18 +17,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 
 use super::multisig::{AuthMultisig, AuthMultisigConfig};
 use crate::account::components::multisig_psm_library;
 
 // CONSTANTS
 // ================================================================================================
-
-static PSM_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::psm::config")
-        .expect("storage slot name should be valid")
-});
 
 static PSM_PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::psm::pub_key")
@@ -70,35 +64,12 @@ impl PsmConfig {
         self.auth_scheme
     }
 
-    fn enabled() -> Word {
-        Word::from([1u32, 0u32, 0u32, 0u32])
-    }
-
-    fn config_slot() -> &'static StorageSlotName {
-        &PSM_CONFIG_SLOT_NAME
-    }
-
     fn public_key_slot() -> &'static StorageSlotName {
         &PSM_PUBKEY_SLOT_NAME
     }
 
     fn scheme_id_slot() -> &'static StorageSlotName {
         &PSM_SCHEME_ID_SLOT_NAME
-    }
-
-    fn config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::config_slot().clone(),
-            StorageSlotSchema::value(
-                "Private state manager config",
-                [
-                    FeltSchema::u32("is_psm_signature_required").with_default(Felt::new(0)),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                ],
-            ),
-        )
     }
 
     fn public_key_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
@@ -124,13 +95,7 @@ impl PsmConfig {
     }
 
     fn into_component_parts(self) -> (Vec<StorageSlot>, Vec<(StorageSlotName, StorageSlotSchema)>) {
-        let mut storage_slots = Vec::with_capacity(3);
-
-        // Private state manager config slot (value: [is_psm_signature_required, 0, 0, 0])
-        // This always starts enabled.
-        // PSM key rotation flow can temporarily disable it.
-        let psm_config = Self::enabled();
-        storage_slots.push(StorageSlot::with_value(Self::config_slot().clone(), psm_config));
+        let mut storage_slots = Vec::with_capacity(2);
 
         // Private state manager public key slot (map: [0, 0, 0, 0] -> pubkey)
         let psm_public_key_entries =
@@ -150,11 +115,7 @@ impl PsmConfig {
             StorageMap::with_entries(psm_scheme_id_entries).unwrap(),
         ));
 
-        let slot_metadata = vec![
-            Self::config_slot_schema(),
-            Self::public_key_slot_schema(),
-            Self::auth_scheme_slot_schema(),
-        ];
+        let slot_metadata = vec![Self::public_key_slot_schema(), Self::auth_scheme_slot_schema()];
 
         (storage_slots, slot_metadata)
     }
@@ -269,11 +230,6 @@ impl AuthMultisigPsm {
         AuthMultisig::procedure_thresholds_slot()
     }
 
-    /// Returns the [`StorageSlotName`] where the private state manager config is stored.
-    pub fn psm_config_slot() -> &'static StorageSlotName {
-        PsmConfig::config_slot()
-    }
-
     /// Returns the [`StorageSlotName`] where the private state manager public key is stored.
     pub fn psm_public_key_slot() -> &'static StorageSlotName {
         PsmConfig::public_key_slot()
@@ -307,11 +263,6 @@ impl AuthMultisigPsm {
     /// Returns the storage slot schema for the procedure thresholds slot.
     pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         AuthMultisig::procedure_thresholds_slot_schema()
-    }
-
-    /// Returns the storage slot schema for the private state manager config slot.
-    pub fn psm_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        PsmConfig::config_slot_schema()
     }
 
     /// Returns the storage slot schema for the private state manager public key slot.
@@ -436,12 +387,6 @@ mod tests {
             assert_eq!(stored_scheme_id, Word::from([*expected_auth_scheme as u32, 0, 0, 0]));
         }
 
-        let psm_config = account
-            .storage()
-            .get_item(AuthMultisigPsm::psm_config_slot())
-            .expect("private state manager config storage slot access failed");
-        assert_eq!(psm_config, PsmConfig::enabled());
-
         // Verify private state manager signer is configured.
         let psm_public_key = account
             .storage()
@@ -527,12 +472,6 @@ mod tests {
             .with_component(BasicWallet)
             .build()
             .expect("account building failed");
-
-        let psm_config = account
-            .storage()
-            .get_item(AuthMultisigPsm::psm_config_slot())
-            .expect("private state manager config storage slot access failed");
-        assert_eq!(psm_config, PsmConfig::enabled());
 
         let psm_public_key = account
             .storage()
@@ -620,12 +559,5 @@ mod tests {
                 .to_string()
                 .contains("private state manager public key must be different from approvers")
         );
-    }
-
-    #[test]
-    fn test_multisig_psm_config_state_constants() {
-        let enabled = PsmConfig::enabled();
-        assert_eq!(enabled, Word::from([1u32, 0, 0, 0]));
-        assert_ne!(enabled, Word::from([0u32, 0, 0, 0]));
     }
 }

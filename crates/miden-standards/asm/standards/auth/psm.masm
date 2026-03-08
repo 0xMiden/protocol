@@ -5,27 +5,17 @@
 # Private State Manager (PSM) is a cloud backup and synchronization layer for Miden private accounts
 # See: https://github.com/OpenZeppelin/private-state-manager
 
-use miden::protocol::active_account
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
 use miden::standards::auth::signature
 
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
-# - The `is_psm_signature_required` selector in `PSM_CONFIG_SLOT` controls whether the extra PSM signature
-#   is enforced:
-#     * (is_psm_signature_required == 1) => exactly one valid PSM signature is required.
-#     * (is_psm_signature_required == 0) => PSM signature is skipped.
-#
-# - `verify_signature` reads `is_psm_signature_required` from current storage state.
-#   This allows same transaction temporary updates to affect the check.
-#
-# - `enable_psm_signature_requirement` / `disable_psm_signature_requirement` procedures allow explicit control over PSM state.
-#
-# - `update_psm_public_key`:
-#     * Rotates the PSM public key and corresponding scheme id using the fixed map key `PSM_MAP_KEY`.
-#     * Performs storage update only and does not require signature by a PSM signer
-#     * Temporarily disables PSM signature requirement so key rotation can proceed without a PSM signature.
+# - By default, exactly one valid PSM signature is required.
+# - If `update_psm_public_key` was called in the current transaction, `verify_signature` skips the
+#   PSM signature check so key rotation can proceed without the old PSM signer.
+# - `update_psm_public_key` rotates the PSM public key and corresponding scheme id using the fixed
+#   map key `PSM_MAP_KEY`.
 
 
 # CONSTANTS
@@ -34,9 +24,6 @@ use miden::standards::auth::signature
 # Storage Slots
 #
 # This authentication component uses named storage slots.
-# - PSM_CONFIG_SLOT:
-#   [is_psm_signature_required, 0, 0, 0]
-#
 # - PSM_PUBLIC_KEYS_SLOT (map):
 #   PSM_MAP_KEY => PSM_PUBLIC_KEY
 #   where: PSM_MAP_KEY = [0, 0, 0, 0]
@@ -44,10 +31,6 @@ use miden::standards::auth::signature
 # - PSM_SCHEME_ID_SLOT (map):
 #   PSM_MAP_KEY => [scheme_id, 0, 0, 0]
 #   where: PSM_MAP_KEY = [0, 0, 0, 0]
-
-# The slot in this component's storage layout where the PSM configuration is stored.
-# [is_psm_signature_required, 0, 0, 0]
-const PSM_CONFIG_SLOT = word("miden::standards::auth::psm::config")
 
 # The slot in this component's storage layout where the PSM public key map is stored.
 # Map entries: [PSM_MAP_KEY] => [PSM_PUBLIC_KEY]
@@ -64,62 +47,6 @@ const PSM_MAP_KEY = [0, 0, 0, 0]
 # -------------------------------------------------------------------------------------------------
 const ERR_INVALID_PSM_SIGNATURE = "invalid private state manager signature"
 
-# INTERNAL PROCEDURES
-# ================================================================================================
-
-#! Updates the PSM config's signature requirement felt.
-#!
-#! Notes:
-#! - Signature requirement input is normalized to boolean value.
-#! - Config is always written as [is_psm_signature_required, 0, 0, 0].
-#!
-#! Inputs:  [is_psm_signature_required]
-#! Outputs: []
-#!
-#! Invocation: exec
-proc set_psm_signature_requirement(is_psm_signature_required: felt)
-    push.0.0.0
-    movup.3
-    # => [is_psm_signature_required, 0, 0, 0]
-
-    push.PSM_CONFIG_SLOT[0..2]
-    # => [config_slot_prefix, config_slot_suffix, NEW_PSM_CONFIG_WORD]
-
-    exec.native_account::set_item
-    # => [OLD_PSM_CONFIG]
-
-    dropw
-    # => []
-end
-
-#! Enables PSM signature requirement by setting `is_psm_signature_required` to 1.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-proc enable_psm_signature_requirement
-    push.1
-    # => [1]
-
-    exec.set_psm_signature_requirement
-    # => []
-end
-
-#! Disables PSM signature requirement by setting `is_psm_signature_required` to 0.
-#!
-#! Inputs:  []
-#! Outputs: []
-#!
-#! Invocation: exec
-proc disable_psm_signature_requirement
-    push.0
-    # => [0]
-
-    exec.set_psm_signature_requirement
-    # => []
-end
-
 # PUBLIC INTERFACE
 # ================================================================================================
 
@@ -129,9 +56,8 @@ end
 #! Outputs: []
 #!
 #! Notes:
-#! - This procedure disables PSM signature requirement before updating the key.
-#! - This procedure also updates the PSM signature scheme id.
-#! - Signature requirement is set back to ON by `verify_signature` at the end of auth.
+#! - This procedure only updates the PSM public key and corresponding scheme id.
+#! - `verify_signature` skips PSM verification in transactions that call this procedure.
 #!
 #! Invocation: call
 @locals(1)
@@ -141,9 +67,6 @@ pub proc update_psm_public_key(new_psm_scheme_id: felt, new_psm_public_key: word
     # => [new_psm_scheme_id, NEW_PSM_PUBLIC_KEY]
 
     loc_store.0
-    # => [NEW_PSM_PUBLIC_KEY]
-
-    exec.disable_psm_signature_requirement
     # => [NEW_PSM_PUBLIC_KEY]
 
     push.PSM_MAP_KEY
@@ -184,24 +107,21 @@ end
 #! Outputs: []
 #!
 #! Panics if:
-#! - signature requirement is ON and a valid PSM signature is missing or invalid.
-#!
-#! Notes:
-#! - Signature requirement is read from current storage state so `update_psm_public_key` can
-#!   temporarily skip PSM in this tx.
-#! - If the initial signature requirement was enabled, it is set back to ON at the end of auth.
+#! - `update_psm_public_key` was not called and a valid PSM signature is missing or invalid.
 #!
 #! Invocation: exec
 pub proc verify_signature(msg: word)
-    # Use current config to apply temporary PSM changes in this tx.
-    push.PSM_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [is_psm_signature_required, 0, 0, 0, MSG]
+    procref.update_psm_public_key
+    # => [UPDATE_PSM_PUBLIC_KEY_ROOT, MSG]
 
-    movdn.4 drop drop drop swap
-    # => [is_psm_signature_required, MSG]
+    exec.native_account::was_procedure_called
+    # => [was_update_psm_public_key_called, MSG]
 
-    # Verify exactly one signature from the configured private state manager signer.
     if.true
+        # Key rotation transactions skip the PSM signature check.
+        dropw
+        # => []
+    else
         push.1
         # => [1, MSG]
 
@@ -222,10 +142,8 @@ pub proc verify_signature(msg: word)
             push.0 assert.err=ERR_INVALID_PSM_SIGNATURE
         end
         # => [MSG]
+
+        dropw
+        # => []
     end
-    # => [MSG]
-
-    dropw
-
-    exec.enable_psm_signature_requirement
 end
