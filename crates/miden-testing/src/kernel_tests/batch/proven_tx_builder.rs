@@ -13,6 +13,7 @@ use miden_protocol::transaction::{
     InputNoteCommitment,
     ProvenOutputNote,
     ProvenTransaction,
+    TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
 
@@ -114,12 +115,17 @@ impl MockProvenTxBuilder {
         input_note_commitments
             .extend(self.nullifiers.unwrap_or_default().into_iter().map(InputNoteCommitment::from));
 
-        ProvenTransaction::new(
+        let account_update = TxAccountUpdate::new(
             self.account_id,
             self.initial_account_commitment,
             self.final_account_commitment,
             Word::empty(),
             AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        ProvenTransaction::new(
+            account_update,
             input_note_commitments,
             self.output_notes.unwrap_or_default(),
             BlockNumber::from(0),

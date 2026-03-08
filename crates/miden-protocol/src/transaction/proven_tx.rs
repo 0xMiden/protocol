@@ -102,11 +102,7 @@ impl ProvenTransaction {
     ///   type [`AccountUpdateDetails::Private`].
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        account_id: AccountId,
-        initial_account_commitment: Word,
-        final_account_commitment: Word,
-        account_delta_commitment: Word,
-        account_update_details: AccountUpdateDetails,
+        account_update: TxAccountUpdate,
         input_notes: Vec<InputNoteCommitment>,
         output_notes: Vec<ProvenOutputNote>,
         ref_block_num: BlockNumber,
@@ -121,20 +117,12 @@ impl ProvenTransaction {
             .map_err(ProvenTransactionError::OutputNotesError)?;
 
         let id = TransactionId::new(
-            initial_account_commitment,
-            final_account_commitment,
+            account_update.initial_state_commitment(),
+            account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
             fee,
         );
-
-        let account_update = TxAccountUpdate::new(
-            account_id,
-            initial_account_commitment,
-            final_account_commitment,
-            account_delta_commitment,
-            account_update_details,
-        )?;
 
         let proven_transaction = Self {
             id,
@@ -734,12 +722,17 @@ mod tests {
         let expiration_block_num = BlockNumber::from(2);
         let proof = ExecutionProof::new_dummy();
 
-        let tx = ProvenTransaction::new(
+        let account_update = TxAccountUpdate::new(
             account_id,
             initial_account_commitment,
             final_account_commitment,
             account_delta_commitment,
             AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        let tx = ProvenTransaction::new(
+            account_update,
             vec![],
             vec![],
             ref_block_num,

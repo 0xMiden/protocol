@@ -441,7 +441,7 @@ mod tests {
     use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use crate::asset::FungibleAsset;
-    use crate::transaction::ProvenTransaction;
+    use crate::transaction::{ProvenTransaction, TxAccountUpdate};
 
     #[test]
     fn proposed_batch_serialization() -> anyhow::Result<()> {
@@ -482,12 +482,17 @@ mod tests {
         let expiration_block_num = reference_block_header.block_num() + 1;
         let proof = ExecutionProof::new_dummy();
 
-        let tx = ProvenTransaction::new(
+        let account_update = TxAccountUpdate::new(
             account_id,
             initial_account_commitment,
             final_account_commitment,
             account_delta_commitment,
             AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        let tx = ProvenTransaction::new(
+            account_update,
             vec![],
             vec![],
             block_num,

@@ -13,6 +13,7 @@ use miden_protocol::transaction::{
     TransactionInputs,
     TransactionKernel,
     TransactionOutputs,
+    TxAccountUpdate,
 };
 pub use miden_prover::ProvingOptions;
 use miden_prover::{ExecutionProof, Word, prove};
@@ -79,15 +80,20 @@ impl LocalTransactionProver {
             AccountUpdateDetails::Private
         };
 
-        let input_note_commitments: Vec<InputNoteCommitment> =
-            input_notes.iter().map(InputNoteCommitment::from).collect();
-
-        ProvenTransaction::new(
+        let account_update = TxAccountUpdate::new(
             account.id(),
             account.initial_commitment(),
             tx_outputs.account.to_commitment(),
             pre_fee_delta_commitment,
             account_update_details,
+        )
+        .map_err(TransactionProverError::ProvenTransactionBuildFailed)?;
+
+        let input_note_commitments: Vec<InputNoteCommitment> =
+            input_notes.iter().map(InputNoteCommitment::from).collect();
+
+        ProvenTransaction::new(
+            account_update,
             input_note_commitments,
             output_notes,
             ref_block_num,
