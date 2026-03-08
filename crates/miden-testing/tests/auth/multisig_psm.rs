@@ -300,7 +300,7 @@ async fn test_multisig_update_psm_public_key(
 
     let updated_psm_public_key = updated_multisig_account
         .storage()
-        .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::from([0u32, 0, 0, 0]))?;
+        .get_map_item(AuthMultisigPsm::psm_public_key_slot(), Word::empty())?;
     assert_eq!(updated_psm_public_key, Word::from(new_psm_public_key.to_commitment()));
     let updated_psm_scheme_id = updated_multisig_account
         .storage()
@@ -313,48 +313,9 @@ async fn test_multisig_update_psm_public_key(
     mock_chain.add_pending_executed_transaction(&update_psm_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Run one tx after key update to ensure the new PSM key is enforced in subsequent auth flows.
-    let reenable_salt = Word::from([Felt::new(992); 4]);
-    let tx_context_init_reenable = mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[], &[])?
-        .auth_args(reenable_salt)
-        .build()?;
-    let tx_summary_reenable = match tx_context_init_reenable.execute().await.unwrap_err() {
-        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => anyhow::bail!("expected abort with tx effects: {error}"),
-    };
-    let reenable_msg = tx_summary_reenable.as_ref().to_commitment();
-    let tx_summary_reenable_signing = SigningInputs::TransactionSummary(tx_summary_reenable);
-    let reenable_sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary_reenable_signing)
-        .await?;
-    let reenable_sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary_reenable_signing)
-        .await?;
-    let reenable_psm_sig = new_psm_authenticator
-        .get_signature(new_psm_public_key.to_commitment(), &tx_summary_reenable_signing)
-        .await?;
-
-    let reenable_tx = mock_chain
-        .build_tx_context(updated_multisig_account.id(), &[], &[])?
-        .add_signature(public_keys[0].to_commitment(), reenable_msg, reenable_sig_1)
-        .add_signature(public_keys[1].to_commitment(), reenable_msg, reenable_sig_2)
-        .add_signature(new_psm_public_key.to_commitment(), reenable_msg, reenable_psm_sig)
-        .auth_args(reenable_salt)
-        .build()?
-        .execute()
-        .await?;
-    updated_multisig_account.apply_delta(reenable_tx.account_delta())?;
-    let psm_config = updated_multisig_account
-        .storage()
-        .get_item(AuthMultisigPsm::psm_config_slot())?;
-    assert_eq!(psm_config, Word::from([1u32, 0u32, 0u32, 0u32]));
-
-    mock_chain.add_pending_executed_transaction(&reenable_tx)?;
-    mock_chain.prove_next_block()?;
-
-    // Build the next tx summary used for signature generation.
-    let next_salt = Word::from([Felt::new(993); 4]);
+    // Build one tx summary after key update. Old PSM must fail and new PSM must pass on this same
+    // transaction.
+    let next_salt = Word::from([Felt::new(992); 4]);
     let tx_context_init_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?
         .auth_args(next_salt)

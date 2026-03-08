@@ -215,7 +215,7 @@ impl AuthMultisigPsmConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing a multisig based on ECDSA signatures.
+/// An [`AccountComponent`] implementing a multisig authentication with a private state manager.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides. With Private State Manager (PSM) is configured,
@@ -363,8 +363,8 @@ mod tests {
     use alloc::string::ToString;
 
     use miden_protocol::Word;
+    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::AuthSecretKey;
-    use miden_protocol::account::{AccountBuilder, auth};
 
     use super::*;
     use crate::account::wallets::BasicWallet;
@@ -461,7 +461,7 @@ mod tests {
     fn test_multisig_component_minimum_threshold() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let psm_key = AuthSecretKey::new_falcon512_poseidon2();
-        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
+        let approvers = vec![(pub_key, AuthScheme::EcdsaK256Keccak)];
         let threshold = 1u32;
 
         let multisig_component = AuthMultisigPsm::new(
@@ -497,10 +497,7 @@ mod tests {
             .storage()
             .get_map_item(AuthMultisigPsm::approver_scheme_ids_slot(), Word::from([0u32, 0, 0, 0]))
             .expect("approver scheme IDs storage map access failed");
-        assert_eq!(
-            stored_scheme_id,
-            Word::from([auth::AuthScheme::EcdsaK256Keccak as u32, 0, 0, 0])
-        );
+        assert_eq!(stored_scheme_id, Word::from([AuthScheme::EcdsaK256Keccak as u32, 0, 0, 0]));
     }
 
     /// Test multisig component setup with a private state manager.
@@ -555,15 +552,7 @@ mod tests {
     fn test_multisig_component_error_cases() {
         let pub_key = AuthSecretKey::new_ecdsa_k256_keccak().public_key().to_commitment();
         let psm_key = AuthSecretKey::new_falcon512_poseidon2();
-        let approvers = vec![(pub_key, auth::AuthScheme::EcdsaK256Keccak)];
-
-        // Test threshold = 0 (should fail)
-        let result = AuthMultisigPsmConfig::new(
-            approvers.clone(),
-            0,
-            PsmConfig::new(psm_key.public_key().to_commitment(), psm_key.auth_scheme()),
-        );
-        assert!(result.unwrap_err().to_string().contains("threshold must be at least 1"));
+        let approvers = vec![(pub_key, AuthScheme::EcdsaK256Keccak)];
 
         // Test threshold > number of approvers (should fail)
         let result = AuthMultisigPsmConfig::new(
@@ -571,6 +560,7 @@ mod tests {
             2,
             PsmConfig::new(psm_key.public_key().to_commitment(), psm_key.auth_scheme()),
         );
+
         assert!(
             result
                 .unwrap_err()

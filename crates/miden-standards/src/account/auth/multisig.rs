@@ -125,7 +125,7 @@ impl AuthMultisigConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing a multisig based on ECDSA signatures.
+/// An [`AccountComponent`] implementing a multisig authentication.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)

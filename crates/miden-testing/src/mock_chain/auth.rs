@@ -34,15 +34,15 @@ pub enum Auth {
     /// Multisig
     Multisig {
         threshold: u32,
-        approvers: Vec<(Word, AuthScheme)>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
-    /// Multisig with optional private state manager.
+    /// Multisig with a private state manager.
     MultisigPsm {
         threshold: u32,
-        approvers: Vec<(Word, AuthScheme)>,
-        psm: Option<(Word, AuthScheme)>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        psm_config: PsmConfig,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
@@ -88,14 +88,7 @@ impl Auth {
                 (component, Some(authenticator))
             },
             Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let approvers = approvers
-                    .iter()
-                    .map(|(pub_key, auth_scheme)| {
-                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
-                    })
-                    .collect();
-
-                let config = AuthMultisigConfig::new(approvers, *threshold)
+                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
                 let component =
@@ -106,26 +99,12 @@ impl Auth {
             Auth::MultisigPsm {
                 threshold,
                 approvers,
-                psm,
+                psm_config,
                 proc_threshold_map,
             } => {
-                let (psm_pub_key, psm_auth_scheme) =
-                    psm.expect("multisig psm auth requires a private state manager signer");
-
-                let approvers = approvers
-                    .iter()
-                    .map(|(pub_key, auth_scheme)| {
-                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
-                    })
-                    .collect();
-
-                let config = AuthMultisigPsmConfig::new(
-                    approvers,
-                    *threshold,
-                    PsmConfig::new(PublicKeyCommitment::from(psm_pub_key), psm_auth_scheme),
-                )
-                .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                .expect("invalid multisig psm config");
+                let config = AuthMultisigPsmConfig::new(approvers.clone(), *threshold, *psm_config)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid multisig psm config");
                 let component = AuthMultisigPsm::new(config)
                     .expect("multisig psm component creation failed")
                     .into();
