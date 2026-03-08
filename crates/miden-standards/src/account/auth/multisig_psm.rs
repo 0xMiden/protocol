@@ -295,10 +295,13 @@ impl From<AuthMultisigPsm> for AccountComponent {
         let storage_schema =
             StorageSchema::new(slot_schemas).expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthMultisigPsm::NAME)
-            .with_description(multisig_component.metadata().description())
-            .with_supported_types(multisig_component.supported_types().clone())
-            .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(
+            AuthMultisigPsm::NAME,
+            multisig_component.supported_types().clone(),
+        )
+        .with_description(multisig_component.metadata().description())
+        .with_version(multisig_component.metadata().version().clone())
+        .with_storage_schema(storage_schema);
 
         AccountComponent::new(multisig_psm_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",
