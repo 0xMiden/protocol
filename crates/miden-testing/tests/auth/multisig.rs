@@ -466,7 +466,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::multisig::update_signers_and_threshold
+            call.::miden::standards::account_components::auth::multisig::update_signers_and_threshold
         end
     ";
 
@@ -730,7 +730,7 @@ async fn test_multisig_update_signers_remove_owner(
     // Create transaction script
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(multisig_library())?
-        .compile_tx_script("begin\n    call.::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("begin\n    call.::miden::standards::account_components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -947,7 +947,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::multisig::update_signers_and_threshold
+            call.::miden::standards::account_components::auth::multisig::update_signers_and_threshold
         end
     ";
 
