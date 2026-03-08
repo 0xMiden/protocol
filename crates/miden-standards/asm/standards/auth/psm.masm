@@ -7,13 +7,15 @@
 
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::native_account
+use miden::standards::auth::tx_policy
 use miden::standards::auth::signature
 
 # IMPORTANT SECURITY NOTES
 # --------------------------------------------------------------------------------
 # - By default, exactly one valid PSM signature is required.
-# - If `update_psm_public_key` was called in the current transaction, `verify_signature` skips the
-#   PSM signature check so key rotation can proceed without the old PSM signer.
+# - If `update_psm_public_key` is the only non-auth account procedure called in the current
+#   transaction, `verify_signature` skips the PSM signature check so key rotation can proceed
+#   without the old PSM signer.
 # - `update_psm_public_key` rotates the PSM public key and corresponding scheme id using the fixed
 #   map key `PSM_MAP_KEY`.
 
@@ -57,7 +59,8 @@ const ERR_INVALID_PSM_SIGNATURE = "invalid private state manager signature"
 #!
 #! Notes:
 #! - This procedure only updates the PSM public key and corresponding scheme id.
-#! - `verify_signature` skips PSM verification in transactions that call this procedure.
+#! - `verify_signature` skips PSM verification only when this is the only non-auth account
+#!   procedure called in the transaction.
 #!
 #! Invocation: call
 @locals(1)
@@ -107,18 +110,24 @@ end
 #! Outputs: []
 #!
 #! Panics if:
+#! - `update_psm_public_key` is called together with another non-auth account procedure.
 #! - `update_psm_public_key` was not called and a valid PSM signature is missing or invalid.
 #!
 #! Invocation: exec
 pub proc verify_signature(msg: word)
     procref.update_psm_public_key
     # => [UPDATE_PSM_PUBLIC_KEY_ROOT, MSG]
-
+    
     exec.native_account::was_procedure_called
     # => [was_update_psm_public_key_called, MSG]
 
     if.true
-        # Key rotation transactions skip the PSM signature check.
+        exec.tx_policy::assert_only_one_non_auth_procedure_called
+        # => [MSG]
+
+        exec.tx_policy::assert_no_input_or_output_notes
+        # => [MSG]
+
         dropw
         # => []
     else

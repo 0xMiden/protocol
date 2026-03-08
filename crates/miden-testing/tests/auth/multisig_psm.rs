@@ -7,7 +7,7 @@ use miden_protocol::account::{
     AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
@@ -18,7 +18,11 @@ use miden_standards::account::auth::{AuthMultisigPsm, AuthMultisigPsmConfig, Psm
 use miden_standards::account::components::multisig_psm_library;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_testing::MockChainBuilder;
+use miden_standards::errors::standards::{
+    ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE,
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES,
+};
+use miden_testing::{MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -352,6 +356,176 @@ async fn test_multisig_update_psm_public_key(
         .build()?
         .execute()
         .await?;
+
+    Ok(())
+}
+
+/// Tests that `update_psm_public_key` must be the only account action in the transaction.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_update_psm_public_key_must_be_called_alone(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let old_psm_secret_key = AuthSecretKey::new_ecdsa_k256_keccak();
+    let old_psm_public_key = old_psm_secret_key.public_key();
+    let old_psm_authenticator = BasicAuthenticator::new(core::slice::from_ref(&old_psm_secret_key));
+
+    let new_psm_secret_key = AuthSecretKey::new_falcon512_poseidon2();
+    let new_psm_public_key = new_psm_secret_key.public_key();
+    let new_psm_auth_scheme = new_psm_secret_key.auth_scheme();
+
+    let multisig_account = create_multisig_account_with_psm(
+        2,
+        &approvers,
+        PsmConfig::new(old_psm_public_key.to_commitment(), AuthScheme::EcdsaK256Keccak),
+        10,
+        vec![],
+    )?;
+
+    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
+    let new_psm_scheme_id = new_psm_auth_scheme as u32;
+    let update_psm_script = CodeBuilder::new()
+        .with_dynamically_linked_library(multisig_psm_library())?
+        .compile_tx_script(format!(
+            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
+        ))?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let receive_asset_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build().unwrap();
+
+    let salt = Word::from([Felt::new(993); 4]);
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
+        .tx_script(update_psm_script.clone())
+        .auth_args(salt)
+        .build()?;
+
+    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let without_psm_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
+        .tx_script(update_psm_script.clone())
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(without_psm_result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+
+    let old_psm_signature = old_psm_authenticator
+        .get_signature(old_psm_public_key.to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let with_psm_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[receive_asset_note.id()], &[])?
+        .tx_script(update_psm_script)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .add_signature(old_psm_public_key.to_commitment(), msg, old_psm_signature)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(with_psm_result, ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE);
+
+    // Also reject rotation transactions that touch notes even when no other account procedure is
+    // called.
+    let note_script = CodeBuilder::default().compile_note_script("begin nop end")?;
+    let note_serial_num = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+    let note_recipient =
+        NoteRecipient::new(note_serial_num, note_script.clone(), NoteStorage::default());
+    let output_note = Note::new(
+        NoteAssets::new(vec![])?,
+        NoteMetadata::new(multisig_account.id(), NoteType::Public),
+        note_recipient,
+    );
+
+    let new_psm_key_word: Word = new_psm_public_key.to_commitment().into();
+    let new_psm_scheme_id = new_psm_auth_scheme as u32;
+    let update_psm_with_output_script = CodeBuilder::new()
+        .with_dynamically_linked_library(multisig_psm_library())?
+        .compile_tx_script(format!(
+            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend",
+            recipient = output_note.recipient().digest(),
+            note_type = NoteType::Public as u8,
+            tag = Felt::from(output_note.metadata().tag()),
+        ))?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let salt = Word::from([Felt::new(994); 4]);
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_psm_with_output_script.clone())
+        .add_note_script(note_script.clone())
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .auth_args(salt)
+        .build()?;
+
+    let tx_summary = match tx_context_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(update_psm_with_output_script)
+        .add_note_script(note_script)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .add_signature(public_keys[0].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_2)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(
+        result,
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
+    );
 
     Ok(())
 }
