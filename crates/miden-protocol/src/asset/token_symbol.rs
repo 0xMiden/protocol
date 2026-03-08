@@ -209,10 +209,16 @@ fn decode_felt_to_symbol(encoded_felt: Felt) -> Result<String, TokenSymbolError>
 
 #[cfg(test)]
 mod test {
+    use alloc::string::ToString;
+
     use assert_matches::assert_matches;
 
     use super::{
-        Felt, TokenSymbol, TokenSymbolError, decode_felt_to_symbol, encode_symbol_to_felt,
+        Felt,
+        TokenSymbol,
+        TokenSymbolError,
+        decode_felt_to_symbol,
+        encode_symbol_to_felt,
     };
 
     #[test]
