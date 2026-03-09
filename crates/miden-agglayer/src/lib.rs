@@ -411,11 +411,11 @@ impl From<AggLayerFaucet> for AccountComponent {
 // FAUCET REGISTRY HELPERS
 // ================================================================================================
 
-/// Creates a Word key from an account ID: `[suffix, prefix, 0, 0]`.
+/// Creates a Word key from an account ID: `[0, 0, suffix, prefix]`.
 ///
-/// This is the standard layout for storing account IDs in MASM storage slots and map keys.
+/// This matches the canonical `AccountIdKey` layout used for account tree lookups.
 pub fn create_id_key(id: AccountId) -> Word {
-    Word::new([id.suffix(), id.prefix().as_felt(), Felt::ZERO, Felt::ZERO])
+    Word::new([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()])
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

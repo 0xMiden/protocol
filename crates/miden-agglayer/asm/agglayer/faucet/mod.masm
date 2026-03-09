@@ -10,7 +10,7 @@ use miden::standards::note_tag
 use miden::protocol::note
 use miden::protocol::tx
 use miden::core::mem
-use miden::core::word
+
 
 # ERRORS
 # =================================================================================================
@@ -208,10 +208,10 @@ proc validate_claim
 
     # get bridge account ID
     exec.active_account::get_item
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
+    # => [0, 0, bridge_account_id_suffix, bridge_account_id_prefix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
-    movup.2 drop movup.2 drop
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
+    drop drop
+    # => [bridge_account_id_suffix, bridge_account_id_prefix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
 
     # call bridge_in::verify_leaf_bridge
     exec.tx::execute_foreign_procedure

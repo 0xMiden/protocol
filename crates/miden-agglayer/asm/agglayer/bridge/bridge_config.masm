@@ -98,32 +98,34 @@ end
 #! Registers a faucet in the bridge's faucet registry.
 #!
 #! Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
-#! `KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]`.
+#! `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
 #!
 #! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
 #! non-existent entries (SMTs return EMPTY_WORD for missing keys).
 #!
 #! Panics if the note sender is not the bridge admin.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc register_faucet
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
-    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
 
     # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
     push.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, faucet_id_prefix, faucet_id_suffix, pad(14)]
+    # => [IS_FAUCET_REGISTERED_FLAG, suffix, prefix, pad(14)]
 
     movdn.7
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
+    # => [[suffix, prefix, 0, 0], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
+    movup.2 movup.3
+    # => [[0, 0, suffix, prefix], [0, 0, 0, IS_FAUCET_REGISTERED_FLAG], pad(9)]
 
     # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]
-    # Stack: [slot0, slot1, [prefix, suffix, 0, 0], [0, 0, 0, 1], pad(9)]
+    # => [slot0, slot1, KEY, VALUE, pad(9)]
 
     exec.native_account::set_map_item
     # => [OLD_VALUE, pad(9)]
@@ -136,7 +138,7 @@ end
 #! Looks up the faucet ID in the faucet registry map and asserts the registration
 #! flag is set.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
@@ -144,10 +146,9 @@ end
 #!
 #! Invocation: exec
 pub proc assert_faucet_registered
-    # Build KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
     push.0.0
-    movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     push.FAUCET_REGISTRY_SLOT[0..2]
     exec.active_account::get_map_item
@@ -176,16 +177,16 @@ pub proc assert_sender_is_bridge_admin
 
     push.BRIDGE_ADMIN_SLOT[0..2]
     exec.active_account::get_item
-    # => [admin_prefix, admin_suffix, 0, 0, pad(16)]
+    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
+
+    drop drop
+    # => [admin_suffix, admin_prefix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, admin_prefix, admin_suffix, pad(18)]
+    # => [sender_suffix, sender_prefix, admin_suffix, admin_prefix, pad(16)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
-    # => [pad(18)]
-
-    drop drop
     # => [pad(16)]
 end
 
@@ -206,15 +207,15 @@ pub proc assert_sender_is_ger_manager
 
     push.GER_MANAGER_SLOT[0..2]
     exec.active_account::get_item
-    # => [mgr_prefix, mgr_suffix, 0, 0, pad(16)]
+    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
+
+    drop drop
+    # => [mgr_suffix, mgr_prefix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, mgr_prefix, mgr_suffix, pad(18)]
+    # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_GER_MANAGER
-    # => [pad(18)]
-
-    drop drop
     # => [pad(16)]
 end
