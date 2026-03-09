@@ -30,7 +30,10 @@ pub use outputs::{
 };
 pub use partial_blockchain::PartialBlockchain;
 pub use proven_tx::{
-    InputNoteCommitment, ProvenTransaction, ProvenTransactionBuilder, TxAccountUpdate,
+    InputNoteCommitment,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
+    TxAccountUpdate,
 };
 pub use transaction_id::TransactionId;
 pub use tx_args::{TransactionArgs, TransactionScript};
