@@ -160,13 +160,13 @@ proc u128_sub_no_underflow
     # Arrange args (LE convention) as:
     #   [y2, y3, x2, x3]
     # ---------------------------------------------------------------------------------------------
-    movup.3
+    movup.4
     movup.4
     # => [x2, x3, borrow_low, z0, z1, y2, y3]
 
-    movup.5
     movup.6
     # => [y2, y3, x2, x3, borrow_low, z0, z1]
+    movup.6
 
     exec.u64::overflowing_sub
     # => [underflow_high_raw, t0, t1, borrow_low, z0, z1]
