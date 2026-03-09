@@ -95,7 +95,7 @@ Example:
 
 ```masm
 #! Inputs: [single_value, SOME_WORD]
-#! Inputs: [dest_address(5), AMOUNT_U256(8), pad(2)]
+#! Inputs: [dest_address(5), amount_u256(8), pad(2)]
 ```
 
 Variable, which represents a memory address, should have a `_ptr` suffix in its name. For example, `note_script_commitment_ptr`.
