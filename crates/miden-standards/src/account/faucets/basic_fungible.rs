@@ -33,6 +33,7 @@ use crate::procedure_digest;
 // Initialize the digest of the `distribute` procedure of the Basic Fungible Faucet only once.
 procedure_digest!(
     BASIC_FUNGIBLE_FAUCET_DISTRIBUTE,
+    BasicFungibleFaucet::NAME,
     BasicFungibleFaucet::DISTRIBUTE_PROC_NAME,
     basic_fungible_faucet_library
 );
@@ -40,6 +41,7 @@ procedure_digest!(
 // Initialize the digest of the `burn` procedure of the Basic Fungible Faucet only once.
 procedure_digest!(
     BASIC_FUNGIBLE_FAUCET_BURN,
+    BasicFungibleFaucet::NAME,
     BasicFungibleFaucet::BURN_PROC_NAME,
     basic_fungible_faucet_library
 );
@@ -74,13 +76,13 @@ impl BasicFungibleFaucet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::basic_fungible_faucet";
+    pub const NAME: &'static str = "miden::standards::components::faucets::basic_fungible_faucet";
 
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const DISTRIBUTE_PROC_NAME: &str = "basic_fungible_faucet::distribute";
-    const BURN_PROC_NAME: &str = "basic_fungible_faucet::burn";
+    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
