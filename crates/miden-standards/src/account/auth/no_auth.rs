@@ -21,7 +21,7 @@ pub struct NoAuth;
 
 impl NoAuth {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::no_auth";
+    pub const NAME: &'static str = "miden::standards::components::auth::no_auth";
 
     /// Creates a new [`NoAuth`] component.
     pub fn new() -> Self {
