@@ -88,7 +88,8 @@ impl RegulatedNetworkFungibleFaucet {
     pub const MAX_DECIMALS: u8 = 12;
 
     /// The name of the component used to construct procedure paths.
-    pub const NAME: &'static str = "miden::standards::components::faucets::regulated_network_fungible_faucet";
+    pub const NAME: &'static str =
+        "miden::standards::components::faucets::regulated_network_fungible_faucet";
 
     const DISTRIBUTE_PROC_NAME: &str = "distribute";
     const BURN_PROC_NAME: &str = "burn";
