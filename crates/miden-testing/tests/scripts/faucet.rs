@@ -147,7 +147,7 @@ async fn execute_faucet_note_script(
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
         .serial_number(Word::from([rng_seed, rng_seed + 1, rng_seed + 2, rng_seed + 3]))
-        .code(note_script_code.to_owned())
+        .code(note_script_code)
         .build()?;
 
     let tx_context = mock_chain
