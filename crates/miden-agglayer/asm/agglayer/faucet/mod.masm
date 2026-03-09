@@ -77,6 +77,10 @@ pub proc get_scale
 
     drop movdn.2 drop drop
     # => [scale]
+
+    # truncate stack
+    swap drop
+    # => [scale]
 end
 
 #! Converts a native Miden asset amount to origin asset data using the stored

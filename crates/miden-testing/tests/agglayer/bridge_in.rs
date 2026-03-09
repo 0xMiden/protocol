@@ -17,6 +17,7 @@ use miden_agglayer::{
     create_existing_bridge_account,
 };
 use miden_protocol::account::Account;
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -28,6 +29,7 @@ use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
+use miden_standards::testing::mock_account::MockAccountExt;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{AccountState, Auth, MockChain, TransactionContextBuilder};
 use miden_tx::utils::hex_to_bytes;
@@ -114,8 +116,6 @@ fn merkle_proof_verification_code(
 #[case::simulated(ClaimDataSource::Simulated)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
-    use miden_protocol::account::auth::AuthScheme;
-
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -174,8 +174,6 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // For the simulated case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
-        use miden_standards::testing::mock_account::MockAccountExt;
-
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
         // Ensure the mock account ID matches the destination embedded in the JSON test vector,
@@ -272,8 +270,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // TX2: EXECUTE CLAIM NOTE AGAINST BRIDGE (validates proof, creates MINT note)
     // --------------------------------------------------------------------------------------------
-    let claim_tx_context =
-        mock_chain.build_tx_context(bridge_account.id(), &[], &[claim_note])?.build()?;
+    let faucet_foreign_inputs = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note])?
+        .foreign_accounts(vec![faucet_foreign_inputs])
+        .build()?;
 
     let claim_executed = claim_tx_context.execute().await?;
 
