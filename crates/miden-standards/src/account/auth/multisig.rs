@@ -23,6 +23,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::multisig_library;
 
+// CONSTANTS
+// ================================================================================================
+
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
         .expect("storage slot name should be valid")
@@ -123,19 +126,13 @@ impl AuthMultisigConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing a multisig based on ECDSA signatures.
+/// An [`AccountComponent`] implementing a multisig authentication.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
-/// per-procedure thresholds overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts, as a single approver could withhold
-///  the new state from other approvers, effectively locking them out.
-///
-/// The storage layout is:
-/// - Slot 0(value): [threshold, num_approvers, 0, 0]
-/// - Slot 1(map): A map with approver public keys (index -> pubkey)
-/// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
-/// - Slot 3(map): A map which stores executed transactions
-/// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
+/// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
+/// should be used with caution for private multisig accounts, without Private State Manager (PSM),
+/// a single approver may advance state and withhold updates from other approvers, effectively
+/// locking them out.
 ///
 /// This component supports all account types.
 #[derive(Debug)]
@@ -313,6 +310,9 @@ impl From<AuthMultisig> for AccountComponent {
         )
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {
