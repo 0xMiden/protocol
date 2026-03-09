@@ -224,7 +224,6 @@ pub proc set
         push.1
         # => [is_new_key]
     else
-        # insert new entry
         # => [is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
         dup.2 dup.2
@@ -301,20 +300,20 @@ pub proc get
         padw padw push.0
         # => [contains_key, EMPTY_WORD, EMPTY_WORD]
     else
-        # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
+        # => [is_found, entry_ptr, map_ptr, KEY]
 
         dup.2 dup.2
-        # => [entry_ptr, map_ptr, is_absent_at_head, entry_ptr, map_ptr, KEY]
+        # => [entry_ptr, map_ptr, is_found, entry_ptr, map_ptr, KEY]
 
         # validate the entry pointer
         # this can be skipped for assert_absent_at_head because the entry_ptr is not used in that
         # branch
         exec.assert_entry_ptr_is_valid
-        # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
+        # => [is_found, entry_ptr, map_ptr, KEY]
 
         # drop unused map_ptr
         movup.2 drop
-        # => [is_absent_at_head, entry_ptr, KEY]
+        # => [is_found, entry_ptr, KEY]
 
         # note: the flag and empty word logic is duplicated rather than appended after the if-else
         # branch to avoid introducing an extra MAST node
