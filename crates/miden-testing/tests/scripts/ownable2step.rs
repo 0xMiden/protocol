@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 
 use miden_processor::crypto::random::RpoRandomCoin;
+use miden_protocol::Felt;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -18,7 +19,6 @@ use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::Felt;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
