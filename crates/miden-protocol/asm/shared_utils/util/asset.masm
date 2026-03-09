@@ -1,3 +1,8 @@
+# ERRORS
+# =================================================================================================
+
+const ERR_VAULT_INVALID_ENABLE_CALLBACKS = "enable_callbacks must be 0 or 1"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -11,6 +16,9 @@ pub const ASSET_SIZE = 8
 
 # The offset of the asset value in an asset stored in memory.
 pub const ASSET_VALUE_MEMORY_OFFSET = 4
+
+pub const CALLBACKS_DISABLED = 0
+pub const CALLBACKS_ENABLED = 1
 
 # PROCEDURES
 # =================================================================================================
@@ -180,6 +188,21 @@ pub proc key_to_callbacks_enabled
     # => [callbacks_enabled, ASSET_KEY]
 end
 
+#! Creates asset metadata from the provided inputs.
+#!
+#! Inputs:  [enable_callbacks]
+#! Outputs: [asset_metadata]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether the asset callbacks flag should be set.
+#! - asset_metadata is the asset metadata.
+proc create_metadata
+    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    dup u32lte.CALLBACKS_ENABLED
+    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # => [asset_metadata]
+end
+
 #! Creates a fungible asset vault key for the specified faucet.
 #!
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix]
@@ -198,23 +221,35 @@ end
 
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
-#! WARNING: Does not validate its inputs.
+#! WARNING: Does not validate the faucet ID or amount.
 #!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
 #! - ASSET_KEY is the vault key of the created fungible asset
 #! - ASSET_VALUE is the value of the created fungible asset.
 #!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+#!
 #! Invocation: exec
 pub proc create_fungible_asset_unchecked
+    # convert enable_callbacks flag to asset_metadata
+    exec.create_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, amount]
+
+    # merge metadata into lower 8 bits of faucet_id_suffix
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, amount]
+
     # create the key and value
     repeat.3 push.0 movdn.3 end
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
 
     exec.create_fungible_key
     # => [ASSET_KEY, ASSET_VALUE]
