@@ -121,6 +121,11 @@ impl Serializable for NoteStorage {
         target.write_u16(items.len().try_into().expect("storage items len is not a u16 value"));
         target.write_many(items);
     }
+
+    fn get_size_hint(&self) -> usize {
+        // 2 bytes for u16 length + 8 bytes per Felt
+        2 + self.items.len() * 8
+    }
 }
 
 impl Deserializable for NoteStorage {

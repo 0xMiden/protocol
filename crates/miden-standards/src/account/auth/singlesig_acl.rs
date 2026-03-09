@@ -11,6 +11,7 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{
     AccountCode,
     AccountComponent,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -21,6 +22,9 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
 use crate::account::components::singlesig_acl_library;
+
+// CONSTANTS
+// ================================================================================================
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig_acl::pub_key")
@@ -291,9 +295,8 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthSingleSigAcl::NAME)
+        let metadata = AccountComponentMetadata::new(AuthSingleSigAcl::NAME, AccountType::all())
             .with_description("Authentication component with procedure-based ACL using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
-            .with_supports_all_types()
             .with_storage_schema(storage_schema);
 
         AccountComponent::new(singlesig_acl_library(), storage_slots, metadata).expect(
@@ -301,6 +304,9 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         )
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {

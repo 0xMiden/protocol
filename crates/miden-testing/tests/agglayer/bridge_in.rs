@@ -116,12 +116,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------

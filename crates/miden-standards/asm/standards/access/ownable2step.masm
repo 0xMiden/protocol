@@ -1,0 +1,369 @@
+# miden::standards::access::ownable2step
+#
+# Provides two-step ownership management functionality for account components.
+# This module can be imported and used by any component that needs owner controls.
+#
+# Unlike a single-step ownership transfer, this module requires the new owner to explicitly
+# accept the transfer before it takes effect. This prevents accidental transfers to incorrect
+# addresses, which would permanently lock the component.
+#
+# The transfer flow is:
+#   1. The current owner calls `transfer_ownership` to nominate a new owner.
+#   2. The nominated account calls `accept_ownership` to complete the transfer.
+#   3. Optionally, the current owner can call `transfer_ownership` with their own address
+#      to cancel the nominated transfer.
+#
+# Storage layout (single slot):
+#   Word:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#           word[0]       word[1]        word[2]                  word[3]
+
+use miden::protocol::active_account
+use miden::protocol::account_id
+use miden::protocol::active_note
+use miden::protocol::native_account
+
+# CONSTANTS
+# ================================================================================================
+
+# Ownership config value representing renounced ownership (all zeros).
+const RENOUNCED_OWNERSHIP_CONFIG = [0, 0, 0, 0]
+
+# The slot in this component's storage layout where the owner configuration is stored.
+# Contains both the current owner and the nominated owner in a single word.
+const OWNER_CONFIG_SLOT = word("miden::standards::access::ownable2step::owner_config")
+
+# ERRORS
+# ================================================================================================
+
+const ERR_SENDER_NOT_OWNER = "note sender is not the owner"
+const ERR_SENDER_NOT_NOMINATED_OWNER = "note sender is not the nominated owner"
+const ERR_NO_NOMINATED_OWNER = "no nominated ownership transfer exists"
+
+# LOCAL MEMORY ADDRESSES
+# ================================================================================================
+
+# transfer_ownership locals
+const NEW_OWNER_SUFFIX_LOC = 0
+const NEW_OWNER_PREFIX_LOC = 1
+const OWNER_SUFFIX_LOC = 2
+const OWNER_PREFIX_LOC = 3
+
+# INTERNAL PROCEDURES
+# ================================================================================================
+
+#! Returns the full ownership word from storage.
+#!
+#! Inputs:  []
+#! Outputs: [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#!
+#! Where:
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the current owner account ID.
+#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
+#!   owner account ID.
+proc load_ownership_info
+    push.OWNER_CONFIG_SLOT[0..2] exec.active_account::get_item
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+end
+
+#! Writes the ownership word to storage and drops the old value.
+#!
+#! Inputs:  [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+#! Outputs: []
+proc save_ownership_info
+    push.OWNER_CONFIG_SLOT[0..2]
+    # => [slot_suffix, slot_prefix, owner_suffix, owner_prefix,
+    #     nominated_owner_suffix, nominated_owner_prefix]
+
+    exec.native_account::set_item
+    # => [OLD_OWNERSHIP_WORD]
+
+    dropw
+    # => []
+end
+
+#! Returns the owner account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [owner_suffix, owner_prefix]
+#!
+#! Where:
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
+proc get_owner_internal
+    exec.load_ownership_info
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+
+    movup.2 drop
+    # => [owner_suffix, owner_prefix, nominated_owner_prefix]
+
+    movup.2 drop
+    # => [owner_suffix, owner_prefix]
+end
+
+#! Returns the nominated owner account ID from storage.
+#!
+#! Inputs:  []
+#! Outputs: [nominated_owner_suffix, nominated_owner_prefix]
+#!
+#! Where:
+#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
+#!   owner account ID.
+proc get_nominated_owner_internal
+    exec.load_ownership_info
+    # => [owner_suffix, owner_prefix, nominated_owner_suffix, nominated_owner_prefix]
+
+    drop drop
+    # => [nominated_owner_suffix, nominated_owner_prefix]
+end
+
+#! Checks if the given account ID is the owner of this component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_owner]
+#!
+#! Where:
+#! - is_owner is 1 if the account is the owner, 0 otherwise.
+proc is_owner_internal
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_owner]
+end
+
+#! Checks if the given account ID is the nominated owner of this component.
+#!
+#! Inputs:  [account_id_suffix, account_id_prefix]
+#! Outputs: [is_nominated_owner]
+#!
+#! Where:
+#! - account_id_{suffix, prefix} are the suffix and prefix felts of the account ID to check.
+#! - is_nominated_owner is 1 if the account is the nominated owner, 0 otherwise.
+proc is_nominated_owner_internal
+    exec.get_nominated_owner_internal
+    # => [nominated_owner_suffix, nominated_owner_prefix, account_id_suffix, account_id_prefix]
+
+    exec.account_id::is_equal
+    # => [is_nominated_owner]
+end
+
+#! Checks if the note sender is the owner and panics if not.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: exec
+proc assert_sender_is_owner_internal
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix]
+
+    exec.is_owner_internal
+    # => [is_owner]
+
+    assert.err=ERR_SENDER_NOT_OWNER
+    # => []
+end
+
+# PUBLIC INTERFACE
+# ================================================================================================
+
+#! Checks if the note sender is the owner and panics if not.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+pub proc assert_sender_is_owner
+    exec.assert_sender_is_owner_internal
+    # => [pad(16)]
+end
+
+#! Returns the owner account ID.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [owner_suffix, owner_prefix, pad(14)]
+#!
+#! Where:
+#! - owner_{suffix, prefix} are the suffix and prefix felts of the owner account ID.
+#!
+#! Invocation: call
+pub proc get_owner
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [owner_suffix, owner_prefix, pad(14)]
+end
+
+#! Returns the nominated owner account ID.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [nominated_owner_suffix, nominated_owner_prefix, pad(14)]
+#!
+#! Where:
+#! - nominated_owner_{suffix, prefix} are the suffix and prefix felts of the nominated
+#!   owner account ID. Both are zero if no nominated transfer exists.
+#!
+#! Invocation: call
+pub proc get_nominated_owner
+    exec.get_nominated_owner_internal
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    movup.2 drop movup.2 drop
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(14)]
+end
+
+#! Initiates a two-step ownership transfer by setting the nominated owner.
+#!
+#! The current owner remains in control until the nominated owner calls `accept_ownership`.
+#! Can only be called by the current owner.
+#!
+#! If the new owner is the current owner, any nominated transfer is cancelled and the
+#! nominated owner field is cleared.
+#!
+#! Inputs:  [new_owner_suffix, new_owner_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Locals:
+#! 0: new_owner_suffix
+#! 1: new_owner_prefix
+#! 2: owner_suffix
+#! 3: owner_prefix
+#!
+#! Invocation: call
+@locals(4)
+pub proc transfer_ownership
+    exec.assert_sender_is_owner_internal
+    # => [new_owner_suffix, new_owner_prefix, pad(14)]
+
+    dup.1 dup.1 exec.account_id::validate
+    # => [new_owner_suffix, new_owner_prefix, pad(14)]
+
+    loc_store.NEW_OWNER_SUFFIX_LOC
+    # => [new_owner_prefix, pad(14)]
+
+    loc_store.NEW_OWNER_PREFIX_LOC
+    # => [pad(14)]
+
+    exec.get_owner_internal
+    # => [owner_suffix, owner_prefix, pad(14)]
+
+    loc_store.OWNER_SUFFIX_LOC
+    # => [owner_prefix, pad(13)]
+
+    loc_store.OWNER_PREFIX_LOC
+    # => [pad(12)]
+
+    # Check if new_owner == owner (cancel case).
+    loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
+    # => [new_owner_suffix, new_owner_prefix, pad(12)]
+
+    loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
+    # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
+
+    exec.account_id::is_equal
+    # => [is_self_transfer, pad(12)]
+
+    if.true
+        # Cancel ownership transfer and clear nominated owner.
+        # Stack for save: [owner_suffix, owner_prefix, nominated_suffix=0, nominated_prefix=0]
+        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
+        # => [owner_suffix, owner_prefix, pad(12)]
+
+        push.0.0 movup.3 movup.3
+        # => [owner_suffix, owner_prefix, 0, 0, pad(12)]
+    else
+        # Transfer ownership by setting nominated = new_owner.
+        # Stack for save: [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix]
+        loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
+        # => [new_owner_suffix, new_owner_prefix, pad(12)]
+
+        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
+        # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
+    end
+
+    exec.save_ownership_info
+    # => [pad(12)]
+end
+
+#! Accepts a nominated ownership transfer. The nominated owner becomes the new owner
+#! and the nominated owner field is cleared.
+#!
+#! Can only be called by the nominated owner.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - there is no nominated ownership transfer (nominated owner is zero).
+#! - the note sender is not the nominated owner.
+#!
+#! Invocation: call
+pub proc accept_ownership
+    exec.get_nominated_owner_internal
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    # Check that a nominated transfer exists (nominated owner is not zero).
+    dup.1 eq.0 dup.1 eq.0 and
+    # => [is_zero, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    assertz.err=ERR_NO_NOMINATED_OWNER
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    dup.3 dup.3
+    exec.account_id::is_equal
+    # => [is_sender_nominated_owner, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    assert.err=ERR_SENDER_NOT_NOMINATED_OWNER
+    # => [nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    # Build new ownership word: nominated becomes owner, clear nominated.
+    # Stack for save: [owner_suffix, owner_prefix, nominated_suffix=0, nominated_prefix=0]
+    push.0.0
+    # => [0, 0, nominated_owner_suffix, nominated_owner_prefix, pad(16)]
+
+    # Reorder: move nominated (now new owner) to owner position
+    movup.3 movup.3
+    # => [nominated_owner_suffix, nominated_owner_prefix, 0, 0, pad(16)]
+
+    exec.save_ownership_info
+    # => [pad(16)]
+end
+
+#! Renounces ownership, leaving the component without an owner.
+#!
+#! Can only be called by the current owner. Clears both the owner and any nominated owner.
+#!
+#! Important Note!
+#! This feature allows the owner to relinquish administrative privileges, a common pattern
+#! after an initial stage with centralized administration is over. Once ownership is renounced,
+#! the component becomes permanently ownerless and cannot be managed by any account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender is not the owner.
+#!
+#! Invocation: call
+pub proc renounce_ownership
+    exec.assert_sender_is_owner_internal
+    # => [pad(16)]
+
+    push.RENOUNCED_OWNERSHIP_CONFIG
+    # => [0, 0, 0, 0, pad(16)]
+
+    exec.save_ownership_info
+    # => [pad(16)]
+end

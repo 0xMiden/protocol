@@ -6,10 +6,13 @@ use miden_protocol::account::component::{
     StorageSchema,
     StorageSlotSchema,
 };
-use miden_protocol::account::{AccountComponent, StorageSlot, StorageSlotName};
+use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::singlesig_library;
+
+// CONSTANTS
+// ================================================================================================
 
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig::pub_key")
@@ -83,9 +86,8 @@ impl From<AuthSingleSig> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(AuthSingleSig::NAME)
+        let metadata = AccountComponentMetadata::new(AuthSingleSig::NAME, AccountType::all())
             .with_description("Authentication component using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
-            .with_supports_all_types()
             .with_storage_schema(storage_schema);
 
         let storage_slots = vec![

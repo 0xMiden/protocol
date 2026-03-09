@@ -803,10 +803,14 @@ mod tests {
         let library1 = Assembler::default().assemble_library([code1]).unwrap();
 
         // This component support all account types except the regular account with updatable code.
-        let metadata = AccountComponentMetadata::new("test::component1")
-            .with_supported_type(AccountType::FungibleFaucet)
-            .with_supported_type(AccountType::NonFungibleFaucet)
-            .with_supported_type(AccountType::RegularAccountImmutableCode);
+        let metadata = AccountComponentMetadata::new(
+            "test::component1",
+            [
+                AccountType::FungibleFaucet,
+                AccountType::NonFungibleFaucet,
+                AccountType::RegularAccountImmutableCode,
+            ],
+        );
         let component1 = AccountComponent::new(library1, vec![], metadata).unwrap();
 
         let err = Account::initialize_from_components(
