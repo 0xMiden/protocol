@@ -407,8 +407,6 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let info = TokenMetadataInfo::new().with_name(name.clone());
-
         let network_faucet = NetworkFungibleFaucet::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
@@ -420,8 +418,7 @@ impl MockChainBuilder {
             None,
         )
         .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?
-        .with_info(info);
+        .context("failed to create network fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)

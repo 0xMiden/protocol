@@ -11,7 +11,6 @@ pub use ::miden::standards::faucets::network_fungible::accept_ownership
 pub use ::miden::standards::faucets::network_fungible::renounce_ownership
 
 # Metadata — all from metadata::fungible
-pub use ::miden::standards::metadata::fungible::get_owner
 pub use ::miden::standards::metadata::fungible::get_name
 pub use ::miden::standards::metadata::fungible::get_mutability_config
 pub use ::miden::standards::metadata::fungible::is_max_supply_mutable
