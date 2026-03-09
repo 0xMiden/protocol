@@ -85,10 +85,10 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     let value_after = updated_bridge.storage().get_map_item(registry_slot_name, key)?;
     // TODO: use a getter helper on AggLayerBridge once available
     // (see https://github.com/0xMiden/protocol/issues/2548)
-    let expected_value = [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE].into();
+    let expected_value = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
     assert_eq!(
         value_after, expected_value,
-        "Faucet should be registered with value [0, 0, 0, 1]"
+        "Faucet should be registered with value [1, 0, 0, 0]"
     );
 
     Ok(())
