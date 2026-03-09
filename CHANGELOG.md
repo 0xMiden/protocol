@@ -113,6 +113,7 @@
 - Added an `AccountBuilder` extension trait to help build the schema commitment; added `AccountComponentMetadata` to `AccountComponent` ([#2269](https://github.com/0xMiden/miden-base/pull/2269)).
 - Added `miden::standards::access::ownable` standard module for component ownership management, and integrated it into the `network_fungible` faucet (including new tests). ([#2228](https://github.com/0xMiden/miden-base/pull/2228)).
 - [BREAKING] Add `leaf_value` to `CLAIM` note inputs ([#2290](https://github.com/0xMiden/miden-base/pull/2290)).
+- Added `miden::standards::access::pausable` standard module for regulated management of assets a regulated faucet (including new tests). ([#2228](https://github.com/0xMiden/miden-base/pull/2291)).
 
 ### Changes
 

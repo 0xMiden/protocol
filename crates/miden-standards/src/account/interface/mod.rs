@@ -200,7 +200,11 @@ impl AccountInterface {
             basic_fungible_faucet.send_note_body(*self.id(), output_notes)
         } else if let Some(_network_fungible_faucet) =
             self.components().iter().find(|component_interface| {
-                matches!(component_interface, AccountComponentInterface::NetworkFungibleFaucet)
+                matches!(
+                    component_interface,
+                    AccountComponentInterface::NetworkFungibleFaucet
+                        | AccountComponentInterface::RegulatedNetworkFungibleFaucet
+                )
             })
         {
             // Network fungible faucet doesn't support send_note_body, because minting
