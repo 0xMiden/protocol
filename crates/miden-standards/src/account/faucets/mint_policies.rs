@@ -229,9 +229,11 @@ impl From<MintPolicies> for AccountComponent {
         ])
         .expect("storage schema should be valid");
 
-        let metadata = AccountComponentMetadata::new(MintPolicies::NAME)
+        let metadata = AccountComponentMetadata::new(
+            MintPolicies::NAME,
+            [AccountType::FungibleFaucet],
+        )
             .with_description("Mint policy management component for network fungible faucets")
-            .with_supported_type(AccountType::FungibleFaucet)
             .with_storage_schema(storage_schema);
 
         AccountComponent::new(
