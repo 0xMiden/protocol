@@ -13,12 +13,12 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
-    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
+<<<<<<< HEAD
 use super::{
     Description,
     ExternalLink,
@@ -27,14 +27,23 @@ use super::{
     LogoURI,
     TokenName,
 };
+=======
+use super::{FungibleFaucetError, TokenMetadata};
+use crate::account::access::Ownable2Step;
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
+use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::procedure_digest;
 
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
+<<<<<<< HEAD
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
 use crate::procedure_digest;
+=======
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
 
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
@@ -66,16 +75,24 @@ procedure_digest!(
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
+/// Ownership is managed via a two-step transfer pattern ([`Ownable2Step`]). The current owner
+/// must first nominate a new owner, who then accepts the transfer.
+///
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Fungible faucet metadata.
-/// - [`Self::owner_config_slot`]: The owner account of this network faucet.
+/// - [`Ownable2Step::slot_name`]: The owner and nominated owner of this network faucet.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct NetworkFungibleFaucet {
+<<<<<<< HEAD
     metadata: FungibleTokenMetadata,
     owner_account_id: AccountId,
     info: Option<TokenMetadataInfo>,
+=======
+    metadata: TokenMetadata,
+    ownership: Ownable2Step,
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
 }
 
 impl NetworkFungibleFaucet {
@@ -114,6 +131,7 @@ impl NetworkFungibleFaucet {
         logo_uri: Option<LogoURI>,
         external_link: Option<ExternalLink>,
     ) -> Result<Self, FungibleFaucetError> {
+<<<<<<< HEAD
         let metadata = FungibleTokenMetadata::new(
             symbol,
             decimals,
@@ -124,12 +142,18 @@ impl NetworkFungibleFaucet {
             external_link,
         )?;
         Ok(Self { metadata, owner_account_id, info: None })
+=======
+        let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
+        let ownership = Ownable2Step::new(owner_account_id);
+        Ok(Self { metadata, ownership })
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
     }
 
     /// Creates a new [`NetworkFungibleFaucet`] component from the given [`FungibleTokenMetadata`].
     ///
     /// This is a convenience constructor that allows creating a faucet from pre-validated
     /// metadata.
+<<<<<<< HEAD
     pub fn from_metadata(metadata: FungibleTokenMetadata, owner_account_id: AccountId) -> Self {
         Self { metadata, owner_account_id, info: None }
     }
@@ -139,6 +163,11 @@ impl NetworkFungibleFaucet {
     pub fn with_info(mut self, info: TokenMetadataInfo) -> Self {
         self.info = Some(info);
         self
+=======
+    pub fn from_metadata(metadata: TokenMetadata, owner_account_id: AccountId) -> Self {
+        let ownership = Ownable2Step::new(owner_account_id);
+        Self { metadata, ownership }
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
     }
 
     /// Attempts to create a new [`NetworkFungibleFaucet`] component from the associated account
@@ -169,14 +198,11 @@ impl NetworkFungibleFaucet {
         // Read token metadata from storage
         let metadata = FungibleTokenMetadata::try_from(storage)?;
 
-        // obtain owner account ID from the next storage slot
-        let owner_account_id_word: Word = storage
-            .get_item(NetworkFungibleFaucet::owner_config_slot())
-            .map_err(|err| FungibleFaucetError::StorageLookupFailed {
-                slot_name: NetworkFungibleFaucet::owner_config_slot().clone(),
-                source: err,
-            })?;
+        // Read ownership data from storage
+        let ownership =
+            Ownable2Step::try_from_storage(storage).map_err(FungibleFaucetError::OwnershipError)?;
 
+<<<<<<< HEAD
         // Convert Word back to AccountId
         // Storage format: [0, 0, suffix, prefix]
         let prefix = owner_account_id_word[3];
@@ -184,6 +210,9 @@ impl NetworkFungibleFaucet {
         let owner_account_id = AccountId::new_unchecked([prefix, suffix]);
 
         Ok(Self { metadata, owner_account_id, info: None })
+=======
+        Ok(Self { metadata, ownership })
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
     }
 
     // PUBLIC ACCESSORS
@@ -195,12 +224,15 @@ impl NetworkFungibleFaucet {
         FungibleTokenMetadata::metadata_slot()
     }
 
+<<<<<<< HEAD
     /// Returns the [`StorageSlotName`] where the [`NetworkFungibleFaucet`]'s owner configuration is
     /// stored (slot 1).
     pub fn owner_config_slot() -> &'static StorageSlotName {
         crate::account::metadata::owner_config_slot()
     }
 
+=======
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
     /// Returns the storage slot schema for the metadata slot.
     pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         let token_symbol_type = SchemaType::new(TOKEN_SYMBOL_TYPE).expect("valid type");
@@ -213,22 +245,6 @@ impl NetworkFungibleFaucet {
                     FeltSchema::felt("max_supply"),
                     FeltSchema::u8("decimals"),
                     FeltSchema::new_typed(token_symbol_type, "symbol"),
-                ],
-            ),
-        )
-    }
-
-    /// Returns the storage slot schema for the owner configuration slot.
-    pub fn owner_config_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::owner_config_slot().clone(),
-            StorageSlotSchema::value(
-                "Owner account configuration",
-                [
-                    FeltSchema::new_void(),
-                    FeltSchema::new_void(),
-                    FeltSchema::felt("owner_suffix"),
-                    FeltSchema::felt("owner_prefix"),
                 ],
             ),
         )
@@ -264,9 +280,19 @@ impl NetworkFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the owner account ID of the faucet.
-    pub fn owner_account_id(&self) -> AccountId {
-        self.owner_account_id
+    /// Returns the owner account ID of the faucet, or `None` if ownership has been renounced.
+    pub fn owner_account_id(&self) -> Option<AccountId> {
+        self.ownership.owner()
+    }
+
+    /// Returns the nominated owner account ID, or `None` if no transfer is in progress.
+    pub fn nominated_owner(&self) -> Option<AccountId> {
+        self.ownership.nominated_owner()
+    }
+
+    /// Returns the ownership data of the faucet.
+    pub fn ownership(&self) -> &Ownable2Step {
+        &self.ownership
     }
 
     /// Returns the digest of the `distribute` account procedure.
@@ -297,6 +323,7 @@ impl NetworkFungibleFaucet {
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
+<<<<<<< HEAD
 
         let owner_account_id_word: Word = [
             Felt::new(0),
@@ -310,6 +337,9 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
             NetworkFungibleFaucet::owner_config_slot().clone(),
             owner_account_id_word,
         );
+=======
+        let owner_slot = network_faucet.ownership.to_storage_slot();
+>>>>>>> 698fa6fb (feat: implement `Ownable2Step` (#2292))
 
         let mut slots = vec![metadata_slot, owner_slot];
         if let Some(info) = &network_faucet.info {
@@ -318,7 +348,7 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
 
         let storage_schema = StorageSchema::new([
             NetworkFungibleFaucet::metadata_slot_schema(),
-            NetworkFungibleFaucet::owner_config_slot_schema(),
+            Ownable2Step::slot_schema(),
         ])
         .expect("storage schema should be valid");
 
