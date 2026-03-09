@@ -89,17 +89,6 @@ impl ProvenTransaction {
     ///   number of input notes is zero.
     /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
     ///   not match its declared account delta commitment.
-    /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
-    /// - The transaction was executed against a _new_ account with public state and its account ID
-    ///   does not match the ID in the account update.
-    /// - The transaction was executed against a _new_ account with public state and its commitment
-    ///   does not match the final state commitment of the account update.
-    /// - The transaction creates a _new_ account with public state and the update is of type
-    ///   [`AccountUpdateDetails::Delta`] but the account delta is not a full state delta.
-    /// - The transaction was executed against a private account and the account update is _not_ of
-    ///   type [`AccountUpdateDetails::Private`].
-    /// - The transaction was executed against an account with public state and the update is of
-    ///   type [`AccountUpdateDetails::Private`].
     pub fn new(
         account_update: TxAccountUpdate,
         input_notes: impl IntoIterator<Item = impl Into<InputNoteCommitment>>,
