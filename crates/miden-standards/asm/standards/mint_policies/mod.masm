@@ -1,7 +1,7 @@
 use miden::core::word
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::standards::access::ownable
+use miden::standards::access::ownable2step
 
 # CONSTANTS
 # ================================================================================================
@@ -89,7 +89,7 @@ end
 #!
 #! Invocation: dynexec
 pub proc mint_policy_owner_only
-    exec.ownable::verify_owner
+    exec.ownable2step::assert_sender_is_owner
     # => [amount, tag, note_type, RECIPIENT, pad(9)]
 end
 
@@ -105,7 +105,7 @@ end
 #! Invocation: dynexec
 @locals(1)
 pub proc mint_policy_owner_per_call_cap
-    exec.ownable::verify_owner
+    exec.ownable2step::assert_sender_is_owner
     # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
     push.MINT_POLICY_PARAMS_SLOT[0..2] exec.active_account::get_item
@@ -180,7 +180,7 @@ end
 #!
 #! Invocation: call
 pub proc set_mint_policy
-    exec.ownable::verify_owner
+    exec.ownable2step::assert_sender_is_owner
     # => [NEW_POLICY_ROOT, pad(12)]
 
     exec.assert_valid_policy_root
@@ -203,7 +203,7 @@ end
 #!
 #! Invocation: call
 pub proc set_per_call_cap
-    exec.ownable::verify_owner
+    exec.ownable2step::assert_sender_is_owner
     # => [PER_CALL_CAP, pad(15)]
 
     padw movup.4
