@@ -1,0 +1,102 @@
+use $kernel::tx
+use $kernel::asset
+use $kernel::account
+use miden::core::word
+
+# CONSTANTS
+# ==================================================================================================
+
+# The index of the local memory slot that contains the procedure root of the callback.
+const CALLBACK_PROC_ROOT_PTR = 0
+
+# The name of the storage slot where the procedure root for the on_asset_added_to_account callback
+# is stored.
+const ON_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT = word("miden::protocol::faucet::callbacks::on_asset_added_to_account")
+
+# PROCEDURES
+# ==================================================================================================
+
+#! TODO
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [PROCESSED_ASSET_VALUE]
+pub proc on_asset_added_to_account
+    exec.asset::key_to_callbacks_enabled
+    # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE]
+
+    if.true
+        exec.on_asset_added_to_account_raw
+        # => [PROCESSED_ASSET_VALUE]
+    else
+        # drop asset key
+        dropw
+        # => [ASSET_VALUE]
+    end
+    # => [PROCESSED_ASSET_VALUE]
+end
+
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [PROCESSED_ASSET_VALUE]
+@locals(4)
+proc on_asset_added_to_account_raw
+    exec.start_foreign_callback_context
+    # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    # get the procedure root of the callback from the faucet's storage
+    push.ON_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT[0..2]
+    exec.account::get_item
+    # => [PROC_ROOT, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    exec.word::testz
+    # => [is_empty_word, PROC_ROOT, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    # only invoke the callback if it is not the empty word
+    if.true
+        # drop proc root, account ID and asset key
+        dropw drop drop dropw
+        # => [ASSET_VALUE]
+    else
+        # prepare for dyncall by storing procedure root in local memory
+        loc_storew_le.CALLBACK_PROC_ROOT_PTR dropw
+        # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+        # pad the stack to 16 for the call
+        repeat.6 push.0 movdn.10 end
+        locaddr.CALLBACK_PROC_ROOT_PTR
+        # => [callback_proc_root_ptr, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
+
+        dyncall
+        # => [PROCESSED_ASSET_VALUE, pad(12)]
+
+        # truncate the stack after the call
+        repeat.3 swapw dropw end
+        # => [PROCESSED_ASSET_VALUE]
+    end
+    # => [PROCESSED_ASSET_VALUE]
+
+    exec.tx::end_foreign_context
+    # => [PROCESSED_ASSET_VALUE]
+end
+
+#! Prepares the invocation of a faucet callback by:
+#!- starting a foreign context against the faucet identified by the asset key's faucet ID.
+#!- returning the native account's ID that is to be passed as an input to callbacks.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+proc start_foreign_callback_context
+    exec.asset::key_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    # get the ID of the active account that will be passed as an input to the callback
+    # this must be done before the foreign context is started
+    exec.account::get_id
+    # => [native_account_id_suffix, native_account_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    movup.3 movup.3
+    # => [faucet_id_suffix, faucet_id_prefix, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    # start a foreign context against the faucet
+    exec.tx::start_foreign_context
+    # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
+end
