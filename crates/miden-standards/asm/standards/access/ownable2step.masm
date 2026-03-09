@@ -263,14 +263,10 @@ pub proc transfer_ownership
     # => [pad(12)]
 
     # Check if new_owner == owner (cancel case).
-    loc_load.NEW_OWNER_SUFFIX_LOC loc_load.NEW_OWNER_PREFIX_LOC
-    # => [new_owner_prefix, new_owner_suffix, pad(12)]
-    swap
+    loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
     # => [new_owner_suffix, new_owner_prefix, pad(12)]
 
-    loc_load.OWNER_SUFFIX_LOC loc_load.OWNER_PREFIX_LOC
-    # => [owner_prefix, owner_suffix, new_owner_suffix, new_owner_prefix, pad(12)]
-    swap
+    loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
     # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
 
     exec.account_id::is_equal
@@ -279,9 +275,7 @@ pub proc transfer_ownership
     if.true
         # Cancel ownership transfer and clear nominated owner.
         # Stack for save: [owner_suffix, owner_prefix, nominated_suffix=0, nominated_prefix=0]
-        loc_load.OWNER_SUFFIX_LOC loc_load.OWNER_PREFIX_LOC
-        # => [owner_prefix, owner_suffix, pad(12)]
-        swap
+        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
         # => [owner_suffix, owner_prefix, pad(12)]
 
         push.0.0 movup.3 movup.3
@@ -289,14 +283,10 @@ pub proc transfer_ownership
     else
         # Transfer ownership by setting nominated = new_owner.
         # Stack for save: [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix]
-        loc_load.NEW_OWNER_SUFFIX_LOC loc_load.NEW_OWNER_PREFIX_LOC
-        # => [new_owner_prefix, new_owner_suffix, pad(12)]
-        swap
+        loc_load.NEW_OWNER_PREFIX_LOC loc_load.NEW_OWNER_SUFFIX_LOC
         # => [new_owner_suffix, new_owner_prefix, pad(12)]
 
-        loc_load.OWNER_SUFFIX_LOC loc_load.OWNER_PREFIX_LOC
-        # => [owner_prefix, owner_suffix, new_owner_suffix, new_owner_prefix, pad(12)]
-        swap
+        loc_load.OWNER_PREFIX_LOC loc_load.OWNER_SUFFIX_LOC
         # => [owner_suffix, owner_prefix, new_owner_suffix, new_owner_prefix, pad(12)]
     end
 

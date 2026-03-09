@@ -12,15 +12,14 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
     StorageSlot,
-    StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
+use miden_protocol::Felt;
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_NO_NOMINATED_OWNER,
@@ -29,11 +28,6 @@ use miden_standards::errors::standards::{
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
-
-static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
-        .expect("storage slot name should be valid")
-});
 
 // HELPERS
 // ================================================================================================
@@ -53,16 +47,8 @@ fn create_ownable_account(
     let component_code_obj =
         CodeBuilder::default().compile_component_code("test::ownable", component_code)?;
 
-    let ownership_word: Word = [
-        owner.suffix(),           // word[0] = owner_suffix
-        owner.prefix().as_felt(), // word[1] = owner_prefix
-        Felt::new(0),             // word[2] = nominated_suffix
-        Felt::new(0),             // word[3] = nominated_prefix
-    ]
-    .into();
-
     let mut storage_slots = initial_storage;
-    storage_slots.push(StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), ownership_word));
+    storage_slots.push(Ownable2Step::new(owner).to_storage_slot());
 
     let account = AccountBuilder::new([1; 32])
         .storage_mode(AccountStorageMode::Public)
@@ -76,25 +62,13 @@ fn create_ownable_account(
 }
 
 fn get_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
-    let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
-    let suffix = word[0];
-    let prefix = word[1];
-    if suffix == Felt::new(0) && prefix == Felt::new(0) {
-        Ok(None)
-    } else {
-        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
-    }
+    let ownable = Ownable2Step::try_from_storage(account.storage())?;
+    Ok(ownable.owner())
 }
 
 fn get_nominated_owner_from_storage(account: &Account) -> anyhow::Result<Option<AccountId>> {
-    let word = account.storage().get_item(&OWNER_CONFIG_SLOT_NAME)?;
-    let suffix = word[2];
-    let prefix = word[3];
-    if suffix == Felt::new(0) && prefix == Felt::new(0) {
-        Ok(None)
-    } else {
-        Ok(Some(AccountId::try_from_elements(suffix, prefix)?))
-    }
+    let ownable = Ownable2Step::try_from_storage(account.storage())?;
+    Ok(ownable.nominated_owner())
 }
 
 fn create_transfer_note(
