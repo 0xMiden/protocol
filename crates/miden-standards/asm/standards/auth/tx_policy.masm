@@ -1,0 +1,80 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+
+const ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE = "procedure must be called alone"
+const ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES = "transaction must not include input or output notes"
+
+#! Asserts that exactly one non-auth account procedure was called in the current transaction.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+@locals(1) # non-auth called proc count
+pub proc assert_only_one_non_auth_procedure_called
+    push.0
+    loc_store.0
+    # => []
+
+    exec.active_account::get_num_procedures
+    # => [num_procedures]
+
+    dup neq.0
+    # => [should_continue, num_procedures]
+    while.true
+        sub.1 dup
+        exec.active_account::get_procedure_root dupw
+        # => [PROC_ROOT, PROC_ROOT]
+
+        exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT]
+
+        if.true
+            dropw
+            # => [proc_index]
+
+            # The auth procedure is always at procedure index 0.
+            dup neq.0
+            # => [is_not_auth_proc, proc_index]
+
+            if.true
+                loc_load.0 add.1 loc_store.0
+                # => [proc_index]
+            end
+        else
+            dropw
+            # => [proc_index]
+        end
+
+        dup neq.0
+        # => [should_continue, proc_index]
+    end
+
+    drop
+    # => []
+
+    loc_load.0 eq.1
+    assert.err=ERR_AUTH_PROCEDURE_MUST_BE_CALLED_ALONE
+    # => []
+end
+
+#! Asserts that the current transaction does not consume input notes or create output notes.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc assert_no_input_or_output_notes
+    exec.tx::get_num_input_notes
+    # => [num_input_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
+    # => []
+
+    exec.tx::get_num_output_notes
+    # => [num_output_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
+    # => []
+end
