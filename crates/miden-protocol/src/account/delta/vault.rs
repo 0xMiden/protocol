@@ -352,7 +352,9 @@ impl Serializable for FungibleAssetDelta {
     }
 
     fn get_size_hint(&self) -> usize {
-        self.0.len().get_size_hint() + self.0.len() * FungibleAsset::SERIALIZED_SIZE
+        // Each entry is (AccountId, u64 delta)
+        const ENTRY_SIZE: usize = AccountId::SERIALIZED_SIZE + core::mem::size_of::<u64>();
+        self.0.len().get_size_hint() + self.0.len() * ENTRY_SIZE
     }
 }
 
