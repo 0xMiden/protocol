@@ -104,11 +104,11 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
@@ -310,11 +310,11 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // CREATE BRIDGE ADMIN ACCOUNT
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
@@ -408,11 +408,11 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Create a bridge admin account
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // Create a GER manager account (not used in this test, but distinct from admin)
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // Create a bridge account (includes a `bridge` component)
     let bridge_account = create_existing_bridge_account(
@@ -424,7 +424,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     // Create a user account that will create and consume the B2AGG note
     let mut user_account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
@@ -519,11 +519,11 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // Create a bridge admin account
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // Create a GER manager account (not used in this test, but distinct from admin)
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // Create a bridge account as the designated TARGET for the B2AGG note
     let bridge_account = create_existing_bridge_account(
@@ -535,7 +535,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     // Create a user account as the SENDER of the B2AGG note
     let sender_account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account(

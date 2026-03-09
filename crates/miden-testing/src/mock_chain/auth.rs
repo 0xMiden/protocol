@@ -9,9 +9,12 @@ use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
     AuthMultisig,
     AuthMultisigConfig,
+    AuthMultisigPsm,
+    AuthMultisigPsmConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
+    PsmConfig,
 };
 use miden_standards::testing::account_component::{
     ConditionalAuthComponent,
@@ -31,7 +34,15 @@ pub enum Auth {
     /// Multisig
     Multisig {
         threshold: u32,
-        approvers: Vec<(Word, AuthScheme)>,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        proc_threshold_map: Vec<(Word, u32)>,
+    },
+
+    /// Multisig with a private state manager.
+    MultisigPsm {
+        threshold: u32,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        psm_config: PsmConfig,
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
@@ -77,18 +88,26 @@ impl Auth {
                 (component, Some(authenticator))
             },
             Auth::Multisig { threshold, approvers, proc_threshold_map } => {
-                let approvers = approvers
-                    .iter()
-                    .map(|(pub_key, auth_scheme)| {
-                        (PublicKeyCommitment::from(*pub_key), *auth_scheme)
-                    })
-                    .collect();
-
-                let config = AuthMultisigConfig::new(approvers, *threshold)
+                let config = AuthMultisigConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig config");
                 let component =
                     AuthMultisig::new(config).expect("multisig component creation failed").into();
+
+                (component, None)
+            },
+            Auth::MultisigPsm {
+                threshold,
+                approvers,
+                psm_config,
+                proc_threshold_map,
+            } => {
+                let config = AuthMultisigPsmConfig::new(approvers.clone(), *threshold, *psm_config)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid multisig psm config");
+                let component = AuthMultisigPsm::new(config)
+                    .expect("multisig psm component creation failed")
+                    .into();
 
                 (component, None)
             },

@@ -58,12 +58,12 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (note sender)
     // --------------------------------------------------------------------------------------------
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
