@@ -89,7 +89,7 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static REGULATED_NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/regulated_network_fungible_faucet.masl"
+        "/assets/account_components/faucets/regulated_network_fungible_faucet.masl"
     ));
     Library::read_from_bytes(bytes)
         .expect("Shipped Regulated Network Fungible Faucet library is well-formed")

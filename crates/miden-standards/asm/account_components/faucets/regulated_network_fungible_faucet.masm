@@ -9,6 +9,8 @@
 
 pub use ::miden::standards::faucets::regulated_network_fungible::distribute
 pub use ::miden::standards::faucets::regulated_network_fungible::burn
+pub use ::miden::standards::faucets::regulated_network_fungible::get_owner
+pub use ::miden::standards::faucets::regulated_network_fungible::is_not_paused
 pub use ::miden::standards::faucets::regulated_network_fungible::transfer_ownership
 pub use ::miden::standards::faucets::regulated_network_fungible::renounce_ownership
 pub use ::miden::standards::faucets::regulated_network_fungible::pause

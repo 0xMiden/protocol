@@ -1,6 +1,4 @@
-use miden::protocol::active_note
 use miden::standards::faucets
-use miden::standards::faucets::network_fungible
 use miden::standards::access::ownable
 use miden::standards::access::pausable
 
@@ -26,8 +24,8 @@ pub use pausable::is_not_paused
 #!
 #! Invocation: call
 #!
-#! NOTE: Reuses network_fungible::get_owner
-pub use network_fungible::get_owner
+#! NOTE: Reuses ownable::get_owner
+pub use ownable::get_owner
 
 #! Distributes freshly minted fungible assets to the provided recipient.
 #!
@@ -35,16 +33,15 @@ pub use network_fungible::get_owner
 #! checks if the faucet is not paused, and finally mints the asset and creates an
 #! output note with that asset for the recipient.
 #!
-#! Inputs:  [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
-#! Outputs: [pad(16)]
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [note_idx, pad(15)]
 #!
 #! Where:
 #! - amount is the amount to be minted and sent.
 #! - tag is the tag to be included in the note.
-#! - aux is the auxiliary data to be included in the note.
 #! - note_type is the type of the note that holds the asset.
-#! - execution_hint is the execution hint of the note that holds the asset.
 #! - RECIPIENT is the recipient of the asset.
+#! - note_idx is the index of the created note.
 #!
 #! Panics if:
 #! - the note sender is not the owner of this faucet.
@@ -54,13 +51,13 @@ pub use network_fungible::get_owner
 #! Invocation: call
 pub proc distribute
     exec.ownable::verify_owner
-    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
     exec.is_not_paused
-    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
     exec.faucets::distribute
-    # => [pad(16)]
+    # => [note_idx, pad(15)]
 end
 
 #! Burns the fungible asset from the active note.
@@ -103,8 +100,8 @@ end
 #!
 #! Invocation: call
 #!
-#! NOTE: Reuses network_fungible::transfer_ownership
-pub use network_fungible::transfer_ownership
+#! NOTE: Reuses ownable::transfer_ownership
+pub use ownable::transfer_ownership
 
 #! Renounces ownership, leaving the component without an owner.
 #!
@@ -118,8 +115,8 @@ pub use network_fungible::transfer_ownership
 #!
 #! Invocation: call
 #!
-#! NOTE: Reuses network_fungible::renounce_ownership
-pub use network_fungible::renounce_ownership
+#! NOTE: Reuses ownable::renounce_ownership
+pub use ownable::renounce_ownership
 
 #! Pauses the faucet, preventing minting and burning operations.
 #!

@@ -45,7 +45,7 @@ use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
-use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word, ZERO};
+use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
@@ -411,7 +411,7 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
         owner_account_id: AccountId,
-        total_issuance: Option<u64>,
+        _total_issuance: Option<u64>,
     ) -> anyhow::Result<Account> {
         let token_symbol = TokenSymbol::new(token_symbol).context("invalid argument")?;
         let regulated_faucet = RegulatedNetworkFungibleFaucet::new(
@@ -427,24 +427,8 @@ impl MockChainBuilder {
             .with_component(regulated_faucet)
             .account_type(AccountType::FungibleFaucet);
 
-        // Network faucets always use Noop auth (no authentication)
-        let mut account =
-            self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)?;
-
-        // The faucet's sysdata slot is initialized to an empty word by default.
-        // If total_issuance is set, overwrite it and reinsert the account.
-        if let Some(issuance) = total_issuance {
-            account
-                .storage_mut()
-                .set_item(
-                    AccountStorage::faucet_sysdata_slot(),
-                    Word::from([ZERO, ZERO, ZERO, Felt::new(issuance)]),
-                )
-                .context("failed to set faucet storage")?;
-            self.accounts.insert(account.id(), account.clone());
-        }
-
-        Ok(account)
+        // Network faucets always use IncrNonce auth (no authentication)
+        self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
     }
 
     /// Creates a new public account with an [`MockAccountComponent`] and registers the

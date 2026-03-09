@@ -1,3 +1,4 @@
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -11,7 +12,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use super::{BasicFungibleFaucet, FungibleFaucetError};
 use crate::account::auth::NoAuth;
@@ -26,6 +27,7 @@ use crate::procedure_digest;
 // once.
 procedure_digest!(
     REGULATED_NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE,
+    RegulatedNetworkFungibleFaucet::NAME,
     RegulatedNetworkFungibleFaucet::DISTRIBUTE_PROC_NAME,
     regulated_network_fungible_faucet_library
 );
@@ -33,6 +35,7 @@ procedure_digest!(
 // Initialize the digest of the `burn` procedure of the Regulated Network Fungible Faucet only once.
 procedure_digest!(
     REGULATED_NETWORK_FUNGIBLE_FAUCET_BURN,
+    RegulatedNetworkFungibleFaucet::NAME,
     RegulatedNetworkFungibleFaucet::BURN_PROC_NAME,
     regulated_network_fungible_faucet_library
 );
@@ -84,8 +87,11 @@ impl RegulatedNetworkFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = 12;
 
-    const DISTRIBUTE_PROC_NAME: &str = "regulated_network_fungible_faucet::distribute";
-    const BURN_PROC_NAME: &str = "regulated_network_fungible_faucet::burn";
+    /// The name of the component used to construct procedure paths.
+    pub const NAME: &'static str = "miden::standards::components::faucets::regulated_network_fungible_faucet";
+
+    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -155,9 +161,9 @@ impl RegulatedNetworkFungibleFaucet {
                 // verify metadata values and create BasicFungibleFaucet
                 let token_symbol = TokenSymbol::try_from(token_symbol)
                     .map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-                let decimals = decimals.as_int().try_into().map_err(|_| {
+                let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
                     FungibleFaucetError::TooManyDecimals {
-                        actual: decimals.as_int(),
+                        actual: decimals.as_canonical_u64(),
                         max: Self::MAX_DECIMALS,
                     }
                 })?;
@@ -168,7 +174,7 @@ impl RegulatedNetworkFungibleFaucet {
             }
         }
 
-        Err(FungibleFaucetError::NoAvailableInterface)
+        Err(FungibleFaucetError::MissingNetworkFungibleFaucetInterface)
     }
 
     // PUBLIC ACCESSORS
@@ -177,7 +183,7 @@ impl RegulatedNetworkFungibleFaucet {
     /// Returns the [`StorageSlotName`] where the [`RegulatedNetworkFungibleFaucet`]'s metadata is
     /// stored.
     pub fn metadata_slot() -> &'static StorageSlotName {
-        &super::METADATA_SLOT_NAME
+        super::TokenMetadata::metadata_slot()
     }
 
     /// Returns the [`StorageSlotName`] where the [`RegulatedNetworkFungibleFaucet`]'s owner
@@ -257,12 +263,18 @@ impl From<RegulatedNetworkFungibleFaucet> for AccountComponent {
             Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
         );
 
+        let component_metadata = AccountComponentMetadata::new(
+            RegulatedNetworkFungibleFaucet::NAME,
+            [AccountType::FungibleFaucet],
+        )
+        .with_description("Regulated network fungible faucet with pausable functionality");
+
         AccountComponent::new(
             regulated_network_fungible_faucet_library(),
-            vec![metadata_slot, owner_slot, pausable_slot]
+            vec![metadata_slot, owner_slot, pausable_slot],
+            component_metadata,
         )
-            .expect("regulated network fungible faucet component should satisfy the requirements of a valid account component")
-            .with_supported_type(AccountType::FungibleFaucet)
+        .expect("regulated network fungible faucet component should satisfy the requirements of a valid account component")
     }
 }
 
