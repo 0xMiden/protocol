@@ -510,12 +510,12 @@ impl PublicOutputNote {
     }
 
     /// Returns a reference to the underlying note.
-    pub fn inner(&self) -> &Note {
+    pub fn as_note(&self) -> &Note {
         &self.0
     }
 
     /// Consumes this wrapper and returns the underlying note.
-    pub fn into_inner(self) -> Note {
+    pub fn into_note(self) -> Note {
         self.0
     }
 }
@@ -586,12 +586,12 @@ impl PrivateNoteHeader {
     }
 
     /// Returns a reference to the underlying note header.
-    pub fn inner(&self) -> &NoteHeader {
+    pub fn as_header(&self) -> &NoteHeader {
         &self.0
     }
 
     /// Consumes this wrapper and returns the underlying note header.
-    pub fn into_inner(self) -> NoteHeader {
+    pub fn into_header(self) -> NoteHeader {
         self.0
     }
 }
