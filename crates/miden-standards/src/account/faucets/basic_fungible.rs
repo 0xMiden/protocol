@@ -171,7 +171,7 @@ impl BasicFungibleFaucet {
     }
 
     /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> TokenSymbol {
+    pub fn symbol(&self) -> &TokenSymbol {
         self.metadata.symbol()
     }
 
@@ -364,9 +364,10 @@ mod tests {
         let decimals = 2u8;
         let storage_mode = AccountStorageMode::Private;
 
+        let token_symbol_felt = token_symbol.as_element();
         let faucet_account = create_basic_fungible_faucet(
             init_seed,
-            token_symbol,
+            token_symbol.clone(),
             decimals,
             max_supply,
             storage_mode,
@@ -407,7 +408,7 @@ mod tests {
         // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(
             faucet_account.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap(),
-            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
+            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol_felt].into()
         );
 
         assert!(faucet_account.is_faucet());
@@ -416,7 +417,7 @@ mod tests {
 
         // Verify the faucet can be extracted and has correct metadata
         let faucet_component = BasicFungibleFaucet::try_from(faucet_account.clone()).unwrap();
-        assert_eq!(faucet_component.symbol(), token_symbol);
+        assert_eq!(faucet_component.symbol(), &token_symbol);
         assert_eq!(faucet_component.decimals(), decimals);
         assert_eq!(faucet_component.max_supply(), max_supply);
         assert_eq!(faucet_component.token_supply(), Felt::ZERO);
@@ -434,7 +435,7 @@ mod tests {
         let faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
             .with_component(
-                BasicFungibleFaucet::new(token_symbol, 10, Felt::new(100))
+                BasicFungibleFaucet::new(token_symbol.clone(), 10, Felt::new(100))
                     .expect("failed to create a fungible faucet component"),
             )
             .with_auth_component(AuthSingleSig::new(
@@ -446,7 +447,7 @@ mod tests {
 
         let basic_ff = BasicFungibleFaucet::try_from(faucet_account)
             .expect("basic fungible faucet creation failed");
-        assert_eq!(basic_ff.symbol(), token_symbol);
+        assert_eq!(basic_ff.symbol(), &token_symbol);
         assert_eq!(basic_ff.decimals(), 10);
         assert_eq!(basic_ff.max_supply(), Felt::new(100));
         assert_eq!(basic_ff.token_supply(), Felt::ZERO);

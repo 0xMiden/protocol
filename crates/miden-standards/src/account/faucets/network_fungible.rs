@@ -174,7 +174,7 @@ impl NetworkFungibleFaucet {
     }
 
     /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> TokenSymbol {
+    pub fn symbol(&self) -> &TokenSymbol {
         self.metadata.symbol()
     }
 
