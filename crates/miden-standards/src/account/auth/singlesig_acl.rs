@@ -157,7 +157,7 @@ pub struct AuthSingleSigAcl {
 
 impl AuthSingleSigAcl {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::singlesig_acl";
+    pub const NAME: &'static str = "miden::standards::components::auth::singlesig_acl";
     /// Creates a new [`AuthSingleSigAcl`] component with the given `public_key` and
     /// configuration.
     ///

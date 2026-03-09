@@ -254,7 +254,7 @@ async fn test_multisig_update_psm_public_key(
     let update_psm_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_psm_library())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
+            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let update_salt = Word::from([Felt::new(991); 4]);
@@ -397,7 +397,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
     let update_psm_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_psm_library())?
         .compile_tx_script(format!(
-            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
+            "begin\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend"
         ))?;
 
     let mut mock_chain_builder =
@@ -476,7 +476,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
     let update_psm_with_output_script = CodeBuilder::new()
         .with_dynamically_linked_library(multisig_psm_library())?
         .compile_tx_script(format!(
-            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend",
+            "use miden::protocol::output_note\nbegin\n    push.{recipient}\n    push.{note_type}\n    push.{tag}\n    exec.output_note::create\n    swapdw\n    dropw\n    dropw\n    push.{new_psm_key_word}\n    push.{new_psm_scheme_id}\n    call.::miden::standards::components::auth::multisig_psm::update_psm_public_key\n    drop\n    dropw\nend",
             recipient = output_note.recipient().digest(),
             note_type = NoteType::Public as u8,
             tag = Felt::from(output_note.metadata().tag()),
