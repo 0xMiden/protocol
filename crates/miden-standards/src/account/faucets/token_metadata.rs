@@ -402,9 +402,8 @@ impl FungibleTokenMetadata {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the [`StorageSlotName`] where the token metadata is stored.
-    /// Returns the storage slot name for token metadata (canonical slot shared with metadata
-    /// module).
+    /// Returns the [`StorageSlotName`] where the token metadata is stored (canonical slot shared
+    /// with the metadata module).
     pub fn metadata_slot() -> &'static StorageSlotName {
         metadata::token_metadata_slot()
     }
@@ -447,6 +446,22 @@ impl FungibleTokenMetadata {
     /// Returns the optional external link (for Info component when building an account).
     pub fn external_link(&self) -> Option<&ExternalLink> {
         self.external_link.as_ref()
+    }
+
+    /// Builds a [`TokenMetadataInfo`](crate::account::metadata::TokenMetadata) from this
+    /// metadata, copying the name and any optional description/logo_uri/external_link fields.
+    pub fn to_token_metadata_info(&self) -> metadata::TokenMetadata {
+        let mut info = metadata::TokenMetadata::new().with_name(self.name.clone());
+        if let Some(d) = self.description() {
+            info = info.with_description(d.clone(), false);
+        }
+        if let Some(l) = self.logo_uri() {
+            info = info.with_logo_uri(l.clone(), false);
+        }
+        if let Some(e) = self.external_link() {
+            info = info.with_external_link(e.clone(), false);
+        }
+        info
     }
 
     // MUTATORS

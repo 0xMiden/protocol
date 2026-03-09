@@ -447,10 +447,8 @@ impl MockChainBuilder {
         logo_uri: Option<([Word; 7], bool)>,
         external_link: Option<([Word; 7], bool)>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)
-            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
-            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let max_supply = Felt::try_from(max_supply)?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let name = TokenName::new(token_symbol)
             .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
         let token_symbol =
