@@ -27,11 +27,11 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ADMIN ACCOUNT (note sender)
     let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
     let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
 
     // CREATE BRIDGE ACCOUNT (starts with empty faucet registry)
     let bridge_account = create_existing_bridge_account(
