@@ -24,6 +24,7 @@ use crate::procedure_digest;
 
 procedure_digest!(
     MINT_POLICIES_OWNER_ONLY_POLICY_ROOT,
+    MintPolicies::NAME,
     MintPolicies::MINT_POLICY_OWNER_ONLY_PROC_NAME,
     mint_policies_faucet_library
 );
@@ -68,7 +69,7 @@ impl MintPolicies {
     /// The name of the component.
     pub const NAME: &'static str = "miden::mint_policies";
 
-    const MINT_POLICY_OWNER_ONLY_PROC_NAME: &str = "mint_policies::mint_policy_owner_only";
+    const MINT_POLICY_OWNER_ONLY_PROC_NAME: &str = "mint_policy_owner_only";
 
     /// Creates a new [`MintPolicies`] component from the provided configuration.
     pub fn new(config: MintPolicyConfig) -> Self {
