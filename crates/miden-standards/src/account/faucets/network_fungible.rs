@@ -35,6 +35,7 @@ use crate::procedure_digest;
 // Initialize the digest of the `distribute` procedure of the Network Fungible Faucet only once.
 procedure_digest!(
     NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE,
+    NetworkFungibleFaucet::NAME,
     NetworkFungibleFaucet::DISTRIBUTE_PROC_NAME,
     network_fungible_faucet_library
 );
@@ -42,6 +43,7 @@ procedure_digest!(
 // Initialize the digest of the `burn` procedure of the Network Fungible Faucet only once.
 procedure_digest!(
     NETWORK_FUNGIBLE_FAUCET_BURN,
+    NetworkFungibleFaucet::NAME,
     NetworkFungibleFaucet::BURN_PROC_NAME,
     network_fungible_faucet_library
 );
@@ -85,10 +87,8 @@ impl NetworkFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const DISTRIBUTE_PROC_NAME: &str =
-        "miden::standards::components::faucets::network_fungible_faucet::distribute";
-    const BURN_PROC_NAME: &str =
-        "miden::standards::components::faucets::network_fungible_faucet::burn";
+    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
