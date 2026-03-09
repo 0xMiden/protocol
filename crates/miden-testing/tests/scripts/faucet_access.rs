@@ -422,8 +422,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     let updated_faucet = mock_chain.committed_account(faucet.id())?;
-    let stored_owner_after =
-        updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
+    let stored_owner_after = updated_faucet.storage().get_item(Ownable2Step::slot_name())?;
 
     assert_eq!(stored_owner_after, Word::default());
 

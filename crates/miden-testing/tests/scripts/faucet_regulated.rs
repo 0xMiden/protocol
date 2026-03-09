@@ -13,9 +13,8 @@ use miden_standards::account::faucets::RegulatedNetworkFungibleFaucet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{ERR_IS_PAUSED, ERR_SENDER_NOT_OWNER};
 use miden_standards::testing::note::NoteBuilder;
-use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
-
 use miden_testing::utils::create_p2id_note_exact;
+use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 
 // PAUSABLE TESTS
 // ================================================================================================
@@ -190,7 +189,8 @@ async fn pausable_full_pause_unpause_distribute_flow() -> anyhow::Result<()> {
 
     // Step 2: Try to distribute while paused - should fail
     let amount = Felt::new(50);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
     let note_type: u8 = NoteType::Private as u8;
 
@@ -458,7 +458,8 @@ async fn pausable_distribute_fails_when_paused() -> anyhow::Result<()> {
 
     // Create mint note script for regulated network fungible faucet
     let amount = Felt::new(75);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
@@ -718,7 +719,8 @@ async fn pausable_is_not_paused_detection() -> anyhow::Result<()> {
     builder2_temp.add_account(mock_chain.committed_account(faucet.id())?.clone())?;
     let target_account = builder2_temp.add_existing_wallet(Auth::IncrNonce)?;
     let amount = Felt::new(50);
-    let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
+    let mint_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
     let serial_num = Word::default();
 
     let output_note_tag = NoteTag::with_account_target(target_account.id());
