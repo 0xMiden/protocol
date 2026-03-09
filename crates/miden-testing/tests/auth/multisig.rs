@@ -469,7 +469,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::multisig::update_signers_and_threshold
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
 
@@ -733,7 +733,7 @@ async fn test_multisig_update_signers_remove_owner(
     // Create transaction script
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(multisig_library())?
-        .compile_tx_script("begin\n    call.::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -919,7 +919,7 @@ async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
 
     let tx_script = CodeBuilder::default()
         .with_dynamically_linked_library(multisig_library())?
-        .compile_tx_script("begin\n    call.::multisig::update_signers_and_threshold\nend")?;
+        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
     let salt = Word::from([Felt::new(8); 4]);
@@ -1022,7 +1022,7 @@ async fn test_multisig_new_approvers_cannot_sign_before_update(
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::multisig::update_signers_and_threshold
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
 
@@ -1302,7 +1302,7 @@ async fn test_multisig_set_procedure_threshold(
         begin
             push.{proc_root}
             push.1
-            call.::multisig::set_procedure_threshold
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
             dropw
             drop
         end
@@ -1382,7 +1382,7 @@ async fn test_multisig_set_procedure_threshold(
         begin
             push.{proc_root}
             push.0
-            call.::multisig::set_procedure_threshold
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
             dropw
             drop
         end
@@ -1483,7 +1483,7 @@ async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
         begin
             push.{proc_root}
             push.3
-            call.::multisig::set_procedure_threshold
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
         end
         "#
     );

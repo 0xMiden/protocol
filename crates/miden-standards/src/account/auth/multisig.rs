@@ -142,7 +142,7 @@ pub struct AuthMultisig {
 
 impl AuthMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::multisig";
+    pub const NAME: &'static str = "miden::standards::components::auth::multisig";
 
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {

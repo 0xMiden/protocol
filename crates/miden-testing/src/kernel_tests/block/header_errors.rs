@@ -17,7 +17,12 @@ use miden_protocol::batch::ProvenBatch;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};
 use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlockError};
 use miden_protocol::note::NoteType;
-use miden_protocol::transaction::ProvenTransactionBuilder;
+use miden_protocol::transaction::{
+    InputNoteCommitment,
+    OutputNote,
+    ProvenTransaction,
+    TxAccountUpdate,
+};
 use miden_protocol::vm::ExecutionProof;
 use miden_standards::testing::account_component::{IncrNonceAuthComponent, MockAccountComponent};
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -383,19 +388,25 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
 
     let [tx0, tx1] =
         [(id0, [0, 0, 0, 1u32]), (id1, [0, 0, 0, 2u32])].map(|(id, final_state_comm)| {
-            ProvenTransactionBuilder::new(
+            let account_update = TxAccountUpdate::new(
                 id,
                 Word::empty(),
                 Word::from(final_state_comm),
                 Word::empty(),
+                AccountUpdateDetails::Private,
+            )
+            .context("failed to build account update")
+            .unwrap();
+            ProvenTransaction::new(
+                account_update,
+                Vec::<InputNoteCommitment>::new(),
+                Vec::<OutputNote>::new(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
                 FungibleAsset::mock(500).unwrap_fungible(),
                 BlockNumber::from(u32::MAX),
                 ExecutionProof::new_dummy(),
             )
-            .account_update_details(AccountUpdateDetails::Private)
-            .build()
             .context("failed to build proven transaction")
             .unwrap()
         });

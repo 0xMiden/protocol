@@ -45,7 +45,7 @@ pub struct AuthSingleSig {
 
 impl AuthSingleSig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::singlesig";
+    pub const NAME: &'static str = "miden::standards::components::auth::singlesig";
 
     /// Creates a new [`AuthSingleSig`] component with the given `public_key`.
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
