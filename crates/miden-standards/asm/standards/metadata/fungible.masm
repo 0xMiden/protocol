@@ -344,7 +344,7 @@ end
 #! Returns the owner AccountId.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [owner_prefix, owner_suffix, pad(14)]
+#! Outputs: [owner_suffix, owner_prefix, pad(14)]
 #!
 #! Invocation: call
 pub use ownable::get_owner
