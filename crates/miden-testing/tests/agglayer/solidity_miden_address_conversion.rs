@@ -135,8 +135,8 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         assert_eq!(limb0, 0, "test {}: expected msb limb (limb0) to be zero", idx);
 
         let account_id_felts: [Felt; 2] = (*original_account_id).into();
-        let expected_prefix = account_id_felts[0].as_canonical_u64();
-        let expected_suffix = account_id_felts[1].as_canonical_u64();
+        let expected_prefix = account_id_felts[0];
+        let expected_suffix = account_id_felts[1];
 
         let script_code = format!(
             r#"
@@ -162,14 +162,13 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
 
         let exec_output = execute_program_with_default_host(program).await?;
 
-        let actual_prefix = exec_output.stack[0].as_canonical_u64();
-        let actual_suffix = exec_output.stack[1].as_canonical_u64();
+        let actual_prefix = exec_output.stack[0];
+        let actual_suffix = exec_output.stack[1];
 
         assert_eq!(actual_prefix, expected_prefix, "test {}: prefix mismatch", idx);
         assert_eq!(actual_suffix, expected_suffix, "test {}: suffix mismatch", idx);
 
-        let reconstructed_account_id =
-            AccountId::try_from_elements(Felt::new(actual_suffix), Felt::new(actual_prefix))?;
+        let reconstructed_account_id = AccountId::try_from_elements(actual_suffix, actual_prefix)?;
 
         assert_eq!(
             reconstructed_account_id, *original_account_id,
