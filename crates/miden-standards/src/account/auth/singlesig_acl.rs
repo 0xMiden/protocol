@@ -23,6 +23,9 @@ use miden_protocol::{Felt, Word};
 
 use crate::account::components::singlesig_acl_library;
 
+// CONSTANTS
+// ================================================================================================
+
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig_acl::pub_key")
         .expect("storage slot name should be valid")
@@ -301,6 +304,9 @@ impl From<AuthSingleSigAcl> for AccountComponent {
         )
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {

@@ -144,7 +144,7 @@ end
 #! Inputs:  [slot_idx, RATE0, RATE1, CAPACITY]
 #! Outputs: [RATE0, RATE1, CAPACITY]
 proc update_slot_delta
-    dup exec.account::get_storage_slot_type
+    dup exec.account::get_native_storage_slot_type
     # => [storage_slot_type, slot_idx, RATE0, RATE1, CAPACITY]
 
     # check if slot is of type value

@@ -11,6 +11,9 @@ use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::singlesig_library;
 
+// CONSTANTS
+// ================================================================================================
+
 static PUBKEY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::singlesig::pub_key")
         .expect("storage slot name should be valid")
