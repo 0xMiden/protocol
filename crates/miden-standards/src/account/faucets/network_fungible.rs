@@ -169,7 +169,7 @@ impl NetworkFungibleFaucet {
         // Read token metadata from storage
         let metadata = FungibleTokenMetadata::try_from(storage)?;
 
-        // obtain owner account ID from the next storage slot
+        // Obtain owner account ID from storage
         let owner_account_id_word: Word = storage
             .get_item(NetworkFungibleFaucet::owner_config_slot())
             .map_err(|err| FungibleFaucetError::StorageLookupFailed {
