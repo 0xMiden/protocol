@@ -1,38 +1,69 @@
-use crate::errors::AssetError;
+use alloc::vec::Vec;
 
-const CALLBACKS_DISABLED: u8 = 0;
-const CALLBACKS_ENABLED: u8 = 1;
+use crate::Word;
+use crate::account::{StorageSlot, StorageSlotName};
+use crate::utils::sync::LazyLock;
 
-/// Whether callbacks are enabled for assets.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[repr(u8)]
-pub enum AssetCallbacksFlag {
-    #[default]
-    Disabled = CALLBACKS_DISABLED,
+// CONSTANTS
+// ================================================================================================
 
-    Enabled = CALLBACKS_ENABLED,
+static ON_ASSET_ADDED_TO_ACCOUNT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::protocol::faucet::callbacks::on_asset_added_to_account")
+        .expect("storage slot name should be valid")
+});
+
+// ASSET CALLBACKS
+// ================================================================================================
+
+/// Configures the callback procedure root for the `on_asset_added_to_account` callback.
+///
+/// ## Storage Layout
+///
+/// - [`Self::slot`]: Stores the procedure root of the `on_asset_added_to_account` callback.
+///
+/// [`AssetCallbacksFlag::Enabled`]: crate::asset::AssetCallbacksFlag::Enabled
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AssetCallbacks {
+    on_asset_added_to_account: Option<Word>,
 }
 
-impl AssetCallbacksFlag {
-    /// Encodes the callbacks setting as a `u8`.
-    pub const fn as_u8(&self) -> u8 {
-        *self as u8
+impl AssetCallbacks {
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [`AssetCallbacks`] with all callbacks set to `None`.
+    pub fn new() -> Self {
+        Self::default()
     }
-}
 
-impl TryFrom<u8> for AssetCallbacksFlag {
-    type Error = AssetError;
+    pub fn on_asset_added_to_account(mut self, proc_root: Word) -> Self {
+        self.on_asset_added_to_account = Some(proc_root);
+        self
+    }
 
-    /// Decodes a callbacks setting from a `u8`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value is not a valid callbacks encoding.
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            CALLBACKS_DISABLED => Ok(Self::Disabled),
-            CALLBACKS_ENABLED => Ok(Self::Enabled),
-            _ => Err(AssetError::InvalidAssetCallbacksFlag(value)),
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the [`StorageSlotName`] where the callback procedure root is stored.
+    pub fn on_asset_added_to_account_slot() -> &'static StorageSlotName {
+        &ON_ASSET_ADDED_TO_ACCOUNT_SLOT_NAME
+    }
+
+    /// Returns the procedure root of the `on_asset_added_to_account` callback.
+    pub fn on_asset_added_proc_root(&self) -> Option<Word> {
+        self.on_asset_added_to_account
+    }
+
+    pub fn into_storage_slots(self) -> Vec<StorageSlot> {
+        let mut slots = Vec::new();
+
+        if let Some(on_asset_added_to_account) = self.on_asset_added_to_account {
+            slots.push(StorageSlot::with_value(
+                AssetCallbacks::on_asset_added_to_account_slot().clone(),
+                on_asset_added_to_account,
+            ));
         }
+
+        slots
     }
 }

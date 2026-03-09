@@ -22,7 +22,10 @@ mod token_symbol;
 pub use token_symbol::TokenSymbol;
 
 mod asset_callbacks;
-pub use asset_callbacks::AssetCallbacksFlag;
+pub use asset_callbacks::AssetCallbacks;
+
+mod asset_callbacks_flag;
+pub use asset_callbacks_flag::AssetCallbacksFlag;
 
 mod vault;
 pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
