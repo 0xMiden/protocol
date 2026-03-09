@@ -133,6 +133,14 @@ end
 #! with the constraint:
 #!     y <= x
 #!
+#! Each 128-bit value is stored as 4 u32 limbs in little-endian order:
+#!     value = limb0 + limb1·2^32 + limb2·2^64 + limb3·2^96
+#!
+#! The subtraction is performed in three steps using u64::overflowing_sub:
+#!     1. (z0, z1)  = (x0, x1) - (y0, y1)       -> borrow_lo
+#!     2. (t0, t1)  = (x2, x3) - (y2, y3)       -> underflow_hi_raw
+#!     3. (z2, z3)  = (t0, t1) - borrow_lo      -> underflow_hi_borrow
+#!
 #! Inputs:  [y0, y1, y2, y3, x0, x1, x2, x3]
 #! Outputs: [z0, z1, z2, z3]
 #!
@@ -143,46 +151,45 @@ proc u128_sub_no_underflow
     swapw
     # => [x0, x1, x2, x3, y0, y1, y2, y3]
 
-    # ---------------------------------------------------------------------------------------------
-    # Low 64 bits: (x0,x1) - (y0,y1)
-    # Arrange args for u64::overflowing_sub (LE convention) as:
-    #   [y0, y1, x0, x1]
-    # ---------------------------------------------------------------------------------------------
+    # =============================================================================================
+    # Step 1: (z0, z1) = (x0, x1) - (y0, y1)
+    #   u64::overflowing_sub expects [b_lo, b_hi, a_lo, a_hi], computes a - b
+    # =============================================================================================
     movup.5
     movup.5
     # => [y0, y1, x0, x1, x2, x3, y2, y3]
 
     exec.u64::overflowing_sub
-    # => [borrow_low, z0, z1, x2, x3, y2, y3]
+    # => [borrow_lo, z0, z1, x2, x3, y2, y3]
 
-    # ---------------------------------------------------------------------------------------------
-    # High 64 bits (raw): (x2,x3) - (y2,y3)
-    # Arrange args (LE convention) as:
-    #   [y2, y3, x2, x3]
-    # ---------------------------------------------------------------------------------------------
+    # =============================================================================================
+    # Step 2: (t0, t1) = (x2, x3) - (y2, y3)   [raw, without borrow]
+    #   Arrange as [y2, y3, x2, x3]
+    # =============================================================================================
+
     movup.4
     movup.4
-    # => [x2, x3, borrow_low, z0, z1, y2, y3]
+    # => [x2, x3, borrow_lo, z0, z1, y2, y3]
 
     movup.6
-    # => [y2, y3, x2, x3, borrow_low, z0, z1]
     movup.6
+    # => [y2, y3, x2, x3, borrow_lo, z0, z1]
 
     exec.u64::overflowing_sub
-    # => [underflow_high_raw, t0, t1, borrow_low, z0, z1]
+    # => [underflow_hi_raw, t0, t1, borrow_lo, z0, z1]
 
-    # ---------------------------------------------------------------------------------------------
-    # Apply propagated borrow from low 64-bit subtraction:
-    #   (t0,t1) - borrow_low
-    # Arrange args (LE convention) as:
-    #   [borrow_low, 0, t0, t1]
-    # ---------------------------------------------------------------------------------------------
+    # =============================================================================================
+    # Step 3: (z2, z3) = (t0, t1) - borrow_lo
+    #   Arrange as [borrow_lo, 0, t0, t1]
+    # =============================================================================================
     swap.3
-    # => [borrow_low, t0, t1, underflow_high_raw, z0, z1]
+    # => [borrow_lo, t0, t1, underflow_hi_raw, z0, z1]
+
     push.0 swap
-    # => [borrow_low, 0, t0, t1, underflow_high_raw, z0, z1]
+    # => [borrow_lo, 0, t0, t1, underflow_hi_raw, z0, z1]
+
     exec.u64::overflowing_sub
-    # => [underflow_high_borrow, z2, z3, underflow_high_raw, z0, z1]
+    # => [underflow_hi_borrow, z2, z3, underflow_hi_raw, z0, z1]
 
     # Underflow iff either high-half step underflowed.
     movup.3 or
