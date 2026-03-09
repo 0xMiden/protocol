@@ -54,4 +54,6 @@ pub enum FungibleFaucetError {
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
+    #[error("network faucet ownership has been renounced (no owner)")]
+    OwnershipRenounced,
 }

@@ -89,7 +89,7 @@ use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use thiserror::Error;
 
-use crate::account::components::storage_schema_library;
+use crate::account::components::{metadata_info_component_library, storage_schema_library};
 use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 
 // CONSTANTS — canonical layout: slots 0–22
@@ -439,11 +439,13 @@ impl TokenMetadata {
         // for get_owner and verify_owner (used in optional_set_* mutations).
         // Word layout: [0, 0, owner_suffix, owner_prefix] so that after get_item (which places
         // word[0] on top), dropping the two leading zeros yields [owner_suffix, owner_prefix].
-        let owner_word = self
-            .owner
-            .map(|id| Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]))
-            .unwrap_or_default();
-        slots.push(StorageSlot::with_value(owner_config_slot().clone(), owner_word));
+        // Only included when an owner is explicitly set, to avoid conflicting with components
+        // (like NetworkFungibleFaucet) that provide their own owner_config slot.
+        if let Some(id) = self.owner {
+            let owner_word =
+                Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]);
+            slots.push(StorageSlot::with_value(owner_config_slot().clone(), owner_word));
+        }
 
         let name_words = self.name.as_ref().map(|n| n.to_words()).unwrap_or_default();
         slots.push(StorageSlot::with_value(
@@ -486,6 +488,21 @@ impl TokenMetadata {
         }
 
         slots
+    }
+}
+
+impl From<TokenMetadata> for AccountComponent {
+    fn from(info: TokenMetadata) -> Self {
+        let metadata =
+            AccountComponentMetadata::new("miden::standards::metadata::info", AccountType::all())
+                .with_description(
+                    "Component exposing token name, description, logo URI and external link",
+                );
+
+        AccountComponent::new(metadata_info_component_library(), info.storage_slots(), metadata)
+            .expect(
+                "TokenMetadata component should satisfy the requirements of a valid account component",
+            )
     }
 }
 

@@ -823,8 +823,10 @@ end
 pub proc optional_set_max_supply
     # 1. Check max supply mutability
     exec.get_mutability_config_word
-    swapw dropw
     # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, new_max_supply, pad(15)]
+    # Note: unlike other optional_set_* procedures, we cannot use swapw dropw here because
+    # new_max_supply occupies position 4 and would be discarded. Instead, drop 3 elements
+    # directly; the assert then brings the stack back to depth 16.
     drop drop drop
     # => [max_supply_mutable, new_max_supply, pad(15)]
     push.1 eq
