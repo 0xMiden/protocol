@@ -93,19 +93,15 @@ const OUTPUT_NOTE_AUX = 0
 pub proc get_origin_token_address
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
-    # => [addr3, addr2, addr1, addr0]
-
-    exec.word::reverse
     # => [addr0, addr1, addr2, addr3]
 
-    # Read slot 2: [0, scale, origin_network, addr4]
+    # Read slot 2: [addr4, origin_network, scale, 0]
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4, addr0, addr1, addr2, addr3]
+    # => [addr4, origin_network, scale, 0, addr0, addr1, addr2, addr3]
 
-    # Keep only addr4 from slot 2 and append it after slot 1 limbs
-    drop drop drop
-    movdn.4
+    # Keep only addr4, drop origin_network, scale, 0
+    movdn.7 drop drop drop
     # => [addr0, addr1, addr2, addr3, addr4]
 end
 
@@ -118,9 +114,9 @@ end
 pub proc get_origin_network
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4]
+    # => [addr4, origin_network, scale, 0]
 
-    drop drop swap drop
+    drop movdn.2 drop drop
     # => [origin_network]
 end
 
@@ -133,9 +129,9 @@ end
 pub proc get_scale
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4]
+    # => [addr4, origin_network, scale, 0]
 
-    drop movdn.2 drop drop
+    drop drop swap drop
     # => [scale]
 end
 

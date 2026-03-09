@@ -276,10 +276,10 @@ fn agglayer_faucet_conversion_slots(
 ) -> (Word, Word) {
     let addr_elements = origin_token_address.to_elements();
 
-    let slot1 = Word::new([addr_elements[3], addr_elements[2], addr_elements[1], addr_elements[0]]);
+    let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
 
     let slot2 =
-        Word::new([Felt::ZERO, Felt::from(scale), Felt::from(origin_network), addr_elements[4]]);
+        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
 
     (slot1, slot2)
 }
