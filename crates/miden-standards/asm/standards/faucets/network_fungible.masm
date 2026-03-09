@@ -1,6 +1,6 @@
 use miden::standards::faucets
 use miden::standards::access::ownable2step
-use miden::standards::mint_policies
+use miden::standards::mint_policies::policy_manager
 
 # PUBLIC INTERFACE
 # ================================================================================================
@@ -39,7 +39,7 @@ pub use ownable2step::renounce_ownership
 #!
 #! Invocation: call
 pub proc distribute
-    exec.mint_policies::enforce_mint_policy
+    exec.policy_manager::enforce_mint_policy
     # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
 
     exec.faucets::distribute

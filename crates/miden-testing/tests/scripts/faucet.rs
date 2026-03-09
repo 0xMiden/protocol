@@ -41,7 +41,6 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
-    ERR_MINT_POLICY_AMOUNT_EXCEEDS_PER_CALL_CAP,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
@@ -815,217 +814,7 @@ async fn test_network_faucet_owner_can_mint_with_separate_mint_policies_componen
     Ok(())
 }
 
-/// Tests owner-per-call-cap policy: owner check + cap check.
-#[tokio::test]
-async fn test_network_faucet_owner_per_call_cap_policy() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-    let non_owner_account_id = AccountId::dummy(
-        [2; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let faucet = builder.add_existing_network_faucet(
-        "NET",
-        1000,
-        owner_account_id,
-        Some(50),
-        MintPolicyConfig::OwnerPerCallCap { per_call_cap: Felt::new(50) },
-    )?;
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let mock_chain = builder.build()?;
-
-    let build_mint_note = |sender: AccountId,
-                           amount: Felt,
-                           serial_num: Word|
-     -> anyhow::Result<Note> {
-        let mint_asset: Asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?.into();
-        let output_note_tag = NoteTag::with_account_target(target_account.id());
-        let p2id_note = create_p2id_note_exact(
-            faucet.id(),
-            target_account.id(),
-            vec![mint_asset],
-            NoteType::Private,
-            serial_num,
-        )?;
-        let recipient = p2id_note.recipient().digest();
-        let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
-        let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
-        Ok(MintNote::create(
-            faucet.id(),
-            sender,
-            mint_storage,
-            NoteAttachment::default(),
-            &mut rng,
-        )?)
-    };
-
-    // Owner can mint up to the configured cap.
-    let allowed_mint_note =
-        build_mint_note(owner_account_id, Felt::new(50), Word::from([1u32, 2, 3, 4]))?;
-    let tx_context =
-        mock_chain.build_tx_context(faucet.id(), &[], &[allowed_mint_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-
-    // Owner cannot mint above the cap.
-    let over_cap_note =
-        build_mint_note(owner_account_id, Felt::new(51), Word::from([5u32, 6, 7, 8]))?;
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[over_cap_note])?.build()?;
-    let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_MINT_POLICY_AMOUNT_EXCEEDS_PER_CALL_CAP);
-
-    // Non-owner cannot mint even if amount is within cap.
-    let non_owner_note =
-        build_mint_note(non_owner_account_id, Felt::new(10), Word::from([9u32, 10, 11, 12]))?;
-    let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[non_owner_note])?.build()?;
-    let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
-
-    Ok(())
-}
-
-/// Tests policy transition from owner-only to owner-per-call-cap.
-#[tokio::test]
-async fn test_network_faucet_switches_between_owner_only_and_per_call_cap() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let owner_account_id = AccountId::dummy(
-        [1; 15],
-        AccountIdVersion::Version0,
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Private,
-    );
-
-    let mut faucet = builder.add_existing_network_faucet(
-        "NET",
-        1000,
-        owner_account_id,
-        Some(0),
-        MintPolicyConfig::OwnerOnly,
-    )?;
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let mock_chain = builder.build()?;
-    let faucet_id = faucet.id();
-    let target_account_id = target_account.id();
-
-    let build_mint_note = |amount: Felt, serial_num: Word| -> anyhow::Result<Note> {
-        let mint_asset: Asset = FungibleAsset::new(faucet_id, amount.as_canonical_u64())?.into();
-        let output_note_tag = NoteTag::with_account_target(target_account_id);
-        let p2id_note = create_p2id_note_exact(
-            faucet_id,
-            target_account_id,
-            vec![mint_asset],
-            NoteType::Private,
-            serial_num,
-        )?;
-        let recipient = p2id_note.recipient().digest();
-        let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
-        let mut rng = RpoRandomCoin::new([Felt::from(11u32); 4].into());
-        Ok(MintNote::create(
-            faucet_id,
-            owner_account_id,
-            mint_storage,
-            NoteAttachment::default(),
-            &mut rng,
-        )?)
-    };
-
-    // Owner-only starts uncapped: mint 100 succeeds.
-    let mint_100_note = build_mint_note(Felt::new(100), Word::from([21u32, 22, 23, 24]))?;
-    let tx_context = mock_chain.build_tx_context(faucet.clone(), &[], &[mint_100_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-    faucet.apply_delta(executed_transaction.account_delta())?;
-
-    // Configure per-call cap to 50.
-    let set_cap_note_script = r#"
-        use miden::standards::mint_policies->mint_policies
-
-        begin
-            repeat.15 push.0 end
-            push.50
-            call.mint_policies::set_per_call_cap
-            dropw dropw dropw dropw
-        end
-    "#;
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let set_cap_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(set_cap_note_script.to_owned())?;
-    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
-    let set_cap_note = NoteBuilder::new(owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .tag(NoteTag::default().into())
-        .serial_number(Word::from([200u32, 201, 202, 203]))
-        .code(set_cap_note_script.to_owned())
-        .build()?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[set_cap_note])?
-        .add_note_script(set_cap_script)
-        .with_source_manager(source_manager)
-        .build()?;
-    let executed_set_cap = tx_context.execute().await?;
-    faucet.apply_delta(executed_set_cap.account_delta())?;
-
-    // Switch active policy to owner-per-call-cap.
-    let owner_per_call_cap_root = MintPolicies::owner_per_call_cap_policy_root();
-    let set_policy_note_script = format!(
-        r#"
-        use miden::standards::mint_policies->mint_policies
-
-        begin
-            repeat.12 push.0 end
-            push.{owner_per_call_cap_root}
-            call.mint_policies::set_mint_policy
-            dropw dropw dropw dropw
-        end
-        "#
-    );
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let set_policy_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(set_policy_note_script.clone())?;
-    let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
-    let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
-        .note_type(NoteType::Private)
-        .tag(NoteTag::default().into())
-        .serial_number(Word::from([300u32, 301, 302, 303]))
-        .code(set_policy_note_script)
-        .build()?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[set_policy_note])?
-        .add_note_script(set_policy_script)
-        .with_source_manager(source_manager)
-        .build()?;
-    let executed_set_policy = tx_context.execute().await?;
-    faucet.apply_delta(executed_set_policy.account_delta())?;
-
-    // Now 100 should fail because of the active per-call cap policy.
-    let mint_100_again_note = build_mint_note(Felt::new(100), Word::from([31u32, 32, 33, 34]))?;
-    let tx_context = mock_chain
-        .build_tx_context(faucet.clone(), &[], &[mint_100_again_note])?
-        .build()?;
-    let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_MINT_POLICY_AMOUNT_EXCEEDS_PER_CALL_CAP);
-
-    // Minting 50 succeeds under cap policy.
-    let mint_50_note = build_mint_note(Felt::new(50), Word::from([41u32, 42, 43, 44]))?;
-    let tx_context = mock_chain.build_tx_context(faucet.clone(), &[], &[mint_50_note])?.build()?;
-    let executed_transaction = tx_context.execute().await?;
-    assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-
-    Ok(())
-}
-
-/// Tests that set_mint_policy rejects policy roots outside the two allowed policies.
+/// Tests that set_mint_policy rejects policy roots outside the allowed policy roots map.
 #[tokio::test]
 async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1050,12 +839,12 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let invalid_policy_root = NetworkFungibleFaucet::distribute_digest();
     let set_policy_note_script = format!(
         r#"
-        use miden::standards::mint_policies->mint_policies
+        use miden::standards::mint_policies::policy_manager->policy_manager
 
         begin
             repeat.12 push.0 end
             push.{invalid_policy_root}
-            call.mint_policies::set_mint_policy
+            call.policy_manager::set_mint_policy
             dropw dropw dropw dropw
         end
         "#
