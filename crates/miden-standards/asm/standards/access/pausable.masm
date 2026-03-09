@@ -57,13 +57,13 @@ const ERR_IS_PAUSED="contract is paused"
 pub proc is_not_paused
     push.PAUSABLE_SLOT[0..2] exec.active_account::get_item
     # => [paused_flag, 0, 0, 0]
-    # Paused state is stored as [1, 0, 0, 0] when paused, [0, 0, 0, 0] when unpaused
-    # get_item returns the Word with the first element at the top of the stack
-    # Drop the last 3 elements to isolate the paused_flag
-    drop drop drop
-    # => [paused_flag]
+    # Paused state is stored as Word[1, 0, 0, 0] when paused, Word[0, 0, 0, 0] when unpaused
+    # get_item (mem_loadw_le) returns word[0] on top of stack
+    # Check the flag (top of stack) first, then clean up the remaining zeros
     assertz.err=ERR_IS_PAUSED
-    # => [] (if paused_flag was 0, otherwise it panics)
+    # => [0, 0, 0] (if paused_flag was 0, otherwise it panics)
+    drop drop drop
+    # => []
 end
 
 # PUBLIC INTERFACE
@@ -81,14 +81,14 @@ end
 #!
 #! Invocation: call
 pub proc pause
-    # Write [1, 0, 0, 0] to storage to indicate paused state
-    # Using [1, 0, 0, 0] follows Miden convention where the flag is in the first position
-    # This makes boolean isolation more efficient (flag is at top of stack after get_item)
-    push.1.0.0.0
+    # Write Word[1, 0, 0, 0] to storage to indicate paused state
+    # push.0.0.0.1 pushes left-to-right, so 1 (last) ends up on top of stack
+    # set_item uses mem_storew_le: top of stack → word[0], so word[0] = 1
+    push.0.0.0.1
     # => [1, 0, 0, 0, pad(16)]
 
     push.PAUSABLE_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, 1, 0, 0, 0, pad(16)]
+    # => [slot_suffix, slot_prefix, 1, 0, 0, 0, pad(16)]
 
     exec.native_account::set_item
     # => [OLD_PAUSED_WORD, pad(16)]

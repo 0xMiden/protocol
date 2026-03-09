@@ -143,7 +143,8 @@ impl RegulatedNetworkFungibleFaucet {
                         slot_name: RegulatedNetworkFungibleFaucet::metadata_slot().clone(),
                         source: err,
                     })?;
-                let [max_supply, decimals, token_symbol, _] = *faucet_metadata;
+                // Storage layout: [token_supply, max_supply, decimals, symbol]
+                let [_token_supply, max_supply, decimals, token_symbol] = *faucet_metadata;
 
                 // obtain owner account ID from the next storage slot
                 let owner_account_id_word: Word = storage
@@ -232,14 +233,9 @@ impl RegulatedNetworkFungibleFaucet {
 
 impl From<RegulatedNetworkFungibleFaucet> for AccountComponent {
     fn from(regulated_faucet: RegulatedNetworkFungibleFaucet) -> Self {
-        // Note: data is stored as [a0, a1, a2, a3] but loaded onto the stack as
-        // [a3, a2, a1, a0, ...]
-        let metadata = Word::new([
-            regulated_faucet.faucet.max_supply(),
-            Felt::from(regulated_faucet.faucet.decimals()),
-            regulated_faucet.faucet.symbol().into(),
-            Felt::ZERO,
-        ]);
+        // Storage layout: [token_supply, max_supply, decimals, symbol]
+        // With little-endian get_item (mem_loadw_le), word[0] is on top of the stack.
+        let metadata: Word = (*regulated_faucet.faucet.metadata()).into();
 
         // Convert AccountId into its Word encoding for storage.
         let owner_account_id_word: Word = [
