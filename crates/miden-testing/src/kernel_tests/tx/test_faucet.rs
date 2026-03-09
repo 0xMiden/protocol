@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
-    AssetCallbacks,
+    AssetCallbacksFlag,
     AssetId,
     AssetVaultKey,
     FungibleAsset,
@@ -307,7 +307,7 @@ async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()>
     let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
 
     // Build a vault key with callbacks enabled.
-    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetCallbacks::Enabled)?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetCallbacksFlag::Enabled)?;
 
     let code = format!(
         r#"

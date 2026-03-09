@@ -6,21 +6,21 @@ const CALLBACKS_ENABLED: u8 = 1;
 /// Whether callbacks are enabled for assets.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AssetCallbacks {
+pub enum AssetCallbacksFlag {
     #[default]
     Disabled = CALLBACKS_DISABLED,
 
     Enabled = CALLBACKS_ENABLED,
 }
 
-impl AssetCallbacks {
+impl AssetCallbacksFlag {
     /// Encodes the callbacks setting as a `u8`.
     pub const fn as_u8(&self) -> u8 {
         *self as u8
     }
 }
 
-impl TryFrom<u8> for AssetCallbacks {
+impl TryFrom<u8> for AssetCallbacksFlag {
     type Error = AssetError;
 
     /// Decodes a callbacks setting from a `u8`.
@@ -32,7 +32,7 @@ impl TryFrom<u8> for AssetCallbacks {
         match value {
             CALLBACKS_DISABLED => Ok(Self::Disabled),
             CALLBACKS_ENABLED => Ok(Self::Enabled),
-            _ => Err(AssetError::InvalidAssetCallbacks(value)),
+            _ => Err(AssetError::InvalidAssetCallbacksFlag(value)),
         }
     }
 }

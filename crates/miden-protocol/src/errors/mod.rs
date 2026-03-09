@@ -489,7 +489,7 @@ pub enum AssetError {
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
     #[error("invalid native asset callbacks encoding: {0}")]
-    InvalidAssetCallbacks(u8),
+    InvalidAssetCallbacksFlag(u8),
 }
 
 // TOKEN SYMBOL ERROR

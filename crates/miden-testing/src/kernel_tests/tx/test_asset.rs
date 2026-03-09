@@ -1,6 +1,6 @@
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
-    AssetCallbacks,
+    AssetCallbacksFlag,
     AssetId,
     AssetVaultKey,
     FungibleAsset,
@@ -229,10 +229,10 @@ async fn test_validate_fungible_asset(
 }
 
 #[rstest::rstest]
-#[case::without_callbacks(AssetCallbacks::Disabled)]
-#[case::with_callbacks(AssetCallbacks::Enabled)]
+#[case::without_callbacks(AssetCallbacksFlag::Disabled)]
+#[case::with_callbacks(AssetCallbacksFlag::Enabled)]
 #[tokio::test]
-async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbacks) -> anyhow::Result<()> {
+async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbacksFlag) -> anyhow::Result<()> {
     let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
     let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, callbacks)?;
 
