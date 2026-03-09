@@ -355,6 +355,29 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Exercises u128_sub_no_underflow when x > 2^64, so x has distinct high limbs (x2 != x3).
+///
+/// The u128 subtraction splits each 128-bit operand into two 64-bit halves. This test
+/// ensures the high-half subtraction and borrow propagation work correctly when x_high
+/// is non-zero.
+#[tokio::test]
+async fn test_scale_down_high_limb_subtraction() -> anyhow::Result<()> {
+    let x_val = U256::from_dec_str("18999999999999999999").unwrap();
+
+    // Verify the u32 limb structure that makes this test meaningful:
+    //   x = x0 + x1*2^32 + x2*2^64 + x3*2^96
+    // x2 and x3 must differ - otherwise the high subtraction is trivially correct
+    // regardless of limb ordering.
+    let x2 = ((x_val >> 64) & U256::from(u32::MAX)).as_u32();
+    let x3 = ((x_val >> 96) & U256::from(u32::MAX)).as_u32();
+    assert_eq!(x2, 1, "x2 must be non-zero for the high subtraction to be non-trivial");
+    assert_eq!(x3, 0, "x3 must differ from x2");
+
+    let x = EthAmount::from_u256(x_val);
+    assert_scale_down_ok(x, 18).await?;
+    Ok(())
+}
+
 #[test]
 fn test_felts_to_u256_bytes_sequential_values() {
     let limbs = [
