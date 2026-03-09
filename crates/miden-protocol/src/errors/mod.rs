@@ -785,23 +785,22 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
-    #[error(
-        "output note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
-    )]
-    OutputNoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
-// PUBLIC OUTPUT NOTE ERROR
+// OUTPUT NOTE ERROR
 // ================================================================================================
 
 /// Errors that can occur when creating a
-/// [`PublicOutputNote`](crate::transaction::PublicOutputNote).
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
+/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
 #[derive(Debug, Error)]
-pub enum PublicOutputNoteError {
-    #[error("note with id {0} is private but PublicOutputNote requires a public note")]
+pub enum OutputNoteError {
+    #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
+    #[error("note with id {0} is public but expected a private note")]
+    NoteIsPublic(NoteId),
     #[error(
-        "note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+        "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
     )]
     NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
