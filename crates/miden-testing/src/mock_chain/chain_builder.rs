@@ -458,6 +458,7 @@ impl MockChainBuilder {
 
         let mut info = TokenMetadataInfo::new()
             .with_name(name.clone())
+            .with_owner(owner_account_id)
             .with_max_supply_mutable(max_supply_mutable);
         if let Some((words, mutable)) = description {
             info = info.with_description(

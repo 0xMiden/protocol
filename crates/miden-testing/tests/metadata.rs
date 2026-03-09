@@ -933,11 +933,16 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
     )
     .unwrap();
 
+    let info = Info::new()
+        .with_name(TokenName::new("POL").unwrap())
+        .with_owner(owner_account_id);
+
     let account = AccountBuilder::new([4u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(NoAuth)
         .with_component(faucet)
+        .with_component(info)
         .build()?;
 
     let expected_prefix = owner_account_id.prefix().as_felt().as_canonical_u64();

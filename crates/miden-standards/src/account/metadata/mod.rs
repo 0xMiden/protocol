@@ -78,6 +78,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountId,
     AccountStorage,
     AccountType,
     StorageSlot,
@@ -288,6 +289,7 @@ pub fn mutability_config_slot() -> &'static StorageSlotName {
 /// - Slot 19–25: external_link (7 Words)
 #[derive(Debug, Clone, Default)]
 pub struct TokenMetadata {
+    owner: Option<AccountId>,
     name: Option<TokenName>,
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
@@ -302,6 +304,16 @@ impl TokenMetadata {
     /// Creates a new empty token metadata (all fields absent by default).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the owner of this metadata component.
+    ///
+    /// The owner is stored in the `ownable::owner_config` slot and is used by the
+    /// `metadata::fungible` MASM procedures to authorize mutations (e.g.
+    /// `optional_set_description`).
+    pub fn with_owner(mut self, owner: AccountId) -> Self {
+        self.owner = Some(owner);
+        self
     }
 
     /// Sets whether the max supply can be updated by the owner via
@@ -422,6 +434,16 @@ impl TokenMetadata {
     /// added as a separate `AccountComponent`.
     pub fn storage_slots(&self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
+
+        // Owner slot (ownable::owner_config) — required by metadata::fungible MASM procedures
+        // for get_owner and verify_owner (used in optional_set_* mutations).
+        // Word layout: [0, 0, owner_suffix, owner_prefix] so that after get_item (which places
+        // word[0] on top), dropping the two leading zeros yields [owner_suffix, owner_prefix].
+        let owner_word = self
+            .owner
+            .map(|id| Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]))
+            .unwrap_or_default();
+        slots.push(StorageSlot::with_value(owner_config_slot().clone(), owner_word));
 
         let name_words = self.name.as_ref().map(|n| n.to_words()).unwrap_or_default();
         slots.push(StorageSlot::with_value(

@@ -379,7 +379,7 @@ pub fn create_network_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone());
+    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone()).with_owner(owner);
     if let Some(d) = metadata.description() {
         info = info.with_description(d.clone(), false);
     }
