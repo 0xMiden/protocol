@@ -30,11 +30,11 @@ use crate::procedure_digest;
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `distribute` procedure of the Basic Fungible Faucet only once.
+// Initialize the digest of the `mint` procedure of the Basic Fungible Faucet only once.
 procedure_digest!(
-    BASIC_FUNGIBLE_FAUCET_DISTRIBUTE,
+    BASIC_FUNGIBLE_FAUCET_MINT,
     BasicFungibleFaucet::NAME,
-    BasicFungibleFaucet::DISTRIBUTE_PROC_NAME,
+    BasicFungibleFaucet::MINT_PROC_NAME,
     basic_fungible_faucet_library
 );
 
@@ -52,10 +52,10 @@ procedure_digest!(
 /// against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `distribute` procedure can be called from a transaction script and requires authentication
+/// The `mint` procedure can be called from a transaction script and requires authentication
 /// via the authentication component. The `burn` procedure can only be called from a note script
 /// and requires the calling note to contain the asset to be burned.
 /// This component must be combined with an authentication component.
@@ -81,7 +81,7 @@ impl BasicFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const MINT_PROC_NAME: &str = "mint";
     const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
@@ -195,9 +195,9 @@ impl BasicFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the digest of the `distribute` account procedure.
-    pub fn distribute_digest() -> Word {
-        *BASIC_FUNGIBLE_FAUCET_DISTRIBUTE
+    /// Returns the digest of the `mint` account procedure.
+    pub fn mint_digest() -> Word {
+        *BASIC_FUNGIBLE_FAUCET_MINT
     }
 
     /// Returns the digest of the `burn` account procedure.
@@ -262,10 +262,10 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// decimals, max supply).
 ///
 /// The basic faucet interface exposes two procedures:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `distribute` procedure can be called from a transaction script and requires authentication
+/// The `mint` procedure can be called from a transaction script and requires authentication
 /// via the specified authentication scheme. The `burn` procedure can only be called from a note
 /// script and requires the calling note to contain the asset to be burned.
 ///
@@ -281,14 +281,14 @@ pub fn create_basic_fungible_faucet(
     account_storage_mode: AccountStorageMode,
     auth_method: AuthMethod,
 ) -> Result<Account, FungibleFaucetError> {
-    let distribute_proc_root = BasicFungibleFaucet::distribute_digest();
+    let mint_proc_root = BasicFungibleFaucet::mint_digest();
 
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
             pub_key,
             auth_scheme,
             AuthSingleSigAclConfig::new()
-                .with_auth_trigger_procedures(vec![distribute_proc_root])
+                .with_auth_trigger_procedures(vec![mint_proc_root])
                 .with_allow_unauthorized_input_notes(true),
         )
         .map_err(FungibleFaucetError::AccountError)?
@@ -383,15 +383,15 @@ mod tests {
         // The config slot of the auth component stores:
         // [num_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0].
         //
-        // With 1 trigger procedure (distribute), allow_unauthorized_output_notes=false, and
+        // With 1 trigger procedure (mint), allow_unauthorized_output_notes=false, and
         // allow_unauthorized_input_notes=true, this should be [1, 0, 1, 0].
         assert_eq!(
             faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
             [Felt::ONE, Felt::ZERO, Felt::ONE, Felt::ZERO].into()
         );
 
-        // The procedure root map should contain the distribute procedure root.
-        let distribute_root = BasicFungibleFaucet::distribute_digest();
+        // The procedure root map should contain the mint procedure root.
+        let mint_root = BasicFungibleFaucet::mint_digest();
         assert_eq!(
             faucet_account
                 .storage()
@@ -400,7 +400,7 @@ mod tests {
                     [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO].into()
                 )
                 .unwrap(),
-            distribute_root
+            mint_root
         );
 
         // Check that faucet metadata was initialized to the given values.
@@ -469,7 +469,7 @@ mod tests {
     /// Check that the obtaining of the basic fungible faucet procedure digests does not panic.
     #[test]
     fn get_faucet_procedures() {
-        let _distribute_digest = BasicFungibleFaucet::distribute_digest();
+        let _mint_digest = BasicFungibleFaucet::mint_digest();
         let _burn_digest = BasicFungibleFaucet::burn_digest();
     }
 }

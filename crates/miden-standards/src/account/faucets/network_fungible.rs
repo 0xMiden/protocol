@@ -32,11 +32,11 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::t
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `distribute` procedure of the Network Fungible Faucet only once.
+// Initialize the digest of the `mint` procedure of the Network Fungible Faucet only once.
 procedure_digest!(
-    NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE,
+    NETWORK_FUNGIBLE_FAUCET_MINT,
     NetworkFungibleFaucet::NAME,
-    NetworkFungibleFaucet::DISTRIBUTE_PROC_NAME,
+    NetworkFungibleFaucet::MINT_PROC_NAME,
     network_fungible_faucet_library
 );
 
@@ -54,10 +54,10 @@ procedure_digest!(
 /// against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `distribute` and `burn` can only be called from note scripts. `distribute` requires
+/// Both `mint` and `burn` can only be called from note scripts. `mint` requires
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
@@ -85,7 +85,7 @@ impl NetworkFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const MINT_PROC_NAME: &str = "mint";
     const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
@@ -223,9 +223,9 @@ impl NetworkFungibleFaucet {
         &self.ownership
     }
 
-    /// Returns the digest of the `distribute` account procedure.
-    pub fn distribute_digest() -> Word {
-        *NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE
+    /// Returns the digest of the `mint` account procedure.
+    pub fn mint_digest() -> Word {
+        *NETWORK_FUNGIBLE_FAUCET_MINT
     }
 
     /// Returns the digest of the `burn` account procedure.
@@ -299,10 +299,10 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// (token symbol, decimals, max supply, owner account ID).
 ///
 /// The network faucet interface exposes two procedures:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `distribute` and `burn` can only be called from note scripts. `distribute` requires
+/// Both `mint` and `burn` can only be called from note scripts. `mint` requires
 /// authentication using the NoAuth scheme. `burn` does not require authentication and can be
 /// called by anyone.
 ///

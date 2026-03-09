@@ -14,10 +14,10 @@ pub use ownable2step::transfer_ownership
 pub use ownable2step::accept_ownership
 pub use ownable2step::renounce_ownership
 
-# ASSET DISTRIBUTION
+# ASSET MINTING
 # ------------------------------------------------------------------------------------------------
 
-#! Distributes freshly minted fungible assets to the provided recipient.
+#! Mints fungible assets to the provided recipient.
 #!
 #! This procedure first enforces the active mint policy configured via
 #! `mint_policy_proc_root`, and then mints the asset and creates an output note
@@ -38,7 +38,7 @@ pub use ownable2step::renounce_ownership
 #! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
-pub proc distribute
+pub proc mint
     exec.policy_manager::enforce_mint_policy
     # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
 

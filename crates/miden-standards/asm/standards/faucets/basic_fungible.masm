@@ -8,7 +8,7 @@ use miden::standards::faucets
 # PROCEDURES
 # =================================================================================================
 
-#! Distributes freshly minted fungible assets to the provided recipient by creating a note.
+#! Mints fungible assets to the provided recipient by creating a note.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
@@ -25,7 +25,7 @@ use miden::standards::faucets
 #! - any of the validations in faucets::distribute fail.
 #!
 #! Invocation: call
-pub proc distribute
+pub proc mint
     exec.faucets::distribute
     # => [note_idx, pad(15)]
 end

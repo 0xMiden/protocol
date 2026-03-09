@@ -76,7 +76,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -140,7 +140,7 @@ async fn execute_faucet_note_script(
 ) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .compile_note_script(note_script_code.to_owned())?;
+        .compile_note_script(note_script_code)?;
 
     let mut rng = RpoRandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender_account_id, &mut rng)
@@ -190,7 +190,7 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
     Ok(())
 }
 
-/// Tests that distribute fails when the minted amount would exceed the max supply.
+/// Tests that mint fails when the minted amount would exceed the max supply.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyhow::Result<()> {
     // CONSTRUCT AND EXECUTE TX (Failure)
@@ -222,7 +222,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -399,7 +399,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 /// Tests that a public note can be created during note consumption by fetching the note script
 /// from the data store. This test verifies the functionality added in issue #1972.
 ///
-/// The test creates a note that calls the faucet's `distribute` function to create a PUBLIC
+/// The test creates a note that calls the faucet's `mint` function to create a PUBLIC
 /// P2ID output note. The P2ID script is fetched from the data store during transaction execution.
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
@@ -477,13 +477,13 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 exec.note::build_recipient
                 # => [RECIPIENT]
 
-                # Now call distribute with the computed recipient
+                # Now call mint with the computed recipient
                 push.{note_type}
                 push.{tag}
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint
                 # => [note_idx, pad(15)]
 
                 # Truncate the stack
@@ -504,7 +504,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         amount = amount,
     );
 
-    // Create the trigger note that will call distribute
+    // Create the trigger note that will call mint
     let mut rng = RpoRandomCoin::new([Felt::from(1u32); 4].into());
     let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
@@ -836,7 +836,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = NetworkFungibleFaucet::distribute_digest();
+    let invalid_policy_root = NetworkFungibleFaucet::mint_digest();
     let set_policy_note_script = format!(
         r#"
         use miden::standards::mint_policies::policy_manager->policy_manager
@@ -921,7 +921,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
     let result = tx_context.execute().await;
 
-    // The distribute function uses ERR_ONLY_OWNER, which is "note sender is not the owner"
+    // The mint function uses ERR_ONLY_OWNER, which is "note sender is not the owner"
     let expected_error = ERR_SENDER_NOT_OWNER;
     assert_transaction_executor_error!(result, expected_error);
 
@@ -1498,10 +1498,10 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     Ok(())
 }
 
-/// Tests that calling distribute multiple times in a single transaction produces output notes
+/// Tests that calling mint multiple times in a single transaction produces output notes
 /// with the correct individual amounts, not the cumulative vault totals.
 #[tokio::test]
-async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
+async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
@@ -1523,7 +1523,7 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
     let tx_script_code = format!(
         "
             begin
-                # --- First distribute: mint {amount_1} tokens to recipient_1 ---
+                # --- First mint: mint {amount_1} tokens to recipient_1 ---
                 padw padw push.0
 
                 push.{recipient_1}
@@ -1532,13 +1532,13 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
                 push.{amount_1}
                 # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint
                 # => [note_idx, pad(15)]
 
                 # clean up the stack before the second call
                 dropw dropw dropw dropw
 
-                # --- Second distribute: mint {amount_2} tokens to recipient_2 ---
+                # --- Second mint: mint {amount_2} tokens to recipient_2 ---
                 padw padw push.0
 
                 push.{recipient_2}
@@ -1547,7 +1547,7 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
                 push.{amount_2}
                 # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint
                 # => [note_idx, pad(15)]
 
                 # truncate the stack

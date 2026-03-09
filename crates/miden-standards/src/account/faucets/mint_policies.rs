@@ -67,7 +67,7 @@ pub enum MintPolicyConfig {
 
 impl MintPolicies {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::mint_policies";
+    pub const NAME: &'static str = "miden::standards::components::faucets::mint_policies";
 
     const MINT_POLICY_OWNER_ONLY_PROC_NAME: &str = "mint_policy_owner_only";
 

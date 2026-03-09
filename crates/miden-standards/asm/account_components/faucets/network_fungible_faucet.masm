@@ -2,7 +2,7 @@
 #
 # See the `NetworkFungibleFaucet` Rust type's documentation for more details.
 
-pub use ::miden::standards::faucets::network_fungible::distribute
+pub use ::miden::standards::faucets::network_fungible::mint
 pub use ::miden::standards::faucets::network_fungible::burn
 pub use ::miden::standards::faucets::network_fungible::get_owner
 pub use ::miden::standards::faucets::network_fungible::get_nominated_owner
