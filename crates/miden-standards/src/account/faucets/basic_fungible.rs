@@ -347,17 +347,7 @@ pub fn create_basic_fungible_faucet(
         },
     };
 
-    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone());
-    if let Some(d) = metadata.description() {
-        info = info.with_description(d.clone(), false);
-    }
-    if let Some(l) = metadata.logo_uri() {
-        info = info.with_logo_uri(l.clone(), false);
-    }
-    if let Some(e) = metadata.external_link() {
-        info = info.with_external_link(e.clone(), false);
-    }
-
+    let info = metadata.to_token_metadata_info();
     let faucet = BasicFungibleFaucet::from_metadata(metadata).with_info(info);
 
     let account = AccountBuilder::new(init_seed)

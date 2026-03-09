@@ -13,7 +13,6 @@ use miden_protocol::account::{
     AccountStorage,
     AccountStorageMode,
     AccountType,
-    StorageSlot,
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
@@ -281,13 +280,7 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
 
-        let ownership = Ownable2Step::new(network_faucet.owner_account_id);
-        let owner_account_id_word: Word = ownership.to_word();
-
-        let owner_slot = StorageSlot::with_value(
-            NetworkFungibleFaucet::owner_config_slot().clone(),
-            owner_account_id_word,
-        );
+        let owner_slot = Ownable2Step::new(network_faucet.owner_account_id).to_storage_slot();
 
         let mut slots = vec![metadata_slot, owner_slot];
         if let Some(info) = &network_faucet.info {
@@ -355,17 +348,7 @@ pub fn create_network_fungible_faucet(
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let mut info = TokenMetadataInfo::new().with_name(metadata.name().clone()).with_owner(owner);
-    if let Some(d) = metadata.description() {
-        info = info.with_description(d.clone(), false);
-    }
-    if let Some(l) = metadata.logo_uri() {
-        info = info.with_logo_uri(l.clone(), false);
-    }
-    if let Some(e) = metadata.external_link() {
-        info = info.with_external_link(e.clone(), false);
-    }
-
+    let info = metadata.to_token_metadata_info().with_owner(owner);
     let faucet = NetworkFungibleFaucet::from_metadata(metadata, owner).with_info(info);
 
     let account = AccountBuilder::new(init_seed)

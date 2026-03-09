@@ -145,7 +145,7 @@ async fn metadata_info_get_name_zeros_returns_empty() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that get_description_commitment returns the RPO256 hash of the 6 description words.
+/// Tests that get_description_commitment returns the RPO256 hash of the 7 description words.
 #[tokio::test]
 async fn metadata_info_get_description_from_masm() -> anyhow::Result<()> {
     let desc_text = "some test description text";
@@ -432,8 +432,6 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
         None,
         None,
     )
-    .unwrap()
-    .with_token_supply(Felt::new(0))
     .unwrap();
 
     let extension = Info::new()
@@ -491,8 +489,6 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
         None,
         None,
     )
-    .unwrap()
-    .with_token_supply(Felt::new(0))
     .unwrap();
 
     let extension = Info::new()
@@ -760,90 +756,6 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
             push.{expected_symbol} assert_eq.err="token_symbol does not match"
         end
         "#,
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
-/// Isolated test: only get_name.
-#[tokio::test]
-async fn metadata_get_name_only() -> anyhow::Result<()> {
-    let token_name = TokenName::new("test name").unwrap();
-    let name = token_name.to_words();
-    let extension = Info::new().with_name(token_name);
-
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_name
-            push.{expected_name_0}
-            assert_eqw.err="name chunk 0 does not match"
-            push.{expected_name_1}
-            assert_eqw.err="name chunk 1 does not match"
-        end
-        "#,
-        expected_name_0 = name[0],
-        expected_name_1 = name[1],
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
-/// Isolated test: get_description_commitment returns the RPO256 hash of the 6 description words.
-#[tokio::test]
-async fn metadata_get_description_only() -> anyhow::Result<()> {
-    let desc_text = "some test description text";
-    let description_typed = Description::new(desc_text).unwrap();
-    let description = description_typed.to_words();
-    let extension = Info::new().with_description(description_typed, false);
-
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_commitment = Hasher::hash_elements(&desc_felts);
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_description_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected}
-            assert_eqw.err="description commitment does not match"
-        end
-        "#,
-        expected = expected_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1198,7 +1110,7 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
     value
 }
 
-/// When description flag is 1 (immutable), optional_set_description panics.
+/// When description mutable flag is 0 (immutable), optional_set_description panics.
 #[tokio::test]
 async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1624,8 +1536,7 @@ async fn optional_set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()>
 // =================================================================================================
 
 /// Tests that all is_*_mutable procedures correctly read the config flags.
-/// Each field is tested with flag=2 (mutable, expects 1) and flag=1 (immutable, expects 0).
-/// Also tests is_max_supply_mutable with true (expects 1).
+/// Each field is tested with flag=1 (mutable) and flag=0 (immutable).
 #[tokio::test]
 async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
     let desc = Description::new("test").unwrap();
@@ -1680,7 +1591,7 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
 // get_logo_uri_commitment: commitment test
 // =================================================================================================
 
-/// Tests that get_logo_uri_commitment returns the RPO256 hash of the 6 logo URI words.
+/// Tests that get_logo_uri_commitment returns the RPO256 hash of the 7 logo URI words.
 #[tokio::test]
 async fn metadata_get_logo_uri_commitment() -> anyhow::Result<()> {
     let logo_text = "https://example.com/logo.png";
@@ -1728,7 +1639,7 @@ async fn metadata_get_logo_uri_commitment() -> anyhow::Result<()> {
 // get_external_link_commitment: commitment test
 // =================================================================================================
 
-/// Tests that get_external_link_commitment returns the RPO256 hash of the 6 external link words.
+/// Tests that get_external_link_commitment returns the RPO256 hash of the 7 external link words.
 #[tokio::test]
 async fn metadata_get_external_link_commitment() -> anyhow::Result<()> {
     let link_text = "https://example.com";

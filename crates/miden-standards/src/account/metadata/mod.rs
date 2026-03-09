@@ -425,9 +425,7 @@ impl TokenMetadata {
 
         (name, description, logo_uri, external_link)
     }
-}
 
-impl TokenMetadata {
     /// Returns the storage slots for this metadata (without creating an `AccountComponent`).
     ///
     /// These slots are meant to be included directly in a faucet component rather than
@@ -491,6 +489,9 @@ impl TokenMetadata {
     }
 }
 
+/// Converts [`TokenMetadata`] into a standalone [`AccountComponent`] that includes the metadata
+/// MASM library (`metadata_info_component_library`). Use this when adding metadata as a separate
+/// component alongside a faucet that does not embed info via `.with_info()`.
 impl From<TokenMetadata> for AccountComponent {
     fn from(info: TokenMetadata) -> Self {
         let metadata =
