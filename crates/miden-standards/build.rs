@@ -15,6 +15,7 @@ const ASM_STANDARDS_DIR: &str = "standards";
 const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
+const ACCOUNT_COMPONENTS_LIB_NAMESPACE: &str = "miden::standards::components";
 
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
@@ -108,12 +109,12 @@ fn compile_account_components(
             .expect("reading the component's MASM source code should succeed");
 
         // Build full library path from directory structure:
-        // e.g. faucets/basic_fungible_faucet.masm →
-        //      miden::standards::account_components::faucets::basic_fungible_faucet
+        // e.g. faucets/basic_fungible_faucet.masm ->
+        // miden::standards::components::faucets::basic_fungible_faucet
         let relative_path = masm_file_path
             .strip_prefix(source_dir)
             .expect("masm file should be inside source dir");
-        let mut library_path = format!("{STANDARDS_LIB_NAMESPACE}::{ASM_ACCOUNT_COMPONENTS_DIR}");
+        let mut library_path = ACCOUNT_COMPONENTS_LIB_NAMESPACE.to_owned();
         for component in relative_path.with_extension("").components() {
             let part = component.as_os_str().to_str().expect("valid UTF-8");
             library_path.push_str("::");

@@ -86,9 +86,9 @@ impl NetworkFungibleFaucet {
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
     const DISTRIBUTE_PROC_NAME: &str =
-        "miden::standards::account_components::faucets::network_fungible_faucet::distribute";
+        "miden::standards::components::faucets::network_fungible_faucet::distribute";
     const BURN_PROC_NAME: &str =
-        "miden::standards::account_components::faucets::network_fungible_faucet::burn";
+        "miden::standards::components::faucets::network_fungible_faucet::burn";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------

@@ -60,9 +60,9 @@ impl BasicWallet {
     pub const NAME: &'static str = "miden::standards::components::wallets::basic_wallet";
 
     const RECEIVE_ASSET_PROC_NAME: &str =
-        "miden::standards::account_components::wallets::basic_wallet::receive_asset";
+        "miden::standards::components::wallets::basic_wallet::receive_asset";
     const MOVE_ASSET_TO_NOTE_PROC_NAME: &str =
-        "miden::standards::account_components::wallets::basic_wallet::move_asset_to_note";
+        "miden::standards::components::wallets::basic_wallet::move_asset_to_note";
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
