@@ -2,9 +2,10 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetError, Word};
+use super::{AccountType, Asset, AssetCallbacksFlag, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
+use crate::asset::AssetId;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -23,6 +24,7 @@ use crate::utils::serde::{
 pub struct FungibleAsset {
     faucet_id: AccountId,
     amount: u64,
+    callbacks: AssetCallbacksFlag,
 }
 
 impl FungibleAsset {
@@ -36,8 +38,10 @@ impl FungibleAsset {
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
-    /// An account ID (15 bytes) plus an amount (u64).
-    pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE + core::mem::size_of::<u64>();
+    /// An account ID (15 bytes) plus an amount (u64) plus a callbacks flag (u8).
+    pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE
+        + core::mem::size_of::<u64>()
+        + AssetCallbacksFlag::SERIALIZED_SIZE;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -58,7 +62,11 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
 
-        Ok(Self { faucet_id, amount })
+        Ok(Self {
+            faucet_id,
+            amount,
+            callbacks: AssetCallbacksFlag::default(),
+        })
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -80,7 +88,10 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
         }
 
-        Self::new(key.faucet_id(), value[0].as_canonical_u64())
+        let mut asset = Self::new(key.faucet_id(), value[0].as_canonical_u64())?;
+        asset.callbacks = key.callbacks();
+
+        Ok(asset)
     }
 
     /// Creates a fungible asset from the provided key and value.
@@ -110,14 +121,26 @@ impl FungibleAsset {
         self.amount
     }
 
-    /// Returns true if this and the other assets were issued from the same faucet.
-    pub fn is_from_same_faucet(&self, other: &Self) -> bool {
-        self.faucet_id == other.faucet_id
+    /// Returns true if this and the other asset were issued from the same faucet.
+    pub fn is_same(&self, other: &Self) -> bool {
+        self.vault_key() == other.vault_key()
+    }
+
+    /// Returns the [`AssetCallbacksFlag`] of this asset.
+    pub fn callbacks(&self) -> AssetCallbacksFlag {
+        self.callbacks
+    }
+
+    /// Returns a copy of this asset with the given [`AssetCallbacksFlag`].
+    pub fn with_callbacks(mut self, callbacks: AssetCallbacksFlag) -> Self {
+        self.callbacks = callbacks;
+        self
     }
 
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::new_fungible(self.faucet_id).expect("faucet ID should be of type fungible")
+        AssetVaultKey::new(AssetId::default(), self.faucet_id, self.callbacks)
+            .expect("faucet ID should be of type fungible")
     }
 
     /// Returns the asset's key encoded to a [`Word`].
@@ -147,7 +170,8 @@ impl FungibleAsset {
     /// - The total value of assets is greater than or equal to 2^63.
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
-        if self.faucet_id != other.faucet_id {
+        // TODO(callbacks): Return callback flags as well in error.
+        if !self.is_same(&other) {
             return Err(AssetError::FungibleAssetInconsistentFaucetIds {
                 original_issuer: self.faucet_id,
                 other_issuer: other.faucet_id,
@@ -162,7 +186,11 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
 
-        Ok(Self { faucet_id: self.faucet_id, amount })
+        Ok(Self {
+            faucet_id: self.faucet_id,
+            amount,
+            callbacks: self.callbacks,
+        })
     }
 
     /// Subtracts a fungible asset from another and returns the result.
@@ -173,7 +201,8 @@ impl FungibleAsset {
     /// - The final amount would be negative.
     #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
-        if self.faucet_id != other.faucet_id {
+        // TODO(callbacks): Return callback flags as well in error.
+        if !self.is_same(&other) {
             return Err(AssetError::FungibleAssetInconsistentFaucetIds {
                 original_issuer: self.faucet_id,
                 other_issuer: other.faucet_id,
@@ -187,7 +216,11 @@ impl FungibleAsset {
             },
         )?;
 
-        Ok(FungibleAsset { faucet_id: self.faucet_id, amount })
+        Ok(FungibleAsset {
+            faucet_id: self.faucet_id,
+            amount,
+            callbacks: self.callbacks,
+        })
     }
 }
 
@@ -213,10 +246,13 @@ impl Serializable for FungibleAsset {
         // distinguishable during deserialization.
         target.write(self.faucet_id);
         target.write(self.amount);
+        target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.faucet_id.get_size_hint() + self.amount.get_size_hint()
+        self.faucet_id.get_size_hint()
+            + self.amount.get_size_hint()
+            + self.callbacks.get_size_hint()
     }
 }
 
@@ -235,8 +271,13 @@ impl FungibleAsset {
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
         let amount: u64 = source.read()?;
-        FungibleAsset::new(faucet_id, amount)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let callbacks = source.read()?;
+
+        let asset = FungibleAsset::new(faucet_id, amount)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?
+            .with_callbacks(callbacks);
+
+        Ok(asset)
     }
 }
 
