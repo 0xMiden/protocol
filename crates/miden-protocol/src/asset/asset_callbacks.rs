@@ -20,7 +20,9 @@ static ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_NAME: LazyLock<StorageSlotName> =
 ///
 /// ## Storage Layout
 ///
-/// - [`Self::slot`]: Stores the procedure root of the `on_before_asset_added_to_account` callback.
+/// - [`Self::on_before_asset_added_to_account_slot()`]: Stores the procedure root of the
+///   `on_before_asset_added_to_account` callback. This storage slot is only added if a callback
+///   procedure root is set.
 ///
 /// [`AssetCallbacksFlag::Enabled`]: crate::asset::AssetCallbacksFlag::Enabled
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
