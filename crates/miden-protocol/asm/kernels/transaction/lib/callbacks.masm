@@ -11,7 +11,7 @@ const CALLBACK_PROC_ROOT_LOC = 0
 
 # The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
-const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+pub const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
 
 # PROCEDURES
 # ==================================================================================================
@@ -64,7 +64,7 @@ proc on_before_asset_added_to_account_raw
     # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
 
     # get the procedure root of the callback from the faucet's storage
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT[0..2]
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
     exec.account::get_item
     # => [PROC_ROOT, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
 
@@ -81,16 +81,17 @@ proc on_before_asset_added_to_account_raw
         loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
         # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
 
-        # pad the stack to 16 for the call
+        # pad the stack to 16 for the call (excluding the proc root ptr)
         repeat.6 push.0 movdn.10 end
         locaddr.CALLBACK_PROC_ROOT_LOC
         # => [callback_proc_root_ptr, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
 
+        # invoke the callback
         dyncall
         # => [PROCESSED_ASSET_VALUE, pad(12)]
 
         # truncate the stack after the call
-        repeat.3 swapw dropw end
+        swapdw dropw dropw swapw dropw
         # => [PROCESSED_ASSET_VALUE]
     end
     # => [PROCESSED_ASSET_VALUE]

@@ -2,6 +2,7 @@ use $kernel::account_delta
 use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::callbacks
+use $kernel::callbacks::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
@@ -17,9 +18,6 @@ use miden::core::word
 
 # ERRORS
 # =================================================================================================
-
-# The slot ID of the on_before_asset_added_to_account callback.
-const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_ID = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
 
 const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE="account nonce can only be incremented once"
 
@@ -675,33 +673,33 @@ pub proc add_asset_to_vault
 
     exec.callbacks::on_before_asset_added_to_account
     swapw
-    # => [ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # duplicate the asset for the later event and delta update
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # push the account vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
-    # => [ASSET_KEY, ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # emit event to signal that an asset is going to be added to the account vault
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
-    # => [ASSET_VALUE', ASSET_KEY, ASSET_VALUE]
+    # => [PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     movdnw.2
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
 
     # emit event to signal that an asset is being added to the account vault
     emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
 
     exec.account_delta::add_asset
-    # => [ASSET_VALUE']
+    # => [PROCESSED_ASSET_VALUE']
 end
 
 #! Removes the specified asset from the account vault.
@@ -1624,8 +1622,8 @@ proc get_map_item_raw
     # => [VALUE]
 end
 
-#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
-#! returns a flag indicating whether the slot was found and the pointer to that slot.
+#! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns a flag
+#! indicating whether the slot was found and the pointer to that slot.
 #!
 #! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 #! Outputs: [is_found, slot_ptr]
@@ -1644,7 +1642,6 @@ proc find_storage_slot
     swap movup.3 movup.3
     # => [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
 
-    # find the slot whose slot key matches [_, _, slot_id_suffix, slot_id_prefix]
     # if the slot key does not exist, this procedure will validate its absence
     exec.sorted_array::find_half_key_value
     # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
@@ -1653,8 +1650,8 @@ proc find_storage_slot
     # => [is_slot_found, slot_ptr]
 end
 
-#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
-#! returns the pointer to that slot.
+#! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns the
+#! pointer to that slot.
 #!
 #! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 #! Outputs: [slot_ptr]
@@ -2021,13 +2018,14 @@ end
 
 #! Returns whether the active account defines callbacks.
 #!
+#! Inputs:  []
 #! Outputs: [has_callbacks]
 #!
 #! Where:
 #! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
 pub proc has_callbacks
     # check if the on_before_asset_added_to_account callback slot exists and is non-empty
-    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_ID[0..2]
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
     exec.has_non_empty_slot
     # => [has_callbacks]
 end
