@@ -301,7 +301,7 @@ proc verify_leaf
     # Determine if we're dealing with a deposit from mainnet or from a rollup.
     # The global index is laid out as:
     # [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
-    # gi0 is on top (position 0). The mainnet flag is at MAINNET_FLAG_STACK_POS.
+    # gi0 is on top (position 0). The mainnet flag is at stack position 5.
 
     # Duplicate the mainnet flag element, byte-swap from LE to BE,
     # assert it is a valid boolean (0 or 1), then use it to branch.

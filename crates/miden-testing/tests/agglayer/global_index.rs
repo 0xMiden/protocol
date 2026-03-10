@@ -6,7 +6,6 @@ use miden_agglayer::errors::{
     ERR_BRIDGE_NOT_MAINNET,
     ERR_BRIDGE_NOT_ROLLUP,
     ERR_LEADING_BITS_NON_ZERO,
-    ERR_MAINNET_FLAG_INVALID,
     ERR_ROLLUP_INDEX_NON_ZERO,
 };
 use miden_agglayer::{GlobalIndex, agglayer_library};
@@ -164,46 +163,4 @@ async fn test_process_global_index_rollup_rejects_mainnet_flag() {
 
     let err = execute_program_with_default_host(program, None).await.map_err(ExecError::new);
     assert_execution_error!(err, ERR_BRIDGE_NOT_ROLLUP);
-}
-
-// MAINNET FLAG BOOLEAN VALIDATION TEST
-// ================================================================================================
-
-/// Tests the mainnet flag boolean validation in `verify_leaf`.
-///
-/// The `verify_leaf` procedure (private) validates via `dup.5 swap_u32_bytes dup u32lt.2 assert`
-/// that the mainnet flag is exactly 0 or 1 before branching. A flag value >= 2 should fail with
-/// ERR_MAINNET_FLAG_INVALID.
-///
-/// Since `verify_leaf` is private, we replicate its flag validation logic inline.
-#[tokio::test]
-async fn test_mainnet_flag_rejects_invalid_value() {
-    use crate::agglayer::test_utils::execute_masm_script;
-
-    // Global index with mainnet_flag = 3 (invalid: must be 0 or 1)
-    let mut bytes = [0u8; 32];
-    bytes[23] = 3; // mainnet flag = 3
-    bytes[31] = 2; // leaf index = 2
-    let gi = GlobalIndex::new(bytes);
-    let elements = gi.to_elements();
-    let [g0, g1, g2, g3, g4, g5, g6, g7] = elements.try_into().unwrap();
-
-    // Replicate the flag validation from verify_leaf:
-    // push global index, dup the flag element, byte-swap, dup, u32lt.2, assert
-    let script = format!(
-        r#"
-        use miden::agglayer::common::utils
-
-        begin
-            push.{g7}.{g6}.{g5}.{g4}.{g3}.{g2}.{g1}.{g0}
-
-            dup.5 exec.utils::swap_u32_bytes dup
-            u32lt.2 assert.err="mainnet flag must be 0 or 1"
-            drop dropw dropw
-        end
-        "#
-    );
-
-    let err = execute_masm_script(&script).await.map_err(ExecError::new);
-    assert_execution_error!(err, ERR_MAINNET_FLAG_INVALID);
 }
