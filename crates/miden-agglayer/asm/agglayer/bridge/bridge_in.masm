@@ -10,6 +10,7 @@ use miden::core::mem
 use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
+use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::attachments::network_account_target
@@ -54,7 +55,6 @@ const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
-const P2ID_ATTACHMENT_KIND_NONE = 0
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
 
 # Global memory pointers
@@ -644,7 +644,7 @@ proc write_mint_note_storage
 
     # Write P2ID attachment fields (the P2ID note has no attachment)
     # attachment_kind = NONE [2]
-    push.P2ID_ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
+    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
     # => []
 
     # attachment_scheme = NONE [3]
