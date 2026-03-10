@@ -57,6 +57,15 @@ static MULTISIG_PSM_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Multisig PSM library is well-formed")
 });
 
+/// Initialize the Multisig Smart library only once.
+static MULTISIG_SMART_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/multisig_smart.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Multisig Smart library is well-formed")
+});
+
 // Initialize the NoAuth library only once.
 static NO_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes =
@@ -137,6 +146,11 @@ pub fn multisig_psm_library() -> Library {
     MULTISIG_PSM_LIBRARY.clone()
 }
 
+/// Returns the Multisig Smart Library.
+pub fn multisig_smart_library() -> Library {
+    MULTISIG_SMART_LIBRARY.clone()
+}
+
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
@@ -155,6 +169,7 @@ pub enum StandardAccountComponent {
     AuthSingleSigAcl,
     AuthMultisig,
     AuthMultisigPsm,
+    AuthMultisigSmart,
     AuthNoAuth,
 }
 
@@ -169,6 +184,7 @@ impl StandardAccountComponent {
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
             Self::AuthMultisigPsm => MULTISIG_PSM_LIBRARY.as_ref(),
+            Self::AuthMultisigSmart => MULTISIG_SMART_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
         };
 
@@ -224,6 +240,9 @@ impl StandardAccountComponent {
                 Self::AuthMultisigPsm => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisigPsm)
                 },
+                Self::AuthMultisigSmart => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigSmart)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -243,6 +262,7 @@ impl StandardAccountComponent {
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisigPsm.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigSmart.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
     }

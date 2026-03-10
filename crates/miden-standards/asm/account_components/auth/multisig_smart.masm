@@ -1,0 +1,1824 @@
+# The MASM code of the Multi-Signature Smart Authentication Component.
+#
+# See the `AuthMultisigSmart` Rust type's documentation for more details.
+
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::output_note
+use miden::protocol::account_id
+use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
+use miden::protocol::tx
+use miden::standards::auth
+
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage Layout Constants
+#
+# 
+#  THRESHOLD & APPROVERS CONFIG   PUB KEYS  EXECUTED TXS   PROC THRESHOLDS  
+#            (slot)                 (map)      (map)            (map)       
+# 
+#               0                    1           2                3         
+# 
+
+# The slot in this component's storage layout where the default signature threshold and
+# number of approvers are stored as:
+# [default_threshold, num_approvers, 0, 0].
+# The threshold is guaranteed to be less than or equal to num_approvers.
+const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
+
+# The slot in this component's storage layout where the public keys map is stored.
+# Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
+const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
+
+# The slot in this component's storage layout where signature schemes are stored.
+# Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
+const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
+
+# The slot in this component's storage layout where executed transactions are stored.
+# Map entries: transaction_message => [is_executed, 0, 0, 0]
+const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
+
+# The slot in this component's storage layout where procedure thresholds are stored.
+# Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
+const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
+
+# Executed Transaction Flag Constant
+const IS_EXECUTED_FLAG = [1, 0, 0, 0]
+const ECDSA_K256_KECCAK_SCHEME_ID_WORD = [1, 0, 0, 0]
+
+# User-defined spending interval (in blocks).
+# Typically set to the ~24h equivalent number of blocks.
+const SPENT_INTERVAL_BLOCKS_SLOT = word("miden::standards::auth::multisig_smart::spent_interval_blocks")
+
+# [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+const AMOUNT_LIMITS_SLOT = word("miden::standards::auth::multisig_smart::amount_limits")
+
+# [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
+
+# [tier_0, tier_1, tier_2, tier_3]
+const TIER_THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::tier_threshold_config")
+
+# [oracle_id_prefix, oracle_id_suffix, 0, 0]
+const ORACLE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::oracle_config")
+
+# Procedure root for the oracle price reader (e.g. get_median proc root)
+# [proc_root]
+const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::get_price_proc_root")
+
+# Map entries: [tx_summary_hash] -> [proposal_block_num, num_signatures, expiration_block_num, 0]
+const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
+
+# TX_EXECUTOR SLOTS:
+#
+#Intent slots for each transaction
+# - PENDING_PROPOSE_SLOT:  # => [TX_SUMMARY_HASH] or [EMPTY_WORD]
+# - PENDING_CANCEL_SLOT: # => [TX_SUMMARY_HASH] or [EMPTY_WORD]
+# - PENDING_EXECUTE_SLOT: #=> [1,0,0,0] or [EMPTY_WORD]
+const PENDING_PROPOSE_SLOT = word("miden::standards::auth::multisig_smart::pending_propose")
+const PENDING_CANCEL_SLOT = word("miden::standards::auth::multisig_smart::pending_cancel")
+const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pending_execute")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_TX_ALREADY_EXECUTED = "failed to approve multisig transaction as it was already executed"
+
+const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
+
+const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
+
+const ERR_U32 = "value is not a u32"
+
+const ERR_SPENT_INTERVAL_ZERO = "spent_interval_blocks must be non-zero"
+
+const ERR_LAST_EPOCH_GT_CURRENT = "last_spent_epoch is greater than current_epoch"
+
+const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
+
+const ERR_TIER0_MUST_BE_POSITIVE = "tier_0 must be > 0"
+
+const ERR_TIER3_TOO_HIGH = "tier_3 must be < num_approvers"
+
+const ERR_INVALID_TIER_CONFIG = "tier config is invalid"
+
+const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <= limit1 <= limit2)"
+
+const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
+
+const ERR_TX_NOT_PROPOSED  = "tx not proposed"
+
+const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
+
+const ERR_PENDING_ALREADY_SET = "pending action already set"
+
+const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
+
+const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
+
+#! Check if transaction has already been executed and add it to executed transactions for replay protection.
+#!
+#! Inputs:  [MSG]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the same transaction has already been executed
+proc assert_new_tx(msg: word)
+    push.IS_EXECUTED_FLAG
+    # => [[0, 0, 0, is_executed], MSG]
+
+    swapw
+    # => [MSG, IS_EXECUTED_FLAG]
+
+    push.EXECUTED_TXS_SLOT[0..2]
+    # => [txs_slot_prefix, txs_slot_suffix, MSG, IS_EXECUTED_FLAG]
+
+    # Set the key value pair in the map to mark transaction as executed
+    exec.native_account::set_map_item
+    # => [[0, 0, 0, is_executed]]
+
+    movdn.3
+    drop drop drop
+    # => [is_executed]
+
+    assertz.err=ERR_TX_ALREADY_EXECUTED
+    # => []
+end
+
+#! Remove old approver public keys from the approver public key mapping.
+#!
+#! This procedure cleans up the storage by removing public keys of approvers that are no longer
+#! part of the multisig configuration. This procedure assumes that init_num_of_approvers and
+#! new_num_of_approvers are u32 values.
+#!
+#! Inputs: [init_num_of_approvers, new_num_of_approvers]
+#! Outputs: []
+#!
+#! Where:
+#! - init_num_of_approvers is the original number of approvers before the update
+#! - new_num_of_approvers is the new number of approvers after the update
+proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
+    dup.1 dup.1
+    u32assert2 u32lt
+    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
+
+    while.true
+        # => [i, new_num_of_approvers]
+
+        sub.1
+        # => [i-1, new_num_of_approvers]
+
+        dup exec.create_approver_map_key
+        # => [approver_key, i-1, new_num_of_approvers]
+
+        padw swapw
+        # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, new_num_of_approvers]
+
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        # clear scheme id at the same approver index
+        dup exec.create_approver_map_key
+        padw swapw
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        exec.native_account::set_map_item
+        dropw
+        # => [i-1, new_num_of_approvers]
+
+        dup.1 dup.1
+        u32lt
+        # => [should_loop, i-1, new_num_of_approvers]
+    end
+
+    drop drop
+    # => []
+end
+
+#! Builds the approver map key for signer index i.
+#!
+#! Inputs: [key_index]
+#! Outputs: [[key_index, 0, 0, 0]]
+proc create_approver_map_key
+    push.0.0.0
+    movup.3
+end
+
+#! Update threshold config and add / remove approvers
+#!
+#! Inputs:
+#!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
+#!   Advice map: {
+#!     MULTISIG_CONFIG_HASH => [CONFIG, PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0]
+#!   }
+#! Outputs:
+#!   Operand stack: []
+#!
+#! Where:
+#! - MULTISIG_CONFIG_HASH is the hash of the threshold and new public key vector
+#! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
+#! - PUB_KEY_i is the public key of the i-th signer
+#!
+#! Locals:
+#!
+#! 0: new_num_of_approvers
+#! 1: init_num_of_approvers
+@locals(2)
+pub proc update_signers_and_threshold(multisig_config_hash: word)
+    adv.push_mapval
+    # => [MULTISIG_CONFIG_HASH, pad(12)]
+
+    adv_loadw
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    # store new_num_of_approvers for later
+    dup.1 loc_store.0
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    # make sure that the threshold is smaller than the number of approvers
+    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
+    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    dup dup.2
+    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
+
+    # make sure that threshold or num_approvers are not zero
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
+    # => [MULTISIG_CONFIG, pad(12)]
+
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    # => [config_slot_prefix, config_slot_suffix, MULTISIG_CONFIG, pad(12)]
+
+    exec.native_account::set_item
+    # => [OLD_THRESHOLD_CONFIG, pad(12)]
+
+    # store init_num_of_approvers for later
+    drop loc_store.1 drop drop
+    # => [pad(12)]
+
+    loc_load.0
+    # => [num_approvers]
+
+    dup neq.0
+    while.true
+        sub.1
+        # => [i-1, pad(12)]
+
+        dup exec.create_approver_map_key
+        # => [approver_key, i-1, pad(12)]
+
+        padw adv_loadw
+        # => [PUB_KEY, [0, 0, 0, i-1], i-1, pad(12)]
+
+        swapw
+        # => [[0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+
+        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
+
+        exec.native_account::set_map_item
+        # => [OLD_VALUE, i-1, pad(12)]
+
+        dropw
+        # => [i-1, pad(12)]
+
+        # set signer scheme for this index to ECDSA K256 Keccak ([1, 0, 0, 0])
+        dup exec.create_approver_map_key
+        # => [approver_key, i-1, pad(12)]
+
+        push.ECDSA_K256_KECCAK_SCHEME_ID_WORD
+        swapw
+        # => [[0, 0, 0, i-1], [1, 0, 0, 0], i-1, pad(12)]
+
+        push.APPROVER_SCHEME_ID_SLOT[0..2]
+        exec.native_account::set_map_item
+        dropw
+        # => [i-1, pad(12)]
+
+        dup neq.0
+        # => [is_non_zero, i-1, pad(12)]
+    end
+    # => [pad(13)]
+
+    drop
+    # => [pad(12)]
+
+    # compare initial vs current multisig config
+
+    # load init_num_of_approvers & new_num_of_approvers
+    loc_load.0 loc_load.1
+    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
+
+    exec.cleanup_pubkey_mapping
+    # => [pad(12)]
+end
+
+#! High-impact action.
+#!
+#! Sets the global spending interval measured in blocks.
+#! Used to compute epochs for spending policy checks.
+#!
+#! Inputs:  [spent_interval_blocks]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes SPENT_INTERVAL_BLOCKS_SLOT.
+pub proc update_spent_interval_blocks
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
+    # => [spent_interval_blocks]
+
+    # build value word for storage: [spent_interval_blocks, 0, 0, 0]
+    # stack representation to store is reverse: [0, 0, 0, spent_interval_blocks]
+    push.0 push.0 push.0
+    # => [0, 0, 0, spent_interval_blocks]
+
+    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, 0, spent_interval_blocks]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! High-impact action.
+#!
+#! Sets tier thresholds stored in TIER_THRESHOLD_CONFIG_SLOT.
+#! These thresholds map a computed tier index to required approvals.
+#!
+#! Inputs:  [tier_0, tier_1, tier_2, tier_3]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes TIER_THRESHOLD_CONFIG_SLOT.
+#!
+#! Locals:
+#!
+#! 0: tier_0
+#! 1: tier_1
+#! 2: tier_2
+#! 3: tier_3
+@locals(4)
+pub proc update_threshold_config
+    # ------ Check inputs are u32 ------
+    u32assert.err=ERR_U32  
+    loc_store.0
+    # => [tier_1, tier_2, tier_3]
+    
+    u32assert.err=ERR_U32  
+    loc_store.1
+    # => [tier_2, tier_3]
+
+    u32assert.err=ERR_U32  
+    loc_store.2
+    # => [tier_3]
+
+    u32assert.err=ERR_U32  
+    loc_store.3
+    # => []
+
+    # tier_0 must be > 0
+    loc_load.0
+    eq.0
+    assertz.err=ERR_TIER0_MUST_BE_POSITIVE
+    # => []
+
+    # ------ Monotonic check tier_0 <= tier_1 <= tier_2 <= tier_3 ------
+    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
+    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
+    loc_load.2 loc_load.3 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
+    # => []
+
+    # ------ Check the threshold < num_approvers
+    exec.get_threshold_and_num_approvers
+    # => [default_threshold, num_approvers]
+
+    drop
+    # => [num_approvers]
+
+    loc_load.3
+    # => [tier_3, num_approvers]
+    u32lt
+    assert.err=ERR_TIER3_TOO_HIGH
+    # => []
+
+    # ------ Prepare data for storage ------
+    loc_load.0
+    loc_load.2
+    loc_load.1
+    loc_load.3
+    # => [tier_3, tier_2, tier_1, tier_0]
+
+    push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tier_3, tier_2, tier_1, tier_0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! High-impact action.
+#!
+#! Sets amount limits stored in AMOUNT_LIMITS_SLOT.
+#! These amount limits are used to compute the required threshold tier.
+#!
+#! Inputs:  [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes AMOUNT_LIMITS_SLOT.
+#!
+#! Locals:
+#!
+#! 0: amount_limit0
+#! 1: amount_limit1
+#! 2: amount_limit2
+#! 3: amount_start_delay
+@locals(4)
+pub proc update_spending_limits
+    u32assert.err=ERR_U32  
+    loc_store.0   
+    # => [amount_limit1, amount_limit2, amount_start_delay]
+
+    u32assert.err=ERR_U32  
+    loc_store.1
+    # => [amount_limit2, amount_start_delay]
+
+    u32assert.err=ERR_U32  
+    loc_store.2
+    # => [amount_start_delay]
+
+    u32assert.err=ERR_U32  
+    loc_store.3
+    # => []
+
+    # (opsiyonel) monotonic check: limit0 <= limit1 <= limit2
+    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS  # limit0 > limit1 ?
+    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS  # limit1 > limit2 ?
+    # => []
+
+    # build word for storage: [limit0, limit1, limit2, start_delay]
+    # stack rep must be: [start_delay, limit2, limit1, limit0]
+    loc_load.0
+    loc_load.1
+    loc_load.2
+    loc_load.3
+    # => [start_delay, limit2, limit1, limit0]
+
+    push.AMOUNT_LIMITS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, start_delay, limit2, limit1, limit0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! High-impact action.
+#!
+#! Updates the oracle configuration and the procedure root used for price reads.
+#! - Stores the oracle id (prefix/suffix) in ORACLE_CONFIG_SLOT as [oracle_id_prefix, oracle_id_suffix, 0, 0]
+#! - Stores the oracle "get_price" (e.g. get_median) procedure root in GET_PRICE_PROC_ROOT_SLOT as [proc_root]
+#!
+#! Inputs:  [oracle_id_prefix, oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes ORACLE_CONFIG_SLOT
+#!   - Writes GET_PRICE_PROC_ROOT_SLOT
+#!
+#! Locals:
+#!
+#! 0: oracle_id_prefix
+#! 1: oracle_id_suffix
+#! 2: get_price_root_w3
+#! 3: get_price_root_w2
+#! 4: get_price_root_w1
+#! 5: get_price_root_w0
+@locals(6)
+pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
+    # Store oracle_id_prefix
+    loc_store.0
+    # => [oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+
+    
+    # Store oracle_id_suffix
+    loc_store.1
+    # => [GET_MEDIAN_PROC_ROOT]
+
+    # Store oracle get_price proc_root
+    loc_store.2
+    loc_store.3
+    loc_store.4
+    loc_store.5
+    # => []
+
+    # ------ Write ORACLE_CONFIG_SLOT = [oracle_id_prefix, oracle_id_suffix, 0, 0]
+    # ------ Reconstruct the stack: [0, 0, oracle_id_suffix, oracle_id_prefix]
+    loc_load.0
+    loc_load.1
+    push.0
+    push.0
+    # => [0, 0, oracle_id_suffix, oracle_id_prefix]
+
+    push.ORACLE_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, oracle_id_suffix, oracle_id_prefix]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+
+    # ------ Write GET_PRICE_PROC_ROOT_SLOT = [GET_MEDIAN_PROC_ROOT]
+    # ------ Reconstruct root word in the same stack order it originally had:
+    loc_load.5
+    loc_load.4
+    loc_load.3
+    loc_load.2
+    # => [root_w3, root_w2, root_w1, root_w0]
+
+    push.GET_PRICE_PROC_ROOT_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, root_w3, root_w2, root_w1, root_w0]
+    
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Returns current default threshold and num_approvers from THRESHOLD_CONFIG_SLOT.
+#!
+#! Inputs: []
+#! Outputs: [default_threshold, num_approvers]
+proc get_threshold_and_num_approvers
+    push.THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_initial_item
+    # => [default_threshold, num_approvers, 0, 0]
+
+    movup.2 drop
+    movup.2 drop
+    # => [default_threshold, num_approvers]
+end
+
+
+# Computes the effective transaction threshold based on called procedures and per-procedure
+# overrides stored in PROC_THRESHOLD_ROOTS_SLOT. Falls back to default_threshold if no
+# overrides apply.
+#
+#! Inputs:  [default_threshold, spending_threshold]
+#! Outputs: [transaction_threshold]
+#!
+#! Locals:
+#!
+#! 0: default_threshold
+#! 1: spending_threshold
+@locals(2)
+proc compute_transaction_threshold(default_threshold: u32, spending_threshold: u32) -> u32
+    # 1. initialize transaction_threshold = 0
+    # 2. iterate through all account procedures
+    #   a. check if the procedure was called during the transaction
+    #   b. if called, get the override threshold of that procedure from the config map
+    #   c. if proc_threshold > transaction_threshold, set transaction_threshold = proc_threshold
+    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+
+    # store default_threshold for later
+    loc_store.0
+    # => [spending_threshold]
+
+    # store spending_threshold for later
+    loc_store.1
+    # => []
+
+    # 1. initialize transaction_threshold = 0
+    push.0
+    # => [transaction_threshold]
+
+    # get the number of account procedures
+    exec.active_account::get_num_procedures
+    # => [num_procedures, transaction_threshold]
+
+    # 2. iterate through all account procedures
+    dup neq.0
+    # => [should_continue, num_procedures, transaction_threshold]
+    while.true
+        sub.1 dup
+        # => [num_procedures-1, num_procedures-1, transaction_threshold]
+
+        # get procedure root of the procedure with index i
+        exec.active_account::get_procedure_root dupw
+        # => [PROC_ROOT, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+        # 2a. check if this procedure has been called in the transaction
+        exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+        # if it has been called, get the override threshold of that procedure
+        if.true
+            # => [PROC_ROOT, num_procedures-1, transaction_threshold]
+
+            push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+            # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+            # 2b. get the override proc_threshold of that procedure
+            # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
+            exec.active_account::get_initial_map_item
+            # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
+
+            movdn.3 drop drop drop dup dup.3
+            # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
+
+            u32assert2.err="transaction threshold or procedure threshold are not u32"
+            u32gt
+            # => [is_gt, proc_threshold, num_procedures-1, transaction_threshold]
+            # 2c. if proc_threshold > transaction_threshold, update transaction_threshold
+            movup.2 movdn.3
+            # => [is_gt, proc_threshold, transaction_threshold, num_procedures-1]
+            cdrop
+            # => [updated_transaction_threshold, num_procedures-1]
+            swap
+            # => [num_procedures-1, updated_transaction_threshold]
+        # if it has not been called during this transaction, nothing to do, move to the next procedure
+        else
+            dropw
+            # => [num_procedures-1, transaction_threshold]
+        end
+
+        dup neq.0
+        # => [should_continue, num_procedures-1, transaction_threshold]
+    end
+
+    drop
+    # => [transaction_threshold]
+
+    loc_load.1
+    # => [spending_threshold, transaction_threshold]
+
+    dup.1 dup.1
+    # => [spending_threshold, transaction_threshold, spending_threshold, transaction_threshold]
+    
+    swap
+    # => [transaction_threshold, spending_threshold, spending_threshold, transaction_threshold]
+    
+    u32gt
+    # => [is_spending_gt, spending_threshold, transaction_threshold]
+    cdrop
+    # => [combined_threshold]
+
+    loc_load.0
+    # => [default_threshold, combined_threshold]
+
+    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+    dup.1 eq.0
+    # => [is_zero, default_threshold, combined_threshold]
+
+    cdrop
+    # => [effective_transaction_threshold]
+end
+
+#! Computes: epoch = block_number / spent_interval_blocks.
+#!
+#! Inputs:  [block_number]
+#! Outputs: [epoch]
+#!
+#! Notes:
+#!   - spent_interval_blocks is expected to be read from
+#!     SPENT_INTERVAL_BLOCKS_SLOT (slot 0).
+proc block_num_to_epoch
+    exec.get_spent_interval
+    # => [spent_interval, block_number]
+
+    # u32div expects [b, a] => floor(a/b); we already have [spent_interval_blocks, block_number]
+    u32div
+    # => [epoch]
+end
+
+#! Computes current_epoch from the current block number.
+#!
+#! Inputs:  []
+#! Outputs: [current_epoch]
+proc get_current_epoch
+    exec.get_mock_block_number
+    # => [block_number]
+
+    exec.block_num_to_epoch
+    # => [current_epoch]
+
+    # Error if the value is not u32 
+    u32assert2.err=ERR_U32
+end
+
+
+#! Returns whether we are still within the same epoch as the last spend.
+#!
+#! Semantics:
+#!   - if last_spent_epoch == current_epoch => returns 1
+#!   - if last_spent_epoch <  current_epoch => returns 0
+#!   - if last_spent_epoch >  current_epoch => error
+#!
+#! Inputs:  []
+#! Outputs: [within_epoch]
+proc within_epoch
+    exec.get_last_epoch_spent
+    # => [last_spent_epoch]
+
+    exec.get_current_epoch
+    # => [current_epoch, last_spent_epoch]
+
+    # --- Check if current_epoch == last_spent_epoch
+    dup.1 dup.1
+    # => [current_epoch, last_spent_epoch, current_epoch, last_spent_epoch]
+    eq
+    # => [is_eq, current_epoch, last_spent_epoch]
+
+    if.true
+        drop drop
+        push.1
+        # => [1]
+    else
+        u32lt
+        # => [is_lt]
+
+        # -- Check if last_spent_epoch < current_epoch
+        if.true
+            push.0
+            # => [0]
+        else
+            push.0 assert.err=ERR_LAST_EPOCH_GT_CURRENT
+        end
+    end
+end
+
+#! Reads amount_spent_in_epoch from SPENDING_TRACKER_SLOT.
+#!
+#! Outputs: [amount_spent_in_epoch]
+proc get_amount_spent_in_epoch
+    push.SPENDING_TRACKER_SLOT[0..2] 
+    #=> [SPENDING_TRACKER_SLOT]
+
+    exec.active_account::get_initial_item
+    # => [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+
+    movdn.3
+    drop drop drop
+    # => [amount_spent_in_epoch]
+end
+
+
+#! Loads the configured spending interval (in blocks) from SPENT_INTERVAL_BLOCKS_SLOT.
+#!
+#! This value is used to derive `epoch = block_number / spent_interval_blocks`.
+#! Must be non-zero. 
+#! Panics with ERR_SPENT_INTERVAL_ZERO if zero.
+#!
+#! Inputs:  []
+#! Outputs: [spent_interval_blocks]
+proc get_spent_interval
+    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
+    # => [SPENT_INTERVAL_BLOCK_SLOT]
+
+    exec.active_account::get_initial_item
+    # => [spent_interval_blocks, 0, 0, 0]
+
+    movdn.3
+    drop drop drop
+    # => [spent_interval]
+
+    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
+    # => [spent_interval]
+end
+
+#! Reads the last epoch in which spending was recorded from SPENDING_TRACKER_SLOT.
+#!
+#! Inputs:  []
+#! Outputs: [epoch_last_spent]
+proc get_last_epoch_spent
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [SPENDING_TRACKER_SLOT]
+
+    exec.active_account::get_initial_item
+    # => [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+
+    drop
+    # => [epoch_last_spent, 0, 0]
+
+    movdn.2
+    drop drop
+    # => [epoch_last_spent]
+end
+
+#! Test helper to get a deterministic block number for local testing/debugging.
+#!
+#! Reads the real tx block number via tx::get_block_number and 
+#! Adds a constant offset +50 so epoch transitions can be exercised easily.
+#!
+#! Inputs:  []
+#! Outputs: [mock_block_number]
+proc get_mock_block_number
+    exec.tx::get_block_number
+    # => [block_number] = [0].
+
+    push.50 add
+    # => [block_number + 50] = [50].
+end
+
+
+#! Temporary oracle stub (for development).
+#!
+#! Behaves as if every faucet is tracked and priced 1:1:
+#! - is_tracked = 1
+#! - amount_in_usdc = amount
+#! Drops faucet_id and returns the amount unchanged.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [is_tracked, amount_in_usdc]
+proc get_price_test
+    drop drop
+    push.1
+end
+
+#! Inputs: []
+#! Outputs: [oracle_id_prefix, oracle_id_suffix]
+proc get_oracle_id
+    push.ORACLE_CONFIG_SLOT[0..2]
+    exec.active_account::get_item
+    drop drop
+end
+
+#! Inputs: []
+#! Outputs: [get_price_proc_root]
+proc get_oracle_price_proc_root
+    push.GET_PRICE_PROC_ROOT_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [is_tracked, amount_in_usd]
+proc get_price_test_new
+    exec.get_oracle_price_proc_root
+    exec.get_oracle_id
+    exec.tx::execute_foreign_procedure
+end
+
+# tmp memory area for loading assets
+# NOTE: must be multiple of 4 for mem_loadw_be
+const TMP_ASSETS_PTR = 1024
+
+#! Computes the total spending amount for all output notes (USD terms).
+#!
+#! Behavior:
+#! - iterates over output notes: tx::get_num_output_notes
+#! - for each note: output_note::get_assets(dest_ptr, note_index) writes assets into memory
+#! - iterates assets in memory with mem_loadw_be (word load)
+#! - if asset is_fungible_faucet, calls get_price and adds tracked values
+#!
+#! Inputs:  []
+#! Outputs: [amount_in_usdc]
+#!
+#! Assumes (for fungible word on stack after mem_loadw_be):
+#!   [faucet_id_prefix, faucet_id_suffix, 0, amount]
+#! And get_price interface:
+#!   Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
+#!   Outputs: [is_tracked, amount_in_usdc]
+#!
+#! Locals:
+#!
+#! 0: running_sum
+#! 1: dest_ptr
+@locals(2)
+proc compute_spending_amount
+    # sum = 0
+    push.0
+    loc_store.0
+    # => []
+
+    # num_output_notes
+    exec.tx::get_num_output_notes
+    # => [num_notes]
+
+    dup neq.0
+    while.true
+        # note_index = num_notes - 1
+        sub.1
+        # => [note_index]
+
+        # keep note_index for outer loop continuation
+        dup
+        # => [note_index_arg, note_index_keep]
+
+        # call get_assets(dest_ptr, note_index_arg)
+        push.TMP_ASSETS_PTR
+        # => [dest_ptr, note_index_arg, note_index_keep]
+
+        exec.output_note::get_assets
+        # => [num_assets, dest_ptr, note_index_ret, note_index_keep]
+
+        # drop note_index_ret (NOT num_assets!)
+        movup.2
+        # => [note_index_ret, num_assets, dest_ptr, note_index_keep]
+        
+        drop
+        # => [num_assets, dest_ptr, note_index_keep]
+
+        # store dest_ptr into local ptr
+        swap
+        # => [dest_ptr, num_assets, note_index_keep]
+        loc_store.1
+        # => [num_assets, note_index_keep]
+
+        # inner loop over assets
+        dup neq.0
+        while.true
+            sub.1
+            # => [remaining, note_index_keep]
+
+            # load asset key word from memory at ptr
+            loc_load.1
+            # => [ptr, remaining, note_index_keep]
+
+            padw
+            # => [0,0,0,0, ptr, remaining, note_index_keep]
+            movup.4
+            # => [ptr,0,0,0,0, remaining, note_index_keep]
+
+            mem_loadw_le
+            # => [ASSET_KEY, remaining, note_index_keep]
+
+            # load asset value word from memory at ptr + 4
+            loc_load.1
+            add.4
+            # => [ptr+4, ASSET_KEY, remaining, note_index_keep]
+
+            padw
+            movup.4
+            mem_loadw_le
+            # => [ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            # advance ptr += 8 (two words per asset)
+            loc_load.1
+            add.8
+            loc_store.1
+            # => [ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            # ASSET_KEY layout: [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
+            # ASSET_VALUE layout (fungible): [amount, 0, 0, 0]
+            # Check faucet_id_prefix is a fungible faucet.
+            dup.7
+            exec.account_id::is_fungible_faucet
+            # => [is_fungible, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
+
+            if.true
+                # Add fungible amount (ASSET_VALUE[0]) to running sum.
+                dup
+                loc_load.0
+                add
+                loc_store.0
+            end
+
+            # drop loaded ASSET_VALUE and ASSET_KEY words
+            dropw
+            dropw
+            # => [remaining, note_index_keep]
+
+            dup neq.0
+        end
+
+        # inner done: [0, note_index_keep]
+        drop
+        # => [note_index_keep]
+
+        dup neq.0
+    end
+
+    drop
+    # => []
+
+    loc_load.0
+    # => [amount_in_usdc]
+end
+
+
+#! Maps a computed tier index (0..3) to the required approvals threshold.
+#!
+#! Reads tier thresholds from TIER_THRESHOLD_CONFIG_SLOT:
+#!   [tier_0, tier_1, tier_2, tier_3]
+#! Then selects the correct tier threshold based on `tier_index`.
+#!
+#! Panics with ERR_INVALID_TIER_INDEX if tier_index is not in {0,1,2,3}.
+#!
+#! Inputs:  [tier_index]
+#! Outputs: [tier_threshold]
+#!
+#! Locals:
+#! 0: tier_index
+#! 1: selected tier_threshold
+@locals(2)
+proc get_tier_threshold_for_index
+    loc_store.0
+    # => []
+
+    push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
+    exec.active_account::get_initial_item
+    # => [tier_3, tier_2, tier_1, tier_0]
+
+    loc_load.0
+    u32assert.err=ERR_U32
+    # => [idx, tier_3, tier_2, tier_1, tier_0]
+
+    dup eq.0
+    if.true
+        # idx == 0 => tier_0
+        dup.4 loc_store.1
+    else
+        dup eq.1
+        if.true
+            # idx == 1 => tier_1
+            dup.3 loc_store.1
+        else
+            dup eq.2
+            if.true
+                # idx == 2 => tier_2
+                dup.2 loc_store.1
+            else
+                dup eq.3
+                assert.err=ERR_INVALID_TIER_INDEX
+                # idx == 3 => tier_3
+                dup.1 loc_store.1
+            end
+        end
+    end
+
+    # drop idx
+    drop
+    # drop thresholds word
+    dropw
+    # => []
+
+    loc_load.1
+    # => [tier_threshold]
+end
+
+
+#! Updates SPENDING_TRACKER_SLOT using current epoch and the computed total_spent_amount.
+#!
+#! Inputs:  [total_spent_amount]
+#! Outputs: []
+#!
+#! Writes:
+#!   SPENDING_TRACKER_SLOT = [amount_spent_in_epoch = total_spent_amount, epoch_last_spent = current_epoch, 0, 0]
+proc set_spending_tracker
+    exec.get_current_epoch
+    # => [current_epoch, total_spent_amount]
+
+    push.0 push.0
+    # => [0, 0, current_epoch, total_spent_amount]
+
+    movup.3
+    # => [total_spent_amount, 0, 0, current_epoch]
+
+    movup.3
+    # => [current_epoch, total_spent_amount, 0, 0]
+
+    swap
+    # => [total_spent_amount, current_epoch, 0, 0]
+
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, total_spent_amount, current_epoch, 0, 0]
+
+    exec.native_account::set_item
+    # => [OLD_TRACKER_WORD]
+
+    dropw
+    # => []
+end
+
+
+#! Computes required approvals for the current transaction's spending amount.
+#!
+#! Inputs:  [currently_spending_amount]
+#! Outputs: [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+#!
+#! - within_epoch == 1 => total = amount_spent_in_epoch + currently_spending_amount
+#! - within_epoch == 0 => total = currently_spending_amount
+#! - tier selection based on AMOUNT_LIMITS_SLOT: [limit0, limit1, limit2, start_delay]
+#! - requires_delay = 1 if total > start_delay else 0
+#!
+#! Locals:
+#!
+#! 0: requires_delay
+#! 1: total_amount
+#! 2: amount_limit0
+#! 3: amount_limit1
+#! 4: amount_limit2
+#! 5: amount_start_delay
+@locals(6)
+proc get_num_required_signatures
+    u32assert.err=ERR_U32
+    # => [currently_spending_amount]
+
+    exec.within_epoch
+    # => [is_within_epoch, currently_spending_amount]
+
+    if.true
+        # same epoch: include amount_spent_in_epoch
+        exec.get_amount_spent_in_epoch
+        # => [amount_spent_in_epoch, currently_spending_amount]
+
+        u32assert2.err=ERR_U32
+        add
+        # => [total_amount]
+    else
+        # new epoch: ignore old spent
+        # => [currently_spending_amount]
+    end
+    # => [total_amount]
+
+    loc_store.1
+
+    # Load limits: [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+    push.AMOUNT_LIMITS_SLOT[0..2]
+    exec.active_account::get_initial_item
+    # => [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+
+    loc_store.2
+    loc_store.3
+    loc_store.4
+    loc_store.5
+    # => []
+
+    # requires_delay = (total_amount > amount_start_delay)
+    loc_load.1
+    loc_load.5
+    u32assert2.err=ERR_U32
+    u32gt
+    loc_store.0
+    # => []
+
+    # total < limit0 => tier 0
+    loc_load.1
+    loc_load.2
+    u32assert2.err=ERR_U32
+    u32lt
+    if.true
+        push.0
+
+    else
+        # total < limit1 => 1
+        loc_load.3
+        loc_load.1
+        u32assert2.err=ERR_U32
+        u32lt
+        if.true
+            push.1
+        else
+            # total < limit2 => 2
+            loc_load.4
+            loc_load.1
+            u32assert2.err=ERR_U32
+            u32lt
+            if.true
+                push.2
+            else
+                push.3
+            end
+        end
+    end
+    # => [tier_index]
+
+    exec.get_tier_threshold_for_index
+    # => [threshold_tier]
+
+    loc_load.0
+    # => [requires_delay, threshold_tier]
+    
+    swap
+    # => [threshold_tier, requires_delay]
+
+    loc_load.1
+    # => [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+end
+
+#! Computes spending policy for this tx and updates tracker (if spending > 0).
+#!
+#! Inputs:  []
+#! Outputs: [threshold_tier, requires_delay]
+#! Side effects:
+#!   - If spending_amount > 0: writes SPENDING_TRACKER_SLOT
+proc compute_spending_policy
+    exec.compute_spending_amount
+    # => [spending_amount]
+
+    dup eq.0
+    if.true
+        drop
+        # => []
+
+        push.0 push.0
+        # => [threshold_tier=0, requires_delay=0]
+    else
+        exec.get_num_required_signatures
+        # => [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+
+        # update tracker with total
+        exec.set_spending_tracker
+        # => [threshold_tier, requires_delay]
+    end
+end
+
+# UTILS
+
+
+#! Returns 1 if WORD == [0,0,0,0], else 0.
+#!
+#! Inputs:  [WORD]
+#! Outputs: [is_empty]
+proc is_empty_word
+    push.0.0.0.0
+    eqw
+    movdn.8
+    dropw dropw
+end
+
+
+# TIMELOCKED ACCOUNT PROCEDURES
+
+
+#! Gets proposal entry for a tx_summary_hash.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set]
+proc get_tx_proposal(tx_summary_hash: word)
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, TX_HASH]
+
+    exec.active_account::get_map_item
+    # => [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set]
+end
+
+#! Returns 1 if proposal exists, 0 otherwise.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [is_proposed]
+proc is_tx_proposed(tx_summary_hash: word) -> u32
+    exec.get_tx_proposal       
+    # => [proposal, expiration, min_cancel, is_set]
+    exec.is_empty_word
+    eq.0
+end
+
+
+#! Deletes proposal entry by setting value to EMPTY_WORD.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc remove_tx_proposal(tx_summary_hash: word)
+    padw
+    # => [EMPTY_WORD, TX_HASH]
+
+    swapw
+    # => [TX_HASH, EMPTY_WORD]
+
+    push.TX_PROPOSALS_SLOT[0..2]
+    # => [TX_PROPOSALS_SLOT, TX_HASH, EMPTY_WORD]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+
+    dropw
+end
+
+#! Writes proposal entry:
+#!   TX_HASH -> [proposal_epoch, expiration_epoch, min_cancel_sigs, 1]
+#!
+#! Stack order note:
+#!   The stored VALUE word will be read back as:
+#!     [is_set, min_cancel_sigs, expiration_epoch, proposal_epoch]
+#!
+#! Inputs:  [min_cancel_sigs, expiration_epoch, proposal_epoch, tx_summary_hash]
+#! Outputs: []
+#! Side effects:
+#!   - Writes TX_PROPOSALS_SLOT map item.
+@locals(3)
+proc write_tx_proposal
+    loc_store.0
+    loc_store.1
+    loc_store.2
+
+    push.1
+    loc_load.0
+    loc_load.1
+    loc_load.2
+
+    swapw         
+    # -> [TX_HASH, VALUE_WORD]
+
+    push.TX_PROPOSALS_SLOT[0..2]
+    exec.native_account::set_map_item
+
+    dropw
+end
+
+
+
+#! Returns 1 if current_epoch > proposal_epoch else 0.
+#!
+#! Inputs:  [current_epoch, proposal_epoch]
+#! Outputs: [has_elapsed]
+proc has_timelock_elapsed
+    u32assert2.err=ERR_U32
+    # elapsed if current > proposal
+    swap
+    u32gt
+end
+
+#! Enforces that TX_HASH is proposed AND timelock elapsed.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [min_cancel_sigs]   (isteyen caller kullanabilsin diye)
+proc enforce_tx_timelock
+    dupw
+    # [tx_summary_hash]
+
+    exec.get_tx_proposal
+    # => [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set, tx_summary_hash]
+
+    swapw
+    exec.is_tx_proposed
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    exec.get_current_epoch
+    #
+    # => [current_epoch, proposal_epoch, expiration_epoch, min_cancel_sigs, is_set]
+
+    exec.has_timelock_elapsed
+    assert.err=ERR_TX_STILL_TIMELOCKED
+
+    # => [expiration_epoch, min_cancel_sigs, is_set]
+    movup.2 drop drop
+    # => [min_cancel_sigs]
+end
+
+#! Reads current pending propose hash (or EMPTY_WORD).
+#!
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_propose
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_cancel
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_execute
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Asserts the given WORD is EMPTY_WORD.
+#!
+#! Inputs:  [WORD]
+#! Outputs: []
+proc assert_pending_empty
+    exec.is_empty_word
+    assert.err=ERR_PENDING_ALREADY_SET
+end
+
+#! Sets pending propose to TX_HASH. Fails if already set.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc set_pending_propose
+    exec.get_pending_propose
+    # => [existing_word, new_hash]
+
+    exec.assert_pending_empty
+    # => [new_hash]
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Clears pending propose to EMPTY_WORD.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_propose
+    push.0 push.0 push.0 push.0
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc set_pending_cancel
+    exec.get_pending_cancel
+    # => [existing_word, new_hash]
+
+    exec.assert_pending_empty
+    # => [new_hash]
+
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_cancel
+    push.0 push.0 push.0 push.0
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Sets pending execute flag to [1,0,0,0]. Fails if already set.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc set_pending_execute
+    exec.get_pending_execute
+    # => [existing_word]
+
+    exec.assert_pending_empty
+    # => []
+
+    push.1 push.0 push.0 push.0
+    # => [0, 0, 0, 1]
+
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_execute
+    push.0 push.0 push.0 push.0
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Allows any signer to propose a transaction.
+#! (Actual caching/write happens inside auth_tx finalizer.)
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+pub proc propose_transaction
+    # early check: already proposed?
+    dupw
+    # => [TX_HASH, TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_proposed, TX_HASH]
+
+    eq.1
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+
+    exec.set_pending_propose
+    # => []
+end
+
+#! Cancels an existing proposal (final delete inside auth_tx).
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+pub proc cancel_transaction_proposal
+    dupw
+    # => [TX_HASH, TX_HASH]
+
+    exec.is_tx_proposed
+    # => [is_proposed, TX_HASH]
+
+    eq.1
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    exec.set_pending_cancel
+    # => []
+end
+
+#! Cancels old proposal and proposes new one in the same tx.
+#!
+#! Inputs:  [old_TX_HASH, new_TX_HASH]
+#! Outputs: []
+pub proc cancel_and_propose_new_transaction
+    dupw
+    # => [old_TX_HASH, old_TX_HASH, new_TX_HASH]
+    exec.is_tx_proposed
+    eq.1
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    # new must NOT exist
+    swapw
+    # => [new_TX_HASH, old_TX_HASH]
+    
+    dupw
+    # => [new_TX_HASH, new_TX_HASH, old_TX_HASH]
+
+    exec.is_tx_proposed
+    eq.1
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+
+    swapw
+    # => [old_TX_HASH, new_TX_HASH]
+
+    # set pending cancel then pending propose
+    #consumes old_TX_HASH
+    exec.set_pending_cancel
+    # => [new_TX_HASH]
+
+    # consumes new_TX_HASH   
+    exec.set_pending_propose
+    # => []
+end
+
+#! Marks that this tx intends to execute a proposed action.
+#! Enforcement happens inside auth_tx based on current TX_SUMMARY_COMMITMENT
+#! and requires_delay flag (spending-limit integrated).
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc execute_proposed_transaction
+    exec.set_pending_execute
+end
+
+#! Finalizes pending propose/cancel/execute actions.
+#! Must be called AFTER verify_signatures (so num_verified is available)
+#! and AFTER overall auth threshold is satisfied.
+#!
+#! Inputs:
+#!   [num_verified_signatures, requires_delay, tx_summary_hash]
+#! Outputs: []
+#!
+#! Locals:
+#!
+#! 0: num_verified_signatures
+#! 1: requires_delay
+@locals(2)
+proc finalize_timelock_proposals
+    loc_store.0
+    # => [requires_delay, TX_HASH]
+
+    loc_store.1
+    # => [TX_HASH]
+
+    # ------------------------------------------------------------
+    # Execute Finalizer 
+    # Only if pending_execute set [0, 0, 0, 1] 
+    # AND the transaction requires_delay.
+    # ------------------------------------------------------------
+
+    exec.get_pending_execute
+    # => [pending_execute_word, TX_HASH]
+
+    exec.is_empty_word
+    # => [is_empty_word, TX_HASH]
+
+    if.false
+        loc_load.1 
+        # => [requires_delay, TX_HASH]
+
+        eq.1
+        # [is_equal, TX_HASH]
+
+        if.true
+            dupw
+            # => [TX_HASH, TX_HASH]
+
+            exec.enforce_tx_timelock
+            # => [min_cancel_signatures, TX_HASH]
+
+            drop
+            # => [TX_HASH]
+
+            dupw
+            # => [TX_HASH, TX_HASH]
+
+            exec.remove_tx_proposal
+            # => [TX_HASH]
+        end
+    end
+
+    exec.clear_pending_execute
+    # => [TX_HASH]
+
+    # ------------------------------------------------------------
+    # Cancel Finalize requires num_verified >= stored min_cancel_sigs
+    # ------------------------------------------------------------
+    exec.get_pending_cancel
+    # => [CANCEL_HASH, TX_HASH]
+
+    exec.is_empty_word
+    # => [is_empty, TX_HASH]
+
+    if.false
+        exec.get_pending_cancel
+        # => [CANCEL_HASH, TX_HASH]
+
+        dupw
+        # => [CANCEL_HASH, CANCEL_HASH, TX_HASH]
+
+        exec.get_tx_proposal
+        # => [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set, CANCEL_HASH, TX_HASH]
+
+        dup.3 eq.1
+        assert.err=ERR_TX_NOT_PROPOSED
+
+        # num_verified_signatures >= min_cancel_sigs
+        loc_load.0
+        # => [num_verified_signatures, proposal_epoch, expiration_epoch, min_cancel_sigs, is_set, CANCEL_HASH, TX_HASH]
+
+        movup.3
+        # => [min_cancel_sigs, num_verified_signatures, proposal_epoch, expiration_epoch, is_set, CANCEL_HASH, TX_HASH]
+
+        u32assert2.err=ERR_U32
+        u32lt
+        assertz.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+
+        drop drop drop
+        # => [CANCEL_HASH, TX_HASH]
+
+        exec.remove_tx_proposal
+        # => [TX_HASH]
+    end
+
+    exec.clear_pending_cancel
+    # => [TX_HASH]
+
+    # ------------------------------------------------------------
+    # Propose Finalize
+    # ------------------------------------------------------------
+
+    exec.get_pending_propose
+    # => [PROPOSAL_HASH, TX_HASH]
+
+    exec.is_empty_word
+    # => [is_empty, TX_HASH]
+
+    if.false
+        exec.get_pending_propose
+        # => [PROPOSAL_HASH, TX_HASH]
+
+        dupw
+        # => [PROPOSAL_HASH, PROPOSAL_HASH, TX_HASH]
+
+        exec.is_tx_proposed
+        # => [is_proposed, PROPOSAL_HASH, TX_HASH]
+
+        eq.1
+        assertz.err=ERR_TX_ALREADY_PROPOSED
+
+        loc_load.0
+        # => [num_verified_signatures, PROPOSAL_HASH, TX_HASH]
+
+        dup
+        # => [num_verified_signatures, num_verified_signatures, PROPOSAL_HASH, TX_HASH]
+
+        u32assert.err=ERR_U32
+        eq.0
+        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
+        # => [num_verified_signatures, PROPOSAL_HASH, TX_HASH]
+
+        exec.get_current_epoch
+        # => [proposal_epoch, num_verified_signatures, PROPOSAL_HASH, TX_HASH]
+
+        push.0
+        # => [expiration_epoch, proposal_epoch, num_verified_signatures, PROPOSAL_HASH, TX_HASH]
+
+        movup.2
+        # => [num_verified_signatures, expiration_epoch, proposal_epoch, PROPOSAL_HASH, TX_HASH]
+
+        exec.write_tx_proposal
+        # => [tx_hash]
+    end
+
+    exec.clear_pending_propose
+    # => [TX_HASH]
+end
+
+
+#! Authenticate a transaction using multisig smart-policy rules.
+#!
+#! Inputs:
+#!   Operand stack: [SALT]
+#! Outputs:
+#!   Operand stack: []
+#! Invocation: call
+@auth_script
+pub proc auth_tx_multisig_smart(salt: word)
+    exec.auth_tx_multisig_smart_inner
+end
+
+@locals(3)
+proc auth_tx_multisig_smart_inner(salt: word)
+    exec.native_account::incr_nonce drop
+    # => [SALT]
+
+    #------- Computing spending policy ------
+    exec.compute_spending_policy
+    # => [threshold_tier, requires_delay]
+
+    loc_store.0
+    # => [requires_delay]
+
+    loc_store.1
+    # => []
+
+    # ------ Computing transaction summary ------
+
+    exec.auth::create_tx_summary
+    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+
+    # to build a tx_summary in the host, we need these four words in the advice provider
+    adv.insert_hqword
+    # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
+
+    # the commitment to the tx summary is the message that is signed
+    exec.auth::hash_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Verifying approver signatures ------
+
+    exec.get_threshold_and_num_approvers
+    # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
+
+    movdn.5
+    # => [num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
+    # => [pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    push.APPROVER_SCHEME_ID_SLOT[0..2]
+    # => [scheme_slot_prefix, scheme_slot_suffix, pub_key_slot_prefix, pub_key_slot_suffix, num_of_approvers, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    exec.::miden::standards::auth::signature::verify_signatures
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+    
+    dup
+    # => [num_verified_signatures, num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+
+    loc_store.2
+    # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
+    # ------ Checking threshold is >= num_verified_signatures ------
+
+    movup.5
+    # => [default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    loc_load.0
+    # => [spending_threshold, default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    swap
+    # => [default_threshold, spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    exec.compute_transaction_threshold
+    # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+
+    u32assert2 u32lt
+    # => [is_unauthorized, TX_SUMMARY_COMMITMENT]
+
+    # If signatures are non-existent the tx will fail here.
+    if.true
+        emit.AUTH_UNAUTHORIZED_EVENT
+        push.0 assert.err="insufficient number of signatures"
+    end
+
+    # ------ Finalize Tx Proposals ------
+    loc_load.1
+    # => [requires_delay, TX_HASH]
+
+    loc_load.2
+    # => [num_verified_signatures, requires_delay, TX_HASH]
+
+    exec.finalize_timelock_proposals
+    # => [TX_SUMMARY_COMMITMENT]
+
+    exec.assert_new_tx
+    # => []
+end

@@ -11,6 +11,8 @@ use miden_standards::account::auth::{
     AuthMultisigConfig,
     AuthMultisigPsm,
     AuthMultisigPsmConfig,
+    AuthMultisigSmart,
+    AuthMultisigSmartConfig,
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
@@ -44,6 +46,18 @@ pub enum Auth {
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         psm_config: PsmConfig,
         proc_threshold_map: Vec<(Word, u32)>,
+    },
+
+    /// Multisig with additional smart-policy configuration.
+    MultisigSmart {
+        threshold: u32,
+        approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+        proc_threshold_map: Vec<(Word, u32)>,
+        spent_interval_blocks: u32,
+        amount_limits: [u64; 4],
+        tier_thresholds: [u32; 4],
+        oracle_id: [miden_protocol::Felt; 2],
+        get_price_proc_root: Word,
     },
 
     /// Creates a secret key for the account, and creates a [BasicAuthenticator] used to
@@ -107,6 +121,31 @@ impl Auth {
                     .expect("invalid multisig psm config");
                 let component = AuthMultisigPsm::new(config)
                     .expect("multisig psm component creation failed")
+                    .into();
+
+                (component, None)
+            },
+            Auth::MultisigSmart {
+                threshold,
+                approvers,
+                proc_threshold_map,
+                spent_interval_blocks,
+                amount_limits,
+                tier_thresholds,
+                oracle_id,
+                get_price_proc_root,
+            } => {
+                let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
+                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .expect("invalid multisig smart config")
+                    .with_spent_interval_blocks(*spent_interval_blocks)
+                    .with_amount_limits(*amount_limits)
+                    .with_tier_thresholds(*tier_thresholds)
+                    .with_oracle_config(*oracle_id)
+                    .with_get_price_proc_root(*get_price_proc_root);
+
+                let component = AuthMultisigSmart::new(config)
+                    .expect("multisig smart component creation failed")
                     .into();
 
                 (component, None)
