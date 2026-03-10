@@ -9,6 +9,9 @@ use miden::protocol::account_id
 use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::protocol::tx
 use miden::standards::auth
+use miden::standards::auth::multisig
+
+pub use multisig::update_signers_and_threshold
 
 
 # CONSTANTS
@@ -47,7 +50,6 @@ const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::proced
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]
-const ECDSA_K256_KECCAK_SCHEME_ID_WORD = [1, 0, 0, 0]
 
 # User-defined spending interval (in blocks).
 # Typically set to the ~24h equivalent number of blocks.
@@ -146,184 +148,6 @@ proc assert_new_tx(msg: word)
 
     assertz.err=ERR_TX_ALREADY_EXECUTED
     # => []
-end
-
-#! Remove old approver public keys from the approver public key mapping.
-#!
-#! This procedure cleans up the storage by removing public keys of approvers that are no longer
-#! part of the multisig configuration. This procedure assumes that init_num_of_approvers and
-#! new_num_of_approvers are u32 values.
-#!
-#! Inputs: [init_num_of_approvers, new_num_of_approvers]
-#! Outputs: []
-#!
-#! Where:
-#! - init_num_of_approvers is the original number of approvers before the update
-#! - new_num_of_approvers is the new number of approvers after the update
-proc cleanup_pubkey_mapping(init_num_of_approvers: u32, new_num_of_approvers: u32)
-    dup.1 dup.1
-    u32assert2 u32lt
-    # => [should_loop, i = init_num_of_approvers, new_num_of_approvers]
-
-    while.true
-        # => [i, new_num_of_approvers]
-
-        sub.1
-        # => [i-1, new_num_of_approvers]
-
-        dup exec.create_approver_map_key
-        # => [approver_key, i-1, new_num_of_approvers]
-
-        padw swapw
-        # => [[0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], EMPTY_WORD, i-1, new_num_of_approvers]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, new_num_of_approvers]
-
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        # clear scheme id at the same approver index
-        dup exec.create_approver_map_key
-        padw swapw
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        exec.native_account::set_map_item
-        dropw
-        # => [i-1, new_num_of_approvers]
-
-        dup.1 dup.1
-        u32lt
-        # => [should_loop, i-1, new_num_of_approvers]
-    end
-
-    drop drop
-    # => []
-end
-
-#! Builds the approver map key for signer index i.
-#!
-#! Inputs: [key_index]
-#! Outputs: [[key_index, 0, 0, 0]]
-proc create_approver_map_key
-    push.0.0.0
-    movup.3
-end
-
-#! Update threshold config and add / remove approvers
-#!
-#! Inputs:
-#!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
-#!   Advice map: {
-#!     MULTISIG_CONFIG_HASH => [CONFIG, PUB_KEY_N, PUB_KEY_N-1, ..., PUB_KEY_0]
-#!   }
-#! Outputs:
-#!   Operand stack: []
-#!
-#! Where:
-#! - MULTISIG_CONFIG_HASH is the hash of the threshold and new public key vector
-#! - MULTISIG_CONFIG is [threshold, num_approvers, 0, 0]
-#! - PUB_KEY_i is the public key of the i-th signer
-#!
-#! Locals:
-#!
-#! 0: new_num_of_approvers
-#! 1: init_num_of_approvers
-@locals(2)
-pub proc update_signers_and_threshold(multisig_config_hash: word)
-    adv.push_mapval
-    # => [MULTISIG_CONFIG_HASH, pad(12)]
-
-    adv_loadw
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    # store new_num_of_approvers for later
-    dup.1 loc_store.0
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    dup dup.2
-    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
-
-    # make sure that the threshold is smaller than the number of approvers
-    u32assert2.err=ERR_MALFORMED_MULTISIG_CONFIG
-    u32gt assertz.err=ERR_MALFORMED_MULTISIG_CONFIG
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    dup dup.2
-    # => [num_approvers, threshold, MULTISIG_CONFIG, pad(12)]
-
-    # make sure that threshold or num_approvers are not zero
-    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
-    eq.0 assertz.err=ERR_ZERO_IN_MULTISIG_CONFIG
-    # => [MULTISIG_CONFIG, pad(12)]
-
-    push.THRESHOLD_CONFIG_SLOT[0..2]
-    # => [config_slot_prefix, config_slot_suffix, MULTISIG_CONFIG, pad(12)]
-
-    exec.native_account::set_item
-    # => [OLD_THRESHOLD_CONFIG, pad(12)]
-
-    # store init_num_of_approvers for later
-    drop loc_store.1 drop drop
-    # => [pad(12)]
-
-    loc_load.0
-    # => [num_approvers]
-
-    dup neq.0
-    while.true
-        sub.1
-        # => [i-1, pad(12)]
-
-        dup exec.create_approver_map_key
-        # => [approver_key, i-1, pad(12)]
-
-        padw adv_loadw
-        # => [PUB_KEY, [0, 0, 0, i-1], i-1, pad(12)]
-
-        swapw
-        # => [[0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
-
-        push.APPROVER_PUBLIC_KEYS_SLOT[0..2]
-        # => [pub_key_slot_prefix, pub_key_slot_suffix, [0, 0, 0, i-1], PUB_KEY, i-1, pad(12)]
-
-        exec.native_account::set_map_item
-        # => [OLD_VALUE, i-1, pad(12)]
-
-        dropw
-        # => [i-1, pad(12)]
-
-        # set signer scheme for this index to ECDSA K256 Keccak ([1, 0, 0, 0])
-        dup exec.create_approver_map_key
-        # => [approver_key, i-1, pad(12)]
-
-        push.ECDSA_K256_KECCAK_SCHEME_ID_WORD
-        swapw
-        # => [[0, 0, 0, i-1], [1, 0, 0, 0], i-1, pad(12)]
-
-        push.APPROVER_SCHEME_ID_SLOT[0..2]
-        exec.native_account::set_map_item
-        dropw
-        # => [i-1, pad(12)]
-
-        dup neq.0
-        # => [is_non_zero, i-1, pad(12)]
-    end
-    # => [pad(13)]
-
-    drop
-    # => [pad(12)]
-
-    # compare initial vs current multisig config
-
-    # load init_num_of_approvers & new_num_of_approvers
-    loc_load.0 loc_load.1
-    # => [init_num_of_approvers, new_num_of_approvers, pad(12)]
-
-    exec.cleanup_pubkey_mapping
-    # => [pad(12)]
 end
 
 #! High-impact action.

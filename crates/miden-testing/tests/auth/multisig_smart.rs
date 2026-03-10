@@ -34,12 +34,15 @@ use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use rstest::rstest;
 
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
 
 type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<PublicKey>, Vec<BasicAuthenticator>);
+type MultisigTestSetupWithSchemes =
+    (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
 const TEST_ORACLE_ID_PREFIX: u64 = 15_240_030_242_886_579_968;
 const TEST_ORACLE_ID_SUFFIX: u64 = 5_177_303_881_306_160_384;
@@ -90,6 +93,67 @@ fn setup_keys_and_authenticators(
     }
 
     Ok((secret_keys, public_keys, authenticators))
+}
+
+/// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
+fn setup_keys_and_authenticators_with_scheme(
+    num_approvers: usize,
+    threshold: usize,
+    auth_scheme: AuthScheme,
+) -> anyhow::Result<MultisigTestSetupWithSchemes> {
+    let seed: [u8; 32] = rand::random();
+    let mut rng = ChaCha20Rng::from_seed(seed);
+
+    let mut secret_keys = Vec::new();
+    let mut auth_schemes = Vec::new();
+    let mut public_keys = Vec::new();
+    let mut authenticators = Vec::new();
+
+    for _ in 0..num_approvers {
+        let sec_key = match auth_scheme {
+            AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
+            AuthScheme::Falcon512Poseidon2 => {
+                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
+            },
+            _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
+        };
+        let pub_key = sec_key.public_key();
+
+        secret_keys.push(sec_key);
+        auth_schemes.push(auth_scheme);
+        public_keys.push(pub_key);
+    }
+
+    for secret_key in secret_keys.iter().take(threshold) {
+        authenticators.push(BasicAuthenticator::new(core::slice::from_ref(secret_key)));
+    }
+
+    Ok((secret_keys, auth_schemes, public_keys, authenticators))
+}
+
+fn build_update_signers_config_vector(
+    threshold: u64,
+    num_of_approvers: u64,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+) -> Vec<Felt> {
+    let mut config_and_pubkeys_vector = Vec::new();
+    config_and_pubkeys_vector.extend_from_slice(&[
+        Felt::new(threshold),
+        Felt::new(num_of_approvers),
+        Felt::new(0),
+        Felt::new(0),
+    ]);
+
+    let scheme_word = [Felt::new(auth_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)];
+
+    for public_key in public_keys.iter().rev() {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&scheme_word);
+    }
+
+    config_and_pubkeys_vector
 }
 
 fn create_multisig_smart_account_with_assets(
@@ -208,28 +272,57 @@ fn create_multisig_account(
     starting_balance: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
+    let approvers = public_keys
+        .iter()
+        .map(|pk| (pk.clone(), AuthScheme::EcdsaK256Keccak))
+        .collect::<Vec<_>>();
+
+    create_multisig_account_with_schemes(
+        threshold,
+        &approvers,
+        starting_balance,
+        proc_threshold_map,
+    )
+}
+
+fn create_multisig_account_with_schemes(
+    threshold: u32,
+    approvers: &[(PublicKey, AuthScheme)],
+    starting_balance: u64,
+    proc_threshold_map: Vec<(Word, u32)>,
+) -> anyhow::Result<Account> {
     let spent_interval_blocks = 10u32;
     let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
     let tier_thresholds = [1u32, 2u32, 3u32, 4u32];
     let oracle_id = test_oracle_id();
     let get_price_proc_root = test_get_price_proc_root();
+    let approvers: Vec<_> =
+        approvers.iter().map(|(pk, scheme)| (pk.to_commitment(), *scheme)).collect();
 
-    let assets = vec![FungibleAsset::new(
-        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
-        starting_balance,
-    )?];
+    let multisig_account = AccountBuilder::new([0; 32])
+        .with_auth_component(Auth::MultisigSmart {
+            threshold,
+            approvers,
+            proc_threshold_map,
+            spent_interval_blocks,
+            amount_limits,
+            tier_thresholds,
+            oracle_id,
+            get_price_proc_root,
+        })
+        .with_component(BasicWallet)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_assets(vec![
+            FungibleAsset::new(
+                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+                starting_balance,
+            )?
+            .into(),
+        ])
+        .build_existing()?;
 
-    create_multisig_smart_account_with_assets(
-        threshold,
-        public_keys,
-        assets,
-        spent_interval_blocks,
-        amount_limits,
-        tier_thresholds,
-        oracle_id,
-        get_price_proc_root,
-        proc_threshold_map,
-    )
+    Ok(multisig_account)
 }
 
 // ================================================================================================
@@ -964,11 +1057,21 @@ async fn test_multisig_smart_replay_protection() -> anyhow::Result<()> {
 /// - 4 New Approvers (updated multisig signers)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_update_signers() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+async fn test_multisig_smart_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account_with_schemes(2, &approvers, 10, vec![])?;
 
     // SECTION 1: Execute a transaction script to update signers and threshold
     // ================================================================================
@@ -992,26 +1095,18 @@ async fn test_multisig_smart_update_signers() -> anyhow::Result<()> {
 
     // Setup new signers
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, new_public_keys, _new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-    }
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
 
     // Hash the vector to create config hash
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
@@ -1233,11 +1328,22 @@ async fn test_multisig_smart_update_signers() -> anyhow::Result<()> {
 /// - 2 Updated Approvers (after removing 3 owners)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_update_signers_remove_owner() -> anyhow::Result<()> {
+async fn test_multisig_smart_update_signers_remove_owner(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup 5 original owners with threshold 4
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
-    let multisig_account = create_multisig_account(4, &public_keys, 10, vec![])?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+    let multisig_account = create_multisig_account_with_schemes(4, &approvers, 10, vec![])?;
 
     // Build mock chain
     let mock_chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -1248,15 +1354,12 @@ async fn test_multisig_smart_update_signers_remove_owner() -> anyhow::Result<()>
     let threshold = 1u64;
     let num_of_approvers = 2u64;
 
-    // Create multisig config vector
-    let mut config_and_pubkeys_vector =
-        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
-
-    // Add public keys in reverse order
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-    }
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        new_public_keys,
+        auth_scheme,
+    );
 
     // Create config hash and advice map
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
@@ -1412,14 +1515,26 @@ async fn test_multisig_smart_update_signers_remove_owner() -> anyhow::Result<()>
 /// 2. Prepare a signer update transaction with new approvers
 /// 3. Try to sign the transaction with the NEW approvers (should fail)
 /// 4. Verify that only the CURRENT approvers can sign the update transaction
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_new_approvers_cannot_sign_before_update() -> anyhow::Result<()> {
+async fn test_multisig_smart_new_approvers_cannot_sign_before_update(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // SECTION 1: Create a multisig account with 2 original approvers
     // ================================================================================
 
-    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account_with_schemes(2, &approvers, 10, vec![])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1435,26 +1550,18 @@ async fn test_multisig_smart_new_approvers_cannot_sign_before_update() -> anyhow
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, new_public_keys, new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
 
-    // Create vector with threshold config and public keys (4 field elements each)
-    let mut config_and_pubkeys_vector = Vec::new();
-    config_and_pubkeys_vector.extend_from_slice(&[
-        Felt::new(threshold),
-        Felt::new(num_of_approvers),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
-
-    // Add each public key to the vector
-    for public_key in new_public_keys.iter().rev() {
-        let key_word: Word = public_key.to_commitment().into();
-        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
-    }
+    let config_and_pubkeys_vector = build_update_signers_config_vector(
+        threshold,
+        num_of_approvers,
+        &new_public_keys,
+        auth_scheme,
+    );
 
     // Hash the vector to create config hash
     let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
