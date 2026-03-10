@@ -1687,14 +1687,14 @@ async fn test_has_procedure() -> anyhow::Result<()> {
 #[rstest::rstest]
 #[case::with_callbacks(
     vec![StorageSlot::with_value(
-        AssetCallbacks::on_asset_added_to_account_slot().clone(),
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
         Word::from([1, 2, 3, 4u32]),
     )],
     true,
 )]
 #[case::with_empty_callback(
     vec![StorageSlot::with_empty_value(
-        AssetCallbacks::on_asset_added_to_account_slot().clone(),
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
     )],
     false,
 )]

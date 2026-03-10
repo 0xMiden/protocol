@@ -9,9 +9,9 @@ use miden::core::word
 # The index of the local memory slot that contains the procedure root of the callback.
 const CALLBACK_PROC_ROOT_PTR = 0
 
-# The name of the storage slot where the procedure root for the on_asset_added_to_account callback
+# The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
 # is stored.
-const ON_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT = word("miden::protocol::faucet::callbacks::on_asset_added_to_account")
+const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
 
 # PROCEDURES
 # ==================================================================================================
@@ -20,12 +20,12 @@ const ON_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT = word("miden::protocol::faucet::callb
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [PROCESSED_ASSET_VALUE]
-pub proc on_asset_added_to_account
+pub proc on_before_asset_added_to_account
     exec.asset::key_to_callbacks_enabled
     # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE]
 
     if.true
-        exec.on_asset_added_to_account_raw
+        exec.on_before_asset_added_to_account_raw
         # => [PROCESSED_ASSET_VALUE]
     else
         # drop asset key
@@ -38,12 +38,12 @@ end
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
 #! Outputs: [PROCESSED_ASSET_VALUE]
 @locals(4)
-proc on_asset_added_to_account_raw
+proc on_before_asset_added_to_account_raw
     exec.start_foreign_callback_context
     # => [native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
 
     # get the procedure root of the callback from the faucet's storage
-    push.ON_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT[0..2]
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT[0..2]
     exec.account::get_item
     # => [PROC_ROOT, native_account_id_suffix, native_account_id_prefix, ASSET_KEY, ASSET_VALUE]
 

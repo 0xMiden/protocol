@@ -50,7 +50,7 @@ const ERR_ACCOUNT_BLOCKED = "the account is blocked and cannot receive this asse
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
-pub proc on_asset_added_to_account
+pub proc on_before_asset_added_to_account
     # Build account ID map key: [0, 0, suffix, prefix]
     push.0.0
     # => [0, 0, native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
@@ -98,16 +98,17 @@ static BLOCK_LIST_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 });
 
 procedure_digest!(
-    BLOCK_LIST_ON_ASSET_ADDED_TO_ACCOUNT,
+    BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
     BlockList::NAME,
-    BlockList::ON_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
+    BlockList::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
     || { BLOCK_LIST_COMPONENT_CODE.as_library() }
 );
 
 // BLOCK LIST
 // ================================================================================================
 
-/// A test component that implements a block list for the `on_asset_added_to_account` callback.
+/// A test component that implements a block list for the `on_before_asset_added_to_account`
+/// callback.
 ///
 /// When a faucet distributes assets with callbacks enabled, this component checks whether the
 /// receiving account is in the block list. If the account is blocked, the transaction fails.
@@ -118,7 +119,7 @@ struct BlockList {
 impl BlockList {
     const NAME: &str = "miden::testing::callbacks::block_list";
 
-    const ON_ASSET_ADDED_TO_ACCOUNT_PROC_NAME: &str = "on_asset_added_to_account";
+    const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME: &str = "on_before_asset_added_to_account";
 
     /// Creates a new [`BlockList`] with the given set of blocked accounts.
     fn new(blocked_accounts: BTreeSet<AccountId>) -> Self {
@@ -126,8 +127,8 @@ impl BlockList {
     }
 
     /// Returns the digest of the `distribute` account procedure.
-    pub fn on_asset_added_to_account_digest() -> Word {
-        *BLOCK_LIST_ON_ASSET_ADDED_TO_ACCOUNT
+    pub fn on_before_asset_added_to_account_digest() -> Word {
+        *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
     }
 }
 
@@ -153,7 +154,9 @@ impl From<BlockList> for AccountComponent {
             vec![StorageSlot::with_map(BLOCK_LIST_SLOT_NAME.clone(), storage_map)];
         storage_slots.extend(
             AssetCallbacks::new()
-                .on_asset_added_to_account(BlockList::on_asset_added_to_account_digest())
+                .on_before_asset_added_to_account(
+                    BlockList::on_before_asset_added_to_account_digest(),
+                )
                 .into_storage_slots(),
         );
         let metadata =

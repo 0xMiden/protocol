@@ -18,8 +18,8 @@ use miden::core::word
 # ERRORS
 # =================================================================================================
 
-# The slot ID of the on_asset_added_to_account callback.
-const ON_ASSET_ADDED_TO_ACCOUNT_SLOT_ID = word("miden::protocol::faucet::callbacks::on_asset_added_to_account")
+# The slot ID of the on_before_asset_added_to_account callback.
+const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_ID = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
 
 const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE="account nonce can only be incremented once"
 
@@ -673,7 +673,7 @@ pub proc add_asset_to_vault
     swapw dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
 
-    exec.callbacks::on_asset_added_to_account
+    exec.callbacks::on_before_asset_added_to_account
     swapw
     # => [ASSET_KEY, ASSET_VALUE]
 
@@ -2026,8 +2026,8 @@ end
 #! Where:
 #! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
 pub proc has_callbacks
-    # check if the on_asset_added_to_account callback slot exists and is non-empty
-    push.ON_ASSET_ADDED_TO_ACCOUNT_SLOT_ID[0..2]
+    # check if the on_before_asset_added_to_account callback slot exists and is non-empty
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_ID[0..2]
     exec.has_non_empty_slot
     # => [has_callbacks]
 end
