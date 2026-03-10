@@ -8,8 +8,8 @@ use crate::transaction::{
     ExecutedTransaction,
     InputNoteCommitment,
     InputNotes,
-    OutputNotes,
     ProvenTransaction,
+    RawOutputNotes,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -62,7 +62,7 @@ impl TransactionHeader {
         fee: FungibleAsset,
     ) -> Self {
         let input_notes_commitment = input_notes.commitment();
-        let output_notes_commitment = OutputNotes::compute_commitment(output_notes.iter());
+        let output_notes_commitment = RawOutputNotes::compute_commitment(output_notes.iter());
 
         let id = TransactionId::new(
             initial_state_commitment,
