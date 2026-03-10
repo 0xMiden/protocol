@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     AccountBuilder,
@@ -171,6 +172,119 @@ impl From<BlockList> for AccountComponent {
 // TESTS
 // ================================================================================================
 
+/// Tests that the `on_before_asset_added_to_account` callback receives the correct inputs.
+#[tokio::test]
+async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs()
+-> anyhow::Result<()> {
+    let mut builder = crate::MockChain::builder();
+
+    // Create wallet first so we know its ID before building the faucet.
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+    let wallet_id_suffix = target_account.id().suffix().as_canonical_u64();
+    let wallet_id_prefix = target_account.id().prefix().as_u64();
+
+    let amount: u64 = 100;
+
+    // MASM callback that asserts the inputs match expected values.
+    let component_name = "miden::testing::callbacks::input_validator";
+    let proc_name = "on_before_asset_added_to_account";
+    let callback_masm = format!(
+        r#"
+    const ERR_WRONG_VALUE = "callback received unexpected asset value element"
+
+    #! Inputs:  [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
+    #! Outputs: [ASSET_VALUE, pad(12)]
+    pub proc {proc_name}
+        # Assert native account ID
+        push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
+        push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
+        # => [ASSET_KEY, ASSET_VALUE, pad(6)]
+
+        # duplicate the asset value for returning
+        dupw.1 swapw
+        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(6)]
+
+        # build the expected asset
+        push.{amount}
+        exec.::miden::protocol::active_account::get_id
+        push.1
+        # => [enable_callbacks, active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, pad(6)]
+        exec.::miden::protocol::asset::create_fungible_asset
+        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(6)]
+
+        movupw.2
+        assert_eqw.err="callback received unexpected asset key"
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(6)]
+
+        assert_eqw.err="callback received unexpected asset value"
+        # => [ASSET_VALUE, pad(12)]
+    end
+    "#
+    );
+
+    // Compile the callback code and extract the procedure root.
+    let callback_code =
+        CodeBuilder::default().compile_component_code(component_name, callback_masm.as_str())?;
+
+    let proc_root = callback_code
+        .as_library()
+        .get_procedure_root_by_path(format!("{component_name}::{proc_name}").as_str())
+        .expect("callback should contain the procedure");
+
+    // Build the faucet with BasicFungibleFaucet + callback component.
+    let basic_faucet = BasicFungibleFaucet::new("CBK".try_into()?, 8, Felt::new(1_000_000))?;
+
+    let callback_storage_slots = AssetCallbacks::new()
+        .on_before_asset_added_to_account(proc_root)
+        .into_storage_slots();
+
+    let callback_metadata =
+        AccountComponentMetadata::new(component_name, [AccountType::FungibleFaucet])
+            .with_description("input validation callback component for testing");
+
+    let callback_component =
+        AccountComponent::new(callback_code, callback_storage_slots, callback_metadata)?;
+
+    let account_builder = AccountBuilder::new([43u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(basic_faucet)
+        .with_component(callback_component);
+
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // Create a P2ID note with a callbacks-enabled fungible asset.
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbacksFlag::Enabled);
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::Fungible(fungible_asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    // Execute the transaction - should succeed because all callback assertions pass.
+    mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
 /// Tests that a blocked account cannot receive assets with callbacks enabled.
 ///
 /// Flow:
@@ -196,7 +310,7 @@ async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
 
     let faucet = builder.add_account_from_builder(
         Auth::BasicAuth {
-            auth_scheme: miden_protocol::account::auth::AuthScheme::Falcon512Poseidon2,
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
         },
         account_builder,
         AccountState::Exists,
