@@ -78,8 +78,8 @@ pub proc get_scale
     drop movdn.2 drop drop
     # => [scale]
 
-    # truncate stack
-    swap drop
+    # truncate stack for FPI call
+    exec.sys::truncate_stack
     # => [scale]
 end
 
