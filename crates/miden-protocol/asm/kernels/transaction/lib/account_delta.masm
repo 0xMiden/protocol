@@ -338,35 +338,35 @@ proc update_fungible_asset_delta
         movup.8 loc_store.1
         # => [KEY, VALUE0, ...]
         # this stack state is equivalent to:
-        # => [[0, 0, faucet_id_suffix, faucet_id_prefix], [delta_amount, 0, 0, 0], ...]
+        # => [[0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount, 0, 0, 0], ...]
 
         swapw
-        # => [[delta_amount, 0, 0, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
+        # => [[delta_amount, 0, 0, 0], [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
 
         # compute the absolute value of delta amount with a flag indicating whether it's positive
         exec.delta_amount_absolute
-        # => [is_delta_amount_positive, [delta_amount_abs, 0, 0, 0], [0, 0, faucet_id_suffix, faucet_id_prefix], ...]
+        # => [is_delta_amount_positive, [delta_amount_abs, 0, 0, 0], [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
 
         # define the was_added value as equivalent to is_delta_amount_positive
         # this value is 1 if the amount was added and 0 if the amount was removed
         swap.6 drop
-        # => [[delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix, faucet_id_prefix], ...]
+        # => [[delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
 
         dup neq.0
-        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix, faucet_id_prefix], ...]
+        # => [is_delta_amount_non_zero, [delta_amount_abs, 0, 0, 0], [0, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
 
         # if delta amount is non-zero, update the hasher
         if.true
             push.DOMAIN_ASSET swap.5 drop
-            # => [[delta_amount_abs, 0, 0, 0], [domain, was_added, faucet_id_suffix, faucet_id_prefix], ...]
+            # => [[delta_amount_abs, 0, 0, 0], [domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], ...]
 
             # swap value and metadata words
             swapw
-            # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], RATE0, RATE1, CAPACITY]
+            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], RATE0, RATE1, CAPACITY]
 
             # drop previous RATE elements
             swapdw dropw dropw
-            # => [[domain, was_added, faucet_id_suffix, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], CAPACITY]
+            # => [[domain, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix], [delta_amount_abs, 0, 0, 0], CAPACITY]
 
             exec.poseidon2::permute
             # => [RATE0, RATE1, CAPACITY]
