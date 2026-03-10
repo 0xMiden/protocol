@@ -103,10 +103,10 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
     // The MASM loads GER_LOWER and GER_UPPER from note storage via mem_loadw_le,
     // then calls poseidon2::merge which computes hash(GER_LOWER || GER_UPPER).
-    let ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
-    let ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
+    let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
+    let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
 
-    let ger_hash = Poseidon2::merge(&[ger_lower.into(), ger_upper.into()]);
+    let ger_hash = Poseidon2::merge(&[ger_lower, ger_upper]);
     // TODO: use a helper getter on AggLayerBridge once available
     // (see https://github.com/0xMiden/protocol/issues/2548)
     let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
