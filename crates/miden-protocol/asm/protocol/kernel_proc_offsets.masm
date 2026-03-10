@@ -47,9 +47,7 @@ pub const ACCOUNT_HAS_PROCEDURE_OFFSET=24
 ### Faucet ######################################
 pub const FAUCET_MINT_ASSET_OFFSET=25
 pub const FAUCET_BURN_ASSET_OFFSET=26
-
-# Callbacks
-pub const ACCOUNT_HAS_CALLBACKS_OFFSET=27
+pub const FAUCET_HAS_CALLBACKS_OFFSET=27
 
 ### Note ########################################
 

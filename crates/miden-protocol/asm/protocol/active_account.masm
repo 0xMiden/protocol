@@ -18,7 +18,6 @@ use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_ASSET_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NUM_PROCEDURES_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_PROCEDURE_ROOT_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_PROCEDURE_OFFSET
-use ::miden::protocol::kernel_proc_offsets::ACCOUNT_HAS_CALLBACKS_OFFSET
 use miden::core::word
 
 # ACTIVE ACCOUNT PROCEDURES
@@ -681,33 +680,3 @@ pub proc has_procedure
     # => [is_procedure_available]
 end
 
-# CALLBACKS
-# -------------------------------------------------------------------------------------------------
-
-#! Returns whether the active account defines callbacks.
-#!
-#! The account defines callbacks if any callback storage slot is present and it contains not the
-#! empty word.
-#!
-#! Inputs:  []
-#! Outputs: [has_callbacks]
-#!
-#! Where:
-#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
-#!
-#! Invocation: exec
-pub proc has_callbacks
-    # pad the stack
-    padw padw padw push.0.0.0
-    # => [pad(15)]
-
-    push.ACCOUNT_HAS_CALLBACKS_OFFSET
-    # => [offset, pad(15)]
-
-    syscall.exec_kernel_proc
-    # => [has_callbacks, pad(15)]
-
-    # clean the stack
-    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
-    # => [has_callbacks]
-end

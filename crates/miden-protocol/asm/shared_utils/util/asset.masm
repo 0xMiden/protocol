@@ -17,7 +17,10 @@ pub const ASSET_SIZE = 8
 # The offset of the asset value in an asset stored in memory.
 pub const ASSET_VALUE_MEMORY_OFFSET = 4
 
+# The flag representing disabled callbacks.
 pub const CALLBACKS_DISABLED = 0
+
+# The flag representing enabled callbacks.
 pub const CALLBACKS_ENABLED = 1
 
 # PROCEDURES
@@ -188,21 +191,6 @@ pub proc key_to_callbacks_enabled
     # => [callbacks_enabled, ASSET_KEY]
 end
 
-#! Creates asset metadata from the provided inputs.
-#!
-#! Inputs:  [enable_callbacks]
-#! Outputs: [asset_metadata]
-#!
-#! Where:
-#! - enable_callbacks is a flag (0 or 1) indicating whether the asset callbacks flag should be set.
-#! - asset_metadata is the asset metadata.
-proc create_metadata
-    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
-    dup u32lte.CALLBACKS_ENABLED
-    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
-    # => [asset_metadata]
-end
-
 #! Creates a fungible asset vault key for the specified faucet.
 #!
 #! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix]
@@ -221,6 +209,8 @@ pub proc create_fungible_key
     exec.create_metadata
     # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
 
+    # merge the asset metadata into the lower 8 bits of the suffix
+    # this is safe since create_metadata builds only valid metadata
     add
     # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
 
@@ -309,6 +299,24 @@ proc split_suffix_and_metadata
     # extract lower 8 bits of the lo part to get the metadata
     swap u32and.0x000000ff
     # => [asset_metadata, faucet_id_suffix]
+end
+
+#! Creates asset metadata from the provided inputs.
+#!
+#! Inputs:  [enable_callbacks]
+#! Outputs: [asset_metadata]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether the asset callbacks flag should be set.
+#! - asset_metadata is the asset metadata.
+#!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+proc create_metadata
+    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    dup u32lte.CALLBACKS_ENABLED
+    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # => [asset_metadata]
 end
 
 #! Extracts the asset callback flag from asset metadata.

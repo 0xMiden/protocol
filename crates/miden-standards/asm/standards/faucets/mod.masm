@@ -136,7 +136,7 @@ pub proc distribute
     # ---------------------------------------------------------------------------------------------
 
     # mint the asset with the callbacks flag based on whether the faucet has callbacks defined
-    exec.active_account::has_callbacks
+    exec.faucet::has_callbacks
     # => [has_callbacks, amount, note_idx, note_idx]
 
     # creating the asset

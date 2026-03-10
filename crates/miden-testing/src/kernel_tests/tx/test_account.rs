@@ -1678,7 +1678,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that the `has_callbacks` kernel procedure correctly reports whether an account defines
+/// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
 /// callbacks.
 ///
 /// - `with_callbacks`: callback slot has a non-empty value -> returns 1
@@ -1700,7 +1700,7 @@ async fn test_has_procedure() -> anyhow::Result<()> {
 )]
 #[case::without_callbacks(vec![], false)]
 #[tokio::test]
-async fn test_account_has_callbacks(
+async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
@@ -1716,10 +1716,10 @@ async fn test_account_has_callbacks(
 
     let tx_script_code = format!(
         r#"
-        use miden::protocol::active_account
+        use miden::protocol::faucet
 
         begin
-            exec.active_account::has_callbacks
+            exec.faucet::has_callbacks
             push.{has_callbacks}
             assert_eq.err="has_callbacks returned unexpected value"
         end
