@@ -1,4 +1,5 @@
 use miden::protocol::account_id
+use miden::protocol::util::asset
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
@@ -511,7 +512,7 @@ pub proc get_balance
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    push.0.0
+    exec.asset::create_fungible_key
     # => [ASSET_KEY]
 
     exec.get_asset
@@ -543,7 +544,7 @@ pub proc get_initial_balance
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
     # => [faucet_id_suffix, faucet_id_prefix]
 
-    push.0.0
+    exec.asset::create_fungible_key
     # => [ASSET_KEY]
 
     exec.get_initial_asset
