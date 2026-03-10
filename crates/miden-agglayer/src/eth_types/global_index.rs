@@ -57,21 +57,51 @@ impl GlobalIndex {
     /// - The mainnet flag (limb 5, bytes 20-23) is exactly 1
     /// - The rollup index (limb 6, bytes 24-27) is 0
     pub fn validate_mainnet(&self) -> Result<(), GlobalIndexError> {
-        // Check limbs 0-4 are zero (bytes 0-19)
-        if self.0[0..20].iter().any(|&b| b != 0) {
-            return Err(GlobalIndexError::LeadingBitsNonZero);
-        }
+        self.validate_leading_bits()?;
 
-        // Check mainnet flag limb (bytes 20-23) is exactly 1
         if !self.is_mainnet() {
             return Err(GlobalIndexError::InvalidMainnetFlag);
         }
 
-        // Check rollup index is zero (bytes 24-27)
-        if u32::from_be_bytes([self.0[24], self.0[25], self.0[26], self.0[27]]) != 0 {
+        if self.rollup_index() != 0 {
             return Err(GlobalIndexError::RollupIndexNonZero);
         }
 
+        Ok(())
+    }
+
+    /// Validates that this is a valid rollup deposit global index.
+    ///
+    /// Checks that:
+    /// - The top 160 bits (limbs 0-4, bytes 0-19) are zero
+    /// - The mainnet flag (limb 5, bytes 20-23) is exactly 0
+    pub fn validate_rollup(&self) -> Result<(), GlobalIndexError> {
+        self.validate_leading_bits()?;
+
+        if self.is_mainnet() {
+            return Err(GlobalIndexError::InvalidMainnetFlag);
+        }
+
+        Ok(())
+    }
+
+    /// Validates this global index based on its mainnet flag.
+    ///
+    /// Dispatches to [`validate_mainnet`](Self::validate_mainnet) or
+    /// [`validate_rollup`](Self::validate_rollup).
+    pub fn validate(&self) -> Result<(), GlobalIndexError> {
+        if self.is_mainnet() {
+            self.validate_mainnet()
+        } else {
+            self.validate_rollup()
+        }
+    }
+
+    /// Validates that the leading 160 bits (bytes 0-19) are zero.
+    fn validate_leading_bits(&self) -> Result<(), GlobalIndexError> {
+        if self.0[0..20].iter().any(|&b| b != 0) {
+            return Err(GlobalIndexError::LeadingBitsNonZero);
+        }
         Ok(())
     }
 
@@ -106,6 +136,63 @@ mod tests {
     use miden_core::FieldElement;
 
     use super::*;
+
+    #[test]
+    fn test_rollup_global_index_validation() {
+        // Rollup global index: mainnet_flag=0, rollup_index=5, leaf_index=42
+        // Format: (rollup_index << 32) | leaf_index
+        let mut bytes = [0u8; 32];
+        // mainnet flag = 0 (bytes 20-23): already zero
+        // rollup index = 5 (bytes 24-27, BE)
+        bytes[27] = 5;
+        // leaf index = 42 (bytes 28-31, BE)
+        bytes[31] = 42;
+
+        let gi = GlobalIndex::new(bytes);
+
+        assert!(!gi.is_mainnet());
+        assert_eq!(gi.rollup_index(), 5);
+        assert_eq!(gi.leaf_index(), 42);
+        assert!(gi.validate_rollup().is_ok());
+        assert!(gi.validate().is_ok());
+
+        // Should fail mainnet validation
+        assert_eq!(gi.validate_mainnet(), Err(GlobalIndexError::InvalidMainnetFlag));
+    }
+
+    #[test]
+    fn test_rollup_global_index_rejects_leading_bits() {
+        let mut bytes = [0u8; 32];
+        bytes[3] = 1; // non-zero leading bits
+        bytes[27] = 5; // rollup index = 5
+        bytes[31] = 42; // leaf index = 42
+
+        let gi = GlobalIndex::new(bytes);
+        assert_eq!(gi.validate_rollup(), Err(GlobalIndexError::LeadingBitsNonZero));
+        assert_eq!(gi.validate(), Err(GlobalIndexError::LeadingBitsNonZero));
+    }
+
+    #[test]
+    fn test_rollup_global_index_various_indices() {
+        // Test with larger rollup index and leaf index values
+        let test_cases = [
+            (1u32, 0u32),  // first rollup, first leaf
+            (7, 1000),     // rollup 7, leaf 1000
+            (100, 999999), // larger values
+        ];
+
+        for (rollup_idx, leaf_idx) in test_cases {
+            let mut bytes = [0u8; 32];
+            bytes[24..28].copy_from_slice(&rollup_idx.to_be_bytes());
+            bytes[28..32].copy_from_slice(&leaf_idx.to_be_bytes());
+
+            let gi = GlobalIndex::new(bytes);
+            assert!(!gi.is_mainnet());
+            assert_eq!(gi.rollup_index(), rollup_idx);
+            assert_eq!(gi.leaf_index(), leaf_idx);
+            assert!(gi.validate_rollup().is_ok());
+        }
+    }
 
     #[test]
     fn test_mainnet_global_indices_from_production() {

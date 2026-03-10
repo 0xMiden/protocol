@@ -107,6 +107,7 @@ fn merkle_proof_verification_code(
 #[rstest::rstest]
 #[case::real(ClaimDataSource::Real)]
 #[case::simulated(ClaimDataSource::Simulated)]
+#[case::rollup(ClaimDataSource::Rollup)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     use miden_protocol::account::auth::AuthScheme;
@@ -167,8 +168,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .to_account_id()
         .expect("destination address is not an embedded Miden AccountId");
 
-    // For the simulated case, create the destination account so we can consume the P2ID note
-    let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
+    // For the simulated/rollup case, create the destination account so we can consume the P2ID note
+    let destination_account = if matches!(
+        data_source,
+        ClaimDataSource::Simulated | ClaimDataSource::Rollup
+    ) {
         use miden_standards::testing::mock_account::MockAccountExt;
 
         let dest =
