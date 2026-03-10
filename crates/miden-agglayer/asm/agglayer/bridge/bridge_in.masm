@@ -27,11 +27,11 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 
 # Memory pointers for proof data layout
 const PROOF_DATA_PTR = 0
-const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
+const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = PROOF_DATA_PTR # local SMT proof is first
 const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
 const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
 const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
-const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = 256 # rollup SMT proof starts after local
+const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = SMT_PROOF_LOCAL_EXIT_ROOT_PTR + 256 # rollup SMT proof starts after local
 const ROLLUP_EXIT_ROOT_PTR = EXIT_ROOTS_PTR + 8 # 528
 
 # the memory address where leaf data is stored for get_leaf_value
