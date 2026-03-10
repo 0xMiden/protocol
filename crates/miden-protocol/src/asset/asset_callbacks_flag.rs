@@ -1,4 +1,4 @@
-use std::string::ToString;
+use alloc::string::ToString;
 
 use crate::errors::AssetError;
 use crate::utils::serde::{

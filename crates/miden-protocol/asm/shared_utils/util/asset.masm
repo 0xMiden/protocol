@@ -205,17 +205,27 @@ end
 
 #! Creates a fungible asset vault key for the specified faucet.
 #!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [ASSET_KEY]
 #!
 #! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
 #! - ASSET_KEY is the vault key for the fungible asset.
 #!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+#!
 #! Invocation: exec
 pub proc create_fungible_key
+    exec.create_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
+
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
     push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # => [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]
     # => [ASSET_KEY]
 end
 
@@ -239,17 +249,11 @@ end
 #!
 #! Invocation: exec
 pub proc create_fungible_asset_unchecked
-    # convert enable_callbacks flag to asset_metadata
-    exec.create_metadata
-    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, amount]
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 
-    # merge metadata into lower 8 bits of faucet_id_suffix
-    add
-    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, amount]
-
-    # create the key and value
-    repeat.3 push.0 movdn.3 end
-    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_VALUE]
+    # pad amount into ASSET_VALUE
+    repeat.3 push.0 movdn.4 end
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
 
     exec.create_fungible_key
     # => [ASSET_KEY, ASSET_VALUE]
