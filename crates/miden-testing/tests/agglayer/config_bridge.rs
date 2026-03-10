@@ -1,14 +1,10 @@
 extern crate alloc;
 
-use miden_agglayer::{
-    AggLayerBridge,
-    ConfigAggBridgeNote,
-    create_existing_bridge_account,
-    create_id_key,
-};
+use miden_agglayer::{AggLayerBridge, ConfigAggBridgeNote, create_existing_bridge_account};
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
 use miden_testing::{Auth, MockChain};
@@ -53,7 +49,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
 
     // Verify the faucet is NOT in the registry before registration
     let registry_slot_name = AggLayerBridge::faucet_registry_slot_name();
-    let key = create_id_key(faucet_to_register);
+    let key = AccountIdKey::new(faucet_to_register).as_word();
     let value_before = bridge_account.storage().get_map_item(registry_slot_name, key)?;
     assert_eq!(
         value_before,

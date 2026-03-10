@@ -21,6 +21,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
@@ -219,8 +220,8 @@ impl AggLayerBridge {
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = create_id_key(bridge.bridge_admin_id);
-        let ger_manager_word = create_id_key(bridge.ger_manager_id);
+        let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
+        let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
 
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
@@ -388,7 +389,7 @@ impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
         let metadata_slot = StorageSlot::from(faucet.metadata);
 
-        let bridge_account_id_word = create_id_key(faucet.bridge_account_id);
+        let bridge_account_id_word = AccountIdKey::new(faucet.bridge_account_id).as_word();
         let bridge_slot =
             StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
 
@@ -406,16 +407,6 @@ impl From<AggLayerFaucet> for AccountComponent {
             vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
         agglayer_faucet_component(agglayer_storage_slots)
     }
-}
-
-// FAUCET REGISTRY HELPERS
-// ================================================================================================
-
-/// Creates a Word key from an account ID: `[0, 0, suffix, prefix]`.
-///
-/// This matches the canonical `AccountIdKey` layout used for account tree lookups.
-pub fn create_id_key(id: AccountId) -> Word {
-    Word::new([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()])
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS
