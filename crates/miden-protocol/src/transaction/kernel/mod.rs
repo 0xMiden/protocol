@@ -13,7 +13,7 @@ use crate::block::BlockNumber;
 use crate::crypto::SequentialCommit;
 use crate::errors::TransactionOutputError;
 use crate::protocol::ProtocolLib;
-use crate::transaction::{OutputNote, OutputNotes, TransactionInputs, TransactionOutputs};
+use crate::transaction::{RawOutputNote, RawOutputNotes, TransactionInputs, TransactionOutputs};
 use crate::utils::serde::Deserializable;
 use crate::utils::sync::LazyLock;
 use crate::vm::{AdviceInputs, Program, ProgramInfo, StackInputs, StackOutputs};
@@ -341,7 +341,7 @@ impl TransactionKernel {
     pub fn from_transaction_parts(
         stack: &StackOutputs,
         advice_inputs: &AdviceInputs,
-        output_notes: Vec<OutputNote>,
+        output_notes: Vec<RawOutputNote>,
     ) -> Result<TransactionOutputs, TransactionOutputError> {
         let (output_notes_commitment, account_update_commitment, fee, expiration_block_num) =
             Self::parse_output_stack(stack)?;
@@ -359,7 +359,7 @@ impl TransactionKernel {
             .map_err(TransactionOutputError::FinalAccountHeaderParseFailure)?;
 
         // validate output notes
-        let output_notes = OutputNotes::new(output_notes)?;
+        let output_notes = RawOutputNotes::new(output_notes)?;
         if output_notes_commitment != output_notes.commitment() {
             return Err(TransactionOutputError::OutputNotesCommitmentInconsistent {
                 actual: output_notes.commitment(),

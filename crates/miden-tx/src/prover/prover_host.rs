@@ -9,7 +9,7 @@ use miden_protocol::Word;
 use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
-use miden_protocol::transaction::{InputNote, InputNotes, OutputNote};
+use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
 
 use crate::host::{RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent};
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
@@ -54,7 +54,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<OutputNote>) {
+    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
         self.base_host.into_parts()
     }
 }
