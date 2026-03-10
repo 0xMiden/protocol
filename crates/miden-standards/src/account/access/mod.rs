@@ -12,7 +12,7 @@ pub enum AccessControl {
 impl From<AccessControl> for AccountComponent {
     fn from(access_control: AccessControl) -> Self {
         match access_control {
-            AccessControl::Ownable2Step { owner } => ownable2step::Ownable2Step::new(owner).into(),
+            AccessControl::Ownable2Step { owner } => Ownable2Step::new(owner).into(),
         }
     }
 }
