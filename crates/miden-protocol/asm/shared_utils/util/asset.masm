@@ -153,6 +153,22 @@ pub proc key_into_asset_id
     # => [asset_id_suffix, asset_id_prefix]
 end
 
+#! Creates a fungible asset vault key for the specified faucet.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
+#! - ASSET_KEY is the vault key for the fungible asset.
+#!
+#! Invocation: exec
+pub proc create_fungible_key
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # => [ASSET_KEY]
+end
+
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
 #! WARNING: Does not validate its inputs.
@@ -171,10 +187,9 @@ end
 pub proc create_fungible_asset_unchecked
     # create the key and value
     repeat.3 push.0 movdn.3 end
-    # => [faucet_id_suffix, faucet_id_prefix, [amount, 0, 0, 0]]
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
 
-    push.0.0
-    # => [[0, 0, faucet_id_suffix, faucet_id_prefix], ASSET_VALUE]
+    exec.create_fungible_key
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
