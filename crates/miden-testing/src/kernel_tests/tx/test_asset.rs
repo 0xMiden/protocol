@@ -44,8 +44,8 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
         begin
             exec.prologue::prepare_transaction
 
-            # create fungible asset
-            push.{FUNGIBLE_ASSET_AMOUNT}
+            # create fungible asset (enable_callbacks = 0)
+            push.{FUNGIBLE_ASSET_AMOUNT} push.0
             exec.faucet::create_fungible_asset
             # => [ASSET_KEY, ASSET_VALUE]
 
