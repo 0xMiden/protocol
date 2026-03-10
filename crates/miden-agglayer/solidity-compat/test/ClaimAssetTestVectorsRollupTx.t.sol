@@ -7,13 +7,20 @@ import "@agglayer/lib/GlobalExitRootLib.sol";
 import "./DepositContractTestHelpers.sol";
 
 /**
- * @title RollupDepositTree
- * @notice A separate deposit tree instance used to represent the rollup exit tree.
- *         Each leaf in this tree is a rollup's local exit root.
+ * @title RollupExitTree
+ * @notice Simulates the rollup exit tree from PolygonRollupManager.
+ *         Each registered rollup has a fixed slot (rollupID - 1). The tree is a depth-32
+ *         Merkle tree where unregistered positions contain zero leaves.
+ *         See PolygonRollupManager.getRollupExitRoot() for the production implementation.
  */
-contract RollupDepositTree is DepositContractBase, DepositContractTestHelpers {
-    function addLeaf(bytes32 leaf) external {
-        _addLeaf(leaf);
+contract RollupExitTree is DepositContractBase, DepositContractTestHelpers {
+    /// @notice Place a local exit root at a specific rollup index (= rollupID - 1).
+    ///         Earlier positions are filled with zero leaves (unregistered rollups).
+    function setLocalExitRootAt(bytes32 localExitRoot, uint256 rollupIndex) external {
+        for (uint256 i = 0; i < rollupIndex; i++) {
+            _addLeaf(bytes32(0));
+        }
+        _addLeaf(localExitRoot);
     }
 
     function generateProof(uint256 leafIndex) external view returns (bytes32[32] memory) {
@@ -27,6 +34,8 @@ contract RollupDepositTree is DepositContractBase, DepositContractTestHelpers {
  * @notice Test contract that generates test vectors for a rollup deposit (mainnet_flag=0).
  *         This simulates a deposit on a rollup chain whose local exit root is then included
  *         in the rollup exit tree, requiring two-level Merkle proof verification.
+ *
+ *         Uses non-zero leafIndex and indexRollup to exercise byte-ordering paths.
  *
  * Run with: forge test -vv --match-contract ClaimAssetTestVectorsRollupTx
  *
@@ -55,15 +64,19 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         bytes32 metadataHash = keccak256(metadata);
 
         // ====== STEP 1: BUILD THE ROLLUP'S LOCAL EXIT TREE ======
-        // Add the leaf to this contract's deposit tree (acting as the rollup's local exit tree)
+        // Add dummy leaves before the target to get a non-zero leafIndex,
+        // exercising byte-swap paths in the MASM verification.
 
         bytes32 leafValue = getLeafValue(
             leafType, originNetwork, originTokenAddress, destinationNetwork, destinationAddress, amount, metadataHash
         );
 
+        // Add 2 dummy deposits before the real one -> leafIndex = 2
+        _addLeaf(keccak256("dummy_deposit_0"));
+        _addLeaf(keccak256("dummy_deposit_1"));
         _addLeaf(leafValue);
 
-        uint256 leafIndex = depositCount - 1;
+        uint256 leafIndex = depositCount - 1; // = 2
         bytes32 localExitRoot = getRoot();
 
         // Generate the local exit root proof (leaf -> localExitRoot)
@@ -77,16 +90,15 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         );
 
         // ====== STEP 2: BUILD THE ROLLUP EXIT TREE ======
-        // The rollup exit tree contains local exit roots at positions corresponding to rollup indices.
-        // We use a separate DepositContractBase instance for this tree.
+        // The rollup exit tree is a sparse Merkle tree where each rollup has a fixed slot
+        // at position (rollupID - 1). We place our localExitRoot at indexRollup = 5
+        // (simulating rollupID = 6, with 5 earlier rollups having no bridge activity).
 
-        RollupDepositTree rollupTree = new RollupDepositTree();
+        RollupExitTree rollupTree = new RollupExitTree();
 
-        // The rollup index determines which position in the rollup exit tree this rollup's
-        // local exit root is placed at. We add the local exit root as the first leaf (index 0).
-        rollupTree.addLeaf(localExitRoot);
+        uint256 indexRollup = 5;
+        rollupTree.setLocalExitRootAt(localExitRoot, indexRollup);
 
-        uint256 indexRollup = rollupTree.depositCount() - 1; // = 0
         bytes32 rollupExitRoot = rollupTree.getRoot();
 
         // Generate the rollup exit root proof (localExitRoot -> rollupExitRoot)
@@ -145,7 +157,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
             vm.serializeBytes32(obj, "global_exit_root", globalExitRoot);
 
             string memory json = vm.serializeString(
-                obj, "description", "Rollup deposit test vectors with valid two-level Merkle proofs"
+                obj, "description", "Rollup deposit test vectors with valid two-level Merkle proofs (non-zero indices)"
             );
 
             string memory outputPath = "test-vectors/claim_asset_vectors_rollup_tx.json";

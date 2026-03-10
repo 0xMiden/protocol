@@ -342,16 +342,15 @@ proc verify_leaf
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
         # We need to save rollup_index while calculate_root runs.
         # calculate_root expects: [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_idx]
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
-        # Move rollup_index deep in the stack, past the leaf value
-        movdn.9
-        # => [leaf_index, LEAF_VALUE[8], rollup_index]
-
-        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR swap
-        # => [leaf_index, smt_proof_local_ptr, LEAF_VALUE[8], rollup_index]
-
-        # Rearrange for calculate_root: [LEAF_VALUE[8], smt_proof_local_ptr, leaf_index]
+        # Rearrange to: [LEAF_VALUE[8], smt_proof_local_ptr, leaf_index, rollup_index]
+        # First, move leaf_index and rollup_index past LEAF_VALUE
         movdn.9 movdn.9
+        # => [LEAF_VALUE[8], leaf_index, rollup_index]
+
+        # Insert smt_proof_local_ptr before leaf_index
+        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR movdn.8
         # => [LEAF_VALUE[8], smt_proof_local_ptr, leaf_index, rollup_index]
 
         exec.calculate_root
