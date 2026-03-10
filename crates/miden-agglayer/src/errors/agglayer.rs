@@ -16,8 +16,10 @@ pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::f
 /// Error Message: "B2AGG script requires exactly 1 note asset"
 pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("B2AGG script requires exactly 1 note asset");
 
-/// Error Message: "bridge not mainnet"
-pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
+/// Error Message: "mainnet flag must be 1 for a mainnet deposit"
+pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainnet flag must be 1 for a mainnet deposit");
+/// Error Message: "mainnet flag must be 0 for a rollup deposit"
+pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet flag must be 0 for a rollup deposit");
 
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");

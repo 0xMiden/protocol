@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 
 use miden_agglayer::errors::{
     ERR_BRIDGE_NOT_MAINNET,
+    ERR_BRIDGE_NOT_ROLLUP,
     ERR_LEADING_BITS_NON_ZERO,
     ERR_ROLLUP_INDEX_NON_ZERO,
 };
@@ -161,5 +162,5 @@ async fn test_process_global_index_rollup_rejects_mainnet_flag() {
     );
 
     let err = execute_program_with_default_host(program, None).await.map_err(ExecError::new);
-    assert_execution_error!(err, ERR_BRIDGE_NOT_MAINNET);
+    assert_execution_error!(err, ERR_BRIDGE_NOT_ROLLUP);
 }

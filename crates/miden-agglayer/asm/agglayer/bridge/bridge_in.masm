@@ -15,7 +15,8 @@ type MemoryAddress = u32
 # ERRORS
 # =================================================================================================
 
-const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
+const ERR_BRIDGE_NOT_MAINNET = "mainnet flag must be 1 for a mainnet deposit"
+const ERR_BRIDGE_NOT_ROLLUP = "mainnet flag must be 0 for a rollup deposit"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
@@ -158,7 +159,7 @@ pub proc process_global_index_rollup
     # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
     # so no swap is needed before asserting
     # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
-    assertz.err=ERR_BRIDGE_NOT_MAINNET
+    assertz.err=ERR_BRIDGE_NOT_ROLLUP
 
     # byte-swap rollup_index from LE to BE
     exec.utils::swap_u32_bytes
