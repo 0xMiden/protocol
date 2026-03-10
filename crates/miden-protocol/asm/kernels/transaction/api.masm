@@ -1502,6 +1502,10 @@ pub proc tx_exec_foreign_proc
     # end the foreign context
     exec.tx::end_foreign_context
     # => [foreign_procedure_outputs(16)]
+
+    # clear the foreign procedure ID and root in memory
+    exec.tx::clear_fpi_memory
+    # => [foreign_procedure_outputs(16)]
 end
 
 #! Updates the transaction expiration block delta.
