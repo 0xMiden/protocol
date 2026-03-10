@@ -51,13 +51,9 @@ pub proc update_ger
     exec.rpo256::merge
     # => [GER_HASH, pad(12)]
 
-    # get the reference block number
-    exec.tx::get_block_number
-    # => [block_num, GER_HASH, pad(12)]
-
     # prepare VALUE = [0, 0, block_num, GER_KNOWN_FLAG]
     push.GER_KNOWN_FLAG
-    swap
+    exec.tx::get_block_number
     push.0.0
     # => [0, 0, block_num, GER_KNOWN_FLAG, GER_HASH, pad(12)]
 
