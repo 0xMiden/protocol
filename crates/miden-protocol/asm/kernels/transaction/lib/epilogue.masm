@@ -49,7 +49,7 @@ const SMT_SET_ADDITIONAL_CYCLES=250
 # that this includes at least smt::set's best case number of cycles.
 # This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
 # to the lowest observed value.
-const NUM_POST_COMPUTE_FEE_CYCLES=510
+const NUM_POST_COMPUTE_FEE_CYCLES=608
 
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed.
 const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
