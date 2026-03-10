@@ -297,7 +297,7 @@ proc split_suffix_and_metadata
     # => [faucet_id_suffix, suffix_metadata_lo]
 
     # extract lower 8 bits of the lo part to get the metadata
-    swap u32and.0x000000ff
+    swap u32and.0xff
     # => [asset_metadata, faucet_id_suffix]
 end
 

@@ -60,24 +60,15 @@ pub proc on_before_asset_added_to_account
     # Look up in block list storage map
     push.BLOCK_LIST_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [MAP_VALUE, ASSET_KEY, ASSET_VALUE, pad(6)]
+    # => [IS_BLOCKED, ASSET_KEY, ASSET_VALUE, pad(6)]
 
-    # If value is non-zero, account is blocked.
-    # testz returns 1 if word is all zeros (not blocked), 0 otherwise (blocked).
-    # assert fails if top is 0, so blocked accounts cause a panic.
-    exec.word::testz
+    # If IS_BLOCKED is non-zero, account is blocked.
+    exec.word::eqz
     assert.err=ERR_ACCOUNT_BLOCKED
-    # => [ASSET_KEY, ASSET_VALUE, pad(6)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
-    # Drop ASSET_KEY, keep ASSET_VALUE on top
+    # drop unused asset key - auto pads to 12
     dropw
-    # => [ASSET_VALUE, pad(6)]
-
-    # Pad to 16 elements: need ASSET_VALUE(4) + pad(12), have pad(6), add 6 more
-    repeat.6
-        push.0
-        movdn.4
-    end
     # => [ASSET_VALUE, pad(12)]
 end
 "#;
@@ -334,11 +325,12 @@ async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
 
     // Try to consume the note on the blocked wallet - should fail because the callback
     // checks the block list and panics.
-    let consume_tx_context = mock_chain
+    let result = mock_chain
         .build_tx_context(target_account.id(), &[note.id()], &[])?
         .foreign_accounts(vec![faucet_inputs])
-        .build()?;
-    let result = consume_tx_context.execute().await;
+        .build()?
+        .execute()
+        .await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_BLOCKED);
 

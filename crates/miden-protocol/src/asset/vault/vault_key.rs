@@ -265,29 +265,30 @@ mod tests {
     };
 
     #[test]
-    fn asset_vault_key_word_roundtrip() {
-        let fungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-        let nonfungible_faucet =
-            AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
+    fn asset_vault_key_word_roundtrip() -> anyhow::Result<()> {
+        let fungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
+        let nonfungible_faucet = AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET)?;
 
         for callback_flag in [AssetCallbackFlag::Disabled, AssetCallbackFlag::Enabled] {
             // Fungible: asset_id must be zero.
-            let key =
-                AssetVaultKey::new(AssetId::default(), fungible_faucet, callback_flag).unwrap();
+            let key = AssetVaultKey::new(AssetId::default(), fungible_faucet, callback_flag)?;
 
-            let roundtripped = AssetVaultKey::try_from(key.to_word()).unwrap();
+            let roundtripped = AssetVaultKey::try_from(key.to_word())?;
             assert_eq!(key, roundtripped);
+            assert_eq!(key, AssetVaultKey::read_from_bytes(&key.to_bytes())?);
 
             // Non-fungible: asset_id can be non-zero.
             let key = AssetVaultKey::new(
                 AssetId::new(Felt::from(42u32), Felt::from(99u32)),
                 nonfungible_faucet,
                 callback_flag,
-            )
-            .unwrap();
+            )?;
 
-            let roundtripped = AssetVaultKey::try_from(key.to_word()).unwrap();
+            let roundtripped = AssetVaultKey::try_from(key.to_word())?;
             assert_eq!(key, roundtripped);
+            assert_eq!(key, AssetVaultKey::read_from_bytes(&key.to_bytes())?);
         }
+
+        Ok(())
     }
 }

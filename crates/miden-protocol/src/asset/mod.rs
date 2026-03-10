@@ -124,7 +124,7 @@ impl Asset {
 
     /// Returns true if this asset is the same as the specified asset.
     ///
-    /// Two assets are defined to be the same if their vault keys match
+    /// Two assets are defined to be the same if their vault keys match.
     pub fn is_same(&self, other: &Self) -> bool {
         self.vault_key() == other.vault_key()
     }
