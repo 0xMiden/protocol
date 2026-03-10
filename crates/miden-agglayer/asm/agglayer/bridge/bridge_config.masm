@@ -3,6 +3,7 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::native_account
+use miden::protocol::tx
 
 # ERRORS
 # =================================================================================================
@@ -31,7 +32,8 @@ const IS_FAUCET_REGISTERED_FLAG=1
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
 #! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
-#! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
+#! with value [GER_KNOWN_FLAG, block_num, 0, 0] to indicate the GER is known and
+#! record the block at which it was registered.
 #!
 #! Panics if the note sender is not the global exit root manager.
 #!
@@ -49,9 +51,15 @@ pub proc update_ger
     exec.rpo256::merge
     # => [GER_HASH, pad(12)]
 
-    # prepare VALUE = [0, 0, 0, GER_KNOWN_FLAG]
-    push.GER_KNOWN_FLAG.0.0.0
-    # => [0, 0, 0, GER_KNOWN_FLAG, GER_HASH, pad(12)]
+    # get the reference block number
+    exec.tx::get_block_number
+    # => [block_num, GER_HASH, pad(12)]
+
+    # prepare VALUE = [0, 0, block_num, GER_KNOWN_FLAG]
+    push.GER_KNOWN_FLAG
+    swap
+    push.0.0
+    # => [0, 0, block_num, GER_KNOWN_FLAG, GER_HASH, pad(12)]
 
     swapw
     # => [GER_HASH, VALUE, pad(12)]
@@ -86,13 +94,13 @@ pub proc assert_valid_ger
     # => [slot_id_prefix, slot_id_suffix, GER_HASH]
 
     exec.active_account::get_map_item
-    # => [VALUE]
+    # => [0, 0, block_num, GER_KNOWN_FLAG]
 
-    # assert the GER is known in storage (VALUE = [0, 0, 0, GER_KNOWN_FLAG])
-    push.GER_KNOWN_FLAG.0.0.0
-    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE]
+    # assert the GER is known in storage (check only the flag element)
+    drop drop drop
+    # => [GER_KNOWN_FLAG]
 
-    assert_eqw.err=ERR_GER_NOT_FOUND
+    assert.err=ERR_GER_NOT_FOUND
     # => []
 end
 

@@ -104,7 +104,9 @@ Asserts the note sender matches the bridge admin stored in
 Asserts the note sender matches the GER manager stored in
 `miden::agglayer::bridge::ger_manager`, then computes
 `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
-`KEY -> [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
+`KEY -> [1, block_num, 0, 0]` in the `ger` map slot, where `block_num` is the
+transaction's reference block number. This marks the GER as "known" and records
+when it was registered.
 
 #### `bridge_in::verify_leaf_bridge`
 
@@ -129,7 +131,7 @@ Verifies a bridge-in claim:
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
-| `miden::agglayer::bridge::ger` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
+| `miden::agglayer::bridge::ger` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, block_num, 0, 0]` if known (block_num = reference block at registration); `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
 | `miden::agglayer::let` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
 | `miden::agglayer::let::root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
 | `miden::agglayer::let::root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
