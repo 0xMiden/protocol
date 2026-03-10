@@ -299,15 +299,11 @@ proc verify_leaf
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
     # Determine if we're dealing with a deposit from mainnet or from a rollup.
-    # Peek at the mainnet flag (element 5, i.e. 3rd from the top of the 8-element index)
-    # to decide which branch to take, then pass the full index to the helper.
-    # The mainnet flag is at stack position 2 (after elements 0-4 were loaded as the
-    # first word + first element of the second word). Stack is:
-    # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
-    # where GLOBAL_INDEX = [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
-    # gi0 is on top. The mainnet flag is at position 5.
+    # The global index is laid out as:
+    # [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
+    # gi0 is on top (position 0). The mainnet flag is at MAINNET_FLAG_STACK_POS.
 
-    # Duplicate the mainnet flag element (position 5), byte-swap from LE to BE,
+    # Duplicate the mainnet flag element, byte-swap from LE to BE,
     # assert it is a valid boolean (0 or 1), then use it to branch.
     dup.5 exec.utils::swap_u32_bytes dup
     # => [mainnet_flag, mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
