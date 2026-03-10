@@ -356,9 +356,7 @@ pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
     # => []
 end
 
-# Computes the effective transaction threshold based on called procedures and per-procedure
-# overrides stored in PROC_THRESHOLD_ROOTS_SLOT. Falls back to default_threshold if no
-# overrides apply.
+# Computes the effective transaction threshold for multisig smart policy.
 #
 #! Inputs:  [default_threshold, spending_threshold]
 #! Outputs: [transaction_threshold]
@@ -368,14 +366,11 @@ end
 #! 0: default_threshold
 #! 1: spending_threshold
 @locals(2)
-proc compute_transaction_threshold(default_threshold: u32, spending_threshold: u32) -> u32
-    # 1. initialize transaction_threshold = 0
-    # 2. iterate through all account procedures
-    #   a. check if the procedure was called during the transaction
-    #   b. if called, get the override threshold of that procedure from the config map
-    #   c. if proc_threshold > transaction_threshold, set transaction_threshold = proc_threshold
-    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
-
+proc compute_tx_threshold_smart(default_threshold: u32, spending_threshold: u32) -> u32
+    # 1. compute max threshold override over called procedures
+    # 2. combine with spending threshold: combined = max(proc_override_max, spending_threshold)
+    # 3. if combined == 0, revert to using default_threshold
+    # 4. otherwise, use combined as effective transaction threshold
     # store default_threshold for later
     loc_store.0
     # => [spending_threshold]
@@ -384,85 +379,28 @@ proc compute_transaction_threshold(default_threshold: u32, spending_threshold: u
     loc_store.1
     # => []
 
-    # 1. initialize transaction_threshold = 0
-    push.0
-    # => [transaction_threshold]
-
-    # get the number of account procedures
-    exec.active_account::get_num_procedures
-    # => [num_procedures, transaction_threshold]
-
-    # 2. iterate through all account procedures
-    dup neq.0
-    # => [should_continue, num_procedures, transaction_threshold]
-    while.true
-        sub.1 dup
-        # => [num_procedures-1, num_procedures-1, transaction_threshold]
-
-        # get procedure root of the procedure with index i
-        exec.active_account::get_procedure_root dupw
-        # => [PROC_ROOT, PROC_ROOT, num_procedures-1, transaction_threshold]
-
-        # 2a. check if this procedure has been called in the transaction
-        exec.native_account::was_procedure_called
-        # => [was_called, PROC_ROOT, num_procedures-1, transaction_threshold]
-
-        # if it has been called, get the override threshold of that procedure
-        if.true
-            # => [PROC_ROOT, num_procedures-1, transaction_threshold]
-
-            push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
-            # => [proc_roots_slot_prefix, proc_roots_slot_suffix, PROC_ROOT, num_procedures-1, transaction_threshold]
-
-            # 2b. get the override proc_threshold of that procedure
-            # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
-            exec.active_account::get_initial_map_item
-            # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
-
-            movdn.3 drop drop drop dup dup.3
-            # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
-
-            u32assert2.err="transaction threshold or procedure threshold are not u32"
-            u32gt
-            # => [is_gt, proc_threshold, num_procedures-1, transaction_threshold]
-            # 2c. if proc_threshold > transaction_threshold, update transaction_threshold
-            movup.2 movdn.3
-            # => [is_gt, proc_threshold, transaction_threshold, num_procedures-1]
-            cdrop
-            # => [updated_transaction_threshold, num_procedures-1]
-            swap
-            # => [num_procedures-1, updated_transaction_threshold]
-        # if it has not been called during this transaction, nothing to do, move to the next procedure
-        else
-            dropw
-            # => [num_procedures-1, transaction_threshold]
-        end
-
-        dup neq.0
-        # => [should_continue, num_procedures-1, transaction_threshold]
-    end
-
-    drop
-    # => [transaction_threshold]
+    exec.multisig::compute_max_called_proc_threshold
+    # => [max_called_proc_threshold]
 
     loc_load.1
-    # => [spending_threshold, transaction_threshold]
+    # => [spending_threshold, max_called_proc_threshold]
 
     dup.1 dup.1
-    # => [spending_threshold, transaction_threshold, spending_threshold, transaction_threshold]
+    # => [spending_threshold, max_called_proc_threshold, spending_threshold, max_called_proc_threshold]
     
     swap
-    # => [transaction_threshold, spending_threshold, spending_threshold, transaction_threshold]
+    # => [max_called_proc_threshold, spending_threshold, spending_threshold, max_called_proc_threshold]
     
     u32gt
-    # => [is_spending_gt, spending_threshold, transaction_threshold]
+    # => [is_spending_gt, spending_threshold, max_called_proc_threshold]
+    
     cdrop
     # => [combined_threshold]
 
     loc_load.0
     # => [default_threshold, combined_threshold]
 
-    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+    # if both procedure max and spending thresholds are zero, revert to default
     dup.1 eq.0
     # => [is_zero, default_threshold, combined_threshold]
 
@@ -1572,7 +1510,7 @@ proc auth_tx_multisig_smart_inner(salt: word)
     swap
     # => [default_threshold, spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    exec.compute_transaction_threshold
+    exec.compute_tx_threshold_smart
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     u32assert2 u32lt
