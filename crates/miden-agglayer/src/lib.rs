@@ -91,6 +91,11 @@ fn agglayer_bridge_component_library() -> Library {
     BRIDGE_COMPONENT_LIBRARY.clone()
 }
 
+/// Returns the commitment of the Bridge component library.
+fn agglayer_bridge_component_library_commitment() -> Word {
+    *BRIDGE_COMPONENT_LIBRARY.digest()
+}
+
 /// Returns the Faucet component library.
 fn agglayer_faucet_component_library() -> Library {
     FAUCET_COMPONENT_LIBRARY.clone()
@@ -236,14 +241,13 @@ impl AggLayerBridge {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
-    ///   all AggLayer Bridge specific storage slots).
+    /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn is_ger_registered(
         ger: ExitRoot,
         bridge_account: Account,
     ) -> Result<bool, AgglayerBridgeError> {
         // check that the provided account is a bridge account
-        Self::assert_storage_slots(&bridge_account)?;
+        Self::assert_bridge_account(&bridge_account)?;
 
         // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
         let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
@@ -286,11 +290,10 @@ impl AggLayerBridge {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
-    ///   all AggLayer Bridge specific storage slots).
+    /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn read_local_exit_root(account: &Account) -> Result<Vec<Felt>, AgglayerBridgeError> {
         // check that the provided account is a bridge account
-        Self::assert_storage_slots(account)?;
+        Self::assert_bridge_account(account)?;
 
         let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
         let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
@@ -311,6 +314,7 @@ impl AggLayerBridge {
         Ok(root)
     }
 
+    /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
     pub fn read_let_num_leaves(account: &Account) -> u64 {
         let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
         let value = account
@@ -323,6 +327,24 @@ impl AggLayerBridge {
     // HELPER FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
+    /// Checks that the provided account is an [`AggLayerBridge`] account.
+    /// 
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account does not have all AggLayer Bridge specific storage slots.
+    /// - the code commitment of the provided account does not match the code commitment of the
+    ///   AggLayer Bridge account.
+    fn assert_bridge_account(account: &Account) -> Result<(), AgglayerBridgeError> {
+        // check that the storage slots are as expected
+        Self::assert_storage_slots(account)?;
+
+        // check that the code commitment matches the AggLayer bridge's code commitment
+        Self::assert_code_commitment(account)?;
+
+        Ok(())
+    }
+
     /// Checks that the provided account has all storage slots required for the [`AggLayerBridge`].
     ///
     /// # Errors
@@ -332,18 +354,35 @@ impl AggLayerBridge {
     ///   all AggLayer Bridge specific storage slots).
     fn assert_storage_slots(account: &Account) -> Result<(), AgglayerBridgeError> {
         // get the storage slot names of the provided account
-        let account_storage_slot_names = account
+        let account_storage_slot_names: Vec<&StorageSlotName> = account
             .storage()
             .slots()
             .iter()
             .map(|storage_slot| storage_slot.name())
             .collect::<Vec<&StorageSlotName>>();
 
+        // check that all bridge specific storage slots are presented in the provided account
         let are_slots_presented = Self::slot_names_vec()
             .iter()
             .all(|slot_name| account_storage_slot_names.contains(slot_name));
         if !are_slots_presented {
-            return Err(AgglayerBridgeError::ProvidedAccountIsNotAggLayerBridge);
+            return Err(AgglayerBridgeError::StorageSlotsMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the code commitment of the provided account matches the code commitment of the
+    /// AggLayer Bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the code commitment of the provided account does not match the code commitment of the
+    ///   AggLayer Bridge account.
+    fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
+        if agglayer_bridge_component_library_commitment() != account.code().commitment() {
+            return Err(AgglayerBridgeError::CodeCommitmentMismatch)
         }
 
         Ok(())
@@ -416,7 +455,9 @@ fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponen
 #[derive(Debug, Error)]
 pub enum AgglayerBridgeError {
     #[error("provided account does not have storage slots required for the AggLayerBridge account")]
-    ProvidedAccountIsNotAggLayerBridge,
+    StorageSlotsMismatch,
+    #[error("code commitment of the provided account does not match the code commitment of the AggLayerBridge account")]
+    CodeCommitmentMismatch,
 }
 
 // FAUCET CONVERSION STORAGE HELPERS

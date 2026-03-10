@@ -98,8 +98,6 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
     let is_registered = AggLayerBridge::is_ger_registered(ger, updated_bridge_account)?;
-    println!("GER registered: {is_registered}");
-
     assert!(is_registered, "GER was not registered in the bridge account");
 
     Ok(())
