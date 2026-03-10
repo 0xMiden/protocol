@@ -54,6 +54,7 @@ Active account procedures can be used to read from storage, fetch or compute com
 | `get_num_procedures`             | Returns the number of procedures in the active account.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[num_procedures]`                                                                                     | Any              |
 | `get_procedure_root`             | Returns the procedure root for the procedure at the specified index.<br/><br/>**Inputs:** `[index]`<br/>**Outputs:** `[PROC_ROOT]`                                                                         | Any              |
 | `has_procedure`                  | Returns the binary flag indicating whether the procedure with the provided root is available on the active account.<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[is_procedure_available]`                           | Any |
+| `has_callbacks`                  | Returns whether the active account defines callbacks.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[has_callbacks]`                           | Any |
 
 ## Native account Procedures (`miden::protocol::native_account`)
 
@@ -150,7 +151,7 @@ Faucet procedures allow reading and writing to faucet accounts to mint and burn 
 
 | Procedure                      | Description                                                                                                                                                                | Context                   |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `create_fungible_asset`        | Creates a fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`                              | Faucet                    |
+| `create_fungible_asset`        | Creates a fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[enable_callbacks, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`                              | Faucet                    |
 | `create_non_fungible_asset`    | Creates a non-fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`                       | Faucet                    |
 | `mint`                         | Mint an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[NEW_ASSET_VALUE]`                                         | Native & Account & Faucet |
 | `burn`                         | Burn an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[ASSET_VALUE]`                                         | Native & Account & Faucet |
@@ -161,5 +162,5 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 | Procedure                  | Description                                                                                                                                                          | Context |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]` | Any     |
+| `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]` | Any     |
 | `create_non_fungible_asset` | Builds a non-fungible asset for the specified non-fungible faucet and data hash.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`     | Any     |
