@@ -116,8 +116,8 @@ pub const ERR_INPUT_NOTE_INDEX_OUT_OF_BOUNDS: MasmError = MasmError::from_static
 /// Error Message: "provided kernel procedure offset is out of bounds"
 pub const ERR_KERNEL_PROCEDURE_OFFSET_OUT_OF_BOUNDS: MasmError = MasmError::from_static_str("provided kernel procedure offset is out of bounds");
 
-/// Error Message: "map cannot be empty when proving absence after an entry"
-pub const ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY: MasmError = MasmError::from_static_str("map cannot be empty when proving absence after an entry");
+/// Error Message: "empty map requires operation InsertAtHead for set or AbsentAtHead for get"
+pub const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION: MasmError = MasmError::from_static_str("empty map requires operation InsertAtHead for set or AbsentAtHead for get");
 /// Error Message: "host-provided entry ptr is not 'link map entry'-aligned"
 pub const ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED: MasmError = MasmError::from_static_str("host-provided entry ptr is not 'link map entry'-aligned");
 /// Error Message: "host-provided entry ptr is outside the valid memory region"
