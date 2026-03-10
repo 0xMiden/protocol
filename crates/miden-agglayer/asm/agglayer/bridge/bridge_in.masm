@@ -25,29 +25,30 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 # CONSTANTS
 # =================================================================================================
 
-# Memory pointers for proof data layout
+# Memory layout for proof data (loaded from advice map via pipe_preimage_to_memory).
+# The proof data occupies addresses [PROOF_DATA_PTR .. PROOF_DATA_PTR + 535]:
+#   [0..255]   smtProofLocalExitRoot  (256 felts = 32 Keccak256 nodes)
+#   [256..511] smtProofRollupExitRoot (256 felts = 32 Keccak256 nodes)
+#   [512..519] globalIndex            (8 felts)
+#   [520..527] mainnetExitRoot        (8 felts)
+#   [528..535] rollupExitRoot         (8 felts)
 const PROOF_DATA_PTR = 0
-const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = PROOF_DATA_PTR # local SMT proof is first
-const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
-const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
-const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
-const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = SMT_PROOF_LOCAL_EXIT_ROOT_PTR + 256 # rollup SMT proof starts after local
-const ROLLUP_EXIT_ROOT_PTR = EXIT_ROOTS_PTR + 8 # 528
+const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = PROOF_DATA_PTR
+const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = SMT_PROOF_LOCAL_EXIT_ROOT_PTR + 256
+const GLOBAL_INDEX_PTR = SMT_PROOF_ROLLUP_EXIT_ROOT_PTR + 256
+const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8
+const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR
+const ROLLUP_EXIT_ROOT_PTR = EXIT_ROOTS_PTR + 8
 
-# the memory address where leaf data is stored for get_leaf_value
+# Memory layout for leaf data (loaded separately via get_leaf_value)
 const LEAF_DATA_START_PTR = 0
 
-# The offset of the first half of the current Keccak256 hash value in the local memory of the
-# `calculate_root` procedure.
+# Local memory offsets for the `calculate_root` procedure's current hash
 const CUR_HASH_LO_LOCAL = 0
-
-# The offset of the second half of the current Keccak256 hash value in the local memory of the
-# `calculate_root` procedure.
 const CUR_HASH_HI_LOCAL = 4
 
 # Data sizes
 const PROOF_DATA_WORD_LEN = 134
-# the number of words (4 felts each) in the advice map leaf data
 const LEAF_DATA_NUM_WORDS = 8
 
 # PUBLIC INTERFACE
