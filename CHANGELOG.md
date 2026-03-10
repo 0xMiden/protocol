@@ -31,6 +31,7 @@
 - Added PSM authentication procedures and integrated them into `AuthMultisig` ([#2527](https://github.com/0xMiden/protocol/pull/2527)).
 - Added `CodeBuilder::with_warnings_as_errors()` to promote assembler warning diagnostics to errors ([#2558](https://github.com/0xMiden/protocol/pull/2558)).
 - Added `MockChain::add_pending_batch()` to allow submitting user batches directly ([#2565](https://github.com/0xMiden/protocol/pull/2565)).
+- Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
 
 ### Changes
 

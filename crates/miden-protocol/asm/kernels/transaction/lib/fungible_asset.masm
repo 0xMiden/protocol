@@ -7,6 +7,7 @@ use $kernel::asset
 # RE-EXPORTS
 # =================================================================================================
 
+pub use $kernel::util::asset::create_fungible_key->create_key
 pub use $kernel::util::asset::create_fungible_asset_unchecked->create_unchecked
 pub use $kernel::util::asset::fungible_to_amount->to_amount
 pub use $kernel::util::asset::fungible_value_into_amount->value_into_amount
