@@ -111,7 +111,6 @@ impl NoteAssets {
             Asset::NonFungible(non_fungible_asset) => Some(*non_fungible_asset),
         })
     }
-
 }
 
 impl PartialEq for NoteAssets {

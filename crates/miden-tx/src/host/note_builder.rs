@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use miden_protocol::asset::Asset;
+use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
     Note,
     NoteAssets,
@@ -12,7 +13,6 @@ use miden_protocol::note::{
 
 use super::{RawOutputNote, Word};
 use crate::errors::TransactionKernelError;
-use miden_protocol::errors::NoteError;
 
 // OUTPUT NOTE BUILDER
 // ================================================================================================
