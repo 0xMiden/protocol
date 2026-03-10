@@ -166,15 +166,14 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets were not issued by the same faucet.
+    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
     /// - The total value of assets is greater than or equal to 2^63.
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
-        // TODO(callbacks): Return callback flags as well in error.
         if !self.is_same(&other) {
-            return Err(AssetError::FungibleAssetInconsistentFaucetIds {
-                original_issuer: self.faucet_id,
-                other_issuer: other.faucet_id,
+            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
+                original_key: self.vault_key(),
+                other_key: other.vault_key(),
             });
         }
 
@@ -197,15 +196,14 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets were not issued by the same faucet.
+    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
     /// - The final amount would be negative.
     #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
-        // TODO(callbacks): Return callback flags as well in error.
         if !self.is_same(&other) {
-            return Err(AssetError::FungibleAssetInconsistentFaucetIds {
-                original_issuer: self.faucet_id,
-                other_issuer: other.faucet_id,
+            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
+                original_key: self.vault_key(),
+                other_key: other.vault_key(),
             });
         }
 
