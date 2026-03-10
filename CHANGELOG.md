@@ -102,6 +102,7 @@
 - Moved `AccountSchemaCommitment` component into a sub-module ([#2603](https://github.com/0xMiden/protocol/pull/2603)).
 - Added foreign account ID assertion in `account::load_foreign_account` ([#2560](https://github.com/0xMiden/protocol/pull/2560)).
 - Fixed overlap in initial and active account storage slot memory region ([#2557](https://github.com/0xMiden/protocol/pull/2557)).
+- Fixed link map entry pointer validation bypass ([#2556](https://github.com/0xMiden/protocol/pull/2556)).
 
 ## 0.13.3 (2026-01-27)
 
