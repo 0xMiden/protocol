@@ -13,7 +13,7 @@ use miden_protocol::utils::{HexParseError, hex_to_bytes};
 pub enum GlobalIndexError {
     /// The leading 160 bits of the global index are not zero.
     LeadingBitsNonZero,
-    /// The mainnet flag is not 1.
+    /// The mainnet flag is not a valid boolean (must be exactly 0 or 1).
     InvalidMainnetFlag,
     /// The rollup index is not zero for a mainnet deposit.
     RollupIndexNonZero,
@@ -50,59 +50,37 @@ impl GlobalIndex {
         Self(bytes)
     }
 
-    /// Validates that this is a valid mainnet deposit global index.
+    /// Validates this global index.
     ///
     /// Checks that:
-    /// - The top 160 bits (limbs 0-4, bytes 0-19) are zero
-    /// - The mainnet flag (limb 5, bytes 20-23) is exactly 1
-    /// - The rollup index (limb 6, bytes 24-27) is 0
-    pub fn validate_mainnet(&self) -> Result<(), GlobalIndexError> {
-        self.validate_leading_bits()?;
+    /// - The top 160 bits (bytes 0-19) are zero
+    /// - The mainnet flag (bytes 20-23) is exactly 0 or 1
+    /// - For mainnet deposits (flag = 1): the rollup index is 0
+    pub fn validate(&self) -> Result<(), GlobalIndexError> {
+        // Check leading 160 bits are zero
+        if self.0[0..20].iter().any(|&b| b != 0) {
+            return Err(GlobalIndexError::LeadingBitsNonZero);
+        }
 
-        if !self.is_mainnet() {
+        // Check mainnet flag is a valid boolean (exactly 0 or 1)
+        let flag = self.mainnet_flag();
+        if flag > 1 {
             return Err(GlobalIndexError::InvalidMainnetFlag);
         }
 
-        if self.rollup_index() != 0 {
+        // For mainnet deposits, rollup index must be zero
+        if flag == 1 && self.rollup_index() != 0 {
             return Err(GlobalIndexError::RollupIndexNonZero);
         }
 
         Ok(())
     }
 
-    /// Validates that this is a valid rollup deposit global index.
+    /// Returns the raw mainnet flag value (limb 5, bytes 20-23).
     ///
-    /// Checks that:
-    /// - The top 160 bits (limbs 0-4, bytes 0-19) are zero
-    /// - The mainnet flag (limb 5, bytes 20-23) is exactly 0
-    pub fn validate_rollup(&self) -> Result<(), GlobalIndexError> {
-        self.validate_leading_bits()?;
-
-        if self.is_mainnet() {
-            return Err(GlobalIndexError::InvalidMainnetFlag);
-        }
-
-        Ok(())
-    }
-
-    /// Validates this global index based on its mainnet flag.
-    ///
-    /// Dispatches to [`validate_mainnet`](Self::validate_mainnet) or
-    /// [`validate_rollup`](Self::validate_rollup).
-    pub fn validate(&self) -> Result<(), GlobalIndexError> {
-        if self.is_mainnet() {
-            self.validate_mainnet()
-        } else {
-            self.validate_rollup()
-        }
-    }
-
-    /// Validates that the leading 160 bits (bytes 0-19) are zero.
-    fn validate_leading_bits(&self) -> Result<(), GlobalIndexError> {
-        if self.0[0..20].iter().any(|&b| b != 0) {
-            return Err(GlobalIndexError::LeadingBitsNonZero);
-        }
-        Ok(())
+    /// Valid values are 0 (rollup) or 1 (mainnet).
+    pub fn mainnet_flag(&self) -> u32 {
+        u32::from_be_bytes([self.0[20], self.0[21], self.0[22], self.0[23]])
     }
 
     /// Returns the leaf index (limb 7, lowest 32 bits).
@@ -117,7 +95,7 @@ impl GlobalIndex {
 
     /// Returns true if this is a mainnet deposit (mainnet flag = 1).
     pub fn is_mainnet(&self) -> bool {
-        u32::from_be_bytes([self.0[20], self.0[21], self.0[22], self.0[23]]) == 1
+        self.mainnet_flag() == 1
     }
 
     /// Converts to field elements for note storage / MASM processing.
@@ -153,11 +131,8 @@ mod tests {
         assert!(!gi.is_mainnet());
         assert_eq!(gi.rollup_index(), 5);
         assert_eq!(gi.leaf_index(), 42);
-        assert!(gi.validate_rollup().is_ok());
         assert!(gi.validate().is_ok());
-
-        // Should fail mainnet validation
-        assert_eq!(gi.validate_mainnet(), Err(GlobalIndexError::InvalidMainnetFlag));
+        assert!(gi.validate().is_ok());
     }
 
     #[test]
@@ -168,7 +143,7 @@ mod tests {
         bytes[31] = 42; // leaf index = 42
 
         let gi = GlobalIndex::new(bytes);
-        assert_eq!(gi.validate_rollup(), Err(GlobalIndexError::LeadingBitsNonZero));
+        assert_eq!(gi.validate(), Err(GlobalIndexError::LeadingBitsNonZero));
         assert_eq!(gi.validate(), Err(GlobalIndexError::LeadingBitsNonZero));
     }
 
@@ -190,7 +165,7 @@ mod tests {
             assert!(!gi.is_mainnet());
             assert_eq!(gi.rollup_index(), rollup_idx);
             assert_eq!(gi.leaf_index(), leaf_idx);
-            assert!(gi.validate_rollup().is_ok());
+            assert!(gi.validate().is_ok());
         }
     }
 
@@ -209,7 +184,7 @@ mod tests {
             let gi = GlobalIndex::from_hex(hex).expect("valid hex");
 
             // Validate as mainnet
-            assert!(gi.validate_mainnet().is_ok(), "should be valid mainnet global index");
+            assert!(gi.validate().is_ok(), "should be valid mainnet global index");
 
             // Construction sanity checks
             assert!(gi.is_mainnet());
@@ -237,5 +212,16 @@ mod tests {
                 Felt::new(u32::from_le_bytes(expected_leaf_index.to_be_bytes()) as u64)
             );
         }
+    }
+
+    #[test]
+    fn test_invalid_mainnet_flag_rejected() {
+        // mainnet flag = 3 (invalid, must be 0 or 1)
+        let mut bytes = [0u8; 32];
+        bytes[23] = 3;
+        bytes[31] = 2;
+
+        let gi = GlobalIndex::new(bytes);
+        assert_eq!(gi.validate(), Err(GlobalIndexError::InvalidMainnetFlag));
     }
 }
