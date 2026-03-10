@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::string::ToString;
 use core::fmt;
 
 use miden_core::LexicographicWord;
@@ -10,6 +11,13 @@ use crate::asset::vault::AssetId;
 use crate::asset::{Asset, AssetCallbacksFlag, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 /// The unique identifier of an [`Asset`] in the [`AssetVault`](crate::asset::AssetVault).
@@ -36,6 +44,11 @@ pub struct AssetVaultKey {
 }
 
 impl AssetVaultKey {
+    /// The serialized size of an [`AssetVaultKey`] in bytes.
+    ///
+    /// Serialized as its [`Word`] representation (4 field elements).
+    pub const SERIALIZED_SIZE: usize = Word::SERIALIZED_SIZE;
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -216,6 +229,26 @@ impl From<FungibleAsset> for AssetVaultKey {
 impl From<NonFungibleAsset> for AssetVaultKey {
     fn from(non_fungible_asset: NonFungibleAsset) -> Self {
         non_fungible_asset.vault_key()
+    }
+}
+
+// SERIALIZATION
+// ================================================================================================
+
+impl Serializable for AssetVaultKey {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
+        self.to_word().write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Self::SERIALIZED_SIZE
+    }
+}
+
+impl Deserializable for AssetVaultKey {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
+        let word: Word = source.read()?;
+        Self::try_from(word).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
 }
 

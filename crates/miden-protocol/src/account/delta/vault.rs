@@ -13,7 +13,7 @@ use super::{
 };
 use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
-use crate::{Felt, ONE, Word, ZERO};
+use crate::{Felt, ONE, ZERO};
 
 // ACCOUNT VAULT DELTA
 // ================================================================================================
@@ -360,15 +360,11 @@ impl Serializable for FungibleAssetDelta {
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
         //   We should update this code (and deserialization as well) once it supports signed
         //   integers.
-        for (vault_key, &delta) in self.0.iter() {
-            vault_key.to_word().write_into(target);
-            (delta as u64).write_into(target);
-        }
+        target.write_many(self.0.iter().map(|(vault_key, &delta)| (*vault_key, delta as u64)));
     }
 
     fn get_size_hint(&self) -> usize {
-        // Each entry is (Word, u64 delta) = 4*8 + 8 = 40 bytes
-        const ENTRY_SIZE: usize = Word::SERIALIZED_SIZE + core::mem::size_of::<u64>();
+        const ENTRY_SIZE: usize = AssetVaultKey::SERIALIZED_SIZE + core::mem::size_of::<u64>();
         self.0.len().get_size_hint() + self.0.len() * ENTRY_SIZE
     }
 }
@@ -379,14 +375,10 @@ impl Deserializable for FungibleAssetDelta {
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
         //   We should update this code (and serialization as well) once it supports signed
         //   integers.
-        let mut map = BTreeMap::new();
-        for _ in 0..num_fungible_assets {
-            let word: Word = source.read()?;
-            let vault_key = AssetVaultKey::try_from(word)
-                .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-            let delta_as_u64: u64 = source.read()?;
-            map.insert(vault_key, delta_as_u64 as i64);
-        }
+        let map = source
+            .read_many_iter::<(AssetVaultKey, u64)>(num_fungible_assets)?
+            .map(|result| result.map(|(vault_key, delta_as_u64)| (vault_key, delta_as_u64 as i64)))
+            .collect::<Result<_, _>>()?;
 
         Self::new(map).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
