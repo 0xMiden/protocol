@@ -10,7 +10,7 @@ use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_testing::{Auth, MockChain};
 
 /// Tests that a CONFIG_AGG_BRIDGE note registers a faucet in the bridge's faucet registry.
@@ -69,7 +69,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
     let mock_chain = builder.build()?;
 
     // CONSUME THE CONFIG_AGG_BRIDGE NOTE WITH THE BRIDGE ACCOUNT

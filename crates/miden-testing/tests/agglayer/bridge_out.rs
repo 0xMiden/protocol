@@ -22,7 +22,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -152,7 +152,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE ALL B2AGG NOTES UPFRONT (before building mock chain)
     // --------------------------------------------------------------------------------------------
@@ -171,7 +171,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             faucet.id(),
             builder.rng_mut(),
         )?;
-        builder.add_output_note(OutputNote::Full(note.clone()));
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
         notes.push(note);
     }
 
@@ -212,7 +212,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             i + 1
         );
         let burn_note = match executed_tx.output_notes().get_note(0) {
-            OutputNote::Full(note) => note,
+            RawOutputNote::Full(note) => note,
             _ => panic!("Expected OutputNote::Full variant for BURN note"),
         };
         burn_note_ids.push(burn_note.id());
@@ -364,7 +364,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -458,7 +458,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
@@ -580,7 +580,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mock_chain = builder.build()?;
 
     // ATTEMPT TO CONSUME B2AGG NOTE WITH MALICIOUS ACCOUNT (SHOULD FAIL)

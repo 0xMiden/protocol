@@ -22,7 +22,7 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::IncrNonceAuthComponent;
@@ -221,13 +221,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     )?;
 
     // Add the claim note to the builder before building the mock chain
-    builder.add_output_note(OutputNote::Full(claim_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
 
     // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
@@ -266,7 +266,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     // Extract and verify P2ID asset contents
-    let mut assets_iter = output_note.assets().unwrap().iter_fungible();
+    let mut assets_iter = output_note.assets().iter_fungible();
     let p2id_asset = assets_iter.next().unwrap();
 
     // Verify minted amount matches expected scaled value
@@ -299,7 +299,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     )
     .unwrap();
 
-    assert_eq!(OutputNote::Full(expected_output_p2id_note.clone()), *output_note);
+    assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
     // CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
     // --------------------------------------------------------------------------------------------

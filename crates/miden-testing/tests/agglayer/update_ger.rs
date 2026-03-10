@@ -20,7 +20,7 @@ use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_t
 use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_testing::{Auth, MockChain};
 use miden_tx::utils::hex_to_bytes;
@@ -85,7 +85,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
 
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
 
     // EXECUTE UPDATE_GER NOTE AGAINST BRIDGE ACCOUNT
