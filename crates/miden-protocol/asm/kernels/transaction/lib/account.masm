@@ -18,6 +18,9 @@ use miden::core::word
 # ERRORS
 # =================================================================================================
 
+# The slot ID of the on_asset_added_to_account callback.
+const ON_ASSET_ADDED_TO_ACCOUNT_SLOT_ID = word("miden::protocol::faucet::callbacks::on_asset_added_to_account")
+
 const ERR_ACCOUNT_NONCE_CAN_ONLY_BE_INCREMENTED_ONCE="account nonce can only be incremented once"
 
 const ERR_ACCOUNT_NONCE_AT_MAX="account nonce is already at its maximum possible value"
@@ -2011,6 +2014,54 @@ pub proc has_procedure
     # clean the stack
     dropw drop drop
     # => [is_procedure_available']
+end
+
+# CALLBACKS
+# -------------------------------------------------------------------------------------------------
+
+#! Returns whether the active account defines callbacks.
+#!
+#! Outputs: [has_callbacks]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+pub proc has_callbacks
+    # check if the on_asset_added_to_account callback slot exists and is non-empty
+    push.ON_ASSET_ADDED_TO_ACCOUNT_SLOT_ID[0..2]
+    exec.has_non_empty_slot
+    # => [has_callbacks]
+end
+
+#! Checks whether a storage slot with the given slot ID exists in the active account's storage
+#! and has a non-empty value.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [has_non_empty_value]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - has_non_empty_value is 1 if the slot exists and its value is non-empty, 0 otherwise.
+proc has_non_empty_slot
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+
+    exec.find_storage_slot
+    # => [is_found, slot_ptr]
+
+    if.true
+        # read the slot value
+        exec.get_item_raw
+        # => [VALUE]
+
+        # check if the value is non-empty
+        exec.word::eqz not
+        # => [has_non_empty_value]
+    else
+        drop push.0
+        # => [0]
+    end
+    # => [has_non_empty_value]
 end
 
 #! Returns the key built from the provided account ID for use in the advice map or the account

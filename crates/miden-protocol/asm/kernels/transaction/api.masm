@@ -736,6 +736,24 @@ pub proc account_has_procedure
     # => [is_procedure_available, pad(15)]
 end
 
+#! Returns whether the active account defines callbacks.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [has_callbacks, pad(15)]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+#!
+#! Invocation: dynexec
+pub proc account_has_callbacks
+    exec.account::has_callbacks
+    # => [has_callbacks, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [has_callbacks, pad(15)]
+end
+
 # FAUCET
 # -------------------------------------------------------------------------------------------------
 
