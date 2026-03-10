@@ -12,19 +12,20 @@ use crate::utils::serde::{
 const CALLBACKS_DISABLED: u8 = 0;
 const CALLBACKS_ENABLED: u8 = 1;
 
-/// Whether callbacks are enabled for assets.
+/// The flag in an [`AssetVaultKey`](super::AssetVaultKey) that indicates whether
+/// [`AssetCallbacks`](super::AssetCallbacks) are enabled for this asset.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AssetCallbacksFlag {
+pub enum AssetCallbackFlag {
     #[default]
     Disabled = CALLBACKS_DISABLED,
 
     Enabled = CALLBACKS_ENABLED,
 }
 
-impl AssetCallbacksFlag {
-    /// The serialized size of an [`AssetCallbacksFlag`] in bytes.
-    pub const SERIALIZED_SIZE: usize = core::mem::size_of::<AssetCallbacksFlag>();
+impl AssetCallbackFlag {
+    /// The serialized size of an [`AssetCallbackFlag`] in bytes.
+    pub const SERIALIZED_SIZE: usize = core::mem::size_of::<AssetCallbackFlag>();
 
     /// Encodes the callbacks setting as a `u8`.
     pub const fn as_u8(&self) -> u8 {
@@ -32,7 +33,7 @@ impl AssetCallbacksFlag {
     }
 }
 
-impl TryFrom<u8> for AssetCallbacksFlag {
+impl TryFrom<u8> for AssetCallbackFlag {
     type Error = AssetError;
 
     /// Decodes a callbacks setting from a `u8`.
@@ -44,22 +45,22 @@ impl TryFrom<u8> for AssetCallbacksFlag {
         match value {
             CALLBACKS_DISABLED => Ok(Self::Disabled),
             CALLBACKS_ENABLED => Ok(Self::Enabled),
-            _ => Err(AssetError::InvalidAssetCallbacksFlag(value)),
+            _ => Err(AssetError::InvalidAssetCallbackFlag(value)),
         }
     }
 }
 
-impl Serializable for AssetCallbacksFlag {
+impl Serializable for AssetCallbackFlag {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_u8(self.as_u8());
     }
 
     fn get_size_hint(&self) -> usize {
-        AssetCallbacksFlag::SERIALIZED_SIZE
+        AssetCallbackFlag::SERIALIZED_SIZE
     }
 }
 
-impl Deserializable for AssetCallbacksFlag {
+impl Deserializable for AssetCallbackFlag {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         Self::try_from(source.read_u8()?)
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))

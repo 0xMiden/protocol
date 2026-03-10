@@ -8,7 +8,7 @@ use miden_crypto::merkle::smt::LeafIndex;
 use crate::account::AccountId;
 use crate::account::AccountType::{self};
 use crate::asset::vault::AssetId;
-use crate::asset::{Asset, AssetCallbacksFlag, FungibleAsset, NonFungibleAsset};
+use crate::asset::{Asset, AssetCallbackFlag, FungibleAsset, NonFungibleAsset};
 use crate::crypto::merkle::smt::SMT_DEPTH;
 use crate::errors::AssetError;
 use crate::utils::serde::{
@@ -27,7 +27,7 @@ use crate::{Felt, Word};
 /// [
 ///   asset_id_suffix (64 bits),
 ///   asset_id_prefix (64 bits),
-///   [faucet_id_suffix (56 bits) | 7 zero bits | callbacks_flag (1 bit)],
+///   [faucet_id_suffix (56 bits) | 7 zero bits | callbacks_enabled (1 bit)],
 ///   faucet_id_prefix (64 bits)
 /// ]
 /// ```
@@ -40,7 +40,7 @@ pub struct AssetVaultKey {
     faucet_id: AccountId,
 
     /// Determines whether callbacks are enabled.
-    callbacks: AssetCallbacksFlag,
+    callback_flag: AssetCallbackFlag,
 }
 
 impl AssetVaultKey {
@@ -63,10 +63,10 @@ impl AssetVaultKey {
     /// - the asset ID limbs are not zero when `faucet_id` is of type
     ///   [`AccountType::FungibleFaucet`](crate::account::AccountType::FungibleFaucet).
     pub fn new_native(asset_id: AssetId, faucet_id: AccountId) -> Result<Self, AssetError> {
-        Self::new(asset_id, faucet_id, AssetCallbacksFlag::Disabled)
+        Self::new(asset_id, faucet_id, AssetCallbackFlag::Disabled)
     }
 
-    /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetCallbacksFlag`].
+    /// Creates an [`AssetVaultKey`] from its parts with the given [`AssetCallbackFlag`].
     ///
     /// # Errors
     ///
@@ -79,7 +79,7 @@ impl AssetVaultKey {
     pub fn new(
         asset_id: AssetId,
         faucet_id: AccountId,
-        callbacks: AssetCallbacksFlag,
+        callback_flag: AssetCallbackFlag,
     ) -> Result<Self, AssetError> {
         if !faucet_id.is_faucet() {
             return Err(AssetError::InvalidFaucetAccountId(Box::from(format!(
@@ -92,7 +92,7 @@ impl AssetVaultKey {
             return Err(AssetError::FungibleAssetIdMustBeZero(asset_id));
         }
 
-        Ok(Self { asset_id, faucet_id, callbacks })
+        Ok(Self { asset_id, faucet_id, callback_flag })
     }
 
     // PUBLIC ACCESSORS
@@ -106,7 +106,7 @@ impl AssetVaultKey {
         // The lower 8 bits of the faucet suffix are guaranteed to be zero and so it is used to
         // encode the asset metadata.
         debug_assert!(faucet_suffix & 0xff == 0, "lower 8 bits of faucet suffix must be zero");
-        let faucet_id_suffix_and_metadata = faucet_suffix | self.callbacks.as_u8() as u64;
+        let faucet_id_suffix_and_metadata = faucet_suffix | self.callback_flag.as_u8() as u64;
         let faucet_id_suffix_and_metadata = Felt::try_from(faucet_id_suffix_and_metadata)
             .expect("highest bit should still be zero resulting in a valid felt");
 
@@ -129,9 +129,9 @@ impl AssetVaultKey {
         self.faucet_id
     }
 
-    /// Returns the [`AssetCallbacksFlag`] flag of the vault key.
-    pub fn callbacks(&self) -> AssetCallbacksFlag {
-        self.callbacks
+    /// Returns the [`AssetCallbackFlag`] flag of the vault key.
+    pub fn callback_flag(&self) -> AssetCallbackFlag {
+        self.callback_flag
     }
 
     /// Constructs a fungible asset's key from a faucet ID.
@@ -196,7 +196,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id_prefix = key[3];
 
         let raw = faucet_id_suffix_and_metadata.as_canonical_u64();
-        let category = AssetCallbacksFlag::try_from((raw & 0xff) as u8)?;
+        let category = AssetCallbackFlag::try_from((raw & 0xff) as u8)?;
         let faucet_id_suffix = Felt::try_from(raw & 0xffff_ffff_ffff_ff00)
             .expect("clearing lower bits should not produce an invalid felt");
 
@@ -258,7 +258,7 @@ impl Deserializable for AssetVaultKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset::AssetCallbacksFlag;
+    use crate::asset::AssetCallbackFlag;
     use crate::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -270,9 +270,10 @@ mod tests {
         let nonfungible_faucet =
             AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
 
-        for callbacks in [AssetCallbacksFlag::Disabled, AssetCallbacksFlag::Enabled] {
+        for callback_flag in [AssetCallbackFlag::Disabled, AssetCallbackFlag::Enabled] {
             // Fungible: asset_id must be zero.
-            let key = AssetVaultKey::new(AssetId::default(), fungible_faucet, callbacks).unwrap();
+            let key =
+                AssetVaultKey::new(AssetId::default(), fungible_faucet, callback_flag).unwrap();
 
             let roundtripped = AssetVaultKey::try_from(key.to_word()).unwrap();
             assert_eq!(key, roundtripped);
@@ -281,7 +282,7 @@ mod tests {
             let key = AssetVaultKey::new(
                 AssetId::new(Felt::from(42u32), Felt::from(99u32)),
                 nonfungible_faucet,
-                callbacks,
+                callback_flag,
             )
             .unwrap();
 

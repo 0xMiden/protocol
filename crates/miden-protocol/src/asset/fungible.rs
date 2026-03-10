@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetCallbacksFlag, AssetError, Word};
+use super::{AccountType, Asset, AssetCallbackFlag, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
@@ -24,7 +24,7 @@ use crate::utils::serde::{
 pub struct FungibleAsset {
     faucet_id: AccountId,
     amount: u64,
-    callbacks: AssetCallbacksFlag,
+    callbacks: AssetCallbackFlag,
 }
 
 impl FungibleAsset {
@@ -41,7 +41,7 @@ impl FungibleAsset {
     /// An account ID (15 bytes) plus an amount (u64) plus a callbacks flag (u8).
     pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE
         + core::mem::size_of::<u64>()
-        + AssetCallbacksFlag::SERIALIZED_SIZE;
+        + AssetCallbackFlag::SERIALIZED_SIZE;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ impl FungibleAsset {
         Ok(Self {
             faucet_id,
             amount,
-            callbacks: AssetCallbacksFlag::default(),
+            callbacks: AssetCallbackFlag::default(),
         })
     }
 
@@ -89,7 +89,7 @@ impl FungibleAsset {
         }
 
         let mut asset = Self::new(key.faucet_id(), value[0].as_canonical_u64())?;
-        asset.callbacks = key.callbacks();
+        asset.callbacks = key.callback_flag();
 
         Ok(asset)
     }
@@ -126,13 +126,13 @@ impl FungibleAsset {
         self.vault_key() == other.vault_key()
     }
 
-    /// Returns the [`AssetCallbacksFlag`] of this asset.
-    pub fn callbacks(&self) -> AssetCallbacksFlag {
+    /// Returns the [`AssetCallbackFlag`] of this asset.
+    pub fn callbacks(&self) -> AssetCallbackFlag {
         self.callbacks
     }
 
-    /// Returns a copy of this asset with the given [`AssetCallbacksFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbacksFlag) -> Self {
+    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
+    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
         self.callbacks = callbacks;
         self
     }

@@ -24,7 +24,7 @@ static ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_NAME: LazyLock<StorageSlotName> =
 ///   `on_before_asset_added_to_account` callback. This storage slot is only added if the callback
 ///   procedure root is not the empty word.
 ///
-/// [`AssetCallbacksFlag::Enabled`]: crate::asset::AssetCallbacksFlag::Enabled
+/// [`AssetCallbackFlag::Enabled`]: crate::asset::AssetCallbackFlag::Enabled
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AssetCallbacks {
     on_before_asset_added_to_account: Word,

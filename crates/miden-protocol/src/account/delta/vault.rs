@@ -138,7 +138,7 @@ impl AccountVaultDelta {
                 Asset::Fungible(
                     FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
                         .unwrap()
-                        .with_callbacks(vault_key.callbacks()),
+                        .with_callbacks(vault_key.callback_flag()),
                 )
             })
             .chain(
@@ -158,7 +158,7 @@ impl AccountVaultDelta {
                 Asset::Fungible(
                     FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
                         .unwrap()
-                        .with_callbacks(vault_key.callbacks()),
+                        .with_callbacks(vault_key.callback_flag()),
                 )
             })
             .chain(

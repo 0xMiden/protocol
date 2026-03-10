@@ -17,7 +17,7 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetCallbacks, AssetCallbacksFlag, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetCallbacks, FungibleAsset};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::NoteType;
@@ -261,7 +261,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 
     // Create a P2ID note with a callbacks-enabled fungible asset.
     let fungible_asset =
-        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbacksFlag::Enabled);
+        FungibleAsset::new(faucet.id(), amount)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -318,7 +318,7 @@ async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
 
     // Create a P2ID note with a callbacks-enabled asset
     let fungible_asset =
-        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbacksFlag::Enabled);
+        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),

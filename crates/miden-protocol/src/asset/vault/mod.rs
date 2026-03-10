@@ -184,7 +184,7 @@ impl AssetVault {
             // should be in bounds
             let asset = FungibleAsset::new(vault_key.faucet_id(), delta.unsigned_abs())
                 .expect("fungible asset delta should be valid")
-                .with_callbacks(vault_key.callbacks());
+                .with_callbacks(vault_key.callback_flag());
             match delta >= 0 {
                 true => self.add_fungible_asset(asset),
                 false => self.remove_fungible_asset(asset),
