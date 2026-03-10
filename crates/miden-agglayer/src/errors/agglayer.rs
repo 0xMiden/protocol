@@ -42,9 +42,6 @@ pub const ERR_INVALID_CLAIM_PROOF: MasmError = MasmError::from_static_str("inval
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
 
-/// Error Message: "mainnet flag must be 0 or 1"
-pub const ERR_MAINNET_FLAG_INVALID: MasmError = MasmError::from_static_str("mainnet flag must be 0 or 1");
-
 /// Error Message: "number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)"
 pub const ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT: MasmError = MasmError::from_static_str("number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)");
 

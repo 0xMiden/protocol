@@ -119,17 +119,16 @@ end
 #!
 #! Invocation: exec
 pub proc process_global_index_mainnet
-    # for v0.1, let's only implement the mainnet branch
     # the top 191 bits of the global index are zero
     repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
 
     # the next element is the mainnet flag (LE-packed u32)
     # byte-swap to get the BE value, then assert it is exactly 1
-    # => [mainnet_flag_le, rollup_index_le, leaf_index_le, ...]
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
     exec.utils::swap_u32_bytes
     assert.err=ERR_BRIDGE_NOT_MAINNET
 
-    # the next element is the rollup index, must be zero for a mainnet deposit
+    # the rollup index must be zero for a mainnet deposit
     # (zero is byte-order-independent, so no swap needed)
     assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
 
@@ -156,21 +155,17 @@ pub proc process_global_index_rollup
     repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
 
     # the next element is the mainnet flag (LE-packed u32)
-    # byte-swap to get the BE value, then assert it is exactly 0
+    # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
+    # so no swap is needed before asserting
     # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
-    exec.utils::swap_u32_bytes
     assertz.err=ERR_BRIDGE_NOT_MAINNET
 
-    # the next element is the rollup index; byte-swap from LE to BE
+    # byte-swap rollup_index from LE to BE
     exec.utils::swap_u32_bytes
     # => [rollup_index, leaf_index_le]
 
-    # the leaf index is the last element; byte-swap from LE to BE
-    swap exec.utils::swap_u32_bytes swap
-    # => [rollup_index, leaf_index]
-
-    # return [leaf_index, rollup_index] (swap so leaf_index is on top)
-    swap
+    # byte-swap leaf_index from LE to BE
+    swap exec.utils::swap_u32_bytes
     # => [leaf_index, rollup_index]
 end
 
@@ -303,29 +298,25 @@ proc verify_leaf
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
     # Determine if we're dealing with a deposit from mainnet or from a rollup.
+    # Peek at the mainnet flag (element 5, i.e. 3rd from the top of the 8-element index)
+    # to decide which branch to take, then pass the full index to the helper.
+    # The mainnet flag is at stack position 2 (after elements 0-4 were loaded as the
+    # first word + first element of the second word). Stack is:
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
+    # where GLOBAL_INDEX = [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
+    # gi0 is on top. The mainnet flag is at position 5.
 
-    # Assert the top 5 elements (leading bits) are zero
-    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
-    # => [mainnet_flag_le, rollup_index_le, leaf_index_le, LEAF_VALUE[8]]
+    # Duplicate the mainnet flag element (position 5), byte-swap from LE to BE,
+    # assert it is a valid boolean (0 or 1), then use it to branch.
+    dup.5 exec.utils::swap_u32_bytes dup
+    # => [mainnet_flag, mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
-    # Byte-swap the mainnet flag from LE to BE and duplicate for validation + branching
-    exec.utils::swap_u32_bytes dup
-    # => [mainnet_flag, mainnet_flag, rollup_index_le, leaf_index_le, LEAF_VALUE[8]]
-
-    # Assert mainnet_flag is either 0 or 1 (it's a single-bit flag)
     u32lt.2 assert.err=ERR_MAINNET_FLAG_INVALID
-    # => [mainnet_flag, rollup_index_le, leaf_index_le, LEAF_VALUE[8]]
+    # => [mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
     if.true
         # ==================== MAINNET DEPOSIT ====================
-        # mainnet_flag = 1; assert rollup_index = 0 and extract leaf_index
-
-        # rollup index must be zero for mainnet
-        assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
-        # => [leaf_index_le, LEAF_VALUE[8]]
-
-        # byte-swap leaf_index from LE to BE
-        exec.utils::swap_u32_bytes
+        exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
         # verify single Merkle proof: leaf against mainnetExitRoot
@@ -343,14 +334,9 @@ proc verify_leaf
         # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
-        # mainnet_flag = 0; extract rollup_index and leaf_index, then do two-level verification
-
-        # byte-swap rollup_index from LE to BE
-        exec.utils::swap_u32_bytes
-        # => [rollup_index, leaf_index_le, LEAF_VALUE[8]]
-
-        # byte-swap leaf_index from LE to BE
-        swap exec.utils::swap_u32_bytes
+        # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
+        # then do two-level verification
+        exec.process_global_index_rollup
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot

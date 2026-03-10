@@ -42,6 +42,9 @@ fn assemble_process_global_index_program(global_index: GlobalIndex, proc_name: &
         .unwrap()
 }
 
+// MAINNET GLOBAL INDEX TESTS
+// ================================================================================================
+
 #[tokio::test]
 async fn test_process_global_index_mainnet_returns_leaf_index() -> anyhow::Result<()> {
     // Global index format (32 bytes, big-endian like Solidity uint256):
