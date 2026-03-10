@@ -350,12 +350,6 @@ proc verify_leaf
         # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index]
 
         # Step 2: verify_merkle_proof(localExitRoot, smtProofRollupExitRoot, rollupIndex, rollupExitRootPtr)
-        push.ROLLUP_EXIT_ROOT_PTR movup.9
-        push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR
-        # => [smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr, LOCAL_EXIT_ROOT[8]]
-
-        movdn.10 movdn.10 movdn.10
-        # Step 2: verify_merkle_proof(localExitRoot, smtProofRollupExitRoot, rollupIndex, rollupExitRootPtr)
         push.ROLLUP_EXIT_ROOT_PTR movdn.9
         # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
         push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
