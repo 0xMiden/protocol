@@ -686,6 +686,9 @@ end
 
 #! Returns whether the active account defines callbacks.
 #!
+#! The account defines callbacks if any callback storage slot is present and it contains not the
+#! empty word.
+#!
 #! Inputs:  []
 #! Outputs: [has_callbacks]
 #!

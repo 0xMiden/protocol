@@ -20,8 +20,6 @@ use ::miden::protocol::kernel_proc_offsets::FAUCET_BURN_ASSET_OFFSET
 #!
 #! Invocation: exec
 pub proc create_fungible_asset
-    # => [enable_callbacks, amount]
-
     # fetch the id of the faucet the transaction is being executed against.
     exec.active_account::get_id
     # => [id_suffix, id_prefix, enable_callbacks, amount]

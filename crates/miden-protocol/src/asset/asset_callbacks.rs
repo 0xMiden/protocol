@@ -21,26 +21,26 @@ static ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_SLOT_NAME: LazyLock<StorageSlotName> =
 /// ## Storage Layout
 ///
 /// - [`Self::on_before_asset_added_to_account_slot()`]: Stores the procedure root of the
-///   `on_before_asset_added_to_account` callback. This storage slot is only added if a callback
-///   procedure root is set.
+///   `on_before_asset_added_to_account` callback. This storage slot is only added if the callback
+///   procedure root is not the empty word.
 ///
 /// [`AssetCallbacksFlag::Enabled`]: crate::asset::AssetCallbacksFlag::Enabled
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AssetCallbacks {
-    on_before_asset_added_to_account: Option<Word>,
+    on_before_asset_added_to_account: Word,
 }
 
 impl AssetCallbacks {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`AssetCallbacks`] with all callbacks set to `None`.
+    /// Creates a new [`AssetCallbacks`] with all callbacks set to the empty word.
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn on_before_asset_added_to_account(mut self, proc_root: Word) -> Self {
-        self.on_before_asset_added_to_account = Some(proc_root);
+        self.on_before_asset_added_to_account = proc_root;
         self
     }
 
@@ -53,17 +53,17 @@ impl AssetCallbacks {
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_account` callback.
-    pub fn on_before_asset_added_proc_root(&self) -> Option<Word> {
+    pub fn on_before_asset_added_proc_root(&self) -> Word {
         self.on_before_asset_added_to_account
     }
 
     pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots = Vec::new();
 
-        if let Some(on_before_asset_added_to_account) = self.on_before_asset_added_to_account {
+        if !self.on_before_asset_added_to_account.is_empty() {
             slots.push(StorageSlot::with_value(
                 AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
-                on_before_asset_added_to_account,
+                self.on_before_asset_added_to_account,
             ));
         }
 
