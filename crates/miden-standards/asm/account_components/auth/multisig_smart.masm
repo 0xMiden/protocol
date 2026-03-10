@@ -12,6 +12,10 @@ use miden::standards::auth
 use miden::standards::auth::multisig
 
 pub use multisig::update_signers_and_threshold
+pub use multisig::get_threshold_and_num_approvers
+pub use multisig::set_procedure_threshold
+pub use multisig::get_signer_at
+pub use multisig::is_signer
 
 
 # CONSTANTS
@@ -40,16 +44,9 @@ const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approv
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
 const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
-# The slot in this component's storage layout where executed transactions are stored.
-# Map entries: transaction_message => [is_executed, 0, 0, 0]
-const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
-
 # The slot in this component's storage layout where procedure thresholds are stored.
 # Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
 const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
-
-# Executed Transaction Flag Constant
-const IS_EXECUTED_FLAG = [1, 0, 0, 0]
 
 # User-defined spending interval (in blocks).
 # Typically set to the ~24h equivalent number of blocks.
@@ -87,8 +84,6 @@ const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pendi
 # ERRORS
 # =================================================================================================
 
-const ERR_TX_ALREADY_EXECUTED = "failed to approve multisig transaction as it was already executed"
-
 const ERR_MALFORMED_MULTISIG_CONFIG = "number of approvers must be equal to or greater than threshold"
 
 const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not be zero"
@@ -120,35 +115,6 @@ const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
-
-#! Check if transaction has already been executed and add it to executed transactions for replay protection.
-#!
-#! Inputs:  [MSG]
-#! Outputs: []
-#!
-#! Panics if:
-#! - the same transaction has already been executed
-proc assert_new_tx(msg: word)
-    push.IS_EXECUTED_FLAG
-    # => [[0, 0, 0, is_executed], MSG]
-
-    swapw
-    # => [MSG, IS_EXECUTED_FLAG]
-
-    push.EXECUTED_TXS_SLOT[0..2]
-    # => [txs_slot_prefix, txs_slot_suffix, MSG, IS_EXECUTED_FLAG]
-
-    # Set the key value pair in the map to mark transaction as executed
-    exec.native_account::set_map_item
-    # => [[0, 0, 0, is_executed]]
-
-    movdn.3
-    drop drop drop
-    # => [is_executed]
-
-    assertz.err=ERR_TX_ALREADY_EXECUTED
-    # => []
-end
 
 #! High-impact action.
 #!
@@ -229,7 +195,7 @@ pub proc update_threshold_config
     # => []
 
     # ------ Check the threshold < num_approvers
-    exec.get_threshold_and_num_approvers
+    exec.multisig::get_threshold_and_num_approvers
     # => [default_threshold, num_approvers]
 
     drop
@@ -389,21 +355,6 @@ pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
     dropw
     # => []
 end
-
-#! Returns current default threshold and num_approvers from THRESHOLD_CONFIG_SLOT.
-#!
-#! Inputs: []
-#! Outputs: [default_threshold, num_approvers]
-proc get_threshold_and_num_approvers
-    push.THRESHOLD_CONFIG_SLOT[0..2]
-    exec.active_account::get_initial_item
-    # => [default_threshold, num_approvers, 0, 0]
-
-    movup.2 drop
-    movup.2 drop
-    # => [default_threshold, num_approvers]
-end
-
 
 # Computes the effective transaction threshold based on called procedures and per-procedure
 # overrides stored in PROC_THRESHOLD_ROOTS_SLOT. Falls back to default_threshold if no
@@ -1590,7 +1541,7 @@ proc auth_tx_multisig_smart_inner(salt: word)
 
     # ------ Verifying approver signatures ------
 
-    exec.get_threshold_and_num_approvers
+    exec.multisig::get_threshold_and_num_approvers
     # => [default_threshold, num_of_approvers, TX_SUMMARY_COMMITMENT]
 
     movdn.5
@@ -1643,6 +1594,6 @@ proc auth_tx_multisig_smart_inner(salt: word)
     exec.finalize_timelock_proposals
     # => [TX_SUMMARY_COMMITMENT]
 
-    exec.assert_new_tx
+    exec.multisig::assert_new_tx
     # => []
 end
