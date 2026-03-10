@@ -426,7 +426,7 @@ pub proc get_item
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr]
 
     # get the item from storage
@@ -452,7 +452,7 @@ pub proc get_typed_item
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr]
 
     dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
@@ -480,7 +480,7 @@ pub proc get_initial_item
     exec.memory::get_account_initial_storage_slots_ptr
     # => [account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr]
 
     # get the item from initial storage
@@ -509,7 +509,7 @@ pub proc set_item
     exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, VALUE]
 
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr, VALUE]
 
     # load the slot type
@@ -604,7 +604,7 @@ pub proc set_map_item
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr, KEY, NEW_VALUE]
 
     # load the slot type
@@ -1589,7 +1589,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 proc get_map_item_raw
-    exec.find_storage_slot
+    exec.get_storage_slot
     # => [slot_ptr, KEY]
 
     emit.ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT
@@ -1622,19 +1622,17 @@ proc get_map_item_raw
 end
 
 #! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
-#! returns the pointer to that slot.
+#! returns a flag indicating whether the slot was found and the pointer to that slot.
 #!
 #! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
-#! Outputs: [slot_ptr]
+#! Outputs: [is_found, slot_ptr]
 #!
 #! Where:
 #! - storage_slots_ptr is the pointer to the storage slots section.
+#! - is_found is 1 if the slot was found, 0 otherwise.
 #! - slot_ptr is the pointer to the resolved storage slot.
 #! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
-#!
-#! Panics if:
-#! - a slot with the provided slot ID does not exist in account storage.
 proc find_storage_slot
     # construct the start and end pointers of the storage slot section in which we will search
     dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
@@ -1648,10 +1646,29 @@ proc find_storage_slot
     exec.sorted_array::find_half_key_value
     # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
 
-    assert.err=ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME
-    # => [slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
+    movup.2 drop movup.2 drop
+    # => [is_slot_found, slot_ptr]
+end
 
-    swap.2 drop drop
+#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
+#! returns the pointer to that slot.
+#!
+#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+#! Outputs: [slot_ptr]
+#!
+#! Where:
+#! - storage_slots_ptr is the pointer to the storage slots section.
+#! - slot_ptr is the pointer to the resolved storage slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#!
+#! Panics if:
+#! - a slot with the provided slot ID does not exist in account storage.
+proc get_storage_slot
+    exec.find_storage_slot
+    # => [is_found, slot_ptr]
+
+    assert.err=ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME
     # => [slot_ptr]
 end
 
