@@ -8,13 +8,18 @@
 
 use alloc::collections::BTreeMap;
 
+use miden_protocol::Word;
 use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountComponent, AccountType, StorageSlot, StorageSlotName,
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::Word;
 
 use crate::account::components::storage_schema_library;
 
@@ -168,9 +173,9 @@ fn compute_schema_commitment<'a>(
 #[cfg(test)]
 mod tests {
     use miden_protocol::Word;
+    use miden_protocol::account::AccountBuilder;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
     use miden_protocol::account::component::AccountComponentMetadata;
-    use miden_protocol::account::AccountBuilder;
 
     use super::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
     use crate::account::auth::{AuthSingleSig, NoAuth};
