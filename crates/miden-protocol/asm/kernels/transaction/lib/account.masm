@@ -435,6 +435,43 @@ pub proc get_item
     # => [VALUE]
 end
 
+#! Finds an item in the active account's storage by slot ID, returning whether the slot was found
+#! along with its value.
+#!
+#! Unlike `get_item`, this procedure does not panic if the slot does not exist. Instead, it
+#! returns `is_found = 0` and the empty word.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [is_found, VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - is_found is 1 if the slot was found, 0 otherwise.
+#! - VALUE is the value of the item, or the empty word if the slot was not found.
+pub proc find_item
+    # get account storage slots section offset
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+
+    exec.find_storage_slot
+    # => [is_found, slot_ptr]
+
+    if.true
+        # slot was found, read its value
+        exec.get_item_raw
+        # => [VALUE]
+
+        push.1
+        # => [is_found = 1, VALUE]
+    else
+        # slot was not found, drop slot_ptr and return empty word
+        drop padw push.0
+        # => [is_found = 0, EMPTY_WORD]
+    end
+    # => [is_found, VALUE]
+end
+
 #! Gets an item and its slot type from the account storage.
 #!
 #! Inputs:  [slot_id_suffix, slot_id_prefix]
