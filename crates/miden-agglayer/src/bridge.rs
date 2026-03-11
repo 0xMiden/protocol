@@ -3,11 +3,11 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use miden_core::utils::Deserializable;
 use miden_core::{Felt, FieldElement, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
 use miden_protocol::crypto::hash::rpo::Rpo256;
-use miden_standards::procedure_digest;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -33,33 +33,11 @@ pub use crate::{
 // AGGLAYER BRIDGE STRUCT
 // ================================================================================================
 
-// Initialize the digest of the `bridge_out` procedure of the AggLayer Bridge only once.
-procedure_digest!(
-    AGGLAYER_BRIDGE_BRIDGE_OUT,
-    AggLayerBridge::BRIDGE_OUT_PROC_NAME,
-    agglayer_bridge_component_library
-);
-
-// Initialize the digest of the `register_faucet` procedure of the AggLayer Bridge only once.
-procedure_digest!(
-    AGGLAYER_BRIDGE_REGISTER_FAUCET,
-    AggLayerBridge::REGISTER_FAUCET_PROC_NAME,
-    agglayer_bridge_component_library
-);
-
-// Initialize the digest of the `update_ger` procedure of the AggLayer Bridge only once.
-procedure_digest!(
-    AGGLAYER_BRIDGE_UPDATE_GER,
-    AggLayerBridge::UPDATE_GER_PROC_NAME,
-    agglayer_bridge_component_library
-);
-
-// Initialize the digest of the `verify_leaf_bridge` procedure of the AggLayer Bridge only once.
-procedure_digest!(
-    AGGLAYER_BRIDGE_VERIFY_LEAF_BRIDGE,
-    AggLayerBridge::VERIFY_LEAF_BRIDGE_PROC_NAME,
-    agglayer_bridge_component_library
-);
+// Initialize the commitment of the bridge account code only once.
+static BRIDGE_CODE_COMMITMENT: LazyLock<Word> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/bridge_account_code_commitment"));
+    Word::read_from_bytes(bytes).expect("bridge code commitment should be valid")
+});
 
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
@@ -98,8 +76,6 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
-/// - `assert_sender_is_bridge_admin`, which validates CONFIG note senders.
-/// - `assert_sender_is_ger_manager`, which validates UPDATE_GER note senders.
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
@@ -129,11 +105,6 @@ impl AggLayerBridge {
     // --------------------------------------------------------------------------------------------
 
     const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
-
-    const BRIDGE_OUT_PROC_NAME: &str = "::bridge::bridge_out";
-    const REGISTER_FAUCET_PROC_NAME: &str = "::bridge::register_faucet";
-    const UPDATE_GER_PROC_NAME: &str = "::bridge::update_ger";
-    const VERIFY_LEAF_BRIDGE_PROC_NAME: &str = "::bridge::verify_leaf_bridge";
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
@@ -284,13 +255,14 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - the provided account does not have all AggLayer Bridge specific storage slots.
-    /// - the provided account does not have all AggLayer Bridge specific procedures.
+    /// - the code commitment of the provided account does not match the code commitment of the
+    ///   [`AggLayerBridge`].
     fn assert_bridge_account(account: &Account) -> Result<(), AgglayerBridgeError> {
         // check that the storage slots are as expected
         Self::assert_storage_slots(account)?;
 
-        // check that the procedure roots are as expected
-        Self::assert_required_procedures(account)?;
+        // check that the code commitment matches the code commitment of the bridge account
+        Self::assert_code_commitment(account)?;
 
         Ok(())
     }
@@ -300,8 +272,7 @@ impl AggLayerBridge {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided account is not an [`AggLayerBridge`] account (provided account does not have
-    ///   all AggLayer Bridge specific storage slots).
+    /// - provided account does not have all AggLayer Bridge specific storage slots.
     fn assert_storage_slots(account: &Account) -> Result<(), AgglayerBridgeError> {
         // get the storage slot names of the provided account
         let account_storage_slot_names: Vec<&StorageSlotName> = account
@@ -322,22 +293,17 @@ impl AggLayerBridge {
         Ok(())
     }
 
-    /// Checks that the provided account has all procedures required for the [`AggLayerBridge`].
+    /// Checks that the code commitment of the provided account matches the code commitment of the
+    /// [`AggLayerBridge`].
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the provided account does not have all AggLayer Bridge specific procedures.
-    fn assert_required_procedures(account: &Account) -> Result<(), AgglayerBridgeError> {
-        // get the procedure roots of the provided account
-        let account_proc_roots = account.code().procedure_roots().collect::<Vec<Word>>();
-
-        // check that all bridge specific procedures are presented in the provided account
-        let are_procs_presented = Self::proc_digests_vec()
-            .iter()
-            .all(|proc_root| account_proc_roots.contains(*proc_root));
-        if !are_procs_presented {
-            return Err(AgglayerBridgeError::ProcedureRootsMismatch);
+    /// - the code commitment of the provided account does not match the code commitment of the
+    ///   [`AggLayerBridge`].
+    fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
+        if *BRIDGE_CODE_COMMITMENT != account.code().commitment() {
+            return Err(AgglayerBridgeError::CodeCommitmentMismatch);
         }
 
         Ok(())
@@ -354,16 +320,6 @@ impl AggLayerBridge {
             &*FAUCET_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
-        ]
-    }
-
-    /// Returns a vector of all [`AggLayerBridge`] procedure roots.
-    fn proc_digests_vec() -> Vec<&'static Word> {
-        vec![
-            &*AGGLAYER_BRIDGE_BRIDGE_OUT,
-            &*AGGLAYER_BRIDGE_REGISTER_FAUCET,
-            &*AGGLAYER_BRIDGE_UPDATE_GER,
-            &*AGGLAYER_BRIDGE_VERIFY_LEAF_BRIDGE,
         ]
     }
 }
@@ -403,10 +359,14 @@ impl From<AggLayerBridge> for AccountComponent {
 /// AggLayer Bridge related errors.
 #[derive(Debug, Error)]
 pub enum AgglayerBridgeError {
-    #[error("provided account does not have storage slots required for the AggLayerBridge account")]
+    #[error(
+        "provided account does not have storage slots required for the AggLayer Bridge account"
+    )]
     StorageSlotsMismatch,
-    #[error("provided account does not have procedures required for the AggLayerBridge account")]
-    ProcedureRootsMismatch,
+    #[error(
+        "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
+    )]
+    CodeCommitmentMismatch,
 }
 
 // HELPER FUNCTIONS

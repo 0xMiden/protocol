@@ -6,7 +6,16 @@ use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
 use miden_assembly::utils::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
+use miden_protocol::Word;
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountComponentMetadata,
+    AccountStorageMode,
+    AccountType,
+};
 use miden_protocol::transaction::TransactionKernel;
+use miden_standards::account::auth::NoAuth;
 
 // CONSTANTS
 // ================================================================================================
@@ -63,7 +72,7 @@ fn main() -> Result<()> {
     assembler.link_static_library(agglayer_lib)?;
 
     // compile account components (thin wrappers per component)
-    compile_account_components(
+    let (bridge_library, faucet_library) = compile_account_components(
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
         assembler.clone(),
@@ -75,6 +84,10 @@ fn main() -> Result<()> {
         &target_dir.join(ASM_NOTE_SCRIPTS_DIR),
         assembler.clone(),
     )?;
+
+    generate_bridge_code_commitment(&target_dir, bridge_library)?;
+
+    generate_faucet_code_commitment(&target_dir, faucet_library)?;
 
     generate_error_constants(&source_dir)?;
 
@@ -149,8 +162,8 @@ fn compile_note_scripts(
 // COMPILE ACCOUNT COMPONENTS
 // ================================================================================================
 
-/// Compiles the account components in `source_dir` into MASL libraries and stores the compiled
-/// files in `target_dir`.
+/// Compiles the account components in `source_dir` into MASL libraries, stores the compiled
+/// files in `target_dir`, and returns the bridge and faucet component libraries.
 ///
 /// Each `.masm` file in the components directory is a thin wrapper that re-exports specific
 /// procedures from the main agglayer library. This ensures each component (bridge, faucet)
@@ -162,10 +175,13 @@ fn compile_account_components(
     source_dir: &Path,
     target_dir: &Path,
     assembler: Assembler,
-) -> Result<()> {
+) -> Result<(Library, Library)> {
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).unwrap();
     }
+
+    let mut bridge_library: Option<Library> = None;
+    let mut faucet_library: Option<Library> = None;
 
     for masm_file_path in shared::get_masm_files(source_dir).unwrap() {
         let component_name = masm_file_path
@@ -186,9 +202,85 @@ fn compile_account_components(
             .expect("library assembly should succeed");
 
         let component_file_path =
-            target_dir.join(component_name).with_extension(Library::LIBRARY_EXTENSION);
-        component_library.write_to_file(component_file_path).into_diagnostic()?;
+            target_dir.join(&component_name).with_extension(Library::LIBRARY_EXTENSION);
+        component_library.write_to_file(&component_file_path).into_diagnostic()?;
+
+        match component_name.as_str() {
+            "bridge" => {
+                bridge_library = Some(component_library);
+            },
+            "faucet" => {
+                faucet_library = Some(component_library);
+            },
+            _ => {},
+        }
     }
+
+    match (bridge_library, faucet_library) {
+        (Some(bridge), Some(faucet)) => Ok((bridge, faucet)),
+        (None, None) => Err(Report::msg("bridge and faucet component libraries not found")),
+        (None, Some(_)) => Err(Report::msg("bridge component library not found")),
+        (Some(_), None) => Err(Report::msg("faucet component library not found")),
+    }
+}
+
+// GENERATE BRIDGE AND FAUCET CODE COMMITMENTS
+// ================================================================================================
+
+/// Builds the Bridge Account using the provided bridge library and stores its code commitment into
+/// a corresponding file.
+///
+/// Generated commitment is stored in the "{target_dir}/bridge_account_code_commitment" binary file.
+fn generate_bridge_code_commitment(target_dir: &Path, bridge_library: Library) -> Result<()> {
+    let metadata = AccountComponentMetadata::new("agglayer::bridge")
+        .with_description("Bridge component for AggLayer")
+        .with_supports_all_types();
+
+    let bridge_component = AccountComponent::new(bridge_library, vec![], metadata)
+        .expect("bridge component should satisfy the requirements of a valid account component");
+
+    let agglayer_bridge_account = Account::builder(Word::default().as_bytes())
+        .storage_mode(AccountStorageMode::Network)
+        .with_component(bridge_component)
+        .with_auth_component(AccountComponent::from(NoAuth))
+        .build()
+        .expect("bridge account should be valid");
+
+    let bridge_account_code_commitment = agglayer_bridge_account.code().commitment();
+    let output_file = target_dir.join("bridge_account_code_commitment");
+    fs::write(output_file, bridge_account_code_commitment.as_bytes())
+        .into_diagnostic()
+        .wrap_err("failed to write bridge account code commitment")?;
+
+    Ok(())
+}
+
+/// Builds the Faucet Account using the provided faucet library and stores its code commitment into
+/// a corresponding file.
+///
+/// Generated commitment is stored in the "{target_dir}/faucet_account_code_commitment" binary file.
+fn generate_faucet_code_commitment(target_dir: &Path, faucet_library: Library) -> Result<()> {
+    let metadata = AccountComponentMetadata::new("agglayer::faucet")
+        .with_description("AggLayer faucet component with bridge validation")
+        .with_supported_type(AccountType::FungibleFaucet);
+
+    let faucet_component = AccountComponent::new(faucet_library, vec![], metadata).expect(
+        "agglayer_faucet component should satisfy the requirements of a valid account component",
+    );
+
+    let agglayer_faucet_account = Account::builder(Word::default().as_bytes())
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Network)
+        .with_component(faucet_component)
+        .with_auth_component(AccountComponent::from(NoAuth))
+        .build()
+        .expect("agglayer faucet account should be valid");
+
+    let faucet_account_code_commitment = agglayer_faucet_account.code().commitment();
+    let output_file = target_dir.join("faucet_account_code_commitment");
+    fs::write(output_file, faucet_account_code_commitment.as_bytes())
+        .into_diagnostic()
+        .wrap_err("failed to write bridge account code commitment")?;
 
     Ok(())
 }
