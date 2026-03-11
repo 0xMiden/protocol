@@ -2,21 +2,33 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@agglayer/v2/lib/DepositContractV2.sol";
+import "@agglayer/v2/sovereignChains/BridgeL2SovereignChain.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
+import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
 import "./DepositContractTestHelpers.sol";
+
+contract MockGlobalExitRootManagerLocal is IBasePolygonZkEVMGlobalExitRoot {
+    mapping(bytes32 => uint256) public override globalExitRootMap;
+
+    function updateExitRoot(bytes32) external override {}
+
+    function setGlobalExitRoot(bytes32 globalExitRoot) external {
+        globalExitRootMap[globalExitRoot] = block.number;
+    }
+}
 
 /**
  * @title ClaimAssetTestVectorsLocalTx
  * @notice Test contract that generates test vectors for an L1 bridgeAsset transaction.
  *         This simulates calling bridgeAsset() on the PolygonZkEVMBridgeV2 contract
  *         and captures all relevant data including VALID Merkle proofs.
+ *         Uses BridgeL2SovereignChain to get the authoritative claimedGlobalIndexHashChain.
  *
  * Run with: forge test -vv --match-contract ClaimAssetTestVectorsLocalTx
  *
  * The output can be used to verify Miden's ability to process L1 bridge transactions.
  */
-contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2, DepositContractTestHelpers {
+contract ClaimAssetTestVectorsLocalTx is Test, BridgeL2SovereignChain, DepositContractTestHelpers {
     /**
      * @notice Generates bridge asset test vectors with VALID Merkle proofs.
      *         Simulates a user calling bridgeAsset() to bridge tokens from L1 to Miden.
@@ -95,6 +107,36 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2, DepositContrac
         // extracts it via uint32(globalIndex) in _verifyLeaf()
         uint256 globalIndex = (uint256(1) << 64) | uint256(leafIndex);
 
+        // ====== COMPUTE CLAIMED GLOBAL INDEX HASH CHAIN ======
+        // Use the actual BridgeL2SovereignChain to compute the authoritative value
+
+        // Set up the global exit root manager
+        MockGlobalExitRootManagerLocal gerManager = new MockGlobalExitRootManagerLocal();
+        gerManager.setGlobalExitRoot(globalExitRoot);
+        globalExitRootManager = IBasePolygonZkEVMGlobalExitRoot(address(gerManager));
+
+        // Use a non-zero network ID to match sovereign-chain requirements
+        networkID = 10;
+
+        // Call _verifyLeafBridge to update claimedGlobalIndexHashChain
+        this.verifyLeafBridgeHarness(
+            smtProofLocal,
+            smtProofRollup,
+            globalIndex,
+            mainnetExitRoot,
+            rollupExitRoot,
+            leafType,
+            originNetwork,
+            originTokenAddress,
+            destinationNetwork,
+            destinationAddress,
+            amount,
+            metadataHash
+        );
+
+        // Read the updated claimedGlobalIndexHashChain
+        bytes32 claimedHashChain = claimedGlobalIndexHashChain;
+
         // ====== SERIALIZE SMT PROOFS ======
         _serializeProofs(obj, smtProofLocal, smtProofRollup);
 
@@ -115,6 +157,7 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2, DepositContrac
         {
             vm.serializeUint(obj, "deposit_count", depositCountValue);
             vm.serializeBytes32(obj, "global_index", bytes32(globalIndex));
+            vm.serializeBytes32(obj, "claimed_global_index_hash_chain", claimedHashChain);
             vm.serializeBytes32(obj, "local_exit_root", localExitRoot);
             vm.serializeBytes32(obj, "mainnet_exit_root", mainnetExitRoot);
             vm.serializeBytes32(obj, "rollup_exit_root", rollupExitRoot);
@@ -132,6 +175,39 @@ contract ClaimAssetTestVectorsLocalTx is Test, DepositContractV2, DepositContrac
             console.log("Leaf index:", leafIndex);
             console.log("Deposit count:", depositCountValue);
         }
+    }
+
+    /**
+     * @notice Harness function to call _verifyLeafBridge externally
+     */
+    function verifyLeafBridgeHarness(
+        bytes32[32] calldata smtProofLocalExitRoot,
+        bytes32[32] calldata smtProofRollupExitRoot,
+        uint256 globalIndex,
+        bytes32 mainnetExitRoot,
+        bytes32 rollupExitRoot,
+        uint8 leafType,
+        uint32 originNetwork,
+        address originTokenAddress,
+        uint32 destinationNetwork,
+        address destinationAddress,
+        uint256 amount,
+        bytes32 metadataHash
+    ) external {
+        _verifyLeafBridge(
+            smtProofLocalExitRoot,
+            smtProofRollupExitRoot,
+            globalIndex,
+            mainnetExitRoot,
+            rollupExitRoot,
+            leafType,
+            originNetwork,
+            originTokenAddress,
+            destinationNetwork,
+            destinationAddress,
+            amount,
+            metadataHash
+        );
     }
 
     /**

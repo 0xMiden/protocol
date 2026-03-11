@@ -23,7 +23,7 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -63,6 +63,7 @@ use super::test_utils::{
 #[case::simulated(ClaimDataSource::Simulated)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
+    use miden_agglayer::AggLayerBridge;
     use miden_protocol::account::auth::AuthScheme;
 
     let mut builder = MockChain::builder();
@@ -86,7 +87,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data, ger) = data_source.get_data();
+    let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -225,6 +226,26 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         mock_chain.build_tx_context(bridge_account.id(), &[], &[claim_note])?.build()?;
 
     let claim_executed = claim_tx_context.execute().await?;
+
+    // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
+    // --------------------------------------------------------------------------------------------
+
+    let mut updated_bridge_account = bridge_account.clone();
+    updated_bridge_account.apply_delta(claim_executed.account_delta())?;
+
+    let actual_cgi_chain_hash_lo = updated_bridge_account
+        .storage()
+        .get_item(AggLayerBridge::cgi_lo_slot_name())
+        .expect("failed to get CGI hash chain lo slot");
+    let actual_cgi_chain_hash_hi = updated_bridge_account
+        .storage()
+        .get_item(AggLayerBridge::cgi_hi_slot_name())
+        .expect("failed to get CGI hash chain hi slot");
+
+    let actual_cgi_chain_hash =
+        two_words_to_cgi_chain_hash(actual_cgi_chain_hash_lo, actual_cgi_chain_hash_hi);
+
+    assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
@@ -404,5 +425,18 @@ fn merkle_proof_verification_code(
             assert.err="verification failed"
         end
     "#
+    )
+}
+
+// TODO: this procedure should be removed in favor of Agglayer Bridge helper procedure, which should
+// be created in a follow up PR after https://github.com/0xMiden/protocol/pull/2562
+fn two_words_to_cgi_chain_hash(hash_lo: Word, hash_hi: Word) -> Keccak256Output {
+    let hash_bytes = hash_lo
+        .iter()
+        .chain(hash_hi.iter())
+        .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+        .collect::<Vec<u8>>();
+    Keccak256Output::new(
+        hash_bytes.try_into().expect("keccak hash should consist of exactly 32 bytes"),
     )
 }

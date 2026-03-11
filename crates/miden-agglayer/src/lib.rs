@@ -175,6 +175,8 @@ static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::cgi_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
+/// - [`Self::cgi_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -233,6 +235,16 @@ impl AggLayerBridge {
     /// Storage slot name for the GER manager account ID.
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    pub fn cgi_lo_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
 }
 
