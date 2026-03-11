@@ -8,8 +8,9 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::Word;
+use miden_core::program::Program;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;

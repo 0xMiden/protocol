@@ -16,6 +16,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
@@ -426,7 +427,6 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
         "NET".try_into().unwrap(),
         6,
         Felt::new(2_000_000),
-        owner_account_id,
         TokenName::new("NET").unwrap(),
         None,
         None,
@@ -443,6 +443,7 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(NoAuth)
         .with_component(network_faucet.with_info(extension))
+        .with_component(Ownable2Step::new(owner_account_id))
         .build()
         .unwrap();
 
@@ -483,7 +484,6 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
         "MAS".try_into().unwrap(),
         6,
         Felt::new(1_000_000),
-        owner_account_id,
         TokenName::new("MAS").unwrap(),
         None,
         None,
@@ -500,6 +500,7 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(NoAuth)
         .with_component(network_faucet.with_info(extension))
+        .with_component(Ownable2Step::new(owner_account_id))
         .build()?;
 
     let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
@@ -837,7 +838,6 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
         token_symbol,
         decimals,
         max_supply,
-        owner_account_id,
         TokenName::new("POL").unwrap(),
         None,
         None,
