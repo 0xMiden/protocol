@@ -7,6 +7,7 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     EthAddressFormat,
     ExitRoot,
+    MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -130,6 +131,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         "AGG",
@@ -140,6 +142,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         &origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
@@ -328,6 +331,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
     let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let metadata_hash = MetadataHash::from_token_info("AGG", "AGG", 8);
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         "AGG",
@@ -338,6 +342,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         &origin_token_address,
         0, // origin_network
         0, // scale
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 

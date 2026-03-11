@@ -31,6 +31,7 @@ miden-utils-sync = { workspace = true }
 # Third-party dependencies
 primitive-types = { workspace = true }
 thiserror       = { workspace = true }
+tiny-keccak     = { workspace = true }
 
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }

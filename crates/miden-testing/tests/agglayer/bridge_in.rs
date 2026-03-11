@@ -156,6 +156,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         &origin_token_address,
         origin_network,
         scale,
+        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 

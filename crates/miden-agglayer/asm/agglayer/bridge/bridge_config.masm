@@ -106,6 +106,10 @@ end
 #!
 #! Panics if the note sender is not the bridge admin.
 #!
+#! TODO: Once the token name is available in faucet storage and abi.encode(string, string, uint8)
+#! is implemented in MASM, verify the faucet's metadata_hash against the stored name/symbol/decimals
+#! during registration to ensure correctness.
+#!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix, pad(14)]
 #! Outputs: [pad(16)]
 #!

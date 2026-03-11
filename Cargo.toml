@@ -74,4 +74,5 @@ rand_chacha     = { default-features = false, version = "0.9" }
 rstest          = { version = "0.26" }
 serde           = { default-features = false, version = "1.0" }
 thiserror       = { default-features = false, version = "2.0" }
+tiny-keccak     = { default-features = false, features = ["keccak"], version = "2.0" }
 tokio           = { default-features = false, features = ["sync"], version = "1" }

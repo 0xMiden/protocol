@@ -7,4 +7,5 @@
 
 pub use ::miden::agglayer::faucet::claim
 pub use ::miden::agglayer::faucet::asset_to_origin_asset
+pub use ::miden::agglayer::faucet::get_metadata_hash
 pub use ::miden::agglayer::faucet::burn

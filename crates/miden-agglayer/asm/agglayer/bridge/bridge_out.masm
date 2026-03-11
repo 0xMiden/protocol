@@ -144,12 +144,32 @@ pub proc bridge_out
     exec.write_address_to_memory
     # => []
 
-    # TODO construct metadata hash
-    padw padw
-    # => [METADATA_HASH[8]]
+    # Fetch metadata hash from the faucet via FPI.
+    # Reload asset to extract faucet ID for the FPI call.
+    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
+    # => [ASSET]
+    # ASSET layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]
+
+    # Extract faucet ID, drop padding and amount
+    movup.2 drop movup.2 drop
+    # => [faucet_id_prefix, faucet_id_suffix]
+
+    procref.agglayer_faucet::get_metadata_hash
+    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix]
+
+    movup.5 movup.5
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4)]
+
+    exec.tx::execute_foreign_procedure
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
+
+    # Drop 8 trailing padding elements
+    swapdw dropw dropw
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4)]
+
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
-    # => [METADATA_HASH[8], metadata_hash_ptr]
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), metadata_hash_ptr]
     exec.utils::mem_store_double_word_unaligned
 
     # Explicitly zero the 3 padding felts after METADATA_HASH for
