@@ -24,7 +24,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
-use miden_protocol::transaction::{OutputNote, TransactionArgs};
+use miden_protocol::transaction::{RawOutputNote, TransactionArgs};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -452,7 +452,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
         .build()?;
 
-    builder.add_output_note(OutputNote::Full(timelock_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(timelock_note.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain

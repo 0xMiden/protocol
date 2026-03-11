@@ -11,7 +11,7 @@ use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionHeader};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
@@ -279,8 +279,8 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
     let noop_note1 =
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
-    builder.add_output_note(OutputNote::Full(noop_note0.clone()));
-    builder.add_output_note(OutputNote::Full(noop_note1.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note0.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note1.clone()));
     let mut chain = builder.build()?;
 
     let noop_tx = generate_conditional_tx(&mut chain, account0.id(), noop_note0, false).await;

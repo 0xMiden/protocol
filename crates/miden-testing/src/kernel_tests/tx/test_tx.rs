@@ -46,8 +46,8 @@ use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASS
 use miden_protocol::testing::note::DEFAULT_NOTE_CODE;
 use miden_protocol::transaction::{
     InputNotes,
-    OutputNote,
-    OutputNotes,
+    RawOutputNote,
+    RawOutputNotes,
     TransactionArgs,
     TransactionKernel,
     TransactionSummary,
@@ -96,7 +96,7 @@ async fn consuming_note_created_in_future_block_fails() -> anyhow::Result<()> {
     // against reference block 1 which we'll use for the later transaction.
     let tx = mock_chain
         .build_tx_context(account1.id(), &[spawn_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -358,8 +358,8 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
         .tx_script(tx_script)
         .extend_advice_map(vec![(attachment3.content().to_word(), array.as_slice().to_vec())])
         .extend_expected_output_notes(vec![
-            OutputNote::Full(expected_output_note_2.clone()),
-            OutputNote::Full(expected_output_note_3.clone()),
+            RawOutputNote::Full(expected_output_note_2.clone()),
+            RawOutputNote::Full(expected_output_note_3.clone()),
         ])
         .build()?;
 
@@ -393,7 +393,7 @@ async fn executed_transaction_output_notes() -> anyhow::Result<()> {
     let resulting_output_note_3 = executed_transaction.output_notes().get_note(2);
 
     assert_eq!(expected_output_note_3.id(), resulting_output_note_3.id());
-    assert_eq!(expected_output_note_3.assets(), resulting_output_note_3.assets().unwrap());
+    assert_eq!(expected_output_note_3.assets(), resulting_output_note_3.assets());
 
     // make sure that the number of note storage items remains the same
     let resulting_note_2_recipient =
@@ -478,14 +478,14 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
     let input_note = create_spawn_note(vec![&output_note])?;
 
     let mut builder = MockChain::builder();
-    builder.add_output_note(OutputNote::Full(input_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let mock_chain = builder.build()?;
 
     let tx_context = mock_chain.build_tx_context(account, &[input_note.id()], &[])?.build()?;
     let ref_block_num = tx_context.tx_inputs().block_header().block_num().as_u32();
     let final_nonce = tx_context.account().nonce().as_canonical_u64() as u32 + 1;
     let input_notes = tx_context.input_notes().clone();
-    let output_notes = OutputNotes::new(vec![OutputNote::Partial(output_note.into())])?;
+    let output_notes = RawOutputNotes::new(vec![RawOutputNote::Partial(output_note.into())])?;
 
     let error = tx_context.execute().await.unwrap_err();
 

@@ -19,7 +19,7 @@ use miden_protocol::errors::{AccountTreeError, NullifierTreeError, ProposedBlock
 use miden_protocol::note::NoteType;
 use miden_protocol::transaction::{
     InputNoteCommitment,
-    ProvenOutputNote,
+    OutputNote,
     ProvenTransaction,
     TxAccountUpdate,
 };
@@ -400,7 +400,7 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
             ProvenTransaction::new(
                 account_update,
                 Vec::<InputNoteCommitment>::new(),
-                Vec::<ProvenOutputNote>::new(),
+                Vec::<OutputNote>::new(),
                 genesis_block.block_num(),
                 genesis_block.commitment(),
                 FungibleAsset::mock(500).unwrap_fungible(),
