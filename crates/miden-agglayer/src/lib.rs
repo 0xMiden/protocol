@@ -346,7 +346,7 @@ impl AggLayerFaucet {
         scale: u8,
     ) -> Result<Self, FungibleFaucetError> {
         // Use empty name for agglayer faucets (name is stored in Info component, not here).
-        let name = TokenName::new("").expect("empty string is valid");
+        let name = TokenName::default();
         let metadata = FungibleTokenMetadata::with_supply(
             symbol,
             decimals,
