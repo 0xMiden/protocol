@@ -213,7 +213,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        TokenName::new("").unwrap(),
+        TokenName::default(),
         None,
         None,
         None,

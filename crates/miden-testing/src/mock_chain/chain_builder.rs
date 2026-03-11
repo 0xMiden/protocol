@@ -331,7 +331,7 @@ impl MockChainBuilder {
         max_supply: u64,
     ) -> anyhow::Result<Account> {
         let name = TokenName::new(token_symbol)
-            .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
+            .unwrap_or_else(|_| TokenName::default());
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
         let max_supply_felt = Felt::try_from(max_supply)?;
@@ -369,7 +369,7 @@ impl MockChainBuilder {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let name = TokenName::new(token_symbol)
-            .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
+            .unwrap_or_else(|_| TokenName::default());
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
         let metadata = FungibleTokenMetadata::new(
@@ -406,7 +406,7 @@ impl MockChainBuilder {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let name = TokenName::new(token_symbol)
-            .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
+            .unwrap_or_else(|_| TokenName::default());
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -451,7 +451,7 @@ impl MockChainBuilder {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let name = TokenName::new(token_symbol)
-            .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
+            .unwrap_or_else(|_| TokenName::default());
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 

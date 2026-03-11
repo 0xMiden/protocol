@@ -41,6 +41,13 @@ const BYTES_PER_FELT: usize = 7;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenName(Box<str>);
 
+impl Default for TokenName {
+    /// Returns an empty token name.
+    fn default() -> Self {
+        Self(String::new().into_boxed_str())
+    }
+}
+
 impl TokenName {
     /// Maximum byte length for a token name (2 Words = 8 felts × 7 bytes, capacity 55,
     /// capped at 32).
@@ -654,7 +661,7 @@ impl TryFrom<Word> for FungibleTokenMetadata {
             }
         })?;
 
-        let name = TokenName::new("").expect("empty string should be valid");
+        let name = TokenName::default();
         Self::with_supply(symbol, decimals, max_supply, token_supply, name, None, None, None)
     }
 }

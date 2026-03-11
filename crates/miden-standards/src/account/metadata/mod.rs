@@ -107,7 +107,9 @@ pub static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Token name (2 Words = 8 felts), split across 2 slots.
 ///
 /// The encoding is not specified; the value is opaque word data. For human-readable names,
-/// use [`TokenName::new`] / [`TokenName::to_words`] / [`TokenName::try_from_words`].
+/// use [`TokenName::new`](crate::account::faucets::TokenName::new) /
+/// [`TokenName::to_words`](crate::account::faucets::TokenName::to_words) /
+/// [`TokenName::try_from_words`](crate::account::faucets::TokenName::try_from_words).
 pub static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
@@ -135,7 +137,8 @@ pub enum NameUtf8Error {
 /// Bytes are packed 7-bytes-per-felt, length-prefixed, into 8 felts (2 Words).
 /// Returns an error if the UTF-8 byte length exceeds 32.
 ///
-/// Prefer using [`TokenName::new`] + [`TokenName::to_words`] directly.
+/// Prefer using [`TokenName::new`](crate::account::faucets::TokenName::new) +
+/// [`TokenName::to_words`](crate::account::faucets::TokenName::to_words) directly.
 pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
     use crate::account::faucets::TokenName;
     Ok(TokenName::new(s)?.to_words())
@@ -145,7 +148,7 @@ pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
 ///
 /// Assumes the name was encoded with [`name_from_utf8`] (7-bytes-per-felt, length-prefixed).
 ///
-/// Prefer using [`TokenName::try_from_words`] directly.
+/// Prefer using [`TokenName::try_from_words`](crate::account::faucets::TokenName::try_from_words) directly.
 pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
     use crate::account::faucets::TokenName;
     Ok(TokenName::try_from_words(words)?.as_str().into())
@@ -179,8 +182,9 @@ pub enum FieldBytesError {
 /// Bytes are packed 7-bytes-per-felt, length-prefixed, into 28 felts (7 Words).
 /// Returns an error if the length exceeds [`FIELD_MAX_BYTES`].
 ///
-/// Prefer using [`Description::new`] + [`Description::to_words`] (or `LogoURI` / `ExternalLink`)
-/// directly.
+/// Prefer using [`Description::new`](crate::account::faucets::Description::new) +
+/// [`Description::to_words`](crate::account::faucets::Description::to_words) (or `LogoURI` /
+/// `ExternalLink`) directly.
 pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 7], FieldBytesError> {
     use crate::account::faucets::Description;
     let s = core::str::from_utf8(bytes).map_err(|_| FieldBytesError::InvalidUtf8)?;
@@ -268,7 +272,6 @@ pub fn mutability_config_slot() -> &'static StorageSlotName {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
 
     use super::{NAME_UTF8_MAX_BYTES, TokenMetadata as InfoType, mutability_config_slot};
