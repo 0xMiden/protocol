@@ -17,7 +17,14 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetCallbackFlag, AssetCallbacks, FungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetCallbackFlag,
+    AssetCallbacks,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::NoteType;
@@ -26,6 +33,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
+use miden_standards::testing::account_component::MockAccountComponent;
 
 use crate::{AccountState, Auth, assert_transaction_executor_error};
 
@@ -156,9 +164,11 @@ impl From<BlockList> for AccountComponent {
                 )
                 .into_storage_slots(),
         );
-        let metadata =
-            AccountComponentMetadata::new(BlockList::NAME, [AccountType::FungibleFaucet])
-                .with_description("block list callback component for testing");
+        let metadata = AccountComponentMetadata::new(
+            BlockList::NAME,
+            [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
+        )
+        .with_description("block list callback component for testing");
 
         AccountComponent::new(BLOCK_LIST_COMPONENT_CODE.clone(), storage_slots, metadata)
             .expect("block list should satisfy the requirements of a valid account component")
@@ -283,22 +293,16 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     Ok(())
 }
 
-/// Tests that a blocked account cannot receive assets with callbacks enabled.
-///
-/// Flow:
-/// 1. Create a faucet with BasicFungibleFaucet + BlockList components
-/// 2. Create a wallet that is in the block list
-/// 3. Create a P2ID note with a callbacks-enabled asset from the faucet to the wallet
-/// 4. Attempt to consume the note on the blocked wallet
-/// 5. Assert that the transaction fails with ERR_ACCOUNT_BLOCKED
+/// Tests that a blocked account cannot receive a fungible asset with callbacks enabled.
 #[tokio::test]
-async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
+async fn test_blocked_account_cannot_receive_fungible_asset() -> anyhow::Result<()> {
     let mut builder = crate::MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let block_list = BlockList::new(BTreeSet::from_iter([target_account.id()]));
-    let basic_faucet = BasicFungibleFaucet::new("BLK".try_into()?, 8, Felt::new(1_000_000))?;
+
+    let basic_faucet = BasicFungibleFaucet::new("BLK".try_into()?, 8, Felt::from(1_000_000u32))?;
 
     let account_builder = AccountBuilder::new([42u8; 32])
         .storage_mode(AccountStorageMode::Public)
@@ -314,9 +318,9 @@ async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
         AccountState::Exists,
     )?;
 
-    // Create a P2ID note with a callbacks-enabled asset
     let fungible_asset =
         FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
@@ -327,11 +331,58 @@ async fn test_blocked_account_cannot_receive_asset() -> anyhow::Result<()> {
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
-    // Get foreign account inputs for the faucet so the callback's foreign context can access it
     let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
 
-    // Try to consume the note on the blocked wallet - should fail because the callback
-    // checks the block list and panics.
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_BLOCKED);
+
+    Ok(())
+}
+
+/// Tests that a blocked account cannot receive a non-fungible asset with callbacks enabled.
+#[tokio::test]
+async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Result<()> {
+    let mut builder = crate::MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    let block_list = BlockList::new(BTreeSet::from_iter([target_account.id()]));
+
+    let account_builder = AccountBuilder::new([42u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::NonFungibleFaucet)
+        .with_component(MockAccountComponent::with_empty_slots())
+        .with_component(block_list);
+
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    let details = NonFungibleAssetDetails::new(faucet.id(), vec![1, 2, 3, 4])?;
+    let asset = NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled);
+
+    let note = builder.add_p2id_note(
+        faucet.id(),
+        target_account.id(),
+        &[Asset::NonFungible(asset)],
+        NoteType::Public,
+    )?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
     let result = mock_chain
         .build_tx_context(target_account.id(), &[note.id()], &[])?
         .foreign_accounts(vec![faucet_inputs])
