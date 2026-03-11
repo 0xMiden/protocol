@@ -7,8 +7,6 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable
-use miden::core::crypto::hashes::poseidon2
-use miden::core::mem
 
 # =================================================================================================
 # CONSTANTS — slot names
@@ -95,95 +93,6 @@ proc get_mutability_config_word
     exec.active_account::get_item
 end
 
-# --- Description chunk loaders ---
-proc get_description_chunk_0
-    push.DESCRIPTION_0_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_1
-    push.DESCRIPTION_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_2
-    push.DESCRIPTION_2_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_3
-    push.DESCRIPTION_3_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_4
-    push.DESCRIPTION_4_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_5
-    push.DESCRIPTION_5_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_description_chunk_6
-    push.DESCRIPTION_6_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-# --- Logo URI chunk loaders ---
-proc get_logo_uri_chunk_0
-    push.LOGO_URI_0_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_1
-    push.LOGO_URI_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_2
-    push.LOGO_URI_2_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_3
-    push.LOGO_URI_3_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_4
-    push.LOGO_URI_4_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_5
-    push.LOGO_URI_5_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_logo_uri_chunk_6
-    push.LOGO_URI_6_SLOT[0..2]
-    exec.active_account::get_item
-end
-
-# --- External link chunk loaders ---
-proc get_external_link_chunk_0
-    push.EXTERNAL_LINK_0_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_1
-    push.EXTERNAL_LINK_1_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_2
-    push.EXTERNAL_LINK_2_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_3
-    push.EXTERNAL_LINK_3_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_4
-    push.EXTERNAL_LINK_4_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_5
-    push.EXTERNAL_LINK_5_SLOT[0..2]
-    exec.active_account::get_item
-end
-proc get_external_link_chunk_6
-    push.EXTERNAL_LINK_6_SLOT[0..2]
-    exec.active_account::get_item
-end
 #!
 #! Invocation: call
 pub proc get_token_metadata
@@ -350,260 +259,7 @@ end
 pub use ownable::get_owner
 
 # =================================================================================================
-# DESCRIPTION (7 words) — commitment/unhashing pattern
-# =================================================================================================
-
-#! Returns an RPO256 commitment to the description and inserts the 7 words into the advice map.
-#!
-#! The commitment is computed over the 28 felts of the description. The preimage (7 words)
-#! is placed in the advice map keyed by the commitment so that a subsequent
-#! `get_description` call can retrieve and verify it.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [COMMITMENT, pad(12)]
-#!
-#! Invocation: call
-@locals(28)
-pub proc get_description_commitment
-    exec.get_description_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_description_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_description_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_description_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_description_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_description_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_description_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-    # => [pad(16)]
-
-    # Hash the 7 words (28 felts) in local memory via RPO256.
-    # hash_elements expects [ptr, num_felts].
-    push.28 locaddr.FIELD_0_LOC
-    exec.poseidon2::hash_elements
-    # => [COMMITMENT, pad(16)]  depth=20
-
-    # Insert the 7-word preimage into the advice map keyed by COMMITMENT.
-    # adv.insert_mem expects [COMMITMENT, start_addr, end_addr] on stack.
-    locaddr.FIELD_0_LOC dup add.28
-    movdn.5 movdn.4
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-    # => [COMMITMENT, pad(16)]  depth=20
-
-    swapw dropw
-    # => [COMMITMENT, pad(12)]  depth=16
-end
-
-#! Writes the description (7 Words) to memory at the given pointer.
-#!
-#! Loads the description from storage, computes its RPO256 commitment, inserts the preimage
-#! into the advice map, then pipes it into destination memory and verifies the commitment.
-#!
-#! Inputs:  [dest_ptr, pad(15)]
-#! Outputs: [dest_ptr, pad(15)]
-#!
-#! Invocation: exec
-@locals(28)
-pub proc get_description
-    exec.get_description_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_description_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_description_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_description_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_description_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_description_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_description_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-    # => [dest_ptr, pad(15)]  depth=16
-
-    # Hash the 7 words (28 felts) in local memory.
-    push.28 locaddr.FIELD_0_LOC
-    # => [start_ptr, 28, dest_ptr, pad(15)]  depth=18
-    exec.poseidon2::hash_elements
-    # => [COMMITMENT, dest_ptr, pad(15)]  depth=20
-
-    # Insert preimage into advice map keyed by COMMITMENT.
-    locaddr.FIELD_0_LOC dup add.28
-    # => [end_ptr, start_ptr, COMMITMENT, dest_ptr, pad(15)]  depth=22
-    movdn.5 movdn.4
-    # => [COMMITMENT, start_ptr, end_ptr, dest_ptr, pad(15)]
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-    # => [COMMITMENT, dest_ptr, pad(15)]  depth=20
-
-    # Load preimage onto the advice stack.
-    adv.push_mapval
-    # AS => [[DESCRIPTION_DATA]]
-
-    # Set up pipe_preimage_to_memory: [num_words, dest_ptr, COMMITMENT, ...]
-    # dest_ptr is at position 4 (right after COMMITMENT)
-    dup.4 push.7
-    # => [7, dest_ptr, COMMITMENT, dest_ptr, pad(15)]  depth=22
-
-    exec.mem::pipe_preimage_to_memory drop
-    # => [dest_ptr, pad(15)]  depth=16 (consumed 6 [6,dest_ptr,COMMITMENT], pushed 1 [updated_ptr], dropped it)
-end
-
-# =================================================================================================
-# LOGO URI (7 words) — commitment/unhashing pattern
-# =================================================================================================
-
-#! Returns an RPO256 commitment to the logo URI and inserts the 7 words into the advice map.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [COMMITMENT, pad(12)]
-#!
-#! Invocation: call
-@locals(28)
-pub proc get_logo_uri_commitment
-    exec.get_logo_uri_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_logo_uri_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_logo_uri_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_logo_uri_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_logo_uri_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_logo_uri_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_logo_uri_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-
-    push.28 locaddr.FIELD_0_LOC
-    exec.poseidon2::hash_elements
-
-    locaddr.FIELD_0_LOC dup add.28
-    movdn.5 movdn.4
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-
-    swapw dropw
-end
-
-#! Writes the logo URI (7 Words) to memory at the given pointer.
-#!
-#! Inputs:  [dest_ptr, pad(15)]
-#! Outputs: [dest_ptr, pad(15)]
-#!
-#! Invocation: exec
-@locals(28)
-pub proc get_logo_uri
-    exec.get_logo_uri_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_logo_uri_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_logo_uri_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_logo_uri_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_logo_uri_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_logo_uri_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_logo_uri_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-
-    push.28 locaddr.FIELD_0_LOC
-    exec.poseidon2::hash_elements
-
-    locaddr.FIELD_0_LOC dup add.28
-    movdn.5 movdn.4
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-
-    adv.push_mapval
-    dup.4 push.7
-    exec.mem::pipe_preimage_to_memory drop
-end
-
-# =================================================================================================
-# EXTERNAL LINK (7 words) — commitment/unhashing pattern
-# =================================================================================================
-
-#! Returns an RPO256 commitment to the external link and inserts the 7 words into the advice map.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [COMMITMENT, pad(12)]
-#!
-#! Invocation: call
-@locals(28)
-pub proc get_external_link_commitment
-    exec.get_external_link_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_external_link_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_external_link_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_external_link_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_external_link_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_external_link_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_external_link_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-
-    push.28 locaddr.FIELD_0_LOC
-    exec.poseidon2::hash_elements
-
-    locaddr.FIELD_0_LOC dup add.28
-    movdn.5 movdn.4
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-
-    swapw dropw
-end
-
-#! Writes the external link (7 Words) to memory at the given pointer.
-#!
-#! Inputs:  [dest_ptr, pad(15)]
-#! Outputs: [dest_ptr, pad(15)]
-#!
-#! Invocation: exec
-@locals(28)
-pub proc get_external_link
-    exec.get_external_link_chunk_0
-    loc_storew_le.FIELD_0_LOC dropw
-    exec.get_external_link_chunk_1
-    loc_storew_le.FIELD_1_LOC dropw
-    exec.get_external_link_chunk_2
-    loc_storew_le.FIELD_2_LOC dropw
-    exec.get_external_link_chunk_3
-    loc_storew_le.FIELD_3_LOC dropw
-    exec.get_external_link_chunk_4
-    loc_storew_le.FIELD_4_LOC dropw
-    exec.get_external_link_chunk_5
-    loc_storew_le.FIELD_5_LOC dropw
-    exec.get_external_link_chunk_6
-    loc_storew_le.FIELD_6_LOC dropw
-
-    push.28 locaddr.FIELD_0_LOC
-    exec.poseidon2::hash_elements
-
-    locaddr.FIELD_0_LOC dup add.28
-    movdn.5 movdn.4
-    adv.insert_mem
-    movup.4 drop movup.4 drop
-
-    adv.push_mapval
-    dup.4 push.7
-    exec.mem::pipe_preimage_to_memory drop
-end
-
-# =================================================================================================
-# OPTIONAL SET DESCRIPTION (owner-only when desc_mutable == 1)
+# SET DESCRIPTION (owner-only when desc_mutable == 1)
 # =================================================================================================
 
 #! Updates the description (7 Words) if the description mutability flag is 1
@@ -621,7 +277,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call (from note script context)
-pub proc optional_set_description
+pub proc set_description
     # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
@@ -673,7 +329,7 @@ pub proc optional_set_description
 end
 
 # =================================================================================================
-# OPTIONAL SET LOGO URI (owner-only when logo_mutable == 1)
+# SET LOGO URI (owner-only when logo_mutable == 1)
 # =================================================================================================
 
 #! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
@@ -691,7 +347,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call (from note script context)
-pub proc optional_set_logo_uri
+pub proc set_logo_uri
     # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
@@ -739,7 +395,7 @@ pub proc optional_set_logo_uri
 end
 
 # =================================================================================================
-# OPTIONAL SET EXTERNAL LINK (owner-only when extlink_mutable == 1)
+# SET EXTERNAL LINK (owner-only when extlink_mutable == 1)
 # =================================================================================================
 
 #! Updates the external link (7 Words) if the external link mutability flag is 1
@@ -757,7 +413,7 @@ end
 #! - the note sender is not the owner.
 #!
 #! Invocation: call (from note script context)
-pub proc optional_set_external_link
+pub proc set_external_link
     # Read mutability config word: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
     exec.get_mutability_config_word
     swapw dropw
@@ -805,7 +461,7 @@ pub proc optional_set_external_link
 end
 
 # =================================================================================================
-# OPTIONAL SET MAX SUPPLY (owner-only when max_supply_mutable == 1)
+# SET MAX SUPPLY (owner-only when max_supply_mutable == 1)
 # =================================================================================================
 
 #! Updates the max supply if the max supply mutability flag is 1
@@ -820,7 +476,7 @@ end
 #! - the new max supply is less than the current token supply.
 #!
 #! Invocation: call (from note script context)
-pub proc optional_set_max_supply
+pub proc set_max_supply
     # 1. Check max supply mutability
     exec.get_mutability_config_word
     # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, new_max_supply, pad(15)]

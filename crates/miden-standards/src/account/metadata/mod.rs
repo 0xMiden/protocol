@@ -38,9 +38,9 @@
 //!
 //! All metadata procedures (getters, `get_owner`, setters) live in
 //! `miden::standards::metadata::fungible`, which depends on ownable. The standalone
-//! The TokenMetadata component uses the standards library and exposes `get_name`,
-//! `get_description`, `get_logo_uri`, `get_external_link`; for owner and mutable fields use a
-//! component that re-exports from fungible (e.g. network fungible faucet).
+//! The TokenMetadata component uses the standards library and exposes `get_name`; for owner
+//! and mutable fields use a component that re-exports from fungible (e.g. network fungible
+//! faucet).
 //!
 //! ## String encoding (UTF-8)
 //!
@@ -310,14 +310,14 @@ impl TokenMetadata {
     ///
     /// The owner is stored in the `ownable::owner_config` slot and is used by the
     /// `metadata::fungible` MASM procedures to authorize mutations (e.g.
-    /// `optional_set_description`).
+    /// `set_description`).
     pub fn with_owner(mut self, owner: AccountId) -> Self {
         self.owner = Some(owner);
         self
     }
 
     /// Sets whether the max supply can be updated by the owner via
-    /// `optional_set_max_supply`. If `false` (default), the max supply is immutable.
+    /// `set_max_supply`. If `false` (default), the max supply is immutable.
     pub fn with_max_supply_mutable(mut self, mutable: bool) -> Self {
         self.max_supply_mutable = mutable;
         self
@@ -434,7 +434,7 @@ impl TokenMetadata {
         let mut slots: Vec<StorageSlot> = Vec::new();
 
         // Owner slot (ownable::owner_config) — required by metadata::fungible MASM procedures
-        // for get_owner and verify_owner (used in optional_set_* mutations).
+        // for get_owner and verify_owner (used in set_* mutations).
         // Word layout: [0, 0, owner_suffix, owner_prefix] so that after get_item (which places
         // word[0] on top), dropping the two leading zeros yields [owner_suffix, owner_prefix].
         // Only included when an owner is explicitly set, to avoid conflicting with components

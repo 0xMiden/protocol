@@ -100,7 +100,7 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // METADATA LIBRARIES
 // ================================================================================================
 
-// Metadata Info component uses the standards library (get_name, get_description, etc. from
+// Metadata Info component uses the standards library (get_name, set_description, etc. from
 // metadata).
 static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
     LazyLock::new(|| Library::from(crate::StandardsLib::default()));
@@ -137,7 +137,7 @@ pub fn network_fungible_faucet_library() -> Library {
 /// Returns the Metadata Info component library.
 ///
 /// Uses the standards library; the standalone [`Info`](crate::account::metadata::TokenMetadata)
-/// component exposes get_name, get_description, get_logo_uri, get_external_link from
+/// component exposes get_name, set_description, set_logo_uri, set_external_link from
 /// `miden::standards::metadata::fungible`.
 pub fn metadata_info_component_library() -> Library {
     METADATA_INFO_COMPONENT_LIBRARY.clone()

@@ -146,51 +146,6 @@ async fn metadata_info_get_name_zeros_returns_empty() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that get_description_commitment returns the RPO256 hash of the 7 description words.
-#[tokio::test]
-async fn metadata_info_get_description_from_masm() -> anyhow::Result<()> {
-    let desc_text = "some test description text";
-    let description_typed = Description::new(desc_text).unwrap();
-    let description = description_typed.to_words();
-
-    let extension = Info::new().with_description(description_typed, false);
-
-    let account = AccountBuilder::new([1u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_commitment = Hasher::hash_elements(&desc_felts);
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_description_commitment
-            # => [COMMITMENT, pad(12)]
-
-            push.{expected}
-            assert_eqw.err="description commitment does not match"
-        end
-        "#,
-        expected = expected_commitment,
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
 /// Tests that the metadata extension works alongside a fungible faucet.
 #[test]
 fn metadata_info_with_faucet_storage() {
@@ -478,7 +433,6 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
     let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
     let desc_text = "network faucet description";
     let description_typed = Description::new(desc_text).unwrap();
-    let description = description_typed.to_words();
 
     let network_faucet = NetworkFungibleFaucet::new(
         "MAS".try_into().unwrap(),
@@ -503,9 +457,6 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
         .with_component(Ownable2Step::new(owner_account_id))
         .build()?;
 
-    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_desc_commitment = Hasher::hash_elements(&desc_felts);
-
     let tx_script = format!(
         r#"
         begin
@@ -514,16 +465,10 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
             assert_eqw.err="network faucet name chunk 0 does not match"
             push.{expected_name_1}
             assert_eqw.err="network faucet name chunk 1 does not match"
-
-            call.::miden::standards::metadata::fungible::get_description_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected_desc_commitment}
-            assert_eqw.err="network faucet description commitment does not match"
         end
         "#,
         expected_name_0 = name_words[0],
         expected_name_1 = name_words[1],
-        expected_desc_commitment = expected_desc_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1035,7 +980,6 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
     let name = token_name.to_words();
     let desc_text = "readable description";
     let description_typed = Description::new(desc_text).unwrap();
-    let description = description_typed.to_words();
 
     let faucet = BasicFungibleFaucet::new(
         "MAS".try_into().unwrap(),
@@ -1056,10 +1000,7 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
         .with_component(faucet.with_info(extension))
         .build()?;
 
-    let desc_felts: Vec<Felt> = description.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_desc_commitment = Hasher::hash_elements(&desc_felts);
-
-    // MASM script to read name and description commitment via the metadata procedures and verify
+    // MASM script to read name via the metadata procedures and verify
     let tx_script = format!(
         r#"
         begin
@@ -1070,17 +1011,10 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
             assert_eqw.err="faucet name chunk 0 does not match"
             push.{expected_name_1}
             assert_eqw.err="faucet name chunk 1 does not match"
-
-            # Get description commitment and verify
-            call.::miden::standards::metadata::fungible::get_description_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected_desc_commitment}
-            assert_eqw.err="faucet description commitment does not match"
         end
         "#,
         expected_name_0 = name[0],
         expected_name_1 = name[1],
-        expected_desc_commitment = expected_desc_commitment,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1098,7 +1032,7 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
 }
 
 // =================================================================================================
-// optional_set_description: mutable flag and verify_owner
+// set_description: mutable flag and verify_owner
 // =================================================================================================
 
 /// Builds the advice map value for field setters.
@@ -1110,9 +1044,9 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
     value
 }
 
-/// When description mutable flag is 0 (immutable), optional_set_description panics.
+/// When description mutable flag is 0 (immutable), set_description panics.
 #[tokio::test]
-async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
+async fn set_description_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner_account_id = AccountId::dummy(
         [1; 15],
@@ -1153,7 +1087,7 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
 
     let tx_script = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_description
+            call.::miden::standards::metadata::fungible::set_description
         end
     "#;
 
@@ -1174,10 +1108,10 @@ async fn optional_set_description_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When description mutable flag is 1 and note sender is the owner, optional_set_description
+/// When description mutable flag is 1 and note sender is the owner, set_description
 /// succeeds.
 #[tokio::test]
-async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
+async fn set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -1224,7 +1158,7 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
 
     let set_desc_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_description
+            call.::miden::standards::metadata::fungible::set_description
         end
     "#;
 
@@ -1259,10 +1193,10 @@ async fn optional_set_description_mutable_owner_succeeds() -> anyhow::Result<()>
     Ok(())
 }
 
-/// When description mutable flag is 1 but note sender is not the owner, optional_set_description
+/// When description mutable flag is 1 but note sender is not the owner, set_description
 /// panics.
 #[tokio::test]
-async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
+async fn set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -1311,7 +1245,7 @@ async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()
 
     let set_desc_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_description
+            call.::miden::standards::metadata::fungible::set_description
         end
     "#;
 
@@ -1341,12 +1275,12 @@ async fn optional_set_description_mutable_non_owner_fails() -> anyhow::Result<()
 }
 
 // =================================================================================================
-// optional_set_max_supply: mutable flag and verify_owner
+// set_max_supply: mutable flag and verify_owner
 // =================================================================================================
 
-/// When max_supply_mutable is 0 (immutable), optional_set_max_supply panics.
+/// When max_supply_mutable is 0 (immutable), set_max_supply panics.
 #[tokio::test]
-async fn optional_set_max_supply_immutable_fails() -> anyhow::Result<()> {
+async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner_account_id = AccountId::dummy(
         [1; 15],
@@ -1372,7 +1306,7 @@ async fn optional_set_max_supply_immutable_fails() -> anyhow::Result<()> {
         r#"
         begin
             push.{new_max_supply}
-            call.::miden::standards::metadata::fungible::optional_set_max_supply
+            call.::miden::standards::metadata::fungible::set_max_supply
         end
     "#
     );
@@ -1393,9 +1327,9 @@ async fn optional_set_max_supply_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When max_supply_mutable is 1 and note sender is the owner, optional_set_max_supply succeeds.
+/// When max_supply_mutable is 1 and note sender is the owner, set_max_supply succeeds.
 #[tokio::test]
-async fn optional_set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
+async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     use miden_standards::account::faucets::NetworkFungibleFaucet;
 
     let mut builder = MockChain::builder();
@@ -1426,7 +1360,7 @@ async fn optional_set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> 
         begin
             push.{new_max_supply}
             swap drop
-            call.::miden::standards::metadata::fungible::optional_set_max_supply
+            call.::miden::standards::metadata::fungible::set_max_supply
         end
     "#
     );
@@ -1466,9 +1400,9 @@ async fn optional_set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> 
     Ok(())
 }
 
-/// When max_supply_mutable is 1 but note sender is not the owner, optional_set_max_supply panics.
+/// When max_supply_mutable is 1 but note sender is not the owner, set_max_supply panics.
 #[tokio::test]
-async fn optional_set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
+async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -1502,7 +1436,7 @@ async fn optional_set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()>
         begin
             push.{new_max_supply}
             swap drop
-            call.::miden::standards::metadata::fungible::optional_set_max_supply
+            call.::miden::standards::metadata::fungible::set_max_supply
         end
     "#
     );
@@ -1588,150 +1522,12 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
 }
 
 // =================================================================================================
-// get_logo_uri_commitment: commitment test
+// set_logo_uri: mutable flag and verify_owner
 // =================================================================================================
 
-/// Tests that get_logo_uri_commitment returns the RPO256 hash of the 7 logo URI words.
+/// When logo URI flag is 0 (immutable), set_logo_uri panics.
 #[tokio::test]
-async fn metadata_get_logo_uri_commitment() -> anyhow::Result<()> {
-    let logo_text = "https://example.com/logo.png";
-    let logo_typed = LogoURI::new(logo_text).unwrap();
-    let logo_words = logo_typed.to_words();
-
-    let extension = Info::new().with_logo_uri(logo_typed, false);
-
-    let account = AccountBuilder::new([10u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    let logo_felts: Vec<Felt> = logo_words.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_commitment = Hasher::hash_elements(&logo_felts);
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_logo_uri_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected}
-            assert_eqw.err="logo URI commitment does not match"
-        end
-        "#,
-        expected = expected_commitment,
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
-// =================================================================================================
-// get_external_link_commitment: commitment test
-// =================================================================================================
-
-/// Tests that get_external_link_commitment returns the RPO256 hash of the 7 external link words.
-#[tokio::test]
-async fn metadata_get_external_link_commitment() -> anyhow::Result<()> {
-    let link_text = "https://example.com";
-    let link_typed = ExternalLink::new(link_text).unwrap();
-    let link_words = link_typed.to_words();
-
-    let extension = Info::new().with_external_link(link_typed, false);
-
-    let account = AccountBuilder::new([11u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    let link_felts: Vec<Felt> = link_words.iter().flat_map(|w| w.iter().copied()).collect();
-    let expected_commitment = Hasher::hash_elements(&link_felts);
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_external_link_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected}
-            assert_eqw.err="external link commitment does not match"
-        end
-        "#,
-        expected = expected_commitment,
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
-/// Tests that commitment of an empty (all-zero) description is deterministic.
-#[tokio::test]
-async fn metadata_get_description_commitment_zero_field() -> anyhow::Result<()> {
-    // No description set — all storage slots will be zero words
-    let extension = Info::new();
-
-    let account = AccountBuilder::new([12u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .with_auth_component(NoAuth)
-        .with_component(build_faucet_with_info(extension))
-        .build()?;
-
-    // Expected: RPO256 hash of 28 zero felts (7 Words)
-    let zero_felts = vec![Felt::new(0); 28];
-    let expected_commitment = Hasher::hash_elements(&zero_felts);
-
-    let tx_script = format!(
-        r#"
-        begin
-            call.::miden::standards::metadata::fungible::get_description_commitment
-            # => [COMMITMENT, pad(12)]
-            push.{expected}
-            assert_eqw.err="zero description commitment does not match"
-        end
-        "#,
-        expected = expected_commitment,
-    );
-
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let tx_script =
-        CodeBuilder::with_source_manager(source_manager.clone()).compile_tx_script(tx_script)?;
-
-    let tx_context = TransactionContextBuilder::new(account)
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    tx_context.execute().await?;
-
-    Ok(())
-}
-
-// =================================================================================================
-// optional_set_logo_uri: mutable flag and verify_owner
-// =================================================================================================
-
-/// When logo URI flag is 0 (immutable), optional_set_logo_uri panics.
-#[tokio::test]
-async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
+async fn set_logo_uri_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner_account_id = AccountId::dummy(
         [1; 15],
@@ -1772,7 +1568,7 @@ async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
 
     let tx_script = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+            call.::miden::standards::metadata::fungible::set_logo_uri
         end
     "#;
 
@@ -1793,9 +1589,9 @@ async fn optional_set_logo_uri_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When logo URI mutable flag is 1 and note sender is the owner, optional_set_logo_uri succeeds.
+/// When logo URI mutable flag is 1 and note sender is the owner, set_logo_uri succeeds.
 #[tokio::test]
-async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
+async fn set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -1839,7 +1635,7 @@ async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
 
     let set_logo_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+            call.::miden::standards::metadata::fungible::set_logo_uri
         end
     "#;
 
@@ -1874,9 +1670,9 @@ async fn optional_set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When logo URI mutable flag is 1 but note sender is not the owner, optional_set_logo_uri panics.
+/// When logo URI mutable flag is 1 but note sender is not the owner, set_logo_uri panics.
 #[tokio::test]
-async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
+async fn set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -1925,7 +1721,7 @@ async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
 
     let set_logo_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_logo_uri
+            call.::miden::standards::metadata::fungible::set_logo_uri
         end
     "#;
 
@@ -1955,12 +1751,12 @@ async fn optional_set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
 }
 
 // =================================================================================================
-// optional_set_external_link: mutable flag and verify_owner
+// set_external_link: mutable flag and verify_owner
 // =================================================================================================
 
-/// When external link flag is 0 (immutable), optional_set_external_link panics.
+/// When external link flag is 0 (immutable), set_external_link panics.
 #[tokio::test]
-async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
+async fn set_external_link_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner_account_id = AccountId::dummy(
         [1; 15],
@@ -2001,7 +1797,7 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
 
     let tx_script = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_external_link
+            call.::miden::standards::metadata::fungible::set_external_link
         end
     "#;
 
@@ -2022,10 +1818,10 @@ async fn optional_set_external_link_immutable_fails() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// When external link mutable flag is 1 and note sender is the owner, optional_set_external_link
+/// When external link mutable flag is 1 and note sender is the owner, set_external_link
 /// succeeds.
 #[tokio::test]
-async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
+async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -2068,7 +1864,7 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
 
     let set_link_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_external_link
+            call.::miden::standards::metadata::fungible::set_external_link
         end
     "#;
 
@@ -2104,9 +1900,9 @@ async fn optional_set_external_link_mutable_owner_succeeds() -> anyhow::Result<(
 }
 
 /// When external link mutable flag is 1 but note sender is not the owner,
-/// optional_set_external_link panics.
+/// set_external_link panics.
 #[tokio::test]
-async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
+async fn set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let owner_account_id = AccountId::dummy(
@@ -2155,7 +1951,7 @@ async fn optional_set_external_link_mutable_non_owner_fails() -> anyhow::Result<
 
     let set_link_note_script_code = r#"
         begin
-            call.::miden::standards::metadata::fungible::optional_set_external_link
+            call.::miden::standards::metadata::fungible::set_external_link
         end
     "#;
 
