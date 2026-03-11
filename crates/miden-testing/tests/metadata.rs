@@ -31,7 +31,7 @@ use miden_standards::account::metadata::{
     FieldBytesError,
     LOGO_URI_DATA_KEY,
     NAME_UTF8_MAX_BYTES,
-    TokenMetadata as Info,
+    TokenMetadata,
     field_from_bytes,
     mutability_config_slot,
 };
@@ -46,7 +46,7 @@ use miden_standards::errors::standards::{
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
 
-fn build_faucet_with_info(info: Info) -> BasicFungibleFaucet {
+fn build_faucet_with_info(info: TokenMetadata) -> BasicFungibleFaucet {
     BasicFungibleFaucet::new(
         "TST".try_into().unwrap(),
         2,
@@ -66,7 +66,7 @@ async fn metadata_info_get_name_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("test name").unwrap();
     let name = token_name.to_words();
 
-    let extension = Info::new().with_name(token_name);
+    let extension = TokenMetadata::new().with_name(token_name);
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -114,7 +114,7 @@ async fn metadata_info_get_name_from_masm() -> anyhow::Result<()> {
 /// Tests that reading zero-valued name returns empty words.
 #[tokio::test]
 async fn metadata_info_get_name_zeros_returns_empty() -> anyhow::Result<()> {
-    let extension = Info::new();
+    let extension = TokenMetadata::new();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -158,7 +158,7 @@ fn metadata_info_with_faucet_storage() {
     let description_typed = Description::new(desc_text).unwrap();
     let description = description_typed.to_words();
 
-    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
+    let extension = TokenMetadata::new().with_name(token_name).with_description(description_typed, false);
 
     let faucet = BasicFungibleFaucet::new(
         "TST".try_into().unwrap(),
@@ -187,14 +187,14 @@ fn metadata_info_with_faucet_storage() {
     assert_eq!(faucet_metadata[2], Felt::new(8)); // decimals
 
     // Verify name
-    let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     assert_eq!(name_0, name[0]);
     assert_eq!(name_1, name[1]);
 
     // Verify description
     for (i, expected) in description.iter().enumerate() {
-        let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
 }
@@ -204,15 +204,15 @@ fn metadata_info_with_faucet_storage() {
 fn name_32_bytes_accepted() {
     let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
     let token_name = TokenName::new(&max_name).unwrap();
-    let extension = Info::new().with_name(token_name);
+    let extension = TokenMetadata::new().with_name(token_name);
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
         .with_component(build_faucet_with_info(extension))
         .build()
         .unwrap();
-    let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     let decoded = miden_standards::account::metadata::name_to_utf8(&[name_0, name_1]).unwrap();
     assert_eq!(decoded, max_name);
 }
@@ -235,7 +235,7 @@ fn description_7_words_full_capacity() {
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description_typed = Description::new(&desc_text).unwrap();
     let description = description_typed.to_words();
-    let extension = Info::new().with_description(description_typed, false);
+    let extension = TokenMetadata::new().with_description(description_typed, false);
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
@@ -243,7 +243,7 @@ fn description_7_words_full_capacity() {
         .build()
         .unwrap();
     for (i, expected) in description.iter().enumerate() {
-        let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
 }
@@ -259,7 +259,7 @@ fn field_over_max_bytes_rejected() {
     assert!(matches!(result, Err(FieldBytesError::TooLong(n)) if n == over));
 }
 
-/// Tests that BasicFungibleFaucet with Info component (name/description) works correctly.
+/// Tests that BasicFungibleFaucet with TokenMetadata component (name/description) works correctly.
 #[test]
 fn faucet_with_integrated_metadata() {
     use miden_protocol::Felt;
@@ -281,7 +281,7 @@ fn faucet_with_integrated_metadata() {
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
+    let extension = TokenMetadata::new().with_name(token_name).with_description(description_typed, false);
 
     let account = AccountBuilder::new([2u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -298,18 +298,18 @@ fn faucet_with_integrated_metadata() {
     assert_eq!(faucet_metadata[2], Felt::new(6)); // decimals
 
     // Verify name
-    let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     assert_eq!(name_0, name[0]);
     assert_eq!(name_1, name[1]);
 
     // Verify description
     for (i, expected) in description.iter().enumerate() {
-        let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
 
-    // Verify the faucet can be recovered from the account (metadata only; name/desc are in Info)
+    // Verify the faucet can be recovered from the account (metadata only; name/desc are in TokenMetadata)
     let recovered_faucet = BasicFungibleFaucet::try_from(&account).unwrap();
     assert_eq!(recovered_faucet.max_supply(), Felt::new(500_000));
     assert_eq!(recovered_faucet.decimals(), 6);
@@ -335,7 +335,7 @@ fn faucet_initialized_with_max_name_and_full_description() {
         None,
     )
     .unwrap();
-    let extension = Info::new()
+    let extension = TokenMetadata::new()
         .with_name(TokenName::new(&max_name).unwrap())
         .with_description(description_typed, false);
 
@@ -348,12 +348,12 @@ fn faucet_initialized_with_max_name_and_full_description() {
         .unwrap();
 
     let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
-    let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     assert_eq!(name_0, name_words[0]);
     assert_eq!(name_1, name_words[1]);
     for (i, expected) in description.iter().enumerate() {
-        let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
     let faucet_metadata = account.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap();
@@ -389,7 +389,7 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
     )
     .unwrap();
 
-    let extension = Info::new()
+    let extension = TokenMetadata::new()
         .with_name(TokenName::new(&max_name).unwrap())
         .with_description(description_typed, false);
 
@@ -403,12 +403,12 @@ fn network_faucet_initialized_with_max_name_and_full_description() {
         .unwrap();
 
     let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
-    let name_0 = account.storage().get_item(Info::name_chunk_0_slot()).unwrap();
-    let name_1 = account.storage().get_item(Info::name_chunk_1_slot()).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     assert_eq!(name_0, name_words[0]);
     assert_eq!(name_1, name_words[1]);
     for (i, expected) in description.iter().enumerate() {
-        let chunk = account.storage().get_item(Info::description_slot(i)).unwrap();
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
         assert_eq!(chunk, *expected);
     }
     let faucet_metadata =
@@ -445,7 +445,7 @@ async fn network_faucet_get_name_and_description_from_masm() -> anyhow::Result<(
     )
     .unwrap();
 
-    let extension = Info::new()
+    let extension = TokenMetadata::new()
         .with_name(TokenName::new(&max_name).unwrap())
         .with_description(description_typed, false);
 
@@ -721,7 +721,7 @@ async fn faucet_get_token_metadata_only() -> anyhow::Result<()> {
 /// Isolated test: get_mutability_config.
 #[tokio::test]
 async fn metadata_get_config_only() -> anyhow::Result<()> {
-    let extension = Info::new()
+    let extension = TokenMetadata::new()
         .with_description(Description::new("test").unwrap(), true) // mutable
         .with_max_supply_mutable(true);
 
@@ -790,10 +790,10 @@ async fn metadata_get_owner_only() -> anyhow::Result<()> {
     )
     .unwrap();
 
-    // Info provides the ownable::owner_config slot (single-step) that metadata::fungible::get_owner
+    // TokenMetadata provides the ownable::owner_config slot (single-step) that metadata::fungible::get_owner
     // reads from, plus the metadata library. NetworkFungibleFaucet uses ownable2step::owner_config
     // (different slot name), so there's no conflict.
-    let info = Info::new()
+    let info = TokenMetadata::new()
         .with_name(TokenName::new("POL").unwrap())
         .with_owner(owner_account_id);
 
@@ -991,7 +991,7 @@ async fn faucet_metadata_readable_from_masm() -> anyhow::Result<()> {
         None,
     )
     .unwrap();
-    let extension = Info::new().with_name(token_name).with_description(description_typed, false);
+    let extension = TokenMetadata::new().with_name(token_name).with_description(description_typed, false);
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(miden_protocol::account::AccountType::FungibleFaucet)
@@ -1186,7 +1186,7 @@ async fn set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed.account_delta())?;
 
     for (i, expected) in new_desc.iter().enumerate() {
-        let chunk = updated_faucet.storage().get_item(Info::description_slot(i))?;
+        let chunk = updated_faucet.storage().get_item(TokenMetadata::description_slot(i))?;
         assert_eq!(chunk, *expected, "description_{i} should be updated");
     }
 
@@ -1477,18 +1477,18 @@ async fn metadata_is_field_mutable_checks() -> anyhow::Result<()> {
     let logo = LogoURI::new("https://example.com/logo").unwrap();
     let link = ExternalLink::new("https://example.com").unwrap();
 
-    let cases: Vec<(Info, &str, u8)> = vec![
-        (Info::new().with_max_supply_mutable(true), "is_max_supply_mutable", 1),
-        (Info::new().with_description(desc.clone(), true), "is_description_mutable", 1),
-        (Info::new().with_description(desc, false), "is_description_mutable", 0),
-        (Info::new().with_logo_uri(logo.clone(), true), "is_logo_uri_mutable", 1),
-        (Info::new().with_logo_uri(logo, false), "is_logo_uri_mutable", 0),
+    let cases: Vec<(TokenMetadata, &str, u8)> = vec![
+        (TokenMetadata::new().with_max_supply_mutable(true), "is_max_supply_mutable", 1),
+        (TokenMetadata::new().with_description(desc.clone(), true), "is_description_mutable", 1),
+        (TokenMetadata::new().with_description(desc, false), "is_description_mutable", 0),
+        (TokenMetadata::new().with_logo_uri(logo.clone(), true), "is_logo_uri_mutable", 1),
+        (TokenMetadata::new().with_logo_uri(logo, false), "is_logo_uri_mutable", 0),
         (
-            Info::new().with_external_link(link.clone(), true),
+            TokenMetadata::new().with_external_link(link.clone(), true),
             "is_external_link_mutable",
             1,
         ),
-        (Info::new().with_external_link(link, false), "is_external_link_mutable", 0),
+        (TokenMetadata::new().with_external_link(link, false), "is_external_link_mutable", 0),
     ];
 
     for (info, proc_name, expected) in cases {
@@ -1663,7 +1663,7 @@ async fn set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed.account_delta())?;
 
     for (i, expected) in new_logo.iter().enumerate() {
-        let chunk = updated_faucet.storage().get_item(Info::logo_uri_slot(i))?;
+        let chunk = updated_faucet.storage().get_item(TokenMetadata::logo_uri_slot(i))?;
         assert_eq!(chunk, *expected, "logo_uri_{i} should be updated");
     }
 
@@ -1892,7 +1892,7 @@ async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
     updated_faucet.apply_delta(executed.account_delta())?;
 
     for (i, expected) in new_link.iter().enumerate() {
-        let chunk = updated_faucet.storage().get_item(Info::external_link_slot(i))?;
+        let chunk = updated_faucet.storage().get_item(TokenMetadata::external_link_slot(i))?;
         assert_eq!(chunk, *expected, "external_link_{i} should be updated");
     }
 
