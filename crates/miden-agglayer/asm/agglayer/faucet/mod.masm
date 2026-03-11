@@ -265,7 +265,7 @@ end
 #! Ethereum address format to AccountId format (prefix, suffix).
 #!
 #! Inputs:  []
-#! Outputs: [prefix, suffix]
+#! Outputs: [suffix, prefix]
 #!
 #! Invocation: exec
 proc get_destination_account_id_data
@@ -277,7 +277,7 @@ proc get_destination_account_id_data
     # => [address[5]]
 
     exec.eth_address::to_account_id
-    # => [prefix, suffix]
+    # => [suffix, prefix]
 end
 
 #! Builds a P2ID output note for the claim recipient.
@@ -286,7 +286,7 @@ end
 #! It reads the destination account ID, amount, and other note parameters from memory to construct
 #! the output note.
 #!
-#! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
+#! Inputs: [suffix, prefix, AMOUNT[0], AMOUNT[1]]
 #! Outputs: []
 #!
 #! WARNING: This procedure currently assumes the claim amount fits within 128 bits (i.e. AMOUNT[1]
@@ -299,13 +299,13 @@ end
 @locals(9)
 proc build_p2id_output_note
     # save prefix to local memory for later use in note tag computation
-    dup loc_store.BUILD_P2ID_PREFIX_MEM_LOC
+    dup.1 loc_store.BUILD_P2ID_PREFIX_MEM_LOC
 
     # write destination account id into note storage for use in note::build_recipient
     # the expected P2ID storage layout is: [target_account_id_suffix, target_account_id_prefix]
-    # => [prefix, suffix, AMOUNT[0], AMOUNT[1]]
-    mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_PREFIX_PTR
+    # => [suffix, prefix, AMOUNT[0], AMOUNT[1]]
     mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_SUFFIX_PTR
+    mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_PREFIX_PTR
 
     # store amount in memory locals for use in faucets::distribute
     loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
@@ -409,7 +409,7 @@ pub proc claim
     # validate_claim will overwrite memory in-place, so we need to load the account and amount
     # before calling validate_claim and store it in memory locals
     exec.get_destination_account_id_data
-    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
+    loc_store.CLAIM_SUFFIX_MEM_LOC loc_store.CLAIM_PREFIX_MEM_LOC
     # => [pad(7)]
 
     exec.get_raw_claim_amount
@@ -431,8 +431,8 @@ pub proc claim
     loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
     # => [AMOUNT[0], AMOUNT[1], pad(8)]
     
-    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
-    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
+    loc_load.CLAIM_PREFIX_MEM_LOC loc_load.CLAIM_SUFFIX_MEM_LOC
+    # => [suffix, prefix, AMOUNT[0], AMOUNT[1], pad(8)]
 
     exec.build_p2id_output_note
     # => [pad(16)] 

@@ -162,8 +162,8 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
 
         let exec_output = execute_program_with_default_host(program).await?;
 
-        let actual_prefix = exec_output.stack[0];
-        let actual_suffix = exec_output.stack[1];
+        let actual_suffix = exec_output.stack[0];
+        let actual_prefix = exec_output.stack[1];
 
         assert_eq!(actual_prefix, expected_prefix, "test {}: prefix mismatch", idx);
         assert_eq!(actual_suffix, expected_suffix, "test {}: suffix mismatch", idx);
