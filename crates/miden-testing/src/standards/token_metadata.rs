@@ -32,11 +32,8 @@ use miden_standards::account::faucets::{
 use miden_standards::account::metadata::{
     DESCRIPTION_DATA_KEY,
     EXTERNAL_LINK_DATA_KEY,
-    FieldBytesError,
     LOGO_URI_DATA_KEY,
-    NAME_UTF8_MAX_BYTES,
     TokenMetadata,
-    field_from_bytes,
 };
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -616,7 +613,7 @@ fn faucet_with_metadata_storage_layout() {
 
 #[test]
 fn name_32_bytes_accepted() {
-    let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
+    let max_name = "a".repeat(TokenName::MAX_BYTES);
     let token_name = TokenName::new(&max_name).unwrap();
     let metadata = FungibleTokenMetadata::new(
         "TST".try_into().unwrap(),
@@ -637,8 +634,8 @@ fn name_32_bytes_accepted() {
         .unwrap();
     let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
     let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
-    let decoded = miden_standards::account::metadata::name_to_utf8(&[name_0, name_1]).unwrap();
-    assert_eq!(decoded, max_name);
+    let decoded = TokenName::try_from_words(&[name_0, name_1]).unwrap();
+    assert_eq!(decoded.as_str(), max_name);
 }
 
 #[test]
@@ -680,10 +677,9 @@ fn description_7_words_full_capacity() {
 
 #[test]
 fn field_over_max_bytes_rejected() {
-    use miden_standards::account::metadata::FIELD_MAX_BYTES;
-    let over = FIELD_MAX_BYTES + 1;
-    let result = field_from_bytes("a".repeat(over).as_bytes());
-    assert!(matches!(result, Err(FieldBytesError::TooLong(n)) if n == over));
+    let over = Description::MAX_BYTES + 1;
+    let result = Description::new(&"a".repeat(over));
+    assert!(result.is_err());
 }
 
 // =================================================================================================
@@ -697,7 +693,7 @@ fn verify_faucet_with_max_name_and_description(
     storage_mode: AccountStorageMode,
     extra_components: Vec<miden_protocol::account::AccountComponent>,
 ) {
-    let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
+    let max_name = "a".repeat(TokenName::MAX_BYTES);
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description = Description::new(&desc_text).unwrap();
     let desc_words = description.to_words();
@@ -725,7 +721,7 @@ fn verify_faucet_with_max_name_and_description(
 
     let account = builder.build().unwrap();
 
-    let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
+    let name_words = TokenName::new(&max_name).unwrap().to_words();
     let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
     let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
     assert_eq!(name_0, name_words[0]);
@@ -810,8 +806,8 @@ async fn basic_faucet_name_readable_from_masm() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn network_faucet_name_readable_from_masm() -> anyhow::Result<()> {
-    let max_name = "b".repeat(NAME_UTF8_MAX_BYTES);
-    let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
+    let max_name = "b".repeat(TokenName::MAX_BYTES);
+    let name_words = TokenName::new(&max_name).unwrap().to_words();
 
     let network_faucet_metadata = FungibleTokenMetadata::new(
         "MAS".try_into().unwrap(),
