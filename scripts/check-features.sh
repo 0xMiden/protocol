@@ -15,9 +15,7 @@ export BUILD_GENERATED_FILES_IN_SRC=1
 
 # Run cargo-hack with comprehensive feature checking
 # Focus on library packages that have significant feature matrices
-# TODO(bele): Reinstantiate this line once miden-agglayer was migrated.
-# for package in miden-protocol miden-standards miden-agglayer miden-tx miden-testing miden-block-prover miden-tx-batch-prover; do
-for package in miden-protocol miden-standards miden-tx miden-testing miden-block-prover miden-tx-batch-prover; do
+for package in miden-protocol miden-standards miden-agglayer miden-tx miden-testing miden-block-prover miden-tx-batch-prover; do
     echo "Checking package: $package"
     cargo hack check -p "$package" --each-feature --all-targets
 done
