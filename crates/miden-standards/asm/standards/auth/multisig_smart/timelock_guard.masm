@@ -1,0 +1,420 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+
+# CONSTANTS
+# =================================================================================================
+
+# User-defined spending interval (in blocks).
+const SPENT_INTERVAL_BLOCKS_SLOT = word("miden::standards::auth::multisig_smart::spent_interval_blocks")
+
+# Map entries: [tx_summary_hash] -> [proposal_block_num, num_signatures, expiration_block_num, 0]
+const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
+
+# Pending action slots
+const PENDING_PROPOSE_SLOT = word("miden::standards::auth::multisig_smart::pending_propose")
+const PENDING_CANCEL_SLOT = word("miden::standards::auth::multisig_smart::pending_cancel")
+const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pending_execute")
+
+# ERRORS
+# =================================================================================================
+
+const ERR_U32 = "value is not a u32"
+const ERR_SPENT_INTERVAL_ZERO = "spent_interval_blocks must be non-zero"
+const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
+const ERR_TX_NOT_PROPOSED  = "tx not proposed"
+const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
+const ERR_PENDING_ALREADY_SET = "pending action already set"
+const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
+const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
+
+# EPOCH HELPERS
+# =================================================================================================
+
+#! Computes: epoch = block_number / spent_interval_blocks.
+#!
+#! Inputs:  [block_number]
+#! Outputs: [epoch]
+proc block_num_to_epoch
+    exec.get_spent_interval
+    # => [spent_interval, block_number]
+
+    u32div
+    # => [epoch]
+end
+
+#! Computes current_epoch from the current block number.
+#!
+#! Inputs:  []
+#! Outputs: [current_epoch]
+proc get_current_epoch
+    exec.get_mock_block_number
+    # => [block_number]
+
+    exec.block_num_to_epoch
+    # => [current_epoch]
+
+    u32assert2.err=ERR_U32
+end
+
+#! Loads spent interval blocks from SPENT_INTERVAL_BLOCKS_SLOT.
+#!
+#! Inputs:  []
+#! Outputs: [spent_interval_blocks]
+proc get_spent_interval
+    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
+    exec.active_account::get_initial_item
+    # => [spent_interval_blocks, 0, 0, 0]
+
+    movdn.3
+    drop drop drop
+    # => [spent_interval]
+
+    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
+end
+
+#! Test helper to get a deterministic block number for local testing/debugging.
+#!
+#! Inputs:  []
+#! Outputs: [mock_block_number]
+proc get_mock_block_number
+    exec.tx::get_block_number
+    push.50 add
+end
+
+# UTILS
+# =================================================================================================
+
+#! Returns 1 if WORD == [0,0,0,0], else 0.
+#!
+#! Inputs:  [WORD]
+#! Outputs: [is_empty]
+proc is_empty_word
+    push.0.0.0.0
+    eqw
+    movdn.8
+    dropw dropw
+end
+
+# TIMELOCK + PROPOSALS
+# =================================================================================================
+
+#! Gets proposal entry for a tx_summary_hash.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set]
+proc get_tx_proposal(tx_summary_hash: word)
+    push.TX_PROPOSALS_SLOT[0..2]
+    exec.active_account::get_map_item
+end
+
+#! Returns 1 if proposal exists, 0 otherwise.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [is_proposed]
+proc is_tx_proposed(tx_summary_hash: word) -> u32
+    exec.get_tx_proposal
+    exec.is_empty_word
+    eq.0
+end
+
+#! Deletes proposal entry by setting value to EMPTY_WORD.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc remove_tx_proposal(tx_summary_hash: word)
+    padw
+    swapw
+    push.TX_PROPOSALS_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+end
+
+#! Writes proposal entry:
+#!   TX_HASH -> [proposal_epoch, expiration_epoch, min_cancel_sigs, 1]
+#!
+#! Inputs:  [min_cancel_sigs, expiration_epoch, proposal_epoch, tx_summary_hash]
+#! Outputs: []
+@locals(3)
+proc write_tx_proposal
+    loc_store.0
+    loc_store.1
+    loc_store.2
+
+    push.1
+    loc_load.0
+    loc_load.1
+    loc_load.2
+
+    swapw
+    push.TX_PROPOSALS_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
+end
+
+#! Returns 1 if current_epoch > proposal_epoch else 0.
+#!
+#! Inputs:  [current_epoch, proposal_epoch]
+#! Outputs: [has_elapsed]
+proc has_timelock_elapsed
+    u32assert2.err=ERR_U32
+    swap
+    u32gt
+end
+
+#! Enforces that TX_HASH is proposed and timelock has elapsed.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: [min_cancel_sigs]
+proc enforce_tx_timelock
+    dupw
+    exec.get_tx_proposal
+    # => [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set, tx_summary_hash]
+
+    swapw
+    exec.is_tx_proposed
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    exec.get_current_epoch
+    exec.has_timelock_elapsed
+    assert.err=ERR_TX_STILL_TIMELOCKED
+
+    movup.2 drop drop
+    # => [min_cancel_sigs]
+end
+
+#! Reads current pending propose hash (or EMPTY_WORD).
+#!
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_propose
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_cancel
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Inputs:  []
+#! Outputs: [WORD]
+proc get_pending_execute
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.active_account::get_item
+end
+
+#! Asserts the given WORD is EMPTY_WORD.
+#!
+#! Inputs:  [WORD]
+#! Outputs: []
+proc assert_pending_empty
+    exec.is_empty_word
+    assert.err=ERR_PENDING_ALREADY_SET
+end
+
+#! Sets pending propose to TX_HASH. Fails if already set.
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc set_pending_propose
+    exec.get_pending_propose
+    exec.assert_pending_empty
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Clears pending propose to EMPTY_WORD.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_propose
+    push.0 push.0 push.0 push.0
+    push.PENDING_PROPOSE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+proc set_pending_cancel
+    exec.get_pending_cancel
+    exec.assert_pending_empty
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_cancel
+    push.0 push.0 push.0 push.0
+    push.PENDING_CANCEL_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Sets pending execute flag to [1,0,0,0]. Fails if already set.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc set_pending_execute
+    exec.get_pending_execute
+    exec.assert_pending_empty
+
+    push.1 push.0 push.0 push.0
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc clear_pending_execute
+    push.0 push.0 push.0 push.0
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.native_account::set_item
+    dropw
+end
+
+#! Allows any signer to propose a transaction.
+#! (Actual write happens in the auth finalizer.)
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+pub proc propose_transaction
+    dupw
+    exec.is_tx_proposed
+    eq.1
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+
+    exec.set_pending_propose
+end
+
+#! Cancels an existing proposal (final delete happens in auth finalizer).
+#!
+#! Inputs:  [tx_summary_hash]
+#! Outputs: []
+pub proc cancel_transaction_proposal
+    dupw
+    exec.is_tx_proposed
+    eq.1
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    exec.set_pending_cancel
+end
+
+#! Cancels old proposal and proposes new one in the same tx.
+#!
+#! Inputs:  [old_TX_HASH, new_TX_HASH]
+#! Outputs: []
+pub proc cancel_and_propose_new_transaction
+    dupw
+    exec.is_tx_proposed
+    eq.1
+    assert.err=ERR_TX_NOT_PROPOSED
+
+    swapw
+    dupw
+    exec.is_tx_proposed
+    eq.1
+    assertz.err=ERR_TX_ALREADY_PROPOSED
+
+    swapw
+    exec.set_pending_cancel
+    exec.set_pending_propose
+end
+
+#! Marks that this tx intends to execute a proposed action.
+#!
+#! Inputs:  []
+#! Outputs: []
+pub proc execute_proposed_transaction
+    exec.set_pending_execute
+end
+
+#! Finalizes pending propose/cancel/execute actions.
+#!
+#! Inputs:
+#!   [num_verified_signatures, requires_delay, tx_summary_hash]
+#! Outputs: []
+#!
+#! Locals:
+#! 0: num_verified_signatures
+#! 1: requires_delay
+@locals(2)
+pub proc finalize_timelock_proposals
+    loc_store.0
+    # => [requires_delay, TX_HASH]
+
+    loc_store.1
+    # => [TX_HASH]
+
+    # Execute finalizer: only if pending_execute is set and delay is required.
+    exec.get_pending_execute
+    exec.is_empty_word
+    if.false
+        loc_load.1
+        eq.1
+        if.true
+            dupw
+            exec.enforce_tx_timelock
+            drop
+            dupw
+            exec.remove_tx_proposal
+        end
+    end
+
+    exec.clear_pending_execute
+    # => [TX_HASH]
+
+    # Cancel finalizer: requires num_verified >= stored min_cancel_sigs.
+    exec.get_pending_cancel
+    exec.is_empty_word
+    if.false
+        exec.get_pending_cancel
+        dupw
+        exec.get_tx_proposal
+        dup.3 eq.1
+        assert.err=ERR_TX_NOT_PROPOSED
+
+        loc_load.0
+        movup.3
+        u32assert2.err=ERR_U32
+        u32lt
+        assertz.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+
+        drop drop drop
+        exec.remove_tx_proposal
+    end
+
+    exec.clear_pending_cancel
+    # => [TX_HASH]
+
+    # Propose finalizer.
+    exec.get_pending_propose
+    exec.is_empty_word
+    if.false
+        exec.get_pending_propose
+        dupw
+        exec.is_tx_proposed
+        eq.1
+        assertz.err=ERR_TX_ALREADY_PROPOSED
+
+        loc_load.0
+        dup
+        u32assert.err=ERR_U32
+        eq.0
+        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
+
+        exec.get_current_epoch
+        push.0
+        movup.2
+        exec.write_tx_proposal
+    end
+
+    exec.clear_pending_propose
+end
