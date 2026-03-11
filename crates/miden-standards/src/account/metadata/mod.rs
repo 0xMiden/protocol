@@ -73,18 +73,18 @@
 mod schema_commitment;
 mod token_metadata;
 
-pub use schema_commitment::{
-    AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment, SCHEMA_COMMITMENT_SLOT_NAME,
-};
-pub use token_metadata::TokenMetadata;
-
 use alloc::string::String;
 
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+pub use schema_commitment::{
+    AccountBuilderSchemaCommitmentExt,
+    AccountSchemaCommitment,
+    SCHEMA_COMMITMENT_SLOT_NAME,
+};
 use thiserror::Error;
-
+pub use token_metadata::TokenMetadata;
 
 // CONSTANTS — canonical layout: slots 0–22
 // ================================================================================================
@@ -271,11 +271,7 @@ mod tests {
     use miden_protocol::Word;
     use miden_protocol::account::AccountBuilder;
 
-    use super::{
-        NAME_UTF8_MAX_BYTES,
-        TokenMetadata as InfoType,
-        mutability_config_slot,
-    };
+    use super::{NAME_UTF8_MAX_BYTES, TokenMetadata as InfoType, mutability_config_slot};
     use crate::account::auth::NoAuth;
     use crate::account::faucets::{
         BasicFungibleFaucet,
@@ -300,7 +296,9 @@ mod tests {
         .unwrap()
     }
 
-    fn build_account_with_metadata(metadata: FungibleTokenMetadata) -> miden_protocol::account::Account {
+    fn build_account_with_metadata(
+        metadata: FungibleTokenMetadata,
+    ) -> miden_protocol::account::Account {
         AccountBuilder::new([1u8; 32])
             .account_type(miden_protocol::account::AccountType::FungibleFaucet)
             .with_auth_component(NoAuth)
