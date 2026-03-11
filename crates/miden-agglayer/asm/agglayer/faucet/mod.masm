@@ -54,7 +54,9 @@ const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
 const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
-const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
+const OUTPUT_NOTE_STORAGE_PTR = 0
+const OUTPUT_NOTE_TARGET_ACCOUNT_ID_SUFFIX_PTR = OUTPUT_NOTE_STORAGE_PTR
+const OUTPUT_NOTE_TARGET_ACCOUNT_ID_PREFIX_PTR = OUTPUT_NOTE_STORAGE_PTR + 1
 const OUTPUT_NOTE_FAUCET_AMOUNT = 568 
 
 # Memory locals in claim
@@ -299,8 +301,11 @@ proc build_p2id_output_note
     # save prefix to local memory for later use in note tag computation
     dup loc_store.BUILD_P2ID_PREFIX_MEM_LOC
 
-    # write destination account id into memory for use in note::build_recipient
-    push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
+    # write destination account id into note storage for use in note::build_recipient
+    # the expected P2ID storage layout is: [target_account_id_suffix, target_account_id_prefix]
+    # => [prefix, suffix, AMOUNT[0], AMOUNT[1]]
+    mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_PREFIX_PTR
+    mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_SUFFIX_PTR
 
     # store amount in memory locals for use in faucets::distribute
     loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
@@ -317,7 +322,7 @@ proc build_p2id_output_note
     push.P2ID_NOTE_NUM_STORAGE_ITEMS
     # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
-    push.OUTPUT_NOTE_STORAGE_MEM_ADDR
+    push.OUTPUT_NOTE_STORAGE_PTR
     # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
