@@ -38,6 +38,7 @@ use crate::{AccountState, Auth, assert_transaction_executor_error};
 /// block list stored in a storage map. If the account is blocked, the callback panics.
 const BLOCK_LIST_MASM: &str = r#"
 use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::core::word
 
 const BLOCK_LIST_MAP_SLOT = word("miden::testing::callbacks::block_list")
@@ -47,27 +48,31 @@ const ERR_ACCOUNT_BLOCKED = "the account is blocked and cannot receive this asse
 #!
 #! Checks whether the receiving account is in the block list. If so, panics.
 #!
-#! Inputs:  [native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
 pub proc on_before_asset_added_to_account
+    # Get the native account ID (the account receiving the asset)
+    exec.native_account::get_id
+    # => [native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+
     # Build account ID map key: [0, 0, suffix, prefix]
     push.0.0
-    # => [0, 0, native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
-    # => [ACCOUNT_ID_KEY, ASSET_KEY, ASSET_VALUE, pad(6)]
+    # => [0, 0, native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ACCOUNT_ID_KEY, ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # Look up in block list storage map
     push.BLOCK_LIST_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [IS_BLOCKED, ASSET_KEY, ASSET_VALUE, pad(6)]
+    # => [IS_BLOCKED, ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # If IS_BLOCKED is non-zero, account is blocked.
     exec.word::eqz
     assert.err=ERR_ACCOUNT_BLOCKED
-    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
+    # => [ASSET_KEY, ASSET_VALUE, pad(10)]
 
-    # drop unused asset key - auto pads to 12
+    # drop unused asset key
     dropw
     # => [ASSET_VALUE, pad(12)]
 end
@@ -183,29 +188,31 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
         r#"
     const ERR_WRONG_VALUE = "callback received unexpected asset value element"
 
-    #! Inputs:  [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, pad(6)]
+    #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
     #! Outputs: [ASSET_VALUE, pad(12)]
     pub proc {proc_name}
-        # Assert native account ID
+        # Assert native account ID can be retrieved via native_account::get_id
+        exec.::miden::protocol::native_account::get_id
+        # => [native_account_suffix, native_account_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
         push.{wallet_id_suffix} assert_eq.err="callback received unexpected native account ID suffix"
         push.{wallet_id_prefix} assert_eq.err="callback received unexpected native account ID prefix"
-        # => [ASSET_KEY, ASSET_VALUE, pad(6)]
+        # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
         # duplicate the asset value for returning
         dupw.1 swapw
-        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(6)]
+        # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         # build the expected asset
         push.{amount}
         exec.::miden::protocol::active_account::get_id
         push.1
-        # => [enable_callbacks, active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, pad(6)]
+        # => [enable_callbacks, active_account_id_suffix, active_account_id_prefix, amount, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
         exec.::miden::protocol::asset::create_fungible_asset
-        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(6)]
+        # => [EXPECTED_ASSET_KEY, EXPECTED_ASSET_VALUE, ASSET_KEY, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         movupw.2
         assert_eqw.err="callback received unexpected asset key"
-        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(6)]
+        # => [EXPECTED_ASSET_VALUE, ASSET_VALUE, ASSET_VALUE, pad(8)]
 
         assert_eqw.err="callback received unexpected asset value"
         # => [ASSET_VALUE, pad(12)]
