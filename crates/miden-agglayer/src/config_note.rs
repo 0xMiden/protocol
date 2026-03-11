@@ -8,8 +8,9 @@ extern crate alloc;
 use alloc::string::ToString;
 use alloc::vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::Word;
+use miden_core::program::Program;
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -90,8 +91,7 @@ impl ConfigAggBridgeNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 2 felts: [faucet_id_prefix, faucet_id_suffix]
-        let storage_values = vec![faucet_account_id.prefix().as_felt(), faucet_account_id.suffix()];
+        let storage_values = vec![faucet_account_id.suffix(), faucet_account_id.prefix().as_felt()];
 
         let note_storage = NoteStorage::new(storage_values)?;
 

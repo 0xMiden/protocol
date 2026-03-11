@@ -1412,6 +1412,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-agglayer"
+version = "0.14.0-alpha.1"
+dependencies = [
+ "fs-err",
+ "miden-agglayer",
+ "miden-assembly",
+ "miden-core",
+ "miden-core-lib",
+ "miden-crypto",
+ "miden-protocol",
+ "miden-standards",
+ "miden-utils-sync",
+ "primitive-types",
+ "regex",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
 name = "miden-air"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1779,6 +1798,7 @@ dependencies = [
  "assert_matches",
  "hex",
  "itertools 0.14.0",
+ "miden-agglayer",
  "miden-assembly",
  "miden-block-prover",
  "miden-core-lib",

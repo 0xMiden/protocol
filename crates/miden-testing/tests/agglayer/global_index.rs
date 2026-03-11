@@ -56,7 +56,7 @@ async fn test_process_global_index_mainnet_returns_leaf_index() -> anyhow::Resul
 
     let exec_output = execute_program_with_default_host(program, None).await?;
 
-    assert_eq!(exec_output.stack[0].as_int(), 2);
+    assert_eq!(exec_output.stack[0].as_canonical_u64(), 2);
     Ok(())
 }
 
