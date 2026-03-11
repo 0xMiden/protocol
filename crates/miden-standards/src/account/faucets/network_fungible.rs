@@ -29,7 +29,7 @@ use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
+use crate::account::metadata::TokenMetadata;
 use crate::procedure_digest;
 
 /// The schema type for token symbols.
@@ -78,7 +78,7 @@ procedure_digest!(
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct NetworkFungibleFaucet {
     metadata: FungibleTokenMetadata,
-    info: Option<TokenMetadataInfo>,
+    info: Option<TokenMetadata>,
 }
 
 impl NetworkFungibleFaucet {
@@ -138,7 +138,7 @@ impl NetworkFungibleFaucet {
 
     /// Attaches token metadata (name, description, logo, link, mutability flags) to the
     /// faucet. These storage slots will be included in the component when built.
-    pub fn with_info(mut self, info: TokenMetadataInfo) -> Self {
+    pub fn with_info(mut self, info: TokenMetadata) -> Self {
         self.info = Some(info);
         self
     }

@@ -55,7 +55,7 @@ use miden_standards::account::faucets::{
     NetworkFungibleFaucet,
     TokenName,
 };
-use miden_standards::account::metadata::TokenMetadata as TokenMetadataInfo;
+use miden_standards::account::metadata::TokenMetadata;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -408,7 +408,7 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let info = TokenMetadataInfo::new().with_name(name.clone());
+        let info = TokenMetadata::new().with_name(name.clone());
 
         let network_faucet = NetworkFungibleFaucet::new(
             token_symbol,
@@ -455,7 +455,7 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let mut info = TokenMetadataInfo::new()
+        let mut info = TokenMetadata::new()
             .with_name(name.clone())
             .with_owner(owner_account_id)
             .with_max_supply_mutable(max_supply_mutable);

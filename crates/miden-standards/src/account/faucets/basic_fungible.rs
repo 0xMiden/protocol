@@ -32,7 +32,7 @@ use crate::account::components::basic_fungible_faucet_library;
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
+use crate::account::metadata::TokenMetadata;
 use crate::procedure_digest;
 
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
@@ -77,7 +77,7 @@ procedure_digest!(
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct BasicFungibleFaucet {
     metadata: FungibleTokenMetadata,
-    info: Option<TokenMetadataInfo>,
+    info: Option<TokenMetadata>,
 }
 
 impl BasicFungibleFaucet {
@@ -140,7 +140,7 @@ impl BasicFungibleFaucet {
 
     /// Attaches token metadata (name, description, logo, link, mutability flags) to the
     /// faucet. These storage slots will be included in the component when built.
-    pub fn with_info(mut self, info: TokenMetadataInfo) -> Self {
+    pub fn with_info(mut self, info: TokenMetadata) -> Self {
         self.info = Some(info);
         self
     }
@@ -385,7 +385,7 @@ mod tests {
         create_basic_fungible_faucet,
     };
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
-    use crate::account::metadata::TokenMetadata as TokenMetadataInfo;
+    use crate::account::metadata::TokenMetadata;
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -463,11 +463,11 @@ mod tests {
         // Check that Info component has name and description
         let name_0 = faucet_account
             .storage()
-            .get_item(TokenMetadataInfo::name_chunk_0_slot())
+            .get_item(TokenMetadata::name_chunk_0_slot())
             .unwrap();
         let name_1 = faucet_account
             .storage()
-            .get_item(TokenMetadataInfo::name_chunk_1_slot())
+            .get_item(TokenMetadata::name_chunk_1_slot())
             .unwrap();
         let decoded_name = TokenName::try_from_words(&[name_0, name_1]).unwrap();
         assert_eq!(decoded_name.as_str(), token_name_string);
@@ -475,7 +475,7 @@ mod tests {
         for (i, expected) in expected_desc_words.iter().enumerate() {
             let chunk = faucet_account
                 .storage()
-                .get_item(TokenMetadataInfo::description_slot(i))
+                .get_item(TokenMetadata::description_slot(i))
                 .unwrap();
             assert_eq!(chunk, *expected);
         }
