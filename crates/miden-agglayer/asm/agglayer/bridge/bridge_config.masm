@@ -158,8 +158,7 @@ pub proc assert_faucet_registered
     # => [VALUE]
 
     # the stored word must be [1, 0, 0, 0] for registered faucets
-    movdn.3 drop drop drop
-    assert.err=ERR_FAUCET_NOT_REGISTERED
+    assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
     # => []
 end
 
