@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::utils::{Deserializable, Serializable};
+use miden_core::utils::Deserializable;
 use miden_core::{Felt, FieldElement, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -242,11 +242,14 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        let mut origin_token_addr_bytes = conversion_info_1.as_bytes().to_vec();
-        origin_token_addr_bytes.append(&mut conversion_info_2[0].to_bytes().to_vec());
+        let addr_bytes_vec = conversion_info_1
+            .iter()
+            .chain([&conversion_info_2[0]])
+            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .collect::<Vec<u8>>();
 
         Ok(EthAddressFormat::new(
-            origin_token_addr_bytes
+            addr_bytes_vec
                 .try_into()
                 .expect("origin token addr vector should consist of exactly 20 bytes"),
         ))
