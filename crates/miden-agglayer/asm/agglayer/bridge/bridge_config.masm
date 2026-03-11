@@ -115,22 +115,25 @@ pub proc register_faucet
     # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
 
     # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
-    push.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, suffix, prefix, pad(14)]
+    # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
+    push.0.0.0.IS_FAUCET_REGISTERED_FLAG
+    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, suffix, prefix, pad(14)]
 
-    movdn.4
-    # => [suffix, prefix, 0, 0, IS_FAUCET_REGISTERED_FLAG, pad(13)]
-    movup.2 movup.3
-    # => [[0, 0, suffix, prefix], [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0], pad(9)]
+    movup.5 movup.5
+    # => [suffix, prefix, IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, pad(14)]
+
+    push.0.0
+    # => [[0, 0, suffix, prefix], [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0], pad(14)]
 
     # Place slot ID on top
     push.FAUCET_REGISTRY_SLOT[0..2]
-    # => [slot0, slot1, KEY, VALUE, pad(9)]
+    # => [slot0, slot1, KEY, VALUE, pad(14)]
 
     exec.native_account::set_map_item
-    # => [OLD_VALUE, pad(9)]
+    # => [OLD_VALUE, pad(14)]
 
     dropw
+    # => [pad(16)]
 end
 
 #! Asserts that a faucet is registered in the bridge's faucet registry.
