@@ -849,13 +849,13 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Step 1: Create transfer_ownership note script to nominate new owner
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::faucets::network_fungible->network_faucet
+        use miden::standards::access::ownable2step
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.network_faucet::transfer_ownership
+            call.ownable2step::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
@@ -902,11 +902,11 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
 
     // Step 2: Accept ownership as the nominated owner
     let accept_note_script_code = r#"
-        use miden::standards::faucets::network_fungible->network_faucet
+        use miden::standards::access::ownable2step
 
         begin
             repeat.16 push.0 end
-            call.network_faucet::accept_ownership
+            call.ownable2step::accept_ownership
             dropw dropw dropw dropw
         end
         "#;
@@ -971,13 +971,13 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     // Create transfer ownership note script
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::faucets::network_fungible->network_faucet
+        use miden::standards::access::ownable2step
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.network_faucet::transfer_ownership
+            call.ownable2step::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,
@@ -1035,11 +1035,11 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
 
     // Create renounce_ownership note script
     let renounce_note_script_code = r#"
-        use miden::standards::faucets::network_fungible->network_faucet
+        use miden::standards::access::ownable2step
 
         begin
             repeat.16 push.0 end
-            call.network_faucet::renounce_ownership
+            call.ownable2step::renounce_ownership
             dropw dropw dropw dropw
         end
         "#;
@@ -1049,13 +1049,13 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
     // Create transfer note script (will be used after renounce)
     let transfer_note_script_code = format!(
         r#"
-        use miden::standards::faucets::network_fungible->network_faucet
+        use miden::standards::access::ownable2step
 
         begin
             repeat.14 push.0 end
             push.{new_owner_prefix}
             push.{new_owner_suffix}
-            call.network_faucet::transfer_ownership
+            call.ownable2step::transfer_ownership
             dropw dropw dropw dropw
         end
         "#,

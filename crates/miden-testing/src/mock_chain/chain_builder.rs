@@ -46,6 +46,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -380,18 +381,15 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let network_faucet = NetworkFungibleFaucet::new(
-            token_symbol,
-            DEFAULT_FAUCET_DECIMALS,
-            max_supply,
-            owner_account_id,
-        )
-        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?;
+        let network_faucet =
+            NetworkFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+                .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+                .context("failed to create network fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
+            .with_component(Ownable2Step::new(owner_account_id))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
