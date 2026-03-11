@@ -12,9 +12,6 @@ use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
-# Token metadata slot — duplicated here so distribute can read it via exec without
-# going through the call-safe get_max_supply wrapper.
-const TOKEN_METADATA_SLOT = word("miden::standards::metadata::token_metadata")
 
 # ERRORS
 # =================================================================================================
@@ -72,10 +69,18 @@ pub proc distribute
     swap movup.2 drop movup.2 drop
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
-    # Assert that minting does not violate any supply constraints.
-    # - assert token_supply <= max_supply
-    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT
-    # - assert amount <= max_mint_amount
+    # To make sure we cannot mint more than intended, we need to check:
+    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
+    # 2) amount + token_supply does not exceed max_supply
+    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
+    #
+    # This is done with the following concrete assertions:
+    # - assert token_supply <= max_supply which ensures 1)
+    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
+    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
+    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
+    #     max_supply and we already asserted that max_supply does not exceed
+    #     FUNGIBLE_ASSET_MAX_AMOUNT
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
