@@ -12,6 +12,7 @@ use miden_protocol::transaction::{
     TransactionArgs,
     TransactionInputs,
     TransactionKernel,
+    TransactionProgramExecutorFactory,
 };
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
@@ -73,15 +74,18 @@ impl NoteConsumptionInfo {
 /// The check is performed using the [NoteConsumptionChecker::check_notes_consumability] procedure.
 /// Essentially runs the transaction to make sure that provided input notes could be consumed by the
 /// account.
-pub struct NoteConsumptionChecker<'a, STORE, AUTH>(&'a TransactionExecutor<'a, 'a, STORE, AUTH>);
+pub struct NoteConsumptionChecker<'a, STORE, AUTH, F: TransactionProgramExecutorFactory>(
+    &'a TransactionExecutor<'a, 'a, STORE, AUTH, F>,
+);
 
-impl<'a, STORE, AUTH> NoteConsumptionChecker<'a, STORE, AUTH>
+impl<'a, STORE, AUTH, F> NoteConsumptionChecker<'a, STORE, AUTH, F>
 where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
+    F: TransactionProgramExecutorFactory,
 {
     /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
-    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH>) -> Self {
+    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, F>) -> Self {
         NoteConsumptionChecker(tx_executor)
     }
 

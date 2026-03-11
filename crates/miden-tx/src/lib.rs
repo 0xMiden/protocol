@@ -21,6 +21,10 @@ pub use executor::{
 
 mod host;
 pub use host::{AccountProcedureIndexMap, LinkMap, MemoryViewer, ScriptMastForestStore};
+pub use miden_protocol::transaction::{
+    TransactionProgramExecutor,
+    TransactionProgramExecutorFactory,
+};
 
 mod prover;
 pub use prover::{
