@@ -99,7 +99,7 @@ impl TokenName {
 // DESCRIPTION
 // ================================================================================================
 
-/// Token description (max 195 bytes UTF-8). 
+/// Token description (max 195 bytes UTF-8).
 ///
 /// Internally stores the un-encoded string. The invariant that it can be encoded into 7 Words
 /// (28 felts, 7 bytes/felt, length-prefixed) is enforced at construction time.
