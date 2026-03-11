@@ -753,14 +753,17 @@ Implementation status:
 - Implemented: Faucet creation with metadata hash, faucet storage layout, FPI retrieval
   of metadata hash via `agglayer_faucet::get_metadata_hash`, registration via
   `CONFIG_AGG_BRIDGE` notes, faucet registry lookup in `bridge_config::assert_faucet_registered`.
-- Not yet implemented: On-chain verification of the metadata hash during registration.
+- Not yet implemented: On-chain verification of the metadata hash during registration
+  ([#2586](https://github.com/0xMiden/protocol/issues/2586)).
   This would require the token name to be available in faucet storage and
   `abi.encode(string, string, uint8)` to be implemented in MASM, so the bridge could
   recompute `keccak256(abi.encode(name, symbol, decimals))` and compare it against the
   stored hash. See the TODO in `bridge_config::register_faucet`.
-- Not yet implemented: Token name storage in the faucet. Currently only the symbol is
-  stored in the standard faucet metadata slot; the full name is not persisted on-chain.
-  A separate PR is in progress to add this.
+- Not yet implemented: Token name storage in the faucet
+  ([#2585](https://github.com/0xMiden/protocol/issues/2585),
+  related: [PR #2439](https://github.com/0xMiden/protocol/pull/2439)).
+  Currently only the symbol is stored in the standard faucet metadata slot; the full
+  name is not persisted on-chain.
 
 ### 6.2 Bridging-out: How Miden-native tokens are registered on other chains
 
