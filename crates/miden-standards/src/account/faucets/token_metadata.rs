@@ -1,11 +1,27 @@
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
+};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountId,
+    AccountStorage,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
 
 use super::FungibleFaucetError;
+use crate::account::components::fungible_token_metadata_library;
 use crate::account::metadata::{self, FieldBytesError, NameUtf8Error};
 
 // ENCODING CONSTANTS
@@ -295,11 +311,12 @@ fn decode_field_from_words(words: &[Word; 7]) -> Result<String, FieldBytesError>
 /// The metadata is stored in a single storage slot as:
 /// `[token_supply, max_supply, decimals, symbol]`
 ///
-/// `name` and optional `description`/`logo_uri`/`external_link` are not serialized into that
-/// slot. They are kept here as convenience accessors and for use when constructing the
-/// [`TokenMetadata`](crate::account::metadata::TokenMetadata) storage slots via
-/// [`BasicFungibleFaucet::with_info`](super::BasicFungibleFaucet::with_info) or
-/// [`NetworkFungibleFaucet::with_info`](super::NetworkFungibleFaucet::with_info).
+/// `name` and optional `description`/`logo_uri`/`external_link` are stored in separate
+/// storage slots (slots 2–25). All fields are serialized into the component's storage
+/// via [`storage_slots`](Self::storage_slots) when converting to an [`AccountComponent`].
+/// The schema type for token symbols.
+const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
+
 #[derive(Debug, Clone)]
 pub struct FungibleTokenMetadata {
     token_supply: Felt,
@@ -310,6 +327,11 @@ pub struct FungibleTokenMetadata {
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
+    owner: Option<AccountId>,
+    description_mutable: bool,
+    logo_uri_mutable: bool,
+    external_link_mutable: bool,
+    max_supply_mutable: bool,
 }
 
 impl FungibleTokenMetadata {
@@ -396,6 +418,11 @@ impl FungibleTokenMetadata {
             description,
             logo_uri,
             external_link,
+            owner: None,
+            description_mutable: false,
+            logo_uri_mutable: false,
+            external_link_mutable: false,
+            max_supply_mutable: false,
         })
     }
 
@@ -448,20 +475,99 @@ impl FungibleTokenMetadata {
         self.external_link.as_ref()
     }
 
-    /// Builds a [`TokenMetadataInfo`](crate::account::metadata::TokenMetadata) from this
-    /// metadata, copying the name and any optional description/logo_uri/external_link fields.
-    pub fn to_token_metadata_info(&self) -> metadata::TokenMetadata {
-        let mut info = metadata::TokenMetadata::new().with_name(self.name.clone());
-        if let Some(d) = self.description() {
-            info = info.with_description(d.clone(), false);
+    /// Returns the storage slot schema for the metadata slot.
+    pub fn metadata_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        let token_symbol_type = SchemaType::new(TOKEN_SYMBOL_TYPE).expect("valid type");
+        (
+            Self::metadata_slot().clone(),
+            StorageSlotSchema::value(
+                "Token metadata",
+                [
+                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                    FeltSchema::felt("max_supply"),
+                    FeltSchema::u8("decimals"),
+                    FeltSchema::new_typed(token_symbol_type, "symbol"),
+                ],
+            ),
+        )
+    }
+
+    /// Returns all the storage slots for this component (metadata word + name + config +
+    /// description + logo_uri + external_link).
+    pub fn storage_slots(&self) -> Vec<StorageSlot> {
+        let mut slots: Vec<StorageSlot> = Vec::new();
+
+        // Owner slot (ownable::owner_config) — required by metadata::fungible MASM procedures
+        // for verify_owner (used in set_* mutations).
+        if let Some(id) = self.owner {
+            let owner_word =
+                Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]);
+            slots.push(StorageSlot::with_value(metadata::owner_config_slot().clone(), owner_word));
         }
-        if let Some(l) = self.logo_uri() {
-            info = info.with_logo_uri(l.clone(), false);
+
+        // Slot 0: metadata word [token_supply, max_supply, decimals, symbol]
+        let metadata_word = Word::new([
+            self.token_supply,
+            self.max_supply,
+            Felt::from(self.decimals),
+            self.symbol.into(),
+        ]);
+        slots.push(StorageSlot::with_value(Self::metadata_slot().clone(), metadata_word));
+
+        // Slots 2-3: name (2 Words)
+        let name_words = self.name.to_words();
+        slots.push(StorageSlot::with_value(
+            metadata::TokenMetadata::name_chunk_0_slot().clone(),
+            name_words[0],
+        ));
+        slots.push(StorageSlot::with_value(
+            metadata::TokenMetadata::name_chunk_1_slot().clone(),
+            name_words[1],
+        ));
+
+        // Slot 4: mutability config
+        let mutability_config_word = Word::from([
+            Felt::from(self.description_mutable as u32),
+            Felt::from(self.logo_uri_mutable as u32),
+            Felt::from(self.external_link_mutable as u32),
+            Felt::from(self.max_supply_mutable as u32),
+        ]);
+        slots.push(StorageSlot::with_value(
+            metadata::mutability_config_slot().clone(),
+            mutability_config_word,
+        ));
+
+        // Slots 5-11: description (7 Words)
+        let desc_words: [Word; 7] =
+            self.description.as_ref().map(|d| d.to_words()).unwrap_or_default();
+        for (i, word) in desc_words.iter().enumerate() {
+            slots.push(StorageSlot::with_value(
+                metadata::TokenMetadata::description_slot(i).clone(),
+                *word,
+            ));
         }
-        if let Some(e) = self.external_link() {
-            info = info.with_external_link(e.clone(), false);
+
+        // Slots 12-18: logo_uri (7 Words)
+        let logo_words: [Word; 7] =
+            self.logo_uri.as_ref().map(|l| l.to_words()).unwrap_or_default();
+        for (i, word) in logo_words.iter().enumerate() {
+            slots.push(StorageSlot::with_value(
+                metadata::TokenMetadata::logo_uri_slot(i).clone(),
+                *word,
+            ));
         }
-        info
+
+        // Slots 19-25: external_link (7 Words)
+        let link_words: [Word; 7] =
+            self.external_link.as_ref().map(|e| e.to_words()).unwrap_or_default();
+        for (i, word) in link_words.iter().enumerate() {
+            slots.push(StorageSlot::with_value(
+                metadata::TokenMetadata::external_link_slot(i).clone(),
+                *word,
+            ));
+        }
+
+        slots
     }
 
     // MUTATORS
@@ -484,6 +590,40 @@ impl FungibleTokenMetadata {
         self.token_supply = token_supply;
 
         Ok(self)
+    }
+
+    /// Sets whether the description can be updated by the owner.
+    pub fn with_description_mutable(mut self, mutable: bool) -> Self {
+        self.description_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the logo URI can be updated by the owner.
+    pub fn with_logo_uri_mutable(mut self, mutable: bool) -> Self {
+        self.logo_uri_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the external link can be updated by the owner.
+    pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
+        self.external_link_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the max supply can be updated by the owner.
+    pub fn with_max_supply_mutable(mut self, mutable: bool) -> Self {
+        self.max_supply_mutable = mutable;
+        self
+    }
+
+    /// Sets the owner for the `ownable::owner_config` slot.
+    ///
+    /// This is required by the `metadata::fungible` MASM procedures
+    /// (`set_description`, `set_logo_uri`, `set_external_link`, `set_max_supply`)
+    /// which use `ownable::verify_owner` to authorize mutations.
+    pub fn with_owner(mut self, owner: AccountId) -> Self {
+        self.owner = Some(owner);
+        self
     }
 }
 
@@ -533,6 +673,27 @@ impl From<FungibleTokenMetadata> for Word {
 impl From<FungibleTokenMetadata> for StorageSlot {
     fn from(metadata: FungibleTokenMetadata) -> Self {
         StorageSlot::with_value(FungibleTokenMetadata::metadata_slot().clone(), metadata.into())
+    }
+}
+
+impl From<FungibleTokenMetadata> for AccountComponent {
+    fn from(metadata: FungibleTokenMetadata) -> Self {
+        let storage_schema = StorageSchema::new([FungibleTokenMetadata::metadata_slot_schema()])
+            .expect("storage schema should be valid");
+
+        let component_metadata = AccountComponentMetadata::new(
+            "miden::standards::components::faucets::fungible_token_metadata",
+            [AccountType::FungibleFaucet],
+        )
+        .with_description("Fungible token metadata component storing token metadata, name, mutability config, description, logo URI, and external link")
+        .with_storage_schema(storage_schema);
+
+        AccountComponent::new(
+            fungible_token_metadata_library(),
+            metadata.storage_slots(),
+            component_metadata,
+        )
+        .expect("fungible token metadata component should satisfy the requirements of a valid account component")
     }
 }
 
@@ -808,5 +969,158 @@ mod tests {
         assert_eq!(restored.decimals(), decimals);
         assert_eq!(restored.max_supply(), max_supply);
         assert_eq!(restored.token_supply(), token_supply);
+    }
+
+    #[test]
+    fn mutability_builders() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(1_000), name, None, None, None)
+                .unwrap()
+                .with_description_mutable(true)
+                .with_logo_uri_mutable(true)
+                .with_external_link_mutable(false)
+                .with_max_supply_mutable(true);
+
+        let slots = metadata.storage_slots();
+
+        // Slot at index 3 is mutability_config: [desc, logo, extlink, max_supply]
+        let config_slot = &slots[3];
+        let config_word = config_slot.value();
+        assert_eq!(config_word[0], Felt::from(1u32), "desc_mutable");
+        assert_eq!(config_word[1], Felt::from(1u32), "logo_mutable");
+        assert_eq!(config_word[2], Felt::from(0u32), "extlink_mutable");
+        assert_eq!(config_word[3], Felt::from(1u32), "max_supply_mutable");
+    }
+
+    #[test]
+    fn mutability_defaults_to_false() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(1_000), name, None, None, None)
+                .unwrap();
+
+        let slots = metadata.storage_slots();
+        let config_word = slots[3].value();
+        assert_eq!(config_word[0], Felt::ZERO, "desc_mutable default");
+        assert_eq!(config_word[1], Felt::ZERO, "logo_mutable default");
+        assert_eq!(config_word[2], Felt::ZERO, "extlink_mutable default");
+        assert_eq!(config_word[3], Felt::ZERO, "max_supply_mutable default");
+    }
+
+    #[test]
+    fn storage_slots_includes_metadata_word() {
+        let symbol = TokenSymbol::new("POL").unwrap();
+        let name = TokenName::new("polygon").unwrap();
+
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(123), name, None, None, None).unwrap();
+        let slots = metadata.storage_slots();
+
+        // First slot is the metadata word [token_supply, max_supply, decimals, symbol]
+        let metadata_word = slots[0].value();
+        assert_eq!(metadata_word[0], Felt::ZERO); // token_supply
+        assert_eq!(metadata_word[1], Felt::new(123)); // max_supply
+        assert_eq!(metadata_word[2], Felt::from(2u32)); // decimals
+        assert_eq!(metadata_word[3], Felt::from(symbol)); // symbol
+    }
+
+    #[test]
+    fn storage_slots_includes_name() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("my token").unwrap();
+        let expected_words = name.to_words();
+
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+        let slots = metadata.storage_slots();
+
+        // Slots 1 and 2 are name chunks
+        assert_eq!(slots[1].value(), expected_words[0]);
+        assert_eq!(slots[2].value(), expected_words[1]);
+    }
+
+    #[test]
+    fn storage_slots_includes_description() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+        let description = Description::new("A cool token").unwrap();
+        let expected_words = description.to_words();
+
+        let metadata = FungibleTokenMetadata::new(
+            symbol,
+            2,
+            Felt::new(100),
+            name,
+            Some(description),
+            None,
+            None,
+        )
+        .unwrap();
+        let slots = metadata.storage_slots();
+
+        // Slots 4..11 are description (7 words), starting after metadata + name(2) + config
+        for (i, expected) in expected_words.iter().enumerate() {
+            assert_eq!(slots[4 + i].value(), *expected, "description word {i}");
+        }
+    }
+
+    #[test]
+    fn storage_slots_total_count() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+        let slots = metadata.storage_slots();
+
+        // 1 metadata + 2 name + 1 config + 7 description + 7 logo + 7 external_link = 25
+        assert_eq!(slots.len(), 25);
+    }
+
+    #[test]
+    fn into_account_component() {
+        use miden_protocol::account::{AccountBuilder, AccountType};
+
+        use crate::account::auth::NoAuth;
+        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("test token").unwrap();
+        let description = Description::new("A test").unwrap();
+
+        let metadata = FungibleTokenMetadata::new(
+            symbol,
+            4,
+            Felt::new(10_000),
+            name,
+            Some(description),
+            None,
+            None,
+        )
+        .unwrap()
+        .with_max_supply_mutable(true);
+
+        // Should build an account successfully with FungibleTokenMetadata as a component
+        let account = AccountBuilder::new([1u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet)
+            .build()
+            .expect("account build should succeed");
+
+        // Verify metadata slot is accessible
+        let md_word = account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
+        assert_eq!(md_word[1], Felt::new(10_000)); // max_supply
+        assert_eq!(md_word[2], Felt::from(4u32)); // decimals
+
+        // Verify mutability config
+        let config = account.storage().get_item(metadata::mutability_config_slot()).unwrap();
+        assert_eq!(config[3], Felt::from(1u32), "max_supply_mutable");
     }
 }

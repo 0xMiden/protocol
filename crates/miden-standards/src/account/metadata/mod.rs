@@ -63,9 +63,10 @@
 //!     .with_description(Description::new("A cool token").unwrap(), true)
 //!     .with_logo_uri(LogoURI::new("https://example.com/logo.png").unwrap(), false);
 //!
-//! let faucet = BasicFungibleFaucet::new(/* ... */).unwrap().with_info(info);
+//! let metadata = FungibleTokenMetadata::new(/* ... */).unwrap();
 //! let account = AccountBuilder::new(seed)
-//!     .with_component(faucet)
+//!     .with_component(metadata)
+//!     .with_component(BasicFungibleFaucet)
 //!     .build()?;
 //! ```
 
@@ -490,8 +491,8 @@ impl TokenMetadata {
 }
 
 /// Converts [`TokenMetadata`] into a standalone [`AccountComponent`] that includes the metadata
-/// MASM library (`metadata_info_component_library`). Use this when adding metadata as a separate
-/// component alongside a faucet that does not embed info via `.with_info()`.
+/// MASM library (`metadata_info_component_library`). Use this when adding generic metadata as a
+/// separate component (e.g. for non-faucet accounts).
 impl From<TokenMetadata> for AccountComponent {
     fn from(info: TokenMetadata) -> Self {
         let metadata =
@@ -660,25 +661,35 @@ mod tests {
         mutability_config_slot,
     };
     use crate::account::auth::{AuthSingleSig, NoAuth};
-    use crate::account::faucets::{BasicFungibleFaucet, Description, TokenName};
+    use crate::account::faucets::{
+        BasicFungibleFaucet,
+        Description,
+        FungibleTokenMetadata,
+        TokenName,
+    };
 
-    fn build_account_with_info(info: InfoType) -> Account {
-        let name = TokenName::new("T").unwrap();
-        let faucet = BasicFungibleFaucet::new(
+    fn build_faucet_metadata(
+        name: TokenName,
+        description: Option<Description>,
+    ) -> FungibleTokenMetadata {
+        FungibleTokenMetadata::new(
             miden_protocol::asset::TokenSymbol::new("TST").unwrap(),
             2,
             miden_protocol::Felt::new(1_000),
             name,
-            None,
+            description,
             None,
             None,
         )
         .unwrap()
-        .with_info(info);
+    }
+
+    fn build_account_with_metadata(metadata: FungibleTokenMetadata) -> Account {
         AccountBuilder::new([1u8; 32])
             .account_type(miden_protocol::account::AccountType::FungibleFaucet)
             .with_auth_component(NoAuth)
-            .with_component(faucet)
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet)
             .build()
             .unwrap()
     }
@@ -691,8 +702,8 @@ mod tests {
         let name_words = name.to_words();
         let desc_words = description.to_words();
 
-        let info = InfoType::new().with_name(name).with_description(description, false);
-        let account = build_account_with_info(info);
+        let metadata = build_faucet_metadata(name, Some(description));
+        let account = build_account_with_metadata(metadata);
 
         let name_0 = account.storage().get_item(InfoType::name_chunk_0_slot()).unwrap();
         let name_1 = account.storage().get_item(InfoType::name_chunk_1_slot()).unwrap();
@@ -707,17 +718,20 @@ mod tests {
 
     #[test]
     fn metadata_info_empty_works() {
-        let _account = build_account_with_info(InfoType::new());
+        let name = TokenName::new("T").unwrap();
+        let metadata = build_faucet_metadata(name, None);
+        let _account = build_account_with_metadata(metadata);
     }
 
     #[test]
     fn config_slots_set_correctly() {
         use miden_protocol::Felt;
 
-        let info = InfoType::new()
-            .with_description(Description::new("test").unwrap(), true)
+        let name = TokenName::new("T").unwrap();
+        let metadata = build_faucet_metadata(name, Some(Description::new("test").unwrap()))
+            .with_description_mutable(true)
             .with_max_supply_mutable(true);
-        let account = build_account_with_info(info);
+        let account = build_account_with_metadata(metadata);
 
         let mut_word = account.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(mut_word[0], Felt::from(1u32), "desc_mutable should be 1");
@@ -725,7 +739,9 @@ mod tests {
         assert_eq!(mut_word[2], Felt::from(0u32), "extlink_mutable should be 0");
         assert_eq!(mut_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
 
-        let account_default = build_account_with_info(InfoType::new());
+        let name_default = TokenName::new("T").unwrap();
+        let metadata_default = build_faucet_metadata(name_default, None);
+        let account_default = build_account_with_metadata(metadata_default);
         let mut_default = account_default.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(mut_default[0], Felt::from(0u32), "desc_mutable should be 0 by default");
         assert_eq!(mut_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
@@ -773,8 +789,8 @@ mod tests {
     fn metadata_info_with_name() {
         let name = TokenName::new("My Token").unwrap();
         let name_words = name.to_words();
-        let info = InfoType::new().with_name(name);
-        let account = build_account_with_info(info);
+        let metadata = build_faucet_metadata(name, None);
+        let account = build_account_with_metadata(metadata);
         let name_0 = account.storage().get_item(InfoType::name_chunk_0_slot()).unwrap();
         let name_1 = account.storage().get_item(InfoType::name_chunk_1_slot()).unwrap();
         let decoded = TokenName::try_from_words(&[name_0, name_1]).unwrap();
