@@ -55,7 +55,7 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            crate::account::faucets::FungibleTokenMetadata::new(
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
@@ -64,8 +64,9 @@ fn test_basic_wallet_default_notes() {
                 None,
                 None,
             )
-            .expect("failed to create a fungible faucet component"),
+            .expect("failed to create token metadata"),
         )
+        .with_component(BasicFungibleFaucet)
         .build_existing()
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);
@@ -325,7 +326,7 @@ fn test_basic_fungible_faucet_custom_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            BasicFungibleFaucet::new(
+            crate::account::faucets::FungibleTokenMetadata::new(
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
@@ -334,8 +335,9 @@ fn test_basic_fungible_faucet_custom_notes() {
                 None,
                 None,
             )
-            .expect("failed to create a fungible faucet component"),
+            .expect("failed to create token metadata"),
         )
+        .with_component(BasicFungibleFaucet)
         .build_existing()
         .expect("failed to create wallet account");
     let faucet_account_interface = AccountInterface::from_account(&faucet_account);

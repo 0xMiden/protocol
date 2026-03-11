@@ -1,0 +1,1306 @@
+//! Integration tests for the Token Metadata standard (`FungibleTokenMetadata`).
+
+extern crate alloc;
+
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
+use miden_crypto::rand::RpoRandomCoin;
+use miden_protocol::account::{
+    AccountBuilder,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageMode,
+    AccountType,
+};
+use miden_protocol::assembly::DefaultSourceManager;
+use miden_protocol::asset::TokenSymbol;
+use miden_protocol::errors::MasmError;
+use miden_protocol::note::{NoteTag, NoteType};
+use miden_protocol::{Felt, Word};
+use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::auth::NoAuth;
+use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
+    Description,
+    ExternalLink,
+    FungibleTokenMetadata,
+    LogoURI,
+    NetworkFungibleFaucet,
+    TokenName,
+};
+use miden_standards::account::metadata::{
+    DESCRIPTION_DATA_KEY,
+    EXTERNAL_LINK_DATA_KEY,
+    FieldBytesError,
+    LOGO_URI_DATA_KEY,
+    NAME_UTF8_MAX_BYTES,
+    TokenMetadata,
+    field_from_bytes,
+};
+use miden_standards::code_builder::CodeBuilder;
+use miden_standards::errors::standards::{
+    ERR_DESCRIPTION_NOT_MUTABLE,
+    ERR_EXTERNAL_LINK_NOT_MUTABLE,
+    ERR_LOGO_URI_NOT_MUTABLE,
+    ERR_MAX_SUPPLY_IMMUTABLE,
+    ERR_SENDER_NOT_OWNER,
+};
+use miden_standards::testing::note::NoteBuilder;
+
+use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
+
+// SHARED HELPERS
+// ================================================================================================
+
+fn initial_field_data() -> [Word; 7] {
+    [
+        Word::from([1u32, 2, 3, 4]),
+        Word::from([5u32, 6, 7, 8]),
+        Word::from([9u32, 10, 11, 12]),
+        Word::from([13u32, 14, 15, 16]),
+        Word::from([17u32, 18, 19, 20]),
+        Word::from([21u32, 22, 23, 24]),
+        Word::from([25u32, 26, 27, 28]),
+    ]
+}
+
+fn new_field_data() -> [Word; 7] {
+    [
+        Word::from([100u32, 101, 102, 103]),
+        Word::from([104u32, 105, 106, 107]),
+        Word::from([108u32, 109, 110, 111]),
+        Word::from([112u32, 113, 114, 115]),
+        Word::from([116u32, 117, 118, 119]),
+        Word::from([120u32, 121, 122, 123]),
+        Word::from([124u32, 125, 126, 127]),
+    ]
+}
+
+fn owner_account_id() -> AccountId {
+    AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    )
+}
+
+fn non_owner_account_id() -> AccountId {
+    AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    )
+}
+
+/// Build a minimal faucet metadata (no optional fields).
+fn build_faucet_metadata() -> FungibleTokenMetadata {
+    FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        TokenName::new("T").unwrap(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// Build a standard POL faucet metadata (used by scalar getter tests).
+fn build_pol_faucet_metadata() -> FungibleTokenMetadata {
+    FungibleTokenMetadata::new(
+        TokenSymbol::new("POL").unwrap(),
+        8,
+        Felt::new(1_000_000),
+        TokenName::new("POL").unwrap(),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+/// Build a basic faucet account with POL metadata.
+fn build_pol_faucet_account() -> miden_protocol::account::Account {
+    AccountBuilder::new([4u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(NoAuth)
+        .with_component(build_pol_faucet_metadata())
+        .with_component(BasicFungibleFaucet)
+        .build()
+        .unwrap()
+}
+
+/// Flatten `[Word; 7]` into `Vec<Felt>` for advice map values.
+fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
+    let mut value = Vec::with_capacity(28);
+    for word in field.iter() {
+        value.extend(word.iter());
+    }
+    value
+}
+
+/// Execute a tx script against the given account and assert success.
+async fn execute_tx_script(
+    account: miden_protocol::account::Account,
+    tx_script_code: impl AsRef<str>,
+) -> anyhow::Result<()> {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_tx_script(tx_script_code.as_ref())?;
+    let tx_context = TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+    tx_context.execute().await?;
+    Ok(())
+}
+
+// =================================================================================================
+// GETTER TESTS – name
+// =================================================================================================
+
+#[tokio::test]
+async fn get_name_from_masm() -> anyhow::Result<()> {
+    let token_name = TokenName::new("test name").unwrap();
+    let name = token_name.to_words();
+
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        token_name,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()?;
+
+    execute_tx_script(
+        account,
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_name
+                push.{n0}
+                assert_eqw.err="name chunk 0 does not match"
+                push.{n1}
+                assert_eqw.err="name chunk 1 does not match"
+            end
+            "#,
+            n0 = name[0],
+            n1 = name[1],
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
+    // Build a faucet with an empty name to verify get_name returns zero words.
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        TokenName::new("").unwrap(),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()?;
+
+    execute_tx_script(
+        account,
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_name
+            padw assert_eqw.err="name chunk 0 should be empty"
+            padw assert_eqw.err="name chunk 1 should be empty"
+        end
+        "#,
+    )
+    .await
+}
+
+// =================================================================================================
+// GETTER TESTS – scalar fields
+// =================================================================================================
+
+#[tokio::test]
+async fn faucet_get_decimals() -> anyhow::Result<()> {
+    let expected = Felt::from(8u8).as_canonical_u64();
+    execute_tx_script(
+        build_pol_faucet_account(),
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_decimals
+                push.{expected} assert_eq.err="decimals does not match"
+                push.0 assert_eq.err="clean stack: pad must be 0"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn faucet_get_token_symbol() -> anyhow::Result<()> {
+    let expected = Felt::from(TokenSymbol::new("POL").unwrap()).as_canonical_u64();
+    execute_tx_script(
+        build_pol_faucet_account(),
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_token_symbol
+                push.{expected} assert_eq.err="token_symbol does not match"
+                push.0 assert_eq.err="clean stack: pad must be 0"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn faucet_get_token_supply() -> anyhow::Result<()> {
+    execute_tx_script(
+        build_pol_faucet_account(),
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_token_supply
+            push.0 assert_eq.err="token_supply does not match"
+            push.0 assert_eq.err="clean stack: pad must be 0"
+        end
+        "#,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn faucet_get_max_supply() -> anyhow::Result<()> {
+    let expected = Felt::new(1_000_000).as_canonical_u64();
+    execute_tx_script(
+        build_pol_faucet_account(),
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_max_supply
+                push.{expected} assert_eq.err="max_supply does not match"
+                push.0 assert_eq.err="clean stack: pad must be 0"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn faucet_get_token_metadata() -> anyhow::Result<()> {
+    let symbol = TokenSymbol::new("POL").unwrap();
+    let expected_symbol = Felt::from(symbol).as_canonical_u64();
+    let expected_decimals = Felt::from(8u8).as_canonical_u64();
+    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+
+    execute_tx_script(
+        build_pol_faucet_account(),
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_token_metadata
+                push.0 assert_eq.err="token_supply does not match"
+                push.{expected_max_supply} assert_eq.err="max_supply does not match"
+                push.{expected_decimals} assert_eq.err="decimals does not match"
+                push.{expected_symbol} assert_eq.err="token_symbol does not match"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
+    let symbol = TokenSymbol::new("POL").unwrap();
+    let expected_decimals = Felt::from(8u8).as_canonical_u64();
+    let expected_symbol = Felt::from(symbol).as_canonical_u64();
+    let expected_max_supply = Felt::new(1_000_000).as_canonical_u64();
+
+    execute_tx_script(
+        build_pol_faucet_account(),
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_decimals
+                push.{expected_decimals} assert_eq.err="decimals does not match"
+                push.0
+                call.::miden::standards::metadata::fungible::get_token_symbol
+                push.{expected_symbol} assert_eq.err="token_symbol does not match"
+                push.0
+                call.::miden::standards::metadata::fungible::get_max_supply
+                push.{expected_max_supply} assert_eq.err="max_supply does not match"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+// =================================================================================================
+// GETTER TESTS – mutability config
+// =================================================================================================
+
+#[tokio::test]
+async fn get_mutability_config() -> anyhow::Result<()> {
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        TokenName::new("T").unwrap(),
+        Some(Description::new("test").unwrap()),
+        None,
+        None,
+    )
+    .unwrap()
+    .with_description_mutable(true)
+    .with_max_supply_mutable(true);
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()?;
+
+    execute_tx_script(
+        account,
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::get_mutability_config
+            push.1 assert_eq.err="desc_mutable should be 1"
+            push.0 assert_eq.err="logo_mutable should be 0"
+            push.0 assert_eq.err="extlink_mutable should be 0"
+            push.1 assert_eq.err="max_supply_mutable should be 1"
+        end
+        "#,
+    )
+    .await
+}
+
+/// Tests all `is_*_mutable` procedures with flag=0 and flag=1.
+#[tokio::test]
+async fn is_field_mutable_checks() -> anyhow::Result<()> {
+    let desc = Description::new("test").unwrap();
+    let logo = LogoURI::new("https://example.com/logo").unwrap();
+    let link = ExternalLink::new("https://example.com").unwrap();
+
+    // (metadata_builder, proc_name, expected_value)
+    let cases: Vec<(FungibleTokenMetadata, &str, u8)> = vec![
+        (
+            build_faucet_metadata().with_max_supply_mutable(true),
+            "is_max_supply_mutable",
+            1,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                Some(desc.clone()),
+                None,
+                None,
+            )
+            .unwrap()
+            .with_description_mutable(true),
+            "is_description_mutable",
+            1,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                Some(desc),
+                None,
+                None,
+            )
+            .unwrap(),
+            "is_description_mutable",
+            0,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                None,
+                Some(logo.clone()),
+                None,
+            )
+            .unwrap()
+            .with_logo_uri_mutable(true),
+            "is_logo_uri_mutable",
+            1,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                None,
+                Some(logo),
+                None,
+            )
+            .unwrap(),
+            "is_logo_uri_mutable",
+            0,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                None,
+                None,
+                Some(link.clone()),
+            )
+            .unwrap()
+            .with_external_link_mutable(true),
+            "is_external_link_mutable",
+            1,
+        ),
+        (
+            FungibleTokenMetadata::new(
+                "TST".try_into().unwrap(),
+                2,
+                Felt::new(1_000),
+                TokenName::new("T").unwrap(),
+                None,
+                None,
+                Some(link),
+            )
+            .unwrap(),
+            "is_external_link_mutable",
+            0,
+        ),
+    ];
+
+    for (metadata, proc_name, expected) in cases {
+        let account = AccountBuilder::new([1u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet)
+            .build()?;
+
+        execute_tx_script(
+            account,
+            format!(
+                "begin
+                    call.::miden::standards::metadata::fungible::{proc_name}
+                    push.{expected}
+                    assert_eq.err=\"{proc_name} returned unexpected value\"
+                end"
+            ),
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+// =================================================================================================
+// GETTER TESTS – owner
+// =================================================================================================
+
+#[tokio::test]
+async fn get_owner() -> anyhow::Result<()> {
+    let owner = owner_account_id();
+
+    let metadata = build_pol_faucet_metadata().with_owner(owner);
+
+    let account = AccountBuilder::new([4u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(NetworkFungibleFaucet)
+        .build()?;
+
+    let expected_prefix = owner.prefix().as_felt().as_canonical_u64();
+    let expected_suffix = owner.suffix().as_canonical_u64();
+
+    execute_tx_script(
+        account,
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_owner
+                push.{expected_suffix} assert_eq.err="owner suffix does not match"
+                push.{expected_prefix} assert_eq.err="owner prefix does not match"
+                push.0 assert_eq.err="clean stack: pad must be 0"
+            end
+            "#
+        ),
+    )
+    .await
+}
+
+// =================================================================================================
+// STORAGE LAYOUT TESTS
+// =================================================================================================
+
+#[test]
+fn faucet_with_metadata_storage_layout() {
+    let token_name = TokenName::new("test faucet name").unwrap();
+    let desc_text = "faucet description text for testing";
+    let description = Description::new(desc_text).unwrap();
+    let desc_words = description.to_words();
+
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        8,
+        Felt::new(1_000_000),
+        token_name,
+        Some(description),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()
+        .unwrap();
+
+    // Verify faucet metadata
+    let faucet_metadata =
+        account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
+    assert_eq!(faucet_metadata[0], Felt::new(0));
+    assert_eq!(faucet_metadata[1], Felt::new(1_000_000));
+    assert_eq!(faucet_metadata[2], Felt::new(8));
+
+    // Verify description
+    for (i, expected) in desc_words.iter().enumerate() {
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
+        assert_eq!(chunk, *expected);
+    }
+}
+
+#[test]
+fn name_32_bytes_accepted() {
+    let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
+    let token_name = TokenName::new(&max_name).unwrap();
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        token_name,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()
+        .unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
+    let decoded = miden_standards::account::metadata::name_to_utf8(&[name_0, name_1]).unwrap();
+    assert_eq!(decoded, max_name);
+}
+
+#[test]
+fn name_33_bytes_rejected() {
+    let result = TokenName::new(&"a".repeat(33));
+    assert!(matches!(
+        result,
+        Err(miden_standards::account::metadata::NameUtf8Error::TooLong(33))
+    ));
+}
+
+#[test]
+fn description_7_words_full_capacity() {
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description = Description::new(&desc_text).unwrap();
+    let desc_words = description.to_words();
+    let metadata = FungibleTokenMetadata::new(
+        "TST".try_into().unwrap(),
+        2,
+        Felt::new(1_000),
+        TokenName::new("T").unwrap(),
+        Some(description),
+        None,
+        None,
+    )
+    .unwrap();
+    let account = AccountBuilder::new([1u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .with_auth_component(NoAuth)
+        .with_component(metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()
+        .unwrap();
+    for (i, expected) in desc_words.iter().enumerate() {
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
+        assert_eq!(chunk, *expected);
+    }
+}
+
+#[test]
+fn field_over_max_bytes_rejected() {
+    use miden_standards::account::metadata::FIELD_MAX_BYTES;
+    let over = FIELD_MAX_BYTES + 1;
+    let result = field_from_bytes("a".repeat(over).as_bytes());
+    assert!(matches!(result, Err(FieldBytesError::TooLong(n)) if n == over));
+}
+
+// =================================================================================================
+// FAUCET INITIALIZATION – basic + network with max name/description
+// =================================================================================================
+
+fn verify_faucet_with_max_name_and_description(
+    seed: [u8; 32],
+    symbol: &str,
+    max_supply: u64,
+    storage_mode: AccountStorageMode,
+    extra_components: Vec<miden_protocol::account::AccountComponent>,
+) {
+    let max_name = "a".repeat(NAME_UTF8_MAX_BYTES);
+    let desc_text = "a".repeat(Description::MAX_BYTES);
+    let description = Description::new(&desc_text).unwrap();
+    let desc_words = description.to_words();
+
+    let faucet_metadata = FungibleTokenMetadata::new(
+        symbol.try_into().unwrap(),
+        6,
+        Felt::new(max_supply),
+        TokenName::new(&max_name).unwrap(),
+        Some(description),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let mut builder = AccountBuilder::new(seed)
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(storage_mode)
+        .with_auth_component(NoAuth)
+        .with_component(faucet_metadata);
+
+    for comp in extra_components {
+        builder = builder.with_component(comp);
+    }
+
+    let account = builder.build().unwrap();
+
+    let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
+    let name_0 = account.storage().get_item(TokenMetadata::name_chunk_0_slot()).unwrap();
+    let name_1 = account.storage().get_item(TokenMetadata::name_chunk_1_slot()).unwrap();
+    assert_eq!(name_0, name_words[0]);
+    assert_eq!(name_1, name_words[1]);
+    for (i, expected) in desc_words.iter().enumerate() {
+        let chunk = account.storage().get_item(TokenMetadata::description_slot(i)).unwrap();
+        assert_eq!(chunk, *expected);
+    }
+    let faucet_metadata_val =
+        account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
+    assert_eq!(faucet_metadata_val[1], Felt::new(max_supply));
+}
+
+#[test]
+fn basic_faucet_with_max_name_and_full_description() {
+    verify_faucet_with_max_name_and_description(
+        [5u8; 32],
+        "MAX",
+        1_000_000,
+        AccountStorageMode::Public,
+        vec![BasicFungibleFaucet.into()],
+    );
+}
+
+#[test]
+fn network_faucet_with_max_name_and_full_description() {
+    verify_faucet_with_max_name_and_description(
+        [6u8; 32],
+        "NET",
+        2_000_000,
+        AccountStorageMode::Network,
+        vec![NetworkFungibleFaucet.into(), Ownable2Step::new(owner_account_id()).into()],
+    );
+}
+
+// =================================================================================================
+// MASM NAME READBACK – basic + network faucets
+// =================================================================================================
+
+#[tokio::test]
+async fn basic_faucet_name_readable_from_masm() -> anyhow::Result<()> {
+    let token_name = TokenName::new("readable name").unwrap();
+    let name = token_name.to_words();
+
+    let faucet_metadata = FungibleTokenMetadata::new(
+        "MAS".try_into().unwrap(),
+        10,
+        Felt::new(999_999),
+        token_name,
+        Some(Description::new("readable description").unwrap()),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let account = AccountBuilder::new([3u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(NoAuth)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
+        .build()?;
+
+    execute_tx_script(
+        account,
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_name
+                push.{n0}
+                assert_eqw.err="faucet name chunk 0 does not match"
+                push.{n1}
+                assert_eqw.err="faucet name chunk 1 does not match"
+            end
+            "#,
+            n0 = name[0],
+            n1 = name[1],
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn network_faucet_name_readable_from_masm() -> anyhow::Result<()> {
+    let max_name = "b".repeat(NAME_UTF8_MAX_BYTES);
+    let name_words = miden_standards::account::metadata::name_from_utf8(&max_name).unwrap();
+
+    let network_faucet_metadata = FungibleTokenMetadata::new(
+        "MAS".try_into().unwrap(),
+        6,
+        Felt::new(1_000_000),
+        TokenName::new(&max_name).unwrap(),
+        Some(Description::new("network faucet description").unwrap()),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let account = AccountBuilder::new([7u8; 32])
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(AccountStorageMode::Network)
+        .with_auth_component(NoAuth)
+        .with_component(network_faucet_metadata)
+        .with_component(NetworkFungibleFaucet)
+        .with_component(Ownable2Step::new(owner_account_id()))
+        .build()?;
+
+    execute_tx_script(
+        account,
+        format!(
+            r#"
+            begin
+                call.::miden::standards::metadata::fungible::get_name
+                push.{n0}
+                assert_eqw.err="network faucet name chunk 0 does not match"
+                push.{n1}
+                assert_eqw.err="network faucet name chunk 1 does not match"
+            end
+            "#,
+            n0 = name_words[0],
+            n1 = name_words[1],
+        ),
+    )
+    .await
+}
+
+// =================================================================================================
+// SETTER TESTS – set_description, set_logo_uri, set_external_link (parameterised)
+// =================================================================================================
+
+struct FieldSetterFaucetArgs {
+    description: Option<([Word; 7], bool)>,
+    logo_uri: Option<([Word; 7], bool)>,
+    external_link: Option<([Word; 7], bool)>,
+}
+
+fn description_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
+    FieldSetterFaucetArgs {
+        description: Some((data, mutable)),
+        logo_uri: None,
+        external_link: None,
+    }
+}
+
+fn logo_uri_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
+    FieldSetterFaucetArgs {
+        description: None,
+        logo_uri: Some((data, mutable)),
+        external_link: None,
+    }
+}
+
+fn external_link_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs {
+    FieldSetterFaucetArgs {
+        description: None,
+        logo_uri: None,
+        external_link: Some((data, mutable)),
+    }
+}
+
+async fn test_field_setter_immutable_fails(
+    proc_name: &str,
+    advice_key: Word,
+    immutable_error: MasmError,
+    args: FieldSetterFaucetArgs,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+    let new_data = new_field_data();
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "FLD",
+        1000,
+        owner,
+        Some(0),
+        false,
+        args.description,
+        args.logo_uri,
+        args.external_link,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let tx_script_code = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::{proc_name}
+        end
+    "#
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_tx_script(&tx_script_code)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, immutable_error);
+
+    Ok(())
+}
+
+async fn test_field_setter_owner_succeeds(
+    proc_name: &str,
+    advice_key: Word,
+    args: FieldSetterFaucetArgs,
+    slot_fn: fn(usize) -> &'static miden_protocol::account::StorageSlotName,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+    let new_data = new_field_data();
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "FLD",
+        1000,
+        owner,
+        Some(0),
+        false,
+        args.description,
+        args.logo_uri,
+        args.external_link,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note_script_code = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::{proc_name}
+        end
+    "#
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(&note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let note = NoteBuilder::new(owner, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([7, 8, 9, 10u32]))
+        .code(&note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[note])?
+        .add_note_script(note_script)
+        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed = tx_context.execute().await?;
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_delta(executed.account_delta())?;
+
+    for (i, expected) in new_data.iter().enumerate() {
+        let chunk = updated_faucet.storage().get_item(slot_fn(i))?;
+        assert_eq!(chunk, *expected, "field chunk {i} should be updated");
+    }
+
+    Ok(())
+}
+
+async fn test_field_setter_non_owner_fails(
+    proc_name: &str,
+    advice_key: Word,
+    args: FieldSetterFaucetArgs,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+    let non_owner = non_owner_account_id();
+    let new_data = new_field_data();
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "FLD",
+        1000,
+        owner,
+        Some(0),
+        false,
+        args.description,
+        args.logo_uri,
+        args.external_link,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note_script_code = format!(
+        r#"
+        begin
+            call.::miden::standards::metadata::fungible::{proc_name}
+        end
+    "#
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(&note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let note = NoteBuilder::new(non_owner, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([11, 12, 13, 14u32]))
+        .code(&note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[note])?
+        .add_note_script(note_script)
+        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+// --- set_description ---
+
+#[tokio::test]
+async fn set_description_immutable_fails() -> anyhow::Result<()> {
+    test_field_setter_immutable_fails(
+        "set_description",
+        DESCRIPTION_DATA_KEY,
+        ERR_DESCRIPTION_NOT_MUTABLE,
+        description_config(initial_field_data(), false),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
+    test_field_setter_owner_succeeds(
+        "set_description",
+        DESCRIPTION_DATA_KEY,
+        description_config(initial_field_data(), true),
+        TokenMetadata::description_slot,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
+    test_field_setter_non_owner_fails(
+        "set_description",
+        DESCRIPTION_DATA_KEY,
+        description_config(initial_field_data(), true),
+    )
+    .await
+}
+
+// --- set_logo_uri ---
+
+#[tokio::test]
+async fn set_logo_uri_immutable_fails() -> anyhow::Result<()> {
+    test_field_setter_immutable_fails(
+        "set_logo_uri",
+        LOGO_URI_DATA_KEY,
+        ERR_LOGO_URI_NOT_MUTABLE,
+        logo_uri_config(initial_field_data(), false),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
+    test_field_setter_owner_succeeds(
+        "set_logo_uri",
+        LOGO_URI_DATA_KEY,
+        logo_uri_config(initial_field_data(), true),
+        TokenMetadata::logo_uri_slot,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
+    test_field_setter_non_owner_fails(
+        "set_logo_uri",
+        LOGO_URI_DATA_KEY,
+        logo_uri_config(initial_field_data(), true),
+    )
+    .await
+}
+
+// --- set_external_link ---
+
+#[tokio::test]
+async fn set_external_link_immutable_fails() -> anyhow::Result<()> {
+    test_field_setter_immutable_fails(
+        "set_external_link",
+        EXTERNAL_LINK_DATA_KEY,
+        ERR_EXTERNAL_LINK_NOT_MUTABLE,
+        external_link_config(initial_field_data(), false),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
+    test_field_setter_owner_succeeds(
+        "set_external_link",
+        EXTERNAL_LINK_DATA_KEY,
+        external_link_config(initial_field_data(), true),
+        TokenMetadata::external_link_slot,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
+    test_field_setter_non_owner_fails(
+        "set_external_link",
+        EXTERNAL_LINK_DATA_KEY,
+        external_link_config(initial_field_data(), true),
+    )
+    .await
+}
+
+// =================================================================================================
+// SETTER TESTS – set_max_supply
+// =================================================================================================
+
+#[tokio::test]
+async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "MSM",
+        1000,
+        owner,
+        Some(0),
+        false,
+        None,
+        None,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let tx_script_code = r#"
+        begin
+            push.2000
+            call.::miden::standards::metadata::fungible::set_max_supply
+        end
+    "#;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_tx_script(tx_script_code)?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[])?
+        .tx_script(tx_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_MAX_SUPPLY_IMMUTABLE);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+    let new_max_supply: u64 = 2000;
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "MSM",
+        1000,
+        owner,
+        Some(0),
+        true,
+        None,
+        None,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note_script_code = format!(
+        r#"
+        begin
+            push.{new_max_supply}
+            swap drop
+            call.::miden::standards::metadata::fungible::set_max_supply
+        end
+    "#
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(&note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let note = NoteBuilder::new(owner, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([20, 21, 22, 23u32]))
+        .code(&note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[note])?
+        .add_note_script(note_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let executed = tx_context.execute().await?;
+    let mut updated_faucet = faucet.clone();
+    updated_faucet.apply_delta(executed.account_delta())?;
+
+    let metadata_word = updated_faucet.storage().get_item(FungibleTokenMetadata::metadata_slot())?;
+    assert_eq!(metadata_word[1], Felt::new(new_max_supply), "max_supply should be updated");
+    assert_eq!(metadata_word[0], Felt::new(0), "token_supply should remain unchanged");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+    let owner = owner_account_id();
+    let non_owner = non_owner_account_id();
+    let new_max_supply: u64 = 2000;
+
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+        "MSM",
+        1000,
+        owner,
+        Some(0),
+        true,
+        None,
+        None,
+        None,
+    )?;
+    let mock_chain = builder.build()?;
+
+    let note_script_code = format!(
+        r#"
+        begin
+            push.{new_max_supply}
+            swap drop
+            call.::miden::standards::metadata::fungible::set_max_supply
+        end
+    "#
+    );
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let note_script = CodeBuilder::with_source_manager(source_manager.clone())
+        .compile_note_script(&note_script_code)?;
+
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let note = NoteBuilder::new(non_owner, &mut rng)
+        .note_type(NoteType::Private)
+        .tag(NoteTag::default().into())
+        .serial_number(Word::from([30, 31, 32, 33u32]))
+        .code(&note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[], &[note])?
+        .add_note_script(note_script)
+        .with_source_manager(source_manager)
+        .build()?;
+
+    let result = tx_context.execute().await;
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}

@@ -51,11 +51,11 @@ use miden_standards::account::faucets::{
     BasicFungibleFaucet,
     Description,
     ExternalLink,
+    FungibleTokenMetadata,
     LogoURI,
     NetworkFungibleFaucet,
     TokenName,
 };
-use miden_standards::account::metadata::TokenMetadata;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -335,7 +335,7 @@ impl MockChainBuilder {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
         let max_supply_felt = Felt::try_from(max_supply)?;
-        let basic_faucet = BasicFungibleFaucet::new(
+        let metadata = FungibleTokenMetadata::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply_felt,
@@ -344,12 +344,13 @@ impl MockChainBuilder {
             None,
             None,
         )
-        .context("failed to create BasicFungibleFaucet")?;
+        .context("failed to create FungibleTokenMetadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(basic_faucet);
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -371,7 +372,7 @@ impl MockChainBuilder {
             .unwrap_or_else(|_| TokenName::new("").expect("empty name should be valid"));
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
-        let basic_faucet = BasicFungibleFaucet::new(
+        let metadata = FungibleTokenMetadata::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply,
@@ -380,12 +381,13 @@ impl MockChainBuilder {
             None,
             None,
         )
-        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create basic fungible faucet")?;
+        .and_then(|m| m.with_token_supply(token_supply))
+        .context("failed to create fungible token metadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
-            .with_component(basic_faucet)
+            .with_component(metadata)
+            .with_component(BasicFungibleFaucet)
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -408,9 +410,7 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let info = TokenMetadata::new().with_name(name.clone());
-
-        let network_faucet = NetworkFungibleFaucet::new(
+        let metadata = FungibleTokenMetadata::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply,
@@ -419,13 +419,13 @@ impl MockChainBuilder {
             None,
             None,
         )
-        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?
-        .with_info(info);
+        .and_then(|m| m.with_token_supply(token_supply))
+        .context("failed to create fungible token metadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
-            .with_component(network_faucet)
+            .with_component(metadata)
+            .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
             .account_type(AccountType::FungibleFaucet);
 
@@ -455,45 +455,39 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let mut info = TokenMetadata::new()
-            .with_name(name.clone())
-            .with_owner(owner_account_id)
-            .with_max_supply_mutable(max_supply_mutable);
-        if let Some((words, mutable)) = description {
-            info = info.with_description(
-                Description::try_from_words(&words).expect("valid description words"),
-                mutable,
-            );
-        }
-        if let Some((words, mutable)) = logo_uri {
-            info = info.with_logo_uri(
-                LogoURI::try_from_words(&words).expect("valid logo_uri words"),
-                mutable,
-            );
-        }
-        if let Some((words, mutable)) = external_link {
-            info = info.with_external_link(
-                ExternalLink::try_from_words(&words).expect("valid external_link words"),
-                mutable,
-            );
-        }
-
-        let network_faucet = NetworkFungibleFaucet::new(
+        let mut metadata = FungibleTokenMetadata::new(
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply,
             name,
-            None,
-            None,
-            None,
+            description.map(|(words, _)| {
+                Description::try_from_words(&words).expect("valid description words")
+            }),
+            logo_uri
+                .map(|(words, _)| LogoURI::try_from_words(&words).expect("valid logo_uri words")),
+            external_link.map(|(words, _)| {
+                ExternalLink::try_from_words(&words).expect("valid external_link words")
+            }),
         )
-        .and_then(|f| f.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?
-        .with_info(info);
+        .and_then(|m| m.with_token_supply(token_supply))
+        .context("failed to create fungible token metadata")?
+        .with_owner(owner_account_id)
+        .with_max_supply_mutable(max_supply_mutable);
+
+        if let Some((_, mutable)) = description {
+            metadata = metadata.with_description_mutable(mutable);
+        }
+        if let Some((_, mutable)) = logo_uri {
+            metadata = metadata.with_logo_uri_mutable(mutable);
+        }
+        if let Some((_, mutable)) = external_link {
+            metadata = metadata.with_external_link_mutable(mutable);
+        }
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
-            .with_component(network_faucet)
+            .with_component(metadata)
+            .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
             .account_type(AccountType::FungibleFaucet);
 
