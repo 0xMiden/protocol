@@ -6,16 +6,9 @@ use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note,
-    NoteAssets,
-    NoteAttachment,
-    NoteDetails,
-    NoteMetadata,
-    NoteRecipient,
-    NoteScript,
-    NoteStorage,
-    NoteTag,
-    NoteType,
+    Note, NoteAssets, NoteAttachment, NoteAttachmentContent, NoteAttachmentKind,
+    NoteAttachmentScheme, NoteDetails, NoteMetadata, NoteRecipient, NoteScript, NoteStorage,
+    NoteTag, NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -171,16 +164,293 @@ impl SwapNote {
     }
 }
 
+// SWAP NOTE STORAGE
+// ================================================================================================
+
+/// Canonical storage representation for a SWAP note.
+///
+/// Contains the payback note configuration and the requested asset that the
+/// swap creator wants to receive in exchange for the offered asset contained
+/// in the note's vault.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapNoteStorage {
+    payback_note_type: NoteType,
+    payback_tag: NoteTag,
+    payback_attachment: NoteAttachment,
+    requested_asset: Asset,
+    payback_recipient_digest: Word,
+}
+
+impl SwapNoteStorage {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    /// Expected number of storage items of the SWAP note.
+    pub const NUM_ITEMS: usize = 20;
+
+    // CONSTRUCTOR
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates new SWAP note storage with the specified parameters.
+    pub fn new(
+        payback_note_type: NoteType,
+        payback_tag: NoteTag,
+        payback_attachment: NoteAttachment,
+        requested_asset: Asset,
+        payback_recipient_digest: Word,
+    ) -> Self {
+        Self {
+            payback_note_type,
+            payback_tag,
+            payback_attachment,
+            requested_asset,
+            payback_recipient_digest,
+        }
+    }
+
+    /// Returns the payback note type.
+    pub fn payback_note_type(&self) -> NoteType {
+        self.payback_note_type
+    }
+
+    /// Returns the payback note tag.
+    pub fn payback_tag(&self) -> NoteTag {
+        self.payback_tag
+    }
+
+    /// Returns the payback note attachment.
+    pub fn payback_attachment(&self) -> &NoteAttachment {
+        &self.payback_attachment
+    }
+
+    /// Returns the requested asset.
+    pub fn requested_asset(&self) -> Asset {
+        self.requested_asset
+    }
+
+    /// Returns the payback recipient digest.
+    pub fn payback_recipient_digest(&self) -> Word {
+        self.payback_recipient_digest
+    }
+
+    pub fn into_recipient(self, serial_num: Word) -> NoteRecipient {
+        NoteRecipient::new(serial_num, SwapNote::script(), NoteStorage::from(self))
+    }
+}
+
+impl From<SwapNoteStorage> for NoteStorage {
+    fn from(storage: SwapNoteStorage) -> Self {
+        let attachment_scheme = Felt::from(storage.payback_attachment.attachment_scheme().as_u32());
+        let attachment_kind = Felt::from(storage.payback_attachment.attachment_kind().as_u8());
+        let attachment = storage.payback_attachment.content().to_word();
+
+        let mut storage_values = Vec::with_capacity(SwapNoteStorage::NUM_ITEMS);
+        storage_values.extend_from_slice(&[
+            storage.payback_note_type.into(),
+            storage.payback_tag.into(),
+            attachment_scheme,
+            attachment_kind,
+        ]);
+        storage_values.extend_from_slice(attachment.as_elements());
+        storage_values.extend_from_slice(&storage.requested_asset.as_elements());
+        storage_values.extend_from_slice(storage.payback_recipient_digest.as_elements());
+
+        NoteStorage::new(storage_values)
+            .expect("number of storage items should not exceed max storage items")
+    }
+}
+
+impl TryFrom<&[Felt]> for SwapNoteStorage {
+    type Error = NoteError;
+
+    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
+        if note_storage.len() != SwapNote::NUM_STORAGE_ITEMS {
+            return Err(NoteError::InvalidNoteStorageLength {
+                expected: SwapNote::NUM_STORAGE_ITEMS,
+                actual: note_storage.len(),
+            });
+        }
+
+        let payback_note_type = NoteType::try_from(note_storage[0])
+            .map_err(|err| NoteError::other_with_source("invalid payback note type", err))?;
+
+        let payback_tag = NoteTag::new(
+            note_storage[1]
+                .as_canonical_u64()
+                .try_into()
+                .map_err(|e| NoteError::other_with_source("invalid payback tag value", e))?,
+        );
+
+        let attachment_scheme_u32: u32 = note_storage[2]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|e| NoteError::other_with_source("invalid attachment scheme value", e))?;
+        let attachment_scheme = NoteAttachmentScheme::new(attachment_scheme_u32);
+
+        let attachment_kind_u8: u8 = note_storage[3]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|e| NoteError::other_with_source("invalid attachment kind value", e))?;
+        let attachment_kind = NoteAttachmentKind::try_from(attachment_kind_u8)
+            .map_err(|e| NoteError::other_with_source("invalid attachment kind", e))?;
+
+        let attachment_content_word =
+            Word::new([note_storage[4], note_storage[5], note_storage[6], note_storage[7]]);
+
+        let attachment_content = match attachment_kind {
+            NoteAttachmentKind::None => NoteAttachmentContent::None,
+            NoteAttachmentKind::Word => NoteAttachmentContent::new_word(attachment_content_word),
+            NoteAttachmentKind::Array => NoteAttachmentContent::new_word(attachment_content_word),
+        };
+
+        let payback_attachment = NoteAttachment::new(attachment_scheme, attachment_content)
+            .map_err(|e| NoteError::other_with_source("invalid note attachment", e))?;
+
+        let asset_key =
+            Word::new([note_storage[8], note_storage[9], note_storage[10], note_storage[11]]);
+        let asset_value =
+            Word::new([note_storage[12], note_storage[13], note_storage[14], note_storage[15]]);
+        let requested_asset = Asset::from_key_value_words(asset_key, asset_value)
+            .map_err(|err| NoteError::other_with_source("invalid requested asset", err))?;
+
+        let payback_recipient_digest =
+            Word::new([note_storage[16], note_storage[17], note_storage[18], note_storage[19]]);
+
+        Ok(Self {
+            payback_note_type,
+            payback_tag,
+            payback_attachment,
+            requested_asset,
+            payback_recipient_digest,
+        })
+    }
+}
+
 // TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-    use miden_protocol::{self};
+    use miden_protocol::errors::NoteError;
+    use miden_protocol::note::{NoteAttachment, NoteStorage, NoteTag, NoteType};
 
     use super::*;
+
+    fn dummy_fungible_faucet() -> AccountId {
+        AccountId::dummy(
+            [1u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::FungibleFaucet,
+            AccountStorageMode::Public,
+        )
+    }
+
+    fn dummy_non_fungible_faucet() -> AccountId {
+        AccountId::dummy(
+            [2u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::NonFungibleFaucet,
+            AccountStorageMode::Public,
+        )
+    }
+
+    fn dummy_fungible_asset() -> Asset {
+        Asset::Fungible(FungibleAsset::new(dummy_fungible_faucet(), 1000).unwrap())
+    }
+
+    fn dummy_non_fungible_asset() -> Asset {
+        let details =
+            NonFungibleAssetDetails::new(dummy_non_fungible_faucet(), vec![0xaa, 0xbb]).unwrap();
+        Asset::NonFungible(NonFungibleAsset::new(&details).unwrap())
+    }
+
+    #[test]
+    fn swap_note_storage() {
+        let payback_note_type = NoteType::Private;
+        let payback_tag = NoteTag::new(0x12345678);
+        let payback_attachment = NoteAttachment::default();
+        let requested_asset = dummy_fungible_asset();
+        let payback_recipient_digest =
+            Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
+
+        let storage = SwapNoteStorage::new(
+            payback_note_type,
+            payback_tag,
+            payback_attachment.clone(),
+            requested_asset,
+            payback_recipient_digest,
+        );
+
+        // Convert to NoteStorage
+        let note_storage = NoteStorage::from(storage.clone());
+        assert_eq!(note_storage.num_items() as usize, SwapNoteStorage::NUM_ITEMS);
+
+        // Convert back from storage items
+        let decoded = SwapNoteStorage::try_from(note_storage.items())
+            .expect("valid SWAP storage should decode");
+
+        assert_eq!(decoded.payback_note_type(), payback_note_type);
+        assert_eq!(decoded.payback_tag(), payback_tag);
+        assert_eq!(decoded.payback_attachment(), &payback_attachment);
+        assert_eq!(decoded.requested_asset(), requested_asset);
+        assert_eq!(decoded.payback_recipient_digest(), payback_recipient_digest);
+    }
+
+    #[test]
+    fn swap_note_storage_with_non_fungible_asset() {
+        let payback_note_type = NoteType::Public;
+        let payback_tag = NoteTag::new(0xaabbccdd);
+        let payback_attachment = NoteAttachment::default();
+        let requested_asset = dummy_non_fungible_asset();
+        let payback_recipient_digest =
+            Word::new([Felt::new(10), Felt::new(20), Felt::new(30), Felt::new(40)]);
+
+        let storage = SwapNoteStorage::new(
+            payback_note_type,
+            payback_tag,
+            payback_attachment.clone(),
+            requested_asset,
+            payback_recipient_digest,
+        );
+
+        let note_storage = NoteStorage::from(storage);
+        let decoded = SwapNoteStorage::try_from(note_storage.items())
+            .expect("valid SWAP storage should decode");
+
+        assert_eq!(decoded.payback_note_type(), payback_note_type);
+        assert_eq!(decoded.requested_asset(), requested_asset);
+    }
+
+    #[test]
+    fn try_from_invalid_length_fails() {
+        let storage = vec![Felt::ZERO; 10];
+
+        let err =
+            SwapNoteStorage::try_from(storage.as_slice()).expect_err("wrong length must fail");
+
+        assert!(matches!(
+            err,
+            NoteError::InvalidNoteStorageLength {
+                expected: SwapNote::NUM_STORAGE_ITEMS,
+                actual: 10
+            }
+        ));
+    }
+
+    #[test]
+    fn try_from_invalid_note_type_fails() {
+        let mut storage = vec![Felt::ZERO; SwapNoteStorage::NUM_ITEMS];
+        // Set invalid note type (value > 2)
+        storage[0] = Felt::new(99);
+
+        let err =
+            SwapNoteStorage::try_from(storage.as_slice()).expect_err("invalid note type must fail");
+
+        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+    }
 
     #[test]
     fn swap_tag() {

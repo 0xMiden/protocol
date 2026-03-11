@@ -33,6 +33,7 @@
 - Added `MockChain::add_pending_batch()` to allow submitting user batches directly ([#2565](https://github.com/0xMiden/protocol/pull/2565)).
 - Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
+- Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
 
 ### Changes
 
