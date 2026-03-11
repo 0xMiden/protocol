@@ -504,7 +504,7 @@ impl InputNoteCommitment {
     /// Note: this method does not validate that the provided nullifier and header are consistent
     /// with each other (i.e., it does not check that the nullifier was derived from the note
     /// referenced by the header).
-    pub fn from_parts(nullifier: Nullifier, header: Option<NoteHeader>) -> Self {
+    pub fn from_parts_unchecked(nullifier: Nullifier, header: Option<NoteHeader>) -> Self {
         Self { nullifier, header }
     }
 
