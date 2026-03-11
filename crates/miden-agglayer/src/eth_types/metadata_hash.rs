@@ -67,9 +67,14 @@ impl MetadataHash {
 /// - 3 x 32-byte words for offsets/value of each parameter
 /// - 32-byte length + padded data for name string
 /// - 32-byte length + padded data for symbol string
-pub fn encode_token_metadata(name: &str, symbol: &str, decimals: u8) -> Vec<u8> {
+pub(crate) fn encode_token_metadata(name: &str, symbol: &str, decimals: u8) -> Vec<u8> {
     let name_bytes = name.as_bytes();
     let symbol_bytes = symbol.as_bytes();
+
+    // ABI encoding uses 32-byte u256 for offsets and lengths. We only write the lower 2 bytes,
+    // so enforce a reasonable limit. Token names/symbols are typically < 32 bytes.
+    assert!(name_bytes.len() <= 1024, "token name too long for ABI encoding");
+    assert!(symbol_bytes.len() <= 1024, "token symbol too long for ABI encoding");
 
     let name_padded_data_len = pad_to_32(name_bytes.len());
     let symbol_padded_data_len = pad_to_32(symbol_bytes.len());
