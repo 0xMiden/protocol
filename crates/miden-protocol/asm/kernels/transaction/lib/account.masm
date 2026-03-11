@@ -2078,24 +2078,14 @@ end
 #!   the first two felts of the hashed slot name.
 #! - has_non_empty_value is 1 if the slot exists and its value is non-empty, 0 otherwise.
 proc has_non_empty_slot
-    exec.memory::get_account_active_storage_slots_section_ptr
-    # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+    exec.find_item
+    # => [is_found, VALUE]
 
-    exec.find_storage_slot
-    # => [is_found, slot_ptr]
+    # check if is_found && value is non-empty
+    movdn.4 exec.word::eqz not
+    # => [is_non_empty_value, is_found]
 
-    if.true
-        # read the slot value
-        exec.get_item_raw
-        # => [VALUE]
-
-        # check if the value is non-empty
-        exec.word::eqz not
-        # => [has_non_empty_value]
-    else
-        drop push.0
-        # => [0]
-    end
+    and
     # => [has_non_empty_value]
 end
 
