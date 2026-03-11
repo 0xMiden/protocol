@@ -49,8 +49,7 @@
 //! content, zero-padded. Each 7-byte chunk is stored as a LE u64 with the high byte always zero,
 //! so it always fits in a Goldilocks field element.
 //!
-//! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32). See
-//! [`name_from_utf8`], [`name_to_utf8`] for convenience helpers.
+//! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32).
 //!
 //! # Example
 //!
@@ -73,8 +72,6 @@
 mod schema_commitment;
 mod token_metadata;
 
-use alloc::string::String;
-
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
@@ -90,7 +87,7 @@ pub use token_metadata::TokenMetadata;
 // ================================================================================================
 
 /// Token metadata: `[token_supply, max_supply, decimals, token_symbol]`.
-pub static TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(crate) static TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::token_metadata")
         .expect("storage slot name should be valid")
 });
@@ -99,7 +96,7 @@ pub static TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Referenced here so that faucets and other metadata consumers can locate the owner
 /// through a single `metadata::owner_config_slot()` accessor, without depending on
 /// the ownable module directly.
-pub static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(crate) static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable::owner_config")
         .expect("storage slot name should be valid")
 });
@@ -110,7 +107,7 @@ pub static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// use [`TokenName::new`](crate::account::faucets::TokenName::new) /
 /// [`TokenName::to_words`](crate::account::faucets::TokenName::to_words) /
 /// [`TokenName::try_from_words`](crate::account::faucets::TokenName::try_from_words).
-pub static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::name_1").expect("valid slot name"),
@@ -119,80 +116,44 @@ pub static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
 
 /// Maximum length of a name in bytes when using the UTF-8 encoding (2 Words = 8 felts × 7 bytes
 /// = 56 byte buffer − 1 length byte = 55 capacity, capped at 32).
-pub const NAME_UTF8_MAX_BYTES: usize = 32;
+pub(crate) const NAME_UTF8_MAX_BYTES: usize = 32;
 
 /// Errors when encoding or decoding the metadata name as UTF-8.
 #[derive(Debug, Clone, Error)]
 pub enum NameUtf8Error {
-    /// Name exceeds [`NAME_UTF8_MAX_BYTES`].
-    #[error("name must be at most {NAME_UTF8_MAX_BYTES} UTF-8 bytes, got {0}")]
+    /// Name exceeds the maximum of 32 UTF-8 bytes.
+    #[error("name must be at most 32 UTF-8 bytes, got {0}")]
     TooLong(usize),
     /// Decoded bytes are not valid UTF-8.
     #[error("name is not valid UTF-8")]
     InvalidUtf8,
 }
 
-/// Encodes a UTF-8 string into the 2-Word name format.
-///
-/// Bytes are packed 7-bytes-per-felt, length-prefixed, into 8 felts (2 Words).
-/// Returns an error if the UTF-8 byte length exceeds 32.
-///
-/// Prefer using [`TokenName::new`](crate::account::faucets::TokenName::new) +
-/// [`TokenName::to_words`](crate::account::faucets::TokenName::to_words) directly.
-pub fn name_from_utf8(s: &str) -> Result<[Word; 2], NameUtf8Error> {
-    use crate::account::faucets::TokenName;
-    Ok(TokenName::new(s)?.to_words())
-}
-
-/// Decodes the 2-Word name format as UTF-8.
-///
-/// Assumes the name was encoded with [`name_from_utf8`] (7-bytes-per-felt, length-prefixed).
-///
-/// Prefer using [`TokenName::try_from_words`](crate::account::faucets::TokenName::try_from_words) directly.
-pub fn name_to_utf8(words: &[Word; 2]) -> Result<String, NameUtf8Error> {
-    use crate::account::faucets::TokenName;
-    Ok(TokenName::try_from_words(words)?.as_str().into())
-}
-
 /// Mutability config slot: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`.
 ///
 /// Each flag is 0 (immutable) or 1 (mutable / owner can update).
-pub static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::mutability_config")
         .expect("storage slot name should be valid")
 });
 
 /// Maximum length of a metadata field (description, logo_uri, external_link) in bytes.
 /// 7 Words = 28 felts × 7 bytes = 196 byte buffer − 1 length byte = 195 bytes.
-pub const FIELD_MAX_BYTES: usize = 195;
+pub(crate) const FIELD_MAX_BYTES: usize = 195;
 
 /// Errors when encoding or decoding metadata fields.
 #[derive(Debug, Clone, Error)]
 pub enum FieldBytesError {
-    /// Field exceeds [`FIELD_MAX_BYTES`].
-    #[error("field must be at most {FIELD_MAX_BYTES} bytes, got {0}")]
+    /// Field exceeds the maximum of 195 bytes.
+    #[error("field must be at most 195 bytes, got {0}")]
     TooLong(usize),
     /// Decoded bytes are not valid UTF-8.
     #[error("field is not valid UTF-8")]
     InvalidUtf8,
 }
 
-/// Encodes a UTF-8 string into 7 Words (28 felts).
-///
-/// Bytes are packed 7-bytes-per-felt, length-prefixed, into 28 felts (7 Words).
-/// Returns an error if the length exceeds [`FIELD_MAX_BYTES`].
-///
-/// Prefer using [`Description::new`](crate::account::faucets::Description::new) +
-/// [`Description::to_words`](crate::account::faucets::Description::to_words) (or `LogoURI` /
-/// `ExternalLink`) directly.
-pub fn field_from_bytes(bytes: &[u8]) -> Result<[Word; 7], FieldBytesError> {
-    use crate::account::faucets::Description;
-    let s = core::str::from_utf8(bytes).map_err(|_| FieldBytesError::InvalidUtf8)?;
-    Ok(Description::new(s)?.to_words())
-}
-
 /// Description (7 Words = 28 felts), split across 7 slots.
-pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::description_0").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::description_1").expect("valid slot name"),
@@ -205,7 +166,7 @@ pub static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| 
 });
 
 /// Logo URI (7 Words = 28 felts), split across 7 slots.
-pub static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::logo_uri_0").expect("valid slot name"),
         StorageSlotName::new("miden::standards::metadata::logo_uri_1").expect("valid slot name"),
@@ -218,7 +179,7 @@ pub static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
 });
 
 /// External link (7 Words = 28 felts), split across 7 slots.
-pub static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::external_link_0")
             .expect("valid slot name"),
@@ -253,17 +214,17 @@ pub const EXTERNAL_LINK_DATA_KEY: Word =
 // ================================================================================================
 
 /// Returns the [`StorageSlotName`] for token metadata (slot 0).
-pub fn token_metadata_slot() -> &'static StorageSlotName {
+pub(crate) fn token_metadata_slot() -> &'static StorageSlotName {
     &TOKEN_METADATA_SLOT
 }
 
 /// Returns the [`StorageSlotName`] for owner config (slot 1).
-pub fn owner_config_slot() -> &'static StorageSlotName {
+pub(crate) fn owner_config_slot() -> &'static StorageSlotName {
     &OWNER_CONFIG_SLOT
 }
 
 /// Returns the [`StorageSlotName`] for the mutability config Word.
-pub fn mutability_config_slot() -> &'static StorageSlotName {
+pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
     &MUTABILITY_CONFIG_SLOT
 }
 
@@ -274,7 +235,7 @@ pub fn mutability_config_slot() -> &'static StorageSlotName {
 mod tests {
     use miden_protocol::account::AccountBuilder;
 
-    use super::{NAME_UTF8_MAX_BYTES, TokenMetadata as InfoType, mutability_config_slot};
+    use super::{TokenMetadata as InfoType, mutability_config_slot};
     use crate::account::auth::NoAuth;
     use crate::account::faucets::{
         BasicFungibleFaucet,
@@ -375,7 +336,7 @@ mod tests {
 
     #[test]
     fn name_max_32_bytes_accepted() {
-        let s = "a".repeat(NAME_UTF8_MAX_BYTES);
+        let s = "a".repeat(TokenName::MAX_BYTES);
         assert_eq!(s.len(), 32);
         let name = TokenName::new(&s).unwrap();
         let words = name.to_words();
@@ -398,7 +359,7 @@ mod tests {
 
     #[test]
     fn description_too_long_rejected() {
-        let s = "a".repeat(super::FIELD_MAX_BYTES + 1);
+        let s = "a".repeat(Description::MAX_BYTES + 1);
         assert!(Description::new(&s).is_err());
     }
 
