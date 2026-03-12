@@ -126,7 +126,7 @@ async fn test_array_get_and_set() -> anyhow::Result<()> {
 
     // Compile the transaction script with the wrapper library linked
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_library(wrapper_library.clone())?
         .compile_tx_script(tx_script_code)?;
 
     // Create transaction context and execute
@@ -243,7 +243,7 @@ async fn test_double_word_array_get_and_set() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(&wrapper_library)?
+        .with_dynamically_linked_library(wrapper_library.clone())?
         .compile_tx_script(tx_script_code)?;
 
     let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;

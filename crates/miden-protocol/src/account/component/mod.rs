@@ -196,31 +196,26 @@ impl AccountComponent {
         self.metadata.supported_types().contains(&account_type)
     }
 
-    /// Returns a vector of tuples (digest, is_auth) for all procedures in this component.
+    /// Returns an iterator over (digest, is_auth) for all procedures in this component.
     ///
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
     /// attribute.
-    pub fn get_procedures(&self) -> Vec<(Word, bool)> {
-        let library = self.code.as_library();
-        let mut procedures = Vec::new();
-        for export in library.exports() {
-            if let Some(proc_export) = export.as_procedure() {
-                let digest = library
-                    .mast_forest()
-                    .get_node_by_id(proc_export.node)
-                    .expect("export node not in the forest")
-                    .digest();
-                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-                procedures.push((digest, is_auth));
-            }
-        }
-        procedures
+    pub fn get_procedures(&self) -> impl Iterator<Item = (Word, bool)> + '_ {
+        let mast = self.code.mast_forest();
+        self.code.exports().iter().map(move |proc_export| {
+            let digest = mast
+                .get_node_by_id(proc_export.node)
+                .expect("export node not in the forest")
+                .digest();
+            let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+            (digest, is_auth)
+        })
     }
 
     /// Returns the digest of the procedure with the specified path, or `None` if it was not found
-    /// in this component's library or its library path is malformed.
+    /// in this component.
     pub fn get_procedure_root_by_path(&self, proc_name: impl AsRef<Path>) -> Option<Word> {
-        self.code.as_library().get_procedure_root_by_path(proc_name)
+        self.code.get_procedure_root_by_path(proc_name)
     }
 }
 

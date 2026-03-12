@@ -70,7 +70,7 @@ use crate::standards_lib::StandardsLib;
 /// let script = CodeBuilder::default()
 ///     .with_linked_module("my::module", module_code).context("failed to link module")?
 ///     .with_statically_linked_library(&my_lib).context("failed to link static library")?
-///     .with_dynamically_linked_library(&fpi_lib).context("failed to link dynamic library")?  // For FPI calls
+///     .with_dynamically_linked_library(fpi_lib).context("failed to link dynamic library")?  // For FPI calls
 ///     .compile_tx_script(script_code).context("failed to parse tx script")?;
 /// # Ok(())
 /// # }
@@ -223,9 +223,10 @@ impl CodeBuilder {
     /// Returns an error if the library cannot be added to the assembler
     pub fn with_dynamically_linked_library(
         mut self,
-        library: impl AsRef<Library>,
+        library: impl Into<Library>,
     ) -> Result<Self, CodeBuilderError> {
-        self.link_dynamic_library(library.as_ref())?;
+        let library = library.into();
+        self.link_dynamic_library(&library)?;
         Ok(self)
     }
 
@@ -697,7 +698,7 @@ mod tests {
         let builder = CodeBuilder::default()
             .with_statically_linked_library(&static_lib)
             .context("failed to link static library")?
-            .with_dynamically_linked_library(&dynamic_lib)
+            .with_dynamically_linked_library(dynamic_lib)
             .context("failed to link dynamic library")?;
 
         builder

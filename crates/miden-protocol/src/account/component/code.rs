@@ -1,33 +1,64 @@
-use miden_assembly::Library;
-use miden_processor::mast::MastForest;
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
+use miden_assembly::library::ProcedureExport;
+use miden_assembly::{Library, Path};
+use miden_core::Word;
+use miden_core::mast::{MastForest, MastNodeExt};
 
 use crate::vm::AdviceMap;
 
 // ACCOUNT COMPONENT CODE
 // ================================================================================================
 
-/// A [`Library`] that has been assembled for use as component code.
+/// The code associated with an account component, consisting of a [`MastForest`] and the set of
+/// procedures exported by the component.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccountComponentCode(Library);
+pub struct AccountComponentCode {
+    mast: Arc<MastForest>,
+    exports: Vec<ProcedureExport>,
+}
 
 impl AccountComponentCode {
-    /// Returns a reference to the underlying [`Library`]
-    pub fn as_library(&self) -> &Library {
-        &self.0
+    // CONSTRUCTORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [`AccountComponentCode`] from the provided MAST forest and procedure exports.
+    pub fn new(mast: Arc<MastForest>, exports: Vec<ProcedureExport>) -> Self {
+        Self { mast, exports }
     }
 
-    /// Returns a reference to the code's [`MastForest`]
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns a reference to the code's [`MastForest`].
     pub fn mast_forest(&self) -> &MastForest {
-        self.0.mast_forest().as_ref()
+        self.mast.as_ref()
     }
 
-    /// Consumes `self` and returns the underlying [`Library`]
-    pub fn into_library(self) -> Library {
-        self.0
+    /// Returns the [`MastForest`] wrapped in an [`Arc`].
+    pub fn mast(&self) -> Arc<MastForest> {
+        self.mast.clone()
     }
 
-    /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the
-    /// underlying [Library]'s [MastForest].
+    /// Returns the procedure exports of this component.
+    pub fn exports(&self) -> &[ProcedureExport] {
+        &self.exports
+    }
+
+    /// Returns the digest of the procedure with the specified path, or `None` if it was not found
+    /// in this component.
+    pub fn get_procedure_root_by_path(&self, path: impl AsRef<Path>) -> Option<Word> {
+        let path = path.as_ref().to_absolute();
+        self.exports
+            .iter()
+            .find(|export| export.path.as_ref() == path.as_ref())
+            .map(|export| self.mast[export.node].digest())
+    }
+
+    /// Returns a new [`AccountComponentCode`] with the provided advice map entries merged into the
+    /// underlying [`MastForest`].
     ///
     /// This allows adding advice map entries to an already-compiled account component,
     /// which is useful when the entries are determined after compilation.
@@ -36,13 +67,13 @@ impl AccountComponentCode {
             return self;
         }
 
-        Self(self.0.with_advice_map(advice_map))
-    }
-}
+        let mut mast = (*self.mast).clone();
+        mast.advice_map_mut().extend(advice_map);
 
-impl AsRef<Library> for AccountComponentCode {
-    fn as_ref(&self) -> &Library {
-        self.as_library()
+        Self {
+            mast: Arc::new(mast),
+            exports: self.exports,
+        }
     }
 }
 
@@ -50,14 +81,32 @@ impl AsRef<Library> for AccountComponentCode {
 // ================================================================================================
 
 impl From<Library> for AccountComponentCode {
-    fn from(value: Library) -> Self {
-        Self(value)
+    fn from(library: Library) -> Self {
+        let mast = library.mast_forest().clone();
+        let exports: Vec<ProcedureExport> =
+            library.exports().filter_map(|export| export.as_procedure().cloned()).collect();
+
+        Self { mast, exports }
     }
 }
 
 impl From<AccountComponentCode> for Library {
     fn from(value: AccountComponentCode) -> Self {
-        value.into_library()
+        let exports: BTreeMap<_, _> =
+            value.exports.into_iter().map(|e| (e.path.clone(), e.into())).collect();
+
+        Library::new(value.mast, exports)
+            .expect("AccountComponentCode should have at least one export")
+    }
+}
+
+impl From<&AccountComponentCode> for Library {
+    fn from(value: &AccountComponentCode) -> Self {
+        let exports: BTreeMap<_, _> =
+            value.exports.iter().cloned().map(|e| (e.path.clone(), e.into())).collect();
+
+        Library::new(value.mast.clone(), exports)
+            .expect("AccountComponentCode should have at least one export")
     }
 }
 
@@ -82,10 +131,9 @@ mod tests {
         assert!(component_code.mast_forest().advice_map().is_empty());
 
         // Empty advice map should be a no-op (digest stays the same)
-        let cloned = component_code.clone();
-        let original_digest = cloned.as_library().digest();
+        let original_digest = *Library::from(component_code.clone()).digest();
         let component_code = component_code.with_advice_map(AdviceMap::default());
-        assert_eq!(original_digest, component_code.as_library().digest());
+        assert_eq!(&original_digest, Library::from(component_code.clone()).digest());
 
         // Non-empty advice map should add entries
         let key = Word::from([10u32, 20, 30, 40]);

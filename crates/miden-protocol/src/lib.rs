@@ -37,7 +37,7 @@ pub use protocol::ProtocolLib;
 pub mod assembly {
     pub use miden_assembly::ast::{Module, ModuleKind, ProcedureName, QualifiedProcedureName};
     pub use miden_assembly::debuginfo::SourceManagerSync;
-    pub use miden_assembly::library::LibraryExport;
+    pub use miden_assembly::library::{LibraryExport, ProcedureExport as LibraryProcedureExport};
     pub use miden_assembly::{
         Assembler,
         DefaultSourceManager,
