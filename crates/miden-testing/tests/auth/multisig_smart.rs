@@ -48,7 +48,6 @@ use rstest::rstest;
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 type MultisigTestSetupWithSchemes =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
@@ -72,35 +71,6 @@ fn test_get_price_proc_root() -> Word {
         Felt::new(TEST_GET_PRICE_PROC_ROOT[2]),
         Felt::new(TEST_GET_PRICE_PROC_ROOT[3]),
     ])
-}
-
-/// Sets up secret keys, public keys, and authenticators for multisig testing
-fn setup_keys_and_authenticators(
-    num_approvers: usize,
-    threshold: usize,
-) -> anyhow::Result<MultisigTestSetup> {
-    let seed: [u8; 32] = rand::random();
-    let mut rng = ChaCha20Rng::from_seed(seed);
-
-    let mut secret_keys = Vec::new();
-    let mut public_keys = Vec::new();
-    let mut authenticators = Vec::new();
-
-    for _ in 0..num_approvers {
-        let sec_key = AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng);
-        let pub_key = sec_key.public_key();
-
-        secret_keys.push(sec_key);
-        public_keys.push(pub_key);
-    }
-
-    // Create authenticators for required signers
-    for secret_key in secret_keys.iter().take(threshold) {
-        let authenticator = BasicAuthenticator::new(core::slice::from_ref(secret_key));
-        authenticators.push(authenticator);
-    }
-
-    Ok((secret_keys, public_keys, authenticators))
 }
 
 /// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
@@ -167,6 +137,7 @@ fn build_update_signers_config_vector(
 fn create_multisig_smart_account_with_assets(
     threshold: u32,
     public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
     assets: Vec<FungibleAsset>,
     spent_interval_blocks: u32,
     amount_limits: [u64; 4],
@@ -175,10 +146,8 @@ fn create_multisig_smart_account_with_assets(
     get_price_proc_root: Word,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> = public_keys
-        .iter()
-        .map(|pk| (pk.to_commitment(), AuthScheme::EcdsaK256Keccak))
-        .collect();
+    let approvers: Vec<_> =
+        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
 
     // Create the multisig spending limits account
     let multisig_account = AccountBuilder::new([0; 32])
@@ -204,12 +173,11 @@ fn create_multisig_smart_account_with_assets(
 fn create_multisig_smart_with_fixed_test_configuration(
     threshold: u32,
     public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> = public_keys
-        .iter()
-        .map(|pk| (pk.to_commitment(), AuthScheme::EcdsaK256Keccak))
-        .collect();
+    let approvers: Vec<_> =
+        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
 
     let multisig_starting_assets = vec![
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 10000u64),
@@ -277,13 +245,11 @@ fn create_assets_for_output_notes(
 fn create_multisig_account(
     threshold: u32,
     public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
     starting_balance: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
-    let approvers = public_keys
-        .iter()
-        .map(|pk| (pk.clone(), AuthScheme::EcdsaK256Keccak))
-        .collect::<Vec<_>>();
+    let approvers = public_keys.iter().map(|pk| (pk.clone(), auth_scheme)).collect::<Vec<_>>();
 
     create_multisig_account_with_schemes(
         threshold,
@@ -416,9 +382,15 @@ async fn execute_script_with_signers(
 /// - 5 Approvers (multisig signers)
 /// - 1 Multisig Contract
 /// - 3 Fungible Asset Faucets in Output Notes
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_send_3_different_assets() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+async fn test_multisig_smart_send_3_different_assets(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let multisig_starting_faucets = vec![
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 10000u64),
@@ -435,6 +407,7 @@ async fn test_multisig_smart_send_3_different_assets() -> anyhow::Result<()> {
     let mut multisig_account = create_multisig_smart_account_with_assets(
         3,
         &public_keys,
+        auth_scheme,
         multisig_starting_faucets
             .iter()
             .map(|(account_id, amount)| FungibleAsset::new(*account_id, *amount).unwrap())
@@ -580,12 +553,18 @@ async fn test_multisig_smart_send_3_different_assets() -> anyhow::Result<()> {
 /// - 5 Approvers (multisig signers)
 /// - 1 Multisig Contract
 /// - 3 Fungible Asset Faucets in Output Notes
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_less_than_limit1_requires_tier1_signatures() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+async fn test_multisig_smart_less_than_limit1_requires_tier1_signatures(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let mut multisig_account =
-        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, vec![])?;
+        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, auth_scheme, vec![])?;
 
     // print multisig_account vault assets
     for asset in multisig_account.vault().assets() {
@@ -679,12 +658,18 @@ async fn test_multisig_smart_less_than_limit1_requires_tier1_signatures() -> any
 /// - 5 Approvers (multisig signers)
 /// - 1 Multisig Contract
 /// - 3 Fungible Asset Faucets in Output Notes
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_less_than_limit2_requires_tier2_signatures() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+async fn test_multisig_smart_less_than_limit2_requires_tier2_signatures(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let mut multisig_account =
-        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, vec![])?;
+        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, auth_scheme, vec![])?;
 
     // print multisig_account vault assets
     for asset in multisig_account.vault().assets() {
@@ -783,12 +768,18 @@ async fn test_multisig_smart_less_than_limit2_requires_tier2_signatures() -> any
 /// - 5 Approvers (multisig signers)
 /// - 1 Multisig Contract
 /// - 3 Fungible Asset Faucets in Output Notes
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_more_than_limit3_requires_tier3_signatures() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+async fn test_multisig_smart_more_than_limit3_requires_tier3_signatures(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let mut multisig_account =
-        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, vec![])?;
+        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, auth_scheme, vec![])?;
 
     // print multisig_account vault assets
     for asset in multisig_account.vault().assets() {
@@ -887,16 +878,22 @@ async fn test_multisig_smart_more_than_limit3_requires_tier3_signatures() -> any
 /// **Roles:**
 /// - 2 Approvers (multisig signers)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 #[ignore = "legacy optional scenario"]
-async fn disabled_test_multisig_smart_2_of_2_with_note_creation() -> anyhow::Result<()> {
+async fn disabled_test_multisig_smart_2_of_2_with_note_creation(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let mut multisig_account =
-        create_multisig_account(2, &public_keys, multisig_starting_balance, vec![])?;
+        create_multisig_account(2, &public_keys, auth_scheme, multisig_starting_balance, vec![])?;
 
     let output_note_asset = FungibleAsset::mock(0);
 
@@ -975,14 +972,20 @@ async fn disabled_test_multisig_smart_2_of_2_with_note_creation() -> anyhow::Res
 /// implementation correctly validates signatures from any valid subset.
 ///
 /// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
 #[ignore = "legacy optional scenario"]
-async fn disabled_test_multisig_smart_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
+async fn disabled_test_multisig_smart_2_of_4_all_signer_combinations(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators (4 approvers, all 4 can sign)
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     // Create multisig account with 4 approvers but threshold of 2
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 10, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1053,13 +1056,19 @@ async fn disabled_test_multisig_smart_2_of_4_all_signer_combinations() -> anyhow
 /// **Roles:**
 /// - 3 Approvers (2 signers required)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_replay_protection() -> anyhow::Result<()> {
+async fn test_multisig_smart_replay_protection(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 2)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
 
     // Create 2/3 multisig account
-    let multisig_account = create_multisig_account(2, &public_keys, 20, vec![])?;
+    let multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 20, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -1722,10 +1731,16 @@ async fn test_multisig_smart_new_approvers_cannot_sign_before_update(
 /// threshold of 1 for note consumption, can:
 /// 1. Consume a note when only one approver signs the transaction
 /// 2. Send a note only when both approvers sign the transaction (default threshold)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_proc_threshold_overrides() -> anyhow::Result<()> {
+async fn test_multisig_smart_proc_threshold_overrides(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
 
@@ -1745,6 +1760,7 @@ async fn test_multisig_smart_proc_threshold_overrides() -> anyhow::Result<()> {
     let mut multisig_account = create_multisig_smart_account_with_assets(
         2,
         &public_keys,
+        auth_scheme,
         assets,
         spent_interval_blocks,
         amount_limits,
@@ -1897,11 +1913,17 @@ async fn test_multisig_smart_proc_threshold_overrides() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_epoch_boundary_resets_spending_tracker() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+async fn test_multisig_smart_epoch_boundary_resets_spending_tracker(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
     let mut multisig_account =
-        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, vec![])?;
+        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, auth_scheme, vec![])?;
 
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -2074,10 +2096,16 @@ async fn test_multisig_smart_epoch_boundary_resets_spending_tracker() -> anyhow:
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_pending_actions_are_mutually_exclusive() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
-    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
@@ -2173,10 +2201,16 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive() -> anyhow:
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_execute_proposal_without_timelock_requirement() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 3)?;
-    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_execute_proposal_without_timelock_requirement(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
@@ -2261,11 +2295,16 @@ async fn test_multisig_smart_execute_proposal_without_timelock_requirement() -> 
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundary()
--> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
-    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundary(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
@@ -2348,11 +2387,15 @@ async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundar
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_map_integrity()
--> anyhow::Result<()> {
+async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_map_integrity(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     let (_initial_secret_keys, initial_schemes, initial_public_keys, initial_authenticators) =
-        setup_keys_and_authenticators_with_scheme(5, 5, AuthScheme::EcdsaK256Keccak)?;
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
     let initial_approvers = initial_public_keys
         .iter()
@@ -2380,7 +2423,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
         shrink_threshold,
         shrink_num_approvers,
         shrink_keys,
-        AuthScheme::EcdsaK256Keccak,
+        auth_scheme,
     );
     let shrink_hash = Hasher::hash_elements(&shrink_data);
     let mut shrink_advice_map = AdviceMap::default();
@@ -2407,12 +2450,8 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
     mock_chain.add_pending_executed_transaction(&shrink_tx)?;
     mock_chain.prove_next_block()?;
 
-    let ecdsa_scheme_word = Word::from([
-        Felt::new(AuthScheme::EcdsaK256Keccak as u64),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
+    let initial_scheme_word =
+        Word::from([Felt::new(auth_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)]);
     for (idx, expected_key) in shrink_keys.iter().enumerate() {
         let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let expected_key_word: Word = expected_key.to_commitment().into();
@@ -2426,7 +2465,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
             multisig_account
                 .storage()
                 .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), storage_key)?,
-            ecdsa_scheme_word
+            initial_scheme_word
         );
     }
     for idx in 2..5 {
@@ -2447,15 +2486,21 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
         );
     }
 
+    let new_scheme = match auth_scheme {
+        AuthScheme::EcdsaK256Keccak => AuthScheme::Falcon512Poseidon2,
+        AuthScheme::Falcon512Poseidon2 => AuthScheme::EcdsaK256Keccak,
+        _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
+    };
+
     let (_new_secret_keys, _new_schemes, expanded_public_keys, _new_authenticators) =
-        setup_keys_and_authenticators_with_scheme(4, 0, AuthScheme::Falcon512Poseidon2)?;
+        setup_keys_and_authenticators_with_scheme(4, 0, new_scheme)?;
     let expand_threshold = 3u64;
     let expand_num_approvers = 4u64;
     let expand_data = build_update_signers_config_vector(
         expand_threshold,
         expand_num_approvers,
         &expanded_public_keys,
-        AuthScheme::Falcon512Poseidon2,
+        new_scheme,
     );
     let expand_hash = Hasher::hash_elements(&expand_data);
     let mut expand_advice_map = AdviceMap::default();
@@ -2480,12 +2525,8 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
     .expect("expand update should succeed");
     multisig_account.apply_delta(expand_tx.account_delta())?;
 
-    let falcon_scheme_word = Word::from([
-        Felt::new(AuthScheme::Falcon512Poseidon2 as u64),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-    ]);
+    let expanded_scheme_word =
+        Word::from([Felt::new(new_scheme as u64), Felt::new(0), Felt::new(0), Felt::new(0)]);
     for (idx, expected_key) in expanded_public_keys.iter().enumerate() {
         let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let expected_key_word: Word = expected_key.to_commitment().into();
@@ -2499,7 +2540,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
             multisig_account
                 .storage()
                 .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), storage_key)?,
-            falcon_scheme_word
+            expanded_scheme_word
         );
     }
 
@@ -2511,6 +2552,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
         Word::empty(),
         "old stale key index should remain empty after re-expansion"
     );
+
     assert_eq!(
         multisig_account
             .storage()
@@ -2522,10 +2564,15 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier() -> anyhow::Result<()>
-{
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 4)];
 
     let assets =
@@ -2534,6 +2581,7 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier() -
     let multisig_account = create_multisig_smart_account_with_assets(
         2,
         &public_keys,
+        auth_scheme,
         assets,
         10,
         [500, 1000, 2000, 1500],
@@ -2614,11 +2662,16 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier() -
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker() -> anyhow::Result<()>
-{
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 3)?;
-    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
 
     let initial_tracker = multisig_account
         .storage()
@@ -2670,11 +2723,16 @@ async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker() 
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset()
--> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
-    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
 
     let mut mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
@@ -2733,11 +2791,16 @@ async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset()
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_config()
--> anyhow::Result<()> {
-    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(4, 4)?;
-    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_config(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
@@ -2807,10 +2870,16 @@ async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_co
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_invalid_spending_limits_rejected() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(4, 4)?;
-    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+async fn test_multisig_smart_invalid_spending_limits_rejected(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+    let multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
     let mock_chain =
         MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
 
