@@ -67,7 +67,7 @@ impl AccountComponentCode {
             return self;
         }
 
-        let mut mast = (*self.mast).clone();
+        let mut mast = Arc::unwrap_or_clone(self.mast);
         mast.advice_map_mut().extend(advice_map);
 
         Self {
