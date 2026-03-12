@@ -111,6 +111,11 @@ impl NoteAssets {
             Asset::NonFungible(non_fungible_asset) => Some(*non_fungible_asset),
         })
     }
+
+    /// Consumes self and returns the underlying vector of assets.
+    pub fn into_vec(self) -> Vec<Asset> {
+        self.assets
+    }
 }
 
 impl PartialEq for NoteAssets {
