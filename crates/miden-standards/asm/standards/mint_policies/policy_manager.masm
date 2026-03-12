@@ -7,13 +7,13 @@ use miden::standards::access::ownable2step
 # ================================================================================================
 
 # Active policy root slot.
-# Layout: [proc_root_w0, proc_root_w1, proc_root_w2, proc_root_w3]
-const MINT_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policies::proc_root")
+# Layout: [PROC_ROOT]
+const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policy_manager::active_policy_proc_root")
 
 # Allowlist map slot for policy roots.
 # Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
-# Any root missing from this map is rejected by `set_mint_policy` and `enforce_mint_policy`.
-const MINT_POLICY_ALLOWED_ROOTS_SLOT=word("miden::standards::mint_policies::allowed_roots")
+# Any root missing from this map is rejected by `set_mint_policy` and `execute_mint_policy`.
+const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
 
 # Local memory pointer used to pass a policy root to `dynexec`.
 const MINT_POLICY_PROC_ROOT_PTR=0
@@ -35,7 +35,7 @@ const ERR_MINT_POLICY_ROOT_NOT_ALLOWED="mint policy root is not allowed"
 #!
 #! Invocation: exec
 proc get_mint_policy_root
-    push.MINT_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
+    push.ACTIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.active_account::get_item
     # => [MINT_POLICY_ROOT]
 end
 
@@ -49,7 +49,7 @@ end
 #! - policy root is not present in this account's procedures.
 #!
 #! Invocation: exec
-proc assert_valid_policy_root
+proc assert_existing_policy_root
     exec.word::testz
     assertz.err=ERR_MINT_POLICY_ROOT_IS_ZERO
     # => [MINT_POLICY_ROOT]
@@ -70,12 +70,12 @@ end
 #! Invocation: exec
 proc assert_allowed_policy_root
     dupw
-    push.MINT_POLICY_ALLOWED_ROOTS_SLOT[0..2]
+    push.ALLOWED_POLICY_PROC_ROOTS_SLOT[0..2]
     exec.active_account::get_map_item
     # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
 
-    exec.word::testz not
-    assert.err=ERR_MINT_POLICY_ROOT_NOT_ALLOWED
+    exec.word::testz
+    assertz.err=ERR_MINT_POLICY_ROOT_NOT_ALLOWED
     # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
 
     dropw
@@ -85,7 +85,7 @@ end
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Enforces active mint policy by dynamic execution.
+#! Executes active mint policy by dynamic execution.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
@@ -95,20 +95,21 @@ end
 #! - active policy predicate fails.
 #!
 #! Invocation: exec
-pub proc enforce_mint_policy
+@locals(4)
+pub proc execute_mint_policy
     exec.get_mint_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
 
-    exec.assert_valid_policy_root
+    exec.assert_existing_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
 
     exec.assert_allowed_policy_root
     # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
 
-    mem_storew_le.MINT_POLICY_PROC_ROOT_PTR dropw
+    loc_storew_le.MINT_POLICY_PROC_ROOT_PTR dropw
     # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-    push.MINT_POLICY_PROC_ROOT_PTR
+    locaddr.MINT_POLICY_PROC_ROOT_PTR
     # => [policy_root_ptr, amount, tag, note_type, RECIPIENT, pad(9)]
 
     dynexec
@@ -142,12 +143,12 @@ pub proc set_mint_policy
     exec.ownable2step::assert_sender_is_owner
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    exec.assert_valid_policy_root
+    exec.assert_existing_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
     exec.assert_allowed_policy_root
     # => [NEW_POLICY_ROOT, pad(12)]
 
-    push.MINT_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
+    push.ACTIVE_POLICY_PROC_ROOT_SLOT[0..2] exec.native_account::set_item dropw
     # => [pad(16)]
 end

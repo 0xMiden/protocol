@@ -48,8 +48,8 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, Transac
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    MintPolicies,
-    MintPolicyConfig,
+    MintPolicy,
+    MintPolicyManager,
     NetworkFungibleFaucet,
 };
 use miden_standards::account::wallets::BasicWallet;
@@ -379,7 +379,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy_config: MintPolicyConfig,
+        mint_policy: MintPolicy,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
@@ -398,7 +398,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
-            .with_component(MintPolicies::new(mint_policy_config))
+            .with_component(MintPolicyManager::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

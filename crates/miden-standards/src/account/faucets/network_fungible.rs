@@ -22,7 +22,7 @@ use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::access::Ownable2Step;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
-use crate::account::faucets::{MintPolicies, MintPolicyConfig};
+use crate::account::faucets::{MintPolicy, MintPolicyManager};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -311,7 +311,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`MintPolicies`] component types and contains no additional storage slots for its auth
+/// [`MintPolicyManager`] component types and contains no additional storage slots for its auth
 /// ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
@@ -319,7 +319,7 @@ pub fn create_network_fungible_faucet(
     decimals: u8,
     max_supply: Felt,
     owner_account_id: AccountId,
-    mint_policy_config: MintPolicyConfig,
+    mint_policy: MintPolicy,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
@@ -328,7 +328,7 @@ pub fn create_network_fungible_faucet(
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(auth_component)
         .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply, owner_account_id)?)
-        .with_component(MintPolicies::new(mint_policy_config))
+        .with_component(MintPolicyManager::new(mint_policy))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

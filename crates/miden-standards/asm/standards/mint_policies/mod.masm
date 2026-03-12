@@ -12,7 +12,7 @@ use miden::standards::access::ownable2step
 #! - note sender is not owner.
 #!
 #! Invocation: dynexec
-pub proc mint_policy_owner_only
+pub proc owner_only
     exec.ownable2step::assert_sender_is_owner
     # => [amount, tag, note_type, RECIPIENT, pad(9)]
 end
