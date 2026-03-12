@@ -27,7 +27,7 @@ use miden_protocol::asset::{
 };
 use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::MasmError;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::BasicFungibleFaucet;
@@ -35,7 +35,7 @@ use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
 use miden_standards::testing::account_component::MockAccountComponent;
 
-use crate::{AccountState, Auth, assert_transaction_executor_error};
+use crate::{AccountState, Auth, MockChain, assert_transaction_executor_error};
 
 // CONSTANTS
 // ================================================================================================
@@ -52,6 +52,34 @@ use miden::core::word
 const BLOCK_LIST_MAP_SLOT = word("miden::testing::callbacks::block_list")
 const ERR_ACCOUNT_BLOCKED = "the account is blocked and cannot receive this asset"
 
+#! Asserts that the native account is not in the block list.
+#!
+#! Inputs:  []
+#! Outputs: []
+#!
+#! Panics if the native account is in the block list.
+#!
+#! Invocation: exec
+proc assert_native_account_not_blocked
+    # Get the native account ID
+    exec.native_account::get_id
+    # => [native_acct_suffix, native_acct_prefix]
+
+    # Build account ID map key: [0, 0, suffix, prefix]
+    push.0.0
+    # => [ACCOUNT_ID_KEY]
+
+    # Look up in block list storage map
+    push.BLOCK_LIST_MAP_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [IS_BLOCKED]
+
+    # If IS_BLOCKED is non-zero, account is blocked.
+    exec.word::eqz
+    assert.err=ERR_ACCOUNT_BLOCKED
+    # => []
+end
+
 #! Callback invoked when an asset with callbacks enabled is added to an account's vault.
 #!
 #! Checks whether the receiving account is in the block list. If so, panics.
@@ -61,27 +89,28 @@ const ERR_ACCOUNT_BLOCKED = "the account is blocked and cannot receive this asse
 #!
 #! Invocation: call
 pub proc on_before_asset_added_to_account
-    # Get the native account ID (the account receiving the asset)
-    exec.native_account::get_id
-    # => [native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    # Build account ID map key: [0, 0, suffix, prefix]
-    push.0.0
-    # => [0, 0, native_acct_suffix, native_acct_prefix, ASSET_KEY, ASSET_VALUE, pad(8)]
-    # => [ACCOUNT_ID_KEY, ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    # Look up in block list storage map
-    push.BLOCK_LIST_MAP_SLOT[0..2]
-    exec.active_account::get_map_item
-    # => [IS_BLOCKED, ASSET_KEY, ASSET_VALUE, pad(8)]
-
-    # If IS_BLOCKED is non-zero, account is blocked.
-    exec.word::eqz
-    assert.err=ERR_ACCOUNT_BLOCKED
-    # => [ASSET_KEY, ASSET_VALUE, pad(10)]
+    exec.assert_native_account_not_blocked
+    # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # drop unused asset key
     dropw
+    # => [ASSET_VALUE, pad(12)]
+end
+
+#! Callback invoked when an asset with callbacks enabled is added to an output note.
+#!
+#! Checks whether the native account (the note creator) is in the block list. If so, panics.
+#!
+#! Inputs:  [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+#! Outputs: [ASSET_VALUE, pad(12)]
+#!
+#! Invocation: call
+pub proc on_before_asset_added_to_note
+    exec.assert_native_account_not_blocked
+    # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+
+    # drop note_idx and unused asset key
+    drop dropw
     # => [ASSET_VALUE, pad(12)]
 end
 "#;
@@ -109,6 +138,13 @@ procedure_digest!(
     || { BLOCK_LIST_COMPONENT_CODE.as_library() }
 );
 
+procedure_digest!(
+    BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
+    BlockList::NAME,
+    BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
+    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
+);
+
 // BLOCK LIST
 // ================================================================================================
 
@@ -126,14 +162,21 @@ impl BlockList {
 
     const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME: &str = "on_before_asset_added_to_account";
 
+    const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME: &str = "on_before_asset_added_to_note";
+
     /// Creates a new [`BlockList`] with the given set of blocked accounts.
     fn new(blocked_accounts: BTreeSet<AccountId>) -> Self {
         Self { blocked_accounts }
     }
 
-    /// Returns the digest of the `distribute` account procedure.
+    /// Returns the digest of the `on_before_asset_added_to_account` procedure.
     pub fn on_before_asset_added_to_account_digest() -> Word {
         *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT
+    }
+
+    /// Returns the digest of the `on_before_asset_added_to_note` procedure.
+    pub fn on_before_asset_added_to_note_digest() -> Word {
+        *BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE
     }
 }
 
@@ -162,6 +205,7 @@ impl From<BlockList> for AccountComponent {
                 .on_before_asset_added_to_account(
                     BlockList::on_before_asset_added_to_account_digest(),
                 )
+                .on_before_asset_added_to_note(BlockList::on_before_asset_added_to_note_digest())
                 .into_storage_slots(),
         );
         let metadata = AccountComponentMetadata::new(
@@ -182,7 +226,7 @@ impl From<BlockList> for AccountComponent {
 #[tokio::test]
 async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs()
 -> anyhow::Result<()> {
-    let mut builder = crate::MockChain::builder();
+    let mut builder = MockChain::builder();
 
     // Create wallet first so we know its ID before building the faucet.
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -296,7 +340,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 /// Tests that a blocked account cannot receive a fungible asset with callbacks enabled.
 #[tokio::test]
 async fn test_blocked_account_cannot_receive_fungible_asset() -> anyhow::Result<()> {
-    let mut builder = crate::MockChain::builder();
+    let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -348,7 +392,7 @@ async fn test_blocked_account_cannot_receive_fungible_asset() -> anyhow::Result<
 /// Tests that a blocked account cannot receive a non-fungible asset with callbacks enabled.
 #[tokio::test]
 async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Result<()> {
-    let mut builder = crate::MockChain::builder();
+    let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -395,11 +439,106 @@ async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Res
     Ok(())
 }
 
+/// Tests that a blocked account cannot add a callbacks-enabled asset to an output note.
+#[tokio::test]
+async fn test_blocked_account_cannot_add_asset_to_note() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    // Create wallet first so we know its ID for the block list.
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // Build block list storage map containing the wallet as a blocked account.
+    let map_entries: Vec<(StorageMapKey, Word)> = vec![(
+        StorageMapKey::new(AccountIdKey::new(target_account.id()).as_word()),
+        Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+    )];
+    let storage_map =
+        StorageMap::with_entries(map_entries).expect("should have no duplicate entries");
+
+    // Build storage slots: block list map + ONLY note callback (NOT account callback).
+    let mut storage_slots = vec![StorageSlot::with_map(BLOCK_LIST_SLOT_NAME.clone(), storage_map)];
+    storage_slots.extend(
+        AssetCallbacks::new()
+            .on_before_asset_added_to_note(BlockList::on_before_asset_added_to_note_digest())
+            .into_storage_slots(),
+    );
+    let metadata = AccountComponentMetadata::new(BlockList::NAME, [AccountType::FungibleFaucet])
+        .with_description("note callback block list component for testing");
+
+    let note_callback_component =
+        AccountComponent::new(BLOCK_LIST_COMPONENT_CODE.clone(), storage_slots, metadata)?;
+
+    let basic_faucet = BasicFungibleFaucet::new("NTB".try_into()?, 8, Felt::from(1_000_000u32))?;
+
+    let account_builder = AccountBuilder::new([44u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(basic_faucet)
+        .with_component(note_callback_component);
+
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // Build the callbacks-enabled fungible asset.
+    let fungible_asset =
+        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let asset = Asset::Fungible(fungible_asset);
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // Build a tx script that creates a private output note and adds the callbacks-enabled asset.
+    // We use a private note to avoid the public note details requirement in the advice provider.
+    let recipient = Word::from([0u32, 1, 2, 3]);
+    let script_code = format!(
+        r#"
+        use miden::protocol::output_note
+
+        begin
+            push.{recipient}
+            push.{note_type}
+            push.{tag}
+            exec.output_note::create
+
+            push.{asset_value}
+            push.{asset_key}
+            exec.output_note::add_asset
+        end
+        "#,
+        recipient = recipient,
+        note_type = NoteType::Private as u8,
+        tag = NoteTag::default(),
+        asset_value = asset.to_value_word(),
+        asset_key = asset.to_key_word(),
+    );
+
+    let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(&script_code)?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    let result = mock_chain
+        .build_tx_context(target_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_ACCOUNT_BLOCKED);
+
+    Ok(())
+}
+
 /// Tests that consuming a callbacks-enabled asset succeeds even when the issuing faucet does not
 /// have the callback storage slot.
 #[tokio::test]
 async fn test_faucet_without_callback_slot_skips_callback() -> anyhow::Result<()> {
-    let mut builder = crate::MockChain::builder();
+    let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
