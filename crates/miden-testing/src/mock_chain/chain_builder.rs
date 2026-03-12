@@ -49,8 +49,8 @@ use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::mint_policies::{
-    AuthTxContolled,
-    OwnerContolled,
+    AuthTxControlled,
+    OwnerControlled,
     OwnerControlledInitConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
@@ -338,7 +338,7 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
             .with_component(basic_faucet)
-            .with_component(AuthTxContolled::auth_tx_contolled());
+            .with_component(AuthTxControlled::auth_tx_controlled());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -367,7 +367,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
-            .with_component(AuthTxContolled::auth_tx_contolled())
+            .with_component(AuthTxControlled::auth_tx_controlled())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -398,7 +398,7 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(OwnerContolled::new(mint_policy))
+            .with_component(OwnerControlled::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

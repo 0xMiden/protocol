@@ -27,7 +27,7 @@ const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager
 
 # Policy authority slot.
 # Layout: [POLICY_AUTHORITY, 0, 0, 0]
-# - POLICY_AUTHORITY = 0: policy authority rely on `auth_tx_contolled`.
+# - POLICY_AUTHORITY = 0: policy authority rely on `auth_tx_controlled`.
 # - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable2Step owner check.
 const POLICY_AUTHORITY_SLOT=word("miden::standards::mint_policy_manager::policy_authority")
 

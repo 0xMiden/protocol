@@ -1,5 +1,5 @@
-mod auth_tx_contolled;
-mod owner_contolled;
+mod auth_tx_controlled;
+mod owner_controlled;
 
-pub use auth_tx_contolled::{AuthTxContolled, AuthTxContolledInitConfig};
-pub use owner_contolled::{OwnerContolled, OwnerControlledInitConfig};
+pub use auth_tx_controlled::{AuthTxControlled, AuthTxControlledInitConfig};
+pub use owner_controlled::{OwnerControlled, OwnerControlledInitConfig};

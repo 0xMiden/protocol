@@ -22,7 +22,7 @@ use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::mint_policies::OwnerContolled;
+use crate::account::mint_policies::OwnerControlled;
 use crate::procedure_digest;
 
 /// The schema type for token symbols.
@@ -282,7 +282,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`OwnerContolled`] and [`crate::account::access::Ownable2Step`] component types and
+/// [`OwnerControlled`] and [`crate::account::access::Ownable2Step`] component types and
 /// contains no additional storage slots for its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
@@ -299,7 +299,7 @@ pub fn create_network_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply)?)
         .with_component(access_control)
-        .with_component(OwnerContolled::owner_only())
+        .with_component(OwnerControlled::owner_only())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
