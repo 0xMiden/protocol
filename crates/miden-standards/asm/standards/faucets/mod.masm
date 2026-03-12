@@ -135,10 +135,6 @@ pub proc distribute
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
-    # mint the asset with the callbacks flag based on whether the faucet has callbacks defined
-    exec.faucet::has_callbacks
-    # => [has_callbacks, amount, note_idx, note_idx]
-
     # creating the asset
     exec.faucet::create_fungible_asset
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]

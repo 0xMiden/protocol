@@ -6,27 +6,26 @@ use ::miden::protocol::kernel_proc_offsets::FAUCET_HAS_CALLBACKS_OFFSET
 
 #! Creates a fungible asset for the faucet the transaction is being executed against.
 #!
-#! Inputs:  [enable_callbacks, amount]
+#! Inputs:  [amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
 #! - amount is the amount of the asset to create.
 #! - ASSET_KEY is the vault key of the created fungible asset.
 #! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Panics if:
 #! - the active account is not a fungible faucet.
-#! - enable_callbacks is not 0 or 1.
 #!
 #! Invocation: exec
 pub proc create_fungible_asset
     # fetch the id of the faucet the transaction is being executed against.
     exec.active_account::get_id
-    # => [id_suffix, id_prefix, enable_callbacks, amount]
+    # => [id_suffix, id_prefix, amount]
 
-    movup.2
-    # => [enable_callbacks, id_suffix, id_prefix, amount]
+    # check whether the faucet has callbacks defined
+    exec.has_callbacks
+    # => [has_callbacks, id_suffix, id_prefix, amount]
 
     # create the fungible asset
     exec.asset::create_fungible_asset
