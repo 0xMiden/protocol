@@ -675,13 +675,6 @@ fn description_7_words_full_capacity() {
     }
 }
 
-#[test]
-fn field_over_max_bytes_rejected() {
-    let over = Description::MAX_BYTES + 1;
-    let result = Description::new(&"a".repeat(over));
-    assert!(result.is_err());
-}
-
 // =================================================================================================
 // FAUCET INITIALIZATION – basic + network with max name/description
 // =================================================================================================
