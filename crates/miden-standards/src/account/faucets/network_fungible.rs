@@ -221,20 +221,23 @@ impl NetworkFungibleFaucet {
         self.metadata = self.metadata.with_token_supply(token_supply)?;
         Ok(self)
     }
+
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([Self::metadata_slot_schema()])
+            .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description("Network fungible faucet component for minting and burning tokens")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
-        let storage_schema = StorageSchema::new([NetworkFungibleFaucet::metadata_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(
-            NetworkFungibleFaucet::NAME,
-            [AccountType::FungibleFaucet],
-        )
-        .with_description("Network fungible faucet component for minting and burning tokens")
-        .with_storage_schema(storage_schema);
+        let metadata = NetworkFungibleFaucet::component_metadata();
 
         AccountComponent::new(
             network_fungible_faucet_library(),

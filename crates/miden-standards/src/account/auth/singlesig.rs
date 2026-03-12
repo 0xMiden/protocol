@@ -87,7 +87,7 @@ impl AuthSingleSig {
 
         AccountComponentMetadata::new(Self::NAME, AccountType::all())
             .with_description(
-                "Authentication component using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme",
+                "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )
             .with_storage_schema(storage_schema)
     }

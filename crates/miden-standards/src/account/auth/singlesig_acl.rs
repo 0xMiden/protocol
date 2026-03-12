@@ -96,7 +96,7 @@ impl Default for AuthSingleSigAclConfig {
 }
 
 /// An [`AccountComponent`] implementing a procedure-based Access Control List (ACL) using either
-/// the EcdsaK256Keccak or Rpo Falcon 512 signature scheme for authentication of transactions.
+/// the EcdsaK256Keccak or Falcon512 Poseidon2 signature scheme for authentication of transactions.
 ///
 /// This component provides fine-grained authentication control based on three conditions:
 /// 1. **Procedure-based authentication**: Requires authentication when any of the specified trigger
@@ -254,7 +254,7 @@ impl AuthSingleSigAcl {
 
         AccountComponentMetadata::new(Self::NAME, AccountType::all())
             .with_description(
-                "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme",
+                "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
             )
             .with_storage_schema(storage_schema)
     }
