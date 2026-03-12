@@ -24,7 +24,7 @@ use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
-use miden_standards::account::mint_policies::MintPolicy;
+use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
@@ -414,7 +414,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         1000,
         faucet_owner_account_id,
         Some(100),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     // Create a bridge admin account
@@ -534,7 +534,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         1000,
         faucet_owner_account_id,
         Some(100),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     // Create a bridge admin account

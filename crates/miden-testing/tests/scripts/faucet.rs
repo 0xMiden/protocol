@@ -34,7 +34,7 @@ use miden_standards::account::faucets::{
     NetworkFungibleFaucet,
     TokenMetadata,
 };
-use miden_standards::account::mint_policies::MintPolicy;
+use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
@@ -585,7 +585,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         max_supply,
         faucet_owner_account_id,
         Some(token_supply),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     // Create a target account to consume the minted note
@@ -705,7 +705,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
@@ -759,7 +759,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
         1000,
         owner_account_id,
         Some(0),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let mock_chain = builder.build()?;
 
@@ -816,7 +816,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
@@ -873,7 +873,7 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let _mock_chain = builder.build()?;
 
@@ -916,7 +916,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         1000,
         initial_owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
@@ -1069,7 +1069,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let mock_chain = builder.build()?;
 
@@ -1136,7 +1136,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         1000,
         owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     // Check stored value before renouncing
@@ -1262,7 +1262,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         200,
         faucet_owner_account_id,
         Some(100),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     let burn_amount = 100u64;
@@ -1334,7 +1334,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         1000,
         faucet_owner_account_id,
         Some(50),
-        MintPolicy::OwnerOnly,
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 

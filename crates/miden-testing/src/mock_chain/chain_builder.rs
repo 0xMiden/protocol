@@ -48,7 +48,7 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
-use miden_standards::account::mint_policies::{MintPolicy, MintPolicyOwnerControlled};
+use miden_standards::account::mint_policies::{OwnerContolled, OwnerControlledInitConfig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -376,7 +376,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: MintPolicy,
+        mint_policy: OwnerControlledInitConfig,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
@@ -392,7 +392,7 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(MintPolicyOwnerControlled::new(mint_policy))
+            .with_component(OwnerContolled::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

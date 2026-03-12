@@ -101,10 +101,20 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/mint_policies/mint_policy_owner_controlled.masl"
+        "/assets/account_components/mint_policies/owner_contolled.masl"
     ));
     Library::read_from_bytes(bytes)
         .expect("Shipped Mint Policy Owner Controlled library is well-formed")
+});
+
+// Initialize the Mint Policy Auth Tx Contolled library only once.
+static MINT_POLICY_AUTH_TX_CONTOLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/mint_policies/auth_tx_contolled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Auth Tx Contolled library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -140,8 +150,13 @@ pub fn network_fungible_faucet_library() -> Library {
 }
 
 /// Returns the Mint Policy Owner Controlled Library.
-pub fn mint_policy_owner_controlled_library() -> Library {
+pub fn owner_contolled_library() -> Library {
     MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Mint Policy Auth Tx Contolled Library.
+pub fn auth_tx_contolled_library() -> Library {
+    MINT_POLICY_AUTH_TX_CONTOLLED_LIBRARY.clone()
 }
 
 /// Returns the Storage Schema Library.
