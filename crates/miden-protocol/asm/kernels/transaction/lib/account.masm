@@ -3,6 +3,7 @@ use $kernel::account_id
 use $kernel::asset_vault
 use $kernel::callbacks
 use $kernel::callbacks::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT
+use $kernel::callbacks::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
@@ -2064,6 +2065,14 @@ pub proc has_callbacks
     # check if the on_before_asset_added_to_account callback slot exists and is non-empty
     push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
     exec.has_non_empty_slot
+    # => [has_account_callback]
+
+    # check if the on_before_asset_added_to_note callback slot exists and is non-empty
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
+    exec.has_non_empty_slot
+    # => [has_note_callback, has_account_callback]
+
+    or
     # => [has_callbacks]
 end
 

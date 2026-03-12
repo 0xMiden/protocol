@@ -101,17 +101,17 @@ end
 #!
 #! Checks whether the native account (the note creator) is in the block list. If so, panics.
 #!
-#! Inputs:  [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 #! Outputs: [ASSET_VALUE, pad(12)]
 #!
 #! Invocation: call
 pub proc on_before_asset_added_to_note
     exec.assert_native_account_not_blocked
-    # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
-    # drop note_idx and unused asset key
-    drop dropw
-    # => [ASSET_VALUE, pad(12)]
+    # drop unused asset key
+    dropw
+    # => [ASSET_VALUE, note_idx, pad(7)]
 end
 "#;
 
