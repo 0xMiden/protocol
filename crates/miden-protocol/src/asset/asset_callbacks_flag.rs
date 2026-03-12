@@ -9,21 +9,21 @@ use crate::utils::serde::{
     Serializable,
 };
 
-const CALLBACKS_DISABLED: u8 = 0;
-const CALLBACKS_ENABLED: u8 = 1;
-
 /// The flag in an [`AssetVaultKey`](super::AssetVaultKey) that indicates whether
 /// [`AssetCallbacks`](super::AssetCallbacks) are enabled for this asset.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AssetCallbackFlag {
     #[default]
-    Disabled = CALLBACKS_DISABLED,
+    Disabled = Self::DISABLED,
 
-    Enabled = CALLBACKS_ENABLED,
+    Enabled = Self::ENABLED,
 }
 
 impl AssetCallbackFlag {
+    const DISABLED: u8 = 0;
+    const ENABLED: u8 = 1;
+
     /// The serialized size of an [`AssetCallbackFlag`] in bytes.
     pub const SERIALIZED_SIZE: usize = core::mem::size_of::<AssetCallbackFlag>();
 
@@ -43,8 +43,8 @@ impl TryFrom<u8> for AssetCallbackFlag {
     /// Returns an error if the value is not a valid callbacks encoding.
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            CALLBACKS_DISABLED => Ok(Self::Disabled),
-            CALLBACKS_ENABLED => Ok(Self::Enabled),
+            Self::DISABLED => Ok(Self::Disabled),
+            Self::ENABLED => Ok(Self::Enabled),
             _ => Err(AssetError::InvalidAssetCallbackFlag(value)),
         }
     }
