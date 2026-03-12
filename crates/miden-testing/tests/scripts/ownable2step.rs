@@ -18,7 +18,7 @@ use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::assembly::debuginfo::SourceManagerSync;
 use miden_protocol::note::Note;
 use miden_protocol::testing::account_id::AccountIdBuilder;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
@@ -161,7 +161,7 @@ async fn test_transfer_ownership_only_owner() -> anyhow::Result<()> {
     let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
     let note = create_transfer_note(non_owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -191,7 +191,7 @@ async fn test_complete_ownership_transfer() -> anyhow::Result<()> {
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -247,7 +247,7 @@ async fn test_accept_ownership_only_nominated_owner() -> anyhow::Result<()> {
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -290,7 +290,7 @@ async fn test_accept_ownership_no_nominated() -> anyhow::Result<()> {
     let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
     let accept_note = create_accept_note(owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(accept_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(accept_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -320,7 +320,7 @@ async fn test_cancel_transfer() -> anyhow::Result<()> {
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -369,7 +369,7 @@ async fn test_transfer_to_self_no_nominated() -> anyhow::Result<()> {
     let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
     let note = create_transfer_note(owner, owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -403,7 +403,7 @@ async fn test_renounce_ownership() -> anyhow::Result<()> {
     let transfer_note =
         create_transfer_note(owner, new_owner, &mut rng, Arc::clone(&source_manager))?;
 
-    builder.add_output_note(OutputNote::Full(transfer_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(transfer_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -473,7 +473,7 @@ async fn test_transfer_ownership_fails_with_invalid_account_id() -> anyhow::Resu
         .code(script)
         .build()?;
 
-    builder.add_output_note(OutputNote::Full(note.clone()));
+    builder.add_output_note(RawOutputNote::Full(note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 

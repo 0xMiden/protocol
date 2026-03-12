@@ -9,7 +9,6 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
-    AccountId,
     AccountStorage,
     AccountStorageMode,
     AccountType,
@@ -19,7 +18,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::{Felt, Word};
 
 use super::{FungibleFaucetError, TokenMetadata};
-use crate::account::access::Ownable2Step;
+use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::faucets::{MintPolicy, MintPolicyManager};
@@ -61,18 +60,17 @@ procedure_digest!(
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
-/// Ownership is managed via a two-step transfer pattern ([`Ownable2Step`]). The current owner
-/// must first nominate a new owner, who then accepts the transfer.
+/// This component relies on [`crate::account::access::Ownable2Step`] for ownership checks in
+/// `distribute`. When building an account with this component,
+/// [`crate::account::access::Ownable2Step`] must also be included.
 ///
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Fungible faucet metadata.
-/// - [`Ownable2Step::slot_name`]: The owner and nominated owner of this network faucet.
 ///
 /// [builder]: crate::code_builder::CodeBuilder
 pub struct NetworkFungibleFaucet {
     metadata: TokenMetadata,
-    ownership: Ownable2Step,
 }
 
 impl NetworkFungibleFaucet {
@@ -102,20 +100,17 @@ impl NetworkFungibleFaucet {
         symbol: TokenSymbol,
         decimals: u8,
         max_supply: Felt,
-        owner_account_id: AccountId,
     ) -> Result<Self, FungibleFaucetError> {
         let metadata = TokenMetadata::new(symbol, decimals, max_supply)?;
-        let ownership = Ownable2Step::new(owner_account_id);
-        Ok(Self { metadata, ownership })
+        Ok(Self { metadata })
     }
 
     /// Creates a new [`NetworkFungibleFaucet`] component from the given [`TokenMetadata`].
     ///
     /// This is a convenience constructor that allows creating a faucet from pre-validated
     /// metadata.
-    pub fn from_metadata(metadata: TokenMetadata, owner_account_id: AccountId) -> Self {
-        let ownership = Ownable2Step::new(owner_account_id);
-        Self { metadata, ownership }
+    pub fn from_metadata(metadata: TokenMetadata) -> Self {
+        Self { metadata }
     }
 
     /// Attempts to create a new [`NetworkFungibleFaucet`] component from the associated account
@@ -146,11 +141,7 @@ impl NetworkFungibleFaucet {
         // Read token metadata from storage
         let metadata = TokenMetadata::try_from(storage)?;
 
-        // Read ownership data from storage
-        let ownership =
-            Ownable2Step::try_from_storage(storage).map_err(FungibleFaucetError::OwnershipError)?;
-
-        Ok(Self { metadata, ownership })
+        Ok(Self { metadata })
     }
 
     // PUBLIC ACCESSORS
@@ -208,21 +199,6 @@ impl NetworkFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the owner account ID of the faucet, or `None` if ownership has been renounced.
-    pub fn owner_account_id(&self) -> Option<AccountId> {
-        self.ownership.owner()
-    }
-
-    /// Returns the nominated owner account ID, or `None` if no transfer is in progress.
-    pub fn nominated_owner(&self) -> Option<AccountId> {
-        self.ownership.nominated_owner()
-    }
-
-    /// Returns the ownership data of the faucet.
-    pub fn ownership(&self) -> &Ownable2Step {
-        &self.ownership
-    }
-
     /// Returns the digest of the `mint` account procedure.
     pub fn mint_digest() -> Word {
         *NETWORK_FUNGIBLE_FAUCET_MINT
@@ -251,13 +227,8 @@ impl NetworkFungibleFaucet {
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
-        let owner_slot = network_faucet.ownership.to_storage_slot();
-
-        let storage_schema = StorageSchema::new([
-            NetworkFungibleFaucet::metadata_slot_schema(),
-            Ownable2Step::slot_schema(),
-        ])
-        .expect("storage schema should be valid");
+        let storage_schema = StorageSchema::new([NetworkFungibleFaucet::metadata_slot_schema()])
+            .expect("storage schema should be valid");
 
         let metadata = AccountComponentMetadata::new(
             NetworkFungibleFaucet::NAME,
@@ -268,7 +239,7 @@ impl From<NetworkFungibleFaucet> for AccountComponent {
 
         AccountComponent::new(
             network_fungible_faucet_library(),
-            vec![metadata_slot, owner_slot],
+            vec![metadata_slot],
             metadata,
         )
         .expect("network fungible faucet component should satisfy the requirements of a valid account component")
@@ -296,7 +267,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 }
 
 /// Creates a new faucet account with network fungible faucet interface and provided metadata
-/// (token symbol, decimals, max supply, owner account ID).
+/// (token symbol, decimals, max supply) and access control.
 ///
 /// The network faucet interface exposes two procedures:
 /// - `mint`, which mints an assets and create a note for the provided recipient.
@@ -311,14 +282,14 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`MintPolicyManager`] component types and contains no additional storage slots for its auth
+/// [`MintPolicyManager`] and [`crate::account::access::Ownable2Step`] component types and contains no additional storage slots for its auth
 /// ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,
     decimals: u8,
     max_supply: Felt,
-    owner_account_id: AccountId,
+    access_control: AccessControl,
     mint_policy: MintPolicy,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
@@ -327,10 +298,60 @@ pub fn create_network_fungible_faucet(
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_auth_component(auth_component)
-        .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply, owner_account_id)?)
+        .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply)?)
+        .with_component(access_control)
         .with_component(MintPolicyManager::new(mint_policy))
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
     Ok(account)
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+
+    use super::*;
+    use crate::account::access::Ownable2Step;
+
+    #[test]
+    fn test_create_network_fungible_faucet() {
+        let init_seed = [7u8; 32];
+        let symbol = TokenSymbol::new("NET").expect("token symbol should be valid");
+        let decimals = 8u8;
+        let max_supply = Felt::new(1_000);
+
+        let owner = AccountId::dummy(
+            [1u8; 15],
+            AccountIdVersion::Version0,
+            AccountType::RegularAccountImmutableCode,
+            AccountStorageMode::Private,
+        );
+
+        let account = create_network_fungible_faucet(
+            init_seed,
+            symbol,
+            decimals,
+            max_supply,
+            AccessControl::Ownable2Step { owner },
+            MintPolicy::OwnerOnly,
+        )
+        .expect("network faucet creation should succeed");
+
+        let expected_owner_word = Ownable2Step::new(owner).to_word();
+        assert_eq!(
+            account.storage().get_item(Ownable2Step::slot_name()).unwrap(),
+            expected_owner_word
+        );
+
+        let faucet = NetworkFungibleFaucet::try_from(&account)
+            .expect("network fungible faucet should be extractable from account");
+        assert_eq!(faucet.symbol(), symbol);
+        assert_eq!(faucet.decimals(), decimals);
+        assert_eq!(faucet.max_supply(), max_supply);
+        assert_eq!(faucet.token_supply(), Felt::ZERO);
+    }
 }

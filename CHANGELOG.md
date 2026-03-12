@@ -32,9 +32,13 @@
 - Added `CodeBuilder::with_warnings_as_errors()` to promote assembler warning diagnostics to errors ([#2558](https://github.com/0xMiden/protocol/pull/2558)).
 - Added `MintPolicyConfig` for flexible minting policy enforcement ([#2559](https://github.com/0xMiden/protocol/pull/2559))
 - Added `MockChain::add_pending_batch()` to allow submitting user batches directly ([#2565](https://github.com/0xMiden/protocol/pull/2565)).
+- Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
+- Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
+- Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
 
 ### Changes
 
+- [BREAKING] Removed `NoteAssets::add_asset`; `OutputNoteBuilder` now accumulates assets in a `Vec` and computes the commitment only when `build()` is called, avoiding rehashing on every asset addition. ([#2577](https://github.com/0xMiden/protocol/pull/2577))
 - [BREAKING] Made `supported_types` a required parameter of `AccountComponentMetadata::new()`; removed `with_supported_type`, `with_supported_types`, `with_supports_all_types`, and `with_supports_regular_types` builder methods; added `AccountType::all()` and `AccountType::regular()` helpers ([#2554](https://github.com/0xMiden/protocol/pull/2554)).
 - [BREAKING] Migrated to miden-vm 0.21 and miden-crypto 0.22 ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
 - [BREAKING] The stack orientation changed from big-endian to little-endian - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
@@ -83,6 +87,8 @@
 - [BREAKING] Use `@auth_script` MASM attribute instead of `auth_` prefix to identify authentication procedures in account components ([#2534](https://github.com/0xMiden/protocol/pull/2534)).
 - [BREAKING] Changed `TransactionId` to include fee asset in hash computation, making it commit to entire `TransactionHeader` contents.
 - Explicitly use `get_native_account_active_storage_slots_ptr` in `account::set_item` and `account::set_map_item`.
+- Added Ownable2Step as an Account Component ([#2572](https://github.com/0xMiden/protocol/pull/2572))
+- [BREAKING] Introduced `PrivateNoteHeader` for output notes and removed `RawOutputNote::Header` variant ([#2569](https://github.com/0xMiden/protocol/pull/2569)).
 
 ## 0.13.3 (2026-01-27)
 

@@ -71,6 +71,14 @@ impl NoteDetails {
         Nullifier::from(self)
     }
 
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Reduces the size of the note script by stripping all debug info from it.
+    pub fn minify_script(&mut self) {
+        self.recipient.minify_script();
+    }
+
     /// Decomposes note details into underlying assets and recipient.
     pub fn into_parts(self) -> (NoteAssets, NoteRecipient) {
         (self.assets, self.recipient)

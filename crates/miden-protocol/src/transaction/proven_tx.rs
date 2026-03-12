@@ -13,8 +13,8 @@ use crate::transaction::{
     AccountId,
     InputNotes,
     Nullifier,
-    ProvenOutputNote,
-    ProvenOutputNotes,
+    OutputNote,
+    OutputNotes,
     TransactionId,
 };
 use crate::utils::serde::{
@@ -52,7 +52,7 @@ pub struct ProvenTransaction {
 
     /// Notes created by the transaction. For private notes, this will contain only note headers,
     /// while for public notes this will also contain full note details.
-    output_notes: ProvenOutputNotes,
+    output_notes: OutputNotes,
 
     /// [`BlockNumber`] of the transaction's reference block.
     ref_block_num: BlockNumber,
@@ -92,7 +92,7 @@ impl ProvenTransaction {
     pub fn new(
         account_update: TxAccountUpdate,
         input_notes: impl IntoIterator<Item = impl Into<InputNoteCommitment>>,
-        output_notes: impl IntoIterator<Item = impl Into<ProvenOutputNote>>,
+        output_notes: impl IntoIterator<Item = impl Into<OutputNote>>,
         ref_block_num: BlockNumber,
         ref_block_commitment: Word,
         fee: FungibleAsset,
@@ -101,13 +101,12 @@ impl ProvenTransaction {
     ) -> Result<Self, ProvenTransactionError> {
         let input_notes: Vec<InputNoteCommitment> =
             input_notes.into_iter().map(Into::into).collect();
-        let output_notes: Vec<ProvenOutputNote> =
-            output_notes.into_iter().map(Into::into).collect();
+        let output_notes: Vec<OutputNote> = output_notes.into_iter().map(Into::into).collect();
 
         let input_notes =
             InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
-        let output_notes = ProvenOutputNotes::new(output_notes)
-            .map_err(ProvenTransactionError::OutputNotesError)?;
+        let output_notes =
+            OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
 
         let id = TransactionId::new(
             account_update.initial_state_commitment(),
@@ -156,7 +155,7 @@ impl ProvenTransaction {
     }
 
     /// Returns a reference to the notes produced by the transaction.
-    pub fn output_notes(&self) -> &ProvenOutputNotes {
+    pub fn output_notes(&self) -> &OutputNotes {
         &self.output_notes
     }
 
@@ -269,7 +268,7 @@ impl Deserializable for ProvenTransaction {
         let account_update = TxAccountUpdate::read_from(source)?;
 
         let input_notes = <InputNotes<InputNoteCommitment>>::read_from(source)?;
-        let output_notes = ProvenOutputNotes::read_from(source)?;
+        let output_notes = OutputNotes::read_from(source)?;
 
         let ref_block_num = BlockNumber::read_from(source)?;
         let ref_block_commitment = Word::read_from(source)?;
@@ -499,6 +498,16 @@ pub struct InputNoteCommitment {
 }
 
 impl InputNoteCommitment {
+    /// Returns a new [InputNoteCommitment] instantiated from the provided nullifier and optional
+    /// note header.
+    ///
+    /// Note: this method does not validate that the provided nullifier and header are consistent
+    /// with each other (i.e., it does not check that the nullifier was derived from the note
+    /// referenced by the header).
+    pub fn from_parts_unchecked(nullifier: Nullifier, header: Option<NoteHeader>) -> Self {
+        Self { nullifier, header }
+    }
+
     /// Returns the nullifier of the input note committed to by this commitment.
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
@@ -614,7 +623,7 @@ mod tests {
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-    use crate::transaction::{InputNoteCommitment, ProvenOutputNote, TxAccountUpdate};
+    use crate::transaction::{InputNoteCommitment, OutputNote, TxAccountUpdate};
     use crate::utils::serde::{Deserializable, Serializable};
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, LexicographicWord, ONE, Word};
 
@@ -728,7 +737,7 @@ mod tests {
         let tx = ProvenTransaction::new(
             account_update,
             Vec::<InputNoteCommitment>::new(),
-            Vec::<ProvenOutputNote>::new(),
+            Vec::<OutputNote>::new(),
             ref_block_num,
             ref_block_commitment,
             FungibleAsset::mock(42).unwrap_fungible(),

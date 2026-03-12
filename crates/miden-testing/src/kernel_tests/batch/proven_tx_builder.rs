@@ -11,7 +11,7 @@ use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     InputNote,
     InputNoteCommitment,
-    ProvenOutputNote,
+    OutputNote,
     ProvenTransaction,
     TxAccountUpdate,
 };
@@ -25,7 +25,7 @@ pub struct MockProvenTxBuilder {
     ref_block_commitment: Option<Word>,
     fee: FungibleAsset,
     expiration_block_num: BlockNumber,
-    output_notes: Option<Vec<ProvenOutputNote>>,
+    output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
 }
@@ -88,7 +88,7 @@ impl MockProvenTxBuilder {
 
     /// Adds notes to the transaction's output notes.
     #[must_use]
-    pub fn output_notes(mut self, notes: Vec<ProvenOutputNote>) -> Self {
+    pub fn output_notes(mut self, notes: Vec<OutputNote>) -> Self {
         self.output_notes = Some(notes);
 
         self

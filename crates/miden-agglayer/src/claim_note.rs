@@ -2,8 +2,8 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, Word};
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -34,7 +34,7 @@ impl Keccak256Output {
     /// Converts the Keccak256 output to 8 Felt elements (32-byte value as 8 u32 values in
     /// little-endian)
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 
     /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.

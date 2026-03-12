@@ -44,7 +44,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
-use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
+use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
@@ -52,6 +52,8 @@ use miden_standards::account::faucets::{
     MintPolicyManager,
     NetworkFungibleFaucet,
 };
+use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -108,7 +110,7 @@ use crate::{AccountState, Auth, MockChain};
 pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
-    notes: Vec<OutputNote>,
+    notes: Vec<RawOutputNote>,
     rng: RpoRandomCoin,
     // Fee parameters.
     native_asset_id: AccountId,
@@ -206,7 +208,7 @@ impl MockChainBuilder {
             .notes
             .iter()
             .filter_map(|note| match note {
-                OutputNote::Full(n) => Some(n.clone()),
+                RawOutputNote::Full(n) => Some(n.clone()),
                 _ => None,
             })
             .collect();
@@ -214,7 +216,7 @@ impl MockChainBuilder {
         let proven_notes: Vec<_> = self
             .notes
             .into_iter()
-            .map(|note| note.to_proven_output_note().expect("genesis note should be valid"))
+            .map(|note| note.to_output_note().expect("genesis note should be valid"))
             .collect();
         let note_chunks = proven_notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
         let output_note_batches: Vec<OutputNoteBatch> = note_chunks
@@ -386,18 +388,15 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let network_faucet = NetworkFungibleFaucet::new(
-            token_symbol,
-            DEFAULT_FAUCET_DECIMALS,
-            max_supply,
-            owner_account_id,
-        )
-        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?;
+        let network_faucet =
+            NetworkFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+                .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+                .context("failed to create network fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
+            .with_component(Ownable2Step::new(owner_account_id))
             .with_component(MintPolicyManager::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
@@ -514,7 +513,7 @@ impl MockChainBuilder {
     // ----------------------------------------------------------------------------------------
 
     /// Adds the provided note to the initial chain state.
-    pub fn add_output_note(&mut self, note: impl Into<OutputNote>) {
+    pub fn add_output_note(&mut self, note: impl Into<RawOutputNote>) {
         self.notes.push(note.into());
     }
 
@@ -529,7 +528,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Note> {
         let note = create_p2any_note(sender_account_id, note_type, assets, &mut self.rng);
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
@@ -554,12 +553,12 @@ impl MockChainBuilder {
             NoteAttachment::default(),
             &mut self.rng,
         )?;
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
 
-    /// Adds a P2IDE [`OutputNote`] (pay‑to‑ID‑extended) to the list of genesis notes.
+    /// Adds a P2IDE note (pay‑to‑ID‑extended) to the list of genesis notes.
     ///
     /// A P2IDE note can include an optional `timelock_height` and/or an optional
     /// `reclaim_height` after which the `sender_account_id` may reclaim the
@@ -584,12 +583,12 @@ impl MockChainBuilder {
             &mut self.rng,
         )?;
 
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
 
-    /// Adds a public SWAP [`OutputNote`] to the list of genesis notes.
+    /// Adds a public SWAP note to the list of genesis notes.
     pub fn add_swap_note(
         &mut self,
         sender: AccountId,
@@ -608,7 +607,7 @@ impl MockChainBuilder {
             &mut self.rng,
         )?;
 
-        self.add_output_note(OutputNote::Full(swap_note.clone()));
+        self.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
         Ok((swap_note, payback_note))
     }
@@ -631,7 +630,7 @@ impl MockChainBuilder {
         I: ExactSizeIterator<Item = &'note Note>,
     {
         let note = create_spawn_note(output_notes)?;
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
