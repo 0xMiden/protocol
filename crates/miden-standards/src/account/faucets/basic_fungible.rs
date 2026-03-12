@@ -55,9 +55,9 @@ procedure_digest!(
 /// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `mint_and_send` procedure can be called from a transaction script and requires authentication
-/// via the authentication component. The `burn` procedure can only be called from a note script
-/// and requires the calling note to contain the asset to be burned.
+/// The `mint_and_send` procedure can be called from a transaction script and requires
+/// authentication via the authentication component. The `burn` procedure can only be called from a
+/// note script and requires the calling note to contain the asset to be burned.
 /// This component must be combined with an authentication component.
 ///
 /// This component supports accounts of type [`AccountType::FungibleFaucet`].
@@ -265,9 +265,9 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `mint_and_send` procedure can be called from a transaction script and requires authentication
-/// via the specified authentication scheme. The `burn` procedure can only be called from a note
-/// script and requires the calling note to contain the asset to be burned.
+/// The `mint_and_send` procedure can be called from a transaction script and requires
+/// authentication via the specified authentication scheme. The `burn` procedure can only be called
+/// from a note script and requires the calling note to contain the asset to be burned.
 ///
 /// The storage layout of the faucet account is defined by the combination of the following
 /// components (see their docs for details):
