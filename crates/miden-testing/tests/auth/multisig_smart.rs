@@ -17,7 +17,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
 use miden_standards::account::auth::AuthMultisigSmart;
@@ -25,11 +25,19 @@ use miden_standards::account::components::multisig_smart_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_TX_ALREADY_EXECUTED;
+use miden_standards::errors::standards::{
+    ERR_CANCEL_INSUFFICIENT_SIGNATURES,
+    ERR_INVALID_AMOUNT_LIMITS,
+    ERR_INVALID_TIER_CONFIG,
+    ERR_PENDING_ALREADY_SET,
+    ERR_TIER0_MUST_BE_POSITIVE,
+    ERR_TIER3_TOO_HIGH,
+    ERR_TX_ALREADY_EXECUTED,
+};
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
-use miden_testing::{Auth, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -323,6 +331,72 @@ fn create_multisig_account_with_schemes(
         .build_existing()?;
 
     Ok(multisig_account)
+}
+
+fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
+    Ok(CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_smart_library())?
+        .compile_tx_script(script.as_ref())?)
+}
+
+async fn execute_script_with_signers(
+    mock_chain: &MockChain,
+    account_id: AccountId,
+    tx_script: TransactionScript,
+    salt: Word,
+    signer_indices: &[usize],
+    public_keys: &[PublicKey],
+    authenticators: &[BasicAuthenticator],
+    tx_script_args: Option<Word>,
+    advice_inputs: Option<AdviceInputs>,
+) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
+    let mut tx_context_init_builder = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(tx_script.clone())
+        .auth_args(salt);
+
+    if let Some(tx_script_args) = tx_script_args {
+        tx_context_init_builder = tx_context_init_builder.tx_script_args(tx_script_args);
+    }
+
+    if let Some(advice_inputs) = advice_inputs.clone() {
+        tx_context_init_builder = tx_context_init_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let mut tx_context_signed_builder = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(tx_script)
+        .auth_args(salt);
+
+    if let Some(tx_script_args) = tx_script_args {
+        tx_context_signed_builder = tx_context_signed_builder.tx_script_args(tx_script_args);
+    }
+
+    if let Some(advice_inputs) = advice_inputs {
+        tx_context_signed_builder = tx_context_signed_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    for signer_idx in signer_indices {
+        let sig = authenticators[*signer_idx]
+            .get_signature(public_keys[*signer_idx].to_commitment(), &tx_summary)
+            .await?;
+
+        tx_context_signed_builder = tx_context_signed_builder.add_signature(
+            public_keys[*signer_idx].to_commitment(),
+            msg,
+            sig,
+        );
+    }
+
+    Ok(tx_context_signed_builder.build()?.execute().await)
 }
 
 // ================================================================================================
@@ -1819,6 +1893,968 @@ async fn test_multisig_smart_proc_threshold_overrides() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 6);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_epoch_boundary_resets_spending_tracker() -> anyhow::Result<()> {
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
+    let mut multisig_account =
+        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, vec![])?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let output_note_1 = P2idNote::create(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        vec![
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+        Default::default(),
+        &mut RpoRandomCoin::new(Word::from([Felt::new(101); 4])),
+    )?;
+    let script_1 = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note_1.clone().into()], None)?;
+    let salt_1 = Word::from([Felt::new(201); 4]);
+
+    let tx_summary_1 = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_1.clone())])
+        .tx_script(script_1.clone())
+        .auth_args(salt_1)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let msg_1 = tx_summary_1.as_ref().to_commitment();
+    let tx_summary_1 = SigningInputs::TransactionSummary(tx_summary_1);
+    let sig_1_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_1)
+        .await?;
+    let sig_1_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_1)
+        .await?;
+
+    let tx_1 = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
+        .tx_script(script_1)
+        .auth_args(salt_1)
+        .add_signature(public_keys[0].to_commitment(), msg_1, sig_1_0)
+        .add_signature(public_keys[1].to_commitment(), msg_1, sig_1_1)
+        .build()?
+        .execute()
+        .await?;
+    multisig_account.apply_delta(tx_1.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&tx_1)?;
+    mock_chain.prove_next_block()?;
+
+    let output_note_2 = P2idNote::create(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        vec![
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+        Default::default(),
+        &mut RpoRandomCoin::new(Word::from([Felt::new(102); 4])),
+    )?;
+    let script_2 = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note_2.clone().into()], None)?;
+    let salt_2 = Word::from([Felt::new(202); 4]);
+
+    let tx_summary_2 = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_2.clone())])
+        .tx_script(script_2.clone())
+        .auth_args(salt_2)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let msg_2 = tx_summary_2.as_ref().to_commitment();
+    let tx_summary_2 = SigningInputs::TransactionSummary(tx_summary_2);
+    let sig_2_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_2)
+        .await?;
+    let sig_2_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_2)
+        .await?;
+
+    let tx_2_with_two_sigs = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_2)])
+        .tx_script(script_2)
+        .auth_args(salt_2)
+        .add_signature(public_keys[0].to_commitment(), msg_2, sig_2_0)
+        .add_signature(public_keys[1].to_commitment(), msg_2, sig_2_1)
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        matches!(tx_2_with_two_sigs, Err(TransactionExecutorError::Unauthorized(_))),
+        "second transfer in the same epoch should require a higher tier"
+    );
+
+    for _ in 0..11 {
+        mock_chain.prove_next_block()?;
+    }
+
+    let output_note_3 = P2idNote::create(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        vec![
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+        Default::default(),
+        &mut RpoRandomCoin::new(Word::from([Felt::new(103); 4])),
+    )?;
+    let script_3 = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note_3.clone().into()], None)?;
+    let salt_3 = Word::from([Felt::new(203); 4]);
+
+    let tx_summary_3 = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_3.clone())])
+        .tx_script(script_3.clone())
+        .auth_args(salt_3)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let msg_3 = tx_summary_3.as_ref().to_commitment();
+    let tx_summary_3 = SigningInputs::TransactionSummary(tx_summary_3);
+    let sig_3_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_3)
+        .await?;
+    let sig_3_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_3)
+        .await?;
+
+    let tx_3 = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note_3)])
+        .tx_script(script_3)
+        .auth_args(salt_3)
+        .add_signature(public_keys[0].to_commitment(), msg_3, sig_3_0)
+        .add_signature(public_keys[1].to_commitment(), msg_3, sig_3_1)
+        .build()?
+        .execute()
+        .await?;
+    multisig_account.apply_delta(tx_3.account_delta())?;
+
+    let spending_tracker = multisig_account
+        .storage()
+        .get_item(AuthMultisigSmart::spending_tracker_slot())?;
+    assert_eq!(
+        spending_tracker[0],
+        Felt::new(700),
+        "amount_spent_in_epoch should restart from the transaction amount after epoch change"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_pending_actions_are_mutually_exclusive() -> anyhow::Result<()> {
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let pending_propose_hash =
+        Word::from([Felt::new(11), Felt::new(22), Felt::new(33), Felt::new(44)]);
+    let pending_cancel_hash =
+        Word::from([Felt::new(55), Felt::new(66), Felt::new(77), Felt::new(88)]);
+
+    let propose_twice_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{pending_propose_hash}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            push.{pending_propose_hash}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(propose_twice_script)
+        .auth_args(Word::from([Felt::new(301); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_PENDING_ALREADY_SET);
+
+    let propose_once_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{pending_cancel_hash}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let propose_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        propose_once_script,
+        Word::from([Felt::new(302); 4]),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("proposal setup transaction should succeed");
+    multisig_account.apply_delta(propose_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let cancel_twice_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{pending_cancel_hash}
+            call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
+            push.{pending_cancel_hash}
+            call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(cancel_twice_script)
+        .auth_args(Word::from([Felt::new(303); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_PENDING_ALREADY_SET);
+
+    let execute_twice_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::execute_proposed_transaction
+            call.::miden::standards::components::auth::multisig_smart::execute_proposed_transaction
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(execute_twice_script)
+        .auth_args(Word::from([Felt::new(304); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_PENDING_ALREADY_SET);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_execute_proposal_without_timelock_requirement() -> anyhow::Result<()> {
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 3)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let execute_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::execute_proposed_transaction
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let execute_salt = Word::from([Felt::new(401); 4]);
+
+    let execute_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(execute_script.clone())
+        .auth_args(execute_salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let execute_tx_hash = execute_summary.as_ref().to_commitment();
+
+    let propose_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{execute_tx_hash}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let propose_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        propose_script,
+        Word::from([Felt::new(402); 4]),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("proposal transaction should succeed");
+    multisig_account.apply_delta(propose_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let execute_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        execute_script,
+        execute_salt,
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("execute transaction should succeed without timelock enforcement");
+    multisig_account.apply_delta(execute_tx.account_delta())?;
+
+    let pending_execute =
+        multisig_account.storage().get_item(AuthMultisigSmart::pending_execute_slot())?;
+    assert_eq!(pending_execute, Word::empty(), "pending_execute should be cleared");
+
+    let proposal_entry = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), execute_tx_hash)?;
+    assert_eq!(
+        proposal_entry,
+        Word::empty(),
+        "proposal should be removed when execute flow finalizes"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundary()
+-> anyhow::Result<()> {
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let proposal_hash = Word::from([Felt::new(91), Felt::new(92), Felt::new(93), Felt::new(94)]);
+
+    let propose_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{proposal_hash}
+            call.::miden::standards::components::auth::multisig_smart::propose_transaction
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+    let propose_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        propose_script,
+        Word::from([Felt::new(501); 4]),
+        &[0, 1, 2],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("proposal transaction should succeed");
+    multisig_account.apply_delta(propose_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&propose_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let cancel_script = compile_multisig_smart_tx_script(format!(
+        "
+        begin
+            push.{proposal_hash}
+            call.::miden::standards::components::auth::multisig_smart::cancel_transaction_proposal
+            dropw dropw dropw dropw dropw
+        end
+        "
+    ))?;
+
+    let insufficient_cancel = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        cancel_script.clone(),
+        Word::from([Felt::new(502); 4]),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?;
+    assert_transaction_executor_error!(insufficient_cancel, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
+
+    let exact_cancel = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        cancel_script,
+        Word::from([Felt::new(503); 4]),
+        &[0, 1, 2],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("cancel should succeed when num_verified == min_cancel_sigs");
+    multisig_account.apply_delta(exact_cancel.account_delta())?;
+
+    let proposal_entry = multisig_account
+        .storage()
+        .get_map_item(AuthMultisigSmart::tx_proposals_slot(), proposal_hash)?;
+    assert_eq!(
+        proposal_entry,
+        Word::empty(),
+        "proposal should be deleted after successful cancel"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_map_integrity()
+-> anyhow::Result<()> {
+    let (_initial_secret_keys, initial_schemes, initial_public_keys, initial_authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, AuthScheme::EcdsaK256Keccak)?;
+
+    let initial_approvers = initial_public_keys
+        .iter()
+        .zip(initial_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let mut multisig_account =
+        create_multisig_account_with_schemes(4, &initial_approvers, 10, vec![])?;
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let shrink_threshold = 2u64;
+    let shrink_num_approvers = 2u64;
+    let shrink_keys = &initial_public_keys[0..2];
+    let shrink_data = build_update_signers_config_vector(
+        shrink_threshold,
+        shrink_num_approvers,
+        shrink_keys,
+        AuthScheme::EcdsaK256Keccak,
+    );
+    let shrink_hash = Hasher::hash_elements(&shrink_data);
+    let mut shrink_advice_map = AdviceMap::default();
+    shrink_advice_map.insert(shrink_hash, shrink_data);
+    let shrink_advice_inputs = AdviceInputs {
+        map: shrink_advice_map,
+        ..Default::default()
+    };
+
+    let shrink_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        update_signers_script.clone(),
+        Word::from([Felt::new(601); 4]),
+        &[0, 1, 2, 3],
+        &initial_public_keys,
+        &initial_authenticators,
+        Some(shrink_hash),
+        Some(shrink_advice_inputs),
+    )
+    .await?
+    .expect("shrink update should succeed");
+    multisig_account.apply_delta(shrink_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&shrink_tx)?;
+    mock_chain.prove_next_block()?;
+
+    let ecdsa_scheme_word = Word::from([
+        Felt::new(AuthScheme::EcdsaK256Keccak as u64),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+    ]);
+    for (idx, expected_key) in shrink_keys.iter().enumerate() {
+        let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let expected_key_word: Word = expected_key.to_commitment().into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)?,
+            expected_key_word
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), storage_key)?,
+            ecdsa_scheme_word
+        );
+    }
+    for idx in 2..5 {
+        let storage_key = [Felt::new(idx), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)?,
+            Word::empty(),
+            "public key slot {idx} should be cleared after shrink"
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), storage_key)?,
+            Word::empty(),
+            "scheme slot {idx} should be cleared after shrink"
+        );
+    }
+
+    let (_new_secret_keys, _new_schemes, expanded_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 0, AuthScheme::Falcon512Poseidon2)?;
+    let expand_threshold = 3u64;
+    let expand_num_approvers = 4u64;
+    let expand_data = build_update_signers_config_vector(
+        expand_threshold,
+        expand_num_approvers,
+        &expanded_public_keys,
+        AuthScheme::Falcon512Poseidon2,
+    );
+    let expand_hash = Hasher::hash_elements(&expand_data);
+    let mut expand_advice_map = AdviceMap::default();
+    expand_advice_map.insert(expand_hash, expand_data);
+    let expand_advice_inputs = AdviceInputs {
+        map: expand_advice_map,
+        ..Default::default()
+    };
+
+    let expand_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        update_signers_script,
+        Word::from([Felt::new(602); 4]),
+        &[0, 1],
+        &initial_public_keys,
+        &initial_authenticators,
+        Some(expand_hash),
+        Some(expand_advice_inputs),
+    )
+    .await?
+    .expect("expand update should succeed");
+    multisig_account.apply_delta(expand_tx.account_delta())?;
+
+    let falcon_scheme_word = Word::from([
+        Felt::new(AuthScheme::Falcon512Poseidon2 as u64),
+        Felt::new(0),
+        Felt::new(0),
+        Felt::new(0),
+    ]);
+    for (idx, expected_key) in expanded_public_keys.iter().enumerate() {
+        let storage_key = [Felt::new(idx as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+        let expected_key_word: Word = expected_key.to_commitment().into();
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), storage_key)?,
+            expected_key_word
+        );
+        assert_eq!(
+            multisig_account
+                .storage()
+                .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), storage_key)?,
+            falcon_scheme_word
+        );
+    }
+
+    let stale_index_key = [Felt::new(4), Felt::new(0), Felt::new(0), Felt::new(0)].into();
+    assert_eq!(
+        multisig_account
+            .storage()
+            .get_map_item(AuthMultisigSmart::approver_public_keys_slot(), stale_index_key)?,
+        Word::empty(),
+        "old stale key index should remain empty after re-expansion"
+    );
+    assert_eq!(
+        multisig_account
+            .storage()
+            .get_map_item(AuthMultisigSmart::approver_scheme_ids_slot(), stale_index_key)?,
+        Word::empty(),
+        "old stale scheme index should remain empty after re-expansion"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier() -> anyhow::Result<()>
+{
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 4)];
+
+    let assets =
+        vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
+
+    let multisig_account = create_multisig_smart_account_with_assets(
+        2,
+        &public_keys,
+        assets,
+        10,
+        [500, 1000, 2000, 1500],
+        [1, 2, 3, 4],
+        test_oracle_id(),
+        test_get_price_proc_root(),
+        proc_threshold_map,
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build()?;
+
+    let salt = Word::from([Felt::new(701); 4]);
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary.clone());
+
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary_signing)
+        .await?;
+    let sig_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let three_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2.clone())
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        matches!(three_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "proc threshold override should dominate and reject 3 signatures when override is 4"
+    );
+
+    let sig_3 = authenticators[3]
+        .get_signature(public_keys[3].to_commitment(), &tx_summary_signing)
+        .await?;
+    let four_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2)
+        .add_signature(public_keys[3].to_commitment(), msg, sig_3)
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        four_sig_result.is_ok(),
+        "transaction should succeed with 4 signatures due to proc override"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_zero_output_notes_do_not_update_spending_tracker() -> anyhow::Result<()>
+{
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 3)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+
+    let initial_tracker = multisig_account
+        .storage()
+        .get_item(AuthMultisigSmart::spending_tracker_slot())?;
+
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let salt = Word::from([Felt::new(801); 4]);
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    let tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .build()?
+        .execute()
+        .await?;
+    multisig_account.apply_delta(tx.account_delta())?;
+
+    let tracker_after = multisig_account
+        .storage()
+        .get_item(AuthMultisigSmart::spending_tracker_slot())?;
+    assert_eq!(
+        tracker_after, initial_tracker,
+        "spending tracker must remain unchanged for zero-output transactions"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset()
+-> anyhow::Result<()> {
+    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let salt = Word::from([Felt::new(901); 4]);
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary)
+        .await?;
+    let sig_3 = authenticators[3]
+        .get_signature(public_keys[3].to_commitment(), &tx_summary)
+        .await?;
+
+    let first_execution = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .build()?
+        .execute()
+        .await
+        .expect("first execution should succeed");
+
+    mock_chain.add_pending_executed_transaction(&first_execution)?;
+    mock_chain.prove_next_block()?;
+
+    let replay_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .auth_args(salt)
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2)
+        .add_signature(public_keys[3].to_commitment(), msg, sig_3)
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(replay_result, ERR_TX_ALREADY_EXECUTED);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_config()
+-> anyhow::Result<()> {
+    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let zero_tier0_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.3
+            push.2
+            push.1
+            push.0
+            call.::miden::standards::components::auth::multisig_smart::update_threshold_config
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(zero_tier0_script)
+        .auth_args(Word::from([Felt::new(1001); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TIER0_MUST_BE_POSITIVE);
+
+    let non_monotonic_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.3
+            push.2
+            push.3
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::update_threshold_config
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(non_monotonic_script)
+        .auth_args(Word::from([Felt::new(1002); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_INVALID_TIER_CONFIG);
+
+    let tier3_too_high_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.4
+            push.3
+            push.2
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::update_threshold_config
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tier3_too_high_script)
+        .auth_args(Word::from([Felt::new(1003); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_TIER3_TOO_HIGH);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_invalid_spending_limits_rejected() -> anyhow::Result<()> {
+    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let multisig_account = create_multisig_account(2, &public_keys, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let invalid_limit0_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.0
+            push.300
+            push.100
+            push.200
+            call.::miden::standards::components::auth::multisig_smart::update_spending_limits
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(invalid_limit0_script)
+        .auth_args(Word::from([Felt::new(1101); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_INVALID_AMOUNT_LIMITS);
+
+    let invalid_limit1_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.0
+            push.200
+            push.300
+            push.100
+            call.::miden::standards::components::auth::multisig_smart::update_spending_limits
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(invalid_limit1_script)
+        .auth_args(Word::from([Felt::new(1102); 4]))
+        .build()?
+        .execute()
+        .await;
+    assert_transaction_executor_error!(result, ERR_INVALID_AMOUNT_LIMITS);
 
     Ok(())
 }

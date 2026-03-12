@@ -363,9 +363,12 @@ pub proc finalize_timelock_proposals
             dupw
             exec.enforce_tx_timelock
             drop
-            dupw
-            exec.remove_tx_proposal
         end
+
+        # When pending_execute is set, clear the matching proposal entry regardless of whether
+        # delay enforcement was required in this transaction.
+        dupw
+        exec.remove_tx_proposal
     end
 
     exec.clear_pending_execute
