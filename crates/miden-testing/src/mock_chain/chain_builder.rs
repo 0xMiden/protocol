@@ -338,7 +338,7 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
             .with_component(basic_faucet)
-            .with_component(AuthTxControlled::auth_tx_controlled());
+            .with_component(AuthTxControlled::allow_all());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -367,7 +367,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
-            .with_component(AuthTxControlled::auth_tx_controlled())
+            .with_component(AuthTxControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)

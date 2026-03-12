@@ -23,9 +23,9 @@ use crate::procedure_digest;
 // ================================================================================================
 
 procedure_digest!(
-    AUTH_TX_CONTROLLED_POLICY_ROOT,
+    ALLOW_ALL_POLICY_ROOT,
     AuthTxControlled::NAME,
-    AuthTxControlled::AUTH_TX_CONTROLLED_PROC_NAME,
+    AuthTxControlled::ALLOW_ALL_PROC_NAME,
     auth_tx_controlled_library
 );
 
@@ -46,7 +46,7 @@ static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// It reexports policy procedures from `miden::standards::mint_policies` and manager procedures
 /// from `miden::standards::mint_policies::policy_manager`:
-/// - `auth_tx_controlled`
+/// - `allow_all`
 /// - `set_mint_policy`
 /// - `get_mint_policy`
 ///
@@ -63,9 +63,9 @@ pub struct AuthTxControlled {
 /// Initial policy configuration for the [`AuthTxControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum AuthTxControlledInitConfig {
-    /// Sets the initial policy to `auth_tx_controlled`.
+    /// Sets the initial policy to `allow_all`.
     #[default]
-    AuthTxControlled,
+    AllowAll,
     /// Sets a custom initial policy root.
     CustomInitialRoot(Word),
 }
@@ -75,22 +75,22 @@ impl AuthTxControlled {
     pub const NAME: &'static str =
         "miden::standards::components::mint_policies::auth_tx_controlled";
 
-    const AUTH_TX_CONTROLLED_PROC_NAME: &str = "auth_tx_controlled";
+    const ALLOW_ALL_PROC_NAME: &str = "allow_all";
 
     /// Creates a new [`AuthTxControlled`] component from the provided configuration.
     pub fn new(policy: AuthTxControlledInitConfig) -> Self {
         let initial_policy_root = match policy {
-            AuthTxControlledInitConfig::AuthTxControlled => Self::auth_tx_controlled_policy_root(),
+            AuthTxControlledInitConfig::AllowAll => Self::allow_all_policy_root(),
             AuthTxControlledInitConfig::CustomInitialRoot(root) => root,
         };
 
         Self { initial_policy_root }
     }
 
-    /// Creates a new [`AuthTxControlled`] component with `auth_tx_controlled` policy as
+    /// Creates a new [`AuthTxControlled`] component with `allow_all` policy as
     /// default.
-    pub fn auth_tx_controlled() -> Self {
-        Self::new(AuthTxControlledInitConfig::AuthTxControlled)
+    pub fn allow_all() -> Self {
+        Self::new(AuthTxControlledInitConfig::AllowAll)
     }
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
@@ -152,15 +152,15 @@ impl AuthTxControlled {
         )
     }
 
-    /// Returns the default `auth_tx_controlled` policy root.
-    pub fn auth_tx_controlled_policy_root() -> Word {
-        *AUTH_TX_CONTROLLED_POLICY_ROOT
+    /// Returns the default `allow_all` policy root.
+    pub fn allow_all_policy_root() -> Word {
+        *ALLOW_ALL_POLICY_ROOT
     }
 }
 
 impl Default for AuthTxControlled {
     fn default() -> Self {
-        Self::auth_tx_controlled()
+        Self::allow_all()
     }
 }
 
@@ -171,12 +171,12 @@ impl From<AuthTxControlled> for AccountComponent {
             auth_tx_controlled.initial_policy_root,
         );
         let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
-        let auth_tx_controlled_policy_root = AuthTxControlled::auth_tx_controlled_policy_root();
+        let allow_all_policy_root = AuthTxControlled::allow_all_policy_root();
 
         let mut allowed_policy_entries =
-            vec![(StorageMapKey::from_raw(auth_tx_controlled_policy_root), allowed_policy_flag)];
+            vec![(StorageMapKey::from_raw(allow_all_policy_root), allowed_policy_flag)];
 
-        if auth_tx_controlled.initial_policy_root != auth_tx_controlled_policy_root {
+        if auth_tx_controlled.initial_policy_root != allow_all_policy_root {
             allowed_policy_entries.push((
                 StorageMapKey::from_raw(auth_tx_controlled.initial_policy_root),
                 allowed_policy_flag,

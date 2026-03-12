@@ -318,7 +318,7 @@ pub fn create_basic_fungible_faucet(
         .storage_mode(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(BasicFungibleFaucet::new(symbol, decimals, max_supply)?)
-        .with_component(AuthTxControlled::auth_tx_controlled())
+        .with_component(AuthTxControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
