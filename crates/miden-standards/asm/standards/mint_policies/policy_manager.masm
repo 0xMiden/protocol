@@ -5,7 +5,7 @@ use miden::standards::access::ownable2step
 
 # DEPENDENCY NOTE
 # This manager supports two policy-authority modes:
-# - 0: auth_tx_contolled: no Ownable2Step dependency.
+# - 0: auth_tx_controlled: no Ownable2Step dependency.
 # - 1: owner_controlled: requires Ownable2Step component
 #   (`ownable2step::assert_sender_is_owner`) for `set_mint_policy`.
 
@@ -27,7 +27,7 @@ const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager
 
 # Policy authority slot.
 # Layout: [POLICY_AUTHORITY, 0, 0, 0]
-# - POLICY_AUTHORITY = 0: policy authority rely on `auth_tx_contolled`.
+# - POLICY_AUTHORITY = 0: policy authority rely on `auth_tx_controlled`.
 # - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable2Step owner check.
 const POLICY_AUTHORITY_SLOT=word("miden::standards::mint_policy_manager::policy_authority")
 
@@ -99,7 +99,7 @@ proc assert_allowed_policy_root
 end
 
 #! Reads policy authority mode.
-#! - 0 = `auth_tx_contolled`
+#! - 0 = `auth_tx_controlled`
 #! - 1 = `owner_controlled`
 #!
 #! Inputs:  []
