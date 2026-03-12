@@ -1,5 +1,4 @@
 use miden::standards::faucets
-use miden::standards::access::ownable2step
 use miden::standards::mint_policies::policy_manager
 
 # PUBLIC INTERFACE
@@ -26,14 +25,14 @@ use miden::standards::mint_policies::policy_manager
 #!
 #! Panics if:
 #! - active mint policy validation fails.
-#! - any of the validations in faucets::distribute fail.
+#! - any of the validations in faucets::mint_and_send fail.
 #!
 #! Invocation: call
-pub proc mint
+pub proc mint_and_send
     exec.policy_manager::execute_mint_policy
-    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
-    exec.faucets::distribute
+    exec.faucets::mint_and_send
     # => [note_idx, pad(15)]
 end
 

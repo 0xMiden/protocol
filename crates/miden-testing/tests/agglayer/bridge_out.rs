@@ -22,8 +22,8 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
-use miden_protocol::transaction::{OutputNote, RawOutputNote};
-use miden_standards::account::faucets::{MintPolicy, TokenMetadata, TokenMetadata};
+use miden_protocol::transaction::RawOutputNote;
+use miden_standards::account::faucets::{MintPolicy, TokenMetadata};
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;

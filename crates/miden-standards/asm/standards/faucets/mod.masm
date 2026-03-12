@@ -56,7 +56,7 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #!
 #! Invocation: exec
 @locals(4)
-pub proc distribute
+pub proc mint_and_send
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 

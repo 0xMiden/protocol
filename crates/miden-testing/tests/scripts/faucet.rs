@@ -74,7 +74,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -215,7 +215,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -476,7 +476,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT]
 
-                call.::miden::standards::faucets::basic_fungible::mint
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # Truncate the stack
@@ -764,7 +764,7 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     let mock_chain = builder.build()?;
 
     // This root exists in account code, but is not in the mint policy allowlist.
-    let invalid_policy_root = NetworkFungibleFaucet::mint_digest();
+    let invalid_policy_root = NetworkFungibleFaucet::mint_and_send_digest();
     let set_policy_note_script = format!(
         r#"
         use miden::standards::mint_policies::policy_manager->policy_manager
@@ -1460,7 +1460,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_1}
                 # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # clean up the stack before the second call
@@ -1475,7 +1475,7 @@ async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result
                 push.{amount_2}
                 # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::mint
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack

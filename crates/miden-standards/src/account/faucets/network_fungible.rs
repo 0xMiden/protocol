@@ -31,9 +31,9 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::t
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `mint` procedure of the Network Fungible Faucet only once.
+// Initialize the digest of the `mint_and_send` procedure of the Network Fungible Faucet only once.
 procedure_digest!(
-    NETWORK_FUNGIBLE_FAUCET_MINT,
+    NETWORK_FUNGIBLE_FAUCET_MINT_AND_SEND,
     NetworkFungibleFaucet::NAME,
     NetworkFungibleFaucet::MINT_PROC_NAME,
     network_fungible_faucet_library
@@ -53,15 +53,15 @@ procedure_digest!(
 /// against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `mint`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `mint` and `burn` can only be called from note scripts. `mint` requires
+/// Both `mint_and_send` and `burn` can only be called from note scripts. `mint_and_send` requires
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
 /// This component relies on [`crate::account::access::Ownable2Step`] for ownership checks in
-/// `distribute`. When building an account with this component,
+/// `mint_and_send`. When building an account with this component,
 /// [`crate::account::access::Ownable2Step`] must also be included.
 ///
 /// ## Storage Layout
@@ -83,7 +83,7 @@ impl NetworkFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const MINT_PROC_NAME: &str = "mint";
+    const MINT_PROC_NAME: &str = "mint_and_send";
     const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
@@ -199,9 +199,9 @@ impl NetworkFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the digest of the `mint` account procedure.
-    pub fn mint_digest() -> Word {
-        *NETWORK_FUNGIBLE_FAUCET_MINT
+    /// Returns the digest of the `mint_and_send` account procedure.
+    pub fn mint_and_send_digest() -> Word {
+        *NETWORK_FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
     /// Returns the digest of the `burn` account procedure.
@@ -270,10 +270,10 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// (token symbol, decimals, max supply) and access control.
 ///
 /// The network faucet interface exposes two procedures:
-/// - `mint`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `mint` and `burn` can only be called from note scripts. `mint` requires
+/// Both `mint_and_send` and `burn` can only be called from note scripts. `mint_and_send` requires
 /// authentication using the NoAuth scheme. `burn` does not require authentication and can be
 /// called by anyone.
 ///

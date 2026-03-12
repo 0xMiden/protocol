@@ -49,10 +49,8 @@ use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    BasicFungibleFaucet,
     MintPolicy,
     MintPolicyManager,
-    NetworkFungibleFaucet,
     NetworkFungibleFaucet,
 };
 use miden_standards::account::wallets::BasicWallet;

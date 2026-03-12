@@ -30,9 +30,9 @@ use crate::procedure_digest;
 // BASIC FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `mint` procedure of the Basic Fungible Faucet only once.
+// Initialize the digest of the `mint_and_send` procedure of the Basic Fungible Faucet only once.
 procedure_digest!(
-    BASIC_FUNGIBLE_FAUCET_MINT,
+    BASIC_FUNGIBLE_FAUCET_MINT_AND_SEND,
     BasicFungibleFaucet::NAME,
     BasicFungibleFaucet::MINT_PROC_NAME,
     basic_fungible_faucet_library
@@ -52,10 +52,10 @@ procedure_digest!(
 /// against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `mint`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `mint` procedure can be called from a transaction script and requires authentication
+/// The `mint_and_send` procedure can be called from a transaction script and requires authentication
 /// via the authentication component. The `burn` procedure can only be called from a note script
 /// and requires the calling note to contain the asset to be burned.
 /// This component must be combined with an authentication component.
@@ -81,7 +81,7 @@ impl BasicFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const MINT_PROC_NAME: &str = "mint";
+    const MINT_PROC_NAME: &str = "mint_and_send";
     const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
@@ -195,9 +195,9 @@ impl BasicFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the digest of the `mint` account procedure.
-    pub fn mint_digest() -> Word {
-        *BASIC_FUNGIBLE_FAUCET_MINT
+    /// Returns the digest of the `mint_and_send` account procedure.
+    pub fn mint_and_send_digest() -> Word {
+        *BASIC_FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
     /// Returns the digest of the `burn` account procedure.
@@ -262,10 +262,10 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// decimals, max supply).
 ///
 /// The basic faucet interface exposes two procedures:
-/// - `mint`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// The `mint` procedure can be called from a transaction script and requires authentication
+/// The `mint_and_send` procedure can be called from a transaction script and requires authentication
 /// via the specified authentication scheme. The `burn` procedure can only be called from a note
 /// script and requires the calling note to contain the asset to be burned.
 ///
@@ -281,7 +281,7 @@ pub fn create_basic_fungible_faucet(
     account_storage_mode: AccountStorageMode,
     auth_method: AuthMethod,
 ) -> Result<Account, FungibleFaucetError> {
-    let mint_proc_root = BasicFungibleFaucet::mint_digest();
+    let mint_proc_root = BasicFungibleFaucet::mint_and_send_digest();
 
     let auth_component: AccountComponent = match auth_method {
         AuthMethod::SingleSig { approver: (pub_key, auth_scheme) } => AuthSingleSigAcl::new(
@@ -391,7 +391,7 @@ mod tests {
         );
 
         // The procedure root map should contain the mint procedure root.
-        let mint_root = BasicFungibleFaucet::mint_digest();
+        let mint_root = BasicFungibleFaucet::mint_and_send_digest();
         assert_eq!(
             faucet_account
                 .storage()
@@ -469,7 +469,7 @@ mod tests {
     /// Check that the obtaining of the basic fungible faucet procedure digests does not panic.
     #[test]
     fn get_faucet_procedures() {
-        let _mint_digest = BasicFungibleFaucet::mint_digest();
+        let _mint_and_send_digest = BasicFungibleFaucet::mint_and_send_digest();
         let _burn_digest = BasicFungibleFaucet::burn_digest();
     }
 }
