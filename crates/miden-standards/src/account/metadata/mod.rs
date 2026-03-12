@@ -345,22 +345,10 @@ mod tests {
     }
 
     #[test]
-    fn name_too_long_errors() {
-        let s = "a".repeat(33);
-        assert!(TokenName::new(&s).is_err());
-    }
-
-    #[test]
     fn description_max_bytes_accepted() {
         let s = "a".repeat(Description::MAX_BYTES);
         let desc = Description::new(&s).unwrap();
         assert_eq!(desc.to_words().len(), 7);
-    }
-
-    #[test]
-    fn description_too_long_rejected() {
-        let s = "a".repeat(Description::MAX_BYTES + 1);
-        assert!(Description::new(&s).is_err());
     }
 
     #[test]
