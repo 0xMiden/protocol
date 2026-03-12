@@ -65,6 +65,7 @@ miden-utils-sync      = { default-features = false, version = "0.20" }
 miden-verifier        = { default-features = false, version = "0.20" }
 
 # External dependencies
+alloy-sol-types = { default-features = false, version = "1.5" }
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
 assert_matches  = { default-features = false, version = "1.5" }
 fs-err          = { default-features = false, version = "3" }
@@ -74,5 +75,4 @@ rand_chacha     = { default-features = false, version = "0.9" }
 rstest          = { version = "0.26" }
 serde           = { default-features = false, version = "1.0" }
 thiserror       = { default-features = false, version = "2.0" }
-tiny-keccak     = { default-features = false, features = ["keccak"], version = "2.0" }
 tokio           = { default-features = false, features = ["sync"], version = "1" }

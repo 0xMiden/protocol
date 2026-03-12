@@ -29,12 +29,17 @@ miden-standards  = { workspace = true }
 miden-utils-sync = { workspace = true }
 
 # Third-party dependencies
+alloy-sol-types = { workspace = true }
 primitive-types = { workspace = true }
 thiserror       = { workspace = true }
-tiny-keccak     = { workspace = true }
+
+# Crypto
+miden-crypto = { workspace = true }
 
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }
+serde          = { features = ["derive"], version = "1.0" }
+serde_json     = { version = "1.0" }
 
 [build-dependencies]
 fs-err          = { workspace = true }
