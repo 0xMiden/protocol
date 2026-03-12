@@ -97,13 +97,14 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
-// Initialize the Mint Policy Manager library only once.
-static MINT_POLICY_MANAGER_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Mint Policy Owner Controlled library only once.
+static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/faucets/mint_policy_manager.masl"
+        "/assets/account_components/mint_policies/mint_policy_owner_controlled.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Mint Policy Manager library is well-formed")
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Owner Controlled library is well-formed")
 });
 
 // METADATA LIBRARIES
@@ -138,9 +139,9 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Mint Policy Manager Library.
-pub fn mint_policy_manager_library() -> Library {
-    MINT_POLICY_MANAGER_LIBRARY.clone()
+/// Returns the Mint Policy Owner Controlled Library.
+pub fn mint_policy_owner_controlled_library() -> Library {
+    MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
 }
 
 /// Returns the Storage Schema Library.

@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::mint_policy_manager_library;
+use crate::account::components::mint_policy_owner_controlled_library;
 use crate::procedure_digest;
 
 // CONSTANTS
@@ -24,18 +24,20 @@ use crate::procedure_digest;
 
 procedure_digest!(
     OWNER_ONLY_POLICY_ROOT,
-    MintPolicyManager::NAME,
-    MintPolicyManager::OWNER_ONLY_PROC_NAME,
-    mint_policy_manager_library
+    MintPolicyOwnerControlled::NAME,
+    MintPolicyOwnerControlled::OWNER_ONLY_PROC_NAME,
+    mint_policy_owner_controlled_library
 );
 
 static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
+    StorageSlotName::new("miden::standards::mint_policy_owner_controlled::active_policy_proc_root")
         .expect("storage slot name should be valid")
 });
 static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
-        .expect("storage slot name should be valid")
+    StorageSlotName::new(
+        "miden::standards::mint_policy_owner_controlled::allowed_policy_proc_roots",
+    )
+    .expect("storage slot name should be valid")
 });
 
 /// An [`AccountComponent`] providing configurable mint-policy management for network faucets.
@@ -51,11 +53,11 @@ static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
 /// - [`Self::active_policy_proc_root_slot`]: Procedure root of the active mint policy.
 /// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed mint policy procedure roots.
 #[derive(Debug, Clone, Copy)]
-pub struct MintPolicyManager {
+pub struct MintPolicyOwnerControlled {
     initial_policy_root: Word,
 }
 
-/// Initial policy configuration for the [`MintPolicyManager`] component.
+/// Initial policy configuration for the [`MintPolicyOwnerControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum MintPolicy {
     /// Sets the initial policy to `owner_only`.
@@ -65,13 +67,14 @@ pub enum MintPolicy {
     CustomInitialRoot(Word),
 }
 
-impl MintPolicyManager {
+impl MintPolicyOwnerControlled {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::faucets::mint_policy_manager";
+    pub const NAME: &'static str =
+        "miden::standards::components::mint_policies::mint_policy_owner_controlled";
 
     const OWNER_ONLY_PROC_NAME: &str = "owner_only";
 
-    /// Creates a new [`MintPolicyManager`] component from the provided configuration.
+    /// Creates a new [`MintPolicyOwnerControlled`] component from the provided configuration.
     pub fn new(policy: MintPolicy) -> Self {
         let initial_policy_root = match policy {
             MintPolicy::OwnerOnly => Self::owner_only_policy_root(),
@@ -81,7 +84,7 @@ impl MintPolicyManager {
         Self { initial_policy_root }
     }
 
-    /// Creates a new [`MintPolicyManager`] component with owner-only policy as default.
+    /// Creates a new [`MintPolicyOwnerControlled`] component with owner-only policy as default.
     pub fn owner_only() -> Self {
         Self::new(MintPolicy::OwnerOnly)
     }
@@ -101,7 +104,7 @@ impl MintPolicyManager {
         (
             Self::active_policy_proc_root_slot().clone(),
             StorageSlotSchema::value(
-                "The procedure root of the active mint policy in the mint policy manager",
+                "The procedure root of the active mint policy in the mint policy owner controlled component",
                 [
                     FeltSchema::felt("proc_root_0"),
                     FeltSchema::felt("proc_root_1"),
@@ -117,7 +120,7 @@ impl MintPolicyManager {
         (
             Self::allowed_policy_proc_roots_slot().clone(),
             StorageSlotSchema::map(
-                "The set of allowed mint policy procedure roots in the mint policy manager",
+                "The set of allowed mint policy procedure roots in the mint policy owner controlled component",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -130,27 +133,27 @@ impl MintPolicyManager {
     }
 }
 
-impl Default for MintPolicyManager {
+impl Default for MintPolicyOwnerControlled {
     fn default() -> Self {
         Self::owner_only()
     }
 }
 
-impl From<MintPolicyManager> for AccountComponent {
-    fn from(mint_policy_manager: MintPolicyManager) -> Self {
+impl From<MintPolicyOwnerControlled> for AccountComponent {
+    fn from(mint_policy_owner_controlled: MintPolicyOwnerControlled) -> Self {
         let active_policy_proc_root_slot = StorageSlot::with_value(
-            MintPolicyManager::active_policy_proc_root_slot().clone(),
-            mint_policy_manager.initial_policy_root,
+            MintPolicyOwnerControlled::active_policy_proc_root_slot().clone(),
+            mint_policy_owner_controlled.initial_policy_root,
         );
         let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
-        let owner_only_policy_root = MintPolicyManager::owner_only_policy_root();
+        let owner_only_policy_root = MintPolicyOwnerControlled::owner_only_policy_root();
 
         let mut allowed_policy_entries =
             vec![(StorageMapKey::from_raw(owner_only_policy_root), allowed_policy_flag.clone())];
 
-        if mint_policy_manager.initial_policy_root != owner_only_policy_root {
+        if mint_policy_owner_controlled.initial_policy_root != owner_only_policy_root {
             allowed_policy_entries.push((
-                StorageMapKey::from_raw(mint_policy_manager.initial_policy_root),
+                StorageMapKey::from_raw(mint_policy_owner_controlled.initial_policy_root),
                 allowed_policy_flag,
             ));
         }
@@ -159,28 +162,30 @@ impl From<MintPolicyManager> for AccountComponent {
             .expect("allowed mint policy roots should have unique keys");
 
         let allowed_policy_proc_roots_slot = StorageSlot::with_map(
-            MintPolicyManager::allowed_policy_proc_roots_slot().clone(),
+            MintPolicyOwnerControlled::allowed_policy_proc_roots_slot().clone(),
             allowed_policy_proc_roots,
         );
 
         let storage_schema = StorageSchema::new(vec![
-            MintPolicyManager::active_policy_proc_root_slot_schema(),
-            MintPolicyManager::allowed_policy_proc_roots_slot_schema(),
+            MintPolicyOwnerControlled::active_policy_proc_root_slot_schema(),
+            MintPolicyOwnerControlled::allowed_policy_proc_roots_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
-        let metadata =
-            AccountComponentMetadata::new(MintPolicyManager::NAME, [AccountType::FungibleFaucet])
-                .with_description("Mint policy manager component for network fungible faucets")
-                .with_storage_schema(storage_schema);
+        let metadata = AccountComponentMetadata::new(
+            MintPolicyOwnerControlled::NAME,
+            [AccountType::FungibleFaucet],
+        )
+        .with_description("Mint policy owner controlled component for network fungible faucets")
+        .with_storage_schema(storage_schema);
 
         AccountComponent::new(
-            mint_policy_manager_library(),
+            mint_policy_owner_controlled_library(),
             vec![active_policy_proc_root_slot, allowed_policy_proc_roots_slot],
             metadata,
         )
         .expect(
-            "mint policy manager component should satisfy the requirements of a valid account component",
+            "mint policy owner controlled component should satisfy the requirements of a valid account component",
         )
     }
 }

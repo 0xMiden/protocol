@@ -7,12 +7,10 @@ use thiserror::Error;
 use crate::account::access::Ownable2StepError;
 
 mod basic_fungible;
-mod mint_policy_manager;
 mod network_fungible;
 mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
-pub use mint_policy_manager::{MintPolicy, MintPolicyManager};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use token_metadata::TokenMetadata;
 

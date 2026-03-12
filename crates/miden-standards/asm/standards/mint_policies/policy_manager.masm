@@ -8,12 +8,12 @@ use miden::standards::access::ownable2step
 
 # Active policy root slot.
 # Layout: [PROC_ROOT]
-const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policy_manager::active_policy_proc_root")
+const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policy_owner_controlled::active_policy_proc_root")
 
 # Allowlist map slot for policy roots.
 # Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
 # Any root missing from this map is rejected by `set_mint_policy` and `execute_mint_policy`.
-const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_owner_controlled::allowed_policy_proc_roots")
 
 # Local memory pointer used to pass a policy root to `dynexec`.
 const MINT_POLICY_PROC_ROOT_PTR=0

@@ -31,10 +31,10 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    MintPolicy,
     NetworkFungibleFaucet,
     TokenMetadata,
 };
+use miden_standards::account::mint_policies::MintPolicy;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
