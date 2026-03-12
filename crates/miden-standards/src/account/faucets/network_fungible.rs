@@ -282,8 +282,8 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`MintPolicyManager`] and [`crate::account::access::Ownable2Step`] component types and contains no additional storage slots for its auth
-/// ([`NoAuth`]).
+/// [`MintPolicyManager`] and [`crate::account::access::Ownable2Step`] component types and contains
+/// no additional storage slots for its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,

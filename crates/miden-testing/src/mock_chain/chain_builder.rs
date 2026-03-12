@@ -46,14 +46,15 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
     BasicFungibleFaucet,
     MintPolicy,
     MintPolicyManager,
     NetworkFungibleFaucet,
+    NetworkFungibleFaucet,
 };
-use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
