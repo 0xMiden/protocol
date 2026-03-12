@@ -196,7 +196,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id_prefix = key[3];
 
         let raw = faucet_id_suffix_and_metadata.as_canonical_u64();
-        let category = AssetCallbackFlag::try_from((raw & 0xff) as u8)?;
+        let callback_flag = AssetCallbackFlag::try_from((raw & 0xff) as u8)?;
         let faucet_id_suffix = Felt::try_from(raw & 0xffff_ffff_ffff_ff00)
             .expect("clearing lower bits should not produce an invalid felt");
 
@@ -204,7 +204,7 @@ impl TryFrom<Word> for AssetVaultKey {
         let faucet_id = AccountId::try_from_elements(faucet_id_suffix, faucet_id_prefix)
             .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
 
-        Self::new(asset_id, faucet_id, category)
+        Self::new(asset_id, faucet_id, callback_flag)
     }
 }
 

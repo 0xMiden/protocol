@@ -108,6 +108,12 @@ impl FungibleAsset {
         Self::from_key_value(vault_key, value)
     }
 
+    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
+    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
+        self.callbacks = callbacks;
+        self
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -129,12 +135,6 @@ impl FungibleAsset {
     /// Returns the [`AssetCallbackFlag`] of this asset.
     pub fn callbacks(&self) -> AssetCallbackFlag {
         self.callbacks
-    }
-
-    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
-    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
-        self.callbacks = callbacks;
-        self
     }
 
     /// Returns the key which is used to store this asset in the account vault.
