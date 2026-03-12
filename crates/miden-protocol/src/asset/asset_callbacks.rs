@@ -39,6 +39,7 @@ impl AssetCallbacks {
         Self::default()
     }
 
+    /// Sets the `on_before_asset_added_to_account` callback procedure root.
     pub fn on_before_asset_added_to_account(mut self, proc_root: Word) -> Self {
         self.on_before_asset_added_to_account = proc_root;
         self
@@ -53,7 +54,7 @@ impl AssetCallbacks {
     }
 
     /// Returns the procedure root of the `on_before_asset_added_to_account` callback.
-    pub fn on_before_asset_added_proc_root(&self) -> Word {
+    pub fn on_before_asset_added_to_account_proc_root(&self) -> Word {
         self.on_before_asset_added_to_account
     }
 
