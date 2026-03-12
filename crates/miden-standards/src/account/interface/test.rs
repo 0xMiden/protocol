@@ -268,7 +268,7 @@ fn test_basic_wallet_custom_notes() {
                 call.wallet::move_asset_to_note
 
                 # unsupported procs
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
                 call.fungible_faucet::burn
             else
                 # supported procs
@@ -293,11 +293,11 @@ fn test_basic_wallet_custom_notes() {
             push.1
             if.true
                 # unsupported procs
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
                 call.fungible_faucet::burn
             else
                 # unsupported proc
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
 
                 # supported procs
                 call.wallet::receive_asset
@@ -346,11 +346,11 @@ fn test_basic_fungible_faucet_custom_notes() {
             push.1
             if.true
                 # supported procs
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
                 call.fungible_faucet::burn
             else
                 # supported proc
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
 
                 # unsupported procs
                 call.wallet::receive_asset
@@ -374,7 +374,7 @@ fn test_basic_fungible_faucet_custom_notes() {
             push.1
             if.true
                 # supported procs
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
                 call.fungible_faucet::burn
 
                 # unsupported proc
@@ -566,7 +566,7 @@ fn test_custom_account_multiple_components_custom_notes() {
                 call.test_account::procedure_2
 
                 # unsupported proc
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
             end
         end
     ";
@@ -597,7 +597,7 @@ fn test_custom_account_multiple_components_custom_notes() {
                 call.test_account::procedure_2
 
                 # unsupported proc
-                call.fungible_faucet::mint
+                call.fungible_faucet::mint_and_send
             else
                 # supported procs
                 call.test_account::procedure_1
