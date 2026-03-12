@@ -70,13 +70,29 @@ end
 #! Outputs: [scale]
 #!
 #! Invocation: exec
-pub proc get_scale
+proc get_scale_inner
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
     # => [0, scale, origin_network, addr4]
 
     drop movdn.2 drop drop
     # => [scale]
+end
+
+#! Returns the scale factor from faucet conversion storage.
+#!
+#! Called via FPI from the bridge account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [scale, pad(15)]
+#!
+#! Invocation: call
+pub proc get_scale
+    exec.get_scale_inner
+    # => [scale, pad(16)]
+    
+    swap drop
+    # => [scale, pad(15)]
 end
 
 #! Converts a native Miden asset amount to origin asset data using the stored
@@ -100,7 +116,7 @@ pub proc asset_to_origin_asset
     # => [amount, pad(15)]
 
     # Step 1: Get scale from storage
-    exec.get_scale
+    exec.get_scale_inner
     # => [scale, amount, pad(15)]
     swap
     # => [amount, scale, pad(15)]

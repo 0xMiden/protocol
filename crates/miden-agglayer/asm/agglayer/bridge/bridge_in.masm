@@ -3,12 +3,15 @@ use miden::agglayer::bridge::leaf_utils
 use miden::agglayer::common::utils
 use miden::agglayer::common::asset_conversion
 use miden::agglayer::common::eth_address
+use miden::agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::rpo256
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
+use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::attachments::network_account_target
 use miden::protocol::native_account
@@ -62,7 +65,6 @@ const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
-const P2ID_ATTACHMENT_KIND_NONE = 0
 const P2ID_ATTACHMENT_SCHEME_NONE = 0
 
 # Global memory pointers
@@ -353,6 +355,10 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
+    # Verify faucet_mint_amount matches the leaf data amount
+    exec.verify_claim_amount
+    # => [pad(16)]
+    
     # Build MINT output note targeting the aggfaucet
     loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
     # => [prefix, suffix, pad(16)]
@@ -363,6 +369,62 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
+#! scaled down by the faucet's scale factor.
+#!
+#! This procedure:
+#! 1. Looks up the faucet account ID from the origin token address in the leaf data.
+#! 2. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 3. Loads the raw U256 amount from the leaf data in memory.
+#! 4. Calls `verify_u256_to_native_amount_conversion` to assert that:
+#!        faucet_mint_amount == floor(raw_amount / 10^scale)
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the origin token address is not registered in the bridge's token registry.
+#! - the FPI call to the faucet's get_scale fails.
+#! - the faucet_mint_amount does not match the expected scaled-down value.
+#!
+#! Invocation: exec
+proc verify_claim_amount
+    # Step 1: Look up the faucet account ID from the origin token address
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    # Step 2: FPI call to faucet's get_scale procedure
+    procref.agglayer_faucet::get_scale
+    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    movup.5 movup.5
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
+
+    exec.tx::execute_foreign_procedure
+    # => [scale, pad(15)]
+
+    # Step 3: Load the raw U256 amount from leaf data memory
+    exec.get_raw_claim_amount
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, pad(15)]
+
+    # Step 4: Load faucet_mint_amount (y) and position it for verification
+    mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale, pad(15)]
+
+    movdn.9
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y, pad(15)]
+
+    # Step 5: Verify that y = floor(x / 10^scale)
+    exec.asset_conversion::verify_u256_to_native_amount_conversion
+    # => [y, pad(15)]
+
+    drop push.0
+    # => [pad(16)]
+end
 
 #! Given the leaf data key, loads the leaf data from advice map to memory, packs the data in-place,
 #! and computes the leaf value by hashing the packed bytes.
@@ -606,7 +668,7 @@ proc write_mint_note_storage
 
     # Write P2ID attachment fields (the P2ID note has no attachment)
     # attachment_kind = NONE [2]
-    push.P2ID_ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
+    push.ATTACHMENT_KIND_NONE mem_store.MINT_NOTE_STORAGE_ATTACHMENT_KIND
     # => []
 
     # attachment_scheme = NONE [3]

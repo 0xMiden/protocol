@@ -106,7 +106,6 @@ pub struct LeafValueVector {
     pub metadata_hash: String,
     #[allow(dead_code)]
     pub leaf_value: String,
-    pub claimed_global_index_hash_chain: String,
 }
 
 impl LeafValueVector {
@@ -139,6 +138,7 @@ pub struct ProofValueVector {
     /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
     #[allow(dead_code)]
     pub global_exit_root: String,
+    pub claimed_global_index_hash_chain: String,
 }
 
 impl ProofValueVector {
@@ -278,7 +278,7 @@ impl ClaimDataSource {
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
         let cgi_chain_hash = Keccak256Output::new(
-            hex_to_bytes(&vector.leaf.claimed_global_index_hash_chain)
+            hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
                 .expect("invalid CGI chain hash"),
         );
 
