@@ -122,6 +122,10 @@ pub enum AccountError {
     AccountComponentAssemblyError(Report),
     #[error("failed to merge components into one account code mast forest")]
     AccountComponentMastForestMergeError(#[source] MastForestError),
+    #[error(
+        "account component metadata name `{name}` is not a prefix of library export path `{export_path}`"
+    )]
+    AccountComponentNameMismatch { name: Box<str>, export_path: Box<str> },
     #[error("account component contains multiple authentication procedures")]
     AccountComponentMultipleAuthProcedures,
     #[error("failed to update asset vault")]

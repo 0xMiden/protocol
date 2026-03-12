@@ -29,6 +29,11 @@ pub struct MockAccountComponent {
 }
 
 impl MockAccountComponent {
+    // CONSTANTS
+    // --------------------------------------------------------------------------------------------
+
+    pub const NAME: &str = "mock::account";
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -62,7 +67,7 @@ impl MockAccountComponent {
 impl From<MockAccountComponent> for AccountComponent {
     fn from(mock_component: MockAccountComponent) -> Self {
         let metadata =
-            AccountComponentMetadata::new("miden::testing::mock_account", AccountType::all())
+            AccountComponentMetadata::new(MockAccountComponent::NAME, AccountType::all())
                 .with_description("Mock account component for testing");
 
         AccountComponent::new(

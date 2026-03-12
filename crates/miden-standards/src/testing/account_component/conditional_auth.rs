@@ -37,7 +37,7 @@ static CONDITIONAL_AUTH_CODE: LazyLock<String> = LazyLock::new(|| {
 
 static CONDITIONAL_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(|| {
     CodeBuilder::default()
-        .compile_component_code("mock::conditional_auth", CONDITIONAL_AUTH_CODE.as_str())
+        .compile_component_code(ConditionalAuthComponent::NAME, CONDITIONAL_AUTH_CODE.as_str())
         .expect("conditional auth code should be valid")
 });
 
@@ -50,10 +50,14 @@ static CONDITIONAL_AUTH_LIBRARY: LazyLock<AccountComponentCode> = LazyLock::new(
 /// In case it succeeds, it conditionally increments the nonce based on the fourth argument.
 pub struct ConditionalAuthComponent;
 
+impl ConditionalAuthComponent {
+    pub const NAME: &str = "miden::testing::conditional_auth";
+}
+
 impl From<ConditionalAuthComponent> for AccountComponent {
     fn from(_: ConditionalAuthComponent) -> Self {
         let metadata =
-            AccountComponentMetadata::new("miden::testing::conditional_auth", AccountType::all())
+            AccountComponentMetadata::new(ConditionalAuthComponent::NAME, AccountType::all())
                 .with_description("Testing auth component with conditional behavior");
 
         AccountComponent::new(CONDITIONAL_AUTH_LIBRARY.clone(), vec![], metadata)

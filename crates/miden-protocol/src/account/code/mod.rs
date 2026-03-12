@@ -410,6 +410,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::Assembler;
+    use miden_assembly::diagnostics::NamedSource;
 
     use super::{AccountCode, Deserializable, Serializable};
     use crate::account::code::build_procedure_commitment;
@@ -447,8 +448,10 @@ mod tests {
 
     #[test]
     fn test_account_code_no_auth_component() {
-        let library = Assembler::default().assemble_library([CODE]).unwrap();
-        let metadata = AccountComponentMetadata::new("test::no_auth", AccountType::all());
+        let name = "test::no_auth";
+        let library =
+            Assembler::default().assemble_library([NamedSource::new(name, CODE)]).unwrap();
+        let metadata = AccountComponentMetadata::new(name, AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         let err =
@@ -485,8 +488,11 @@ mod tests {
             end
         ";
 
-        let library = Assembler::default().assemble_library([code_with_multiple_auth]).unwrap();
-        let metadata = AccountComponentMetadata::new("test::multiple_auth", AccountType::all());
+        let name = "test::multiple_auth";
+        let library = Assembler::default()
+            .assemble_library([NamedSource::new(name, code_with_multiple_auth)])
+            .unwrap();
+        let metadata = AccountComponentMetadata::new(name, AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         let err =

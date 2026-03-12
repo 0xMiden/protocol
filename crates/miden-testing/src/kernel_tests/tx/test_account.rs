@@ -1545,8 +1545,8 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         anyhow::anyhow!("failed to link static library: {}", PrintDiagnostic::new(&err))
     })?;
 
-    let account_component_source =
-        NamedSource::new("account_component::account_module", ACCOUNT_COMPONENT_CODE);
+    let component_name = "account_component::account_module";
+    let account_component_source = NamedSource::new(component_name, ACCOUNT_COMPONENT_CODE);
     let account_component_lib =
         assembler.clone().assemble_library([account_component_source]).unwrap();
 
@@ -1560,7 +1560,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
     let account_component = AccountComponent::new(
         account_component_lib.clone(),
         AccountStorage::mock_storage_slots(),
-        AccountComponentMetadata::mock("account_module"),
+        AccountComponentMetadata::mock(component_name),
     )?;
 
     // Build an existing account with nonce 1.

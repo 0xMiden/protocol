@@ -37,6 +37,9 @@ pub struct AccountSchemaCommitment {
 }
 
 impl AccountSchemaCommitment {
+    /// The name of the component.
+    pub const NAME: &str = "miden::standards::components::metadata::schema_commitment";
+
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.
@@ -66,7 +69,7 @@ impl AccountSchemaCommitment {
 impl From<AccountSchemaCommitment> for AccountComponent {
     fn from(schema_commitment: AccountSchemaCommitment) -> Self {
         let metadata =
-            AccountComponentMetadata::new("miden::metadata::schema_commitment", AccountType::all())
+            AccountComponentMetadata::new(AccountSchemaCommitment::NAME, AccountType::all())
                 .with_description("Component exposing the account storage schema commitment");
 
         AccountComponent::new(
