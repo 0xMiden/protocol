@@ -62,7 +62,6 @@ impl AccountSchemaCommitment {
         &SCHEMA_COMMITMENT_SLOT_NAME
     }
 
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         AccountComponentMetadata::new("miden::metadata::schema_commitment", AccountType::all())

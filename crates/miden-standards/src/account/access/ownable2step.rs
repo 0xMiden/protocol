@@ -135,7 +135,6 @@ impl Ownable2Step {
         [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix].into()
     }
 
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema =

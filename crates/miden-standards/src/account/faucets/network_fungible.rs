@@ -222,7 +222,6 @@ impl NetworkFungibleFaucet {
         Ok(self)
     }
 
-
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
         let storage_schema = StorageSchema::new([Self::metadata_slot_schema()])
