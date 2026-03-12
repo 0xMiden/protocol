@@ -237,6 +237,22 @@ impl AuthMultisig {
             ),
         )
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([
+            Self::threshold_config_slot_schema(),
+            Self::approver_public_keys_slot_schema(),
+            Self::approver_auth_scheme_slot_schema(),
+            Self::executed_transactions_slot_schema(),
+            Self::procedure_thresholds_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Multisig authentication component using hybrid signature schemes")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<AuthMultisig> for AccountComponent {
@@ -292,18 +308,7 @@ impl From<AuthMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        let storage_schema = StorageSchema::new([
-            AuthMultisig::threshold_config_slot_schema(),
-            AuthMultisig::approver_public_keys_slot_schema(),
-            AuthMultisig::approver_auth_scheme_slot_schema(),
-            AuthMultisig::executed_transactions_slot_schema(),
-            AuthMultisig::procedure_thresholds_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME, AccountType::all())
-            .with_description("Multisig authentication component using hybrid signature schemes")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisig::component_metadata();
 
         AccountComponent::new(multisig_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",
