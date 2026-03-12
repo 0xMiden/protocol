@@ -233,12 +233,6 @@ proc get_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
 end
 
-# Inputs: [U256[0], U256[1]]
-# Outputs: [amount]
-proc scale_down_amount
-    repeat.7 drop end
-end
-
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
 # Outputs: []
 proc batch_pipe_double_words
