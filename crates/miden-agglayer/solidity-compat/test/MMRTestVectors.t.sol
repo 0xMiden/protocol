@@ -24,8 +24,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
     uint8 constant LEAF_TYPE = 0;
     uint32 constant ORIGIN_NETWORK = 64;
     address constant ORIGIN_TOKEN_ADDR = 0x7a6fC3e8b57c6D1924F1A9d0E2b3c4D5e6F70891;
-    // keccak256(abi.encode("AGG", "AGG", uint8(8)))
-    bytes32 constant METADATA_HASH = 0xc98c1a2dbf558d2ddf62e6ad8f93f6abfacf0cf446d095fc3f20b628d1144b3d;
+    bytes32 constant METADATA_HASH = keccak256(abi.encode("AGG", "AGG", uint8(8)));
 
     // Fixed seed for deterministic "random" destination vectors.
     // Keeping this constant ensures everyone regenerates the exact same JSON vectors.
