@@ -34,7 +34,7 @@ use miden_protocol::{Felt, Word};
 use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
-use miden_standards::testing::account_component::MockAccountComponent;
+use miden_standards::testing::account_component::MockFaucetComponent;
 
 use crate::{AccountState, Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 
@@ -305,23 +305,10 @@ async fn test_blocked_account_cannot_receive_fungible_asset() -> anyhow::Result<
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let block_list = BlockList::new(BTreeSet::from_iter([target_account.id()]));
-
-    let basic_faucet = BasicFungibleFaucet::new("BLK".try_into()?, 8, Felt::from(1_000_000u32))?;
-
-    let account_builder = AccountBuilder::new([42u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
-        .with_component(block_list);
-
-    let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
+    let faucet = add_faucet_with_block_list(
+        &mut builder,
+        AccountType::FungibleFaucet,
+        [target_account.id()],
     )?;
 
     let fungible_asset =
@@ -358,20 +345,10 @@ async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Res
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
-    let block_list = BlockList::new(BTreeSet::from_iter([target_account.id()]));
-
-    let account_builder = AccountBuilder::new([42u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::NonFungibleFaucet)
-        .with_component(MockAccountComponent::with_empty_slots())
-        .with_component(block_list);
-
-    let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
+    let faucet = add_faucet_with_block_list(
+        &mut builder,
+        AccountType::NonFungibleFaucet,
+        [target_account.id()],
     )?;
 
     let details = NonFungibleAssetDetails::new(faucet.id(), vec![1, 2, 3, 4])?;
@@ -406,44 +383,11 @@ async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Res
 async fn test_blocked_account_cannot_add_asset_to_note() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    // Create wallet first so we know its ID for the block list.
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    // Build block list storage map containing the wallet as a blocked account.
-    let map_entries: Vec<(StorageMapKey, Word)> = vec![(
-        StorageMapKey::new(AccountIdKey::new(target_account.id()).as_word()),
-        Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
-    )];
-    let storage_map =
-        StorageMap::with_entries(map_entries).expect("should have no duplicate entries");
-
-    // Build storage slots: block list map + ONLY note callback (NOT account callback).
-    let mut storage_slots = vec![StorageSlot::with_map(BLOCK_LIST_SLOT_NAME.clone(), storage_map)];
-    storage_slots.extend(
-        AssetCallbacks::new()
-            .on_before_asset_added_to_note(BlockList::on_before_asset_added_to_note_digest())
-            .into_storage_slots(),
-    );
-    let metadata = AccountComponentMetadata::new(BlockList::NAME, [AccountType::FungibleFaucet])
-        .with_description("note callback block list component for testing");
-
-    let note_callback_component =
-        AccountComponent::new(BLOCK_LIST_COMPONENT_CODE.clone(), storage_slots, metadata)?;
-
-    let basic_faucet = BasicFungibleFaucet::new("NTB".try_into()?, 8, Felt::from(1_000_000u32))?;
-
-    let account_builder = AccountBuilder::new([44u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
-        .with_component(note_callback_component);
-
-    let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
+    let faucet = add_faucet_with_block_list(
+        &mut builder,
+        AccountType::FungibleFaucet,
+        [target_account.id()],
     )?;
 
     // Build the callbacks-enabled fungible asset.
@@ -663,6 +607,37 @@ async fn test_on_before_asset_added_to_note_callback_receives_correct_inputs() -
 
 // HELPERS
 // ================================================================================================
+
+/// Builds a fungible faucet with the block list callback component and adds it to the builder.
+///
+/// The block list component registers both the account and note callbacks. When a
+/// callbacks-enabled asset is added to an account or note, the callback checks whether the
+/// native account is in the block list and panics if so.
+fn add_faucet_with_block_list(
+    builder: &mut MockChainBuilder,
+    account_type: AccountType,
+    blocked_accounts: impl IntoIterator<Item = AccountId>,
+) -> anyhow::Result<Account> {
+    let block_list = BlockList::new(blocked_accounts.into_iter().collect());
+
+    if !account_type.is_faucet() {
+        anyhow::bail!("account type must be of type faucet")
+    }
+
+    let account_builder = AccountBuilder::new([42u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(account_type)
+        .with_component(MockFaucetComponent)
+        .with_component(block_list);
+
+    builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )
+}
 
 /// Builds a fungible faucet with custom callback MASM code and adds it to the builder.
 ///
