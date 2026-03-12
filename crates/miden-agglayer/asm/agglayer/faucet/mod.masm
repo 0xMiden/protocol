@@ -172,7 +172,9 @@ pub proc get_metadata_hash
     swapw
     # => [lo0, lo1, lo2, lo3, hi0, hi1, hi2, hi3, pad(16)]
 
-    exec.sys::truncate_stack
+    # Drop 8 excess padding elements (24 -> 16)
+    swapdw dropw dropw
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
 end
 
 #! Converts a native Miden asset amount to origin asset data using the stored
