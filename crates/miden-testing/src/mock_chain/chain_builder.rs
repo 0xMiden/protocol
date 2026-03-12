@@ -48,7 +48,11 @@ use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, Tran
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
-use miden_standards::account::mint_policies::{OwnerContolled, OwnerControlledInitConfig};
+use miden_standards::account::mint_policies::{
+    AuthTxContolled,
+    OwnerContolled,
+    OwnerControlledInitConfig,
+};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -333,7 +337,8 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(basic_faucet);
+            .with_component(basic_faucet)
+            .with_component(AuthTxContolled::auth_tx_contolled());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -362,6 +367,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
+            .with_component(AuthTxContolled::auth_tx_contolled())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)

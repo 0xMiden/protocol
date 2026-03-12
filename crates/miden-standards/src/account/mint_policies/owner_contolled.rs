@@ -30,11 +30,15 @@ procedure_digest!(
 );
 
 static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::owner_contolled::active_policy_proc_root")
+    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
         .expect("storage slot name should be valid")
 });
 static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::owner_contolled::allowed_policy_proc_roots")
+    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+        .expect("storage slot name should be valid")
+});
+static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::mint_policy_manager::policy_authority")
         .expect("storage slot name should be valid")
 });
 
@@ -50,6 +54,7 @@ static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
 ///
 /// - [`Self::active_policy_proc_root_slot`]: Procedure root of the active mint policy.
 /// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed mint policy procedure roots.
+/// - [`Self::policy_authority_slot`]: Policy authority mode (`0` = tx auth, `1` = external owner).
 #[derive(Debug, Clone, Copy)]
 pub struct OwnerContolled {
     initial_policy_root: Word,
@@ -124,6 +129,27 @@ impl OwnerContolled {
         )
     }
 
+    /// Returns the [`StorageSlotName`] containing policy authority mode.
+    pub fn policy_authority_slot() -> &'static StorageSlotName {
+        &POLICY_AUTHORITY_SLOT_NAME
+    }
+
+    /// Returns the storage slot schema for policy authority mode.
+    pub fn policy_authority_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::policy_authority_slot().clone(),
+            StorageSlotSchema::value(
+                "Policy authority mode (0 = tx auth, 1 = external owner)",
+                [
+                    FeltSchema::u8("policy_authority"),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                    FeltSchema::new_void(),
+                ],
+            ),
+        )
+    }
+
     /// Returns the default owner-only policy root.
     pub fn owner_only_policy_root() -> Word {
         *OWNER_ONLY_POLICY_ROOT
@@ -146,7 +172,7 @@ impl From<OwnerContolled> for AccountComponent {
         let owner_only_policy_root = OwnerContolled::owner_only_policy_root();
 
         let mut allowed_policy_entries =
-            vec![(StorageMapKey::from_raw(owner_only_policy_root), allowed_policy_flag.clone())];
+            vec![(StorageMapKey::from_raw(owner_only_policy_root), allowed_policy_flag)];
 
         if owner_contolled.initial_policy_root != owner_only_policy_root {
             allowed_policy_entries.push((
@@ -162,10 +188,15 @@ impl From<OwnerContolled> for AccountComponent {
             OwnerContolled::allowed_policy_proc_roots_slot().clone(),
             allowed_policy_proc_roots,
         );
+        let policy_authority_slot = StorageSlot::with_value(
+            OwnerContolled::policy_authority_slot().clone(),
+            Word::from([1u32, 0, 0, 0]),
+        );
 
         let storage_schema = StorageSchema::new(vec![
             OwnerContolled::active_policy_proc_root_slot_schema(),
             OwnerContolled::allowed_policy_proc_roots_slot_schema(),
+            OwnerContolled::policy_authority_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
@@ -178,7 +209,11 @@ impl From<OwnerContolled> for AccountComponent {
 
         AccountComponent::new(
             owner_contolled_library(),
-            vec![active_policy_proc_root_slot, allowed_policy_proc_roots_slot],
+            vec![
+                active_policy_proc_root_slot,
+                allowed_policy_proc_roots_slot,
+                policy_authority_slot,
+            ],
             metadata,
         )
         .expect(

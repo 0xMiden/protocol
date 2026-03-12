@@ -3,17 +3,33 @@ use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 
+# DEPENDENCY NOTE
+# This manager supports two policy-authority modes:
+# - 0: auth_tx_controlled: no Ownable2Step dependency.
+# - 1: owner_controlled: requires Ownable2Step component
+#   (`ownable2step::assert_sender_is_owner`) for `set_mint_policy`.
+
 # CONSTANTS
 # ================================================================================================
 
 # Active policy root slot.
 # Layout: [PROC_ROOT]
-const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::owner_contolled::active_policy_proc_root")
+const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policy_manager::active_policy_proc_root")
 
 # Allowlist map slot for policy roots.
 # Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
-# Any root missing from this map is rejected by `set_mint_policy` and `execute_mint_policy`.
-const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::owner_contolled::allowed_policy_proc_roots")
+# This slot ensure `dynexec` runs only allowed mint-policy roots, not arbitrary procedures.
+# A root that is not in this allowlist is always rejected, even if it exists in account code.
+# This prevents arbitrary procedure root execution through policy selection.
+# Component constructors initialize this map with known allowed mint-policy roots by default.
+# `set_mint_policy` and `execute_mint_policy` checks this.
+const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+
+# Policy authority slot.
+# Layout: [POLICY_AUTHORITY, 0, 0, 0]
+# - POLICY_AUTHORITY = 0: policy authority rely on `auth_tx_contolled`.
+# - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable2Step owner check.
+const POLICY_AUTHORITY_SLOT=word("miden::standards::mint_policy_manager::policy_authority")
 
 # Local memory pointer used to pass a policy root to `dynexec`.
 const MINT_POLICY_PROC_ROOT_PTR=0
@@ -82,6 +98,44 @@ proc assert_allowed_policy_root
     # => [MINT_POLICY_ROOT]
 end
 
+#! Reads policy authority mode.
+#! - 0 = `auth_tx_controlled`
+#! - 1 = `owner_controlled`
+#!
+#! Inputs:  []
+#! Outputs: [policy_authority]
+#!
+#! Invocation: exec
+proc get_policy_authority
+    push.POLICY_AUTHORITY_SLOT[0..2] exec.active_account::get_item
+    # => [policy_authority, 0, 0, 0]
+
+    movdn.3
+    # => [0, 0, 0, policy_authority]
+
+    drop drop drop
+    # => [policy_authority]
+end
+
+#! Authorizes policy update based on policy authority mode.
+#!
+#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
+#! Outputs: [NEW_POLICY_ROOT, pad(12)]
+#!
+#! Panics if:
+#! - POLICY_AUTHORITY = 1 and the sender is not owner.
+#!
+#! Invocation: exec
+proc assert_can_set_mint_policy
+    exec.get_policy_authority
+    # => [policy_authority, NEW_POLICY_ROOT, pad(12)]
+
+    if.true
+        exec.ownable2step::assert_sender_is_owner
+        # => [NEW_POLICY_ROOT, pad(12)]
+    end
+end
+
 # PUBLIC INTERFACE
 # ================================================================================================
 
@@ -133,14 +187,14 @@ end
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
-#! - note sender is not owner.
+#! - POLICY_AUTHORITY = 1 and the sender is not owner.
 #! - NEW_POLICY_ROOT is zero.
 #! - NEW_POLICY_ROOT is not a procedure of this account.
 #! - NEW_POLICY_ROOT is not in the allowed roots map.
 #!
 #! Invocation: call
 pub proc set_mint_policy
-    exec.ownable2step::assert_sender_is_owner
+    exec.assert_can_set_mint_policy
     # => [NEW_POLICY_ROOT, pad(12)]
 
     exec.assert_existing_policy_root
