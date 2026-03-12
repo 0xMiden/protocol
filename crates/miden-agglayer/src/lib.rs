@@ -46,6 +46,8 @@ pub use eth_types::{
 };
 pub use update_ger_note::UpdateGerNote;
 
+use crate::claim_note::Keccak256Output;
+
 // AGGLAYER NOTE SCRIPTS
 // ================================================================================================
 
@@ -245,6 +247,31 @@ impl AggLayerBridge {
     /// Storage slot name for the lower 128 bits of the CGI chain hash.
     pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
         &CGI_CHAIN_HASH_HI_SLOT_NAME
+    }
+
+    /// TODO: update this procedure during the https://github.com/0xMiden/protocol/issues/2580 after
+    /// https://github.com/0xMiden/protocol/pull/2562 PR is merged
+    pub fn cgi_chain_hash(bridge_account: &Account) -> Keccak256Output {
+        let cgi_chain_hash_lo = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_lo_slot_name())
+            .expect("failed to get CGI hash chain lo slot");
+        let cgi_chain_hash_hi = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_hi_slot_name())
+            .expect("failed to get CGI hash chain hi slot");
+
+        let cgi_chain_hash_bytes = cgi_chain_hash_lo
+            .iter()
+            .rev()
+            .chain(cgi_chain_hash_hi.iter().rev())
+            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .collect::<Vec<u8>>();
+        Keccak256Output::new(
+            cgi_chain_hash_bytes
+                .try_into()
+                .expect("keccak hash should consist of exactly 32 bytes"),
+        )
     }
 }
 

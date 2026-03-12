@@ -25,7 +25,7 @@ use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
 use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, FieldElement};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -65,7 +65,6 @@ use super::test_utils::{
 #[case::real(ClaimDataSource::Real)]
 #[case::simulated(ClaimDataSource::Simulated)]
 #[tokio::test]
-#[ignore = "WiP"]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
@@ -235,17 +234,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(claim_executed.account_delta())?;
 
-    let actual_cgi_chain_hash_lo = updated_bridge_account
-        .storage()
-        .get_item(AggLayerBridge::cgi_lo_slot_name())
-        .expect("failed to get CGI hash chain lo slot");
-    let actual_cgi_chain_hash_hi = updated_bridge_account
-        .storage()
-        .get_item(AggLayerBridge::cgi_hi_slot_name())
-        .expect("failed to get CGI hash chain hi slot");
-
-    let actual_cgi_chain_hash =
-        two_words_to_cgi_chain_hash(actual_cgi_chain_hash_lo, actual_cgi_chain_hash_hi);
+    let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account);
 
     assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
@@ -427,18 +416,5 @@ fn merkle_proof_verification_code(
             assert.err="verification failed"
         end
     "#
-    )
-}
-
-// TODO: this procedure should be removed in favor of Agglayer Bridge helper procedure, which should
-// be created in a follow up PR after https://github.com/0xMiden/protocol/pull/2562
-fn two_words_to_cgi_chain_hash(hash_lo: Word, hash_hi: Word) -> Keccak256Output {
-    let hash_bytes = hash_lo
-        .iter()
-        .chain(hash_hi.iter())
-        .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
-        .collect::<Vec<u8>>();
-    Keccak256Output::new(
-        hash_bytes.try_into().expect("keccak hash should consist of exactly 32 bytes"),
     )
 }
