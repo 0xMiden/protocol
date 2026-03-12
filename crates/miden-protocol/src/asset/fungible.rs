@@ -20,6 +20,9 @@ use crate::utils::serde::{
 ///
 /// A fungible asset consists of a faucet ID of the faucet which issued the asset as well as the
 /// asset amount. Asset amount is guaranteed to be 2^63 - 1 or smaller.
+///
+/// The fungible asset can have callbacks to the faucet enabled or disabled, depending on
+/// [`AssetCallbackFlag`]. See [`AssetCallbacks`](crate::asset::AssetCallbacks) for more details.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FungibleAsset {
     faucet_id: AccountId,
