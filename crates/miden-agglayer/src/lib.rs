@@ -249,8 +249,8 @@ impl AggLayerBridge {
         &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
 
-    /// TODO: update this procedure during the https://github.com/0xMiden/protocol/issues/2580 after
-    /// https://github.com/0xMiden/protocol/pull/2562 PR is merged
+    /// TODO: update this procedure during the <https://github.com/0xMiden/protocol/issues/2580>
+    /// after <https://github.com/0xMiden/protocol/pull/2562> PR is merged
     pub fn cgi_chain_hash(bridge_account: &Account) -> Keccak256Output {
         let cgi_chain_hash_lo = bridge_account
             .storage()
