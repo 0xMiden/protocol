@@ -1436,16 +1436,14 @@ async fn test_nested_fpi_stack_overflow() -> anyhow::Result<()> {
                     next_foreign_prefix = next_account.id().prefix().as_felt(),
                 );
 
+        let name = format!("test::foreign_account_chain_{foreign_account_index}");
         let foreign_account_code = CodeBuilder::default()
-            .compile_component_code(
-                format!("test::foreign_account_chain_{foreign_account_index}"),
-                foreign_account_code_source,
-            )
+            .compile_component_code(name.as_str(), foreign_account_code_source)
             .unwrap();
         let foreign_account_component = AccountComponent::new(
             foreign_account_code,
             vec![],
-            AccountComponentMetadata::mock("test::foreign_account_chain"),
+            AccountComponentMetadata::mock(name.as_str()),
         )
         .unwrap();
 

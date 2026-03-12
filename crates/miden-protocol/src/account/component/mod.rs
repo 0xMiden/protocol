@@ -64,6 +64,8 @@ impl AccountComponent {
     ///
     /// Returns an error if:
     /// - The number of given [`StorageSlot`]s exceeds 255.
+    /// - The metadata name is not a valid path.
+    /// - The metadata name is not a prefix (at a `::` boundary) of any library export path.
     pub fn new(
         code: impl Into<AccountComponentCode>,
         storage_slots: Vec<StorageSlot>,
@@ -73,11 +75,28 @@ impl AccountComponent {
         u8::try_from(storage_slots.len())
             .map_err(|_| AccountError::StorageTooManySlots(storage_slots.len() as u64))?;
 
-        Ok(Self {
-            code: code.into(),
-            storage_slots,
-            metadata,
-        })
+        let code: AccountComponentCode = code.into();
+        let canonical_name = Path::validate(metadata.name())
+            .map_err(|err| {
+                AccountError::other_with_source("account component name is not a valid path", err)
+            })?
+            .canonicalize()
+            .expect("Path::validate should ensure valid path");
+
+        for export in code.as_library().exports() {
+            // Contrary to starts_with_exactly, this ignores whether paths start with `::` or not.
+            // That allows a component's name to start without `::` even if the library's path
+            // starts with `::`.
+            let is_prefix = export.path().starts_with(canonical_name.as_path());
+            if !is_prefix {
+                return Err(AccountError::AccountComponentNameMismatch {
+                    name: metadata.name().into(),
+                    export_path: export.path().as_str().into(),
+                });
+            }
+        }
+
+        Ok(Self { code, storage_slots, metadata })
     }
 
     /// Creates an [`AccountComponent`] from a [`Package`] using [`InitStorageData`].
@@ -235,7 +254,9 @@ mod tests {
     use alloc::string::ToString;
     use alloc::sync::Arc;
 
+    use assert_matches::assert_matches;
     use miden_assembly::Assembler;
+    use miden_assembly::diagnostics::NamedSource;
     use miden_mast_package::{
         MastArtifact,
         Package,
@@ -252,16 +273,16 @@ mod tests {
 
     #[test]
     fn test_extract_metadata_from_package() {
+        let name = "test_component";
         // Create a simple library for testing
-        let library = Assembler::default().assemble_library([CODE]).unwrap();
+        let library =
+            Assembler::default().assemble_library([NamedSource::new(name, CODE)]).unwrap();
 
         // Test with metadata
-        let metadata = AccountComponentMetadata::new(
-            "test_component",
-            [AccountType::RegularAccountImmutableCode],
-        )
-        .with_description("A test component")
-        .with_version(Version::new(1, 0, 0));
+        let metadata =
+            AccountComponentMetadata::new(name, [AccountType::RegularAccountImmutableCode])
+                .with_description("A test component")
+                .with_version(Version::new(1, 0, 0));
 
         let metadata_bytes = metadata.to_bytes();
         let package_with_metadata = Package {
@@ -279,7 +300,7 @@ mod tests {
 
         let extracted_metadata =
             AccountComponentMetadata::try_from(&package_with_metadata).unwrap();
-        assert_eq!(extracted_metadata.name(), "test_component");
+        assert_eq!(extracted_metadata.name(), name);
         assert!(
             extracted_metadata
                 .supported_types()
@@ -305,12 +326,14 @@ mod tests {
 
     #[test]
     fn test_from_library_with_init_data() {
+        let name = "test_component";
         // Create a simple library for testing
-        let library = Assembler::default().assemble_library([CODE]).unwrap();
+        let library =
+            Assembler::default().assemble_library([NamedSource::new(name, CODE)]).unwrap();
         let component_code = AccountComponentCode::from(library.clone());
 
         // Create metadata for the component
-        let metadata = AccountComponentMetadata::new("test_component", AccountType::regular())
+        let metadata = AccountComponentMetadata::new(name, AccountType::regular())
             .with_description("A test component")
             .with_version(Version::new(1, 0, 0));
 
@@ -341,5 +364,31 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("package does not contain account component metadata"));
+    }
+
+    #[test]
+    fn test_name_mismatch_returns_error() {
+        let correct_name = "correct::namespace";
+        let wrong_name = "wrong::name";
+
+        // Create a library under the "correct::namespace" path.
+        let library = Assembler::default()
+            .assemble_library([NamedSource::new(correct_name, CODE)])
+            .unwrap();
+
+        // Use a metadata name that does NOT match the library path.
+        let metadata = AccountComponentMetadata::new(wrong_name, AccountType::all());
+
+        let result = AccountComponent::new(library, vec![], metadata);
+        assert_matches!(
+            result,
+            Err(AccountError::AccountComponentNameMismatch { name, export_path }) => {
+                assert_eq!(name.as_ref(), wrong_name);
+                assert!(
+                    export_path.contains(correct_name),
+                    "export_path `{export_path}` should contain `{correct_name}`"
+                );
+            }
+        );
     }
 }

@@ -17,10 +17,14 @@ use crate::testing::mock_account_code::MockAccountCodeExt;
 /// [faucet_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_library
 pub struct MockFaucetComponent;
 
+impl MockFaucetComponent {
+    pub const NAME: &str = "mock::faucet";
+}
+
 impl From<MockFaucetComponent> for AccountComponent {
     fn from(_: MockFaucetComponent) -> Self {
         let metadata = AccountComponentMetadata::new(
-            "miden::testing::mock_faucet",
+            MockFaucetComponent::NAME,
             [AccountType::FungibleFaucet, AccountType::NonFungibleFaucet],
         )
         .with_description("Mock faucet component for testing");

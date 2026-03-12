@@ -2,6 +2,7 @@
 // ================================================================================================
 
 use miden_assembly::Assembler;
+use miden_assembly::diagnostics::NamedSource;
 
 use crate::account::component::AccountComponentMetadata;
 use crate::account::{AccountCode, AccountComponent, AccountType};
@@ -20,10 +21,11 @@ pub const CODE: &str = "
 impl AccountCode {
     /// Creates a mock [AccountCode] with default assembler and mock code
     pub fn mock() -> AccountCode {
+        let name = "miden::testing::mock";
         let library = Assembler::default()
-            .assemble_library([CODE])
+            .assemble_library([NamedSource::new(name, CODE)])
             .expect("mock account component should assemble");
-        let metadata = AccountComponentMetadata::new("miden::testing::mock", AccountType::all());
+        let metadata = AccountComponentMetadata::new(name, AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         Self::from_components(

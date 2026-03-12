@@ -292,6 +292,7 @@ mod tests {
     use std::sync::LazyLock;
 
     use assert_matches::assert_matches;
+    use miden_assembly::diagnostics::NamedSource;
     use miden_assembly::{Assembler, Library};
     use miden_core::mast::MastNodeExt;
 
@@ -299,6 +300,9 @@ mod tests {
     use crate::account::component::AccountComponentMetadata;
     use crate::account::{AccountProcedureRoot, StorageSlot, StorageSlotName};
     use crate::testing::noop_auth_component::NoopAuthComponent;
+
+    const CUSTOM_COMPONENT1_NAME: &str = "test::custom_component1";
+    const CUSTOM_COMPONENT2_NAME: &str = "test::custom_component2";
 
     const CUSTOM_CODE1: &str = "
           pub proc foo
@@ -313,12 +317,12 @@ mod tests {
 
     static CUSTOM_LIBRARY1: LazyLock<Library> = LazyLock::new(|| {
         Assembler::default()
-            .assemble_library([CUSTOM_CODE1])
+            .assemble_library([NamedSource::new(CUSTOM_COMPONENT1_NAME, CUSTOM_CODE1)])
             .expect("code should be valid")
     });
     static CUSTOM_LIBRARY2: LazyLock<Library> = LazyLock::new(|| {
         Assembler::default()
-            .assemble_library([CUSTOM_CODE2])
+            .assemble_library([NamedSource::new(CUSTOM_COMPONENT2_NAME, CUSTOM_CODE2)])
             .expect("code should be valid")
     });
 
@@ -344,7 +348,7 @@ mod tests {
             value[0] = Felt::new(custom.slot0);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
+                AccountComponentMetadata::new(CUSTOM_COMPONENT1_NAME, AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -366,7 +370,7 @@ mod tests {
             value1[3] = Felt::new(custom.slot1);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
+                AccountComponentMetadata::new(CUSTOM_COMPONENT2_NAME, AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![

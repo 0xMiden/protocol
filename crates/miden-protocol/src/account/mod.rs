@@ -553,6 +553,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::Assembler;
+    use miden_assembly::diagnostics::NamedSource;
     use miden_crypto::utils::{Deserializable, Serializable};
     use miden_crypto::{Felt, Word};
 
@@ -799,12 +800,14 @@ mod tests {
     /// account type returns an error.
     #[test]
     fn test_account_unsupported_component_type() {
+        let name = "test::component1";
         let code1 = "pub proc foo add end";
-        let library1 = Assembler::default().assemble_library([code1]).unwrap();
+        let library1 =
+            Assembler::default().assemble_library([NamedSource::new(name, code1)]).unwrap();
 
         // This component support all account types except the regular account with updatable code.
         let metadata = AccountComponentMetadata::new(
-            "test::component1",
+            name,
             [
                 AccountType::FungibleFaucet,
                 AccountType::NonFungibleFaucet,

@@ -98,7 +98,7 @@ fn agglayer_faucet_component_library() -> Library {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge", AccountType::all())
+    let metadata = AccountComponentMetadata::new(AggLayerBridge::NAME, AccountType::all())
         .with_description("Bridge component for AggLayer");
 
     AccountComponent::new(library, storage_slots, metadata)
@@ -172,6 +172,9 @@ pub struct AggLayerBridge {
 }
 
 impl AggLayerBridge {
+    /// The name of the component.
+    pub const NAME: &str = "agglayer::components::bridge";
+
     /// Creates a new AggLayer bridge component with the standard configuration.
     pub fn new(bridge_admin_id: AccountId, ger_manager_id: AccountId) -> Self {
         Self { bridge_admin_id, ger_manager_id }
@@ -244,8 +247,9 @@ impl From<AggLayerBridge> for AccountComponent {
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
-        .with_description("AggLayer faucet component with bridge validation");
+    let metadata =
+        AccountComponentMetadata::new(AggLayerFaucet::NAME, [AccountType::FungibleFaucet])
+            .with_description("AggLayer faucet component with bridge validation");
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
@@ -328,6 +332,9 @@ pub struct AggLayerFaucet {
 }
 
 impl AggLayerFaucet {
+    /// The name of the component.
+    pub const NAME: &str = "agglayer::components::faucet";
+
     /// Creates a new AggLayer faucet component from the given configuration.
     ///
     /// # Errors

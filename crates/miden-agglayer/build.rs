@@ -22,6 +22,7 @@ const ASM_NOTE_SCRIPTS_DIR: &str = "note_scripts";
 const ASM_AGGLAYER_DIR: &str = "agglayer";
 const ASM_AGGLAYER_BRIDGE_DIR: &str = "agglayer/bridge";
 const ASM_COMPONENTS_DIR: &str = "components";
+const AGGLAYER_COMPONENTS_NAMESPACE: &str = "agglayer::components";
 
 const AGGLAYER_ERRORS_FILE: &str = "src/errors/agglayer.rs";
 const AGGLAYER_ERRORS_ARRAY_NAME: &str = "AGGLAYER_ERRORS";
@@ -178,7 +179,16 @@ fn compile_account_components(
         let component_source_code = fs::read_to_string(&masm_file_path)
             .expect("reading the component's MASM source code should succeed");
 
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+        let relative_path = masm_file_path
+            .strip_prefix(source_dir)
+            .expect("masm file should be inside source dir");
+        let mut library_path = AGGLAYER_COMPONENTS_NAMESPACE.to_owned();
+        for component in relative_path.with_extension("").components() {
+            let part = component.as_os_str().to_str().expect("valid UTF-8");
+            library_path.push_str("::");
+            library_path.push_str(part);
+        }
+        let named_source = NamedSource::new(library_path, component_source_code);
 
         let component_library = assembler
             .clone()
