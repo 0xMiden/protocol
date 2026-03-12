@@ -86,7 +86,7 @@ proc on_before_asset_added_to_account_raw
         # => [ASSET_KEY, ASSET_VALUE]
 
         # pad the stack to 16 for the call (excluding the proc root ptr)
-        repeat.8 push.0 movdn.8 end
+        padw padw swapdw
         locaddr.CALLBACK_PROC_ROOT_LOC
         # => [callback_proc_root_ptr, ASSET_KEY, ASSET_VALUE, pad(8)]
 
