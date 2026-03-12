@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::utils::Deserializable;
 use miden_core::{Felt, FieldElement, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
@@ -30,14 +29,13 @@ pub use crate::{
     create_claim_note,
 };
 
+// CONSTANTS
+// ================================================================================================
+// Include the generated agglayer constants
+include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
+
 // AGGLAYER BRIDGE STRUCT
 // ================================================================================================
-
-// Initialize the commitment of the bridge account code only once.
-static BRIDGE_CODE_COMMITMENT: LazyLock<Word> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/bridge_account_code_commitment"));
-    Word::read_from_bytes(bytes).expect("bridge code commitment should be valid")
-});
 
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
@@ -283,10 +281,10 @@ impl AggLayerBridge {
             .collect::<Vec<&StorageSlotName>>();
 
         // check that all bridge specific storage slots are presented in the provided account
-        let are_slots_presented = Self::slot_names_vec()
+        let are_slots_present = Self::slot_names()
             .iter()
             .all(|slot_name| account_storage_slot_names.contains(slot_name));
-        if !are_slots_presented {
+        if !are_slots_present {
             return Err(AgglayerBridgeError::StorageSlotsMismatch);
         }
 
@@ -302,7 +300,9 @@ impl AggLayerBridge {
     /// - the code commitment of the provided account does not match the code commitment of the
     ///   [`AggLayerBridge`].
     fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
-        if *BRIDGE_CODE_COMMITMENT != account.code().commitment() {
+        debug_assert_eq!(BRIDGE_CODE_COMMITMENT, account.code().commitment());
+
+        if BRIDGE_CODE_COMMITMENT != account.code().commitment() {
             return Err(AgglayerBridgeError::CodeCommitmentMismatch);
         }
 
@@ -310,7 +310,7 @@ impl AggLayerBridge {
     }
 
     /// Returns a vector of all [`AggLayerBridge`] storage slot names.
-    fn slot_names_vec() -> Vec<&'static StorageSlotName> {
+    fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*GER_MAP_SLOT_NAME,
             &*LET_FRONTIER_SLOT_NAME,

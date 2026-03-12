@@ -3,7 +3,6 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::utils::Deserializable;
 use miden_core::{Felt, FieldElement, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -40,47 +39,13 @@ pub use crate::{
     create_claim_note,
 };
 
-// FAUCET CONVERSION STORAGE HELPERS
+// CONSTANTS
 // ================================================================================================
-
-/// Builds the two storage slot values for faucet conversion metadata.
-///
-/// The conversion metadata is stored in two value storage slots:
-/// - Slot 1 (`miden::agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
-///   4 felts of the origin token address (5 × u32 limbs).
-/// - Slot 2 (`miden::agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
-///   remaining address felt + origin network + scale factor.
-///
-/// # Parameters
-/// - `origin_token_address`: The EVM token address in Ethereum format
-/// - `origin_network`: The origin network/chain ID
-/// - `scale`: The decimal scaling factor (exponent for 10^scale)
-///
-/// # Returns
-/// A tuple of two `Word` values representing the two storage slot contents.
-fn agglayer_faucet_conversion_slots(
-    origin_token_address: &EthAddressFormat,
-    origin_network: u32,
-    scale: u8,
-) -> (Word, Word) {
-    let addr_elements = origin_token_address.to_elements();
-
-    let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
-
-    let slot2 =
-        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
-
-    (slot1, slot2)
-}
+// Include the generated agglayer constants
+include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 
 // AGGLAYER FAUCET STRUCT
 // ================================================================================================
-
-// Initialize the commitment of the faucet account code only once.
-static FAUCET_CODE_COMMITMENT: LazyLock<Word> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/faucet_account_code_commitment"));
-    Word::read_from_bytes(bytes).expect("faucet code commitment should be valid")
-});
 
 static AGGLAYER_FAUCET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet")
@@ -329,10 +294,10 @@ impl AggLayerFaucet {
             .collect::<Vec<&StorageSlotName>>();
 
         // check that all bridge specific storage slots are presented in the provided account
-        let are_slots_presented = Self::slot_names_vec()
+        let are_slots_present = Self::slot_names()
             .iter()
             .all(|slot_name| account_storage_slot_names.contains(slot_name));
-        if !are_slots_presented {
+        if !are_slots_present {
             return Err(AgglayerFaucetError::StorageSlotsMismatch);
         }
 
@@ -348,7 +313,7 @@ impl AggLayerFaucet {
     /// - the code commitment of the provided account does not match the code commitment of the
     ///   [`AggLayerFaucet`].
     fn assert_code_commitment(account: &Account) -> Result<(), AgglayerFaucetError> {
-        if *FAUCET_CODE_COMMITMENT != account.code().commitment() {
+        if FAUCET_CODE_COMMITMENT != account.code().commitment() {
             return Err(AgglayerFaucetError::CodeCommitmentMismatch);
         }
 
@@ -356,7 +321,7 @@ impl AggLayerFaucet {
     }
 
     /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
-    fn slot_names_vec() -> Vec<&'static StorageSlotName> {
+    fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
             &*AGGLAYER_FAUCET_SLOT_NAME,
             &*CONVERSION_INFO_1_SLOT_NAME,
@@ -420,6 +385,39 @@ pub enum AgglayerFaucetError {
 /// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
     Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
+}
+
+// FAUCET CONVERSION STORAGE HELPERS
+// ================================================================================================
+
+/// Builds the two storage slot values for faucet conversion metadata.
+///
+/// The conversion metadata is stored in two value storage slots:
+/// - Slot 1 (`miden::agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
+///   4 felts of the origin token address (5 × u32 limbs).
+/// - Slot 2 (`miden::agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
+///   remaining address felt + origin network + scale factor.
+///
+/// # Parameters
+/// - `origin_token_address`: The EVM token address in Ethereum format
+/// - `origin_network`: The origin network/chain ID
+/// - `scale`: The decimal scaling factor (exponent for 10^scale)
+///
+/// # Returns
+/// A tuple of two `Word` values representing the two storage slot contents.
+fn agglayer_faucet_conversion_slots(
+    origin_token_address: &EthAddressFormat,
+    origin_network: u32,
+    scale: u8,
+) -> (Word, Word) {
+    let addr_elements = origin_token_address.to_elements();
+
+    let slot1 = Word::new([addr_elements[0], addr_elements[1], addr_elements[2], addr_elements[3]]);
+
+    let slot2 =
+        Word::new([addr_elements[4], Felt::from(origin_network), Felt::from(scale), Felt::ZERO]);
+
+    (slot1, slot2)
 }
 
 // HELPER FUNCTIONS
