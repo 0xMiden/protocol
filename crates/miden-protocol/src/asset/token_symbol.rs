@@ -3,7 +3,7 @@ use alloc::string::String;
 
 use super::{Felt, TokenSymbolError};
 
-/// Represents a token symbol string (e.g. "POL", "ETH").
+/// Represents a token symbol (e.g. "POL", "ETH").
 ///
 /// Token Symbols can consist of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
 ///
@@ -47,13 +47,40 @@ impl TokenSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided token string contains characters that are not uppercase ASCII.
     pub fn new(symbol: &str) -> Result<Self, TokenSymbolError> {
-        validate_symbol(symbol)?;
+        let len = symbol.len();
+
+        if len == 0 || len > Self::MAX_SYMBOL_LENGTH {
+            return Err(TokenSymbolError::InvalidLength(len));
+        }
+
+        for byte in symbol.as_bytes() {
+            if !byte.is_ascii_uppercase() {
+                return Err(TokenSymbolError::InvalidCharacter);
+            }
+        }
+
         Ok(Self(String::from(symbol)))
     }
 
     /// Returns the [`Felt`] encoding of this token symbol.
     pub fn as_element(&self) -> Felt {
-        encode_symbol_to_felt(&self.0).expect("a valid TokenSymbol should always be encodable")
+        let bytes = self.0.as_bytes();
+        let len = bytes.len();
+
+        let mut encoded_value: u64 = 0;
+        let mut idx = 0;
+
+        while idx < len {
+            let digit = (bytes[idx] - b'A') as u64;
+            encoded_value = encoded_value * Self::ALPHABET_LENGTH + digit;
+            idx += 1;
+        }
+
+        // add token length to the encoded value to be able to decode the exact number of
+        // characters
+        encoded_value = encoded_value * Self::ALPHABET_LENGTH + len as u64;
+
+        Felt::new(encoded_value)
     }
 }
 
@@ -87,136 +114,39 @@ impl TryFrom<Felt> for TokenSymbol {
     type Error = TokenSymbolError;
 
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        let value = felt.as_canonical_u64();
-        if value < Self::MIN_ENCODED_VALUE {
-            return Err(TokenSymbolError::ValueTooSmall(value));
+        let encoded_value = felt.as_canonical_u64();
+        if encoded_value < Self::MIN_ENCODED_VALUE {
+            return Err(TokenSymbolError::ValueTooSmall(encoded_value));
         }
-        if value > Self::MAX_ENCODED_VALUE {
-            return Err(TokenSymbolError::ValueTooLarge(value));
-        }
-        decode_felt_to_symbol(felt).map(TokenSymbol)
-    }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Validates that the provided string is a valid token symbol (1-12 uppercase ASCII characters).
-fn validate_symbol(s: &str) -> Result<(), TokenSymbolError> {
-    let len = s.len();
-
-    if len == 0 || len > TokenSymbol::MAX_SYMBOL_LENGTH {
-        return Err(TokenSymbolError::InvalidLength(len));
-    }
-
-    for byte in s.as_bytes() {
-        if !byte.is_ascii_uppercase() {
-            return Err(TokenSymbolError::InvalidCharacter);
-        }
-    }
-
-    Ok(())
-}
-
-/// Encodes the provided token symbol string into a single [`Felt`] value.
-///
-/// The alphabet used in the decoding process consists of the Latin capital letters as defined in
-/// the ASCII table, having the length of 26 characters.
-///
-/// The encoding is performed by multiplying the intermediate encrypted value by the length of the
-/// used alphabet and adding the relative index of the character to it. At the end of the encoding
-/// process the length of the initial token string is added to the encrypted value.
-///
-/// Relative character index is computed by subtracting the index of the character "A" (65) from the
-/// index of the currently processing character, e.g., `A = 65 - 65 = 0`, `B = 66 - 65 = 1`, `...` ,
-/// `Z = 90 - 65 = 25`.
-///
-/// # Errors
-/// Returns an error if:
-/// - The length of the provided string is less than 1 or greater than 12.
-/// - The provided token string contains characters that are not uppercase ASCII.
-const fn encode_symbol_to_felt(s: &str) -> Result<Felt, TokenSymbolError> {
-    let bytes = s.as_bytes();
-    let len = bytes.len();
-
-    if len == 0 || len > TokenSymbol::MAX_SYMBOL_LENGTH {
-        return Err(TokenSymbolError::InvalidLength(len));
-    }
-
-    let mut encoded_value: u64 = 0;
-    let mut idx = 0;
-
-    while idx < len {
-        let byte = bytes[idx];
-
-        if !byte.is_ascii_uppercase() {
-            return Err(TokenSymbolError::InvalidCharacter);
+        if encoded_value > Self::MAX_ENCODED_VALUE {
+            return Err(TokenSymbolError::ValueTooLarge(encoded_value));
         }
 
-        let digit = (byte - b'A') as u64;
-        encoded_value = encoded_value * TokenSymbol::ALPHABET_LENGTH + digit;
-        idx += 1;
+        let mut decoded_string = String::new();
+        let mut remaining_value = encoded_value;
+
+        // get the token symbol length
+        let token_len = (remaining_value % Self::ALPHABET_LENGTH) as usize;
+        if token_len == 0 || token_len > Self::MAX_SYMBOL_LENGTH {
+            return Err(TokenSymbolError::InvalidLength(token_len));
+        }
+        remaining_value /= Self::ALPHABET_LENGTH;
+
+        for _ in 0..token_len {
+            let digit = (remaining_value % Self::ALPHABET_LENGTH) as u8;
+            let char = (digit + b'A') as char;
+            decoded_string.insert(0, char);
+            remaining_value /= Self::ALPHABET_LENGTH;
+        }
+
+        // return an error if some data still remains after specified number of characters have
+        // been decoded.
+        if remaining_value != 0 {
+            return Err(TokenSymbolError::DataNotFullyDecoded);
+        }
+
+        Ok(TokenSymbol(decoded_string))
     }
-
-    // add token length to the encoded value to be able to decode the exact number of characters
-    encoded_value = encoded_value * TokenSymbol::ALPHABET_LENGTH + len as u64;
-
-    Ok(Felt::new(encoded_value))
-}
-
-/// Decodes a [Felt] representation of the token symbol into a string.
-///
-/// The alphabet used in the decoding process consists of the Latin capital letters as defined in
-/// the ASCII table, having the length of 26 characters.
-///
-/// The decoding is performed by getting the modulus of the intermediate encrypted value by the
-/// length of the used alphabet and then dividing the intermediate value by the length of the
-/// alphabet to shift to the next character. At the beginning of the decoding process the length of
-/// the initial token string is obtained from the encrypted value. After that the value obtained
-/// after taking the modulus represents the relative character index, which then gets converted to
-/// the ASCII index.
-///
-/// Final ASCII character idex is computed by adding the index of the character "A" (65) to the
-/// index of the currently processing character, e.g., `A = 0 + 65 = 65`, `B = 1 + 65 = 66`, `...` ,
-/// `Z = 25 + 65 = 90`.
-///
-/// # Errors
-/// Returns an error if:
-/// - The encoded value exceeds the maximum value of [`TokenSymbol::MAX_ENCODED_VALUE`].
-/// - The encoded token string length is less than 1 or greater than 12.
-/// - The encoded token string length is less than the actual string length.
-fn decode_felt_to_symbol(encoded_felt: Felt) -> Result<String, TokenSymbolError> {
-    let encoded_value = encoded_felt.as_canonical_u64();
-
-    // Check if the encoded value is within the valid range
-    if encoded_value > TokenSymbol::MAX_ENCODED_VALUE {
-        return Err(TokenSymbolError::ValueTooLarge(encoded_value));
-    }
-
-    let mut decoded_string = String::new();
-    let mut remaining_value = encoded_value;
-
-    // get the token symbol length
-    let token_len = (remaining_value % TokenSymbol::ALPHABET_LENGTH) as usize;
-    if token_len == 0 || token_len > TokenSymbol::MAX_SYMBOL_LENGTH {
-        return Err(TokenSymbolError::InvalidLength(token_len));
-    }
-    remaining_value /= TokenSymbol::ALPHABET_LENGTH;
-
-    for _ in 0..token_len {
-        let digit = (remaining_value % TokenSymbol::ALPHABET_LENGTH) as u8;
-        let char = (digit + b'A') as char;
-        decoded_string.insert(0, char);
-        remaining_value /= TokenSymbol::ALPHABET_LENGTH;
-    }
-
-    // return an error if some data still remains after specified number of characters have been
-    // decoded.
-    if remaining_value != 0 {
-        return Err(TokenSymbolError::DataNotFullyDecoded);
-    }
-
-    Ok(decoded_string)
 }
 
 // TESTS
@@ -228,13 +158,7 @@ mod test {
 
     use assert_matches::assert_matches;
 
-    use super::{
-        Felt,
-        TokenSymbol,
-        TokenSymbolError,
-        decode_felt_to_symbol,
-        encode_symbol_to_felt,
-    };
+    use super::{Felt, TokenSymbol, TokenSymbolError};
 
     #[test]
     fn test_token_symbol_decoding_encoding() {
@@ -257,28 +181,23 @@ mod test {
             assert_eq!(symbol, decoded_symbol);
         }
 
-        let symbol = "";
-        let felt = encode_symbol_to_felt(symbol);
-        assert_matches!(felt.unwrap_err(), TokenSymbolError::InvalidLength(0));
+        let err = TokenSymbol::new("").unwrap_err();
+        assert_matches!(err, TokenSymbolError::InvalidLength(0));
 
-        let symbol = "ABCDEFGHIJKLM";
-        let felt = encode_symbol_to_felt(symbol);
-        assert_matches!(felt.unwrap_err(), TokenSymbolError::InvalidLength(13));
+        let err = TokenSymbol::new("ABCDEFGHIJKLM").unwrap_err();
+        assert_matches!(err, TokenSymbolError::InvalidLength(13));
 
-        let symbol = "$$$";
-        let felt = encode_symbol_to_felt(symbol);
-        assert_matches!(felt.unwrap_err(), TokenSymbolError::InvalidCharacter);
+        let err = TokenSymbol::new("$$$").unwrap_err();
+        assert_matches!(err, TokenSymbolError::InvalidCharacter);
 
         let symbol = "ABCDEFGHIJKL";
-        let token_symbol = TokenSymbol::try_from(symbol);
-        assert!(token_symbol.is_ok());
-        let token_symbol_felt: Felt = token_symbol.unwrap().into();
-        assert_eq!(token_symbol_felt, encode_symbol_to_felt(symbol).unwrap());
+        let token_symbol = TokenSymbol::new(symbol).unwrap();
+        let token_symbol_felt: Felt = token_symbol.into();
+        assert_eq!(token_symbol_felt, TokenSymbol::new(symbol).unwrap().as_element());
     }
 
     /// Checks that if the encoded length of the token is less than the actual number of token
-    /// characters, [decode_felt_to_symbol] procedure should return the
-    /// [TokenSymbolError::DataNotFullyDecoded] error.
+    /// characters, decoding should return the [TokenSymbolError::DataNotFullyDecoded] error.
     #[test]
     fn test_invalid_token_len() {
         // encoded value of this token has `6` as the length of the initial token string
@@ -287,9 +206,8 @@ mod test {
         // decrease encoded length by, for example, `3`
         let invalid_encoded_symbol_u64 = Felt::from(encoded_symbol).as_canonical_u64() - 3;
 
-        // check that `decode_felt_to_symbol()` procedure returns an error in attempt to create a
-        // token from encoded token with invalid length
-        let err = decode_felt_to_symbol(Felt::new(invalid_encoded_symbol_u64)).unwrap_err();
+        // check that decoding returns an error for a token with invalid length
+        let err = TokenSymbol::try_from(Felt::new(invalid_encoded_symbol_u64)).unwrap_err();
         assert_matches!(err, TokenSymbolError::DataNotFullyDecoded);
     }
 
