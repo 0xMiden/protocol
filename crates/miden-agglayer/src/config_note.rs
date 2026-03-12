@@ -77,7 +77,7 @@ impl ConfigAggBridgeNote {
     /// Creates a CONFIG_AGG_BRIDGE note to register a faucet in the bridge's registry.
     ///
     /// The note storage contains 7 felts:
-    /// - `origin_token_addr[0..4]`: The 5 u32 felts of the origin EVM token address
+    /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
     /// - `faucet_id_prefix`: The prefix of the faucet account ID
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
     ///
