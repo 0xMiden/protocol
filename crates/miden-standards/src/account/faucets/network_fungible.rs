@@ -96,15 +96,17 @@ impl NetworkFungibleFaucet {
 
         Ok(NetworkFungibleFaucet)
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description("Network fungible faucet component for minting and burning tokens")
+    }
 }
 
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(_network_faucet: NetworkFungibleFaucet) -> Self {
-        let metadata = AccountComponentMetadata::new(
-            NetworkFungibleFaucet::NAME,
-            [AccountType::FungibleFaucet],
-        )
-        .with_description("Network fungible faucet component for minting and burning tokens");
+        let metadata = NetworkFungibleFaucet::component_metadata();
 
         AccountComponent::new(network_fungible_faucet_library(), vec![], metadata)
             .expect("network fungible faucet component should satisfy the requirements of a valid account component")

@@ -10,6 +10,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -273,6 +274,27 @@ impl AuthMultisigPsm {
     /// Returns the storage slot schema for the private state manager scheme IDs slot.
     pub fn psm_auth_scheme_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         PsmConfig::auth_scheme_slot_schema()
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([
+            Self::threshold_config_slot_schema(),
+            Self::approver_public_keys_slot_schema(),
+            Self::approver_auth_scheme_slot_schema(),
+            Self::executed_transactions_slot_schema(),
+            Self::procedure_thresholds_slot_schema(),
+            Self::psm_public_key_slot_schema(),
+            Self::psm_auth_scheme_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description(
+                "Multisig authentication component with private state manager \
+                 using hybrid signature schemes",
+            )
+            .with_storage_schema(storage_schema)
     }
 }
 
