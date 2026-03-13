@@ -51,8 +51,8 @@ static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new
         .expect("storage slot name should be valid")
 });
 
-static SPENT_INTERVAL_BLOCKS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::spent_interval_blocks")
+static TIMELOCK_CONTROLLER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::timelock_controller")
         .expect("storage slot name should be valid")
 });
 
@@ -110,7 +110,10 @@ pub struct AuthMultisigSmartConfig {
     approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
     default_threshold: u32,
     proc_thresholds: Vec<(Word, u32)>,
-    spent_interval_blocks: u32,
+    spending_window: u32,
+    min_delay: u32,
+    propose_expiration_delta: u16,
+    execute_expiration_delta: u16,
     amount_limits: [u64; 4],
     tier_thresholds: [u32; 4],
     oracle_id: [Felt; 2],
@@ -144,7 +147,10 @@ impl AuthMultisigSmartConfig {
             approvers,
             default_threshold,
             proc_thresholds: Vec::new(),
-            spent_interval_blocks: 0,
+            spending_window: 0,
+            min_delay: 0,
+            propose_expiration_delta: 0,
+            execute_expiration_delta: 0,
             amount_limits: [0; 4],
             tier_thresholds: [0; 4],
             oracle_id: [Felt::new(0), Felt::new(0)],
@@ -172,8 +178,17 @@ impl AuthMultisigSmartConfig {
         Ok(self)
     }
 
-    pub fn with_spent_interval_blocks(mut self, spent_interval_blocks: u32) -> Self {
-        self.spent_interval_blocks = spent_interval_blocks;
+    pub fn with_timelock_controller(
+        mut self,
+        spending_window: u32,
+        min_delay: u32,
+        propose_expiration_delta: u16,
+        execute_expiration_delta: u16,
+    ) -> Self {
+        self.spending_window = spending_window;
+        self.min_delay = min_delay;
+        self.propose_expiration_delta = propose_expiration_delta;
+        self.execute_expiration_delta = execute_expiration_delta;
         self
     }
 
@@ -209,8 +224,20 @@ impl AuthMultisigSmartConfig {
         &self.proc_thresholds
     }
 
-    pub fn spent_interval_blocks(&self) -> u32 {
-        self.spent_interval_blocks
+    pub fn spending_window(&self) -> u32 {
+        self.spending_window
+    }
+
+    pub fn min_delay(&self) -> u32 {
+        self.min_delay
+    }
+
+    pub fn propose_expiration_delta(&self) -> u16 {
+        self.propose_expiration_delta
+    }
+
+    pub fn execute_expiration_delta(&self) -> u16 {
+        self.execute_expiration_delta
     }
 
     pub fn amount_limits(&self) -> &[u64; 4] {
@@ -245,6 +272,18 @@ impl AuthMultisigSmart {
         if config.amount_limits.iter().any(|v| *v > u32::MAX as u64) {
             return Err(AccountError::other("amount limits must fit into u32"));
         }
+        if config.spending_window() == 0 {
+            return Err(AccountError::other("spending window must be non-zero"));
+        }
+        if config.min_delay() == 0 {
+            return Err(AccountError::other("min delay must be non-zero"));
+        }
+        if config.propose_expiration_delta() == 0 {
+            return Err(AccountError::other("propose expiration delta must be non-zero"));
+        }
+        if config.execute_expiration_delta() == 0 {
+            return Err(AccountError::other("execute expiration delta must be non-zero"));
+        }
 
         Ok(Self { config })
     }
@@ -269,8 +308,8 @@ impl AuthMultisigSmart {
         &PROCEDURE_THRESHOLDS_SLOT_NAME
     }
 
-    pub fn spent_interval_blocks_slot() -> &'static StorageSlotName {
-        &SPENT_INTERVAL_BLOCKS_SLOT_NAME
+    pub fn timelock_controller_slot() -> &'static StorageSlotName {
+        &TIMELOCK_CONTROLLER_SLOT_NAME
     }
 
     pub fn amount_limits_slot() -> &'static StorageSlotName {
@@ -368,10 +407,18 @@ impl AuthMultisigSmart {
         )
     }
 
-    pub fn spent_interval_blocks_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    pub fn timelock_controller_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::spent_interval_blocks_slot().clone(),
-            StorageSlotSchema::value("Spent interval in blocks", SchemaType::u32()),
+            Self::timelock_controller_slot().clone(),
+            StorageSlotSchema::value(
+                "Timelock controller",
+                [
+                    FeltSchema::u32("spending_window"),
+                    FeltSchema::u32("min_delay"),
+                    FeltSchema::u16("propose_expiration_delta"),
+                    FeltSchema::u16("execute_expiration_delta"),
+                ],
+            ),
         )
     }
 
@@ -384,7 +431,7 @@ impl AuthMultisigSmart {
                     FeltSchema::u32("limit_0"),
                     FeltSchema::u32("limit_1"),
                     FeltSchema::u32("limit_2"),
-                    FeltSchema::u32("start_delay_limit"),
+                    FeltSchema::u32("delay_trigger_amount"),
                 ],
             ),
         )
@@ -396,8 +443,8 @@ impl AuthMultisigSmart {
             StorageSlotSchema::value(
                 "Spending tracker",
                 [
-                    FeltSchema::u32("amount_spent_in_epoch"),
-                    FeltSchema::u32("last_spent_epoch"),
+                    FeltSchema::u32("amount_spent_in_window"),
+                    FeltSchema::u32("window_start_timestamp"),
                     FeltSchema::new_void(),
                     FeltSchema::new_void(),
                 ],
@@ -526,8 +573,13 @@ impl From<AuthMultisigSmart> for AccountComponent {
 
         // Smart policy slots
         storage_slots.push(StorageSlot::with_value(
-            AuthMultisigSmart::spent_interval_blocks_slot().clone(),
-            Word::from([multisig.config.spent_interval_blocks(), 0, 0, 0]),
+            AuthMultisigSmart::timelock_controller_slot().clone(),
+            Word::from([
+                multisig.config.spending_window(),
+                multisig.config.min_delay(),
+                multisig.config.propose_expiration_delta() as u32,
+                multisig.config.execute_expiration_delta() as u32,
+            ]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::spending_tracker_slot().clone(),
@@ -587,7 +639,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
             AuthMultisigSmart::procedure_thresholds_slot_schema(),
-            AuthMultisigSmart::spent_interval_blocks_slot_schema(),
+            AuthMultisigSmart::timelock_controller_slot_schema(),
             AuthMultisigSmart::spending_tracker_slot_schema(),
             AuthMultisigSmart::amount_limits_slot_schema(),
             AuthMultisigSmart::tier_threshold_config_slot_schema(),
@@ -631,7 +683,7 @@ mod tests {
 
         let config = AuthMultisigSmartConfig::new(approvers.clone(), 2)
             .expect("invalid multisig smart config")
-            .with_spent_interval_blocks(10)
+            .with_timelock_controller(100, 30, 3, 5)
             .with_amount_limits([500, 1000, 2000, 1500])
             .with_tier_thresholds([1, 2, 2, 2])
             .with_oracle_config([Felt::new(1), Felt::new(2)])
@@ -652,11 +704,11 @@ mod tests {
             .expect("threshold config should be present");
         assert_eq!(threshold_config, Word::from([2u32, 2u32, 0, 0]));
 
-        let spent_interval = account
+        let timelock_controller = account
             .storage()
-            .get_item(AuthMultisigSmart::spent_interval_blocks_slot())
-            .expect("spent interval should be present");
-        assert_eq!(spent_interval, Word::from([10u32, 0, 0, 0]));
+            .get_item(AuthMultisigSmart::timelock_controller_slot())
+            .expect("timelock controller should be present");
+        assert_eq!(timelock_controller, Word::from([100u32, 30u32, 3u32, 5u32]));
 
         let amount_limits = account
             .storage()
@@ -683,6 +735,7 @@ mod tests {
 
         let config = AuthMultisigSmartConfig::new(approvers, 1)
             .expect("config should be valid")
+            .with_timelock_controller(100, 30, 3, 3)
             .with_amount_limits([u32::MAX as u64 + 1, 0, 0, 0]);
         let result = AuthMultisigSmart::new(config);
         assert!(result.unwrap_err().to_string().contains("amount limits must fit into u32"));

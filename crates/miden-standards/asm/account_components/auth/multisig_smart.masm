@@ -53,14 +53,13 @@ const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver
 # Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
 const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
 
-# User-defined spending interval (in blocks).
-# Typically set to the ~24h equivalent number of blocks.
-const SPENT_INTERVAL_BLOCKS_SLOT = word("miden::standards::auth::multisig_smart::spent_interval_blocks")
+# [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+const TIMELOCK_CONTROLLER_SLOT = word("miden::standards::auth::multisig_smart::timelock_controller")
 
-# [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+# [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
 const AMOUNT_LIMITS_SLOT = word("miden::standards::auth::multisig_smart::amount_limits")
 
-# [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+# [amount_spent_in_window, window_start_timestamp, 0, 0]
 const SPENDING_TRACKER_SLOT = word("miden::standards::auth::multisig_smart::spending_tracker")
 
 # [tier_0, tier_1, tier_2, tier_3]
@@ -82,9 +81,17 @@ const ERR_ZERO_IN_MULTISIG_CONFIG = "number of approvers or threshold must not b
 
 const ERR_U32 = "value is not a u32"
 
-const ERR_SPENT_INTERVAL_ZERO = "spent_interval_blocks must be non-zero"
+const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
 
-const ERR_LAST_EPOCH_GT_CURRENT = "last_spent_epoch is greater than current_epoch"
+const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+
+const ERR_EXECUTE_EXPIRATION_DELTA_ZERO = "execute_expiration_delta must be non-zero"
+
+const ERR_EXPIRATION_DELTA_TOO_HIGH = "expiration delta must fit into u16"
+
+const ERR_LAST_WINDOW_START_GT_CURRENT = "window_start_timestamp is greater than current_timestamp"
 
 const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
 
@@ -98,26 +105,49 @@ const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <=
 
 #! High-impact action.
 #!
-#! Sets the global spending interval measured in blocks.
-#! Used to compute epochs for spending policy checks.
+#! Sets the timelock controller configuration used by both timelock and spending-window checks.
 #!
-#! Inputs:  [spent_interval_blocks]
+#! Inputs:  [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
 #! Outputs: []
 #!
 #! Side effects:
-#!   - Writes SPENT_INTERVAL_BLOCKS_SLOT.
-pub proc update_spent_interval_blocks
+#!   - Writes TIMELOCK_CONTROLLER_SLOT.
+#! 0: spending_window
+#! 1: min_delay
+#! 2: propose_expiration_delta
+#! 3: execute_expiration_delta
+@locals(4)
+pub proc update_timelock_controller
     u32assert.err=ERR_U32
-    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
-    # => [spent_interval_blocks]
+    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
+    loc_store.0
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
 
-    # build value word for storage: [spent_interval_blocks, 0, 0, 0]
-    # stack representation to store is reverse: [0, 0, 0, spent_interval_blocks]
-    push.0 push.0 push.0
-    # => [0, 0, 0, spent_interval_blocks]
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    loc_store.1
+    # => [propose_expiration_delta, execute_expiration_delta]
 
-    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, 0, 0, 0, spent_interval_blocks]
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    dup u32lt.65536 assert.err=ERR_EXPIRATION_DELTA_TOO_HIGH
+    loc_store.2
+    # => [execute_expiration_delta]
+
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_EXECUTE_EXPIRATION_DELTA_ZERO
+    dup u32lt.65536 assert.err=ERR_EXPIRATION_DELTA_TOO_HIGH
+    loc_store.3
+    # => []
+
+    loc_load.0
+    loc_load.1
+    loc_load.2
+    loc_load.3
+    # => [execute_expiration_delta, propose_expiration_delta, min_delay, spending_window]
+
+    push.TIMELOCK_CONTROLLER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, execute_expiration_delta, propose_expiration_delta, min_delay, spending_window]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -209,7 +239,7 @@ end
 #! Sets amount limits stored in AMOUNT_LIMITS_SLOT.
 #! These amount limits are used to compute the required threshold tier.
 #!
-#! Inputs:  [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+#! Inputs:  [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
 #! Outputs: []
 #!
 #! Side effects:
@@ -220,20 +250,20 @@ end
 #! 0: amount_limit0
 #! 1: amount_limit1
 #! 2: amount_limit2
-#! 3: amount_start_delay
+#! 3: delay_trigger_amount
 @locals(4)
 pub proc update_spending_limits
     u32assert.err=ERR_U32  
     loc_store.0   
-    # => [amount_limit1, amount_limit2, amount_start_delay]
+    # => [amount_limit1, amount_limit2, delay_trigger_amount]
 
     u32assert.err=ERR_U32  
     loc_store.1
-    # => [amount_limit2, amount_start_delay]
+    # => [amount_limit2, delay_trigger_amount]
 
     u32assert.err=ERR_U32  
     loc_store.2
-    # => [amount_start_delay]
+    # => [delay_trigger_amount]
 
     u32assert.err=ERR_U32  
     loc_store.3
@@ -244,16 +274,16 @@ pub proc update_spending_limits
     loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_AMOUNT_LIMITS  # limit1 > limit2 ?
     # => []
 
-    # build word for storage: [limit0, limit1, limit2, start_delay]
-    # stack rep must be: [start_delay, limit2, limit1, limit0]
+    # build word for storage: [limit0, limit1, limit2, delay_trigger_amount]
+    # stack rep must be: [delay_trigger_amount, limit2, limit1, limit0]
     loc_load.0
     loc_load.1
     loc_load.2
     loc_load.3
-    # => [start_delay, limit2, limit1, limit0]
+    # => [delay_trigger_amount, limit2, limit1, limit0]
 
     push.AMOUNT_LIMITS_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, start_delay, limit2, limit1, limit0]
+    # => [slot_prefix, slot_suffix, delay_trigger_amount, limit2, limit1, limit0]
 
     exec.native_account::set_item
     # => [OLD_WORD]
@@ -296,8 +326,14 @@ pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
 
     # Store oracle get_price proc_root
     loc_store.2
+    # => [root_w2, root_w1, root_w0]
+
     loc_store.3
+    # => [root_w1, root_w0]
+
     loc_store.4
+    # => [root_w0]
+
     loc_store.5
     # => []
 
@@ -388,150 +424,222 @@ proc compute_tx_threshold_smart(default_threshold: u32, spending_threshold: u32)
     # => [effective_transaction_threshold]
 end
 
-#! Computes: epoch = block_number / spent_interval_blocks.
-#!
-#! Inputs:  [block_number]
-#! Outputs: [epoch]
-#!
-#! Notes:
-#!   - spent_interval_blocks is expected to be read from
-#!     SPENT_INTERVAL_BLOCKS_SLOT (slot 0).
-proc block_num_to_epoch
-    exec.get_spent_interval
-    # => [spent_interval, block_number]
-
-    # u32div expects [b, a] => floor(a/b); we already have [spent_interval_blocks, block_number]
-    u32div
-    # => [epoch]
-end
-
-#! Computes current_epoch from the current block number.
+#! Loads the timelock controller configuration.
 #!
 #! Inputs:  []
-#! Outputs: [current_epoch]
-proc get_current_epoch
-    exec.get_mock_block_number
-    # => [block_number]
-
-    exec.block_num_to_epoch
-    # => [current_epoch]
-
-    # Error if the value is not u32 
-    u32assert2.err=ERR_U32
-end
-
-
-#! Returns whether we are still within the same epoch as the last spend.
-#!
-#! Semantics:
-#!   - if last_spent_epoch == current_epoch => returns 1
-#!   - if last_spent_epoch <  current_epoch => returns 0
-#!   - if last_spent_epoch >  current_epoch => error
-#!
-#! Inputs:  []
-#! Outputs: [within_epoch]
-proc within_epoch
-    exec.get_last_epoch_spent
-    # => [last_spent_epoch]
-
-    exec.get_current_epoch
-    # => [current_epoch, last_spent_epoch]
-
-    # --- Check if current_epoch == last_spent_epoch
-    dup.1 dup.1
-    # => [current_epoch, last_spent_epoch, current_epoch, last_spent_epoch]
-    eq
-    # => [is_eq, current_epoch, last_spent_epoch]
-
-    if.true
-        drop drop
-        push.1
-        # => [1]
-    else
-        u32lt
-        # => [is_lt]
-
-        # -- Check if last_spent_epoch < current_epoch
-        if.true
-            push.0
-            # => [0]
-        else
-            push.0 assert.err=ERR_LAST_EPOCH_GT_CURRENT
-        end
-    end
-end
-
-#! Reads amount_spent_in_epoch from SPENDING_TRACKER_SLOT.
-#!
-#! Outputs: [amount_spent_in_epoch]
-proc get_amount_spent_in_epoch
-    push.SPENDING_TRACKER_SLOT[0..2] 
-    #=> [SPENDING_TRACKER_SLOT]
+#! Outputs: [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+proc get_timelock_controller
+    push.TIMELOCK_CONTROLLER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
 
     exec.active_account::get_initial_item
-    # => [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+end
+
+#! Inputs:  []
+#! Outputs: [spending_window]
+proc get_spending_window
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
 
     movdn.3
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta, spending_window]
+
     drop drop drop
-    # => [amount_spent_in_epoch]
+    # => [spending_window]
+
+    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
+    # => [spending_window]
 end
 
-
-#! Loads the configured spending interval (in blocks) from SPENT_INTERVAL_BLOCKS_SLOT.
-#!
-#! This value is used to derive `epoch = block_number / spent_interval_blocks`.
-#! Must be non-zero. 
-#! Panics with ERR_SPENT_INTERVAL_ZERO if zero.
-#!
 #! Inputs:  []
-#! Outputs: [spent_interval_blocks]
-proc get_spent_interval
-    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
-    # => [SPENT_INTERVAL_BLOCK_SLOT]
+#! Outputs: [propose_expiration_delta]
+@locals(3)
+proc get_propose_expiration_delta
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
 
-    exec.active_account::get_initial_item
-    # => [spent_interval_blocks, 0, 0, 0]
+    loc_store.0
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
 
-    movdn.3
-    drop drop drop
-    # => [spent_interval]
+    loc_store.1
+    # => [propose_expiration_delta, execute_expiration_delta]
 
-    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
-    # => [spent_interval]
-end
-
-#! Reads the last epoch in which spending was recorded from SPENDING_TRACKER_SLOT.
-#!
-#! Inputs:  []
-#! Outputs: [epoch_last_spent]
-proc get_last_epoch_spent
-    push.SPENDING_TRACKER_SLOT[0..2]
-    # => [SPENDING_TRACKER_SLOT]
-
-    exec.active_account::get_initial_item
-    # => [amount_spent_in_epoch, epoch_last_spent, 0, 0]
+    loc_store.2
+    # => [execute_expiration_delta]
 
     drop
-    # => [epoch_last_spent, 0, 0]
+    # => []
 
-    movdn.2
-    drop drop
-    # => [epoch_last_spent]
+    loc_load.2
+    # => [propose_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta]
 end
 
-#! Test helper to get a deterministic block number for local testing/debugging.
+#! Inputs:  []
+#! Outputs: []
+proc apply_propose_expiration_delta
+    exec.get_propose_expiration_delta
+    # => [propose_expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end
+
+#! Inputs:  []
+#! Outputs: [current_timestamp]
+proc get_current_timestamp
+    exec.tx::get_block_timestamp
+    # => [current_timestamp]
+
+    u32assert.err=ERR_U32
+    # => [current_timestamp]
+end
+
+#! Inputs:  []
+#! Outputs: [current_window_start_timestamp]
+proc get_current_window_start_timestamp
+    exec.get_current_timestamp
+    # => [current_timestamp]
+
+    dup
+    # => [current_timestamp, current_timestamp]
+
+    exec.get_spending_window
+    # => [spending_window, current_timestamp, current_timestamp]
+
+    u32div
+    # => [current_window_index, current_timestamp]
+
+    exec.get_spending_window
+    # => [spending_window, current_window_index, current_timestamp]
+
+    mul
+    # => [current_window_start_timestamp, current_timestamp]
+
+    swap
+    # => [current_timestamp, current_window_start_timestamp]
+
+    drop
+    # => [current_window_start_timestamp]
+end
+
+#! Returns 1 if WORD == [0,0,0,0], else 0.
 #!
-#! Reads the real tx block number via tx::get_block_number and 
-#! Adds a constant offset +50 so epoch transitions can be exercised easily.
+#! Inputs:  [WORD]
+#! Outputs: [is_empty]
+proc is_empty_word
+    push.0.0.0.0
+    # => [0, 0, 0, 0, WORD]
+
+    eqw
+
+    movdn.8
+    dropw dropw
+    # => [is_empty]
+end
+
+#! Inputs:  []
+#! Outputs: [amount_spent_in_window, window_start_timestamp, 0, 0]
+proc get_spending_tracker
+    push.SPENDING_TRACKER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_initial_item
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+end
+
+#! Reads amount_spent_in_window from SPENDING_TRACKER_SLOT.
+#!
+#! Outputs: [amount_spent_in_window]
+proc get_amount_spent_in_window
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+
+    movdn.3
+    # => [window_start_timestamp, 0, 0, amount_spent_in_window]
+
+    drop drop drop
+    # => [amount_spent_in_window]
+end
+
+#! Reads the start timestamp of the current spending window.
 #!
 #! Inputs:  []
-#! Outputs: [mock_block_number]
-proc get_mock_block_number
-    exec.tx::get_block_number
-    # => [block_number] = [0].
+#! Outputs: [window_start_timestamp]
+proc get_window_start_timestamp
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
 
-    push.50 add
-    # => [block_number + 50] = [50].
+    drop
+    # => [window_start_timestamp, 0, 0]
+
+    movdn.2
+    # => [0, 0, window_start_timestamp]
+
+    drop drop
+    # => [window_start_timestamp]
+end
+
+#! Returns whether we are still within the active spending window.
+#!
+#! Semantics:
+#!   - empty tracker => returns 0
+#!   - if current_window_start_timestamp == window_start_timestamp => returns 1
+#!   - if current_window_start_timestamp > window_start_timestamp => returns 0
+#!   - if current_window_start_timestamp < window_start_timestamp => error
+#!
+#! Inputs:  []
+#! Outputs: [within_spending_window]
+proc within_spending_window
+    exec.get_spending_tracker
+    # => [amount_spent_in_window, window_start_timestamp, 0, 0]
+
+    exec.is_empty_word
+    # => [is_empty_tracker]
+
+    if.true
+        push.0
+        # => [within_spending_window=0]
+    else
+        exec.get_window_start_timestamp
+        # => [window_start_timestamp]
+
+        exec.get_current_window_start_timestamp
+        # => [current_window_start_timestamp, window_start_timestamp]
+
+        dup.1 dup.1
+        # => [current_window_start_timestamp, window_start_timestamp, current_window_start_timestamp, window_start_timestamp]
+
+        eq
+        # => [same_window, current_window_start_timestamp, window_start_timestamp]
+
+        if.true
+            drop drop
+            # => []
+
+            push.1
+            # => [within_spending_window=1]
+        else
+            u32lt
+            # => [window_start_is_before_current]
+
+            if.true
+                push.0
+                # => [within_spending_window=0]
+            else
+                push.0 assert.err=ERR_LAST_WINDOW_START_GT_CURRENT
+            end
+        end
+    end
 end
 
 
@@ -546,30 +654,46 @@ end
 #! Outputs: [is_tracked, amount_in_usdc]
 proc get_price_test
     drop drop
+    # => [amount]
+
     push.1
+    # => [is_tracked=1, amount_in_usdc=amount]
 end
 
 #! Inputs: []
 #! Outputs: [oracle_id_prefix, oracle_id_suffix]
 proc get_oracle_id
     push.ORACLE_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
     exec.active_account::get_item
+    # => [oracle_id_prefix, oracle_id_suffix, 0, 0]
+
     drop drop
+    # => [oracle_id_prefix, oracle_id_suffix]
 end
 
 #! Inputs: []
 #! Outputs: [get_price_proc_root]
 proc get_oracle_price_proc_root
     push.GET_PRICE_PROC_ROOT_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
     exec.active_account::get_item
+    # => [get_price_proc_root]
 end
 
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [is_tracked, amount_in_usd]
 proc get_price_test_new
     exec.get_oracle_price_proc_root
+    # => [get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
+
     exec.get_oracle_id
+    # => [oracle_id_prefix, oracle_id_suffix, get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
+
     exec.tx::execute_foreign_procedure
+    # => [is_tracked, amount_in_usd]
 end
 
 # tmp memory area for loading assets
@@ -738,24 +862,36 @@ proc get_tier_threshold_for_index
     # => [idx, tier_3, tier_2, tier_1, tier_0]
 
     dup eq.0
+    # => [idx_eq_0, idx, tier_3, tier_2, tier_1, tier_0]
+
     if.true
         # idx == 0 => tier_0
         dup.4 loc_store.1
+        # => [idx, tier_3, tier_2, tier_1, tier_0]
     else
         dup eq.1
+        # => [idx_eq_1, idx, tier_3, tier_2, tier_1, tier_0]
+
         if.true
             # idx == 1 => tier_1
             dup.3 loc_store.1
+            # => [idx, tier_3, tier_2, tier_1, tier_0]
         else
             dup eq.2
+            # => [idx_eq_2, idx, tier_3, tier_2, tier_1, tier_0]
+
             if.true
                 # idx == 2 => tier_2
                 dup.2 loc_store.1
+                # => [idx, tier_3, tier_2, tier_1, tier_0]
             else
                 dup eq.3
+                # => [idx_eq_3, idx, tier_3, tier_2, tier_1, tier_0]
+
                 assert.err=ERR_INVALID_TIER_INDEX
                 # idx == 3 => tier_3
                 dup.1 loc_store.1
+                # => [idx, tier_3, tier_2, tier_1, tier_0]
             end
         end
     end
@@ -771,31 +907,32 @@ proc get_tier_threshold_for_index
 end
 
 
-#! Updates SPENDING_TRACKER_SLOT using current epoch and the computed total_spent_amount.
+#! Updates SPENDING_TRACKER_SLOT using the current spending window start and the computed total.
 #!
 #! Inputs:  [total_spent_amount]
 #! Outputs: []
 #!
 #! Writes:
-#!   SPENDING_TRACKER_SLOT = [amount_spent_in_epoch = total_spent_amount, epoch_last_spent = current_epoch, 0, 0]
+#!   SPENDING_TRACKER_SLOT =
+#!   [amount_spent_in_window = total_spent_amount, window_start_timestamp = current_window_start_timestamp, 0, 0]
 proc set_spending_tracker
-    exec.get_current_epoch
-    # => [current_epoch, total_spent_amount]
+    exec.get_current_window_start_timestamp
+    # => [current_window_start_timestamp, total_spent_amount]
 
     push.0 push.0
-    # => [0, 0, current_epoch, total_spent_amount]
+    # => [0, 0, current_window_start_timestamp, total_spent_amount]
 
     movup.3
-    # => [total_spent_amount, 0, 0, current_epoch]
+    # => [total_spent_amount, 0, 0, current_window_start_timestamp]
 
     movup.3
-    # => [current_epoch, total_spent_amount, 0, 0]
+    # => [current_window_start_timestamp, total_spent_amount, 0, 0]
 
     swap
-    # => [total_spent_amount, current_epoch, 0, 0]
+    # => [total_spent_amount, current_window_start_timestamp, 0, 0]
 
     push.SPENDING_TRACKER_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, total_spent_amount, current_epoch, 0, 0]
+    # => [slot_prefix, slot_suffix, total_spent_amount, current_window_start_timestamp, 0, 0]
 
     exec.native_account::set_item
     # => [OLD_TRACKER_WORD]
@@ -808,12 +945,12 @@ end
 #! Computes required approvals for the current transaction's spending amount.
 #!
 #! Inputs:  [currently_spending_amount]
-#! Outputs: [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+#! Outputs: [total_spent_amount_in_window, threshold_tier, requires_delay]
 #!
-#! - within_epoch == 1 => total = amount_spent_in_epoch + currently_spending_amount
-#! - within_epoch == 0 => total = currently_spending_amount
-#! - tier selection based on AMOUNT_LIMITS_SLOT: [limit0, limit1, limit2, start_delay]
-#! - requires_delay = 1 if total > start_delay else 0
+#! - within_spending_window == 1 => total = amount_spent_in_window + currently_spending_amount
+#! - within_spending_window == 0 => total = currently_spending_amount
+#! - tier selection based on AMOUNT_LIMITS_SLOT: [limit0, limit1, limit2, delay_trigger_amount]
+#! - requires_delay = 1 if total > delay_trigger_amount else 0
 #!
 #! Locals:
 #!
@@ -822,35 +959,36 @@ end
 #! 2: amount_limit0
 #! 3: amount_limit1
 #! 4: amount_limit2
-#! 5: amount_start_delay
+#! 5: delay_trigger_amount
 @locals(6)
 proc get_num_required_signatures
     u32assert.err=ERR_U32
     # => [currently_spending_amount]
 
-    exec.within_epoch
-    # => [is_within_epoch, currently_spending_amount]
+    exec.within_spending_window
+    # => [is_within_spending_window, currently_spending_amount]
 
     if.true
-        # same epoch: include amount_spent_in_epoch
-        exec.get_amount_spent_in_epoch
-        # => [amount_spent_in_epoch, currently_spending_amount]
+        # same spending window: include amount_spent_in_window
+        exec.get_amount_spent_in_window
+        # => [amount_spent_in_window, currently_spending_amount]
 
         u32assert2.err=ERR_U32
         add
         # => [total_amount]
     else
-        # new epoch: ignore old spent
+        # new spending window: ignore old spent
         # => [currently_spending_amount]
     end
     # => [total_amount]
 
     loc_store.1
+    # => []
 
-    # Load limits: [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+    # Load limits: [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
     push.AMOUNT_LIMITS_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [amount_limit0, amount_limit1, amount_limit2, amount_start_delay]
+    # => [amount_limit0, amount_limit1, amount_limit2, delay_trigger_amount]
 
     loc_store.2
     loc_store.3
@@ -858,40 +996,60 @@ proc get_num_required_signatures
     loc_store.5
     # => []
 
-    # requires_delay = (total_amount > amount_start_delay)
+    # requires_delay = (total_amount > delay_trigger_amount)
     loc_load.1
     loc_load.5
+    # => [delay_trigger_amount, total_amount]
+
     u32assert2.err=ERR_U32
     u32gt
+    # => [requires_delay]
+
     loc_store.0
     # => []
 
     # total < limit0 => tier 0
     loc_load.1
     loc_load.2
+    # => [amount_limit0, total_amount]
+
     u32assert2.err=ERR_U32
     u32lt
+    # => [total_lt_limit0]
+
     if.true
         push.0
+        # => [tier_index=0]
 
     else
         # total < limit1 => 1
         loc_load.3
         loc_load.1
+        # => [total_amount, amount_limit1]
+
         u32assert2.err=ERR_U32
         u32lt
+        # => [total_lt_limit1]
+
         if.true
             push.1
+            # => [tier_index=1]
         else
             # total < limit2 => 2
             loc_load.4
             loc_load.1
+            # => [total_amount, amount_limit2]
+
             u32assert2.err=ERR_U32
             u32lt
+            # => [total_lt_limit2]
+
             if.true
                 push.2
+                # => [tier_index=2]
             else
                 push.3
+                # => [tier_index=3]
             end
         end
     end
@@ -907,7 +1065,7 @@ proc get_num_required_signatures
     # => [threshold_tier, requires_delay]
 
     loc_load.1
-    # => [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+    # => [total_spent_amount_in_window, threshold_tier, requires_delay]
 end
 
 #! Computes spending policy for this tx and updates tracker (if spending > 0).
@@ -928,8 +1086,11 @@ proc compute_spending_policy
         push.0 push.0
         # => [threshold_tier=0, requires_delay=0]
     else
+        exec.apply_propose_expiration_delta
+        # => [spending_amount]
+
         exec.get_num_required_signatures
-        # => [total_spent_amount_in_epoch, threshold_tier, requires_delay]
+        # => [total_spent_amount_in_window, threshold_tier, requires_delay]
 
         # update tracker with total
         exec.set_spending_tracker

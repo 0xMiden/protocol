@@ -5,10 +5,10 @@ use miden::protocol::tx
 # CONSTANTS
 # =================================================================================================
 
-# User-defined spending interval (in blocks).
-const SPENT_INTERVAL_BLOCKS_SLOT = word("miden::standards::auth::multisig_smart::spent_interval_blocks")
+# [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+const TIMELOCK_CONTROLLER_SLOT = word("miden::standards::auth::multisig_smart::timelock_controller")
 
-# Map entries: [tx_summary_hash] -> [proposal_block_num, num_signatures, expiration_block_num, 0]
+# Map entries: [tx_summary_hash] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
 
 # Pending action slots
@@ -20,66 +20,157 @@ const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pendi
 # =================================================================================================
 
 const ERR_U32 = "value is not a u32"
-const ERR_SPENT_INTERVAL_ZERO = "spent_interval_blocks must be non-zero"
+const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
+const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
+const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
+const ERR_EXECUTE_EXPIRATION_DELTA_ZERO = "execute_expiration_delta must be non-zero"
+const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
-const ERR_TX_NOT_PROPOSED  = "tx not proposed"
+const ERR_TX_NOT_PROPOSED = "tx not proposed"
 const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
 const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 
-# EPOCH HELPERS
+# TIMELOCK CONTROLLER HELPERS
 # =================================================================================================
 
-#! Computes: epoch = block_number / spent_interval_blocks.
-#!
-#! Inputs:  [block_number]
-#! Outputs: [epoch]
-proc block_num_to_epoch
-    exec.get_spent_interval
-    # => [spent_interval, block_number]
-
-    u32div
-    # => [epoch]
-end
-
-#! Computes current_epoch from the current block number.
+#! Loads the timelock controller configuration.
 #!
 #! Inputs:  []
-#! Outputs: [current_epoch]
-proc get_current_epoch
-    exec.get_mock_block_number
-    # => [block_number]
+#! Outputs: [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+proc get_timelock_controller
+    push.TIMELOCK_CONTROLLER_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
 
-    exec.block_num_to_epoch
-    # => [current_epoch]
-
-    u32assert2.err=ERR_U32
-end
-
-#! Loads spent interval blocks from SPENT_INTERVAL_BLOCKS_SLOT.
-#!
-#! Inputs:  []
-#! Outputs: [spent_interval_blocks]
-proc get_spent_interval
-    push.SPENT_INTERVAL_BLOCKS_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [spent_interval_blocks, 0, 0, 0]
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+end
+
+#! Inputs:  []
+#! Outputs: [spending_window]
+proc get_spending_window
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
 
     movdn.3
-    drop drop drop
-    # => [spent_interval]
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta, spending_window]
 
-    dup eq.0 assertz.err=ERR_SPENT_INTERVAL_ZERO
+    drop drop drop
+    # => [spending_window]
+
+    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
+    # => [spending_window]
 end
 
-#! Test helper to get a deterministic block number for local testing/debugging.
-#!
 #! Inputs:  []
-#! Outputs: [mock_block_number]
-proc get_mock_block_number
-    exec.tx::get_block_number
-    push.50 add
+#! Outputs: [min_delay]
+@locals(2)
+proc get_min_delay
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+
+    loc_store.0
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
+
+    loc_store.1
+    # => [propose_expiration_delta, execute_expiration_delta]
+
+    drop drop
+    # => []
+
+    loc_load.1
+    # => [min_delay]
+
+    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    # => [min_delay]
+end
+
+#! Inputs:  []
+#! Outputs: [propose_expiration_delta]
+@locals(3)
+proc get_propose_expiration_delta
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+
+    loc_store.0
+    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
+
+    loc_store.1
+    # => [propose_expiration_delta, execute_expiration_delta]
+
+    loc_store.2
+    # => [execute_expiration_delta]
+
+    drop
+    # => []
+
+    loc_load.2
+    # => [propose_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    # => [propose_expiration_delta]
+end
+
+#! Inputs:  []
+#! Outputs: [execute_expiration_delta]
+proc get_execute_expiration_delta
+    exec.get_timelock_controller
+    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+
+    drop drop drop
+    # => [execute_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_EXECUTE_EXPIRATION_DELTA_ZERO
+    # => [execute_expiration_delta]
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc apply_propose_expiration_delta
+    exec.get_propose_expiration_delta
+    # => [propose_expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end
+
+#! Inputs:  []
+#! Outputs: []
+proc apply_execute_expiration_delta
+    exec.get_execute_expiration_delta
+    # => [execute_expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end
+
+#! Inputs:  []
+#! Outputs: [current_timestamp]
+proc get_current_timestamp
+    exec.tx::get_block_timestamp
+    # => [current_timestamp]
+
+    u32assert.err=ERR_U32
+    # => [current_timestamp]
 end
 
 # UTILS
@@ -91,9 +182,13 @@ end
 #! Outputs: [is_empty]
 proc is_empty_word
     push.0.0.0.0
+    # => [0, 0, 0, 0, WORD]
+
     eqw
+
     movdn.8
     dropw dropw
+    # => [is_empty]
 end
 
 # TIMELOCK + PROPOSALS
@@ -102,10 +197,13 @@ end
 #! Gets proposal entry for a tx_summary_hash.
 #!
 #! Inputs:  [tx_summary_hash]
-#! Outputs: [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set]
+#! Outputs: [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
 proc get_tx_proposal(tx_summary_hash: word)
     push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tx_summary_hash]
+
     exec.active_account::get_map_item
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
 end
 
 #! Returns 1 if proposal exists, 0 otherwise.
@@ -114,8 +212,13 @@ end
 #! Outputs: [is_proposed]
 proc is_tx_proposed(tx_summary_hash: word) -> u32
     exec.get_tx_proposal
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
+
     exec.is_empty_word
+    # => [is_empty_proposal]
+
     eq.0
+    # => [is_proposed]
 end
 
 #! Deletes proposal entry by setting value to EMPTY_WORD.
@@ -124,62 +227,134 @@ end
 #! Outputs: []
 proc remove_tx_proposal(tx_summary_hash: word)
     padw
+    # => [0, 0, 0, 0, tx_summary_hash]
+
     swapw
+    # => [tx_summary_hash, 0, 0, 0, 0]
+
     push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tx_summary_hash, 0, 0, 0, 0]
+
     exec.native_account::set_map_item
+    # => [old_proposal_word]
+
     dropw
+    # => []
 end
 
 #! Writes proposal entry:
-#!   TX_HASH -> [proposal_epoch, expiration_epoch, min_cancel_sigs, 1]
+#!   TX_HASH -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
 #!
-#! Inputs:  [min_cancel_sigs, expiration_epoch, proposal_epoch, tx_summary_hash]
+#! Inputs:  [unlock_timestamp, proposal_timestamp, min_cancel_sigs, tx_summary_hash]
 #! Outputs: []
 @locals(3)
 proc write_tx_proposal
     loc_store.0
+    # => [proposal_timestamp, min_cancel_sigs, tx_summary_hash]
+
     loc_store.1
+    # => [min_cancel_sigs, tx_summary_hash]
+
     loc_store.2
+    # => [tx_summary_hash]
 
     push.1
-    loc_load.0
-    loc_load.1
+    # => [1, tx_summary_hash]
+
     loc_load.2
+    # => [min_cancel_sigs, 1, tx_summary_hash]
+
+    loc_load.1
+    # => [proposal_timestamp, min_cancel_sigs, 1, tx_summary_hash]
+
+    loc_load.0
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1, tx_summary_hash]
 
     swapw
+    # => [tx_summary_hash, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+
     push.TX_PROPOSALS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tx_summary_hash, unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
+
     exec.native_account::set_map_item
+    # => [old_proposal_word]
+
     dropw
+    # => []
 end
 
-#! Returns 1 if current_epoch > proposal_epoch else 0.
+#! Computes the unlock timestamp for the current proposal.
 #!
-#! Inputs:  [current_epoch, proposal_epoch]
-#! Outputs: [has_elapsed]
-proc has_timelock_elapsed
+#! Inputs:  []
+#! Outputs: [unlock_timestamp, proposal_timestamp]
+proc compute_unlock_timestamp
+    exec.get_current_timestamp
+    # => [proposal_timestamp]
+
+    dup
+    # => [proposal_timestamp, proposal_timestamp]
+
+    exec.get_min_delay
+    # => [min_delay, proposal_timestamp, proposal_timestamp]
+
     u32assert2.err=ERR_U32
-    swap
-    u32gt
+    add
+    # => [unlock_timestamp, proposal_timestamp]
 end
 
-#! Enforces that TX_HASH is proposed and timelock has elapsed.
+#! Panics if current_timestamp < unlock_timestamp.
+#!
+#! Inputs:  [current_timestamp, unlock_timestamp]
+#! Outputs: []
+proc assert_unlock_reached
+    u32assert2.err=ERR_U32
+    # => [current_timestamp, unlock_timestamp]
+
+    swap
+    # => [unlock_timestamp, current_timestamp]
+
+    u32lt
+    # => [current_timestamp_lt_unlock_timestamp]
+
+    assertz.err=ERR_TX_STILL_TIMELOCKED
+    # => []
+end
+
+#! Enforces that TX_HASH is proposed and the stored unlock timestamp has been reached.
 #!
 #! Inputs:  [tx_summary_hash]
 #! Outputs: [min_cancel_sigs]
+@locals(3)
 proc enforce_tx_timelock
     dupw
     exec.get_tx_proposal
-    # => [proposal_epoch, expiration_epoch, min_cancel_sigs, is_set, tx_summary_hash]
+    # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, tx_summary_hash]
 
-    swapw
-    exec.is_tx_proposed
+    dup.3 eq.1
     assert.err=ERR_TX_NOT_PROPOSED
 
-    exec.get_current_epoch
-    exec.has_timelock_elapsed
-    assert.err=ERR_TX_STILL_TIMELOCKED
+    loc_store.0
+    loc_store.1
+    loc_store.2
+    # => [tx_summary_hash]
 
-    movup.2 drop drop
+    drop
+    dropw
+    # => []
+
+    exec.get_current_timestamp
+    # => [current_timestamp]
+
+    loc_load.0
+    # => [unlock_timestamp, current_timestamp]
+
+    swap
+    # => [current_timestamp, unlock_timestamp]
+
+    exec.assert_unlock_reached
+    # => []
+
+    loc_load.2
     # => [min_cancel_sigs]
 end
 
@@ -189,21 +364,30 @@ end
 #! Outputs: [WORD]
 proc get_pending_propose
     push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
     exec.active_account::get_item
+    # => [pending_propose_word]
 end
 
 #! Inputs:  []
 #! Outputs: [WORD]
 proc get_pending_cancel
     push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
     exec.active_account::get_item
+    # => [pending_cancel_word]
 end
 
 #! Inputs:  []
 #! Outputs: [WORD]
 proc get_pending_execute
     push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
     exec.active_account::get_item
+    # => [pending_execute_word]
 end
 
 #! Asserts the given WORD is EMPTY_WORD.
@@ -212,7 +396,10 @@ end
 #! Outputs: []
 proc assert_pending_empty
     exec.is_empty_word
+    # => [is_pending_empty]
+
     assert.err=ERR_PENDING_ALREADY_SET
+    # => []
 end
 
 #! Sets pending propose to TX_HASH. Fails if already set.
@@ -221,10 +408,19 @@ end
 #! Outputs: []
 proc set_pending_propose
     exec.get_pending_propose
+    # => [pending_propose_word, tx_summary_hash]
+
     exec.assert_pending_empty
+    # => [tx_summary_hash]
+
     push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tx_summary_hash]
+
     exec.native_account::set_item
+    # => [old_pending_propose_word]
+
     dropw
+    # => []
 end
 
 #! Clears pending propose to EMPTY_WORD.
@@ -233,28 +429,51 @@ end
 #! Outputs: []
 proc clear_pending_propose
     push.0 push.0 push.0 push.0
+    # => [0, 0, 0, 0]
+
     push.PENDING_PROPOSE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, 0, 0]
+
     exec.native_account::set_item
+    # => [old_pending_propose_word]
+
     dropw
+    # => []
 end
 
 #! Inputs:  [tx_summary_hash]
 #! Outputs: []
 proc set_pending_cancel
     exec.get_pending_cancel
+    # => [pending_cancel_word, tx_summary_hash]
+
     exec.assert_pending_empty
+    # => [tx_summary_hash]
+
     push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, tx_summary_hash]
+
     exec.native_account::set_item
+    # => [old_pending_cancel_word]
+
     dropw
+    # => []
 end
 
 #! Inputs:  []
 #! Outputs: []
 proc clear_pending_cancel
     push.0 push.0 push.0 push.0
+    # => [0, 0, 0, 0]
+
     push.PENDING_CANCEL_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, 0, 0]
+
     exec.native_account::set_item
+    # => [old_pending_cancel_word]
+
     dropw
+    # => []
 end
 
 #! Sets pending execute flag to [1,0,0,0]. Fails if already set.
@@ -263,21 +482,38 @@ end
 #! Outputs: []
 proc set_pending_execute
     exec.get_pending_execute
+    # => [pending_execute_word]
+
     exec.assert_pending_empty
+    # => []
 
     push.1 push.0 push.0 push.0
+    # => [1, 0, 0, 0]
+
     push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 1, 0, 0, 0]
+
     exec.native_account::set_item
+    # => [old_pending_execute_word]
+
     dropw
+    # => []
 end
 
 #! Inputs:  []
 #! Outputs: []
 proc clear_pending_execute
     push.0 push.0 push.0 push.0
+    # => [0, 0, 0, 0]
+
     push.PENDING_EXECUTE_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, 0, 0]
+
     exec.native_account::set_item
+    # => [old_pending_execute_word]
+
     dropw
+    # => []
 end
 
 #! Allows any signer to propose a transaction.
@@ -286,12 +522,23 @@ end
 #! Inputs:  [tx_summary_hash]
 #! Outputs: []
 pub proc propose_transaction
+    exec.apply_propose_expiration_delta
+    # => [tx_summary_hash]
+
     dupw
+    # => [tx_summary_hash, tx_summary_hash]
+
     exec.is_tx_proposed
+    # => [is_proposed, tx_summary_hash]
+
     eq.1
+    # => [is_proposed_eq_1, tx_summary_hash]
+
     assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => [tx_summary_hash]
 
     exec.set_pending_propose
+    # => []
 end
 
 #! Cancels an existing proposal (final delete happens in auth finalizer).
@@ -300,11 +547,19 @@ end
 #! Outputs: []
 pub proc cancel_transaction_proposal
     dupw
+    # => [tx_summary_hash, tx_summary_hash]
+
     exec.is_tx_proposed
+    # => [is_proposed, tx_summary_hash]
+
     eq.1
+    # => [is_proposed_eq_1, tx_summary_hash]
+
     assert.err=ERR_TX_NOT_PROPOSED
+    # => [tx_summary_hash]
 
     exec.set_pending_cancel
+    # => []
 end
 
 #! Cancels old proposal and proposes new one in the same tx.
@@ -313,19 +568,43 @@ end
 #! Outputs: []
 pub proc cancel_and_propose_new_transaction
     dupw
+    # => [old_TX_HASH, old_TX_HASH, new_TX_HASH]
+
     exec.is_tx_proposed
+    # => [is_old_proposed, old_TX_HASH, new_TX_HASH]
+
     eq.1
+    # => [is_old_proposed_eq_1, old_TX_HASH, new_TX_HASH]
+
     assert.err=ERR_TX_NOT_PROPOSED
+    # => [old_TX_HASH, new_TX_HASH]
 
     swapw
+    # => [new_TX_HASH, old_TX_HASH]
+
     dupw
+    # => [new_TX_HASH, new_TX_HASH, old_TX_HASH]
+
     exec.is_tx_proposed
+    # => [is_new_proposed, new_TX_HASH, old_TX_HASH]
+
     eq.1
+    # => [is_new_proposed_eq_1, new_TX_HASH, old_TX_HASH]
+
     assertz.err=ERR_TX_ALREADY_PROPOSED
+    # => [new_TX_HASH, old_TX_HASH]
 
     swapw
+    # => [old_TX_HASH, new_TX_HASH]
+
     exec.set_pending_cancel
+    # => [new_TX_HASH]
+
+    exec.apply_propose_expiration_delta
+    # => [new_TX_HASH]
+
     exec.set_pending_propose
+    # => []
 end
 
 #! Marks that this tx intends to execute a proposed action.
@@ -333,7 +612,11 @@ end
 #! Inputs:  []
 #! Outputs: []
 pub proc execute_proposed_transaction
+    exec.apply_execute_expiration_delta
+    # => []
+
     exec.set_pending_execute
+    # => []
 end
 
 #! Finalizes pending propose/cancel/execute actions.
@@ -345,7 +628,10 @@ end
 #! Locals:
 #! 0: num_verified_signatures
 #! 1: requires_delay
-@locals(2)
+#! 2: min_cancel_sigs
+#! 3: unlock_timestamp
+#! 4: proposal_timestamp
+@locals(5)
 pub proc finalize_timelock_proposals
     loc_store.0
     # => [requires_delay, TX_HASH]
@@ -355,20 +641,39 @@ pub proc finalize_timelock_proposals
 
     # Execute finalizer: only if pending_execute is set and delay is required.
     exec.get_pending_execute
+    # => [pending_execute_word, TX_HASH]
+
     exec.is_empty_word
+    # => [is_pending_execute_empty, TX_HASH]
+
     if.false
+        exec.apply_execute_expiration_delta
+        # => [TX_HASH]
+
         loc_load.1
+        # => [requires_delay, TX_HASH]
+
         eq.1
+        # => [requires_delay_eq_1, TX_HASH]
+
         if.true
             dupw
+            # => [TX_HASH, TX_HASH]
+
             exec.enforce_tx_timelock
+            # => [min_cancel_sigs, TX_HASH]
+
             drop
+            # => [TX_HASH]
         end
 
         # When pending_execute is set, clear the matching proposal entry regardless of whether
         # delay enforcement was required in this transaction.
         dupw
+        # => [TX_HASH, TX_HASH]
+
         exec.remove_tx_proposal
+        # => [TX_HASH]
     end
 
     exec.clear_pending_execute
@@ -376,22 +681,51 @@ pub proc finalize_timelock_proposals
 
     # Cancel finalizer: requires num_verified >= stored min_cancel_sigs.
     exec.get_pending_cancel
+    # => [pending_cancel_word, TX_HASH]
+
     exec.is_empty_word
+    # => [is_pending_cancel_empty, TX_HASH]
+
     if.false
         exec.get_pending_cancel
+        # => [pending_cancel_hash, TX_HASH]
+
         dupw
+        # => [pending_cancel_hash, pending_cancel_hash, TX_HASH]
+
         exec.get_tx_proposal
+        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set, pending_cancel_hash, TX_HASH]
+
         dup.3 eq.1
         assert.err=ERR_TX_NOT_PROPOSED
 
+        drop
+        # => [proposal_timestamp, min_cancel_sigs, is_set, pending_cancel_hash, TX_HASH]
+
+        drop
+        # => [min_cancel_sigs, is_set, pending_cancel_hash, TX_HASH]
+
+        loc_store.2
+        # => [is_set, pending_cancel_hash, TX_HASH]
+
+        drop
+        # => [pending_cancel_hash, TX_HASH]
+
         loc_load.0
-        movup.3
+        # => [num_verified_signatures, pending_cancel_hash, TX_HASH]
+
+        loc_load.2
+        # => [min_cancel_sigs, num_verified_signatures, pending_cancel_hash, TX_HASH]
+
         u32assert2.err=ERR_U32
         u32lt
-        assertz.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+        # => [num_verified_lt_min_cancel, pending_cancel_hash, TX_HASH]
 
-        drop drop drop
+        assertz.err=ERR_CANCEL_INSUFFICIENT_SIGNATURES
+        # => [pending_cancel_hash, TX_HASH]
+
         exec.remove_tx_proposal
+        # => [TX_HASH]
     end
 
     exec.clear_pending_cancel
@@ -399,24 +733,66 @@ pub proc finalize_timelock_proposals
 
     # Propose finalizer.
     exec.get_pending_propose
+    # => [pending_propose_hash, TX_HASH]
+
     exec.is_empty_word
+    # => [is_pending_propose_empty, TX_HASH]
+
     if.false
         exec.get_pending_propose
+        # => [pending_propose_hash, TX_HASH]
+
         dupw
+        # => [pending_propose_hash, pending_propose_hash, TX_HASH]
+
         exec.is_tx_proposed
+        # => [is_proposed, pending_propose_hash, TX_HASH]
+
         eq.1
+        # => [is_proposed_eq_1, pending_propose_hash, TX_HASH]
+
         assertz.err=ERR_TX_ALREADY_PROPOSED
+        # => [pending_propose_hash, TX_HASH]
 
         loc_load.0
+        # => [num_verified_signatures, pending_propose_hash, TX_HASH]
+
         dup
+        # => [num_verified_signatures, num_verified_signatures, pending_propose_hash, TX_HASH]
+
         u32assert.err=ERR_U32
         eq.0
-        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
+        # => [num_verified_eq_0, num_verified_signatures, pending_propose_hash, TX_HASH]
 
-        exec.get_current_epoch
-        push.0
-        movup.2
+        assertz.err=ERR_PROPOSE_ZERO_SIGNATURES
+        # => [num_verified_signatures, pending_propose_hash, TX_HASH]
+
+        loc_store.2
+        # => [pending_propose_hash, TX_HASH]
+
+        exec.apply_propose_expiration_delta
+        # => [pending_propose_hash, TX_HASH]
+
+        exec.compute_unlock_timestamp
+        # => [unlock_timestamp, proposal_timestamp, pending_propose_hash, TX_HASH]
+
+        loc_store.3
+        # => [proposal_timestamp, pending_propose_hash, TX_HASH]
+
+        loc_store.4
+        # => [pending_propose_hash, TX_HASH]
+
+        loc_load.2
+        # => [min_cancel_sigs, pending_propose_hash, TX_HASH]
+
+        loc_load.4
+        # => [proposal_timestamp, min_cancel_sigs, pending_propose_hash, TX_HASH]
+
+        loc_load.3
+        # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, pending_propose_hash, TX_HASH]
+
         exec.write_tx_proposal
+        # => [TX_HASH]
     end
 
     exec.clear_pending_propose
