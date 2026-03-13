@@ -107,36 +107,21 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_token_metadata_matches_solidity() {
+    fn test_metadata_hash_matches_solidity() {
         let vectors = load_test_vectors();
-
+        let expected_metadata = hex_to_vec(&vectors.metadata[2..]);
         let expected_hash: [u8; 32] =
             hex_to_bytes(&vectors.metadata_hash).expect("valid metadata_hash hex");
 
-        // Parse the ABI-encoded metadata from the test vector
-        let metadata_bytes = hex_to_vec(&vectors.metadata[2..]);
-
-        // Verify that hashing the ABI-encoded metadata produces the expected hash
-        let hash = MetadataHash::from_abi_encoded(&metadata_bytes);
-        assert_eq!(hash.as_bytes(), &expected_hash);
-    }
-
-    #[test]
-    fn test_encode_token_metadata_format() {
-        let vectors = load_test_vectors();
-        let expected_metadata = hex_to_vec(&vectors.metadata[2..]);
-
         // The test vectors use: name="Test Token", symbol="TEST", decimals=18
         let encoded = encode_token_metadata("Test Token", "TEST", 18);
-        assert_eq!(encoded, expected_metadata);
-    }
+        assert_eq!(encoded, expected_metadata, "ABI encoding must match Solidity");
 
-    #[test]
-    fn test_from_abi_encoded_matches_from_token_info() {
-        let encoded = encode_token_metadata("Test Token", "TEST", 18);
-        let hash_from_encoded = MetadataHash::from_abi_encoded(&encoded);
+        let hash = MetadataHash::from_abi_encoded(&encoded);
+        assert_eq!(hash.as_bytes(), &expected_hash, "keccak256 hash must match Solidity");
+
         let hash_from_info = MetadataHash::from_token_info("Test Token", "TEST", 18);
-        assert_eq!(hash_from_encoded, hash_from_info);
+        assert_eq!(hash, hash_from_info, "from_abi_encoded and from_token_info must agree");
     }
 
     fn hex_to_vec(hex: &str) -> std::vec::Vec<u8> {
