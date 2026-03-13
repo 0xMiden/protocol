@@ -1,12 +1,12 @@
 use miden::protocol::active_account
 use miden::protocol::native_account
-use miden::protocol::tx
+use miden::standards::auth::multisig_smart::common
 
 # CONSTANTS
 # =================================================================================================
 
-# [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
-const TIMELOCK_CONTROLLER_SLOT = word("miden::standards::auth::multisig_smart::timelock_controller")
+# [min_delay, propose_expiration_delta, 0, 0]
+const TIMELOCK_POLICY_SLOT = word("miden::standards::auth::multisig_smart::timelock_policy")
 
 # Map entries: [tx_summary_hash] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
@@ -20,11 +20,8 @@ const PENDING_EXECUTE_SLOT = word("miden::standards::auth::multisig_smart::pendi
 # =================================================================================================
 
 const ERR_U32 = "value is not a u32"
-const ERR_SPENDING_WINDOW_ZERO = "spending_window must be non-zero"
 const ERR_MIN_DELAY_ZERO = "min_delay must be non-zero"
 const ERR_PROPOSE_EXPIRATION_DELTA_ZERO = "propose_expiration_delta must be non-zero"
-const ERR_EXECUTE_EXPIRATION_DELTA_ZERO = "execute_expiration_delta must be non-zero"
-const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
 const ERR_TX_ALREADY_PROPOSED = "tx already proposed"
 const ERR_TX_NOT_PROPOSED = "tx not proposed"
 const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
@@ -32,54 +29,69 @@ const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 
-# TIMELOCK CONTROLLER HELPERS
+#! High-impact action.
+#!
+#! Sets the timelock policy used by proposal lifecycle checks.
+#!
+#! Inputs:  [min_delay, propose_expiration_delta]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes TIMELOCK_POLICY_SLOT.
+#! 0: min_delay
+#! 1: propose_expiration_delta
+@locals(2)
+pub proc update_timelock_policy
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
+    loc_store.0
+    # => [propose_expiration_delta]
+
+    u32assert.err=ERR_U32
+    dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
+    loc_store.1
+    # => []
+
+    loc_load.0
+    loc_load.1
+    push.0 push.0
+    # => [0, 0, propose_expiration_delta, min_delay]
+
+    push.TIMELOCK_POLICY_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, propose_expiration_delta, min_delay]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+# TIMELOCK POLICY HELPERS
 # =================================================================================================
 
-#! Loads the timelock controller configuration.
+#! Loads the timelock policy configuration.
 #!
 #! Inputs:  []
-#! Outputs: [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
-proc get_timelock_controller
-    push.TIMELOCK_CONTROLLER_SLOT[0..2]
+#! Outputs: [min_delay, propose_expiration_delta, 0, 0]
+proc get_timelock_policy
+    push.TIMELOCK_POLICY_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.active_account::get_initial_item
-    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
-end
-
-#! Inputs:  []
-#! Outputs: [spending_window]
-proc get_spending_window
-    exec.get_timelock_controller
-    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
-
-    movdn.3
-    # => [min_delay, propose_expiration_delta, execute_expiration_delta, spending_window]
-
-    drop drop drop
-    # => [spending_window]
-
-    dup eq.0 assertz.err=ERR_SPENDING_WINDOW_ZERO
-    # => [spending_window]
+    # => [min_delay, propose_expiration_delta, 0, 0]
 end
 
 #! Inputs:  []
 #! Outputs: [min_delay]
-@locals(2)
 proc get_min_delay
-    exec.get_timelock_controller
-    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+    exec.get_timelock_policy
+    # => [min_delay, propose_expiration_delta, 0, 0]
 
-    loc_store.0
-    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
+    movdn.3
+    # => [propose_expiration_delta, 0, 0, min_delay]
 
-    loc_store.1
-    # => [propose_expiration_delta, execute_expiration_delta]
-
-    drop drop
-    # => []
-
-    loc_load.1
+    drop drop drop
     # => [min_delay]
 
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
@@ -88,41 +100,25 @@ end
 
 #! Inputs:  []
 #! Outputs: [propose_expiration_delta]
-@locals(3)
+@locals(2)
 proc get_propose_expiration_delta
-    exec.get_timelock_controller
-    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
+    exec.get_timelock_policy
+    # => [min_delay, propose_expiration_delta, 0, 0]
 
     loc_store.0
-    # => [min_delay, propose_expiration_delta, execute_expiration_delta]
+    # => [propose_expiration_delta, 0, 0]
 
     loc_store.1
-    # => [propose_expiration_delta, execute_expiration_delta]
+    # => [0, 0]
 
-    loc_store.2
-    # => [execute_expiration_delta]
-
-    drop
+    drop drop
     # => []
 
-    loc_load.2
+    loc_load.1
     # => [propose_expiration_delta]
 
     dup eq.0 assertz.err=ERR_PROPOSE_EXPIRATION_DELTA_ZERO
     # => [propose_expiration_delta]
-end
-
-#! Inputs:  []
-#! Outputs: [execute_expiration_delta]
-proc get_execute_expiration_delta
-    exec.get_timelock_controller
-    # => [spending_window, min_delay, propose_expiration_delta, execute_expiration_delta]
-
-    drop drop drop
-    # => [execute_expiration_delta]
-
-    dup eq.0 assertz.err=ERR_EXECUTE_EXPIRATION_DELTA_ZERO
-    # => [execute_expiration_delta]
 end
 
 #! Inputs:  []
@@ -131,64 +127,8 @@ proc apply_propose_expiration_delta
     exec.get_propose_expiration_delta
     # => [propose_expiration_delta]
 
-    exec.tx::update_expiration_block_delta
+    exec.common::apply_expiration_delta
     # => []
-
-    exec.tx::get_expiration_block_delta
-    # => [tx_expiration_delta]
-
-    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
-    # => [tx_expiration_delta]
-
-    drop
-    # => []
-end
-
-#! Inputs:  []
-#! Outputs: []
-proc apply_execute_expiration_delta
-    exec.get_execute_expiration_delta
-    # => [execute_expiration_delta]
-
-    exec.tx::update_expiration_block_delta
-    # => []
-
-    exec.tx::get_expiration_block_delta
-    # => [tx_expiration_delta]
-
-    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
-    # => [tx_expiration_delta]
-
-    drop
-    # => []
-end
-
-#! Inputs:  []
-#! Outputs: [current_timestamp]
-proc get_current_timestamp
-    exec.tx::get_block_timestamp
-    # => [current_timestamp]
-
-    u32assert.err=ERR_U32
-    # => [current_timestamp]
-end
-
-# UTILS
-# =================================================================================================
-
-#! Returns 1 if WORD == [0,0,0,0], else 0.
-#!
-#! Inputs:  [WORD]
-#! Outputs: [is_empty]
-proc is_empty_word
-    push.0.0.0.0
-    # => [0, 0, 0, 0, WORD]
-
-    eqw
-
-    movdn.8
-    dropw dropw
-    # => [is_empty]
 end
 
 # TIMELOCK + PROPOSALS
@@ -214,7 +154,7 @@ proc is_tx_proposed(tx_summary_hash: word) -> u32
     exec.get_tx_proposal
     # => [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]
 
-    exec.is_empty_word
+    exec.common::is_empty_word
     # => [is_empty_proposal]
 
     eq.0
@@ -288,7 +228,7 @@ end
 #! Inputs:  []
 #! Outputs: [unlock_timestamp, proposal_timestamp]
 proc compute_unlock_timestamp
-    exec.get_current_timestamp
+    exec.common::get_current_timestamp
     # => [proposal_timestamp]
 
     dup
@@ -342,7 +282,7 @@ proc enforce_tx_timelock
     dropw
     # => []
 
-    exec.get_current_timestamp
+    exec.common::get_current_timestamp
     # => [current_timestamp]
 
     loc_load.0
@@ -395,7 +335,7 @@ end
 #! Inputs:  [WORD]
 #! Outputs: []
 proc assert_pending_empty
-    exec.is_empty_word
+    exec.common::is_empty_word
     # => [is_pending_empty]
 
     assert.err=ERR_PENDING_ALREADY_SET
@@ -612,9 +552,6 @@ end
 #! Inputs:  []
 #! Outputs: []
 pub proc execute_proposed_transaction
-    exec.apply_execute_expiration_delta
-    # => []
-
     exec.set_pending_execute
     # => []
 end
@@ -639,17 +576,13 @@ pub proc finalize_timelock_proposals
     loc_store.1
     # => [TX_HASH]
 
-    # Execute finalizer: only if pending_execute is set and delay is required.
     exec.get_pending_execute
     # => [pending_execute_word, TX_HASH]
 
-    exec.is_empty_word
+    exec.common::is_empty_word
     # => [is_pending_execute_empty, TX_HASH]
 
     if.false
-        exec.apply_execute_expiration_delta
-        # => [TX_HASH]
-
         loc_load.1
         # => [requires_delay, TX_HASH]
 
@@ -667,8 +600,6 @@ pub proc finalize_timelock_proposals
             # => [TX_HASH]
         end
 
-        # When pending_execute is set, clear the matching proposal entry regardless of whether
-        # delay enforcement was required in this transaction.
         dupw
         # => [TX_HASH, TX_HASH]
 
@@ -679,11 +610,10 @@ pub proc finalize_timelock_proposals
     exec.clear_pending_execute
     # => [TX_HASH]
 
-    # Cancel finalizer: requires num_verified >= stored min_cancel_sigs.
     exec.get_pending_cancel
     # => [pending_cancel_word, TX_HASH]
 
-    exec.is_empty_word
+    exec.common::is_empty_word
     # => [is_pending_cancel_empty, TX_HASH]
 
     if.false
@@ -731,11 +661,10 @@ pub proc finalize_timelock_proposals
     exec.clear_pending_cancel
     # => [TX_HASH]
 
-    # Propose finalizer.
     exec.get_pending_propose
     # => [pending_propose_hash, TX_HASH]
 
-    exec.is_empty_word
+    exec.common::is_empty_word
     # => [is_pending_propose_empty, TX_HASH]
 
     if.false

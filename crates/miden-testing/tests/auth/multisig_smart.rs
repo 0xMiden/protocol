@@ -63,7 +63,6 @@ const TEST_GET_PRICE_PROC_ROOT: [u64; 4] = [
 const TEST_SPENDING_WINDOW: u32 = 100;
 const TEST_MIN_DELAY: u32 = 30;
 const TEST_PROPOSE_EXPIRATION_DELTA: u16 = 2;
-const TEST_EXECUTE_EXPIRATION_DELTA: u16 = 2;
 
 fn test_oracle_id() -> [Felt; 2] {
     [Felt::new(TEST_ORACLE_ID_PREFIX), Felt::new(TEST_ORACLE_ID_SUFFIX)]
@@ -147,7 +146,6 @@ fn create_multisig_smart_account_with_assets(
     spending_window: u32,
     min_delay: u32,
     propose_expiration_delta: u16,
-    execute_expiration_delta: u16,
     amount_limits: [u64; 4],
     tier_thresholds: [u32; 4],
     oracle_id: [Felt; 2],
@@ -166,7 +164,6 @@ fn create_multisig_smart_account_with_assets(
             spending_window,
             min_delay,
             propose_expiration_delta,
-            execute_expiration_delta,
             amount_limits,
             tier_thresholds,
             oracle_id,
@@ -210,7 +207,6 @@ fn create_multisig_smart_with_fixed_test_configuration(
             spending_window: TEST_SPENDING_WINDOW,
             min_delay: TEST_MIN_DELAY,
             propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
-            execute_expiration_delta: TEST_EXECUTE_EXPIRATION_DELTA,
             amount_limits,
             tier_thresholds,
             oracle_id,
@@ -293,7 +289,6 @@ fn create_multisig_account_with_schemes(
             spending_window: TEST_SPENDING_WINDOW,
             min_delay: TEST_MIN_DELAY,
             propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
-            execute_expiration_delta: TEST_EXECUTE_EXPIRATION_DELTA,
             amount_limits,
             tier_thresholds,
             oracle_id,
@@ -588,7 +583,6 @@ async fn test_multisig_smart_send_3_different_assets(
         TEST_SPENDING_WINDOW,
         TEST_MIN_DELAY,
         TEST_PROPOSE_EXPIRATION_DELTA,
-        TEST_EXECUTE_EXPIRATION_DELTA,
         amount_limits,
         tier_thresholds,
         oracle_id,
@@ -1940,7 +1934,6 @@ async fn test_multisig_smart_proc_threshold_overrides(
         TEST_SPENDING_WINDOW,
         TEST_MIN_DELAY,
         TEST_PROPOSE_EXPIRATION_DELTA,
-        TEST_EXECUTE_EXPIRATION_DELTA,
         amount_limits,
         tier_thresholds,
         oracle_id,
@@ -2401,7 +2394,6 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         TEST_SPENDING_WINDOW,
         TEST_MIN_DELAY,
         TEST_PROPOSE_EXPIRATION_DELTA,
-        TEST_EXECUTE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 2, 3],
         test_oracle_id(),
@@ -2970,7 +2962,6 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
         TEST_SPENDING_WINDOW,
         TEST_MIN_DELAY,
         TEST_PROPOSE_EXPIRATION_DELTA,
-        TEST_EXECUTE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 3, 4],
         test_oracle_id(),

@@ -1,0 +1,127 @@
+use miden::protocol::active_account
+use miden::protocol::native_account
+use miden::protocol::tx
+
+# CONSTANTS
+# =================================================================================================
+
+# [oracle_id_prefix, oracle_id_suffix, 0, 0]
+const ORACLE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::oracle_config")
+
+# Procedure root for the oracle price reader (e.g. get_median proc root)
+# [proc_root]
+const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::get_price_proc_root")
+
+#! High-impact action.
+#!
+#! Updates the oracle configuration and the procedure root used for price reads.
+#! - Stores the oracle id (prefix/suffix) in ORACLE_CONFIG_SLOT as [oracle_id_prefix, oracle_id_suffix, 0, 0]
+#! - Stores the oracle "get_price" (e.g. get_median) procedure root in GET_PRICE_PROC_ROOT_SLOT as [proc_root]
+#!
+#! Inputs:  [oracle_id_prefix, oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+#! Outputs: []
+#!
+#! Side effects:
+#!   - Writes ORACLE_CONFIG_SLOT
+#!   - Writes GET_PRICE_PROC_ROOT_SLOT
+#!
+#! Locals:
+#!
+#! 0: oracle_id_prefix
+#! 1: oracle_id_suffix
+#! 2: get_price_root_w3
+#! 3: get_price_root_w2
+#! 4: get_price_root_w1
+#! 5: get_price_root_w0
+@locals(6)
+pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
+    # Store oracle_id_prefix
+    loc_store.0
+    # => [oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+
+    # Store oracle_id_suffix
+    loc_store.1
+    # => [GET_MEDIAN_PROC_ROOT]
+
+    # Store oracle get_price proc_root
+    loc_store.2
+    # => [root_w2, root_w1, root_w0]
+
+    loc_store.3
+    # => [root_w1, root_w0]
+
+    loc_store.4
+    # => [root_w0]
+
+    loc_store.5
+    # => []
+
+    # ------ Write ORACLE_CONFIG_SLOT = [oracle_id_prefix, oracle_id_suffix, 0, 0]
+    # ------ Reconstruct the stack: [0, 0, oracle_id_suffix, oracle_id_prefix]
+    loc_load.0
+    loc_load.1
+    push.0
+    push.0
+    # => [0, 0, oracle_id_suffix, oracle_id_prefix]
+
+    push.ORACLE_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, 0, 0, oracle_id_suffix, oracle_id_prefix]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+
+    # ------ Write GET_PRICE_PROC_ROOT_SLOT = [GET_MEDIAN_PROC_ROOT]
+    loc_load.5
+    loc_load.4
+    loc_load.3
+    loc_load.2
+    # => [root_w3, root_w2, root_w1, root_w0]
+
+    push.GET_PRICE_PROC_ROOT_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, root_w3, root_w2, root_w1, root_w0]
+
+    exec.native_account::set_item
+    # => [OLD_WORD]
+
+    dropw
+    # => []
+end
+
+#! Inputs: []
+#! Outputs: [oracle_id_prefix, oracle_id_suffix]
+proc get_oracle_id
+    push.ORACLE_CONFIG_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [oracle_id_prefix, oracle_id_suffix, 0, 0]
+
+    drop drop
+    # => [oracle_id_prefix, oracle_id_suffix]
+end
+
+#! Inputs: []
+#! Outputs: [get_price_proc_root]
+proc get_oracle_price_proc_root
+    push.GET_PRICE_PROC_ROOT_SLOT[0..2]
+    # => [slot_prefix, slot_suffix]
+
+    exec.active_account::get_item
+    # => [get_price_proc_root]
+end
+
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [is_tracked, amount_in_usd]
+pub proc get_price
+    exec.get_oracle_price_proc_root
+    # => [get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
+
+    exec.get_oracle_id
+    # => [oracle_id_prefix, oracle_id_suffix, get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
+
+    exec.tx::execute_foreign_procedure
+    # => [is_tracked, amount_in_usd]
+end

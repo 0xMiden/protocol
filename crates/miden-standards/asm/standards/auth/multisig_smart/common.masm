@@ -1,0 +1,57 @@
+use miden::protocol::tx
+
+# ERRORS
+# =================================================================================================
+
+const ERR_U32 = "value is not a u32"
+const ERR_EXPIRATION_DELTA_ZERO = "expiration_delta must be non-zero"
+const ERR_TX_EXPIRATION_DELTA_NOT_SET = "tx expiration delta must be set"
+
+#! Inputs:  []
+#! Outputs: [current_timestamp]
+pub proc get_current_timestamp
+    exec.tx::get_block_timestamp
+    # => [current_timestamp]
+
+    u32assert.err=ERR_U32
+    # => [current_timestamp]
+end
+
+#! Returns 1 if WORD == [0,0,0,0], else 0.
+#!
+#! Inputs:  [WORD]
+#! Outputs: [is_empty]
+pub proc is_empty_word
+    push.0.0.0.0
+    # => [0, 0, 0, 0, WORD]
+
+    eqw
+
+    movdn.8
+    dropw dropw
+    # => [is_empty]
+end
+
+#! Applies an expiration delta to the current transaction and verifies it was set.
+#!
+#! Inputs:  [expiration_delta]
+#! Outputs: []
+pub proc apply_expiration_delta
+    u32assert.err=ERR_U32
+    # => [expiration_delta]
+
+    dup eq.0 assertz.err=ERR_EXPIRATION_DELTA_ZERO
+    # => [expiration_delta]
+
+    exec.tx::update_expiration_block_delta
+    # => []
+
+    exec.tx::get_expiration_block_delta
+    # => [tx_expiration_delta]
+
+    dup eq.0 assertz.err=ERR_TX_EXPIRATION_DELTA_NOT_SET
+    # => [tx_expiration_delta]
+
+    drop
+    # => []
+end

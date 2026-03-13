@@ -56,7 +56,6 @@ pub enum Auth {
         spending_window: u32,
         min_delay: u32,
         propose_expiration_delta: u16,
-        execute_expiration_delta: u16,
         amount_limits: [u64; 4],
         tier_thresholds: [u32; 4],
         oracle_id: [miden_protocol::Felt; 2],
@@ -135,7 +134,6 @@ impl Auth {
                 spending_window,
                 min_delay,
                 propose_expiration_delta,
-                execute_expiration_delta,
                 amount_limits,
                 tier_thresholds,
                 oracle_id,
@@ -144,12 +142,8 @@ impl Auth {
                 let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig smart config")
-                    .with_timelock_controller(
-                        *spending_window,
-                        *min_delay,
-                        *propose_expiration_delta,
-                        *execute_expiration_delta,
-                    )
+                    .with_spending_window(*spending_window)
+                    .with_timelock_policy(*min_delay, *propose_expiration_delta)
                     .with_amount_limits(*amount_limits)
                     .with_tier_thresholds(*tier_thresholds)
                     .with_oracle_config(*oracle_id)
