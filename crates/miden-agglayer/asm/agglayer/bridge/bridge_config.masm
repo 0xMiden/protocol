@@ -216,12 +216,13 @@ pub proc lookup_faucet_by_token_address
     # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
 
     # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
-    dup.1 dup.1 movup.5 movup.5
+    dup.1 dup.1 push.0.0
     # => [0, 0, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix] 
 
     exec.account_id::is_equal
     # => [is_id_zero, faucet_id_prefix, faucet_id_suffix]
 
+    # If AccountId returned from map is zero, it means the token is not registered.
     assertz.err=ERR_TOKEN_NOT_REGISTERED
     # => [faucet_id_prefix, faucet_id_suffix]
 end
