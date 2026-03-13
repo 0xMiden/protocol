@@ -134,18 +134,22 @@ impl Ownable2Step {
         };
         [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix].into()
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema =
+            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Two-step ownership management component")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<Ownable2Step> for AccountComponent {
     fn from(ownership: Ownable2Step) -> Self {
         let storage_slot = ownership.to_storage_slot();
-
-        let storage_schema = StorageSchema::new([Ownable2Step::slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(Ownable2Step::NAME, AccountType::all())
-            .with_description("Two-step ownership management component")
-            .with_storage_schema(storage_schema);
+        let metadata = Ownable2Step::component_metadata();
 
         AccountComponent::new(ownable2step_library(), vec![storage_slot], metadata).expect(
             "Ownable2Step component should satisfy the requirements of a valid account component",

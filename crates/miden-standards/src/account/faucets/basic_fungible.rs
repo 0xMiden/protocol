@@ -79,6 +79,12 @@ impl BasicFungibleFaucet {
         *BASIC_FUNGIBLE_FAUCET_BURN
     }
 
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description("Basic fungible faucet component for minting and burning tokens")
+    }
+
     /// Checks that the account contains the basic fungible faucet interface and extracts
     /// the [`FungibleTokenMetadata`] from storage.
     fn try_from_interface(
@@ -95,9 +101,7 @@ impl BasicFungibleFaucet {
 
 impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(_faucet: BasicFungibleFaucet) -> Self {
-        let metadata =
-            AccountComponentMetadata::new(BasicFungibleFaucet::NAME, [AccountType::FungibleFaucet])
-                .with_description("Basic fungible faucet component for minting and burning tokens");
+        let metadata = BasicFungibleFaucet::component_metadata();
 
         AccountComponent::new(basic_fungible_faucet_library(), vec![], metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
