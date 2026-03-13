@@ -24,7 +24,7 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 
 #! Reads claim data from memory and inserts it into the advice map under two separate keys.
 #!
-#! This procedure organizes the claim note data into three logical groups and inserts them
+#! This procedure organizes the claim note data into two logical groups and inserts them
 #! into the advice map under separate keys for easier access.
 #!
 #! Inputs: []
