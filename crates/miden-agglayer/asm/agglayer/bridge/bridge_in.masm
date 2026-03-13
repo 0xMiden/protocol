@@ -695,7 +695,7 @@ proc build_mint_recipient
     # => [MINT_SCRIPT_ROOT]
 
     # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
-    swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     # Build the MINT note recipient
