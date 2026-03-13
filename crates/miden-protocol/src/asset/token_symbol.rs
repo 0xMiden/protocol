@@ -36,7 +36,7 @@ impl TokenSymbol {
     /// Panics if:
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided token string contains characters that are not uppercase ASCII.
-    pub fn from_static_str(symbol: &str) -> Self {
+    pub fn new_unchecked(symbol: &str) -> Self {
         Self::new(symbol).expect("invalid token symbol")
     }
 
@@ -63,6 +63,17 @@ impl TokenSymbol {
     }
 
     /// Returns the [`Felt`] encoding of this token symbol.
+    ///
+    /// The alphabet used in the encoding process consists of the Latin capital letters as defined
+    /// in the ASCII table, having the length of 26 characters.
+    ///
+    /// The encoding is performed by multiplying the intermediate encoded value by the length of
+    /// the used alphabet and adding the relative index of the character to it. At the end of the
+    /// encoding process the length of the initial token string is added to the encoded value.
+    ///
+    /// Relative character index is computed by subtracting the index of the character "A" (65)
+    /// from the index of the currently processing character, e.g., `A = 65 - 65 = 0`,
+    /// `B = 66 - 65 = 1`, `...` , `Z = 90 - 65 = 25`.
     pub fn as_element(&self) -> Felt {
         let bytes = self.0.as_bytes();
         let len = bytes.len();
@@ -110,6 +121,21 @@ impl TryFrom<&str> for TokenSymbol {
     }
 }
 
+/// Decodes a [`Felt`] representation of the token symbol into a [`TokenSymbol`].
+///
+/// The alphabet used in the decoding process consists of the Latin capital letters as defined in
+/// the ASCII table, having the length of 26 characters.
+///
+/// The decoding is performed by getting the modulus of the intermediate encoded value by the
+/// length of the used alphabet and then dividing the intermediate value by the length of the
+/// alphabet to shift to the next character. At the beginning of the decoding process the length
+/// of the initial token string is obtained from the encoded value. After that the value obtained
+/// after taking the modulus represents the relative character index, which then gets converted to
+/// the ASCII index.
+///
+/// Final ASCII character index is computed by adding the index of the character "A" (65) to the
+/// index of the currently processing character, e.g., `A = 0 + 65 = 65`, `B = 1 + 65 = 66`,
+/// `...` , `Z = 25 + 65 = 90`.
 impl TryFrom<Felt> for TokenSymbol {
     type Error = TokenSymbolError;
 
@@ -234,16 +260,16 @@ mod test {
         assert_matches!(err, TokenSymbolError::ValueTooSmall(0));
     }
 
-    // from_static_str tests
+    // new_unchecked tests
     // --------------------------------------------------------------------------------------------
 
     #[test]
-    fn test_from_static_str_matches_new() {
-        // Test that from_static_str produces the same result as new
+    fn test_new_unchecked_matches_new() {
+        // Test that new_unchecked produces the same result as new
         let symbols = ["A", "BC", "ETH", "MIDEN", "ZZZZZZ", "ABCDEFGH", "ZZZZZZZZZZZZ"];
         for symbol in symbols {
             let from_new = TokenSymbol::new(symbol).unwrap();
-            let from_static = TokenSymbol::from_static_str(symbol);
+            let from_static = TokenSymbol::new_unchecked(symbol);
             assert_eq!(from_new, from_static, "Mismatch for symbol: {}", symbol);
         }
     }
@@ -251,30 +277,30 @@ mod test {
     #[test]
     #[should_panic(expected = "invalid token symbol")]
     fn token_symbol_panics_on_empty_string() {
-        TokenSymbol::from_static_str("");
+        TokenSymbol::new_unchecked("");
     }
 
     #[test]
     #[should_panic(expected = "invalid token symbol")]
     fn token_symbol_panics_on_too_long_string() {
-        TokenSymbol::from_static_str("ABCDEFGHIJKLM");
+        TokenSymbol::new_unchecked("ABCDEFGHIJKLM");
     }
 
     #[test]
     #[should_panic(expected = "invalid token symbol")]
     fn token_symbol_panics_on_lowercase() {
-        TokenSymbol::from_static_str("eth");
+        TokenSymbol::new_unchecked("eth");
     }
 
     #[test]
     #[should_panic(expected = "invalid token symbol")]
     fn token_symbol_panics_on_invalid_character() {
-        TokenSymbol::from_static_str("ET$");
+        TokenSymbol::new_unchecked("ET$");
     }
 
     #[test]
     #[should_panic(expected = "invalid token symbol")]
     fn token_symbol_panics_on_number() {
-        TokenSymbol::from_static_str("ETH1");
+        TokenSymbol::new_unchecked("ETH1");
     }
 }
