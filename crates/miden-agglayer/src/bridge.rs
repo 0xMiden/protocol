@@ -300,8 +300,6 @@ impl AggLayerBridge {
     /// - the code commitment of the provided account does not match the code commitment of the
     ///   [`AggLayerBridge`].
     fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
-        debug_assert_eq!(BRIDGE_CODE_COMMITMENT, account.code().commitment());
-
         if BRIDGE_CODE_COMMITMENT != account.code().commitment() {
             return Err(AgglayerBridgeError::CodeCommitmentMismatch);
         }

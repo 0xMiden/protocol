@@ -71,7 +71,7 @@ fn main() -> Result<()> {
     let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(agglayer_lib)?;
 
-    // compile account components (thin wrappers per component)
+    // compile account components (thin wrappers per component) and return their libraries
     let component_libraries = compile_account_components(
         &source_dir.join(ASM_COMPONENTS_DIR),
         &target_dir.join(ASM_COMPONENTS_DIR),
@@ -85,6 +85,7 @@ fn main() -> Result<()> {
         assembler.clone(),
     )?;
 
+    // generate agglayer specific constants
     let constants_out_path = Path::new(&build_dir).join(AGGLAYER_GLOBAL_CONSTANTS_FILE_NAME);
     generate_agglayer_constants(constants_out_path, component_libraries)?;
 
@@ -162,7 +163,8 @@ fn compile_note_scripts(
 // ================================================================================================
 
 /// Compiles the account components in `source_dir` into MASL libraries, stores the compiled
-/// files in `target_dir`, and returns the bridge and faucet component libraries.
+/// files in `target_dir`, and returns a vector of compiled component libraries along with their
+/// names.
 ///
 /// Each `.masm` file in the components directory is a thin wrapper that re-exports specific
 /// procedures from the main agglayer library. This ensures each component (bridge, faucet)
@@ -214,9 +216,9 @@ fn compile_account_components(
 
 /// Generates a Rust file containing AggLayer specific constants.
 ///
-/// At the moment, this file contains the following list:
-/// - AggLayer bridge account code commitment.
-/// - AggLayer faucet account code commitment.
+/// At the moment, this file contains the following constants:
+/// - AggLayer Bridge code commitment.
+/// - AggLayer Faucet code commitment.
 fn generate_agglayer_constants(
     target_file: impl AsRef<Path>,
     component_libraries: Vec<(String, Library)>,
@@ -237,12 +239,16 @@ fn generate_agglayer_constants(
     )
     .unwrap();
 
+    // Create a dummy metadata to be able to create components. We only interested in the resulting
+    // code commitment, so it doesn't matter what does this metadata holds.
     let dummy_metadata = AccountComponentMetadata::new("dummy").with_supports_all_types();
 
+    // iterate over the AggLayer Bridge and AggLayer Faucet libraries
     for (lib_name, content_library) in component_libraries {
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
+        // use `AccountCode` to merge codes of agglayer and authentication components
         let account_code = AccountCode::from_components(
             &[AccountComponent::from(NoAuth), agglayer_component],
             AccountType::FungibleFaucet,
@@ -268,6 +274,7 @@ fn generate_agglayer_constants(
         .unwrap();
     }
 
+    // write the resulting constants to the target directory
     shared::write_if_changed(target_file, file_contents.as_bytes())?;
 
     Ok(())
