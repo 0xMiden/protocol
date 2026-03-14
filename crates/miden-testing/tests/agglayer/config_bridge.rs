@@ -1,11 +1,7 @@
 extern crate alloc;
 
-use miden_agglayer::{
-    AggLayerBridge,
-    ConfigAggBridgeNote,
-    create_existing_bridge_account,
-    faucet_registry_key,
-};
+use miden_agglayer::faucet::faucet_registry_key;
+use miden_agglayer::{AggLayerBridge, ConfigAggBridgeNote, create_existing_bridge_account};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
 use miden_protocol::crypto::rand::FeltRng;
