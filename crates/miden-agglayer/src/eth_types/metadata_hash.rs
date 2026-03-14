@@ -59,7 +59,7 @@ impl MetadataHash {
 // ================================================================================================
 
 sol! {
-    struct TokenMetadata {
+    struct SolTokenMetadata {
         string name;
         string symbol;
         uint8 decimals;
@@ -70,7 +70,7 @@ sol! {
 ///
 /// This produces the same encoding as Solidity's `abi.encode(string, string, uint8)`.
 pub(crate) fn encode_token_metadata(name: &str, symbol: &str, decimals: u8) -> Vec<u8> {
-    TokenMetadata {
+    SolTokenMetadata {
         name: name.into(),
         symbol: symbol.into(),
         decimals,

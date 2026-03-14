@@ -38,7 +38,7 @@ miden-crypto = { workspace = true }
 
 [dev-dependencies]
 miden-agglayer = { features = ["testing"], path = "." }
-serde          = { features = ["derive"], version = "1.0" }
+serde          = { features = ["derive"], workspace = true }
 serde_json     = { version = "1.0" }
 
 [build-dependencies]
