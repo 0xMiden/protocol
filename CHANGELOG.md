@@ -89,6 +89,7 @@
 - Explicitly use `get_native_account_active_storage_slots_ptr` in `account::set_item` and `account::set_map_item`.
 - Added Ownable2Step as an Account Component ([#2572](https://github.com/0xMiden/protocol/pull/2572))
 - [BREAKING] Introduced `PrivateNoteHeader` for output notes and removed `RawOutputNote::Header` variant ([#2569](https://github.com/0xMiden/protocol/pull/2569)).
+- [BREAKING] Fixed `TokenSymbol::try_from(Felt)` to reject values below `MIN_ENCODED_VALUE`; implemented `Display` for `TokenSymbol` replacing the fallible `to_string()` method; removed `Default` derive ([#2464](https://github.com/0xMiden/protocol/issues/2464)).
 
 ## 0.13.3 (2026-01-27)
 

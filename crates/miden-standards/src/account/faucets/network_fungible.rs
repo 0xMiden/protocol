@@ -174,7 +174,7 @@ impl NetworkFungibleFaucet {
     }
 
     /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> TokenSymbol {
+    pub fn symbol(&self) -> &TokenSymbol {
         self.metadata.symbol()
     }
 
@@ -332,7 +332,7 @@ mod tests {
 
         let account = create_network_fungible_faucet(
             init_seed,
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             AccessControl::Ownable2Step { owner },
@@ -347,7 +347,7 @@ mod tests {
 
         let faucet = NetworkFungibleFaucet::try_from(&account)
             .expect("network fungible faucet should be extractable from account");
-        assert_eq!(faucet.symbol(), symbol);
+        assert_eq!(faucet.symbol(), &symbol);
         assert_eq!(faucet.decimals(), decimals);
         assert_eq!(faucet.max_supply(), max_supply);
         assert_eq!(faucet.token_supply(), Felt::ZERO);
