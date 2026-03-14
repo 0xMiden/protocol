@@ -339,9 +339,7 @@ pub proc claim
     exec.bridge_config::lookup_faucet_by_token_address
     # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
-    mem_store.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
-    mem_store.CLAIM_FAUCET_ID_SUFFIX_MEM_ADDR
-    # => [pad(16)]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
@@ -368,7 +366,7 @@ end
 #! 4. Calls `verify_u256_to_native_amount_conversion` to assert that:
 #!        faucet_mint_amount == floor(raw_amount / 10^scale)
 #!
-#! Inputs:  []
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
 #!
 #! Panics if:
@@ -378,15 +376,13 @@ end
 #! Invocation: exec
 proc verify_claim_amount
     # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
-    padw padw padw padw
-    # => [pad(16)]
-
-    # Step 2: Load the faucet account ID from global memory
-    mem_load.CLAIM_FAUCET_ID_SUFFIX_MEM_ADDR
-    mem_load.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
+    padw padw 
+    movup.9 movup.9
+    padw padw
+    movup.9 movup.9
     # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
-    # Step 3: FPI call to faucet's get_scale procedure
+    # Step 2: FPI call to faucet's get_scale procedure
     procref.agglayer_faucet::get_scale
     # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
 
@@ -400,18 +396,18 @@ proc verify_claim_amount
     movdn.15 dropw dropw dropw drop drop drop
     # => [scale]
 
-    # Step 4: Load the raw U256 amount from leaf data memory
+    # Step 3: Load the raw U256 amount from leaf data memory
     exec.get_raw_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
-    # Step 5: Load faucet_mint_amount (y) and position it for verification
+    # Step 4: Load faucet_mint_amount (y) and position it for verification
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     movdn.9
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
-    # Step 6: Verify that y = floor(x / 10^scale)
+    # Step 5: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [y]
 
