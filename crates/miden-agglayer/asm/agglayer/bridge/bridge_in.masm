@@ -122,8 +122,8 @@ const CUR_HASH_LO_LOCAL = 0 # first half of the current Keccak256 hash value
 const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
 
 # Offsets in the local memory of the `claim` procedure
-const CLAIM_PREFIX_MEM_LOC = 0
-const CLAIM_SUFFIX_MEM_LOC = 1
+const CLAIM_DEST_ID_PREFIX_LOCAL = 0
+const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -316,7 +316,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.get_destination_account_id_data
-    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
+    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
     # => [pad(7)]
 
     # VALIDATE CLAIM - call verify_leaf_bridge directly (bridge is the native account)
@@ -348,8 +348,8 @@ pub proc claim
     # => [pad(16)]
     
     # Build MINT output note targeting the aggfaucet
-    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
-    # => [prefix, suffix, pad(16)]
+    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
+    # => [destination_id_prefix, destination_id_suffix, pad(16)]
 
     exec.build_mint_output_note
     # => [pad(16)]
@@ -582,11 +582,8 @@ end
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Look up the faucet, create the output note, and set the attachment.
 #!
-#! Inputs:  [prefix, suffix]
+#! Inputs:  [destination_id_prefix, destination_id_suffix]
 #! Outputs: []
-#!
-#! Where:
-#! - prefix, suffix: destination account ID
 #!
 #! Invocation: exec
 proc build_mint_output_note
@@ -616,30 +613,30 @@ end
 #! - [16]: account_id_suffix (destination account suffix)
 #! - [17]: account_id_prefix (destination account prefix)
 #!
-#! Inputs:  [prefix, suffix]
+#! Inputs:  [destination_id_prefix, destination_id_suffix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
     # Write P2ID storage items first (before prefix is consumed): [16..17]
-    # Write account_id_suffix [16]
+    # Write destination_id_suffix [16]
     dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT
-    # => [prefix, suffix]
+    # => [destination_id_prefix, destination_id_suffix]
 
-    # Write account_id_prefix [17]
+    # Write destination_id_prefix [17]
     dup push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
-    # => [prefix, suffix]
+    # => [destination_id_prefix, destination_id_suffix]
 
     swap drop
-    # => [prefix]
+    # => [destination_id_prefix]
 
     # Get the native amount from the pre-computed miden_claim_amount
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [native_amount, prefix]
+    # => [native_amount, destination_id_prefix]
 
     # Compute the note tag for the destination account (consumes prefix)
     swap
-    # => [prefix, native_amount]
+    # => [destination_id_prefix, native_amount]
 
     exec.note_tag::create_account_target
     # => [dest_tag, native_amount]
