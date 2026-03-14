@@ -12,6 +12,9 @@ use miden_processor::{
 
 /// A transaction-scoped program executor used by
 /// [`TransactionExecutor`](super::TransactionExecutor).
+///
+/// TODO: Move this trait into `miden-vm` once the executor boundary is
+/// consolidated there.
 pub trait ProgramExecutor {
     /// Create a new executor configured with the provided transaction inputs and options.
     fn new(
