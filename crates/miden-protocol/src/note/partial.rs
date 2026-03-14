@@ -75,6 +75,10 @@ impl Serializable for PartialNote {
         self.recipient_digest.write_into(target);
         self.assets.write_into(target)
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.metadata().get_size_hint() + Word::SERIALIZED_SIZE + self.assets.get_size_hint()
+    }
 }
 
 impl Deserializable for PartialNote {

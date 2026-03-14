@@ -1,8 +1,7 @@
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -25,13 +24,12 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{OutputNote, OutputNotes, TransactionOutputs};
+use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
 use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
-use super::ZERO;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
@@ -55,7 +53,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(account.clone())
         .extend_input_notes(vec![input_note_1])
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note_1.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_1.clone())])
         .build()?;
 
     let code = format!(
@@ -98,12 +96,12 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let mut final_account = account.clone();
     final_account.increment_nonce(ONE)?;
 
-    let output_notes = OutputNotes::new(
+    let output_notes = RawOutputNotes::new(
         tx_context
             .expected_output_notes()
             .iter()
             .cloned()
-            .map(OutputNote::Full)
+            .map(RawOutputNote::Full)
             .collect(),
     )?;
 
@@ -122,20 +120,35 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         0,
     )?;
 
-    let mut expected_stack = Vec::with_capacity(16);
-    expected_stack.extend(output_notes.commitment().as_elements().iter().rev());
-    expected_stack.extend(account_update_commitment.as_elements().iter().rev());
-    expected_stack.push(fee_asset.faucet_id().prefix().as_felt());
-    expected_stack.push(fee_asset.faucet_id().suffix());
-    expected_stack.push(Felt::try_from(fee_asset.amount()).unwrap());
-    expected_stack.push(Felt::from(u32::MAX)); // Value for tx expiration block number
-    expected_stack.resize(16, ZERO);
-
     assert_eq!(
-        exec_output.stack.as_slice(),
-        expected_stack.as_slice(),
-        "Stack state after finalize_transaction does not contain the expected values"
+        exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
+        output_notes.commitment()
     );
+    assert_eq!(
+        exec_output.get_stack_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX),
+        account_update_commitment,
+    );
+    assert_eq!(
+        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX),
+        fee_asset.faucet_id().suffix(),
+    );
+    assert_eq!(
+        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX),
+        fee_asset.faucet_id().prefix().as_felt()
+    );
+    assert_eq!(
+        exec_output
+            .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
+            .as_canonical_u64(),
+        fee_asset.amount()
+    );
+    assert_eq!(
+        exec_output
+            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+            .as_canonical_u64(),
+        u64::from(u32::MAX)
+    );
+    assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
     assert_eq!(
         exec_output.stack.len(),
@@ -159,8 +172,8 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(account.clone())
         .extend_expected_output_notes(vec![
-            OutputNote::Full(output_note0.clone()),
-            OutputNote::Full(output_note1.clone()),
+            RawOutputNote::Full(output_note0.clone()),
+            RawOutputNote::Full(output_note1.clone()),
         ])
         .build()?;
 
@@ -255,7 +268,7 @@ async fn epilogue_fails_when_assets_arent_preserved(
     let input_note = NoteBuilder::new(account.id(), *builder.rng_mut())
         .add_assets([Asset::from(input_asset)])
         .build()?;
-    builder.add_output_note(OutputNote::Full(input_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let mock_chain = builder.build()?;
 
     let code = format!(
@@ -336,7 +349,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         assert_eq!(
             exec_output
                 .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-                .as_int(),
+                .as_canonical_u64(),
             expected_expiry
         );
     }
@@ -396,7 +409,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_int() as u32,
+            .as_canonical_u64() as u32,
         u32::MAX
     );
 
@@ -455,7 +468,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
             push.91.92.93.94
             push.MOCK_VALUE_SLOT0[0..2]
             repeat.5 movup.5 drop end
-            # => [slot_id_prefix, slot_id_suffix, VALUE]
+            # => [slot_id_suffix, slot_id_prefix, VALUE]
             call.account::set_item
             # => [PREV_VALUE]
             dropw

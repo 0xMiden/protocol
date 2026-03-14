@@ -64,7 +64,7 @@ async fn test_mint_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => [ASSET_VALUE]
 
             # extract balance from asset
-            drop drop drop
+            movdn.3 drop drop drop
             # => [balance]
 
             push.{FUNGIBLE_ASSET_AMOUNT} assert_eq.err="input vault should contain minted asset"
@@ -154,10 +154,10 @@ async fn test_mint_fungible_asset_fails_when_amount_exceeds_max_representable_am
         use mock::faucet
 
         begin
+            push.0
+            push.0
+            push.0
             push.{max_amount_plus_1}
-            push.0
-            push.0
-            push.0
             # => [ASSET_VALUE]
 
             push.{ASSET_KEY}
@@ -333,7 +333,7 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             # => [ASSET_VALUE]
 
             # extract balance from asset
-            drop drop drop
+            movdn.3 drop drop drop
             # => [balance]
 
             push.{final_input_vault_asset_amount}
@@ -622,8 +622,10 @@ fn setup_non_faucet_account() -> anyhow::Result<Account> {
         "pub use ::miden::protocol::faucet::mint
          pub use ::miden::protocol::faucet::burn",
     )?;
-    let metadata = AccountComponentMetadata::new("test::non_faucet_component")
-        .with_supported_type(AccountType::RegularAccountUpdatableCode);
+    let metadata = AccountComponentMetadata::new(
+        "test::non_faucet_component",
+        [AccountType::RegularAccountUpdatableCode],
+    );
     let faucet_component = AccountComponent::new(faucet_code, vec![], metadata)?;
     Ok(AccountBuilder::new([4; 32])
         .account_type(AccountType::RegularAccountUpdatableCode)

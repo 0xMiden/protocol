@@ -2,13 +2,18 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use core::str::FromStr;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_mast_package::{Package, SectionId};
-use miden_processor::DeserializationError;
 use semver::Version;
 
 use super::{AccountType, SchemaRequirement, StorageSchema, StorageValueName};
 use crate::errors::AccountError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT COMPONENT METADATA
 // ================================================================================================
@@ -36,7 +41,6 @@ use crate::errors::AccountError;
 /// ```
 /// use std::collections::BTreeMap;
 ///
-/// use miden_protocol::account::StorageSlotName;
 /// use miden_protocol::account::component::{
 ///     AccountComponentMetadata,
 ///     FeltSchema,
@@ -49,6 +53,7 @@ use crate::errors::AccountError;
 ///     WordSchema,
 ///     WordValue,
 /// };
+/// use miden_protocol::account::{AccountType, StorageSlotName};
 ///
 /// let slot_name = StorageSlotName::new("demo::test_value")?;
 ///
@@ -64,7 +69,7 @@ use crate::errors::AccountError;
 ///     StorageSlotSchema::Value(ValueSlotSchema::new(Some("demo slot".into()), word)),
 /// )])?;
 ///
-/// let metadata = AccountComponentMetadata::new("test name")
+/// let metadata = AccountComponentMetadata::new("test name", AccountType::all())
 ///     .with_description("description of the component")
 ///     .with_storage_schema(storage_schema);
 ///
@@ -100,21 +105,23 @@ pub struct AccountComponentMetadata {
 }
 
 impl AccountComponentMetadata {
-    /// Create a new [AccountComponentMetadata] with the given name.
+    /// Create a new [AccountComponentMetadata] with the given name and supported account types.
     ///
     /// Other fields are initialized to sensible defaults:
     /// - `description`: empty string
     /// - `version`: 1.0.0
-    /// - `supported_types`: empty set
     /// - `storage_schema`: default (empty)
     ///
     /// Use the `with_*` mutator methods to customize these fields.
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        supported_types: impl IntoIterator<Item = AccountType>,
+    ) -> Self {
         Self {
             name: name.into(),
             description: String::new(),
             version: Version::new(1, 0, 0),
-            supported_types: BTreeSet::new(),
+            supported_types: supported_types.into_iter().collect(),
             storage_schema: StorageSchema::default(),
         }
     }
@@ -128,38 +135,6 @@ impl AccountComponentMetadata {
     /// Sets the version of the component.
     pub fn with_version(mut self, version: Version) -> Self {
         self.version = version;
-        self
-    }
-
-    /// Adds a supported account type to the component.
-    pub fn with_supported_type(mut self, account_type: AccountType) -> Self {
-        self.supported_types.insert(account_type);
-        self
-    }
-
-    /// Sets the supported account types of the component.
-    pub fn with_supported_types(mut self, supported_types: BTreeSet<AccountType>) -> Self {
-        self.supported_types = supported_types;
-        self
-    }
-
-    /// Sets the component to support all account types.
-    pub fn with_supports_all_types(mut self) -> Self {
-        self.supported_types.extend([
-            AccountType::FungibleFaucet,
-            AccountType::NonFungibleFaucet,
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]);
-        self
-    }
-
-    /// Sets the component to support regular account types (immutable and updatable code).
-    pub fn with_supports_regular_types(mut self) -> Self {
-        self.supported_types.extend([
-            AccountType::RegularAccountImmutableCode,
-            AccountType::RegularAccountUpdatableCode,
-        ]);
         self
     }
 

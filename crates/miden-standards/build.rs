@@ -15,6 +15,7 @@ const ASM_STANDARDS_DIR: &str = "standards";
 const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
+const ACCOUNT_COMPONENTS_LIB_NAMESPACE: &str = "miden::standards::components";
 
 const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
@@ -43,11 +44,10 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    let mut assembler = TransactionKernel::assembler().with_warnings_as_errors(true);
     // compile standards library (includes note scripts)
-    let standards_lib =
-        compile_standards_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
+    let standards_lib = compile_standards_lib(&source_dir, &target_dir, assembler.clone())?;
 
-    let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(standards_lib)?;
 
     // compile account components
@@ -108,7 +108,19 @@ fn compile_account_components(
         let component_source_code = fs::read_to_string(&masm_file_path)
             .expect("reading the component's MASM source code should succeed");
 
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+        // Build full library path from directory structure:
+        // e.g. faucets/basic_fungible_faucet.masm ->
+        // miden::standards::components::faucets::basic_fungible_faucet
+        let relative_path = masm_file_path
+            .strip_prefix(source_dir)
+            .expect("masm file should be inside source dir");
+        let mut library_path = ACCOUNT_COMPONENTS_LIB_NAMESPACE.to_owned();
+        for component in relative_path.with_extension("").components() {
+            let part = component.as_os_str().to_str().expect("valid UTF-8");
+            library_path.push_str("::");
+            library_path.push_str(part);
+        }
+        let named_source = NamedSource::new(library_path, component_source_code);
 
         let component_library = assembler
             .clone()

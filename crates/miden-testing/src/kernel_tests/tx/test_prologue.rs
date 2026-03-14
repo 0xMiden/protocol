@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::fast::ExecutionOutput;
-use miden_processor::{AdviceInputs, Word};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{ExecutionOutput, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -15,6 +15,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::tx_kernel::ERR_ACCOUNT_SEED_AND_COMMITMENT_DIGEST_MISMATCH;
 use miden_protocol::note::NoteId;
 use miden_protocol::testing::account_id::{
@@ -75,12 +76,7 @@ use miden_protocol::transaction::memory::{
     VALIDATOR_KEY_COMMITMENT_PTR,
     VERIFICATION_BASE_FEE_IDX,
 };
-use miden_protocol::transaction::{
-    ExecutedTransaction,
-    TransactionAdviceInputs,
-    TransactionArgs,
-    TransactionKernel,
-};
+use miden_protocol::transaction::{ExecutedTransaction, TransactionArgs, TransactionKernel};
 use miden_protocol::{EMPTY_WORD, WORD_SIZE};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -268,19 +264,19 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[BLOCK_NUMBER_IDX],
-        inputs.tx_inputs().block_header().block_num().into(),
+        Felt::from(inputs.tx_inputs().block_header().block_num()),
         "The block number should be stored at BLOCK_METADATA_PTR[BLOCK_NUMBER_IDX]"
     );
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[PROTOCOL_VERSION_IDX],
-        inputs.tx_inputs().block_header().version().into(),
+        Felt::from(inputs.tx_inputs().block_header().version()),
         "The protocol version should be stored at BLOCK_METADATA_PTR[PROTOCOL_VERSION_IDX]"
     );
 
     assert_eq!(
         exec_output.get_kernel_mem_word(BLOCK_METADATA_PTR)[TIMESTAMP_IDX],
-        inputs.tx_inputs().block_header().timestamp().into(),
+        Felt::from(inputs.tx_inputs().block_header().timestamp()),
         "The timestamp should be stored at BLOCK_METADATA_PTR[TIMESTAMP_IDX]"
     );
 
@@ -304,12 +300,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[VERIFICATION_BASE_FEE_IDX],
-        inputs
-            .tx_inputs()
-            .block_header()
-            .fee_parameters()
-            .verification_base_fee()
-            .into(),
+        Felt::from(inputs.tx_inputs().block_header().fee_parameters().verification_base_fee()),
         "The verification base fee should be stored at FEE_PARAMETERS_PTR[VERIFICATION_BASE_FEE_IDX]"
     );
 
@@ -352,7 +343,7 @@ fn kernel_data_memory_assertions(exec_output: &ExecutionOutput) {
     // check that the number of kernel procedures stored in the memory is equal to the number of
     // procedures in the `TransactionKernel::PROCEDURES` array
     assert_eq!(
-        exec_output.get_kernel_mem_word(NUM_KERNEL_PROCEDURES_PTR)[0].as_int(),
+        exec_output.get_kernel_mem_word(NUM_KERNEL_PROCEDURES_PTR)[0].as_canonical_u64(),
         TransactionKernel::PROCEDURES.len() as u64,
         "Number of the kernel procedures should be stored at the NUM_KERNEL_PROCEDURES_PTR"
     );
@@ -642,7 +633,7 @@ pub async fn create_account_invalid_seed() -> anyhow::Result<()> {
         .expect("failed to get transaction inputs from mock chain");
 
     // override the seed with an invalid seed to ensure the kernel fails
-    let account_seed_key = TransactionAdviceInputs::account_id_map_key(account.id());
+    let account_seed_key = AccountIdKey::from(account.id()).as_word();
     let adv_inputs = AdviceInputs::default().with_map([(account_seed_key, vec![ZERO; WORD_SIZE])]);
 
     let tx_context = TransactionContextBuilder::new(account)
@@ -685,7 +676,7 @@ async fn test_get_blk_version() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        tx_context.tx_inputs().block_header().version().into()
+        Felt::from(tx_context.tx_inputs().block_header().version())
     );
 
     Ok(())
@@ -711,7 +702,7 @@ async fn test_get_blk_timestamp() -> anyhow::Result<()> {
 
     assert_eq!(
         exec_output.get_stack_element(0),
-        tx_context.tx_inputs().block_header().timestamp().into()
+        Felt::from(tx_context.tx_inputs().block_header().timestamp())
     );
 
     Ok(())

@@ -89,12 +89,15 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |tx_context| async move {
                     // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the single P2ID note consumption tx failed"),
-                    ))
+                    black_box(
+                        prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the single P2ID note consumption tx failed"),
+                        )
+                        .await,
+                    )
                 },
                 BatchSize::SmallInput,
             );
@@ -110,12 +113,15 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |tx_context| async move {
                     // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the two P2ID note consumption tx failed"),
-                    ))
+                    black_box(
+                        prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the two P2ID note consumption tx failed"),
+                        )
+                        .await,
+                    )
                 },
                 BatchSize::SmallInput,
             );
@@ -124,10 +130,10 @@ fn core_benchmarks(c: &mut Criterion) {
     execute_and_prove_group.finish();
 }
 
-fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
+async fn prove_transaction(executed_transaction: ExecutedTransaction) -> Result<()> {
     let executed_transaction_id = executed_transaction.id();
     let proven_transaction: ProvenTransaction =
-        LocalTransactionProver::default().prove(executed_transaction)?;
+        LocalTransactionProver::default().prove(executed_transaction).await?;
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);
     Ok(())

@@ -1,9 +1,8 @@
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec;
 use std::collections::BTreeMap;
 use std::vec::Vec;
-
-use miden_core::utils::{Deserializable, Serializable};
 
 use crate::account::{
     AccountCode,
@@ -17,12 +16,14 @@ use crate::account::{
     StorageSlotType,
 };
 use crate::asset::PartialVault;
+use crate::block::account_tree::AccountIdKey;
 use crate::errors::TransactionInputsExtractionError;
 use crate::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use crate::transaction::TransactionInputs;
+use crate::utils::serde::{Deserializable, Serializable};
 use crate::{Felt, Word};
 
 #[test]
@@ -119,9 +120,10 @@ fn test_read_foreign_account_inputs_with_storage_data() {
 
     // Create advice inputs with both account header and storage header.
     let mut advice_inputs = crate::vm::AdviceInputs::default();
-    let account_id_key =
-        crate::transaction::TransactionAdviceInputs::account_id_map_key(foreign_account_id);
-    advice_inputs.map.insert(account_id_key, foreign_header.to_elements());
+    let account_id_key = AccountIdKey::from(foreign_account_id);
+    advice_inputs
+        .map
+        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
     advice_inputs
         .map
         .insert(foreign_header.storage_commitment(), foreign_storage_header.to_elements());
@@ -232,10 +234,10 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
     let mut advice_inputs = crate::vm::AdviceInputs::default();
 
     // Add account header to advice map.
-    let account_id_key =
-        crate::transaction::TransactionAdviceInputs::account_id_map_key(foreign_account_id);
-    advice_inputs.map.insert(account_id_key, foreign_header.to_elements().to_vec());
-
+    let account_id_key = AccountIdKey::from(foreign_account_id);
+    advice_inputs
+        .map
+        .insert(account_id_key.as_word(), foreign_header.to_elements().to_vec());
     // Add storage header to advice map.
     advice_inputs
         .map
@@ -246,7 +248,9 @@ fn test_read_foreign_account_inputs_with_proper_witness() {
 
     // Add the account leaf to the advice map (needed for witness verification).
     let leaf = foreign_witness.leaf();
-    advice_inputs.map.insert(leaf.hash(), leaf.to_elements());
+    advice_inputs
+        .map
+        .insert(leaf.hash(), leaf.to_elements().collect::<Arc<[Felt]>>());
 
     // Create block header with the account tree root.
     let block_header = crate::block::BlockHeader::mock(0, None, None, &[], account_tree_root);

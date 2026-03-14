@@ -17,8 +17,7 @@ const SLOT_ID_PREFIX_LOC=0
 const SLOT_ID_SUFFIX_LOC=1
 const INDEX_LOC=2
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type BeDoubleWord = struct @bigendian {
+type DoubleWord = struct {
     a: felt,
     b: felt,
     c: felt,
@@ -34,11 +33,11 @@ type BeDoubleWord = struct @bigendian {
 
 #! Sets a double-word in the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index, VALUE_0, VALUE_1]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index, VALUE_0, VALUE_1]
 #! Outputs: [OLD_VALUE_0, OLD_VALUE_1]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
 #! - index is the index at which to store the value (0 to 2^64 - 2^32).
 #! - VALUE_0 is the first word to store at the specified index.
 #! - VALUE_1 is the second word to store at the specified index.
@@ -49,38 +48,38 @@ type BeDoubleWord = struct @bigendian {
 #! Invocation: exec
 @locals(3)
 pub proc set(
-    slot_id_prefix: felt,
     slot_id_suffix: felt,
+    slot_id_prefix: felt,
     index: felt,
-    value: BeDoubleWord
-) -> BeDoubleWord
+    value: DoubleWord
+) -> DoubleWord
     # save inputs to locals for reuse
-    loc_store.SLOT_ID_PREFIX_LOC
     loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.SLOT_ID_PREFIX_LOC
     loc_store.INDEX_LOC
     # => [VALUE_0, VALUE_1]
 
-    # Set the first word under key [index, 0, 0, 0].
-    push.0.0.0
+    # Set the first word under key [0, 0, 0, index].
     loc_load.INDEX_LOC
-    # => [index, 0, 0, 0, VALUE_0, VALUE_1]
+    push.0.0.0
+    # => [0, 0, 0, index, VALUE_0, VALUE_1]
 
-    loc_load.SLOT_ID_SUFFIX_LOC
     loc_load.SLOT_ID_PREFIX_LOC
-    # => [slot_id_prefix, slot_id_suffix, KEY_0, VALUE_0, VALUE_1]
+    loc_load.SLOT_ID_SUFFIX_LOC
+    # => [slot_id_suffix, slot_id_prefix, KEY_0, VALUE_0, VALUE_1]
 
     exec.native_account::set_map_item
     # => [OLD_VALUE_0, VALUE_1]
     swapw
 
-    # Set the second word under key [index, 1, 0, 0].
-    push.0.0.1
+    # Set the second word under key [0, 0, 1, index].
     loc_load.INDEX_LOC
-    # => [index, 1, 0, 0, VALUE_1, OLD_VALUE_0]
+    push.1.0.0
+    # => [0, 0, 1, index, VALUE_1, OLD_VALUE_0]
 
-    loc_load.SLOT_ID_SUFFIX_LOC
     loc_load.SLOT_ID_PREFIX_LOC
-    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_1, OLD_VALUE_0]
+    loc_load.SLOT_ID_SUFFIX_LOC
+    # => [slot_id_suffix, slot_id_prefix, KEY_1, VALUE_1, OLD_VALUE_0]
 
     exec.native_account::set_map_item
     # => [OLD_VALUE_1, OLD_VALUE_0]
@@ -89,44 +88,44 @@ end
 
 #! Gets a double-word from the array at the specified index.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, index]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, index]
 #! Outputs: [VALUE_0, VALUE_1]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier.
 #! - index is the index of the element to retrieve (0 to 2^64 - 2^32).
 #! - VALUE_0 is the first word stored at the specified index (zero if not set).
 #! - VALUE_1 is the second word stored at the specified index (zero if not set).
 #!
 #! Invocation: exec
 @locals(3)
-pub proc get(slot_id_prefix: felt, slot_id_suffix: felt, index: felt) -> BeDoubleWord
+pub proc get(slot_id_suffix: felt, slot_id_prefix: felt, index: felt) -> DoubleWord
     # Save inputs to locals for reuse.
-    loc_store.SLOT_ID_PREFIX_LOC
     loc_store.SLOT_ID_SUFFIX_LOC
+    loc_store.SLOT_ID_PREFIX_LOC
     loc_store.INDEX_LOC
     # => []
 
-    # Get the first word from key [index, 0, 0, 0].
-    push.0.0.0
+    # Get the first word from key [0, 0, 0, index].
     loc_load.INDEX_LOC
-    # => [index, 0, 0, 0]
+    push.0.0.0
+    # => [0, 0, 0, index]
 
-    loc_load.SLOT_ID_SUFFIX_LOC
     loc_load.SLOT_ID_PREFIX_LOC
-    # => [slot_id_prefix, slot_id_suffix, KEY_0]
+    loc_load.SLOT_ID_SUFFIX_LOC
+    # => [slot_id_suffix, slot_id_prefix, KEY_0]
 
     exec.active_account::get_map_item
     # => [VALUE_0]
 
-    # Get the second word from key [index, 1, 0, 0].
-    push.0.0.1
+    # Get the second word from key [0, 0, 1, index].
     loc_load.INDEX_LOC
-    # => [index, 1, 0, 0, VALUE_0]
+    push.1.0.0
+    # => [0, 0, 1, index, VALUE_0]
 
-    loc_load.SLOT_ID_SUFFIX_LOC
     loc_load.SLOT_ID_PREFIX_LOC
-    # => [slot_id_prefix, slot_id_suffix, KEY_1, VALUE_0]
+    loc_load.SLOT_ID_SUFFIX_LOC
+    # => [slot_id_suffix, slot_id_prefix, KEY_1, VALUE_0]
 
     exec.active_account::get_map_item
     swapw

@@ -1,4 +1,3 @@
-use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_protocol::errors::MasmError;
@@ -17,6 +16,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
+use miden_protocol::{Felt, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -50,8 +50,8 @@ async fn test_create_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), expected_asset.to_key_word());
-    assert_eq!(exec_output.get_stack_word_be(4), expected_asset.to_value_word());
+    assert_eq!(exec_output.get_stack_word(0), expected_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(4), expected_asset.to_value_word());
 
     Ok(())
 }
@@ -89,8 +89,8 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(exec_output.get_stack_word_be(0), non_fungible_asset.to_key_word());
-    assert_eq!(exec_output.get_stack_word_be(4), non_fungible_asset.to_value_word());
+    assert_eq!(exec_output.get_stack_word(0), non_fungible_asset.to_key_word());
+    assert_eq!(exec_output.get_stack_word(4), non_fungible_asset.to_value_word());
 
     Ok(())
 }
@@ -103,12 +103,12 @@ async fn test_create_non_fungible_asset_succeeds() -> anyhow::Result<()> {
 )]
 #[case::asset_id_suffix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(0u32.into(), 4u32.into()),
+    AssetId::new(Felt::from(0u32), Felt::from(3u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
 )]
 #[case::asset_id_prefix_mismatch(
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(5u32.into(), 0u32.into()),
+    AssetId::new(Felt::from(2u32), Felt::from(0u32)),
     ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
 )]
 #[tokio::test]
@@ -123,13 +123,13 @@ async fn test_validate_non_fungible_asset(
 
         begin
             # a random asset value
-            push.5 push.4 push.3 push.2
-            # => [2, 3, hash1 = 4, hash0 = 5]
+            push.[2, 3, 4, 5]
+            # => [hash0 = 2, hash1 = 3, 4, 5]
 
-            push.{asset_id_suffix}
-            push.{asset_id_prefix}
-            push.{account_id_suffix}
             push.{account_id_prefix}
+            push.{account_id_suffix}
+            push.{asset_id_prefix}
+            push.{asset_id_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.non_fungible_asset::validate
@@ -160,13 +160,13 @@ async fn test_validate_non_fungible_asset(
 )]
 #[case::asset_id_suffix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(1u32.into(), 0u32.into()),
+    AssetId::new(Felt::from(1u32), Felt::from(0u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
 #[case::asset_id_prefix_is_non_zero(
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into()?,
-    AssetId::new(0u32.into(), 1u32.into()),
+    AssetId::new(Felt::from(0u32), Felt::from(1u32)),
     Word::empty(),
     ERR_FUNGIBLE_ASSET_KEY_ASSET_ID_MUST_BE_ZERO
 )]
@@ -195,10 +195,10 @@ async fn test_validate_fungible_asset(
 
         begin
             push.{ASSET_VALUE}
-            push.{asset_id_suffix}
-            push.{asset_id_prefix}
-            push.{account_id_suffix}
             push.{account_id_prefix}
+            push.{account_id_suffix}
+            push.{asset_id_prefix}
+            push.{asset_id_suffix}
             # => [ASSET_KEY, ASSET_VALUE]
 
             exec.fungible_asset::validate

@@ -18,7 +18,7 @@ use crate::{Felt, Hasher, MAX_ASSETS_PER_NOTE, WORD_SIZE, Word};
 
 /// An asset container for a note.
 ///
-/// A note can contain between 0 and 256 assets. No duplicates are allowed, but the order of assets
+/// A note can contain between 0 and 255 assets. No duplicates are allowed, but the order of assets
 /// is unspecified.
 ///
 /// All the assets in a note can be reduced to a single commitment which is computed by
@@ -112,46 +112,9 @@ impl NoteAssets {
         })
     }
 
-    // STATE MUTATORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Adds the provided asset to this list of note assets.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The same non-fungible asset is already in the list.
-    /// - A fungible asset issued by the same faucet exists in the list and adding both assets
-    ///   together results in an invalid asset.
-    /// - Adding the asset to the list will push the list beyond the [Self::MAX_NUM_ASSETS] limit.
-    pub fn add_asset(&mut self, asset: Asset) -> Result<(), NoteError> {
-        // check if the asset issued by the faucet as the provided asset already exists in the
-        // list of assets
-        if let Some(own_asset) = self.assets.iter_mut().find(|a| a.is_same(&asset)) {
-            match own_asset {
-                Asset::Fungible(f_own_asset) => {
-                    // if a fungible asset issued by the same faucet is found, try to add the
-                    // the provided asset to it
-                    let new_asset = f_own_asset
-                        .add(asset.unwrap_fungible())
-                        .map_err(NoteError::AddFungibleAssetBalanceError)?;
-                    *own_asset = Asset::Fungible(new_asset);
-                },
-                Asset::NonFungible(nf_asset) => {
-                    return Err(NoteError::DuplicateNonFungibleAsset(*nf_asset));
-                },
-            }
-        } else {
-            // if the asset is not in the list, add it to the list
-            self.assets.push(asset);
-            if self.assets.len() > Self::MAX_NUM_ASSETS {
-                return Err(NoteError::TooManyAssets(self.assets.len()));
-            }
-        }
-
-        // Recompute the commitment.
-        self.commitment = self.to_commitment();
-
-        Ok(())
+    /// Consumes self and returns the underlying vector of assets.
+    pub fn into_vec(self) -> Vec<Asset> {
+        self.assets
     }
 }
 
@@ -197,12 +160,21 @@ impl Serializable for NoteAssets {
         target.write_u8(self.assets.len().try_into().expect("Asset number must fit into `u8`"));
         target.write_many(&self.assets);
     }
+
+    fn get_size_hint(&self) -> usize {
+        // Size of the serialized asset count prefix.
+        let u8_size = 0u8.get_size_hint();
+
+        let assets_size: usize = self.assets.iter().map(|asset| asset.get_size_hint()).sum();
+
+        u8_size + assets_size
+    }
 }
 
 impl Deserializable for NoteAssets {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let count = source.read_u8()?;
-        let assets = source.read_many::<Asset>(count.into())?;
+        let assets = source.read_many_iter::<Asset>(count.into())?.collect::<Result<_, _>>()?;
         Self::new(assets).map_err(|e| DeserializationError::InvalidValue(format!("{e:?}")))
     }
 }
@@ -213,7 +185,6 @@ impl Deserializable for NoteAssets {
 #[cfg(test)]
 mod tests {
     use super::NoteAssets;
-    use crate::Word;
     use crate::account::AccountId;
     use crate::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
     use crate::testing::account_id::{
@@ -222,29 +193,6 @@ mod tests {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     };
 
-    #[test]
-    fn add_asset() {
-        let faucet_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();
-
-        let asset1 = Asset::Fungible(FungibleAsset::new(faucet_id, 100).unwrap());
-        let asset2 = Asset::Fungible(FungibleAsset::new(faucet_id, 50).unwrap());
-
-        // create empty assets
-        let mut assets = NoteAssets::default();
-
-        assert_eq!(assets.commitment, Word::empty());
-
-        // add asset1
-        assert!(assets.add_asset(asset1).is_ok());
-        assert_eq!(assets.assets, vec![asset1]);
-        assert!(!assets.commitment.is_empty());
-
-        // add asset2
-        assert!(assets.add_asset(asset2).is_ok());
-        let expected_asset = Asset::Fungible(FungibleAsset::new(faucet_id, 150).unwrap());
-        assert_eq!(assets.assets, vec![expected_asset]);
-        assert!(!assets.commitment.is_empty());
-    }
     #[test]
     fn iter_fungible_asset() {
         let faucet_id_1 = AccountId::try_from(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET).unwrap();

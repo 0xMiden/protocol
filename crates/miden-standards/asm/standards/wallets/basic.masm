@@ -98,11 +98,11 @@ pub proc add_assets_to_account
         # => [ptr, pad(8), ptr, end_ptr]
 
         # load the asset value
-        add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be swapw
+        add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le swapw
         # => [EMPTY_WORD, ASSET_VALUE, ptr, end_ptr]
 
         # load the asset key
-        dup.8 mem_loadw_be
+        dup.8 mem_loadw_le
         # => [ASSET_KEY, ASSET_VALUE, ptr, end_ptr]
 
         # pad the stack before call

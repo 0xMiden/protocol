@@ -5,8 +5,6 @@
 use miden::standards::auth::signature
 use miden::protocol::active_account
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 # CONSTANTS
 # =================================================================================================
 
@@ -20,7 +18,7 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! It first increments the nonce of the account, independent of whether the account's state has
 #! changed or not. Then it computes and signs the following message (in memory order):
@@ -36,10 +34,10 @@ const SCHEME_ID_SLOT = word("miden::standards::auth::singlesig::scheme")
 #!
 #! Invocation: call
 @auth_script
-pub proc auth_tx(auth_args: BeWord)
+pub proc auth_tx(auth_args: word)
     dropw
     # => [pad(16)]
-    
+
     # Fetch public key from storage.
     # ---------------------------------------------------------------------------------------------
 
@@ -47,9 +45,9 @@ pub proc auth_tx(auth_args: BeWord)
     # => [PUB_KEY, pad(16)]
 
     push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
-    # => [0, 0, 0, scheme_id, PUB_KEY, pad(16)]
+    # => [scheme_id, 0, 0, 0, PUB_KEY, pad(16)]
 
-    drop drop drop movdn.4
+    movdn.7 drop drop drop
     # => [PUB_KEY, scheme_id, pad(16)]
 
     exec.signature::authenticate_transaction

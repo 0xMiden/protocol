@@ -17,7 +17,13 @@ use crate::transaction::{
     ProvenTransaction,
     TransactionHeader,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH};
 
 /// A proposed batch of transactions with all necessary data to validate it.
@@ -52,7 +58,8 @@ pub struct ProposedBatch {
     /// [`InputNoteCommitment::nullifier`].
     input_notes: InputNotes<InputNoteCommitment>,
     /// The output notes of this batch. This consists of all notes created by transactions in the
-    /// batch that are not consumed within the same batch. These are sorted by [`OutputNote::id`].
+    /// batch that are not consumed within the same batch. These are sorted by
+    /// [`OutputNote::id`].
     output_notes: Vec<OutputNote>,
 }
 
@@ -426,14 +433,15 @@ impl Deserializable for ProposedBatch {
 mod tests {
     use anyhow::Context;
     use miden_crypto::merkle::mmr::{Mmr, PartialMmr};
+    use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
-    use winter_rand_utils::rand_value;
 
     use super::*;
     use crate::Word;
+    use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use crate::asset::FungibleAsset;
-    use crate::transaction::ProvenTransactionBuilder;
+    use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
     fn proposed_batch_serialization() -> anyhow::Result<()> {
@@ -474,18 +482,25 @@ mod tests {
         let expiration_block_num = reference_block_header.block_num() + 1;
         let proof = ExecutionProof::new_dummy();
 
-        let tx = ProvenTransactionBuilder::new(
+        let account_update = TxAccountUpdate::new(
             account_id,
             initial_account_commitment,
             final_account_commitment,
             account_delta_commitment,
+            AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        let tx = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
             block_num,
             block_ref,
             FungibleAsset::mock(100).unwrap_fungible(),
             expiration_block_num,
             proof,
         )
-        .build()
         .context("failed to build proven transaction")?;
 
         let batch = ProposedBatch::new(

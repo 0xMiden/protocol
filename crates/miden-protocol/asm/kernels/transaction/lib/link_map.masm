@@ -1,4 +1,3 @@
-use miden::core::collections::smt
 use miden::core::word
 use $kernel::memory
 
@@ -723,10 +722,10 @@ proc set_value
     dup movdn.5
     # => [entry_ptr, VALUE0, entry_ptr, VALUE1]
 
-    add.VALUE0_OFFSET mem_storew_be dropw
+    add.VALUE0_OFFSET mem_storew_le dropw
     # => [entry_ptr, VALUE1]
 
-    add.VALUE1_OFFSET mem_storew_be dropw
+    add.VALUE1_OFFSET mem_storew_le dropw
     # => []
 end
 
@@ -750,7 +749,7 @@ proc get_value0
     padw movup.4
     # => [entry_ptr, pad(4)]
 
-    add.VALUE0_OFFSET mem_loadw_be
+    add.VALUE0_OFFSET mem_loadw_le
     # => [VALUE0]
 end
 
@@ -762,7 +761,7 @@ proc get_value1
     padw movup.4
     # => [entry_ptr, pad(4)]
 
-    add.VALUE1_OFFSET mem_loadw_be
+    add.VALUE1_OFFSET mem_loadw_le
     # => [VALUE1]
 end
 
@@ -771,7 +770,7 @@ end
 #! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
 proc set_key
-    add.KEY_OFFSET mem_storew_be dropw
+    add.KEY_OFFSET mem_storew_le dropw
 end
 
 #! Returns the key of the entry pointer.
@@ -782,7 +781,7 @@ proc get_key
     padw movup.4
     # => [entry_ptr, pad(4)]
 
-    add.KEY_OFFSET mem_loadw_be
+    add.KEY_OFFSET mem_loadw_le
     # => [KEY]
 end
 

@@ -1,11 +1,11 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::AccountProcedureRoot;
 use miden_protocol::assembly::{Library, LibraryExport};
-use miden_protocol::utils::Deserializable;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::interface::AccountComponentInterface;
@@ -20,6 +20,18 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
         "/assets/account_components/wallets/basic_wallet.masl"
     ));
     Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed")
+});
+
+// ACCESS LIBRARIES
+// ================================================================================================
+
+// Initialize the Ownable2Step library only once.
+static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/access/ownable2step.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
 });
 
 // AUTH LIBRARIES
@@ -46,6 +58,15 @@ static MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes =
         include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
     Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed")
+});
+
+/// Initialize the Multisig PSM library only once.
+static MULTISIG_PSM_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/auth/multisig_psm.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Multisig PSM library is well-formed")
 });
 
 // Initialize the NoAuth library only once.
@@ -93,6 +114,11 @@ pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
 }
 
+/// Returns the Ownable2Step Library.
+pub fn ownable2step_library() -> Library {
+    OWNABLE2STEP_LIBRARY.clone()
+}
+
 /// Returns the Basic Fungible Faucet Library.
 pub fn basic_fungible_faucet_library() -> Library {
     BASIC_FUNGIBLE_FAUCET_LIBRARY.clone()
@@ -123,6 +149,11 @@ pub fn multisig_library() -> Library {
     MULTISIG_LIBRARY.clone()
 }
 
+/// Returns the Multisig PSM Library.
+pub fn multisig_psm_library() -> Library {
+    MULTISIG_PSM_LIBRARY.clone()
+}
+
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
@@ -140,6 +171,7 @@ pub enum StandardAccountComponent {
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthMultisig,
+    AuthMultisigPsm,
     AuthNoAuth,
 }
 
@@ -153,6 +185,7 @@ impl StandardAccountComponent {
             Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
             Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
             Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
+            Self::AuthMultisigPsm => MULTISIG_PSM_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
         };
 
@@ -205,6 +238,9 @@ impl StandardAccountComponent {
                 Self::AuthMultisig => {
                     component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
+                Self::AuthMultisigPsm => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigPsm)
+                },
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -223,6 +259,7 @@ impl StandardAccountComponent {
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
         Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigPsm.extract_component(procedures_set, component_interface_vec);
         Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
     }

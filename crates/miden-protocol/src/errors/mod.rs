@@ -5,12 +5,11 @@ use core::error::Error;
 
 use miden_assembly::Report;
 use miden_assembly::diagnostics::reporting::PrintDiagnostic;
+use miden_core::Felt;
 use miden_core::mast::MastForestError;
-use miden_core::{EventId, Felt};
 use miden_crypto::merkle::mmr::MmrError;
 use miden_crypto::merkle::smt::{SmtLeafError, SmtProofError};
 use miden_crypto::utils::HexParseError;
-use miden_processor::DeserializationError;
 use thiserror::Error;
 
 use super::account::AccountId;
@@ -32,8 +31,18 @@ use crate::address::AddressType;
 use crate::asset::AssetId;
 use crate::batch::BatchId;
 use crate::block::BlockNumber;
-use crate::note::{NoteAssets, NoteAttachmentArray, NoteTag, NoteType, Nullifier};
+use crate::note::{
+    NoteAssets,
+    NoteAttachmentArray,
+    NoteAttachmentKind,
+    NoteAttachmentScheme,
+    NoteTag,
+    NoteType,
+    Nullifier,
+};
 use crate::transaction::{TransactionEventId, TransactionId};
+use crate::utils::serde::DeserializationError;
+use crate::vm::EventId;
 use crate::{
     ACCOUNT_UPDATE_MAX_SIZE,
     MAX_ACCOUNTS_PER_BATCH,
@@ -41,6 +50,7 @@ use crate::{
     MAX_INPUT_NOTES_PER_TX,
     MAX_NOTE_STORAGE_ITEMS,
     MAX_OUTPUT_NOTES_PER_TX,
+    NOTE_MAX_SIZE,
 };
 
 #[cfg(any(feature = "testing", test))]
@@ -272,6 +282,8 @@ pub enum AccountTreeError {
     ApplyMutations(#[source] MerkleError),
     #[error("failed to compute account tree mutations")]
     ComputeMutations(#[source] MerkleError),
+    #[error("provided smt contains an invalid account ID in key {key}")]
+    InvalidAccountIdKey { key: Word, source: AccountIdError },
     #[error("smt leaf's index is not a valid account ID prefix")]
     InvalidAccountIdPrefix(#[source] AccountIdError),
     #[error("account witness merkle path depth {0} does not match AccountTree::DEPTH")]
@@ -485,6 +497,11 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
+    #[error(
+        "token symbol value {0} cannot be less than {min}",
+        min = TokenSymbol::MIN_ENCODED_VALUE
+    )]
+    ValueTooSmall(u64),
     #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
@@ -592,6 +609,20 @@ pub enum NoteError {
     UnknownNoteAttachmentKind(u8),
     #[error("note attachment of kind None must have attachment scheme None")]
     AttachmentKindNoneMustHaveAttachmentSchemeNone,
+    #[error(
+        "note attachment kind mismatch: header has {header_kind:?} but attachment has {attachment_kind:?}"
+    )]
+    AttachmentKindMismatch {
+        header_kind: NoteAttachmentKind,
+        attachment_kind: NoteAttachmentKind,
+    },
+    #[error(
+        "note attachment scheme mismatch: header has {header_scheme:?} but attachment has {attachment_scheme:?}"
+    )]
+    AttachmentSchemeMismatch {
+        header_scheme: NoteAttachmentScheme,
+        attachment_scheme: NoteAttachmentScheme,
+    },
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
@@ -759,6 +790,24 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
+}
+
+// OUTPUT NOTE ERROR
+// ================================================================================================
+
+/// Errors that can occur when creating a
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
+/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
+#[derive(Debug, Error)]
+pub enum OutputNoteError {
+    #[error("note with id {0} is private but expected a public note")]
+    NoteIsPrivate(NoteId),
+    #[error("note with id {0} is public but expected a private note")]
+    NoteIsPublic(NoteId),
+    #[error(
+        "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+    )]
+    NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
 // TRANSACTION EVENT PARSING ERROR
@@ -1166,5 +1215,5 @@ pub enum NullifierTreeError {
 #[derive(Debug, Error)]
 pub enum AuthSchemeError {
     #[error("auth scheme identifier `{0}` is not valid")]
-    InvalidAuthSchemeIdentifier(u8),
+    InvalidAuthSchemeIdentifier(String),
 }

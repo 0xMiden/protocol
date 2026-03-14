@@ -76,7 +76,7 @@ impl AccountStorage {
         }
 
         // Unstable sort is fine because we require all names to be unique.
-        slots.sort_unstable();
+        slots.sort_unstable_by(|a, b| a.name().cmp(b.name()));
 
         // Check for slot name uniqueness by checking each neighboring slot's IDs. This is
         // sufficient because the slots are sorted.
@@ -348,7 +348,7 @@ impl Serializable for AccountStorage {
 impl Deserializable for AccountStorage {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_slots = source.read_u8()? as usize;
-        let slots = source.read_many::<StorageSlot>(num_slots)?;
+        let slots = source.read_many_iter::<StorageSlot>(num_slots)?.collect::<Result<_, _>>()?;
 
         Self::new(slots).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
     }
@@ -422,7 +422,7 @@ mod tests {
             assert_eq!(name, slot_name0);
         });
 
-        slots.sort_unstable();
+        slots.sort_unstable_by(|a, b| a.name().cmp(b.name()));
         let err = AccountStorageHeader::new(slots.iter().map(StorageSlotHeader::from).collect())
             .unwrap_err();
 

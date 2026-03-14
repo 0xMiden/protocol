@@ -250,7 +250,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             // This could happen if the metadata of the notes is different, which we consider an
             // error.
             let input_commitment = input_note_header.commitment();
-            let output_commitment = output_note.commitment();
+            let output_commitment = output_note.to_commitment();
             if output_commitment != input_commitment {
                 return Err(InputOutputNoteTrackerError::NoteCommitmentMismatch {
                     id,

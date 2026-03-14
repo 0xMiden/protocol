@@ -1,6 +1,5 @@
 use miden::protocol::active_note
 use miden::protocol::asset
-use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
 use miden::protocol::output_note
 use miden::standards::wallets::basic->wallet
 
@@ -9,14 +8,14 @@ use miden::standards::wallets::basic->wallet
 
 const SWAP_NOTE_NUM_STORAGE_ITEMS=20
 
-const PAYBACK_NOTE_TYPE_ADDRESS=0
-const PAYBACK_NOTE_TAG_ADDRESS=1
-const ATTACHMENT_KIND_ADDRESS=2
-const ATTACHMENT_SCHEME_ADDRESS=3
-const ATTACHMENT_ADDRESS=4
-const REQUESTED_ASSET_ADDRESS=8
-const PAYBACK_RECIPIENT_ADDRESS=16
-const ASSET_ADDRESS=20
+const PAYBACK_NOTE_TYPE_PTR=0
+const PAYBACK_NOTE_TAG_PTR=1
+const ATTACHMENT_KIND_PTR=2
+const ATTACHMENT_SCHEME_PTR=3
+const ATTACHMENT_PTR=4
+const REQUESTED_ASSET_PTR=8
+const PAYBACK_RECIPIENT_PTR=16
+const ASSET_PTR=20
 
 # ERRORS
 # =================================================================================================
@@ -70,12 +69,12 @@ pub proc main
     drop
     # => []
 
-    padw mem_loadw_be.PAYBACK_RECIPIENT_ADDRESS
+    padw mem_loadw_le.PAYBACK_RECIPIENT_PTR
     # => [PAYBACK_NOTE_RECIPIENT]
 
     # load payback P2ID details
-    mem_load.PAYBACK_NOTE_TYPE_ADDRESS
-    mem_load.PAYBACK_NOTE_TAG_ADDRESS
+    mem_load.PAYBACK_NOTE_TYPE_PTR
+    mem_load.PAYBACK_NOTE_TAG_PTR
     # => [tag, note_type, PAYBACK_NOTE_RECIPIENT]
 
     # create payback P2ID note
@@ -85,7 +84,7 @@ pub proc main
     padw push.0.0.0 dup.7
     # => [note_idx, pad(7), note_idx]
 
-    push.REQUESTED_ASSET_ADDRESS exec.asset::mem_load
+    push.REQUESTED_ASSET_PTR exec.asset::load
     # => [REQUESTED_ASSET_KEY, REQUESTED_ASSET_VALUE, note_idx, pad(7), note_idx]
 
     # move asset to the note
@@ -93,11 +92,11 @@ pub proc main
     # => [pad(16), note_idx]
 
     dropw
-    mem_loadw_be.ATTACHMENT_ADDRESS
+    mem_loadw_le.ATTACHMENT_PTR
     # => [ATTACHMENT, pad(8), note_idx]
 
-    mem_load.ATTACHMENT_KIND_ADDRESS
-    mem_load.ATTACHMENT_SCHEME_ADDRESS
+    mem_load.ATTACHMENT_KIND_PTR
+    mem_load.ATTACHMENT_SCHEME_PTR
     movup.14
     # => [note_idx, attachment_scheme, attachment_kind, ATTACHMENT, pad(8)]
 
@@ -106,8 +105,8 @@ pub proc main
 
     # --- move assets from the SWAP note into the account -------------------------
 
-    # store the number of note assets to memory starting at address ASSET_ADDRESS
-    push.ASSET_ADDRESS exec.active_note::get_assets
+    # store the number of note assets to memory starting at address ASSET_PTR
+    push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, asset_ptr, pad(8)]
 
     # make sure the number of assets is 1
@@ -115,7 +114,7 @@ pub proc main
     # => [asset_ptr, pad(8)]
 
     # load asset
-    exec.asset::mem_load
+    exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
     # add the asset to the account

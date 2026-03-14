@@ -132,8 +132,8 @@ impl NoteBuilder {
             SourceLanguage::Masm,
             Uri::new(format!(
                 "note_{:x}{:x}",
-                self.serial_num[0].as_int(),
-                self.serial_num[1].as_int()
+                self.serial_num[0].as_canonical_u64(),
+                self.serial_num[1].as_canonical_u64()
             )),
             self.code,
         );

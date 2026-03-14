@@ -6,6 +6,7 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountType,
     StorageSlot,
     StorageSlotName,
 };
@@ -60,13 +61,17 @@ impl AccountSchemaCommitment {
     pub fn schema_commitment_slot() -> &'static StorageSlotName {
         &SCHEMA_COMMITMENT_SLOT_NAME
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        AccountComponentMetadata::new("miden::metadata::schema_commitment", AccountType::all())
+            .with_description("Component exposing the account storage schema commitment")
+    }
 }
 
 impl From<AccountSchemaCommitment> for AccountComponent {
     fn from(schema_commitment: AccountSchemaCommitment) -> Self {
-        let metadata = AccountComponentMetadata::new("miden::metadata::schema_commitment")
-            .with_description("Component exposing the account storage schema commitment")
-            .with_supports_all_types();
+        let metadata = AccountSchemaCommitment::component_metadata();
 
         AccountComponent::new(
             storage_schema_library(),

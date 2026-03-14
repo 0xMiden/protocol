@@ -26,16 +26,16 @@ pub const ASSET_VALUE_MEMORY_OFFSET = 4
 #! - ptr is the memory address where the asset will be stored.
 #! - ASSET_KEY is the 4-element word representing the asset key.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc mem_store
+pub proc store
     # store asset key
     movdn.4 dup.4
     # => [ptr, ASSET_KEY, ptr, ASSET_VALUE]
 
-    mem_storew_be dropw
+    mem_storew_le dropw
     # => [ptr, ASSET_VALUE]
 
     # store asset value
-    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_be dropw
+    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
     # => []
 end
 
@@ -48,17 +48,17 @@ end
 #! - ptr is the memory address of the asset.
 #! - ASSET_KEY is the 4-element word representing the asset key.
 #! - ASSET_VALUE is the 4-element word representing the asset value.
-pub proc mem_load
+pub proc load
     # load asset value
-    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_be
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
     # => [ASSET_VALUE, ptr]
 
     # load asset key
-    padw movup.8 mem_loadw_be
+    padw movup.8 mem_loadw_le
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
-#! Returns the balance of the given fungible asset.
+#! Returns the balance of the given fungible asset and consumes it.
 #!
 #! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
 #!
@@ -68,9 +68,25 @@ end
 #! Where:
 #! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
-pub proc get_balance_from_fungible_asset
-    drop drop drop
+pub proc fungible_value_into_amount
+    movdn.3 drop drop drop
     # => [balance]
+end
+
+#! Returns the balance of the given fungible asset.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [amount, ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - amount is the amount of the fungible asset.
+pub proc fungible_to_amount
+    # => [ASSET_KEY, [amount, 0, 0, 0]]
+    dup.4
+    # => [amount, ASSET_KEY, ASSET_VALUE]
 end
 
 #! Returns the faucet ID from an asset vault key.
@@ -78,16 +94,16 @@ end
 #! WARNING: The faucet ID is not validated.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 #!
 #! Where:
 #! - faucet_id is the account ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the faucet ID.
 pub proc key_to_faucet_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, ASSET_KEY]
+    dup.3 dup.3
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
 end
 
 #! Returns the faucet ID from an asset vault key and consumes it.
@@ -95,67 +111,85 @@ end
 #! WARNING: The faucet ID is not validated.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [faucet_id_prefix, faucet_id_suffix]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix]
 #!
 #! Where:
 #! - faucet_id is the account ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the faucet ID.
 pub proc key_into_faucet_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    movup.2 drop movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix]
+    drop drop
+    # => [faucet_id_suffix, faucet_id_prefix]
 end
 
 #! Returns the asset ID from an asset vault key.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+#! Outputs: [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 #!
 #! Where:
 #! - asset_id is the asset ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the asset ID.
 pub proc key_to_asset_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    dup.3 dup.3
-    # => [asset_id_prefix, asset_id_suffix, ASSET_KEY]
+    dup.1 dup.1
+    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
 end
 
 #! Returns the asset ID from an asset vault key and consumes it.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [asset_id_prefix, asset_id_suffix]
+#! Outputs: [asset_id_suffix, asset_id_prefix]
 #!
 #! Where:
 #! - asset_id is the asset ID in the vault key.
 #! - ASSET_KEY is the vault key from which to extract the asset ID.
 pub proc key_into_asset_id
-    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
 
-    drop drop
-    # => [asset_id_prefix, asset_id_suffix]
+    movup.2 drop movup.2 drop
+    # => [asset_id_suffix, asset_id_prefix]
+end
+
+#! Creates a fungible asset vault key for the specified faucet.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
+#! - ASSET_KEY is the vault key for the fungible asset.
+#!
+#! Invocation: exec
+pub proc create_fungible_key
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # => [ASSET_KEY]
 end
 
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
 #! WARNING: Does not validate its inputs.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, amount]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
-#! - ASSET_KEY is the vault key of the created fungible asset.
+#! - ASSET_KEY is the vault key of the created fungible asset
 #! - ASSET_VALUE is the value of the created fungible asset.
 #!
 #! Invocation: exec
 pub proc create_fungible_asset_unchecked
     # create the key and value
-    repeat.5 push.0 movdn.2 end
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, amount]]
+    repeat.3 push.0 movdn.3 end
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    exec.create_fungible_key
     # => [ASSET_KEY, ASSET_VALUE]
 end
 
@@ -163,11 +197,11 @@ end
 #!
 #! WARNING: Does not validate its inputs.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix, DATA_HASH]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet to create the asset
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - DATA_HASH is the data hash of the non-fungible asset to create.
 #! - ASSET_KEY is the vault key of the created non-fungible asset.
@@ -177,7 +211,7 @@ end
 pub proc create_non_fungible_asset_unchecked
     # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key
     # word
-    dup.5 movdn.2 dup.5 movdn.2
-    # => [[faucet_id_prefix, faucet_id_suffix, hash1, hash0], DATA_HASH]
+    dup.3 dup.3
+    # => [[hash0, hash1, faucet_id_suffix, faucet_id_prefix], DATA_HASH]
     # => [ASSET_KEY, ASSET_VALUE]
 end

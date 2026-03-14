@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use super::{AccountId, AccountIdPrefix, AccountTree, AccountTreeError, account_id_to_smt_key};
+use super::{AccountId, AccountIdKey, AccountIdPrefix, AccountTree, AccountTreeError};
 use crate::Word;
 use crate::crypto::merkle::MerkleError;
 #[cfg(feature = "std")]
@@ -129,9 +129,7 @@ where
     type Error = MerkleError;
 
     fn num_leaves(&self) -> usize {
-        // LargeSmt::num_leaves returns Result<usize, LargeSmtError>
-        // We'll unwrap or return 0 on error
-        LargeSmt::num_leaves(self).map_err(large_smt_error_to_merkle_error).unwrap_or(0)
+        LargeSmt::num_leaves(self)
     }
 
     fn leaves<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = (LeafIndex<SMT_DEPTH>, SmtLeaf)>> {
@@ -205,7 +203,7 @@ impl AccountTree<Smt> {
         let smt = Smt::with_entries(
             entries
                 .into_iter()
-                .map(|(id, commitment)| (account_id_to_smt_key(id), commitment)),
+                .map(|(id, commitment)| (AccountIdKey::from(id).as_word(), commitment)),
         )
         .map_err(|err| {
             let MerkleError::DuplicateValuesForIndex(leaf_idx) = err else {
@@ -234,6 +232,13 @@ fn large_smt_error_to_merkle_error(err: LargeSmtError) -> MerkleError {
         LargeSmtError::Storage(storage_err) => {
             panic!("Storage error encountered: {:?}", storage_err)
         },
+        LargeSmtError::StorageNotEmpty => {
+            panic!("StorageNotEmpty error encountered: {:?}", err)
+        },
         LargeSmtError::Merkle(merkle_err) => merkle_err,
+        LargeSmtError::RootMismatch { expected, actual } => MerkleError::ConflictingRoots {
+            expected_root: expected,
+            actual_root: actual,
+        },
     }
 }
