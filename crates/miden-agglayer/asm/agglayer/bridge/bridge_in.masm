@@ -377,33 +377,41 @@ end
 #!
 #! Invocation: exec
 proc verify_claim_amount
-    # Step 1: Load the faucet account ID from global memory
+    # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
+    padw padw padw padw
+    # => [pad(16)]
+
+    # Step 2: Load the faucet account ID from global memory
     mem_load.CLAIM_FAUCET_ID_SUFFIX_MEM_ADDR
     mem_load.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
-    # Step 2: FPI call to faucet's get_scale procedure
+    # Step 3: FPI call to faucet's get_scale procedure
     procref.agglayer_faucet::get_scale
-    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix]
+    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4)]
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
 
     exec.tx::execute_foreign_procedure
+    # => [scale, pad(15)]
+
+    # Clean up FPI output padding, keeping only scale
+    movdn.15 dropw dropw dropw drop drop drop
     # => [scale]
 
-    # Step 3: Load the raw U256 amount from leaf data memory
+    # Step 4: Load the raw U256 amount from leaf data memory
     exec.get_raw_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
-    # Step 4: Load faucet_mint_amount (y) and position it for verification
+    # Step 5: Load faucet_mint_amount (y) and position it for verification
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
     # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     movdn.9
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
-    # Step 5: Verify that y = floor(x / 10^scale)
+    # Step 6: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [y]
 
