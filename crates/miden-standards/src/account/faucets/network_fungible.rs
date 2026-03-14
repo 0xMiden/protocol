@@ -175,7 +175,7 @@ impl NetworkFungibleFaucet {
     }
 
     /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> TokenSymbol {
+    pub fn symbol(&self) -> &TokenSymbol {
         self.metadata.symbol()
     }
 
@@ -222,20 +222,22 @@ impl NetworkFungibleFaucet {
         self.metadata = self.metadata.with_token_supply(token_supply)?;
         Ok(self)
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([Self::metadata_slot_schema()])
+            .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description("Network fungible faucet component for minting and burning tokens")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<NetworkFungibleFaucet> for AccountComponent {
     fn from(network_faucet: NetworkFungibleFaucet) -> Self {
         let metadata_slot = network_faucet.metadata.into();
-        let storage_schema = StorageSchema::new([NetworkFungibleFaucet::metadata_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(
-            NetworkFungibleFaucet::NAME,
-            [AccountType::FungibleFaucet],
-        )
-        .with_description("Network fungible faucet component for minting and burning tokens")
-        .with_storage_schema(storage_schema);
+        let metadata = NetworkFungibleFaucet::component_metadata();
 
         AccountComponent::new(
             network_fungible_faucet_library(),
@@ -332,7 +334,7 @@ mod tests {
 
         let account = create_network_fungible_faucet(
             init_seed,
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             AccessControl::Ownable2Step { owner },
@@ -347,7 +349,7 @@ mod tests {
 
         let faucet = NetworkFungibleFaucet::try_from(&account)
             .expect("network fungible faucet should be extractable from account");
-        assert_eq!(faucet.symbol(), symbol);
+        assert_eq!(faucet.symbol(), &symbol);
         assert_eq!(faucet.decimals(), decimals);
         assert_eq!(faucet.max_supply(), max_supply);
         assert_eq!(faucet.token_supply(), Felt::ZERO);
