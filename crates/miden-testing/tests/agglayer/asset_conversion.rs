@@ -149,8 +149,7 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
     let y = x.scale_to_token_amount(scale).unwrap().as_int();
     let script = build_scale_down_script(x, scale, y);
-    let out = execute_masm_script(&script).await?;
-    assert_eq!(out.stack[0].as_int(), y);
+    execute_masm_script(&script).await?;
     Ok(y)
 }
 
@@ -345,12 +344,9 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         x_felts[0].as_int(),
     );
 
-    // Execute the script
-    let exec_output = execute_masm_script(&script_code).await?;
-
-    // Verify the result
-    let result = exec_output.stack[0].as_int();
-    assert_eq!(result, y);
+    // Execute the script - verify_u256_to_native_amount_conversion panics on invalid
+    // conversions, so successful execution is sufficient validation
+    execute_masm_script(&script_code).await?;
 
     Ok(())
 }

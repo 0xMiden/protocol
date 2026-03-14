@@ -406,9 +406,6 @@ proc verify_claim_amount
 
     # Step 5: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
-    # => [y]
-
-    drop
     # => []
 end
 
