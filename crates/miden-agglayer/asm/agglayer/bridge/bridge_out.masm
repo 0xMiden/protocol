@@ -145,25 +145,29 @@ pub proc bridge_out
     # => []
 
     # Fetch metadata hash from the faucet via FPI.
-    # Reload asset to extract faucet ID for the FPI call.
+
+    # Explicitly pad the stack for FPI call (get_metadata_hash takes no inputs)
+    padw padw padw padw
+    # => [pad(16)]
+
+    # Reload asset to extract faucet ID for the FPI call
     loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
-    # => [ASSET]
-    # ASSET layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]
+    # => [faucet_id_prefix, faucet_id_suffix, 0, amount, pad(16)]
 
     # Extract faucet ID, drop padding and amount
     movup.2 drop movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     procref.agglayer_faucet::get_metadata_hash
-    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix]
+    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4)]
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
 
     exec.tx::execute_foreign_procedure
     # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
 
-    # Drop 8 trailing padding elements
+    # Clean up FPI output padding
     swapdw dropw dropw
     # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4)]
 
