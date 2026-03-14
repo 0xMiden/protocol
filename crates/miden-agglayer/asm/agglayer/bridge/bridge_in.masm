@@ -79,9 +79,6 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
-# Memory addresses for the faucet ID looked up during claim (used by claim procedure)
-const CLAIM_FAUCET_ID_PREFIX_MEM_ADDR = 708
-
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
@@ -725,8 +722,7 @@ proc create_mint_note_with_attachment
     push.OUTPUT_NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
-    # Load the faucet account ID from global memory (looked up once in `claim`)
-    mem_load.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
+    dup.5
     # => [faucet_id_prefix, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Compute note tag targeting the faucet account
