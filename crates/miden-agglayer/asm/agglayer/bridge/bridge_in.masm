@@ -81,7 +81,6 @@ const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
 # Memory addresses for the faucet ID looked up during claim (used by claim procedure)
 const CLAIM_FAUCET_ID_PREFIX_MEM_ADDR = 708
-const CLAIM_FAUCET_ID_SUFFIX_MEM_ADDR = 709
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
@@ -339,15 +338,16 @@ pub proc claim
     exec.bridge_config::lookup_faucet_by_token_address
     # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+    dup.1 dup.1
+    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
-    # => [pad(16)]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
     
     # Build MINT output note targeting the aggfaucet
     loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
-    # => [destination_id_prefix, destination_id_suffix, pad(16)]
+    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     exec.build_mint_output_note
     # => [pad(16)]
@@ -586,18 +586,18 @@ end
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Look up the faucet, create the output note, and set the attachment.
 #!
-#! Inputs:  [destination_id_prefix, destination_id_suffix]
+#! Inputs:  [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc build_mint_output_note
     # Step 1: Write all 18 MINT note storage items to global memory
     exec.write_mint_note_storage
-    # => []
+    # => [faucet_id_prefix, faucet_id_suffix]
 
     # Step 2: Build the MINT note recipient digest
     exec.build_mint_recipient
-    # => [MINT_RECIPIENT]
+    # => [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Step 3: Create the output note and set the faucet attachment
     exec.create_mint_note_with_attachment
@@ -716,35 +716,36 @@ end
 #! creates a public output note with no assets, and sets the attachment so only the
 #! target faucet can consume the note.
 #!
-#! Inputs:  [MINT_RECIPIENT]
+#! Inputs:  [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT]
+    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Load the faucet account ID from global memory (looked up once in `claim`)
     mem_load.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
-    # => [faucet_id_prefix, note_type, MINT_RECIPIENT]
+    # => [faucet_id_prefix, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Compute note tag targeting the faucet account
     exec.note_tag::create_account_target
-    # => [faucet_tag, note_type, MINT_RECIPIENT]
+    # => [faucet_tag, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
-    # => [note_idx]
+    # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    movdn.2
+    # => [faucet_id_prefix, faucet_id_suffix, note_idx]
 
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
     # network_account_target::new expects [prefix, suffix, exec_hint]
     # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
-    mem_load.CLAIM_FAUCET_ID_SUFFIX_MEM_ADDR
-    mem_load.CLAIM_FAUCET_ID_PREFIX_MEM_ADDR
-    # => [faucet_prefix, faucet_suffix, exec_hint, note_idx]
+    movdn.2
+    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, note_idx]
 
     exec.network_account_target::new
     # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]
