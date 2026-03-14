@@ -30,7 +30,6 @@ const CONVERSION_INFO_1_SLOT = word("miden::agglayer::faucet::conversion_info_1"
 const CONVERSION_INFO_2_SLOT = word("miden::agglayer::faucet::conversion_info_2")
 
 # Storage slots for the pre-computed metadata hash (keccak256 of ABI-encoded token metadata).
-# The 32-byte hash is split across two value slots, each holding 4 u32 felts.
 const METADATA_HASH_LO_SLOT = word("miden::agglayer::faucet::metadata_hash_lo")
 const METADATA_HASH_HI_SLOT = word("miden::agglayer::faucet::metadata_hash_hi")
 
