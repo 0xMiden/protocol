@@ -16,9 +16,7 @@ use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::hash::rpo::Rpo256 as Hasher;
-use miden_crypto::{Felt, FieldElement};
-use miden_protocol::Word;
+use miden_crypto::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::OutputNote;
@@ -99,29 +97,8 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
-    let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
-    let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
-    // Elements are reversed: rpo256::merge treats stack as if loaded BE from memory
-    // The following will produce matching hashes:
-    // Rust
-    // Hasher::merge(&[a, b, c, d], &[e, f, g, h])
-    // MASM
-    // rpo256::merge(h, g, f, e, d, c, b, a)
-    ger_lower.reverse();
-    ger_upper.reverse();
-
-    let ger_hash = Hasher::merge(&[ger_upper.into(), ger_lower.into()]);
-    // Look up the GER hash in the map storage
-    let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
-    let stored_value = updated_bridge_account
-        .storage()
-        .get_map_item(ger_storage_slot, ger_hash)
-        .expect("GER hash should be stored in the map");
-
-    // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
-    let expected_value: Word = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
-    assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
+    let is_registered = AggLayerBridge::is_ger_registered(ger, updated_bridge_account)?;
+    assert!(is_registered, "GER was not registered in the bridge account");
 
     Ok(())
 }
