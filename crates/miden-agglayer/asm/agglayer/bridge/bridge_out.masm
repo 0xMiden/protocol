@@ -115,8 +115,7 @@ pub proc bridge_out
     exec.convert_asset
     # => [AMOUNT_U256_0, AMOUNT_U256_1, origin_addr(5), origin_network, pad(12)]
 
-    # --- 2. Write all leaf data fields to memory ---
-
+    # --- 2. Write all leaf data fields to memory (except metadata hash) ---
     # Store scaled AMOUNT (8 felts)
     push.LEAF_DATA_START_PTR push.AMOUNT_OFFSET add
     movdn.8
@@ -132,6 +131,13 @@ pub proc bridge_out
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     mem_store
     # => [pad(16)]
+
+    # Leaf type
+    push.LEAF_TYPE_ASSET
+    exec.utils::swap_u32_bytes
+    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
+    # => [leaf_type_ptr, leaf_type, pad(16)]
+    mem_store
 
     # Store destination_network
     loc_load.DESTINATION_NETWORK_LOC
@@ -149,8 +155,7 @@ pub proc bridge_out
     exec.write_address_to_memory
     # => [pad(16)]
 
-    # Fetch metadata hash from the faucet via FPI.
-
+    # --- 3. Fetch metadata hash from the faucet via FPI and write to memory ---
     # Extract faucet ID and save to temp memory for FPI setup
     loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
     # => [faucet_id_prefix, faucet_id_suffix, 0, amount, pad(12)]
@@ -195,19 +200,12 @@ pub proc bridge_out
     mem_store
     # => [pad(16)]
 
-    # Leaf type
-    push.LEAF_TYPE_ASSET
-    exec.utils::swap_u32_bytes
-    push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
-    # => [leaf_type_ptr, leaf_type, pad(16)]
-    mem_store
-
-    # --- 3. Compute leaf value and add to MMR frontier ---
+    # --- 4. Compute leaf value and add to MMR frontier ---
     push.LEAF_DATA_START_PTR
     exec.add_leaf_bridge
     # => [pad(16)]
 
-    # --- 4. Create BURN output note for ASSET ---
+    # --- 5. Create BURN output note for ASSET ---
     loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
     # => [ASSET, pad(12)]
     exec.create_burn_note
