@@ -326,9 +326,7 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
-    # Look up the faucet account ID from the origin token address once,
-    # and store it in global memory for use by verify_claim_amount and
-    # create_mint_note_with_attachment.
+    # Look up the faucet account ID from the origin token address
     exec.get_origin_token_address
     # => [origin_token_addr(5), pad(16)]
 
@@ -357,10 +355,9 @@ end
 #! scaled down by the faucet's scale factor.
 #!
 #! This procedure:
-#! 1. Reads the faucet account ID from global memory (looked up once in `claim`).
-#! 2. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
-#! 3. Loads the raw U256 amount from the leaf data in memory.
-#! 4. Calls `verify_u256_to_native_amount_conversion` to assert that:
+#! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 2. Loads the raw U256 amount from the leaf data in memory.
+#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that:
 #!        faucet_mint_amount == floor(raw_amount / 10^scale)
 #!
 #! Inputs:  [faucet_id_prefix, faucet_id_suffix]
@@ -373,7 +370,7 @@ end
 #! Invocation: exec
 proc verify_claim_amount
     # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
-    padw padw 
+    padw padw
     movup.9 movup.9
     padw padw
     movup.9 movup.9
@@ -578,7 +575,7 @@ end
 #! a PUBLIC P2ID note on consumption. This procedure orchestrates three steps:
 #! 1. Write all 18 MINT note storage items to global memory.
 #! 2. Build the MINT note recipient digest from the storage.
-#! 3. Look up the faucet, create the output note, and set the attachment.
+#! 3. Create the output note, and set the attachment.
 #!
 #! Inputs:  [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
@@ -706,8 +703,7 @@ end
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
-#! Reads the faucet account ID from global memory (looked up once in `claim`),
-#! creates a public output note with no assets, and sets the attachment so only the
+#! Creates a public output note with no assets, and sets the attachment so only the
 #! target faucet can consume the note.
 #!
 #! Inputs:  [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
