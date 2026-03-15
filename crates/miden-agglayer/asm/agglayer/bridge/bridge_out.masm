@@ -36,10 +36,6 @@ const LET_ROOT_HI_SLOT=word("miden::agglayer::let::root_hi")
 const LET_NUM_LEAVES_SLOT=word("miden::agglayer::let::num_leaves")
 
 # Memory pointers
-# Temporary storage for faucet ID during metadata hash FPI setup.
-# Placed just before LEAF_DATA_START_PTR (uses 2 felts: prefix at 42, suffix at 43).
-const FAUCET_ID_TMP_PREFIX_PTR=42
-const FAUCET_ID_TMP_SUFFIX_PTR=43
 const LEAF_DATA_START_PTR=44
 # Memory pointer for loading the LET (Local Exit Tree) frontier into memory.
 # The memory layout at this address matches what append_and_update_frontier expects:
@@ -156,14 +152,6 @@ pub proc bridge_out
     # => [pad(16)]
 
     # --- 3. Fetch metadata hash from the faucet via FPI and write to memory ---
-    # Extract faucet ID and save to temp memory for FPI setup
-    loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
-    # => [faucet_id_prefix, faucet_id_suffix, 0, amount, pad(12)]
-    push.FAUCET_ID_TMP_PREFIX_PTR mem_store
-    push.FAUCET_ID_TMP_SUFFIX_PTR mem_store
-    drop drop
-    # => [pad(16)]
-
     procref.agglayer_faucet::get_metadata_hash
     # => [PROC_MAST_ROOT, pad(16)]
 
