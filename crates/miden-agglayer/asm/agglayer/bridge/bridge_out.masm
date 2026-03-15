@@ -85,7 +85,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 5. Creates a BURN note with the bridged out asset
 #!
 #! Inputs:  [ASSET, dest_network_id, dest_address(5), pad(6)]
-#! Outputs: []
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET is the asset to be bridged out (layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]).
