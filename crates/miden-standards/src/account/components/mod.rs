@@ -100,15 +100,6 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 // METADATA LIBRARIES
 // ================================================================================================
 
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
-});
-
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
@@ -127,11 +118,6 @@ pub fn basic_fungible_faucet_library() -> Library {
 /// Returns the Network Fungible Faucet Library.
 pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
-}
-
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
