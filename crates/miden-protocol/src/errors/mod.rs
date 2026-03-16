@@ -13,7 +13,7 @@ use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
 use super::account::AccountId;
-use super::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -456,11 +456,11 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
+        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
     )]
-    FungibleAssetInconsistentFaucetIds {
-        original_issuer: AccountId,
-        other_issuer: AccountId,
+    FungibleAssetInconsistentVaultKeys {
+        original_key: AssetVaultKey,
+        other_key: AssetVaultKey,
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
@@ -488,6 +488,8 @@ pub enum AssetError {
     NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
+    #[error("invalid native asset callbacks encoding: {0}")]
+    InvalidAssetCallbackFlag(u8),
 }
 
 // TOKEN SYMBOL ERROR

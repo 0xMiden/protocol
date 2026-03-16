@@ -49,7 +49,7 @@ const SMT_SET_ADDITIONAL_CYCLES=250
 # that this includes at least smt::set's best case number of cycles.
 # This can be _estimated_ using the transaction measurements on ExecutedTransaction and can be set
 # to the lowest observed value.
-const NUM_POST_COMPUTE_FEE_CYCLES=500
+const NUM_POST_COMPUTE_FEE_CYCLES=608
 
 # The number of cycles the epilogue is estimated to take after compute_fee has been executed.
 const ESTIMATED_AFTER_COMPUTE_FEE_CYCLES=NUM_POST_COMPUTE_FEE_CYCLES+SMT_SET_ADDITIONAL_CYCLES
@@ -290,6 +290,11 @@ end
 proc create_native_fee_asset
     exec.memory::get_native_asset_id
     # => [native_asset_id_suffix, native_asset_id_prefix, fee_amount]
+
+    # assume the fee asset does not have callbacks
+    # this should be addressed more holistically with a fee construction refactor
+    push.0
+    # => [enable_callbacks, native_asset_id_suffix, native_asset_id_prefix, fee_amount]
 
     # SAFETY: native asset ID should be fungible and amount should not be exceeded
     exec.fungible_asset::create_unchecked

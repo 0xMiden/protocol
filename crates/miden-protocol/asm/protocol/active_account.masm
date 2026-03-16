@@ -512,6 +512,10 @@ pub proc get_balance
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
     # => [faucet_id_suffix, faucet_id_prefix]
 
+    # TODO(callbacks): This should take ASSET_KEY as input to avoid hardcoding the callbacks flag.
+    push.0
+    # => [enable_callbacks = 0, faucet_id_suffix, faucet_id_prefix]
+
     exec.asset::create_fungible_key
     # => [ASSET_KEY]
 
@@ -543,6 +547,10 @@ pub proc get_initial_balance
     dup.1 exec.account_id::is_fungible_faucet
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
     # => [faucet_id_suffix, faucet_id_prefix]
+
+    # TODO(callbacks): This should take ASSET_KEY as input to avoid hardcoding the callbacks flag.
+    push.0
+    # => [enable_callbacks = 0, faucet_id_suffix, faucet_id_prefix]
 
     exec.asset::create_fungible_key
     # => [ASSET_KEY]
@@ -671,3 +679,4 @@ pub proc has_procedure
     swapdw dropw dropw swapw dropw movdn.3 drop drop drop
     # => [is_procedure_available]
 end
+
