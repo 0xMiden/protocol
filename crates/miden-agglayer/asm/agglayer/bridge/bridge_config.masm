@@ -23,12 +23,12 @@ const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
 const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
 const TOKEN_REGISTRY_SLOT=word("miden::agglayer::bridge::token_registry")
 
-# Memory pointer for hashing token address
-const TOKEN_ADDR_HASH_PTR=900
-
 # Flags
 const GER_KNOWN_FLAG=1
 const IS_FAUCET_REGISTERED_FLAG=1
+
+# Offset in the local memory of the `hash_token_address` procedure
+const TOKEN_ADDR_HASH_PTR=0
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -216,12 +216,13 @@ pub proc lookup_faucet_by_token_address
     # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
 
     # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
-    dup.1 dup.1 movup.5 movup.5
+    dup.1 dup.1 push.0.0
     # => [0, 0, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix] 
 
     exec.account_id::is_equal
     # => [is_id_zero, faucet_id_prefix, faucet_id_suffix]
 
+    # If AccountId returned from map is zero, it means the token is not registered.
     assertz.err=ERR_TOKEN_NOT_REGISTERED
     # => [faucet_id_prefix, faucet_id_suffix]
 end
@@ -237,14 +238,15 @@ end
 #! Outputs: [TOKEN_ADDR_HASH]
 #!
 #! Invocation: exec
+@locals(8)
 proc hash_token_address
-    # Write origin_token_addr[5] to memory for hashing
-    mem_storew_le.TOKEN_ADDR_HASH_PTR dropw
-    push.TOKEN_ADDR_HASH_PTR add.4 mem_store
+    # Write origin_token_addr[5] to local memory for hashing
+    loc_storew_le.TOKEN_ADDR_HASH_PTR dropw
+    locaddr.TOKEN_ADDR_HASH_PTR add.4 mem_store
     # => []
 
     # Hash the token address: rpo256::hash_elements(num_elements=5, start_ptr)
-    push.5 push.TOKEN_ADDR_HASH_PTR
+    push.5 locaddr.TOKEN_ADDR_HASH_PTR
     exec.rpo256::hash_elements
     # => [TOKEN_ADDR_HASH]
 end

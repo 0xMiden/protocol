@@ -128,12 +128,8 @@ const CUR_HASH_LO_LOCAL = 0 # first half of the current Keccak256 hash value
 const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
 
 # Offsets in the local memory of the `claim` procedure
-const CLAIM_PREFIX_MEM_LOC = 0
-const CLAIM_SUFFIX_MEM_LOC = 1
-
-# Offsets in the local memory of the `create_mint_note_with_attachment` procedure
-const CREATE_MINT_FAUCET_PREFIX_LOC = 0
-const CREATE_MINT_FAUCET_SUFFIX_LOC = 1
+const CLAIM_DEST_ID_PREFIX_LOCAL = 0
+const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -341,7 +337,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.get_destination_account_id_data
-    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
+    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
     # => [pad(7)]
 
     # VALIDATE CLAIM - call verify_leaf_bridge directly (bridge is the native account)
@@ -355,13 +351,23 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
+    # Look up the faucet account ID from the origin token address
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    dup.1 dup.1
+    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
+
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
-    # => [pad(16)]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
     
     # Build MINT output note targeting the aggfaucet
-    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
-    # => [prefix, suffix, pad(16)]
+    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
+    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     exec.build_mint_output_note
     # => [pad(16)]
@@ -374,27 +380,25 @@ end
 #! scaled down by the faucet's scale factor.
 #!
 #! This procedure:
-#! 1. Looks up the faucet account ID from the origin token address in the leaf data.
-#! 2. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
-#! 3. Loads the raw U256 amount from the leaf data in memory.
-#! 4. Calls `verify_u256_to_native_amount_conversion` to assert that:
+#! 1. Performs an FPI call to the faucet's `get_scale` procedure to retrieve the scale factor.
+#! 2. Loads the raw U256 amount from the leaf data in memory.
+#! 3. Calls `verify_u256_to_native_amount_conversion` to assert that:
 #!        faucet_mint_amount == floor(raw_amount / 10^scale)
 #!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Outputs: []
 #!
 #! Panics if:
-#! - the origin token address is not registered in the bridge's token registry.
 #! - the FPI call to the faucet's get_scale fails.
 #! - the faucet_mint_amount does not match the expected scaled-down value.
 #!
 #! Invocation: exec
 proc verify_claim_amount
-    # Step 1: Look up the faucet account ID from the origin token address
-    exec.get_origin_token_address
-    # => [origin_token_addr(5), pad(16)]
-
-    exec.bridge_config::lookup_faucet_by_token_address
+    # Step 1: Pad the stack explicitly for FPI call (get_scale takes no inputs)
+    padw padw
+    movup.9 movup.9
+    padw padw
+    movup.9 movup.9
     # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
 
     # Step 2: FPI call to faucet's get_scale procedure
@@ -407,23 +411,24 @@ proc verify_claim_amount
     exec.tx::execute_foreign_procedure
     # => [scale, pad(15)]
 
+    # Clean up FPI output padding, keeping only scale
+    movdn.15 dropw dropw dropw drop drop drop
+    # => [scale]
+
     # Step 3: Load the raw U256 amount from leaf data memory
     exec.get_raw_claim_amount
-    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, pad(15)]
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     # Step 4: Load faucet_mint_amount (y) and position it for verification
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale, pad(15)]
+    # => [y, x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     movdn.9
-    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y, pad(15)]
+    # => [x7, x6, x5, x4, x3, x2, x1, x0, scale, y]
 
     # Step 5: Verify that y = floor(x / 10^scale)
     exec.asset_conversion::verify_u256_to_native_amount_conversion
-    # => [y, pad(15)]
-
-    drop push.0
-    # => [pad(16)]
+    # => []
 end
 
 #! Given the leaf data key, loads the leaf data from advice map to memory, packs the data in-place,
@@ -594,23 +599,20 @@ end
 #! a PUBLIC P2ID note on consumption. This procedure orchestrates three steps:
 #! 1. Write all 18 MINT note storage items to global memory.
 #! 2. Build the MINT note recipient digest from the storage.
-#! 3. Look up the faucet, create the output note, and set the attachment.
+#! 3. Create the output note, and set the attachment.
 #!
-#! Inputs:  [prefix, suffix]
+#! Inputs:  [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
-#!
-#! Where:
-#! - prefix, suffix: destination account ID
 #!
 #! Invocation: exec
 proc build_mint_output_note
     # Step 1: Write all 18 MINT note storage items to global memory
     exec.write_mint_note_storage
-    # => []
+    # => [faucet_id_prefix, faucet_id_suffix]
 
     # Step 2: Build the MINT note recipient digest
     exec.build_mint_recipient
-    # => [MINT_RECIPIENT]
+    # => [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Step 3: Create the output note and set the faucet attachment
     exec.create_mint_note_with_attachment
@@ -630,30 +632,30 @@ end
 #! - [16]: account_id_suffix (destination account suffix)
 #! - [17]: account_id_prefix (destination account prefix)
 #!
-#! Inputs:  [prefix, suffix]
+#! Inputs:  [destination_id_prefix, destination_id_suffix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
     # Write P2ID storage items first (before prefix is consumed): [16..17]
-    # Write account_id_suffix [16]
+    # Write destination_id_suffix [16]
     dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT
-    # => [prefix, suffix]
+    # => [destination_id_prefix, destination_id_suffix]
 
-    # Write account_id_prefix [17]
+    # Write destination_id_prefix [17]
     dup push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
-    # => [prefix, suffix]
+    # => [destination_id_prefix, destination_id_suffix]
 
     swap drop
-    # => [prefix]
+    # => [destination_id_prefix]
 
     # Get the native amount from the pre-computed miden_claim_amount
     mem_load.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [native_amount, prefix]
+    # => [native_amount, destination_id_prefix]
 
     # Compute the note tag for the destination account (consumes prefix)
     swap
-    # => [prefix, native_amount]
+    # => [destination_id_prefix, native_amount]
 
     exec.note_tag::create_account_target
     # => [dest_tag, native_amount]
@@ -709,7 +711,7 @@ proc build_mint_recipient
     # => [MINT_SCRIPT_ROOT]
 
     # Generate a serial number for the MINT note (use PROOF_DATA_KEY)
-    swapw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    padw mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [MINT_SERIAL_NUM, MINT_SCRIPT_ROOT]
 
     # Build the MINT note recipient
@@ -725,49 +727,38 @@ end
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
-#! Looks up the faucet account ID from the origin token address in the leaf data,
-#! creates a public output note with no assets, and sets the attachment so only the
+#! Creates a public output note with no assets, and sets the attachment so only the
 #! target faucet can consume the note.
 #!
-#! Inputs:  [MINT_RECIPIENT]
+#! Inputs:  [MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 #! Outputs: []
 #!
 #! Invocation: exec
-@locals(2) # 0: faucet_prefix, 1: faucet_suffix
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
     push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, MINT_RECIPIENT]
+    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
-    # Look up the faucet account ID from the origin token address in the leaf data
-    exec.get_origin_token_address
-    # => [origin_token_addr(5), note_type, MINT_RECIPIENT]
-
-    exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, note_type, MINT_RECIPIENT]
-
-    loc_store.CREATE_MINT_FAUCET_PREFIX_LOC loc_store.CREATE_MINT_FAUCET_SUFFIX_LOC
-    # => [note_type, MINT_RECIPIENT]
+    dup.5
+    # => [faucet_id_prefix, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Compute note tag targeting the faucet account
-    loc_load.CREATE_MINT_FAUCET_PREFIX_LOC
-    # => [faucet_prefix, note_type, MINT_RECIPIENT]
-
     exec.note_tag::create_account_target
-    # => [faucet_tag, note_type, MINT_RECIPIENT]
+    # => [faucet_tag, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
-    # => [note_idx]
+    # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    movdn.2
+    # => [faucet_id_prefix, faucet_id_suffix, note_idx]
 
     # Set the attachment on the MINT note to target the faucet account
     # NetworkAccountTarget attachment: targets the faucet so only it can consume the note
     # network_account_target::new expects [prefix, suffix, exec_hint]
     # and returns [attachment_scheme, attachment_kind, ATTACHMENT]
     push.ALWAYS # exec_hint = ALWAYS
-    loc_load.CREATE_MINT_FAUCET_SUFFIX_LOC
-    loc_load.CREATE_MINT_FAUCET_PREFIX_LOC
-    # => [faucet_prefix, faucet_suffix, exec_hint, note_idx]
+    movdn.2
+    # => [faucet_id_prefix, faucet_id_suffix, exec_hint, note_idx]
 
     exec.network_account_target::new
     # => [attachment_scheme, attachment_kind, ATTACHMENT, note_idx]

@@ -231,7 +231,7 @@ end
 #! Inputs:  [x0, x1, x2, x3, scale_exp, y]
 #!          Where x is encoded as 4 u32 limbs in little-endian order.
 #!          (x0 is least significant limb)
-#! Outputs: [y]
+#! Outputs: []
 #!
 #! Where:
 #!   - x: The original amount as an unsigned 128-bit integer (U128).
@@ -275,30 +275,28 @@ pub proc verify_u128_to_native_amount_conversion
     movup.5
     # => [y, scale_exp, x0, x1, x2, x3]
 
-    dup.1 dup.1
-    # => [y, scale_exp, y, scale_exp, x0, x1, x2, x3]
+    # Duplicate scale_exp (needed later for remainder bound check in Step 4)
+    dup.1 swap
+    # => [y, scale_exp, scale_exp, x0, x1, x2, x3]
 
     exec.scale_native_amount_to_u256
-    # => [y_scaled0..y_scaled7, y, scale_exp, x0, x1, x2, x3]
+    # => [y_scaled0..y_scaled7, scale_exp, x0, x1, x2, x3]
 
     # Drop the upper word as it's guaranteed to be zero since y_scaled will fit in 123 bits
     # (amount: 63 bits, 10^target_scale: 60 bits).
     swapw dropw
-    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, y, scale_exp, x0, x1, x2, x3]
+    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, scale_exp, x0, x1, x2, x3]
 
     # =============================================================================================
     # Step 3: Compute z = x - y_scaled and prove no underflow
     #   z := x - y_scaled
     #   Constraint: y_scaled <= x
     # =============================================================================================
-    movup.5 movup.5
-    # => [y, scale_exp, y_scaled0, y_scaled1, y_scaled2, y_scaled3, x0, x1, x2, x3]
- 
-    movdn.9 movdn.9
-    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, x0, x1, x2, x3, y, scale_exp]
+    movup.4 movdn.8
+    # => [y_scaled0, y_scaled1, y_scaled2, y_scaled3, x0, x1, x2, x3, scale_exp]
 
     exec.u128_sub_no_underflow
-    # => [z0, z1, z2, z3, y, scale_exp]
+    # => [z0, z1, z2, z3, scale_exp]
 
     # =============================================================================================
     # Step 4: Enforce z < 10^scale_exp (remainder bound)
@@ -310,24 +308,24 @@ pub proc verify_u128_to_native_amount_conversion
     # Therefore any valid remainder z < 10^scale_exp must be < 2^60 and thus must have z2 == z3 == 0.
     # =============================================================================================
     exec.word::reverse
-    # => [z3, z2, z1, z0, y, scale_exp]
+    # => [z3, z2, z1, z0, scale_exp]
 
     assertz.err=ERR_REMAINDER_TOO_LARGE   # z3 == 0
     assertz.err=ERR_REMAINDER_TOO_LARGE   # z2 == 0
-    # => [z1, z0, y, scale_exp]
+    # => [z1, z0, scale_exp]
 
-    movup.3
+    movup.2
     exec.pow10
-    # => [scale, z1, z0, y]
+    # => [scale, z1, z0]
 
     u32split
-    # => [scale_hi, scale_lo, z1, z0, y]
+    # => [scale_hi, scale_lo, z1, z0]
 
     exec.u64::lt
-    # => [is_lt, y]
+    # => [is_lt]
 
     assert.err=ERR_REMAINDER_TOO_LARGE
-    # => [y]
+    # => []
 end
 
 #! Verify conversion from an AggLayer U256 amount to a Miden native amount (Felt)
@@ -355,7 +353,7 @@ end
 #!          Where x is encoded as 8 u32 limbs in big-endian order.
 #!          (x7 is most significant limb and is at the top of the stack)
 #!          Each limb is expected to contain little-endian bytes.
-#! Outputs: [y]
+#! Outputs: []
 #!
 #! Where:
 #!   - x: The original AggLayer amount as an unsigned 256-bit integer (U256).
@@ -387,5 +385,5 @@ pub proc verify_u256_to_native_amount_conversion
 
     # Delegate to verify_u128_to_native_amount_conversion for the remaining verification
     exec.verify_u128_to_native_amount_conversion
-    # => [y]
+    # => []
 end

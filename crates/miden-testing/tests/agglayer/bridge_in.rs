@@ -234,7 +234,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(claim_executed.account_delta())?;
 
-    let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account);
+    let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account)?;
 
     assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
