@@ -13,6 +13,7 @@ use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::tx
 use miden::standards::note_tag
+use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
 
@@ -712,16 +713,14 @@ proc create_mint_note_with_attachment
     push.OUTPUT_NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
-    dup.5
-    # => [faucet_id_prefix, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
-
-    # Compute note tag targeting the faucet account
-    exec.note_tag::create_account_target
-    # => [faucet_tag, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # Set tag to DEFAULT
+    push.DEFAULT_TAG
+    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
     # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    
     movdn.2
     # => [faucet_id_prefix, faucet_id_suffix, note_idx]
 
