@@ -16,6 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
+use super::{MintPolicyAuthority, policy_authority_slot_name};
 use crate::account::components::auth_controlled_library;
 use crate::procedure_digest;
 
@@ -37,11 +38,6 @@ static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = Laz
     StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
         .expect("storage slot name should be valid")
 });
-static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::policy_authority")
-        .expect("storage slot name should be valid")
-});
-
 /// An [`AccountComponent`] providing configurable mint-policy management for network faucets.
 ///
 /// It reexports policy procedures from `miden::standards::mint_policies` and manager procedures
@@ -54,7 +50,9 @@ static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 ///
 /// - [`Self::active_policy_proc_root_slot`]: Procedure root of the active mint policy.
 /// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed mint policy procedure roots.
-/// - [`Self::policy_authority_slot`]: Policy authority mode (`0` = tx auth, `1` = external owner).
+/// - [`Self::policy_authority_slot`]: Policy authority mode
+///   ([`MintPolicyAuthority::AuthControlled`] = tx auth, [`MintPolicyAuthority::OwnerControlled`] =
+///   external owner).
 #[derive(Debug, Clone, Copy)]
 pub struct AuthControlled {
     initial_policy_root: Word,
@@ -132,7 +130,7 @@ impl AuthControlled {
 
     /// Returns the [`StorageSlotName`] containing policy authority mode.
     pub fn policy_authority_slot() -> &'static StorageSlotName {
-        &POLICY_AUTHORITY_SLOT_NAME
+        policy_authority_slot_name()
     }
 
     /// Returns the storage slot schema for policy authority mode.
@@ -140,7 +138,7 @@ impl AuthControlled {
         (
             Self::policy_authority_slot().clone(),
             StorageSlotSchema::value(
-                "Policy authority mode (0 = tx auth, 1 = external owner)",
+                "Policy authority mode (AuthControlled = tx auth, OwnerControlled = external owner)",
                 [
                     FeltSchema::u8("policy_authority"),
                     FeltSchema::new_void(),
@@ -154,6 +152,11 @@ impl AuthControlled {
     /// Returns the default `allow_all` policy root.
     pub fn allow_all_policy_root() -> Word {
         *ALLOW_ALL_POLICY_ROOT
+    }
+
+    /// Returns the policy authority used by this component.
+    pub fn mint_policy_authority(&self) -> MintPolicyAuthority {
+        MintPolicyAuthority::AuthControlled
     }
 }
 
@@ -189,10 +192,7 @@ impl From<AuthControlled> for AccountComponent {
             AuthControlled::allowed_policy_proc_roots_slot().clone(),
             allowed_policy_proc_roots,
         );
-        let policy_authority_slot = StorageSlot::with_value(
-            AuthControlled::policy_authority_slot().clone(),
-            Word::from([0u32, 0, 0, 0]),
-        );
+        let policy_authority_slot = StorageSlot::from(auth_controlled.mint_policy_authority());
 
         let storage_schema = StorageSchema::new(vec![
             AuthControlled::active_policy_proc_root_slot_schema(),

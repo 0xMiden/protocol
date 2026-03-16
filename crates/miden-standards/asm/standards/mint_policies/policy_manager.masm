@@ -30,6 +30,7 @@ const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::mint_policy_manager
 # - POLICY_AUTHORITY = 0: policy authority rely on `auth_controlled`.
 # - POLICY_AUTHORITY = 1: `set_mint_policy` requires Ownable2Step owner check.
 const POLICY_AUTHORITY_SLOT=word("miden::standards::mint_policy_manager::policy_authority")
+const POLICY_AUTHORITY_OWNER_CONTROLLED=1
 
 # Local memory pointer used to pass a policy root to `dynexec`.
 const MINT_POLICY_PROC_ROOT_PTR=0
@@ -90,11 +91,8 @@ proc assert_allowed_policy_root
     exec.active_account::get_map_item
     # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
 
-    exec.word::testz
+    exec.word::eqz
     assertz.err=ERR_MINT_POLICY_ROOT_NOT_ALLOWED
-    # => [ALLOWED_FLAG, MINT_POLICY_ROOT]
-
-    dropw
     # => [MINT_POLICY_ROOT]
 end
 
@@ -130,6 +128,7 @@ proc assert_can_set_mint_policy
     exec.get_policy_authority
     # => [policy_authority, NEW_POLICY_ROOT, pad(12)]
 
+    eq.POLICY_AUTHORITY_OWNER_CONTROLLED
     if.true
         exec.ownable2step::assert_sender_is_owner
         # => [NEW_POLICY_ROOT, pad(12)]
