@@ -117,8 +117,7 @@ impl SwapNote {
         let note = Note::new(assets, metadata, recipient);
 
         // build the payback note details
-        let payback_recipient =
-            P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
+        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_num);
         let payback_assets = NoteAssets::new(vec![requested_asset])?;
         let payback_note = NoteDetails::new(payback_assets, payback_recipient);
 
@@ -200,8 +199,7 @@ impl SwapNoteStorage {
         payback_attachment: NoteAttachment,
         payback_serial_number: Word,
     ) -> Self {
-        let payback_recipient =
-            P2idNoteStorage::new(sender).into_recipient(payback_serial_number);
+        let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_number);
         let payback_tag = NoteTag::with_account_target(sender);
 
         Self {
@@ -363,7 +361,8 @@ mod tests {
     use miden_protocol::errors::NoteError;
     use miden_protocol::note::{NoteAttachment, NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     };
 
     use super::*;
