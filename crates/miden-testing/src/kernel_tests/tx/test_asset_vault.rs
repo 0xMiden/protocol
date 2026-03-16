@@ -714,7 +714,7 @@ async fn test_merge_different_fungible_assets_fails() -> anyhow::Result<()> {
     // Sanity check that the Rust implementation errors when adding assets from different faucets.
     assert_matches!(
         asset0.add(asset1).unwrap_err(),
-        AssetError::FungibleAssetInconsistentFaucetIds { .. }
+        AssetError::FungibleAssetInconsistentVaultKeys { .. }
     );
 
     Ok(())

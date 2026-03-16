@@ -813,6 +813,24 @@ pub proc faucet_burn_asset
     # => [ASSET_VALUE, pad(12)]
 end
 
+#! Returns whether the active account defines callbacks.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [has_callbacks, pad(15)]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+#!
+#! Invocation: dynexec
+pub proc faucet_has_callbacks
+    exec.account::has_callbacks
+    # => [has_callbacks, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [has_callbacks, pad(15)]
+end
+
 # INPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
@@ -1107,9 +1125,6 @@ pub proc output_note_add_asset
     # check that this procedure was executed against the native account
     exec.memory::assert_native_account
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
-
-    movup.8
-    # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     exec.output_note::add_asset
     # => [pad(16)]
@@ -1483,6 +1498,10 @@ pub proc tx_exec_foreign_proc
 
     # end the foreign context
     exec.tx::end_foreign_context
+    # => [foreign_procedure_outputs(16)]
+
+    # clear the foreign procedure ID and root in memory
+    exec.tx::clear_fpi_memory
     # => [foreign_procedure_outputs(16)]
 end
 

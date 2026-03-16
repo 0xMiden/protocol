@@ -17,6 +17,7 @@ pub use ::$kernel::util::asset::key_to_faucet_id
 pub use ::$kernel::util::asset::key_into_faucet_id
 pub use ::$kernel::util::asset::key_to_asset_id
 pub use ::$kernel::util::asset::key_into_asset_id
+pub use ::$kernel::util::asset::key_to_callbacks_enabled
 pub use ::$kernel::util::asset::store
 pub use ::$kernel::util::asset::load
 

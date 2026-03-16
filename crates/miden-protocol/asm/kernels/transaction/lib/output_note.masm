@@ -1,5 +1,6 @@
 use $kernel::account
 use $kernel::asset
+use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
 use $kernel::note
@@ -178,13 +179,13 @@ end
 
 #! Adds the asset to the note specified by the index.
 #!
-#! Inputs:  [note_idx, ASSET_KEY, ASSET_VALUE]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx]
 #! Outputs: []
 #!
 #! Where:
-#! - note_idx is the index of the note to which the asset is added.
 #! - ASSET_KEY is the vault key of the asset to add.
 #! - ASSET_VALUE is the value of the asset to add.
+#! - note_idx is the index of the note to which the asset is added.
 #!
 #! Panics if:
 #! - the note index points to a non-existent output note.
@@ -194,30 +195,40 @@ end
 #! - the total number of ASSETs exceeds the maximum of 256.
 pub proc add_asset
     # check if the note exists, it must be within [0, num_of_notes]
-    dup exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
-    # => [note_idx, ASSET_KEY, ASSET_VALUE]
-
-    # get a pointer to the memory address of the note at which the asset will be stored
-    exec.memory::get_output_note_ptr
-    # => [note_ptr, ASSET_KEY, ASSET_VALUE]
-
-    # duplicate note ptr
-    dup movdn.9 movdn.9
-    # => [ASSET_KEY, ASSET_VALUE, note_ptr, note_ptr]
+    dup.8 exec.memory::get_num_output_notes lte assert.err=ERR_NOTE_INVALID_INDEX
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     # validate the asset
     exec.asset::validate
-    # => [ASSET_KEY, ASSET_VALUE, note_ptr, note_ptr]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
-    # emit event to signal that a new asset is going to be added to the note.
+    # emit event to signal that a new asset is going to be added to the note
     emit.NOTE_BEFORE_ADD_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, note_ptr]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx]
+
+    # prepare the stack for the callback
+    swapw dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, note_idx]
+
+    dup.12 movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, ASSET_KEY, note_idx]
+
+    # invoke the callback
+    exec.callbacks::on_before_asset_added_to_note
+    swapw
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, note_idx]
+
+    movup.8 exec.memory::get_output_note_ptr dup
+    # => [note_ptr, note_ptr, ASSET_KEY, PROCESSED_ASSET_VALUE]
+
+    movdn.9 movdn.9
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, note_ptr, note_ptr]
 
     # add the asset to the note
     exec.add_asset_raw
     # => [note_ptr]
 
-    # emit event to signal that a new asset was added to the note.
+    # emit event to signal that a new asset was added to the note
     emit.NOTE_AFTER_ADD_ASSET_EVENT
     # => [note_ptr]
 
