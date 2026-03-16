@@ -132,8 +132,8 @@ pub proc update_threshold_config
 
     # ------ Prepare data for storage ------
     loc_load.0
-    loc_load.2
     loc_load.1
+    loc_load.2
     loc_load.3
     # => [tier_3, tier_2, tier_1, tier_0]
 
@@ -512,39 +512,39 @@ proc get_tier_threshold_for_index
 
     push.TIER_THRESHOLD_CONFIG_SLOT[0..2]
     exec.active_account::get_initial_item
-    # => [tier_3, tier_2, tier_1, tier_0]
+    # => [tier_0, tier_1, tier_2, tier_3]
 
     loc_load.0
     u32assert.err=ERR_U32
-    # => [idx, tier_3, tier_2, tier_1, tier_0]
+    # => [idx, tier_0, tier_1, tier_2, tier_3]
 
     dup eq.0
-    # => [idx_eq_0, idx, tier_3, tier_2, tier_1, tier_0]
+    # => [idx_eq_0, idx, tier_0, tier_1, tier_2, tier_3]
 
     if.true
-        dup.4 loc_store.1
-        # => [idx, tier_3, tier_2, tier_1, tier_0]
+        dup.1 loc_store.1
+        # => [idx, tier_0, tier_1, tier_2, tier_3]
     else
         dup eq.1
-        # => [idx_eq_1, idx, tier_3, tier_2, tier_1, tier_0]
+        # => [idx_eq_1, idx, tier_0, tier_1, tier_2, tier_3]
 
         if.true
-            dup.3 loc_store.1
-            # => [idx, tier_3, tier_2, tier_1, tier_0]
+            dup.2 loc_store.1
+            # => [idx, tier_0, tier_1, tier_2, tier_3]
         else
             dup eq.2
-            # => [idx_eq_2, idx, tier_3, tier_2, tier_1, tier_0]
+            # => [idx_eq_2, idx, tier_0, tier_1, tier_2, tier_3]
 
             if.true
-                dup.2 loc_store.1
-                # => [idx, tier_3, tier_2, tier_1, tier_0]
+                dup.3 loc_store.1
+                # => [idx, tier_0, tier_1, tier_2, tier_3]
             else
                 dup eq.3
-                # => [idx_eq_3, idx, tier_3, tier_2, tier_1, tier_0]
+                # => [idx_eq_3, idx, tier_0, tier_1, tier_2, tier_3]
 
                 assert.err=ERR_INVALID_TIER_INDEX
-                dup.1 loc_store.1
-                # => [idx, tier_3, tier_2, tier_1, tier_0]
+                dup.4 loc_store.1
+                # => [idx, tier_0, tier_1, tier_2, tier_3]
             end
         end
     end
@@ -655,9 +655,9 @@ proc get_num_required_signatures
         push.0
         # => [tier_index=0]
     else
-        loc_load.3
         loc_load.1
-        # => [total_amount, amount_limit1]
+        loc_load.3
+        # => [amount_limit1, total_amount]
 
         u32assert2.err=ERR_U32
         u32lt
@@ -667,9 +667,9 @@ proc get_num_required_signatures
             push.1
             # => [tier_index=1]
         else
-            loc_load.4
             loc_load.1
-            # => [total_amount, amount_limit2]
+            loc_load.4
+            # => [amount_limit2, total_amount]
 
             u32assert2.err=ERR_U32
             u32lt

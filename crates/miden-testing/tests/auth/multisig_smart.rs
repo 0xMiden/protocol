@@ -1040,6 +1040,224 @@ async fn test_multisig_smart_more_than_limit3_requires_tier3_signatures(
     Ok(())
 }
 
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+
+    let assets = vec![FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+        5_000,
+    )?];
+    let mut multisig_account = create_multisig_smart_account_with_assets(
+        2,
+        &public_keys,
+        auth_scheme,
+        assets,
+        TEST_SPENDING_WINDOW,
+        TEST_MIN_DELAY,
+        TEST_PROPOSE_EXPIRATION_DELTA,
+        [500, 1000, 2000, 1500],
+        [1, 2, 3, 5],
+        test_oracle_id(),
+        test_get_price_proc_root(),
+        vec![],
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 2_500)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let salt = Word::from([Felt::new(11); 4]);
+
+    let mut mock_chain = mock_chain_builder.build()?;
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+    let sig_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary)
+        .await?;
+    let sig_3 = authenticators[3]
+        .get_signature(public_keys[3].to_commitment(), &tx_summary)
+        .await?;
+
+    let four_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2.clone())
+        .add_signature(public_keys[3].to_commitment(), msg, sig_3.clone())
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        matches!(four_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "high spending should require the tier-3 threshold of 5 signatures"
+    );
+
+    let sig_4 = authenticators[4]
+        .get_signature(public_keys[4].to_commitment(), &tx_summary)
+        .await?;
+    let five_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2)
+        .add_signature(public_keys[3].to_commitment(), msg, sig_3)
+        .add_signature(public_keys[4].to_commitment(), msg, sig_4)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(five_sig_result.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&five_sig_result)?;
+    mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_default(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+
+    let assets = vec![FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+        1_000,
+    )?];
+    let mut multisig_account = create_multisig_smart_account_with_assets(
+        4,
+        &public_keys,
+        auth_scheme,
+        assets,
+        TEST_SPENDING_WINDOW,
+        TEST_MIN_DELAY,
+        TEST_PROPOSE_EXPIRATION_DELTA,
+        [500, 1000, 2000, 1500],
+        [2, 3, 4, 5],
+        test_oracle_id(),
+        test_get_price_proc_root(),
+        vec![],
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 300)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let salt = Word::from([Felt::new(12); 4]);
+
+    let mut mock_chain = mock_chain_builder.build()?;
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let one_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        matches!(one_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "low spending should still reject a single signature when tier-0 threshold is 2"
+    );
+
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+    let two_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(two_sig_result.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&two_sig_result)?;
+    mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
 /// Tests basic 2-of-2 multisig functionality with note creation.
 ///
 /// This test verifies that a multisig account with 2 approvers and threshold 2
@@ -1906,7 +2124,7 @@ async fn test_multisig_smart_new_approvers_cannot_sign_before_update(
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_smart_proc_threshold_overrides(
+async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_signature(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     // Setup keys and authenticators
@@ -1918,7 +2136,8 @@ async fn test_multisig_smart_proc_threshold_overrides(
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
-    let tier_thresholds = [1u32, 2u32, 2u32, 2u32];
+    // Keep all spending tiers at the default so this test isolates proc-threshold behavior.
+    let tier_thresholds = [2u32, 2u32, 2u32, 2u32];
     let oracle_id = test_oracle_id();
     let get_price_proc_root = test_get_price_proc_root();
 
@@ -1993,12 +2212,36 @@ async fn test_multisig_smart_proc_threshold_overrides(
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    // SECTION 2: Test note sending requires 2 signatures
-    // ================================================================================
+    Ok(())
+}
 
-    let salt2 = Word::from([Felt::new(2); 4]);
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_default(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    // Create output note to send 5 units from the account
+    let assets =
+        vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
+    let mut multisig_account = create_multisig_smart_account_with_assets(
+        2,
+        &public_keys,
+        auth_scheme,
+        assets,
+        TEST_SPENDING_WINDOW,
+        TEST_MIN_DELAY,
+        TEST_PROPOSE_EXPIRATION_DELTA,
+        [500, 1000, 2000, 1500],
+        [1, 2, 2, 2],
+        test_oracle_id(),
+        test_get_price_proc_root(),
+        vec![],
+    )?;
+
     let output_note = P2idNote::create(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
@@ -2007,64 +2250,38 @@ async fn test_multisig_smart_proc_threshold_overrides(
         Default::default(),
         &mut RpoRandomCoin::new(Word::from([Felt::new(42); 4])),
     )?;
-    let multisig_account_interface = AccountInterface::from_account(&multisig_account);
-    let send_note_transaction_script =
-        multisig_account_interface.build_send_notes_script(&[output_note.clone().into()], None)?;
+    let send_note_transaction_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
 
-    // Execute transaction without signatures to get tx summary
-    let tx_context_init = mock_chain
+    let mut mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+    let salt = Word::from([Felt::new(2); 4]);
+
+    let tx_summary = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(send_note_transaction_script.clone())
-        .auth_args(salt2)
-        .build()?;
-
-    let tx_summary2 = match tx_context_init.execute().await.unwrap_err() {
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
         TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
         error => panic!("expected abort with tx effects: {error:?}"),
     };
-    // Get signature from only ONE approver
-    let msg2 = tx_summary2.as_ref().to_commitment();
-    let tx_summary2_signing = SigningInputs::TransactionSummary(tx_summary2.clone());
 
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary2_signing)
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+    let sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
         .await?;
 
-    // Try to execute with only 1 signature - should FAIL
-    let tx_context_one_sig = mock_chain
-        .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
-        .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
-        .tx_script(send_note_transaction_script.clone())
-        .auth_args(salt2)
-        .build()?;
-
-    let result = tx_context_one_sig.execute().await;
-    match result {
-        Err(TransactionExecutorError::Unauthorized(_)) => {
-            // Expected: transaction should fail with insufficient signatures
-        },
-        _ => panic!(
-            "Transaction should fail with Unauthorized error when only 1 signature provided for note sending"
-        ),
-    }
-
-    // Now get signatures from BOTH approvers
-    let sig_1 = authenticators[0]
-        .get_signature(public_keys[0].to_commitment(), &tx_summary2_signing)
-        .await?;
-    let sig_2 = authenticators[1]
-        .get_signature(public_keys[1].to_commitment(), &tx_summary2_signing)
-        .await?;
-
-    // Execute with 2 signatures - should SUCCEED
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
-        .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
-        .add_signature(public_keys[1].to_commitment(), msg2, sig_2)
-        .auth_args(salt2)
+        .add_signature(public_keys[0].to_commitment(), msg, sig)
+        .auth_args(salt)
         .tx_script(send_note_transaction_script)
         .build()?
         .execute()
@@ -2072,15 +2289,14 @@ async fn test_multisig_smart_proc_threshold_overrides(
 
     assert!(
         result.is_ok(),
-        "Transaction should succeed with 2 signatures for note sending: {result:?}"
+        "low spending should use tier_0=1 instead of the default threshold of 2"
     );
 
-    // Apply the transaction to the account
     multisig_account.apply_delta(result.as_ref().unwrap().account_delta())?;
     mock_chain.add_pending_executed_transaction(&result.unwrap())?;
     mock_chain.prove_next_block()?;
 
-    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 6);
+    assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 5);
 
     Ok(())
 }
