@@ -46,6 +46,53 @@ use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_er
 // SHARED HELPERS
 // ================================================================================================
 
+/// Builds [`FungibleTokenMetadata`] for tests that use raw word arrays + mutability flags
+/// (e.g. from [`description_config`] / [`logo_uri_config`] / [`external_link_config`]).
+fn network_faucet_metadata(
+    token_symbol: &str,
+    max_supply: u64,
+    token_supply: Option<u64>,
+    max_supply_mutable: bool,
+    description: Option<([Word; 7], bool)>,
+    logo_uri: Option<([Word; 7], bool)>,
+    external_link: Option<([Word; 7], bool)>,
+) -> anyhow::Result<FungibleTokenMetadata> {
+    let max_supply = Felt::try_from(max_supply)?;
+    let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
+    let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
+    let token_symbol = TokenSymbol::new(token_symbol)?;
+
+    let mut metadata = FungibleTokenMetadata::new(
+        token_symbol,
+        10,
+        max_supply,
+        name,
+        description.map(|(words, _)| {
+            Description::try_from_words(&words).expect("valid description words")
+        }),
+        logo_uri.map(|(words, _)| {
+            LogoURI::try_from_words(&words).expect("valid logo_uri words")
+        }),
+        external_link.map(|(words, _)| {
+            ExternalLink::try_from_words(&words).expect("valid external_link words")
+        }),
+    )
+    .and_then(|m| m.with_token_supply(token_supply))?
+    .with_max_supply_mutable(max_supply_mutable);
+
+    if let Some((_, mutable)) = description {
+        metadata = metadata.with_description_mutable(mutable);
+    }
+    if let Some((_, mutable)) = logo_uri {
+        metadata = metadata.with_logo_uri_mutable(mutable);
+    }
+    if let Some((_, mutable)) = external_link {
+        metadata = metadata.with_external_link_mutable(mutable);
+    }
+
+    Ok(metadata)
+}
+
 fn initial_field_data() -> [Word; 7] {
     [
         Word::from([1u32, 2, 3, 4]),
@@ -848,16 +895,16 @@ async fn test_field_setter_immutable_fails(
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+    let metadata = network_faucet_metadata(
         "FLD",
         1000,
-        owner,
         Some(0),
         false,
         args.description,
         args.logo_uri,
         args.external_link,
     )?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -893,16 +940,16 @@ async fn test_field_setter_owner_succeeds(
     let owner = owner_account_id();
     let new_data = new_field_data();
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+    let metadata = network_faucet_metadata(
         "FLD",
         1000,
-        owner,
         Some(0),
         false,
         args.description,
         args.logo_uri,
         args.external_link,
     )?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
@@ -965,16 +1012,16 @@ async fn test_field_setter_non_owner_fails(
     let non_owner = non_owner_account_id();
     let new_data = new_field_data();
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
+    let metadata = network_faucet_metadata(
         "FLD",
         1000,
-        owner,
         Some(0),
         false,
         args.description,
         args.logo_uri,
         args.external_link,
     )?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
@@ -1119,16 +1166,8 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
-        "MSM",
-        1000,
-        owner,
-        Some(0),
-        false,
-        None,
-        None,
-        None,
-    )?;
+    let metadata = network_faucet_metadata("MSM", 1000, Some(0), false, None, None, None)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
@@ -1160,16 +1199,8 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let owner = owner_account_id();
     let new_max_supply: u64 = 2000;
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
-        "MSM",
-        1000,
-        owner,
-        Some(0),
-        true,
-        None,
-        None,
-        None,
-    )?;
+    let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let note_script_code = format!(
@@ -1218,16 +1249,8 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let non_owner = non_owner_account_id();
     let new_max_supply: u64 = 2000;
 
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(
-        "MSM",
-        1000,
-        owner,
-        Some(0),
-        true,
-        None,
-        None,
-        None,
-    )?;
+    let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let note_script_code = format!(
