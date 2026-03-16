@@ -300,64 +300,34 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
 }
 
 /// Tests that a blocked account cannot receive a fungible asset with callbacks enabled.
+#[rstest::rstest]
+#[case::fungible(
+    AccountType::FungibleFaucet,
+    |faucet_id| {
+        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+    }
+)]
+#[case::non_fungible(
+    AccountType::NonFungibleFaucet,
+    |faucet_id| {
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
+        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+    }
+)]
 #[tokio::test]
-async fn test_blocked_account_cannot_receive_fungible_asset() -> anyhow::Result<()> {
+async fn test_blocked_account_cannot_receive_asset(
+    #[case] account_type: AccountType,
+    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_block_list(
-        &mut builder,
-        AccountType::FungibleFaucet,
-        [target_account.id()],
-    )?;
-
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
+    let faucet = add_faucet_with_block_list(&mut builder, account_type, [target_account.id()])?;
 
     let note = builder.add_p2id_note(
         faucet.id(),
         target_account.id(),
-        &[Asset::Fungible(fungible_asset)],
-        NoteType::Public,
-    )?;
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
-    let result = mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
-        .foreign_accounts(vec![faucet_inputs])
-        .build()?
-        .execute()
-        .await;
-
-    assert_transaction_executor_error!(result, ERR_ACCOUNT_BLOCKED);
-
-    Ok(())
-}
-
-/// Tests that a blocked account cannot receive a non-fungible asset with callbacks enabled.
-#[tokio::test]
-async fn test_blocked_account_cannot_receive_non_fungible_asset() -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    let faucet = add_faucet_with_block_list(
-        &mut builder,
-        AccountType::NonFungibleFaucet,
-        [target_account.id()],
-    )?;
-
-    let details = NonFungibleAssetDetails::new(faucet.id(), vec![1, 2, 3, 4])?;
-    let asset = NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled);
-
-    let note = builder.add_p2id_note(
-        faucet.id(),
-        target_account.id(),
-        &[Asset::NonFungible(asset)],
+        &[create_asset(faucet.id())?],
         NoteType::Public,
     )?;
 
