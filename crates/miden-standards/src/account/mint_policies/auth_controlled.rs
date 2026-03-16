@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use crate::account::components::auth_tx_controlled_library;
+use crate::account::components::auth_controlled_library;
 use crate::procedure_digest;
 
 // CONSTANTS
@@ -24,9 +24,9 @@ use crate::procedure_digest;
 
 procedure_digest!(
     ALLOW_ALL_POLICY_ROOT,
-    AuthTxControlled::NAME,
-    AuthTxControlled::ALLOW_ALL_PROC_NAME,
-    auth_tx_controlled_library
+    AuthControlled::NAME,
+    AuthControlled::ALLOW_ALL_PROC_NAME,
+    auth_controlled_library
 );
 
 static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -56,13 +56,13 @@ static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed mint policy procedure roots.
 /// - [`Self::policy_authority_slot`]: Policy authority mode (`0` = tx auth, `1` = external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct AuthTxControlled {
+pub struct AuthControlled {
     initial_policy_root: Word,
 }
 
-/// Initial policy configuration for the [`AuthTxControlled`] component.
+/// Initial policy configuration for the [`AuthControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
-pub enum AuthTxControlledInitConfig {
+pub enum AuthControlledInitConfig {
     /// Sets the initial policy to `allow_all`.
     #[default]
     AllowAll,
@@ -70,27 +70,26 @@ pub enum AuthTxControlledInitConfig {
     CustomInitialRoot(Word),
 }
 
-impl AuthTxControlled {
+impl AuthControlled {
     /// The name of the component.
-    pub const NAME: &'static str =
-        "miden::standards::components::mint_policies::auth_tx_controlled";
+    pub const NAME: &'static str = "miden::standards::components::mint_policies::auth_controlled";
 
     const ALLOW_ALL_PROC_NAME: &str = "allow_all";
 
-    /// Creates a new [`AuthTxControlled`] component from the provided configuration.
-    pub fn new(policy: AuthTxControlledInitConfig) -> Self {
+    /// Creates a new [`AuthControlled`] component from the provided configuration.
+    pub fn new(policy: AuthControlledInitConfig) -> Self {
         let initial_policy_root = match policy {
-            AuthTxControlledInitConfig::AllowAll => Self::allow_all_policy_root(),
-            AuthTxControlledInitConfig::CustomInitialRoot(root) => root,
+            AuthControlledInitConfig::AllowAll => Self::allow_all_policy_root(),
+            AuthControlledInitConfig::CustomInitialRoot(root) => root,
         };
 
         Self { initial_policy_root }
     }
 
-    /// Creates a new [`AuthTxControlled`] component with `allow_all` policy as
+    /// Creates a new [`AuthControlled`] component with `allow_all` policy as
     /// default.
     pub fn allow_all() -> Self {
-        Self::new(AuthTxControlledInitConfig::AllowAll)
+        Self::new(AuthControlledInitConfig::AllowAll)
     }
 
     /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
@@ -108,7 +107,7 @@ impl AuthTxControlled {
         (
             Self::active_policy_proc_root_slot().clone(),
             StorageSlotSchema::value(
-                "The procedure root of the active mint policy in the mint policy auth tx controlled component",
+                "The procedure root of the active mint policy in the mint policy auth controlled component",
                 [
                     FeltSchema::felt("proc_root_0"),
                     FeltSchema::felt("proc_root_1"),
@@ -124,7 +123,7 @@ impl AuthTxControlled {
         (
             Self::allowed_policy_proc_roots_slot().clone(),
             StorageSlotSchema::map(
-                "The set of allowed mint policy procedure roots in the mint policy auth tx controlled component",
+                "The set of allowed mint policy procedure roots in the mint policy auth controlled component",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -158,27 +157,27 @@ impl AuthTxControlled {
     }
 }
 
-impl Default for AuthTxControlled {
+impl Default for AuthControlled {
     fn default() -> Self {
         Self::allow_all()
     }
 }
 
-impl From<AuthTxControlled> for AccountComponent {
-    fn from(auth_tx_controlled: AuthTxControlled) -> Self {
+impl From<AuthControlled> for AccountComponent {
+    fn from(auth_controlled: AuthControlled) -> Self {
         let active_policy_proc_root_slot = StorageSlot::with_value(
-            AuthTxControlled::active_policy_proc_root_slot().clone(),
-            auth_tx_controlled.initial_policy_root,
+            AuthControlled::active_policy_proc_root_slot().clone(),
+            auth_controlled.initial_policy_root,
         );
         let allowed_policy_flag = Word::from([1u32, 0, 0, 0]);
-        let allow_all_policy_root = AuthTxControlled::allow_all_policy_root();
+        let allow_all_policy_root = AuthControlled::allow_all_policy_root();
 
         let mut allowed_policy_entries =
             vec![(StorageMapKey::from_raw(allow_all_policy_root), allowed_policy_flag)];
 
-        if auth_tx_controlled.initial_policy_root != allow_all_policy_root {
+        if auth_controlled.initial_policy_root != allow_all_policy_root {
             allowed_policy_entries.push((
-                StorageMapKey::from_raw(auth_tx_controlled.initial_policy_root),
+                StorageMapKey::from_raw(auth_controlled.initial_policy_root),
                 allowed_policy_flag,
             ));
         }
@@ -187,30 +186,30 @@ impl From<AuthTxControlled> for AccountComponent {
             .expect("allowed mint policy roots should have unique keys");
 
         let allowed_policy_proc_roots_slot = StorageSlot::with_map(
-            AuthTxControlled::allowed_policy_proc_roots_slot().clone(),
+            AuthControlled::allowed_policy_proc_roots_slot().clone(),
             allowed_policy_proc_roots,
         );
         let policy_authority_slot = StorageSlot::with_value(
-            AuthTxControlled::policy_authority_slot().clone(),
+            AuthControlled::policy_authority_slot().clone(),
             Word::from([0u32, 0, 0, 0]),
         );
 
         let storage_schema = StorageSchema::new(vec![
-            AuthTxControlled::active_policy_proc_root_slot_schema(),
-            AuthTxControlled::allowed_policy_proc_roots_slot_schema(),
-            AuthTxControlled::policy_authority_slot_schema(),
+            AuthControlled::active_policy_proc_root_slot_schema(),
+            AuthControlled::allowed_policy_proc_roots_slot_schema(),
+            AuthControlled::policy_authority_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
         let metadata =
-            AccountComponentMetadata::new(AuthTxControlled::NAME, [AccountType::FungibleFaucet])
+            AccountComponentMetadata::new(AuthControlled::NAME, [AccountType::FungibleFaucet])
                 .with_description(
-                    "Mint policy auth tx controlled component for network fungible faucets",
+                    "Mint policy auth controlled component for network fungible faucets",
                 )
                 .with_storage_schema(storage_schema);
 
         AccountComponent::new(
-            auth_tx_controlled_library(),
+            auth_controlled_library(),
             vec![
                 active_policy_proc_root_slot,
                 allowed_policy_proc_roots_slot,
@@ -219,7 +218,7 @@ impl From<AuthTxControlled> for AccountComponent {
             metadata,
         )
         .expect(
-            "mint policy auth tx controlled component should satisfy the requirements of a valid account component",
+            "mint policy auth controlled component should satisfy the requirements of a valid account component",
         )
     }
 }
