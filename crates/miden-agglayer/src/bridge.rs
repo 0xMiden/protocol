@@ -176,7 +176,6 @@ impl AggLayerBridge {
         ger: ExitRoot,
         bridge_account: &Account,
     ) -> Result<bool, AgglayerBridgeError> {
-        Self::assert_bridge_account(bridge_account)?;
         let stored_value = Self::get_ger_value(ger, bridge_account)?;
         Ok(stored_value[Self::GER_FLAG_INDEX] == Self::REGISTERED_GER_FLAG)
     }
@@ -192,7 +191,6 @@ impl AggLayerBridge {
         ger: ExitRoot,
         bridge_account: &Account,
     ) -> Result<Option<BlockNumber>, AgglayerBridgeError> {
-        Self::assert_bridge_account(bridge_account)?;
         let stored_value = Self::get_ger_value(ger, bridge_account)?;
         if stored_value[Self::GER_FLAG_INDEX] != Self::REGISTERED_GER_FLAG {
             return Ok(None);
@@ -204,6 +202,8 @@ impl AggLayerBridge {
 
     /// Looks up the raw value stored for the given GER in the bridge account's GER map.
     fn get_ger_value(ger: ExitRoot, bridge_account: &Account) -> Result<Word, AgglayerBridgeError> {
+        Self::assert_bridge_account(bridge_account)?;
+
         // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
         let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
         let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
