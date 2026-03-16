@@ -78,8 +78,6 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
-/// - `assert_sender_is_bridge_admin`, which validates CONFIG note senders.
-/// - `assert_sender_is_ger_manager`, which validates UPDATE_GER note senders.
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
