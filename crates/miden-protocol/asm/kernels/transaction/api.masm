@@ -813,6 +813,24 @@ pub proc faucet_burn_asset
     # => [ASSET_VALUE, pad(12)]
 end
 
+#! Returns whether the active account defines callbacks.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [has_callbacks, pad(15)]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+#!
+#! Invocation: dynexec
+pub proc faucet_has_callbacks
+    exec.account::has_callbacks
+    # => [has_callbacks, pad(16)]
+
+    # truncate the stack
+    swap drop
+    # => [has_callbacks, pad(15)]
+end
+
 # INPUT NOTE
 # -------------------------------------------------------------------------------------------------
 
@@ -1483,6 +1501,10 @@ pub proc tx_exec_foreign_proc
 
     # end the foreign context
     exec.tx::end_foreign_context
+    # => [foreign_procedure_outputs(16)]
+
+    # clear the foreign procedure ID and root in memory
+    exec.tx::clear_fpi_memory
     # => [foreign_procedure_outputs(16)]
 end
 

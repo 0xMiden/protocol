@@ -2,6 +2,7 @@ use miden::protocol::asset
 use miden::protocol::active_account
 use ::miden::protocol::kernel_proc_offsets::FAUCET_MINT_ASSET_OFFSET
 use ::miden::protocol::kernel_proc_offsets::FAUCET_BURN_ASSET_OFFSET
+use ::miden::protocol::kernel_proc_offsets::FAUCET_HAS_CALLBACKS_OFFSET
 
 #! Creates a fungible asset for the faucet the transaction is being executed against.
 #!
@@ -21,6 +22,10 @@ pub proc create_fungible_asset
     # fetch the id of the faucet the transaction is being executed against.
     exec.active_account::get_id
     # => [id_suffix, id_prefix, amount]
+
+    # check whether the faucet has callbacks defined
+    exec.has_callbacks
+    # => [has_callbacks, id_suffix, id_prefix, amount]
 
     # create the fungible asset
     exec.asset::create_fungible_asset
@@ -123,4 +128,32 @@ pub proc burn
     # clean the stack
     swapdw dropw dropw swapw dropw
     # => [ASSET_VALUE]
+end
+
+#! Returns whether the active account defines callbacks.
+#!
+#! The account defines callbacks if any callback storage slot is present and it contains not the
+#! empty word.
+#!
+#! Inputs:  []
+#! Outputs: [has_callbacks]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+#!
+#! Invocation: exec
+pub proc has_callbacks
+    # pad the stack
+    padw padw padw push.0.0.0
+    # => [pad(15)]
+
+    push.FAUCET_HAS_CALLBACKS_OFFSET
+    # => [offset, pad(15)]
+
+    syscall.exec_kernel_proc
+    # => [has_callbacks, pad(15)]
+
+    # clean the stack
+    swapdw dropw dropw swapw dropw movdn.3 drop drop drop
+    # => [has_callbacks]
 end
