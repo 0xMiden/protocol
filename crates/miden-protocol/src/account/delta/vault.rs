@@ -360,6 +360,7 @@ impl Serializable for FungibleAssetDelta {
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
         //   We should update this code (and deserialization as well) once it supports signed
         //   integers.
+        // TODO: If we keep this code, optimize by not serializing asset ID (which is always 0).
         target.write_many(self.0.iter().map(|(vault_key, &delta)| (*vault_key, delta as u64)));
     }
 
