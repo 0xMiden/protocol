@@ -316,19 +316,19 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         use miden::agglayer::common::asset_conversion
         
         begin
-            # Push y (expected quotient)
+            # Push expected quotient y used for verification (not returned as an output)
             push.{}
             
             # Push scale_exp
             push.{}
             
-            # Push x as 8 u32 limbs (little-endian, x0 at top)
+            # Push x as 8 u32 limbs in the order expected by the verifier
             push.{}.{}.{}.{}.{}.{}.{}.{}
             
-            # Call the scale down procedure
+            # Call the scale down procedure (verifies conversion and may panic on failure)
             exec.asset_conversion::verify_u256_to_native_amount_conversion
             
-            # Truncate stack to just return y
+            # Truncate stack so the program returns with no public outputs (Outputs: [])
             exec.sys::truncate_stack
         end
         "#,
