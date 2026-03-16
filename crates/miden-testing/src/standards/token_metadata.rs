@@ -26,6 +26,7 @@ use miden_standards::account::faucets::{
     Description,
     ExternalLink,
     FungibleTokenMetadata,
+    FungibleTokenMetadataBuilder,
     LogoURI,
     NetworkFungibleFaucet,
     TokenName,
@@ -62,35 +63,26 @@ fn network_faucet_metadata(
     let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
     let token_symbol = TokenSymbol::new(token_symbol)?;
 
-    let mut metadata = FungibleTokenMetadata::new(
-        token_symbol,
-        10,
-        max_supply,
-        name,
-        description.map(|(words, _)| {
-            Description::try_from_words(&words).expect("valid description words")
-        }),
-        logo_uri.map(|(words, _)| {
-            LogoURI::try_from_words(&words).expect("valid logo_uri words")
-        }),
-        external_link.map(|(words, _)| {
-            ExternalLink::try_from_words(&words).expect("valid external_link words")
-        }),
-    )
-    .and_then(|m| m.with_token_supply(token_supply))?
-    .with_max_supply_mutable(max_supply_mutable);
-
-    if let Some((_, mutable)) = description {
-        metadata = metadata.with_description_mutable(mutable);
+    let mut builder = FungibleTokenMetadataBuilder::new(name, token_symbol, 10, max_supply)
+        .token_supply(token_supply)
+        .max_supply_mutable(max_supply_mutable);
+    if let Some((words, mutable)) = description {
+        builder = builder
+            .description(Description::try_from_words(&words).expect("valid description words"))
+            .description_mutable(mutable);
     }
-    if let Some((_, mutable)) = logo_uri {
-        metadata = metadata.with_logo_uri_mutable(mutable);
+    if let Some((words, mutable)) = logo_uri {
+        builder = builder
+            .logo_uri(LogoURI::try_from_words(&words).expect("valid logo_uri words"))
+            .logo_uri_mutable(mutable);
     }
-    if let Some((_, mutable)) = external_link {
-        metadata = metadata.with_external_link_mutable(mutable);
+    if let Some((words, mutable)) = external_link {
+        builder = builder
+            .external_link(ExternalLink::try_from_words(&words).expect("valid external_link words"))
+            .external_link_mutable(mutable);
     }
 
-    Ok(metadata)
+    Ok(builder.build()?)
 }
 
 fn initial_field_data() -> [Word; 7] {
@@ -137,29 +129,25 @@ fn non_owner_account_id() -> AccountId {
 
 /// Build a minimal faucet metadata (no optional fields).
 fn build_faucet_metadata() -> FungibleTokenMetadata {
-    FungibleTokenMetadata::new(
+    FungibleTokenMetadataBuilder::new(
+        TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        TokenName::new("T").unwrap(),
-        None,
-        None,
-        None,
     )
+    .build()
     .unwrap()
 }
 
 /// Build a standard POL faucet metadata (used by scalar getter tests).
 fn build_pol_faucet_metadata() -> FungibleTokenMetadata {
-    FungibleTokenMetadata::new(
+    FungibleTokenMetadataBuilder::new(
+        TokenName::new("POL").unwrap(),
         TokenSymbol::new("POL").unwrap(),
         8,
         Felt::new(1_000_000),
-        TokenName::new("POL").unwrap(),
-        None,
-        None,
-        None,
     )
+    .build()
     .unwrap()
 }
 
@@ -215,15 +203,13 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("test name").unwrap();
     let name = token_name.to_words();
 
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        token_name,
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        token_name,
-        None,
-        None,
-        None,
     )
+    .build()
     .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
@@ -255,15 +241,13 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
 #[tokio::test]
 async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     // Build a faucet with an empty name to verify get_name returns zero words.
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::default(),
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        TokenName::default(),
-        None,
-        None,
-        None,
     )
+    .build()
     .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
@@ -416,18 +400,17 @@ async fn faucet_get_decimals_symbol_and_max_supply() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn get_mutability_config() -> anyhow::Result<()> {
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        TokenName::new("T").unwrap(),
-        Some(Description::new("test").unwrap()),
-        None,
-        None,
     )
-    .unwrap()
-    .with_description_mutable(true)
-    .with_max_supply_mutable(true);
+    .description(Description::new("test").unwrap())
+    .description_mutable(true)
+    .max_supply_mutable(true)
+    .build()
+    .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -466,88 +449,82 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
             1,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                Some(desc.clone()),
-                None,
-                None,
             )
-            .unwrap()
-            .with_description_mutable(true),
+            .description(desc.clone())
+            .description_mutable(true)
+            .build()
+            .unwrap(),
             "is_description_mutable",
             1,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                Some(desc),
-                None,
-                None,
             )
+            .description(desc)
+            .build()
             .unwrap(),
             "is_description_mutable",
             0,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                None,
-                Some(logo.clone()),
-                None,
             )
-            .unwrap()
-            .with_logo_uri_mutable(true),
+            .logo_uri(logo.clone())
+            .logo_uri_mutable(true)
+            .build()
+            .unwrap(),
             "is_logo_uri_mutable",
             1,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                None,
-                Some(logo),
-                None,
             )
+            .logo_uri(logo)
+            .build()
             .unwrap(),
             "is_logo_uri_mutable",
             0,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                None,
-                None,
-                Some(link.clone()),
             )
-            .unwrap()
-            .with_external_link_mutable(true),
+            .external_link(link.clone())
+            .external_link_mutable(true)
+            .build()
+            .unwrap(),
             "is_external_link_mutable",
             1,
         ),
         (
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
                 Felt::new(1_000),
-                TokenName::new("T").unwrap(),
-                None,
-                None,
-                Some(link),
             )
+            .external_link(link)
+            .build()
             .unwrap(),
             "is_external_link_mutable",
             0,
@@ -589,15 +566,14 @@ fn faucet_with_metadata_storage_layout() {
     let description = Description::new(desc_text).unwrap();
     let desc_words = description.to_words();
 
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        token_name,
         "TST".try_into().unwrap(),
         8,
         Felt::new(1_000_000),
-        token_name,
-        Some(description),
-        None,
-        None,
     )
+    .description(description)
+    .build()
     .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
@@ -627,15 +603,13 @@ fn faucet_with_metadata_storage_layout() {
 fn name_32_bytes_accepted() {
     let max_name = "a".repeat(TokenName::MAX_BYTES);
     let token_name = TokenName::new(&max_name).unwrap();
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        token_name,
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        token_name,
-        None,
-        None,
-        None,
     )
+    .build()
     .unwrap();
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -664,15 +638,14 @@ fn description_7_words_full_capacity() {
     let desc_text = "a".repeat(Description::MAX_BYTES);
     let description = Description::new(&desc_text).unwrap();
     let desc_words = description.to_words();
-    let metadata = FungibleTokenMetadata::new(
+    let metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
         Felt::new(1_000),
-        TokenName::new("T").unwrap(),
-        Some(description),
-        None,
-        None,
     )
+    .description(description)
+    .build()
     .unwrap();
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -703,15 +676,14 @@ fn verify_faucet_with_max_name_and_description(
     let description = Description::new(&desc_text).unwrap();
     let desc_words = description.to_words();
 
-    let faucet_metadata = FungibleTokenMetadata::new(
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new(&max_name).unwrap(),
         symbol.try_into().unwrap(),
         6,
         Felt::new(max_supply),
-        TokenName::new(&max_name).unwrap(),
-        Some(description),
-        None,
-        None,
     )
+    .description(description)
+    .build()
     .unwrap();
 
     let mut builder = AccountBuilder::new(seed)
@@ -771,15 +743,14 @@ async fn basic_faucet_name_readable_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("readable name").unwrap();
     let name = token_name.to_words();
 
-    let faucet_metadata = FungibleTokenMetadata::new(
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        token_name,
         "MAS".try_into().unwrap(),
         10,
         Felt::new(999_999),
-        token_name,
-        Some(Description::new("readable description").unwrap()),
-        None,
-        None,
     )
+    .description(Description::new("readable description").unwrap())
+    .build()
     .unwrap();
 
     let account = AccountBuilder::new([3u8; 32])
@@ -814,15 +785,14 @@ async fn network_faucet_name_readable_from_masm() -> anyhow::Result<()> {
     let max_name = "b".repeat(TokenName::MAX_BYTES);
     let name_words = TokenName::new(&max_name).unwrap().to_words();
 
-    let network_faucet_metadata = FungibleTokenMetadata::new(
+    let network_faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new(&max_name).unwrap(),
         "MAS".try_into().unwrap(),
         6,
         Felt::new(1_000_000),
-        TokenName::new(&max_name).unwrap(),
-        Some(Description::new("network faucet description").unwrap()),
-        None,
-        None,
     )
+    .description(Description::new("network faucet description").unwrap())
+    .build()
     .unwrap();
 
     let account = AccountBuilder::new([7u8; 32])

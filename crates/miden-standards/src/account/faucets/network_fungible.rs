@@ -180,7 +180,7 @@ mod tests {
 
     use super::*;
     use crate::account::access::Ownable2Step;
-    use crate::account::faucets::{FungibleTokenMetadata, TokenName};
+    use crate::account::faucets::{FungibleTokenMetadataBuilder, TokenName};
 
     #[test]
     fn test_create_network_fungible_faucet() {
@@ -193,15 +193,13 @@ mod tests {
             AccountStorageMode::Private,
         );
 
-        let metadata = FungibleTokenMetadata::new(
+        let metadata = FungibleTokenMetadataBuilder::new(
+            TokenName::new("NET").expect("valid name"),
             TokenSymbol::new("NET").expect("valid symbol"),
             8u8,
             Felt::new(1_000),
-            TokenName::new("NET").expect("valid name"),
-            None,
-            None,
-            None,
         )
+        .build()
         .expect("valid metadata");
 
         let account = create_network_fungible_faucet(

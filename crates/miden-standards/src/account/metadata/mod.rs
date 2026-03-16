@@ -55,7 +55,7 @@
 //!     .with_description(Description::new("A cool token").unwrap(), true)
 //!     .with_logo_uri(LogoURI::new("https://example.com/logo.png").unwrap(), false);
 //!
-//! let metadata = FungibleTokenMetadata::new(/* ... */).unwrap();
+//! let metadata = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply).build().unwrap();
 //! let account = AccountBuilder::new(seed)
 //!     .with_component(metadata)
 //!     .with_component(BasicFungibleFaucet)
@@ -207,6 +207,7 @@ mod tests {
         BasicFungibleFaucet,
         Description,
         FungibleTokenMetadata,
+        FungibleTokenMetadataBuilder,
         TokenName,
     };
 
@@ -214,16 +215,16 @@ mod tests {
         name: TokenName,
         description: Option<Description>,
     ) -> FungibleTokenMetadata {
-        FungibleTokenMetadata::new(
+        let mut builder = FungibleTokenMetadataBuilder::new(
+            name,
             miden_protocol::asset::TokenSymbol::new("TST").unwrap(),
             2,
             miden_protocol::Felt::new(1_000),
-            name,
-            description,
-            None,
-            None,
-        )
-        .unwrap()
+        );
+        if let Some(desc) = description {
+            builder = builder.description(desc);
+        }
+        builder.build().unwrap()
     }
 
     fn build_account_with_metadata(
