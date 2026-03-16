@@ -37,7 +37,6 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 # Data sizes
 # -------------------------------------------------------------------------------------------------
 
-const PROOF_DATA_WORD_LEN = 134
 # the number of words (4 felts each) in the advice map leaf data
 const LEAF_DATA_NUM_WORDS = 8
 const CLAIM_PROOF_DATA_WORD_LEN = 134
@@ -457,7 +456,7 @@ proc verify_leaf
     adv.push_mapval
     # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
 
-    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.PROOF_DATA_WORD_LEN
+    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.CLAIM_PROOF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
 
     # 1. compute GER from mainnet + rollup exit roots
@@ -491,8 +490,6 @@ proc verify_leaf
 
     exec.verify_merkle_proof
     # => [verification_flag]
-
-    debug.stack
 
     # verify_merkle_proof procedure returns `true` if the verification was successful and `false` 
     # otherwise. Assert that `true` was returned.
