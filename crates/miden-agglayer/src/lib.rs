@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use miden_assembly::Library;
 use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_core::{Felt, FieldElement, ONE, Program, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -20,10 +20,13 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::crypto::hash::rpo::Rpo256;
+use miden_protocol::errors::AccountIdError;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
 use miden_utils_sync::LazyLock;
+use thiserror::Error;
 
 pub mod b2agg_note;
 pub mod claim_note;
@@ -93,6 +96,9 @@ fn agglayer_bridge_component_library() -> Library {
 fn agglayer_faucet_component_library() -> Library {
     FAUCET_COMPONENT_LIBRARY.clone()
 }
+
+// Include the generated agglayer constants (code commitments, etc.)
+include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
@@ -226,6 +232,150 @@ impl AggLayerBridge {
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
     }
+
+    // STORAGE HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// The value stored in the GER map for a registered GER.
+    const REGISTERED_GER_MAP_VALUE: Word = Word::new([ONE, ZERO, ZERO, ZERO]);
+
+    /// Returns a boolean indicating whether the provided GER is present in storage of the provided
+    /// bridge account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn is_ger_registered(
+        ger: ExitRoot,
+        bridge_account: Account,
+    ) -> Result<bool, AgglayerBridgeError> {
+        Self::assert_bridge_account(&bridge_account)?;
+
+        let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
+        let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
+        ger_lower.reverse();
+        ger_upper.reverse();
+        let ger_hash = Rpo256::merge(&[ger_upper.into(), ger_lower.into()]);
+
+        let stored_value = bridge_account
+            .storage()
+            .get_map_item(AggLayerBridge::ger_map_slot_name(), ger_hash)
+            .expect("provided account should have AggLayer Bridge specific storage slots");
+
+        if stored_value == Self::REGISTERED_GER_MAP_VALUE {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Reads the Local Exit Root (double-word) from the bridge account's storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn read_local_exit_root(account: &Account) -> Result<Vec<Felt>, AgglayerBridgeError> {
+        Self::assert_bridge_account(account)?;
+
+        let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
+        let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
+
+        let root_lo = account
+            .storage()
+            .get_item(root_lo_slot)
+            .expect("should be able to read LET root lo");
+        let root_hi = account
+            .storage()
+            .get_item(root_hi_slot)
+            .expect("should be able to read LET root hi");
+
+        let mut root = Vec::with_capacity(8);
+        root.extend(root_lo.to_vec().into_iter().rev());
+        root.extend(root_hi.to_vec().into_iter().rev());
+
+        Ok(root)
+    }
+
+    /// Returns the number of leaves in the Local Exit Tree (LET) frontier.
+    pub fn read_let_num_leaves(account: &Account) -> u64 {
+        let num_leaves_slot = AggLayerBridge::let_num_leaves_slot_name();
+        let value = account
+            .storage()
+            .get_item(num_leaves_slot)
+            .expect("should be able to read LET num leaves");
+        value.to_vec()[0].as_int()
+    }
+
+    // VALIDATION HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Checks that the provided account is an [`AggLayerBridge`] account.
+    fn assert_bridge_account(account: &Account) -> Result<(), AgglayerBridgeError> {
+        Self::assert_storage_slots(account)?;
+        Self::assert_code_commitment(account)?;
+        Ok(())
+    }
+
+    /// Checks that the provided account has all storage slots required for the [`AggLayerBridge`].
+    fn assert_storage_slots(account: &Account) -> Result<(), AgglayerBridgeError> {
+        let account_storage_slot_names: Vec<&StorageSlotName> = account
+            .storage()
+            .slots()
+            .iter()
+            .map(|storage_slot| storage_slot.name())
+            .collect::<Vec<&StorageSlotName>>();
+
+        let are_slots_present = Self::slot_names()
+            .iter()
+            .all(|slot_name| account_storage_slot_names.contains(slot_name));
+        if !are_slots_present {
+            return Err(AgglayerBridgeError::StorageSlotsMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the code commitment of the provided account matches the expected commitment.
+    fn assert_code_commitment(account: &Account) -> Result<(), AgglayerBridgeError> {
+        if BRIDGE_CODE_COMMITMENT != account.code().commitment() {
+            return Err(AgglayerBridgeError::CodeCommitmentMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Returns a vector of all [`AggLayerBridge`] storage slot names.
+    fn slot_names() -> Vec<&'static StorageSlotName> {
+        vec![
+            &*GER_MAP_SLOT_NAME,
+            &*LET_FRONTIER_SLOT_NAME,
+            &*LET_ROOT_LO_SLOT_NAME,
+            &*LET_ROOT_HI_SLOT_NAME,
+            &*LET_NUM_LEAVES_SLOT_NAME,
+            &*FAUCET_REGISTRY_SLOT_NAME,
+            &*TOKEN_REGISTRY_SLOT_NAME,
+            &*BRIDGE_ADMIN_SLOT_NAME,
+            &*GER_MANAGER_SLOT_NAME,
+        ]
+    }
+}
+
+// AGGLAYER BRIDGE ERROR
+// ================================================================================================
+
+/// AggLayer Bridge related errors.
+#[derive(Debug, Error)]
+pub enum AgglayerBridgeError {
+    #[error(
+        "provided account does not have storage slots required for the AggLayer Bridge account"
+    )]
+    StorageSlotsMismatch,
+    #[error(
+        "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
+    )]
+    CodeCommitmentMismatch,
 }
 
 impl From<AggLayerBridge> for AccountComponent {
@@ -405,6 +555,176 @@ impl AggLayerFaucet {
     pub fn owner_config_slot() -> &'static StorageSlotName {
         &OWNER_CONFIG_SLOT_NAME
     }
+
+    // STORAGE HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Extracts the token metadata from the corresponding storage slot of the provided account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerFaucet`] account.
+    pub fn metadata(faucet_account: &Account) -> Result<TokenMetadata, AgglayerFaucetError> {
+        Self::assert_faucet_account(faucet_account)?;
+
+        let metadata_word = faucet_account
+            .storage()
+            .get_item(TokenMetadata::metadata_slot())
+            .expect("should be able to read metadata slot");
+        TokenMetadata::try_from(metadata_word).map_err(AgglayerFaucetError::FungibleFaucetError)
+    }
+
+    /// Extracts the bridge account ID from the owner config storage slot of the provided account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerFaucet`] account.
+    pub fn bridge_account_id(faucet_account: &Account) -> Result<AccountId, AgglayerFaucetError> {
+        Self::assert_faucet_account(faucet_account)?;
+
+        let owner_word = faucet_account
+            .storage()
+            .get_item(&OWNER_CONFIG_SLOT_NAME)
+            .expect("should be able to read owner config slot");
+        AccountId::try_from([owner_word[3], owner_word[2]])
+            .map_err(AgglayerFaucetError::AccountIdError)
+    }
+
+    /// Extracts the origin token address from the corresponding storage slot of the provided
+    /// account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerFaucet`] account.
+    pub fn origin_token_address(
+        faucet_account: &Account,
+    ) -> Result<EthAddressFormat, AgglayerFaucetError> {
+        Self::assert_faucet_account(faucet_account)?;
+
+        let conversion_info_1 = faucet_account
+            .storage()
+            .get_item(&CONVERSION_INFO_1_SLOT_NAME)
+            .expect("should be able to read the first conversion info slot");
+
+        let conversion_info_2 = faucet_account
+            .storage()
+            .get_item(&CONVERSION_INFO_2_SLOT_NAME)
+            .expect("should be able to read the second conversion info slot");
+
+        let addr_bytes_vec = conversion_info_1
+            .iter()
+            .chain([&conversion_info_2[0]])
+            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .collect::<Vec<u8>>();
+
+        Ok(EthAddressFormat::new(
+            addr_bytes_vec
+                .try_into()
+                .expect("origin token addr vector should consist of exactly 20 bytes"),
+        ))
+    }
+
+    /// Extracts the origin network ID from the corresponding storage slot of the provided account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerFaucet`] account.
+    pub fn origin_network(faucet_account: &Account) -> Result<u32, AgglayerFaucetError> {
+        Self::assert_faucet_account(faucet_account)?;
+
+        let conversion_info_2 = faucet_account
+            .storage()
+            .get_item(&CONVERSION_INFO_2_SLOT_NAME)
+            .expect("should be able to read the second conversion info slot");
+
+        Ok(conversion_info_2[1].try_into().expect("origin network ID should fit into u32"))
+    }
+
+    /// Extracts the scaling factor from the corresponding storage slot of the provided account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerFaucet`] account.
+    pub fn scale(faucet_account: &Account) -> Result<u8, AgglayerFaucetError> {
+        Self::assert_faucet_account(faucet_account)?;
+
+        let conversion_info_2 = faucet_account
+            .storage()
+            .get_item(&CONVERSION_INFO_2_SLOT_NAME)
+            .expect("should be able to read the second conversion info slot");
+
+        Ok(conversion_info_2[2].try_into().expect("scaling factor should fit into u8"))
+    }
+
+    // VALIDATION HELPERS
+    // --------------------------------------------------------------------------------------------
+
+    /// Checks that the provided account is an [`AggLayerFaucet`] account.
+    fn assert_faucet_account(account: &Account) -> Result<(), AgglayerFaucetError> {
+        Self::assert_storage_slots(account)?;
+        Self::assert_code_commitment(account)?;
+        Ok(())
+    }
+
+    /// Checks that the provided account has all storage slots required for the [`AggLayerFaucet`].
+    fn assert_storage_slots(account: &Account) -> Result<(), AgglayerFaucetError> {
+        let account_storage_slot_names: Vec<&StorageSlotName> = account
+            .storage()
+            .slots()
+            .iter()
+            .map(|storage_slot| storage_slot.name())
+            .collect::<Vec<&StorageSlotName>>();
+
+        let are_slots_present = Self::slot_names()
+            .iter()
+            .all(|slot_name| account_storage_slot_names.contains(slot_name));
+        if !are_slots_present {
+            return Err(AgglayerFaucetError::StorageSlotsMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the code commitment of the provided account matches the expected commitment.
+    fn assert_code_commitment(account: &Account) -> Result<(), AgglayerFaucetError> {
+        if FAUCET_CODE_COMMITMENT != account.code().commitment() {
+            return Err(AgglayerFaucetError::CodeCommitmentMismatch);
+        }
+
+        Ok(())
+    }
+
+    /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
+    fn slot_names() -> Vec<&'static StorageSlotName> {
+        vec![
+            &*CONVERSION_INFO_1_SLOT_NAME,
+            &*CONVERSION_INFO_2_SLOT_NAME,
+            &*OWNER_CONFIG_SLOT_NAME,
+        ]
+    }
+}
+
+// AGGLAYER FAUCET ERROR
+// ================================================================================================
+
+/// AggLayer Faucet related errors.
+#[derive(Debug, Error)]
+pub enum AgglayerFaucetError {
+    #[error(
+        "provided account does not have storage slots required for the AggLayer Faucet account"
+    )]
+    StorageSlotsMismatch,
+    #[error("provided account does not have procedures required for the AggLayer Faucet account")]
+    CodeCommitmentMismatch,
+    #[error("fungible faucet error")]
+    FungibleFaucetError(#[source] FungibleFaucetError),
+    #[error("account ID error")]
+    AccountIdError(#[source] AccountIdError),
 }
 
 impl From<AggLayerFaucet> for AccountComponent {

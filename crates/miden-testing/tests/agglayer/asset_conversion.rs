@@ -8,6 +8,7 @@ use miden_agglayer::errors::{
 };
 use miden_agglayer::eth_types::amount::EthAmount;
 use miden_agglayer::utils;
+use miden_crypto::FieldElement;
 use miden_protocol::Felt;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
@@ -150,10 +151,7 @@ async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
     let y = x.scale_to_token_amount(scale).unwrap().as_int();
     let script = build_scale_down_script(x, scale, y);
     let output = execute_masm_script(&script).await?;
-    assert!(
-        output.stack.is_empty(),
-        "verify_u256_to_native_amount_conversion should leave an empty stack after truncate_stack"
-    );
+    assert_eq!(output.stack.as_slice(), &[Felt::ZERO; 16], "expected empty stack");
     Ok(y)
 }
 
