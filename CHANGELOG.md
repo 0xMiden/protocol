@@ -87,6 +87,10 @@
 - Added Ownable2Step as an Account Component ([#2572](https://github.com/0xMiden/protocol/pull/2572))
 - [BREAKING] Introduced `PrivateNoteHeader` for output notes and removed `RawOutputNote::Header` variant ([#2569](https://github.com/0xMiden/protocol/pull/2569)).
 
+### Fixes
+
+- Fixed `PartialAccountTree::track_account` rejecting provably-empty leaves in sparse trees by handling `SmtLeaf::Empty` correctly ([#2598](https://github.com/0xMiden/protocol/pull/2598)).
+
 ## 0.13.3 (2026-01-27)
 
 - Fixed `CLAIM` note creation to use `NetworkAccountTarget` attachment ([#2352](https://github.com/0xMiden/miden-base/pull/2352)).
