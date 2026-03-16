@@ -122,6 +122,16 @@ impl Asset {
         Self::from_key_value(vault_key, value)
     }
 
+    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
+    pub fn with_callbacks(self, callbacks: AssetCallbackFlag) -> Self {
+        match self {
+            Asset::Fungible(fungible_asset) => fungible_asset.with_callbacks(callbacks).into(),
+            Asset::NonFungible(non_fungible_asset) => {
+                non_fungible_asset.with_callbacks(callbacks).into()
+            },
+        }
+    }
+
     /// Returns true if this asset is the same as the specified asset.
     ///
     /// Two assets are defined to be the same if their vault keys match.
