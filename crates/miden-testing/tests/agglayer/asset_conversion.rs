@@ -149,8 +149,11 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
     let y = x.scale_to_token_amount(scale).unwrap().as_int();
     let script = build_scale_down_script(x, scale, y);
-    let out = execute_masm_script(&script).await?;
-    assert_eq!(out.stack[0].as_int(), y);
+    let output = execute_masm_script(&script).await?;
+    assert!(
+        output.stack.is_empty(),
+        "verify_u256_to_native_amount_conversion should leave an empty stack after truncate_stack"
+    );
     Ok(y)
 }
 
@@ -317,19 +320,19 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         use miden::agglayer::common::asset_conversion
         
         begin
-            # Push y (expected quotient)
+            # Push expected quotient y used for verification (not returned as an output)
             push.{}
             
             # Push scale_exp
             push.{}
             
-            # Push x as 8 u32 limbs (little-endian, x0 at top)
+            # Push x as 8 u32 limbs in the order expected by the verifier
             push.{}.{}.{}.{}.{}.{}.{}.{}
             
-            # Call the scale down procedure
+            # Call the scale down procedure (verifies conversion and may panic on failure)
             exec.asset_conversion::verify_u256_to_native_amount_conversion
             
-            # Truncate stack to just return y
+            # Truncate stack so the program returns with no public outputs (Outputs: [])
             exec.sys::truncate_stack
         end
         "#,
@@ -345,12 +348,9 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         x_felts[0].as_int(),
     );
 
-    // Execute the script
-    let exec_output = execute_masm_script(&script_code).await?;
-
-    // Verify the result
-    let result = exec_output.stack[0].as_int();
-    assert_eq!(result, y);
+    // Execute the script - verify_u256_to_native_amount_conversion panics on invalid
+    // conversions, so successful execution is sufficient validation
+    execute_masm_script(&script_code).await?;
 
     Ok(())
 }
