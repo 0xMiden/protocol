@@ -1126,9 +1126,6 @@ pub proc output_note_add_asset
     exec.memory::assert_native_account
     # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
-    movup.8
-    # => [note_idx, ASSET_KEY, ASSET_VALUE, pad(7)]
-
     exec.output_note::add_asset
     # => [pad(16)]
 end
