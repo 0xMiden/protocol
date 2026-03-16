@@ -148,11 +148,10 @@ pub fn fungible_token_metadata_library() -> Library {
     FUNGIBLE_TOKEN_METADATA_LIBRARY.clone()
 }
 
-/// Returns the Metadata Info component library.
+/// Returns the [`TokenMetadata`](crate::account::metadata::TokenMetadata) component library.
 ///
-/// Uses the standards library; the standalone [`Info`](crate::account::metadata::TokenMetadata)
-/// component exposes get_name, set_description, set_logo_uri, set_external_link from
-/// `miden::standards::metadata::fungible`.
+/// Exposes `get_name`, `set_description`, `set_logo_uri`, `set_external_link`, and related
+/// mutability-check procedures from `miden::standards::metadata::fungible`.
 pub fn metadata_info_component_library() -> Library {
     METADATA_INFO_COMPONENT_LIBRARY.clone()
 }

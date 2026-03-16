@@ -18,4 +18,3 @@ pub use ::miden::standards::metadata::fungible::set_description
 pub use ::miden::standards::metadata::fungible::set_logo_uri
 pub use ::miden::standards::metadata::fungible::set_external_link
 pub use ::miden::standards::metadata::fungible::set_max_supply
-pub use ::miden::standards::metadata::fungible::get_owner

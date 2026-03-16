@@ -467,7 +467,6 @@ impl MockChainBuilder {
         )
         .and_then(|m| m.with_token_supply(token_supply))
         .context("failed to create fungible token metadata")?
-        .with_owner(owner_account_id)
         .with_max_supply_mutable(max_supply_mutable);
 
         if let Some((_, mutable)) = description {

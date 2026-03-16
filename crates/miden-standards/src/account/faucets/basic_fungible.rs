@@ -85,8 +85,7 @@ impl BasicFungibleFaucet {
             .with_description("Basic fungible faucet component for minting and burning tokens")
     }
 
-    /// Checks that the account contains the basic fungible faucet interface and extracts
-    /// the [`FungibleTokenMetadata`] from storage.
+    /// Checks that the account contains the basic fungible faucet interface.
     fn try_from_interface(
         interface: AccountInterface,
         _storage: &miden_protocol::account::AccountStorage,

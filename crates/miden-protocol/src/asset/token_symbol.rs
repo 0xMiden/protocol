@@ -102,9 +102,9 @@ impl TryFrom<Felt> for TokenSymbol {
 /// The alphabet used in the decoding process consists of the Latin capital letters as defined in
 /// the ASCII table, having the length of 26 characters.
 ///
-/// The encoding is performed by multiplying the intermediate encrypted value by the length of the
+/// The encoding is performed by multiplying the intermediate encoded value by the length of the
 /// used alphabet and adding the relative index of the character to it. At the end of the encoding
-/// process the length of the initial token string is added to the encrypted value.
+/// process the length of the initial token string is added to the encoded value.
 ///
 /// Relative character index is computed by subtracting the index of the character "A" (65) from the
 /// index of the currently processing character, e.g., `A = 65 - 65 = 0`, `B = 66 - 65 = 1`, `...` ,
@@ -148,14 +148,14 @@ const fn encode_symbol_to_felt(s: &str) -> Result<Felt, TokenSymbolError> {
 /// The alphabet used in the decoding process consists of the Latin capital letters as defined in
 /// the ASCII table, having the length of 26 characters.
 ///
-/// The decoding is performed by getting the modulus of the intermediate encrypted value by the
+/// The decoding is performed by getting the modulus of the intermediate encoded value by the
 /// length of the used alphabet and then dividing the intermediate value by the length of the
 /// alphabet to shift to the next character. At the beginning of the decoding process the length of
-/// the initial token string is obtained from the encrypted value. After that the value obtained
+/// the initial token string is obtained from the encoded value. After that the value obtained
 /// after taking the modulus represents the relative character index, which then gets converted to
 /// the ASCII index.
 ///
-/// Final ASCII character idex is computed by adding the index of the character "A" (65) to the
+/// Final ASCII character index is computed by adding the index of the character "A" (65) to the
 /// index of the currently processing character, e.g., `A = 0 + 65 = 65`, `B = 1 + 65 = 66`, `...` ,
 /// `Z = 25 + 65 = 90`.
 ///

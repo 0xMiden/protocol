@@ -13,7 +13,7 @@ use super::{FungibleFaucetError, FungibleTokenMetadata};
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
-use crate::account::faucets::TokenName;
+use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -157,12 +157,22 @@ pub fn create_network_fungible_faucet(
     decimals: u8,
     max_supply: Felt,
     name: TokenName,
+    description: Option<Description>,
+    logo_uri: Option<LogoURI>,
+    external_link: Option<ExternalLink>,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
 
-    let metadata =
-        FungibleTokenMetadata::new(symbol, decimals, max_supply, name, None, None, None)?;
+    let metadata = FungibleTokenMetadata::new(
+        symbol,
+        decimals,
+        max_supply,
+        name,
+        description,
+        logo_uri,
+        external_link,
+    )?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -209,6 +219,9 @@ mod tests {
             decimals,
             max_supply,
             name,
+            None,
+            None,
+            None,
             AccessControl::Ownable2Step { owner },
         )
         .expect("network faucet creation should succeed");
