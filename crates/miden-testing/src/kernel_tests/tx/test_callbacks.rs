@@ -31,7 +31,11 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadataBuilder, TokenName};
+use miden_standards::account::faucets::{
+    BasicFungibleFaucet,
+    FungibleTokenMetadataBuilder,
+    TokenName,
+};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -683,9 +687,13 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let faucet_metadata =
-        FungibleTokenMetadataBuilder::new(TokenName::default(), "SYM".try_into()?, 8, Felt::new(1_000_000))
-            .build()?;
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::default(),
+        "SYM".try_into()?,
+        8,
+        Felt::new(1_000_000),
+    )
+    .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
     let callback_metadata =
