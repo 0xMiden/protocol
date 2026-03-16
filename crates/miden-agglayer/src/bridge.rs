@@ -174,10 +174,10 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn is_ger_registered(
         ger: ExitRoot,
-        bridge_account: Account,
+        bridge_account: &Account,
     ) -> Result<bool, AgglayerBridgeError> {
-        Self::assert_bridge_account(&bridge_account)?;
-        let stored_value = Self::get_ger_value(ger, &bridge_account)?;
+        Self::assert_bridge_account(bridge_account)?;
+        let stored_value = Self::get_ger_value(ger, bridge_account)?;
         Ok(stored_value[Self::GER_FLAG_INDEX] == Self::REGISTERED_GER_FLAG)
     }
 
@@ -190,14 +190,15 @@ impl AggLayerBridge {
     /// - the provided account is not an [`AggLayerBridge`] account.
     pub fn get_ger_block_number(
         ger: ExitRoot,
-        bridge_account: Account,
+        bridge_account: &Account,
     ) -> Result<Option<BlockNumber>, AgglayerBridgeError> {
-        Self::assert_bridge_account(&bridge_account)?;
-        let stored_value = Self::get_ger_value(ger, &bridge_account)?;
+        Self::assert_bridge_account(bridge_account)?;
+        let stored_value = Self::get_ger_value(ger, bridge_account)?;
         if stored_value[Self::GER_FLAG_INDEX] != Self::REGISTERED_GER_FLAG {
             return Ok(None);
         }
-        let block_num = stored_value[Self::GER_BLOCK_NUM_INDEX].as_int() as u32;
+        let block_num = u32::try_from(stored_value[Self::GER_BLOCK_NUM_INDEX].as_int())
+            .map_err(|_| AgglayerBridgeError::InvalidBlockNumber)?;
         Ok(Some(BlockNumber::from(block_num)))
     }
 
@@ -393,6 +394,8 @@ pub enum AgglayerBridgeError {
         "the code commitment of the provided account does not match the code commitment of the AggLayer Bridge account"
     )]
     CodeCommitmentMismatch,
+    #[error("stored block number exceeds u32::MAX")]
+    InvalidBlockNumber,
 }
 
 // HELPER FUNCTIONS
