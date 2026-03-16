@@ -60,6 +60,10 @@ static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
         .expect("faucet registry storage slot name should be valid")
 });
+static TOKEN_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::token_registry")
+        .expect("token registry storage slot name should be valid")
+});
 static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::admin")
         .expect("bridge admin storage slot name should be valid")
@@ -74,6 +78,8 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
+/// - `assert_sender_is_bridge_admin`, which validates CONFIG note senders.
+/// - `assert_sender_is_ger_manager`, which validates UPDATE_GER note senders.
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
@@ -87,6 +93,7 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 /// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
+/// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
 ///
@@ -143,6 +150,11 @@ impl AggLayerBridge {
     /// Storage slot name for the faucet registry map.
     pub fn faucet_registry_slot_name() -> &'static StorageSlotName {
         &FAUCET_REGISTRY_SLOT_NAME
+    }
+
+    /// Storage slot name for the token registry map.
+    pub fn token_registry_slot_name() -> &'static StorageSlotName {
+        &TOKEN_REGISTRY_SLOT_NAME
     }
 
     /// Storage slot name for the bridge admin account ID.
@@ -316,6 +328,7 @@ impl AggLayerBridge {
             &*LET_ROOT_HI_SLOT_NAME,
             &*LET_NUM_LEAVES_SLOT_NAME,
             &*FAUCET_REGISTRY_SLOT_NAME,
+            &*TOKEN_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
         ]
@@ -344,6 +357,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(FAUCET_REGISTRY_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
         ];
