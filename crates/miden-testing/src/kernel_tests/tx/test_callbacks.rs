@@ -224,23 +224,39 @@ impl From<BlockList> for AccountComponent {
 // ================================================================================================
 
 /// Tests that consuming a callbacks-enabled asset succeeds even when the issuing faucet does not
-/// have the callback storage slot.
+/// have the callback storage slot or when the callback storage slot contains the empty word.
 #[rstest::rstest]
-#[case::fungible(AccountType::FungibleFaucet)]
-#[case::non_fungible(AccountType::NonFungibleFaucet)]
+#[case::fungible_empty_storage(AccountType::FungibleFaucet, true)]
+#[case::fungible_no_storage(AccountType::FungibleFaucet, false)]
+#[case::non_fungible_empty_storage(AccountType::NonFungibleFaucet, true)]
+#[case::non_fungible_no_storage(AccountType::NonFungibleFaucet, false)]
 #[tokio::test]
 async fn test_faucet_without_callback_slot_skips_callback(
     #[case] account_type: AccountType,
+    #[case] has_empty_callback_proc_root: bool,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     // Create a faucet WITHOUT any AssetCallbacks component.
-    let account_builder = AccountBuilder::new([45u8; 32])
+    let mut account_builder = AccountBuilder::new([45u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(account_type)
         .with_component(MockFaucetComponent);
+
+    // If callback proc roots should be empty, add the empty storage slots.
+    if has_empty_callback_proc_root {
+        let name = "miden::testing::callbacks";
+        let slots = AssetCallbacks::new().into_storage_slots();
+        let component = AccountComponent::new(
+            CodeBuilder::new().compile_component_code(name, "pub proc dummy nop end")?,
+            slots,
+            AccountComponentMetadata::mock(name),
+        )?;
+        account_builder = account_builder.with_component(component);
+    }
+
     let faucet = builder.add_account_from_builder(
         Auth::BasicAuth {
             auth_scheme: AuthScheme::Falcon512Poseidon2,
