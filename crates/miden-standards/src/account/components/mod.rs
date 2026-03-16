@@ -109,8 +109,8 @@ static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
 });
 
-// Metadata Info component uses the standards library (get_name, set_description, etc. from
-// metadata).
+// [`TokenMetadata`](crate::account::metadata::TokenMetadata) component library — exposes
+// procedures from `miden::standards::metadata::fungible` (get_name, set_description, etc.).
 static METADATA_INFO_COMPONENT_LIBRARY: LazyLock<Library> =
     LazyLock::new(|| Library::from(crate::StandardsLib::default()));
 

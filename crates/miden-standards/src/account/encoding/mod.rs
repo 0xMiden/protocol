@@ -254,8 +254,8 @@ mod tests {
     fn non_utf8_bytes_return_invalid_utf8() {
         // Encode raw bytes that are not valid UTF-8 (e.g. 0xFF byte in content).
         // Length byte = 1, content byte = 0xFF (invalid UTF-8 start byte).
-        // Pack into first felt: LE bytes [1, 0xFF, 0, 0, 0, 0, 0] → u64 = 0x0000_0000_00FF_01
-        let raw: u64 = 0x0000_0000_00_ff_01;
+        // Pack into first felt: LE bytes [1, 0xFF, 0, 0, 0, 0, 0] → u64 = 0x0000_0000_0000_ff01
+        let raw: u64 = 0x0000_0000_0000_ff01;
         let bad_felt = Felt::try_from(raw).unwrap();
         let words = [
             Word::from([bad_felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
