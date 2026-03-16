@@ -6,14 +6,12 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::asset::TokenSymbol;
-use miden_protocol::{Felt, Word};
+use miden_protocol::Word;
 
 use super::{FungibleFaucetError, FungibleTokenMetadata};
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
-use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
 use crate::procedure_digest;
 
@@ -134,7 +132,7 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 }
 
 /// Creates a new faucet account with network fungible faucet interface and provided metadata
-/// (token symbol, decimals, max supply) and access control.
+/// and access control.
 ///
 /// The network faucet interface exposes two procedures:
 /// - `distribute`, which mints an assets and create a note for the provided recipient.
@@ -153,26 +151,10 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
-    symbol: TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
-    name: TokenName,
-    description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
+    metadata: FungibleTokenMetadata,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
     let auth_component: AccountComponent = NoAuth::new().into();
-
-    let metadata = FungibleTokenMetadata::new(
-        symbol,
-        decimals,
-        max_supply,
-        name,
-        description,
-        logo_uri,
-        external_link,
-    )?;
 
     let account = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
@@ -196,14 +178,11 @@ mod tests {
 
     use super::*;
     use crate::account::access::Ownable2Step;
-    use crate::account::faucets::TokenName;
+    use crate::account::faucets::{FungibleTokenMetadata, TokenName};
 
     #[test]
     fn test_create_network_fungible_faucet() {
         let init_seed = [7u8; 32];
-        let symbol = TokenSymbol::new("NET").expect("token symbol should be valid");
-        let decimals = 8u8;
-        let max_supply = Felt::new(1_000);
 
         let owner = AccountId::dummy(
             [1u8; 15],
@@ -212,16 +191,20 @@ mod tests {
             AccountStorageMode::Private,
         );
 
-        let name = TokenName::new("NET").expect("valid name");
+        let metadata = FungibleTokenMetadata::new(
+            TokenSymbol::new("NET").expect("valid symbol"),
+            8u8,
+            Felt::new(1_000),
+            TokenName::new("NET").expect("valid name"),
+            None,
+            None,
+            None,
+        )
+        .expect("valid metadata");
+
         let account = create_network_fungible_faucet(
             init_seed,
-            symbol,
-            decimals,
-            max_supply,
-            name,
-            None,
-            None,
-            None,
+            metadata,
             AccessControl::Ownable2Step { owner },
         )
         .expect("network faucet creation should succeed");
