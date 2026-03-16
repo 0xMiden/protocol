@@ -292,7 +292,7 @@ end
 #! - faucet_id_suffix_and_metadata is the faucet ID suffix merged with the asset metadata.
 #! - faucet_id_suffix is the suffix of the account ID.
 #! - asset_metadata is the asset metadata.
-proc split_suffix_and_metadata
+pub proc split_suffix_and_metadata
     u32split
     # => [suffix_metadata_lo, suffix_metadata_hi]
 
@@ -312,6 +312,20 @@ proc split_suffix_and_metadata
     # => [asset_metadata, faucet_id_suffix]
 end
 
+#! Validates that asset metadata is well formed and consumes it.
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: []
+#!
+#! Panics if:
+#! - asset_metadata is not a valid u32 or exceeds CALLBACKS_ENABLED.
+pub proc validate_metadata
+    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    u32lte.CALLBACKS_ENABLED
+    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # => []
+end
+
 #! Creates asset metadata from the provided inputs.
 #!
 #! Inputs:  [enable_callbacks]
@@ -324,9 +338,8 @@ end
 #! Panics if:
 #! - enable_callbacks is not 0 or 1.
 proc create_metadata
-    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
-    dup u32lte.CALLBACKS_ENABLED
-    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # for now, enable_callbacks is identical to asset_metadata
+    dup exec.validate_metadata
     # => [asset_metadata]
 end
 
