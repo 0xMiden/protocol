@@ -1018,7 +1018,6 @@ async fn test_field_setter_non_owner_fails(
 async fn set_description_immutable_fails() -> anyhow::Result<()> {
     test_field_setter_immutable_fails(
         "set_description",
-        DESCRIPTION_DATA_KEY,
         ERR_DESCRIPTION_NOT_MUTABLE,
         description_config(initial_field_data(), false),
     )
@@ -1029,7 +1028,6 @@ async fn set_description_immutable_fails() -> anyhow::Result<()> {
 async fn set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
     test_field_setter_owner_succeeds(
         "set_description",
-        DESCRIPTION_DATA_KEY,
         description_config(initial_field_data(), true),
         TokenMetadata::description_slot,
     )
@@ -1040,7 +1038,6 @@ async fn set_description_mutable_owner_succeeds() -> anyhow::Result<()> {
 async fn set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
     test_field_setter_non_owner_fails(
         "set_description",
-        DESCRIPTION_DATA_KEY,
         description_config(initial_field_data(), true),
     )
     .await
@@ -1052,7 +1049,6 @@ async fn set_description_mutable_non_owner_fails() -> anyhow::Result<()> {
 async fn set_logo_uri_immutable_fails() -> anyhow::Result<()> {
     test_field_setter_immutable_fails(
         "set_logo_uri",
-        LOGO_URI_DATA_KEY,
         ERR_LOGO_URI_NOT_MUTABLE,
         logo_uri_config(initial_field_data(), false),
     )
@@ -1063,7 +1059,6 @@ async fn set_logo_uri_immutable_fails() -> anyhow::Result<()> {
 async fn set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
     test_field_setter_owner_succeeds(
         "set_logo_uri",
-        LOGO_URI_DATA_KEY,
         logo_uri_config(initial_field_data(), true),
         TokenMetadata::logo_uri_slot,
     )
@@ -1072,12 +1067,8 @@ async fn set_logo_uri_mutable_owner_succeeds() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
-    test_field_setter_non_owner_fails(
-        "set_logo_uri",
-        LOGO_URI_DATA_KEY,
-        logo_uri_config(initial_field_data(), true),
-    )
-    .await
+    test_field_setter_non_owner_fails("set_logo_uri", logo_uri_config(initial_field_data(), true))
+        .await
 }
 
 // --- set_external_link ---
@@ -1086,7 +1077,6 @@ async fn set_logo_uri_mutable_non_owner_fails() -> anyhow::Result<()> {
 async fn set_external_link_immutable_fails() -> anyhow::Result<()> {
     test_field_setter_immutable_fails(
         "set_external_link",
-        EXTERNAL_LINK_DATA_KEY,
         ERR_EXTERNAL_LINK_NOT_MUTABLE,
         external_link_config(initial_field_data(), false),
     )
@@ -1097,7 +1087,6 @@ async fn set_external_link_immutable_fails() -> anyhow::Result<()> {
 async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
     test_field_setter_owner_succeeds(
         "set_external_link",
-        EXTERNAL_LINK_DATA_KEY,
         external_link_config(initial_field_data(), true),
         TokenMetadata::external_link_slot,
     )
@@ -1108,7 +1097,6 @@ async fn set_external_link_mutable_owner_succeeds() -> anyhow::Result<()> {
 async fn set_external_link_mutable_non_owner_fails() -> anyhow::Result<()> {
     test_field_setter_non_owner_fails(
         "set_external_link",
-        EXTERNAL_LINK_DATA_KEY,
         external_link_config(initial_field_data(), true),
     )
     .await

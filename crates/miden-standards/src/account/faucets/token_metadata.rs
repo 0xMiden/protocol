@@ -562,7 +562,7 @@ mod tests {
         let name = TokenName::new("TEST").unwrap();
 
         let metadata = FungibleTokenMetadata::new(
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             name.clone(),
@@ -591,7 +591,7 @@ mod tests {
         let name = TokenName::new("TEST").unwrap();
 
         let metadata = FungibleTokenMetadata::with_supply(
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             token_supply,
@@ -617,7 +617,7 @@ mod tests {
         let description = Description::new("A polygon token").unwrap();
 
         let metadata = FungibleTokenMetadata::new(
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             name.clone(),
@@ -627,12 +627,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(metadata.symbol(), symbol);
+        assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.name(), &name);
         assert_eq!(metadata.description(), Some(&description));
         let word: Word = metadata.into();
         let restored = FungibleTokenMetadata::try_from(word).unwrap();
-        assert_eq!(restored.symbol(), symbol);
+        assert_eq!(restored.symbol(), &symbol);
         assert!(restored.description().is_none());
     }
 
@@ -741,9 +741,16 @@ mod tests {
         let max_supply = Felt::new(123);
         let name = TokenName::new("POL").unwrap();
 
-        let original =
-            FungibleTokenMetadata::new(symbol, decimals, max_supply, name, None, None, None)
-                .unwrap();
+        let original = FungibleTokenMetadata::new(
+            symbol.clone(),
+            decimals,
+            max_supply,
+            name,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let slot: StorageSlot = original.into();
 
         let restored = FungibleTokenMetadata::try_from(&slot).unwrap();
@@ -763,7 +770,7 @@ mod tests {
         let name = TokenName::new("POL").unwrap();
 
         let original = FungibleTokenMetadata::with_supply(
-            symbol,
+            symbol.clone(),
             decimals,
             max_supply,
             token_supply,
@@ -829,7 +836,8 @@ mod tests {
         let name = TokenName::new("polygon").unwrap();
 
         let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(123), name, None, None, None).unwrap();
+            FungibleTokenMetadata::new(symbol.clone(), 2, Felt::new(123), name, None, None, None)
+                .unwrap();
         let slots = metadata.storage_slots();
 
         // First slot is the metadata word [token_supply, max_supply, decimals, symbol]

@@ -174,7 +174,9 @@ pub fn create_network_fungible_faucet(
 
 #[cfg(test)]
 mod tests {
+    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_protocol::asset::TokenSymbol;
 
     use super::*;
     use crate::account::access::Ownable2Step;
