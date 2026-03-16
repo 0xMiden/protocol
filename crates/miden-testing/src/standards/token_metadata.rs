@@ -906,18 +906,23 @@ async fn test_field_setter_owner_succeeds(
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
+    let hash_elems = hash.as_elements();
 
+    // Push hash as 4 Felts so advice map key matches; dropw after call so stack depth is 16
+    // (setter leaves 20). Use `debug.stack` in the script and run with --nocapture to trace.
     let note_script_code = format!(
         r#"
     begin
-        push.{h0}.{h1}.{h2}.{h3}
+        dropw push.{e3} push.{e2} push.{e1} push.{e0}
         call.::miden::standards::metadata::fungible::{proc_name}
+        dropw
     end
 "#,
-        h0 = hash[0].as_canonical_u64(),
-        h1 = hash[1].as_canonical_u64(),
-        h2 = hash[2].as_canonical_u64(),
-        h3 = hash[3].as_canonical_u64(),
+        e0 = hash_elems[0],
+        e1 = hash_elems[1],
+        e2 = hash_elems[2],
+        e3 = hash_elems[3],
+        proc_name = proc_name,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -973,18 +978,21 @@ async fn test_field_setter_non_owner_fails(
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
+    let hash_elems = hash.as_elements();
 
     let note_script_code = format!(
         r#"
     begin
-        push.{h0}.{h1}.{h2}.{h3}
+        dropw push.{e3} push.{e2} push.{e1} push.{e0}
         call.::miden::standards::metadata::fungible::{proc_name}
+        dropw
     end
 "#,
-        h0 = hash[0].as_canonical_u64(),
-        h1 = hash[1].as_canonical_u64(),
-        h2 = hash[2].as_canonical_u64(),
-        h3 = hash[3].as_canonical_u64(),
+        e0 = hash_elems[0],
+        e1 = hash_elems[1],
+        e2 = hash_elems[2],
+        e3 = hash_elems[3],
+        proc_name = proc_name,
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
