@@ -5,6 +5,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_crypto::hash::rpo::Rpo256;
 use miden_crypto::rand::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
@@ -29,12 +30,7 @@ use miden_standards::account::faucets::{
     NetworkFungibleFaucet,
     TokenName,
 };
-use miden_standards::account::metadata::{
-    DESCRIPTION_DATA_KEY,
-    EXTERNAL_LINK_DATA_KEY,
-    LOGO_URI_DATA_KEY,
-    TokenMetadata,
-};
+use miden_standards::account::metadata::TokenMetadata;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
@@ -139,6 +135,12 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
         value.extend(word.iter());
     }
     value
+}
+
+/// Compute the Rpo256 hash of the field data (used as the advice map key).
+fn compute_field_hash(data: &[Word; 7]) -> Word {
+    let felts = field_advice_map_value(data);
+    Word::from(*Rpo256::hash_elements(&felts))
 }
 
 /// Execute a tx script against the given account and assert success.
@@ -530,43 +532,6 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
 }
 
 // =================================================================================================
-// GETTER TESTS – owner
-// =================================================================================================
-
-#[tokio::test]
-async fn get_owner() -> anyhow::Result<()> {
-    let owner = owner_account_id();
-
-    let metadata = build_pol_faucet_metadata().with_owner(owner);
-
-    let account = AccountBuilder::new([4u8; 32])
-        .account_type(AccountType::FungibleFaucet)
-        .storage_mode(AccountStorageMode::Public)
-        .with_auth_component(NoAuth)
-        .with_component(metadata)
-        .with_component(NetworkFungibleFaucet)
-        .build()?;
-
-    let expected_prefix = owner.prefix().as_felt().as_canonical_u64();
-    let expected_suffix = owner.suffix().as_canonical_u64();
-
-    execute_tx_script(
-        account,
-        format!(
-            r#"
-            begin
-                call.::miden::standards::metadata::fungible::get_owner
-                push.{expected_suffix} assert_eq.err="owner suffix does not match"
-                push.{expected_prefix} assert_eq.err="owner prefix does not match"
-                push.0 assert_eq.err="clean stack: pad must be 0"
-            end
-            "#
-        ),
-    )
-    .await
-}
-
-// =================================================================================================
 // STORAGE LAYOUT TESTS
 // =================================================================================================
 
@@ -877,13 +842,11 @@ fn external_link_config(data: [Word; 7], mutable: bool) -> FieldSetterFaucetArgs
 
 async fn test_field_setter_immutable_fails(
     proc_name: &str,
-    advice_key: Word,
     immutable_error: MasmError,
     args: FieldSetterFaucetArgs,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = owner_account_id();
-    let new_data = new_field_data();
 
     let faucet = builder.add_existing_network_faucet_with_metadata_info(
         "FLD",
@@ -912,7 +875,6 @@ async fn test_field_setter_immutable_fails(
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[])?
         .tx_script(tx_script)
-        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
 
@@ -924,7 +886,6 @@ async fn test_field_setter_immutable_fails(
 
 async fn test_field_setter_owner_succeeds(
     proc_name: &str,
-    advice_key: Word,
     args: FieldSetterFaucetArgs,
     slot_fn: fn(usize) -> &'static miden_protocol::account::StorageSlotName,
 ) -> anyhow::Result<()> {
@@ -944,12 +905,19 @@ async fn test_field_setter_owner_succeeds(
     )?;
     let mock_chain = builder.build()?;
 
+    let hash = compute_field_hash(&new_data);
+
     let note_script_code = format!(
         r#"
-        begin
-            call.::miden::standards::metadata::fungible::{proc_name}
-        end
-    "#
+    begin
+        push.{h0}.{h1}.{h2}.{h3}
+        call.::miden::standards::metadata::fungible::{proc_name}
+    end
+"#,
+        h0 = hash[0].as_canonical_u64(),
+        h1 = hash[1].as_canonical_u64(),
+        h2 = hash[2].as_canonical_u64(),
+        h3 = hash[3].as_canonical_u64(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -967,7 +935,7 @@ async fn test_field_setter_owner_succeeds(
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
         .add_note_script(note_script)
-        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
+        .extend_advice_map([(hash, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
 
@@ -985,7 +953,6 @@ async fn test_field_setter_owner_succeeds(
 
 async fn test_field_setter_non_owner_fails(
     proc_name: &str,
-    advice_key: Word,
     args: FieldSetterFaucetArgs,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -1005,12 +972,19 @@ async fn test_field_setter_non_owner_fails(
     )?;
     let mock_chain = builder.build()?;
 
+    let hash = compute_field_hash(&new_data);
+
     let note_script_code = format!(
         r#"
-        begin
-            call.::miden::standards::metadata::fungible::{proc_name}
-        end
-    "#
+    begin
+        push.{h0}.{h1}.{h2}.{h3}
+        call.::miden::standards::metadata::fungible::{proc_name}
+    end
+"#,
+        h0 = hash[0].as_canonical_u64(),
+        h1 = hash[1].as_canonical_u64(),
+        h2 = hash[2].as_canonical_u64(),
+        h3 = hash[3].as_canonical_u64(),
     );
 
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -1028,7 +1002,7 @@ async fn test_field_setter_non_owner_fails(
     let tx_context = mock_chain
         .build_tx_context(faucet.id(), &[], &[note])?
         .add_note_script(note_script)
-        .extend_advice_map([(advice_key, field_advice_map_value(&new_data))])
+        .extend_advice_map([(hash, field_advice_map_value(&new_data))])
         .with_source_manager(source_manager)
         .build()?;
 

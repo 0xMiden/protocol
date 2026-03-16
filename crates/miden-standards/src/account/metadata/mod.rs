@@ -1,25 +1,20 @@
-//! Account / contract / faucet metadata (slots 0..25)
+//! Account / contract / faucet metadata
 //!
 //! All of the following are metadata of the account (or faucet): token_symbol, decimals,
-//! max_supply, owner, name, mutability_config, description, logo URI,
-//! and external link.
+//! max_supply, name, mutability_config, description, logo URI, and external link.
+//! Ownership is handled by the `Ownable2Step` component separately.
 //!
 //! ## Storage layout
 //!
 //! | Slot name | Contents |
 //! |-----------|----------|
 //! | `metadata::token_metadata` | `[token_supply, max_supply, decimals, token_symbol]` |
-//! | `ownable::owner_config` | owner account id (defined by ownable module) |
 //! | `metadata::name_0` | first 4 felts of name |
 //! | `metadata::name_1` | last 4 felts of name |
 //! | `metadata::mutability_config` | `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]` |
 //! | `metadata::description_0..6` | description (7 Words, max 195 bytes) |
 //! | `metadata::logo_uri_0..6` | logo URI (7 Words, max 195 bytes) |
 //! | `metadata::external_link_0..6` | external link (7 Words, max 195 bytes) |
-//!
-//! Slot names use the `miden::standards::metadata::*` namespace, except for the
-//! owner which is defined by the ownable module
-//! (`miden::standards::access::ownable::owner_config`).
 //!
 //! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
 //! Any change to slot indices or names must be applied in both Rust and MASM.
@@ -36,11 +31,9 @@
 //!
 //! ## MASM modules
 //!
-//! All metadata procedures (getters, `get_owner`, setters) live in
-//! `miden::standards::metadata::fungible`, which depends on ownable. The standalone
-//! The TokenMetadata component uses the standards library and exposes `get_name`; for owner
-//! and mutable fields use a component that re-exports from fungible (e.g. network fungible
-//! faucet).
+//! All metadata procedures (getters, setters) live in `miden::standards::metadata::fungible`,
+//! which depends on `ownable2step` for ownership checks. For mutable fields, accounts must
+//! also include the `Ownable2Step` component (e.g. network fungible faucet).
 //!
 //! ## String encoding (UTF-8)
 //!
@@ -74,7 +67,6 @@ mod token_metadata;
 
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word};
 pub use schema_commitment::{
     AccountBuilderSchemaCommitmentExt,
     AccountSchemaCommitment,
@@ -89,15 +81,6 @@ pub use token_metadata::TokenMetadata;
 /// Token metadata: `[token_supply, max_supply, decimals, token_symbol]`.
 pub(crate) static TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::token_metadata")
-        .expect("storage slot name should be valid")
-});
-
-/// Owner config — defined by the ownable module (`miden::standards::access::ownable`).
-/// Referenced here so that faucets and other metadata consumers can locate the owner
-/// through a single `metadata::owner_config_slot()` accessor, without depending on
-/// the ownable module directly.
-pub(crate) static OWNER_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::ownable::owner_config")
         .expect("storage slot name should be valid")
 });
 
@@ -198,29 +181,12 @@ pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock
     ]
 });
 
-/// Advice map key for the description field data (7 words).
-pub const DESCRIPTION_DATA_KEY: Word =
-    Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(1)]);
-
-/// Advice map key for the logo URI field data (7 words).
-pub const LOGO_URI_DATA_KEY: Word =
-    Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(2)]);
-
-/// Advice map key for the external link field data (7 words).
-pub const EXTERNAL_LINK_DATA_KEY: Word =
-    Word::new([Felt::new(0), Felt::new(0), Felt::new(0), Felt::new(3)]);
-
 // SLOT ACCESSORS
 // ================================================================================================
 
 /// Returns the [`StorageSlotName`] for token metadata (slot 0).
 pub(crate) fn token_metadata_slot() -> &'static StorageSlotName {
     &TOKEN_METADATA_SLOT
-}
-
-/// Returns the [`StorageSlotName`] for owner config (slot 1).
-pub(crate) fn owner_config_slot() -> &'static StorageSlotName {
-    &OWNER_CONFIG_SLOT
 }
 
 /// Returns the [`StorageSlotName`] for the mutability config Word.
@@ -323,6 +289,18 @@ mod tests {
         let mut_default = account_default.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(mut_default[0], Felt::from(0u32), "desc_mutable should be 0 by default");
         assert_eq!(mut_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
+    }
+
+    #[test]
+    fn name_too_long_rejected() {
+        let long_name = "a".repeat(TokenName::MAX_BYTES + 1);
+        assert!(TokenName::new(&long_name).is_err());
+    }
+
+    #[test]
+    fn description_too_long_rejected() {
+        let long_desc = "a".repeat(Description::MAX_BYTES + 1);
+        assert!(Description::new(&long_desc).is_err());
     }
 
     #[test]

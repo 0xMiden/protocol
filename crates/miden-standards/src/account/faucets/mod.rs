@@ -14,6 +14,8 @@ pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 pub use token_metadata::{Description, ExternalLink, FungibleTokenMetadata, LogoURI, TokenName};
 
+pub use crate::account::encoding::{FixedWidthString, FixedWidthStringError};
+
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================
 

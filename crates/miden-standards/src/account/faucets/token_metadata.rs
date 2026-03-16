@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -11,7 +9,6 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
-    AccountId,
     AccountStorage,
     AccountType,
     StorageSlot,
@@ -22,35 +19,21 @@ use miden_protocol::{Felt, Word};
 
 use super::FungibleFaucetError;
 use crate::account::components::fungible_token_metadata_library;
-use crate::account::metadata::{self, FieldBytesError, NameUtf8Error};
-
-// ENCODING CONSTANTS
-// ================================================================================================
-
-/// Number of data bytes packed into each felt (7 bytes = 56 bits, always < Goldilocks prime).
-const BYTES_PER_FELT: usize = 7;
+use crate::account::encoding::{FixedWidthString, FixedWidthStringError};
+use crate::account::metadata::{self, FieldBytesError, NameUtf8Error, TokenMetadata};
 
 // TOKEN NAME
 // ================================================================================================
 
-/// Token display name (max 32 bytes UTF-8).
+/// Token display name (max 32 bytes UTF-8), stored in 2 Words.
 ///
-/// Internally stores the un-encoded string for cheap access via [`as_str`](Self::as_str).
-/// The invariant that the string can be encoded into 2 Words (8 felts × 7 bytes/felt) is
-/// enforced at construction time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TokenName(Box<str>);
-
-impl Default for TokenName {
-    /// Returns an empty token name.
-    fn default() -> Self {
-        Self(String::new().into_boxed_str())
-    }
-}
+/// The maximum is intentionally capped at 32 bytes even though the 2-Word encoding could
+/// hold up to 55 bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TokenName(FixedWidthString<2>);
 
 impl TokenName {
-    /// Maximum byte length for a token name (2 Words = 8 felts × 7 bytes, capacity 55,
-    /// capped at 32).
+    /// Maximum byte length for a token name (capped at 32, below the 55-byte capacity).
     pub const MAX_BYTES: usize = metadata::NAME_UTF8_MAX_BYTES;
 
     /// Creates a token name from a UTF-8 string (at most 32 bytes).
@@ -58,250 +41,139 @@ impl TokenName {
         if s.len() > Self::MAX_BYTES {
             return Err(NameUtf8Error::TooLong(s.len()));
         }
-        Ok(Self(s.into()))
+        Ok(Self(FixedWidthString::from_str_unchecked(s)))
     }
 
     /// Returns the name as a string slice.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    /// Encodes the name into 2 Words for storage (7 bytes/felt, length-prefixed,
-    /// zero-padded).
-    pub fn to_words(&self) -> [Word; 2] {
-        let felts = encode_utf8_to_felts::<8>(self.0.as_bytes());
-        [
-            Word::from([felts[0], felts[1], felts[2], felts[3]]),
-            Word::from([felts[4], felts[5], felts[6], felts[7]]),
-        ]
+    /// Encodes the name into 2 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    /// Decodes a token name from 2 Words (7 bytes/felt, length-prefixed).
-    pub fn try_from_words(words: &[Word; 2]) -> Result<Self, NameUtf8Error> {
-        let felts: [Felt; 8] = [
-            words[0][0],
-            words[0][1],
-            words[0][2],
-            words[0][3],
-            words[1][0],
-            words[1][1],
-            words[1][2],
-            words[1][3],
-        ];
-        let s = decode_felts_to_utf8::<8>(&felts).map_err(|_| NameUtf8Error::InvalidUtf8)?;
-        if s.len() > Self::MAX_BYTES {
-            return Err(NameUtf8Error::TooLong(s.len()));
+    /// Decodes a token name from a 2-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, NameUtf8Error> {
+        let inner =
+            FixedWidthString::<2>::try_from_words(words).map_err(|_| NameUtf8Error::InvalidUtf8)?;
+        if inner.as_str().len() > Self::MAX_BYTES {
+            return Err(NameUtf8Error::TooLong(inner.as_str().len()));
         }
-        Ok(Self(s.into()))
+        Ok(Self(inner))
     }
 }
 
 // DESCRIPTION
 // ================================================================================================
 
-/// Token description (max 195 bytes UTF-8).
-///
-/// Internally stores the un-encoded string. The invariant that it can be encoded into 7 Words
-/// (28 felts, 7 bytes/felt, length-prefixed) is enforced at construction time.
+/// Token description (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Description(Box<str>);
+pub struct Description(FixedWidthString<7>);
 
 impl Description {
-    /// Maximum byte length for a description (7 Words = 28 felts × 7 bytes − 1 length byte).
+    /// Maximum byte length for a description (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
 
     /// Creates a description from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        if s.len() > Self::MAX_BYTES {
-            return Err(FieldBytesError::TooLong(s.len()));
-        }
-        Ok(Self(s.into()))
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
+            _ => FieldBytesError::InvalidUtf8,
+        })
     }
 
     /// Returns the description as a string slice.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    /// Encodes the description into 7 Words for storage (7 bytes/felt, length-prefixed).
-    pub fn to_words(&self) -> [Word; 7] {
-        encode_field_to_words(self.0.as_bytes())
+    /// Encodes the description into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    /// Decodes a description from 7 Words (7 bytes/felt, length-prefixed).
-    pub fn try_from_words(words: &[Word; 7]) -> Result<Self, FieldBytesError> {
-        let s = decode_field_from_words(words)?;
-        Ok(Self(s.into()))
+    /// Decodes a description from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|_| FieldBytesError::InvalidUtf8)
     }
 }
 
 // LOGO URI
 // ================================================================================================
 
-/// Token logo URI (max 195 bytes UTF-8).
-///
-/// Internally stores the un-encoded string. The invariant that it can be encoded into 7 Words
-/// (28 felts, 7 bytes/felt, length-prefixed) is enforced at construction time.
+/// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogoURI(Box<str>);
+pub struct LogoURI(FixedWidthString<7>);
 
 impl LogoURI {
-    /// Maximum byte length for a logo URI (7 Words = 28 felts × 7 bytes − 1 length byte).
+    /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
 
     /// Creates a logo URI from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        if s.len() > Self::MAX_BYTES {
-            return Err(FieldBytesError::TooLong(s.len()));
-        }
-        Ok(Self(s.into()))
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
+            _ => FieldBytesError::InvalidUtf8,
+        })
     }
 
     /// Returns the logo URI as a string slice.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    /// Encodes the logo URI into 7 Words for storage (7 bytes/felt, length-prefixed).
-    pub fn to_words(&self) -> [Word; 7] {
-        encode_field_to_words(self.0.as_bytes())
+    /// Encodes the logo URI into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    /// Decodes a logo URI from 7 Words (7 bytes/felt, length-prefixed).
-    pub fn try_from_words(words: &[Word; 7]) -> Result<Self, FieldBytesError> {
-        let s = decode_field_from_words(words)?;
-        Ok(Self(s.into()))
+    /// Decodes a logo URI from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|_| FieldBytesError::InvalidUtf8)
     }
 }
 
 // EXTERNAL LINK
 // ================================================================================================
 
-/// Token external link (max 195 bytes UTF-8).
-///
-/// Internally stores the un-encoded string. The invariant that it can be encoded into 7 Words
-/// (28 felts, 7 bytes/felt, length-prefixed) is enforced at construction time.
+/// Token external link (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalLink(Box<str>);
+pub struct ExternalLink(FixedWidthString<7>);
 
 impl ExternalLink {
-    /// Maximum byte length for an external link (7 Words = 28 felts × 7 bytes − 1 length byte).
+    /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
     pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
 
     /// Creates an external link from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        if s.len() > Self::MAX_BYTES {
-            return Err(FieldBytesError::TooLong(s.len()));
-        }
-        Ok(Self(s.into()))
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
+            _ => FieldBytesError::InvalidUtf8,
+        })
     }
 
     /// Returns the external link as a string slice.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 
-    /// Encodes the external link into 7 Words for storage (7 bytes/felt, length-prefixed).
-    pub fn to_words(&self) -> [Word; 7] {
-        encode_field_to_words(self.0.as_bytes())
+    /// Encodes the external link into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    /// Decodes an external link from 7 Words (7 bytes/felt, length-prefixed).
-    pub fn try_from_words(words: &[Word; 7]) -> Result<Self, FieldBytesError> {
-        let s = decode_field_from_words(words)?;
-        Ok(Self(s.into()))
+    /// Decodes an external link from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|_| FieldBytesError::InvalidUtf8)
     }
-}
-
-// ENCODING HELPERS
-// ================================================================================================
-
-/// Encodes a UTF-8 byte slice into `N` felts using 7-bytes-per-felt, length-prefixed encoding.
-///
-/// ## Buffer layout (`N × 7` bytes)
-///
-/// ```text
-/// Byte 0:          string length (u8)
-/// Bytes 1..1+len:  UTF-8 content
-/// Remaining:       zero-padded
-///
-/// Felt 0: buffer[0..7]   (length byte + first 6 data bytes)
-/// Felt 1: buffer[7..14]  (next 7 data bytes)
-/// ...
-/// ```
-///
-/// Each 7-byte chunk is stored as a little-endian `u64` with the high byte always zero,
-/// so the value is always < 2^56 and fits safely in a Goldilocks field element.
-///
-/// # Panics
-///
-/// Panics (debug-only) if `bytes.len() + 1 > N * BYTES_PER_FELT` (content + length byte
-/// exceeds buffer capacity).
-fn encode_utf8_to_felts<const N: usize>(bytes: &[u8]) -> [Felt; N] {
-    let buf_len = N * BYTES_PER_FELT;
-    debug_assert!(bytes.len() < buf_len);
-
-    let mut buf = [0u8; 256]; // large enough for any field (max 28 * 7 = 196)
-    buf[0] = bytes.len() as u8;
-    buf[1..1 + bytes.len()].copy_from_slice(bytes);
-
-    let mut felts = [Felt::ZERO; N];
-    for (i, felt) in felts.iter_mut().enumerate() {
-        let start = i * BYTES_PER_FELT;
-        let mut le_bytes = [0u8; 8];
-        le_bytes[..BYTES_PER_FELT].copy_from_slice(&buf[start..start + BYTES_PER_FELT]);
-        // High byte is always 0 ⇒ value < 2^56, safe for Goldilocks.
-        *felt = Felt::try_from(u64::from_le_bytes(le_bytes)).expect("7 bytes always fit in a Felt");
-    }
-    felts
-}
-
-/// Decodes `N` felts (7-bytes-per-felt, length-prefixed) back to a UTF-8 string.
-fn decode_felts_to_utf8<const N: usize>(felts: &[Felt; N]) -> Result<String, FieldBytesError> {
-    let buf_len = N * BYTES_PER_FELT;
-    let mut buf = [0u8; 256];
-    for (i, felt) in felts.iter().enumerate() {
-        let v = felt.as_canonical_u64();
-        let le = v.to_le_bytes();
-        // Reject values that use the high byte (> 7 bytes of data).
-        if le[BYTES_PER_FELT] != 0 {
-            return Err(FieldBytesError::InvalidUtf8);
-        }
-        buf[i * BYTES_PER_FELT..][..BYTES_PER_FELT].copy_from_slice(&le[..BYTES_PER_FELT]);
-    }
-    let len = buf[0] as usize;
-    if len + 1 > buf_len {
-        return Err(FieldBytesError::InvalidUtf8);
-    }
-    String::from_utf8(buf[1..1 + len].to_vec()).map_err(|_| FieldBytesError::InvalidUtf8)
-}
-
-/// Encodes a byte slice into 7 Words (28 felts, 7 bytes/felt, length-prefixed, zero-padded).
-///
-/// # Panics
-///
-/// Panics (debug-only) if `bytes.len() > FIELD_MAX_BYTES`. Callers must validate length first.
-fn encode_field_to_words(bytes: &[u8]) -> [Word; 7] {
-    debug_assert!(bytes.len() <= metadata::FIELD_MAX_BYTES);
-    let felts = encode_utf8_to_felts::<28>(bytes);
-    [
-        Word::from([felts[0], felts[1], felts[2], felts[3]]),
-        Word::from([felts[4], felts[5], felts[6], felts[7]]),
-        Word::from([felts[8], felts[9], felts[10], felts[11]]),
-        Word::from([felts[12], felts[13], felts[14], felts[15]]),
-        Word::from([felts[16], felts[17], felts[18], felts[19]]),
-        Word::from([felts[20], felts[21], felts[22], felts[23]]),
-        Word::from([felts[24], felts[25], felts[26], felts[27]]),
-    ]
-}
-
-/// Decodes 7 Words (28 felts, 7 bytes/felt, length-prefixed) back to a UTF-8 string.
-fn decode_field_from_words(words: &[Word; 7]) -> Result<String, FieldBytesError> {
-    let mut felts = [Felt::ZERO; 28];
-    for (i, word) in words.iter().enumerate() {
-        felts[i * 4..i * 4 + 4].copy_from_slice(word.as_slice());
-    }
-    decode_felts_to_utf8::<28>(&felts)
 }
 
 // TOKEN METADATA
@@ -330,15 +202,8 @@ pub struct FungibleTokenMetadata {
     max_supply: Felt,
     decimals: u8,
     symbol: TokenSymbol,
-    name: TokenName,
-    description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
-    owner: Option<AccountId>,
-    description_mutable: bool,
-    logo_uri_mutable: bool,
-    external_link_mutable: bool,
-    max_supply_mutable: bool,
+    /// Embeds name, optional fields, and mutability flags.
+    metadata: TokenMetadata,
 }
 
 impl FungibleTokenMetadata {
@@ -416,20 +281,23 @@ impl FungibleTokenMetadata {
             });
         }
 
+        let mut token_metadata = TokenMetadata::new().with_name(name);
+        if let Some(desc) = description {
+            token_metadata = token_metadata.with_description(desc, false);
+        }
+        if let Some(uri) = logo_uri {
+            token_metadata = token_metadata.with_logo_uri(uri, false);
+        }
+        if let Some(link) = external_link {
+            token_metadata = token_metadata.with_external_link(link, false);
+        }
+
         Ok(Self {
             token_supply,
             max_supply,
             decimals,
             symbol,
-            name,
-            description,
-            logo_uri,
-            external_link,
-            owner: None,
-            description_mutable: false,
-            logo_uri_mutable: false,
-            external_link_mutable: false,
-            max_supply_mutable: false,
+            metadata: token_metadata,
         })
     }
 
@@ -462,24 +330,24 @@ impl FungibleTokenMetadata {
         self.symbol
     }
 
-    /// Returns the token name (for Info component when building an account).
+    /// Returns the token name.
     pub fn name(&self) -> &TokenName {
-        &self.name
+        self.metadata.name().expect("FungibleTokenMetadata always has a name")
     }
 
-    /// Returns the optional description (for Info component when building an account).
+    /// Returns the optional description.
     pub fn description(&self) -> Option<&Description> {
-        self.description.as_ref()
+        self.metadata.description()
     }
 
-    /// Returns the optional logo URI (for Info component when building an account).
+    /// Returns the optional logo URI.
     pub fn logo_uri(&self) -> Option<&LogoURI> {
-        self.logo_uri.as_ref()
+        self.metadata.logo_uri()
     }
 
-    /// Returns the optional external link (for Info component when building an account).
+    /// Returns the optional external link.
     pub fn external_link(&self) -> Option<&ExternalLink> {
-        self.external_link.as_ref()
+        self.metadata.external_link()
     }
 
     /// Returns the storage slot schema for the metadata slot.
@@ -504,14 +372,6 @@ impl FungibleTokenMetadata {
     pub fn storage_slots(&self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
 
-        // Owner slot (ownable::owner_config) — required by metadata::fungible MASM procedures
-        // for verify_owner (used in set_* mutations).
-        if let Some(id) = self.owner {
-            let owner_word =
-                Word::from([Felt::ZERO, Felt::ZERO, id.suffix(), id.prefix().as_felt()]);
-            slots.push(StorageSlot::with_value(metadata::owner_config_slot().clone(), owner_word));
-        }
-
         // Slot 0: metadata word [token_supply, max_supply, decimals, symbol]
         let metadata_word = Word::new([
             self.token_supply,
@@ -521,58 +381,8 @@ impl FungibleTokenMetadata {
         ]);
         slots.push(StorageSlot::with_value(Self::metadata_slot().clone(), metadata_word));
 
-        // Slots 2-3: name (2 Words)
-        let name_words = self.name.to_words();
-        slots.push(StorageSlot::with_value(
-            metadata::TokenMetadata::name_chunk_0_slot().clone(),
-            name_words[0],
-        ));
-        slots.push(StorageSlot::with_value(
-            metadata::TokenMetadata::name_chunk_1_slot().clone(),
-            name_words[1],
-        ));
-
-        // Slot 4: mutability config
-        let mutability_config_word = Word::from([
-            Felt::from(self.description_mutable as u32),
-            Felt::from(self.logo_uri_mutable as u32),
-            Felt::from(self.external_link_mutable as u32),
-            Felt::from(self.max_supply_mutable as u32),
-        ]);
-        slots.push(StorageSlot::with_value(
-            metadata::mutability_config_slot().clone(),
-            mutability_config_word,
-        ));
-
-        // Slots 5-11: description (7 Words)
-        let desc_words: [Word; 7] =
-            self.description.as_ref().map(|d| d.to_words()).unwrap_or_default();
-        for (i, word) in desc_words.iter().enumerate() {
-            slots.push(StorageSlot::with_value(
-                metadata::TokenMetadata::description_slot(i).clone(),
-                *word,
-            ));
-        }
-
-        // Slots 12-18: logo_uri (7 Words)
-        let logo_words: [Word; 7] =
-            self.logo_uri.as_ref().map(|l| l.to_words()).unwrap_or_default();
-        for (i, word) in logo_words.iter().enumerate() {
-            slots.push(StorageSlot::with_value(
-                metadata::TokenMetadata::logo_uri_slot(i).clone(),
-                *word,
-            ));
-        }
-
-        // Slots 19-25: external_link (7 Words)
-        let link_words: [Word; 7] =
-            self.external_link.as_ref().map(|e| e.to_words()).unwrap_or_default();
-        for (i, word) in link_words.iter().enumerate() {
-            slots.push(StorageSlot::with_value(
-                metadata::TokenMetadata::external_link_slot(i).clone(),
-                *word,
-            ));
-        }
+        // Slots 1-24: name, mutability config, description, logo_uri, external_link
+        slots.extend(self.metadata.storage_slots());
 
         slots
     }
@@ -601,35 +411,25 @@ impl FungibleTokenMetadata {
 
     /// Sets whether the description can be updated by the owner.
     pub fn with_description_mutable(mut self, mutable: bool) -> Self {
-        self.description_mutable = mutable;
+        self.metadata = self.metadata.with_description_mutable(mutable);
         self
     }
 
     /// Sets whether the logo URI can be updated by the owner.
     pub fn with_logo_uri_mutable(mut self, mutable: bool) -> Self {
-        self.logo_uri_mutable = mutable;
+        self.metadata = self.metadata.with_logo_uri_mutable(mutable);
         self
     }
 
     /// Sets whether the external link can be updated by the owner.
     pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
-        self.external_link_mutable = mutable;
+        self.metadata = self.metadata.with_external_link_mutable(mutable);
         self
     }
 
     /// Sets whether the max supply can be updated by the owner.
     pub fn with_max_supply_mutable(mut self, mutable: bool) -> Self {
-        self.max_supply_mutable = mutable;
-        self
-    }
-
-    /// Sets the owner for the `ownable::owner_config` slot.
-    ///
-    /// This is required by the `metadata::fungible` MASM procedures
-    /// (`set_description`, `set_logo_uri`, `set_external_link`, `set_max_supply`)
-    /// which use `ownable::verify_owner` to authorize mutations.
-    pub fn with_owner(mut self, owner: AccountId) -> Self {
-        self.owner = Some(owner);
+        self.metadata = self.metadata.with_max_supply_mutable(mutable);
         self
     }
 }
@@ -661,19 +461,22 @@ impl TryFrom<Word> for FungibleTokenMetadata {
             }
         })?;
 
-        let name = TokenName::default();
-        Self::with_supply(symbol, decimals, max_supply, token_supply, name, None, None, None)
+        Self::with_supply(
+            symbol,
+            decimals,
+            max_supply,
+            token_supply,
+            TokenName::default(),
+            None,
+            None,
+            None,
+        )
     }
 }
 
 impl From<FungibleTokenMetadata> for Word {
-    fn from(metadata: FungibleTokenMetadata) -> Self {
-        Word::new([
-            metadata.token_supply,
-            metadata.max_supply,
-            Felt::from(metadata.decimals),
-            metadata.symbol.into(),
-        ])
+    fn from(m: FungibleTokenMetadata) -> Self {
+        Word::new([m.token_supply, m.max_supply, Felt::from(m.decimals), m.symbol.into()])
     }
 }
 
@@ -993,7 +796,7 @@ mod tests {
 
         let slots = metadata.storage_slots();
 
-        // Slot at index 3 is mutability_config: [desc, logo, extlink, max_supply]
+        // Slot layout (no owner slot): [0]=metadata, [1]=name_0, [2]=name_1, [3]=mutability_config
         let config_slot = &slots[3];
         let config_word = config_slot.value();
         assert_eq!(config_word[0], Felt::from(1u32), "desc_mutable");
@@ -1046,7 +849,7 @@ mod tests {
             FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
         let slots = metadata.storage_slots();
 
-        // Slots 1 and 2 are name chunks
+        // Slot layout: [0]=metadata, [1]=name_0, [2]=name_1
         assert_eq!(slots[1].value(), expected_words[0]);
         assert_eq!(slots[2].value(), expected_words[1]);
     }
@@ -1070,7 +873,7 @@ mod tests {
         .unwrap();
         let slots = metadata.storage_slots();
 
-        // Slots 4..11 are description (7 words), starting after metadata + name(2) + config
+        // Slots 4..11 are description (7 words): after metadata(1) + name(2) + config(1)
         for (i, expected) in expected_words.iter().enumerate() {
             assert_eq!(slots[4 + i].value(), *expected, "description word {i}");
         }
@@ -1129,5 +932,63 @@ mod tests {
         // Verify mutability config
         let config = account.storage().get_item(metadata::mutability_config_slot()).unwrap();
         assert_eq!(config[3], Felt::from(1u32), "max_supply_mutable");
+    }
+
+    #[test]
+    fn logo_uri_too_long() {
+        let s = "a".repeat(LogoURI::MAX_BYTES + 1);
+        assert!(LogoURI::new(&s).is_err());
+    }
+
+    #[test]
+    fn external_link_too_long() {
+        let s = "a".repeat(ExternalLink::MAX_BYTES + 1);
+        assert!(ExternalLink::new(&s).is_err());
+    }
+
+    #[test]
+    fn token_supply_exceeds_max_supply() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+        let max_supply = Felt::new(100);
+        let token_supply = Felt::new(101);
+
+        let result = FungibleTokenMetadata::with_supply(
+            symbol, 2, max_supply, token_supply, name, None, None, None,
+        );
+        assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
+    }
+
+    #[test]
+    fn with_token_supply_exceeds_max_supply() {
+        let symbol = TokenSymbol::new("TST").unwrap();
+        let name = TokenName::new("T").unwrap();
+        let metadata =
+            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+
+        let result = metadata.with_token_supply(Felt::new(101));
+        assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
+    }
+
+    #[test]
+    fn slot_name_mismatch() {
+        use miden_protocol::account::StorageSlotName;
+
+        let wrong_slot_name =
+            StorageSlotName::new("wrong::slot::name").expect("valid slot name");
+        let slot = StorageSlot::with_value(wrong_slot_name, Word::default());
+
+        let result = FungibleTokenMetadata::try_from(&slot);
+        assert!(matches!(result, Err(FungibleFaucetError::SlotNameMismatch { .. })));
+    }
+
+    #[test]
+    fn invalid_token_symbol_in_word() {
+        // TokenSymbol::try_from(Felt) fails when the value exceeds MAX_ENCODED_VALUE.
+        // The Word layout is [token_supply, max_supply, decimals, token_symbol] — symbol is [3].
+        let bad_symbol = Felt::new(TokenSymbol::MAX_ENCODED_VALUE + 1);
+        let bad_word = Word::from([Felt::ZERO, Felt::new(100), Felt::new(2), bad_symbol]);
+        let result = FungibleTokenMetadata::try_from(bad_word);
+        assert!(matches!(result, Err(FungibleFaucetError::InvalidTokenSymbol(_))));
     }
 }

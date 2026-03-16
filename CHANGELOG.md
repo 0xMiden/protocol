@@ -7,7 +7,7 @@
 - Made `NoteMetadataHeader` and `NoteMetadata::to_header()` public, added `NoteMetadata::from_header()` constructor, and exported `NoteMetadataHeader` from the `note` module ([#2561](https://github.com/0xMiden/protocol/pull/2561)).
 - Introduce NOTE_MAX_SIZE (32 KiB) and enforce it on individual output notes ([#2205](https://github.com/0xMiden/miden-base/pull/2205))
 - Added AggLayer faucet registry to bridge account with conversion metadata, `CONFIG_AGG_BRIDGE` note for faucet registration, and FPI-based asset conversion in `bridge_out` ([#2426](https://github.com/0xMiden/miden-base/pull/2426)).
-- Added metadata extension (`Info`) with name and content URI slots, and MASM procedures `get_token_metadata`, `get_max_supply`, `get_decimals`, and `get_token_symbol` for the token metadata standard. Aligned fungible faucet token metadata with the metadata standard: faucet now uses the canonical slot `miden::standards::metadata::token_metadata` so MASM metadata getters work with faucet storage.([#2439](https://github.com/0xMiden/miden-base/pull/2439))
+- Added `FungibleTokenMetadata` component with name, description, logo URI, and external link support, and MASM procedures `get_token_metadata`, `get_max_supply`, `get_decimals`, and `get_token_symbol` for the token metadata standard. Aligned fungible faucet token metadata with the metadata standard: faucet now uses the canonical slot `miden::standards::metadata::token_metadata` so MASM metadata getters work with faucet storage.([#2439](https://github.com/0xMiden/miden-base/pull/2439))
 
 - Enable `CodeBuilder` to add advice map entries to compiled scripts ([#2275](https://github.com/0xMiden/miden-base/pull/2275)).
 - Added `BlockNumber::MAX` constant to represent the maximum block number ([#2324](https://github.com/0xMiden/miden-base/pull/2324)).
@@ -47,8 +47,6 @@
 - [BREAKING] The native hash function changed from RPO256 to Poseidon2  - see PR description ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
 - Introduced `StorageMapKey` and `StorageMapKeyHash` Word wrappers for type-safe storage map key handling ([#2431](https://github.com/0xMiden/miden-base/pull/2431)).
 - Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
-- `TokenMetadata` (faucet) now uses the shared metadata slot from the metadata module for consistency with MASM standards.
-- Prefixed standard account component names with `miden::standards::components` ([#2400](https://github.com/0xMiden/miden-base/pull/2400)).
 - `TokenMetadata` (faucet) now uses the shared metadata slot from the metadata module for consistency with MASM standards.
 - Prefixed standard account component names with `miden::standards::components` ([#2400](https://github.com/0xMiden/miden-base/pull/2400)).
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).

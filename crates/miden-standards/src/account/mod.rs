@@ -3,6 +3,7 @@ use super::auth_method::AuthMethod;
 pub mod access;
 pub mod auth;
 pub mod components;
+pub mod encoding;
 pub mod faucets;
 pub mod interface;
 pub mod metadata;
