@@ -49,10 +49,7 @@ use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    Description,
-    ExternalLink,
     FungibleTokenMetadata,
-    LogoURI,
     NetworkFungibleFaucet,
     TokenName,
 };
@@ -430,55 +427,14 @@ impl MockChainBuilder {
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)
     }
 
-    /// Adds an existing network fungible faucet account with a metadata Info component
+    /// Adds an existing network fungible faucet account with the given metadata component
     /// (for testing metadata::fungible procedures: owner can update description / logo_uri /
     /// external_link / max supply when mutable).
-    #[allow(clippy::too_many_arguments)]
     pub fn add_existing_network_faucet_with_metadata_info(
         &mut self,
-        token_symbol: &str,
-        max_supply: u64,
         owner_account_id: AccountId,
-        token_supply: Option<u64>,
-        max_supply_mutable: bool,
-        description: Option<([Word; 7], bool)>,
-        logo_uri: Option<([Word; 7], bool)>,
-        external_link: Option<([Word; 7], bool)>,
+        metadata: FungibleTokenMetadata,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
-        let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
-        let token_symbol =
-            TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
-
-        let mut metadata = FungibleTokenMetadata::new(
-            token_symbol,
-            DEFAULT_FAUCET_DECIMALS,
-            max_supply,
-            name,
-            description.map(|(words, _)| {
-                Description::try_from_words(&words).expect("valid description words")
-            }),
-            logo_uri
-                .map(|(words, _)| LogoURI::try_from_words(&words).expect("valid logo_uri words")),
-            external_link.map(|(words, _)| {
-                ExternalLink::try_from_words(&words).expect("valid external_link words")
-            }),
-        )
-        .and_then(|m| m.with_token_supply(token_supply))
-        .context("failed to create fungible token metadata")?
-        .with_max_supply_mutable(max_supply_mutable);
-
-        if let Some((_, mutable)) = description {
-            metadata = metadata.with_description_mutable(mutable);
-        }
-        if let Some((_, mutable)) = logo_uri {
-            metadata = metadata.with_logo_uri_mutable(mutable);
-        }
-        if let Some((_, mutable)) = external_link {
-            metadata = metadata.with_external_link_mutable(mutable);
-        }
-
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(metadata)
