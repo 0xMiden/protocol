@@ -21,6 +21,12 @@ pub use nonfungible::{NonFungibleAsset, NonFungibleAssetDetails};
 mod token_symbol;
 pub use token_symbol::TokenSymbol;
 
+mod asset_callbacks;
+pub use asset_callbacks::AssetCallbacks;
+
+mod asset_callbacks_flag;
+pub use asset_callbacks_flag::AssetCallbackFlag;
+
 mod vault;
 pub use vault::{AssetId, AssetVault, AssetVaultKey, AssetWitness, PartialVault};
 
@@ -116,18 +122,21 @@ impl Asset {
         Self::from_key_value(vault_key, value)
     }
 
+    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
+    pub fn with_callbacks(self, callbacks: AssetCallbackFlag) -> Self {
+        match self {
+            Asset::Fungible(fungible_asset) => fungible_asset.with_callbacks(callbacks).into(),
+            Asset::NonFungible(non_fungible_asset) => {
+                non_fungible_asset.with_callbacks(callbacks).into()
+            },
+        }
+    }
+
     /// Returns true if this asset is the same as the specified asset.
     ///
-    /// Two assets are defined to be the same if:
-    /// - For fungible assets, if they were issued by the same faucet.
-    /// - For non-fungible assets, if the assets are identical.
+    /// Two assets are defined to be the same if their vault keys match.
     pub fn is_same(&self, other: &Self) -> bool {
-        use Asset::*;
-        match (self, other) {
-            (Fungible(l), Fungible(r)) => l.is_from_same_faucet(r),
-            (NonFungible(l), NonFungible(r)) => l == r,
-            _ => false,
-        }
+        self.vault_key() == other.vault_key()
     }
 
     /// Returns true if this asset is a fungible asset.

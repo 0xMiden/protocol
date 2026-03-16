@@ -11,7 +11,7 @@ use super::{
     DeserializationError,
     Serializable,
 };
-use crate::account::{AccountId, AccountType};
+use crate::account::AccountType;
 use crate::asset::{Asset, AssetVaultKey, FungibleAsset, NonFungibleAsset};
 use crate::{Felt, ONE, ZERO};
 
@@ -134,8 +134,12 @@ impl AccountVaultDelta {
             .0
             .iter()
             .filter(|&(_, &value)| value >= 0)
-            .map(|(&faucet_id, &diff)| {
-                Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
+            .map(|(vault_key, &diff)| {
+                Asset::Fungible(
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
+                        .unwrap()
+                        .with_callbacks(vault_key.callback_flag()),
+                )
             })
             .chain(
                 self.non_fungible
@@ -150,8 +154,12 @@ impl AccountVaultDelta {
             .0
             .iter()
             .filter(|&(_, &value)| value < 0)
-            .map(|(&faucet_id, &diff)| {
-                Asset::Fungible(FungibleAsset::new(faucet_id, diff.unsigned_abs()).unwrap())
+            .map(|(vault_key, &diff)| {
+                Asset::Fungible(
+                    FungibleAsset::new(vault_key.faucet_id(), diff.unsigned_abs())
+                        .unwrap()
+                        .with_callbacks(vault_key.callback_flag()),
+                )
             })
             .chain(
                 self.non_fungible
@@ -185,15 +193,18 @@ impl Deserializable for AccountVaultDelta {
 // ================================================================================================
 
 /// A binary tree map of fungible asset balance changes in the account vault.
+///
+/// The [`AssetVaultKey`] orders the assets in the same way as the in-kernel account delta which
+/// uses a link map.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FungibleAssetDelta(BTreeMap<AccountId, i64>);
+pub struct FungibleAssetDelta(BTreeMap<AssetVaultKey, i64>);
 
 impl FungibleAssetDelta {
     /// Validates and creates a new fungible asset delta.
     ///
     /// # Errors
     /// Returns an error if the delta does not pass the validation.
-    pub fn new(map: BTreeMap<AccountId, i64>) -> Result<Self, AccountDeltaError> {
+    pub fn new(map: BTreeMap<AssetVaultKey, i64>) -> Result<Self, AccountDeltaError> {
         let delta = Self(map);
         delta.validate()?;
 
@@ -206,7 +217,7 @@ impl FungibleAssetDelta {
     /// Returns an error if the delta would overflow.
     pub fn add(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
         let amount: i64 = asset.amount().try_into().expect("Amount it too high");
-        self.add_delta(asset.faucet_id(), amount)
+        self.add_delta(asset.vault_key(), amount)
     }
 
     /// Removes a fungible asset from the delta.
@@ -215,12 +226,12 @@ impl FungibleAssetDelta {
     /// Returns an error if the delta would overflow.
     pub fn remove(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
         let amount: i64 = asset.amount().try_into().expect("Amount it too high");
-        self.add_delta(asset.faucet_id(), -amount)
+        self.add_delta(asset.vault_key(), -amount)
     }
 
-    /// Returns the amount of the fungible asset with the given faucet ID.
-    pub fn amount(&self, faucet_id: &AccountId) -> Option<i64> {
-        self.0.get(faucet_id).copied()
+    /// Returns the amount of the fungible asset with the given vault key.
+    pub fn amount(&self, vault_key: &AssetVaultKey) -> Option<i64> {
+        self.0.get(vault_key).copied()
     }
 
     /// Returns the number of fungible assets affected in the delta.
@@ -234,7 +245,7 @@ impl FungibleAssetDelta {
     }
 
     /// Returns an iterator over the (key, value) pairs of the map.
-    pub fn iter(&self) -> impl Iterator<Item = (&AccountId, &i64)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&AssetVaultKey, &i64)> {
         self.0.iter()
     }
 
@@ -250,8 +261,8 @@ impl FungibleAssetDelta {
         // Track fungible asset amounts - positive and negative. `i64` is not lossy while
         // fungibles are restricted to 2^63-1. Overflow is still possible but we check for that.
 
-        for (&faucet_id, &amount) in other.0.iter() {
-            self.add_delta(faucet_id, amount)?;
+        for (&vault_key, &amount) in other.0.iter() {
+            self.add_delta(vault_key, amount)?;
         }
 
         Ok(())
@@ -265,8 +276,8 @@ impl FungibleAssetDelta {
     ///
     /// # Errors
     /// Returns an error if the delta would overflow.
-    fn add_delta(&mut self, faucet_id: AccountId, delta: i64) -> Result<(), AccountDeltaError> {
-        match self.0.entry(faucet_id) {
+    fn add_delta(&mut self, vault_key: AssetVaultKey, delta: i64) -> Result<(), AccountDeltaError> {
+        match self.0.entry(vault_key) {
             Entry::Vacant(entry) => {
                 // Only track non-zero amounts.
                 if delta != 0 {
@@ -277,7 +288,7 @@ impl FungibleAssetDelta {
                 let old = *entry.get();
                 let new = old.checked_add(delta).ok_or(
                     AccountDeltaError::FungibleAssetDeltaOverflow {
-                        faucet_id,
+                        faucet_id: vault_key.faucet_id(),
                         current: old,
                         delta,
                     },
@@ -299,9 +310,9 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if one or more fungible assets' faucet IDs are invalid.
     fn validate(&self) -> Result<(), AccountDeltaError> {
-        for faucet_id in self.0.keys() {
-            if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
-                return Err(AccountDeltaError::NotAFungibleFaucetId(*faucet_id));
+        for vault_key in self.0.keys() {
+            if !matches!(vault_key.faucet_id().account_type(), AccountType::FungibleFaucet) {
+                return Err(AccountDeltaError::NotAFungibleFaucetId(vault_key.faucet_id()));
             }
         }
 
@@ -314,12 +325,12 @@ impl FungibleAssetDelta {
     /// Note that the order in which elements are appended should be the link map key ordering. This
     /// is fulfilled here because the link map key's most significant element takes precedence over
     /// less significant ones. The most significant element in the fungible asset delta is the
-    /// account ID prefix and the delta happens to be sorted by account IDs. Since the account ID
+    /// faucet ID prefix and the delta happens to be sorted by vault keys. Since the faucet ID
     /// prefix is unique, it will always decide on the ordering of a link map key, so less
     /// significant elements are unimportant. This implicit sort should therefore always match the
     /// link map key ordering, however this is subtle and fragile.
     pub(super) fn append_delta_elements(&self, elements: &mut Vec<Felt>) {
-        for (faucet_id, amount_delta) in self.iter() {
+        for (vault_key, amount_delta) in self.iter() {
             // Note that this iterator is guaranteed to never yield zero amounts, so we don't have
             // to exclude those explicitly.
             debug_assert_ne!(
@@ -331,11 +342,12 @@ impl FungibleAssetDelta {
             let amount_delta = Felt::try_from(amount_delta.unsigned_abs())
                 .expect("amount delta should be less than i64::MAX");
 
+            let key_word = vault_key.to_word();
             elements.extend_from_slice(&[
                 DOMAIN_ASSET,
                 was_added,
-                faucet_id.suffix(),
-                faucet_id.prefix().as_felt(),
+                key_word[2], // faucet_id_suffix_and_metadata
+                key_word[3], // faucet_id_prefix
             ]);
             elements.extend_from_slice(&[amount_delta, ZERO, ZERO, ZERO]);
         }
@@ -348,11 +360,13 @@ impl Serializable for FungibleAssetDelta {
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
         //   We should update this code (and deserialization as well) once it supports signed
         //   integers.
-        target.write_many(self.0.iter().map(|(&faucet_id, &delta)| (faucet_id, delta as u64)));
+        // TODO: If we keep this code, optimize by not serializing asset ID (which is always 0).
+        target.write_many(self.0.iter().map(|(vault_key, &delta)| (*vault_key, delta as u64)));
     }
 
     fn get_size_hint(&self) -> usize {
-        self.0.len().get_size_hint() + self.0.len() * FungibleAsset::SERIALIZED_SIZE
+        const ENTRY_SIZE: usize = AssetVaultKey::SERIALIZED_SIZE + core::mem::size_of::<u64>();
+        self.0.len().get_size_hint() + self.0.len() * ENTRY_SIZE
     }
 }
 
@@ -360,13 +374,11 @@ impl Deserializable for FungibleAssetDelta {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let num_fungible_assets = source.read_usize()?;
         // TODO: We save `i64` as `u64` since winter utils only supports unsigned integers for now.
-        //   We should update this code (and serialization as well) once it support signeds
-        // integers.
+        //   We should update this code (and serialization as well) once it supports signed
+        //   integers.
         let map = source
-            .read_many_iter::<(AccountId, u64)>(num_fungible_assets)?
-            .map(|result| {
-                result.map(|(account_id, delta_as_u64)| (account_id, delta_as_u64 as i64))
-            })
+            .read_many_iter::<(AssetVaultKey, u64)>(num_fungible_assets)?
+            .map(|result| result.map(|(vault_key, delta_as_u64)| (vault_key, delta_as_u64 as i64)))
             .collect::<Result<_, _>>()?;
 
         Self::new(map).map_err(|err| DeserializationError::InvalidValue(err.to_string()))
@@ -492,11 +504,12 @@ impl NonFungibleAssetDelta {
                 NonFungibleDeltaAction::Add => ONE,
             };
 
+            let key_word = asset.vault_key().to_word();
             elements.extend_from_slice(&[
                 DOMAIN_ASSET,
                 was_added,
-                asset.faucet_id().suffix(),
-                asset.faucet_id().prefix().as_felt(),
+                key_word[2], // faucet_id_suffix_and_metadata
+                key_word[3], // faucet_id_prefix
             ]);
             elements.extend_from_slice(asset.to_value_word().as_elements());
         }
