@@ -239,7 +239,7 @@ mod tests {
         // A value with byte[7] != 0: 2^56 exceeds the Goldilocks prime so we need a
         // different approach — set a byte in positions 0..7 that decodes to invalid UTF-8.
         // The length byte will claim len=0xFF (255) which exceeds the buffer, triggering the error.
-        let overflow_len = Felt::try_from(0xFF_u64).unwrap();
+        let overflow_len = Felt::try_from(0xff_u64).unwrap();
         let words = [
             Word::from([overflow_len, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
             Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
@@ -255,7 +255,7 @@ mod tests {
         // Encode raw bytes that are not valid UTF-8 (e.g. 0xFF byte in content).
         // Length byte = 1, content byte = 0xFF (invalid UTF-8 start byte).
         // Pack into first felt: LE bytes [1, 0xFF, 0, 0, 0, 0, 0] → u64 = 0x0000_0000_00FF_01
-        let raw: u64 = 0x0000_0000_00_FF_01;
+        let raw: u64 = 0x0000_0000_00_ff_01;
         let bad_felt = Felt::try_from(raw).unwrap();
         let words = [
             Word::from([bad_felt, Felt::ZERO, Felt::ZERO, Felt::ZERO]),

@@ -1,3 +1,4 @@
+use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -6,7 +7,6 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::Word;
 
 use super::{FungibleFaucetError, FungibleTokenMetadata};
 use crate::account::access::AccessControl;

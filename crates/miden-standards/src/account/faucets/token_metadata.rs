@@ -326,8 +326,8 @@ impl FungibleTokenMetadata {
     }
 
     /// Returns the token symbol.
-    pub fn symbol(&self) -> TokenSymbol {
-        self.symbol
+    pub fn symbol(&self) -> &TokenSymbol {
+        &self.symbol
     }
 
     /// Returns the token name.
@@ -377,7 +377,7 @@ impl FungibleTokenMetadata {
             self.token_supply,
             self.max_supply,
             Felt::from(self.decimals),
-            self.symbol.into(),
+            self.symbol.clone().into(),
         ]);
         slots.push(StorageSlot::with_value(Self::metadata_slot().clone(), metadata_word));
 
@@ -572,7 +572,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(metadata.symbol(), symbol);
+        assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
         assert_eq!(metadata.max_supply(), max_supply);
         assert_eq!(metadata.token_supply(), Felt::ZERO);
@@ -602,7 +602,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(metadata.symbol(), symbol);
+        assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
         assert_eq!(metadata.max_supply(), max_supply);
         assert_eq!(metadata.token_supply(), token_supply);
@@ -718,6 +718,7 @@ mod tests {
     #[test]
     fn token_metadata_to_word() {
         let symbol = TokenSymbol::new("POL").unwrap();
+        let symbol_felt = symbol.as_element();
         let decimals = 2u8;
         let max_supply = Felt::new(123);
         let name = TokenName::new("POL").unwrap();
@@ -730,7 +731,7 @@ mod tests {
         assert_eq!(word[0], Felt::ZERO);
         assert_eq!(word[1], max_supply);
         assert_eq!(word[2], Felt::from(decimals));
-        assert_eq!(word[3], Felt::from(symbol));
+        assert_eq!(word[3], symbol_felt);
     }
 
     #[test]
@@ -747,7 +748,7 @@ mod tests {
 
         let restored = FungibleTokenMetadata::try_from(&slot).unwrap();
 
-        assert_eq!(restored.symbol(), symbol);
+        assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
         assert_eq!(restored.max_supply(), max_supply);
         assert_eq!(restored.token_supply(), Felt::ZERO);
@@ -775,7 +776,7 @@ mod tests {
         let word: Word = original.into();
         let restored = FungibleTokenMetadata::try_from(word).unwrap();
 
-        assert_eq!(restored.symbol(), symbol);
+        assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
         assert_eq!(restored.max_supply(), max_supply);
         assert_eq!(restored.token_supply(), token_supply);
@@ -954,7 +955,14 @@ mod tests {
         let token_supply = Felt::new(101);
 
         let result = FungibleTokenMetadata::with_supply(
-            symbol, 2, max_supply, token_supply, name, None, None, None,
+            symbol,
+            2,
+            max_supply,
+            token_supply,
+            name,
+            None,
+            None,
+            None,
         );
         assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
     }
@@ -974,8 +982,7 @@ mod tests {
     fn slot_name_mismatch() {
         use miden_protocol::account::StorageSlotName;
 
-        let wrong_slot_name =
-            StorageSlotName::new("wrong::slot::name").expect("valid slot name");
+        let wrong_slot_name = StorageSlotName::new("wrong::slot::name").expect("valid slot name");
         let slot = StorageSlot::with_value(wrong_slot_name, Word::default());
 
         let result = FungibleTokenMetadata::try_from(&slot);
