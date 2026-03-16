@@ -136,7 +136,7 @@ proc invoke_callback
     end
     # => [PROCESSED_ASSET_VALUE]
 
-    exec.tx::end_foreign_context
+    exec.end_foreign_callback_context
     # => [PROCESSED_ASSET_VALUE]
 end
 
@@ -182,4 +182,16 @@ proc start_foreign_callback_context
     # should_invoke = is_found && is_non_empty_word
     movup.5 and
     # => [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+end
+
+#! Ends a foreign callback context.
+#!
+#! This pops the top of the account stack, making the previous account the active account.
+#!
+#! This wrapper exists only for uniformity with start_foreign_callback_context.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc end_foreign_callback_context
+    exec.tx::end_foreign_context
 end
