@@ -23,7 +23,7 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
-use crate::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadata, TokenName};
+use crate::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadataBuilder, TokenName};
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
@@ -55,15 +55,13 @@ fn test_basic_wallet_default_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
-                TokenName::new("POL").unwrap(),
-                None,
-                None,
-                None,
             )
+            .build()
             .expect("failed to create token metadata"),
         )
         .with_component(BasicFungibleFaucet)
@@ -326,15 +324,13 @@ fn test_basic_fungible_faucet_custom_notes() {
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(get_mock_falcon_auth_component())
         .with_component(
-            FungibleTokenMetadata::new(
+            FungibleTokenMetadataBuilder::new(
+                TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
                 Felt::new(100),
-                TokenName::new("POL").unwrap(),
-                None,
-                None,
-                None,
             )
+            .build()
             .expect("failed to create token metadata"),
         )
         .with_component(BasicFungibleFaucet)

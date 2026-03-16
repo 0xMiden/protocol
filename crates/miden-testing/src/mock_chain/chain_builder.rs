@@ -49,7 +49,7 @@ use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
-    FungibleTokenMetadata,
+    FungibleTokenMetadataBuilder,
     NetworkFungibleFaucet,
     TokenName,
 };
@@ -331,15 +331,13 @@ impl MockChainBuilder {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
         let max_supply_felt = Felt::try_from(max_supply)?;
-        let metadata = FungibleTokenMetadata::new(
+        let metadata = FungibleTokenMetadataBuilder::new(
+            name,
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply_felt,
-            name,
-            None,
-            None,
-            None,
         )
+        .build()
         .context("failed to create FungibleTokenMetadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -367,16 +365,14 @@ impl MockChainBuilder {
         let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
-        let metadata = FungibleTokenMetadata::new(
+        let metadata = FungibleTokenMetadataBuilder::new(
+            name,
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply,
-            name,
-            None,
-            None,
-            None,
         )
-        .and_then(|m| m.with_token_supply(token_supply))
+        .token_supply(token_supply)
+        .build()
         .context("failed to create fungible token metadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -404,16 +400,14 @@ impl MockChainBuilder {
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let metadata = FungibleTokenMetadata::new(
+        let metadata = FungibleTokenMetadataBuilder::new(
+            name,
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
             max_supply,
-            name,
-            None,
-            None,
-            None,
         )
-        .and_then(|m| m.with_token_supply(token_supply))
+        .token_supply(token_supply)
+        .build()
         .context("failed to create fungible token metadata")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
@@ -433,7 +427,7 @@ impl MockChainBuilder {
     pub fn add_existing_network_faucet_with_metadata_info(
         &mut self,
         owner_account_id: AccountId,
-        metadata: FungibleTokenMetadata,
+        metadata: miden_standards::account::faucets::FungibleTokenMetadata,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)

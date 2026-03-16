@@ -196,6 +196,132 @@ impl ExternalLink {
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
 
+/// Builder for [`FungibleTokenMetadata`] to avoid unwieldy optional arguments.
+///
+/// Required fields are set in [`Self::new`]; optional fields and token supply
+/// can be set via chainable methods. Token supply defaults to zero.
+///
+/// # Example
+///
+/// ```
+/// # use miden_protocol::asset::TokenSymbol;
+/// # use miden_protocol::Felt;
+/// # use miden_standards::account::faucets::{
+/// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
+/// # };
+/// let name = TokenName::new("My Token").unwrap();
+/// let symbol = TokenSymbol::new("MTK").unwrap();
+/// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, Felt::new(1_000_000))
+///     .token_supply(Felt::new(100))
+///     .description(Description::new("A test token").unwrap())
+///     .logo_uri(LogoURI::new("https://example.com/logo.png").unwrap())
+///     .build()
+///     .unwrap();
+/// ```
+#[derive(Debug, Clone)]
+pub struct FungibleTokenMetadataBuilder {
+    name: TokenName,
+    symbol: TokenSymbol,
+    decimals: u8,
+    max_supply: Felt,
+    token_supply: Felt,
+    description: Option<Description>,
+    logo_uri: Option<LogoURI>,
+    external_link: Option<ExternalLink>,
+    description_mutable: bool,
+    logo_uri_mutable: bool,
+    external_link_mutable: bool,
+    max_supply_mutable: bool,
+}
+
+impl FungibleTokenMetadataBuilder {
+    /// Creates a new builder with required fields. Token supply defaults to zero.
+    pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: Felt) -> Self {
+        Self {
+            name,
+            symbol,
+            decimals,
+            max_supply,
+            token_supply: Felt::ZERO,
+            description: None,
+            logo_uri: None,
+            external_link: None,
+            description_mutable: false,
+            logo_uri_mutable: false,
+            external_link_mutable: false,
+            max_supply_mutable: false,
+        }
+    }
+
+    /// Sets the initial token supply (default is zero).
+    pub fn token_supply(mut self, token_supply: Felt) -> Self {
+        self.token_supply = token_supply;
+        self
+    }
+
+    /// Sets the optional description.
+    pub fn description(mut self, description: Description) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    /// Sets the optional logo URI.
+    pub fn logo_uri(mut self, logo_uri: LogoURI) -> Self {
+        self.logo_uri = Some(logo_uri);
+        self
+    }
+
+    /// Sets the optional external link.
+    pub fn external_link(mut self, external_link: ExternalLink) -> Self {
+        self.external_link = Some(external_link);
+        self
+    }
+
+    /// Sets whether the description can be updated by the owner.
+    pub fn description_mutable(mut self, mutable: bool) -> Self {
+        self.description_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the logo URI can be updated by the owner.
+    pub fn logo_uri_mutable(mut self, mutable: bool) -> Self {
+        self.logo_uri_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the external link can be updated by the owner.
+    pub fn external_link_mutable(mut self, mutable: bool) -> Self {
+        self.external_link_mutable = mutable;
+        self
+    }
+
+    /// Sets whether the max supply can be updated by the owner.
+    pub fn max_supply_mutable(mut self, mutable: bool) -> Self {
+        self.max_supply_mutable = mutable;
+        self
+    }
+
+    /// Builds [`FungibleTokenMetadata`].
+    pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
+        let mut meta = FungibleTokenMetadata::with_supply(
+            self.symbol,
+            self.decimals,
+            self.max_supply,
+            self.token_supply,
+            self.name,
+            self.description,
+            self.logo_uri,
+            self.external_link,
+        )?;
+        meta = meta
+            .with_description_mutable(self.description_mutable)
+            .with_logo_uri_mutable(self.logo_uri_mutable)
+            .with_external_link_mutable(self.external_link_mutable)
+            .with_max_supply_mutable(self.max_supply_mutable);
+        Ok(meta)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FungibleTokenMetadata {
     token_supply: Felt,
@@ -461,16 +587,9 @@ impl TryFrom<Word> for FungibleTokenMetadata {
             }
         })?;
 
-        Self::with_supply(
-            symbol,
-            decimals,
-            max_supply,
-            token_supply,
-            TokenName::default(),
-            None,
-            None,
-            None,
-        )
+        FungibleTokenMetadataBuilder::new(TokenName::default(), symbol, decimals, max_supply)
+            .token_supply(token_supply)
+            .build()
     }
 }
 
@@ -561,16 +680,10 @@ mod tests {
         let max_supply = Felt::new(1_000_000);
         let name = TokenName::new("TEST").unwrap();
 
-        let metadata = FungibleTokenMetadata::new(
-            symbol.clone(),
-            decimals,
-            max_supply,
-            name.clone(),
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let metadata =
+            FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), decimals, max_supply)
+                .build()
+                .unwrap();
 
         assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
@@ -590,22 +703,49 @@ mod tests {
         let token_supply = Felt::new(500_000);
         let name = TokenName::new("TEST").unwrap();
 
-        let metadata = FungibleTokenMetadata::with_supply(
-            symbol.clone(),
-            decimals,
-            max_supply,
-            token_supply,
-            name,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let metadata =
+            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
+                .token_supply(token_supply)
+                .build()
+                .unwrap();
 
         assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
         assert_eq!(metadata.max_supply(), max_supply);
         assert_eq!(metadata.token_supply(), token_supply);
+    }
+
+    #[test]
+    fn token_metadata_builder_with_optionals() {
+        let symbol = TokenSymbol::new("MTK").unwrap();
+        let name = TokenName::new("My Token").unwrap();
+        let description = Description::new("A test token").unwrap();
+        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
+        let external_link = ExternalLink::new("https://example.com").unwrap();
+
+        let metadata = FungibleTokenMetadataBuilder::new(
+            name.clone(),
+            symbol.clone(),
+            8,
+            Felt::new(1_000_000),
+        )
+        .token_supply(Felt::new(100))
+        .description(description.clone())
+        .logo_uri(logo_uri.clone())
+        .external_link(external_link.clone())
+        .description_mutable(true)
+        .max_supply_mutable(true)
+        .build()
+        .unwrap();
+
+        assert_eq!(metadata.token_supply(), Felt::new(100));
+        assert_eq!(metadata.description(), Some(&description));
+        assert_eq!(metadata.logo_uri(), Some(&logo_uri));
+        assert_eq!(metadata.external_link(), Some(&external_link));
+        let slots = metadata.storage_slots();
+        let config_word = slots[3].value();
+        assert_eq!(config_word[0], Felt::from(1u32), "desc_mutable");
+        assert_eq!(config_word[3], Felt::from(1u32), "max_supply_mutable");
     }
 
     #[test]
@@ -616,16 +756,11 @@ mod tests {
         let name = TokenName::new("polygon").unwrap();
         let description = Description::new("A polygon token").unwrap();
 
-        let metadata = FungibleTokenMetadata::new(
-            symbol.clone(),
-            decimals,
-            max_supply,
-            name.clone(),
-            Some(description.clone()),
-            None,
-            None,
-        )
-        .unwrap();
+        let metadata =
+            FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), decimals, max_supply)
+                .description(description.clone())
+                .build()
+                .unwrap();
 
         assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.name(), &name);
@@ -696,8 +831,7 @@ mod tests {
         let max_supply = Felt::new(1_000_000);
         let name = TokenName::new("TEST").unwrap();
 
-        let result =
-            FungibleTokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
+        let result = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply).build();
         assert!(matches!(result, Err(FungibleFaucetError::TooManyDecimals { .. })));
     }
 
@@ -710,8 +844,7 @@ mod tests {
         let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT + 1);
         let name = TokenName::new("TEST").unwrap();
 
-        let result =
-            FungibleTokenMetadata::new(symbol, decimals, max_supply, name, None, None, None);
+        let result = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply).build();
         assert!(matches!(result, Err(FungibleFaucetError::MaxSupplyTooLarge { .. })));
     }
 
@@ -723,9 +856,9 @@ mod tests {
         let max_supply = Felt::new(123);
         let name = TokenName::new("POL").unwrap();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol, decimals, max_supply, name, None, None, None)
-                .unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply)
+            .build()
+            .unwrap();
         let word: Word = metadata.into();
 
         assert_eq!(word[0], Felt::ZERO);
@@ -741,16 +874,10 @@ mod tests {
         let max_supply = Felt::new(123);
         let name = TokenName::new("POL").unwrap();
 
-        let original = FungibleTokenMetadata::new(
-            symbol.clone(),
-            decimals,
-            max_supply,
-            name,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let original =
+            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
+                .build()
+                .unwrap();
         let slot: StorageSlot = original.into();
 
         let restored = FungibleTokenMetadata::try_from(&slot).unwrap();
@@ -769,17 +896,11 @@ mod tests {
         let token_supply = Felt::new(500);
         let name = TokenName::new("POL").unwrap();
 
-        let original = FungibleTokenMetadata::with_supply(
-            symbol.clone(),
-            decimals,
-            max_supply,
-            token_supply,
-            name,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let original =
+            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
+                .token_supply(token_supply)
+                .build()
+                .unwrap();
         let word: Word = original.into();
         let restored = FungibleTokenMetadata::try_from(word).unwrap();
 
@@ -794,13 +915,13 @@ mod tests {
         let symbol = TokenSymbol::new("TST").unwrap();
         let name = TokenName::new("T").unwrap();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(1_000), name, None, None, None)
-                .unwrap()
-                .with_description_mutable(true)
-                .with_logo_uri_mutable(true)
-                .with_external_link_mutable(false)
-                .with_max_supply_mutable(true);
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(1_000))
+            .description_mutable(true)
+            .logo_uri_mutable(true)
+            .external_link_mutable(false)
+            .max_supply_mutable(true)
+            .build()
+            .unwrap();
 
         let slots = metadata.storage_slots();
 
@@ -818,9 +939,9 @@ mod tests {
         let symbol = TokenSymbol::new("TST").unwrap();
         let name = TokenName::new("T").unwrap();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(1_000), name, None, None, None)
-                .unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(1_000))
+            .build()
+            .unwrap();
 
         let slots = metadata.storage_slots();
         let config_word = slots[3].value();
@@ -835,9 +956,9 @@ mod tests {
         let symbol = TokenSymbol::new("POL").unwrap();
         let name = TokenName::new("polygon").unwrap();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol.clone(), 2, Felt::new(123), name, None, None, None)
-                .unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol.clone(), 2, Felt::new(123))
+            .build()
+            .unwrap();
         let slots = metadata.storage_slots();
 
         // First slot is the metadata word [token_supply, max_supply, decimals, symbol]
@@ -854,8 +975,9 @@ mod tests {
         let name = TokenName::new("my token").unwrap();
         let expected_words = name.to_words();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
+            .build()
+            .unwrap();
         let slots = metadata.storage_slots();
 
         // Slot layout: [0]=metadata, [1]=name_0, [2]=name_1
@@ -870,16 +992,10 @@ mod tests {
         let description = Description::new("A cool token").unwrap();
         let expected_words = description.to_words();
 
-        let metadata = FungibleTokenMetadata::new(
-            symbol,
-            2,
-            Felt::new(100),
-            name,
-            Some(description),
-            None,
-            None,
-        )
-        .unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
+            .description(description)
+            .build()
+            .unwrap();
         let slots = metadata.storage_slots();
 
         // Slots 4..11 are description (7 words): after metadata(1) + name(2) + config(1)
@@ -893,8 +1009,9 @@ mod tests {
         let symbol = TokenSymbol::new("TST").unwrap();
         let name = TokenName::new("T").unwrap();
 
-        let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
+            .build()
+            .unwrap();
         let slots = metadata.storage_slots();
 
         // 1 metadata + 2 name + 1 config + 7 description + 7 logo + 7 external_link = 25
@@ -912,17 +1029,11 @@ mod tests {
         let name = TokenName::new("test token").unwrap();
         let description = Description::new("A test").unwrap();
 
-        let metadata = FungibleTokenMetadata::new(
-            symbol,
-            4,
-            Felt::new(10_000),
-            name,
-            Some(description),
-            None,
-            None,
-        )
-        .unwrap()
-        .with_max_supply_mutable(true);
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 4, Felt::new(10_000))
+            .description(description)
+            .max_supply_mutable(true)
+            .build()
+            .unwrap();
 
         // Should build an account successfully with FungibleTokenMetadata as a component
         let account = AccountBuilder::new([1u8; 32])
@@ -962,16 +1073,9 @@ mod tests {
         let max_supply = Felt::new(100);
         let token_supply = Felt::new(101);
 
-        let result = FungibleTokenMetadata::with_supply(
-            symbol,
-            2,
-            max_supply,
-            token_supply,
-            name,
-            None,
-            None,
-            None,
-        );
+        let result = FungibleTokenMetadataBuilder::new(name, symbol, 2, max_supply)
+            .token_supply(token_supply)
+            .build();
         assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
     }
 
@@ -979,8 +1083,9 @@ mod tests {
     fn with_token_supply_exceeds_max_supply() {
         let symbol = TokenSymbol::new("TST").unwrap();
         let name = TokenName::new("T").unwrap();
-        let metadata =
-            FungibleTokenMetadata::new(symbol, 2, Felt::new(100), name, None, None, None).unwrap();
+        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
+            .build()
+            .unwrap();
 
         let result = metadata.with_token_supply(Felt::new(101));
         assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
