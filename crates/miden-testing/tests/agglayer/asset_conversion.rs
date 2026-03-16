@@ -149,7 +149,11 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
     let y = x.scale_to_token_amount(scale).unwrap().as_int();
     let script = build_scale_down_script(x, scale, y);
-    execute_masm_script(&script).await?;
+    let stack = execute_masm_script(&script).await?;
+    assert!(
+        stack.is_empty(),
+        "verify_u256_to_native_amount_conversion should leave an empty stack after truncate_stack"
+    );
     Ok(y)
 }
 
