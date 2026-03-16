@@ -8,7 +8,7 @@ use miden::standards::auth
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart::oracle
 use miden::standards::auth::multisig_smart::spending_limits
-use miden::standards::auth::multisig_smart::timelock_guard
+use miden::standards::auth::multisig_smart::timelock_controller
 
 pub use multisig::update_signers_and_threshold
 pub use multisig::get_threshold_and_num_approvers
@@ -19,11 +19,11 @@ pub use oracle::update_oracle_config_and_proc_root
 pub use spending_limits::update_spending_window_policy
 pub use spending_limits::update_spending_limits
 pub use spending_limits::update_threshold_config
-pub use timelock_guard::update_timelock_controller
-pub use timelock_guard::propose_transaction
-pub use timelock_guard::cancel_transaction_proposal
-pub use timelock_guard::cancel_and_propose_new_transaction
-pub use timelock_guard::execute_proposed_transaction
+pub use timelock_controller::update_timelock_controller
+pub use timelock_controller::propose_transaction
+pub use timelock_controller::cancel_transaction_proposal
+pub use timelock_controller::cancel_and_propose_new_transaction
+pub use timelock_controller::execute_proposed_transaction
 
 # CONSTANTS
 # =================================================================================================
@@ -182,7 +182,7 @@ pub proc auth_tx_multisig_smart(salt: word)
     loc_load.2
     # => [num_verified_signatures, requires_delay, TX_HASH]
 
-    exec.timelock_guard::finalize_timelock_proposals
+    exec.timelock_controller::finalize_timelock_proposals
     # => [TX_SUMMARY_COMMITMENT]
 
     exec.multisig::assert_new_tx
