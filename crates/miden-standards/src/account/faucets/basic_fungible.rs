@@ -240,7 +240,7 @@ mod tests {
         let token_name = TokenName::new(token_name_string).unwrap();
         let description = Description::new(description_string).unwrap();
         let metadata = FungibleTokenMetadata::new(
-            token_symbol,
+            token_symbol.clone(),
             decimals,
             max_supply,
             token_name,
