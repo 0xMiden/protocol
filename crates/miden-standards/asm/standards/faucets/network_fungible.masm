@@ -1,3 +1,8 @@
+# NETWORK FUNGIBLE FAUCET CONTRACT
+#
+# Note: This component requires `MintPolicyManager` component to also be present in the account.
+# =================================================================================================
+
 use miden::standards::faucets
 use miden::standards::mint_policies::policy_manager
 
@@ -7,7 +12,7 @@ use miden::standards::mint_policies::policy_manager
 # ASSET MINTING
 # ------------------------------------------------------------------------------------------------
 
-#! Mints fungible assets to the provided recipient.
+#! Mints fungible assets to the provided recipient by creating a note.
 #!
 #! This procedure first executes the active mint policy configured via
 #! `active_policy_proc_root`, and then mints the asset and creates an output note

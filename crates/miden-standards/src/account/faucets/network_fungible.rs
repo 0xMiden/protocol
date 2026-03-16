@@ -293,6 +293,19 @@ pub fn create_network_fungible_faucet(
     max_supply: Felt,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
+    // Validate that access_control is Ownable2Step, as this faucet depends on it.
+    // When new variants are added to AccessControl, update this match to either support
+    // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
+    match access_control {
+        AccessControl::Ownable2Step { .. } => {},
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(FungibleFaucetError::UnsupportedAccessControl(
+                "network fungible faucets require Ownable2Step access control".into(),
+            ));
+        },
+    }
+
     let auth_component: AccountComponent = NoAuth::new().into();
 
     let account = AccountBuilder::new(init_seed)

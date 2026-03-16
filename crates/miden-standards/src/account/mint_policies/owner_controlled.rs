@@ -154,6 +154,20 @@ impl OwnerControlled {
     pub fn owner_only_policy_root() -> Word {
         *OWNER_ONLY_POLICY_ROOT
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new(vec![
+            OwnerControlled::active_policy_proc_root_slot_schema(),
+            OwnerControlled::allowed_policy_proc_roots_slot_schema(),
+            OwnerControlled::policy_authority_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(OwnerControlled::NAME, [AccountType::FungibleFaucet])
+            .with_description("Mint policy owner controlled component for network fungible faucets")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl Default for OwnerControlled {
@@ -193,19 +207,7 @@ impl From<OwnerControlled> for AccountComponent {
             Word::from([1u32, 0, 0, 0]),
         );
 
-        let storage_schema = StorageSchema::new(vec![
-            OwnerControlled::active_policy_proc_root_slot_schema(),
-            OwnerControlled::allowed_policy_proc_roots_slot_schema(),
-            OwnerControlled::policy_authority_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata =
-            AccountComponentMetadata::new(OwnerControlled::NAME, [AccountType::FungibleFaucet])
-                .with_description(
-                    "Mint policy owner controlled component for network fungible faucets",
-                )
-                .with_storage_schema(storage_schema);
+        let metadata = OwnerControlled::component_metadata();
 
         AccountComponent::new(
             owner_controlled_library(),
