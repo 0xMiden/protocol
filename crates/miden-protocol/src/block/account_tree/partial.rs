@@ -303,7 +303,11 @@ mod tests {
         // Building a partial tree from all three witnesses should succeed:
         // id1 and id2 have empty leaves that are provably empty via the sparse tree structure,
         // but they are NOT duplicates of id0.
-        let mut partial_tree = PartialAccountTree::with_witnesses([witness0, witness1, witness2])?;
+        let mut partial_tree =
+            PartialAccountTree::with_witnesses([witness0, witness1.clone(), witness2])?;
+
+        // Adding the same witness again should also succeed.
+        partial_tree.track_account(witness1)?;
 
         // Verify the existing account has its commitment.
         assert_eq!(partial_tree.get(id0)?, commitment0);
