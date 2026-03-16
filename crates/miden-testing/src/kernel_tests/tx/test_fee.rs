@@ -99,7 +99,7 @@ async fn num_tx_cycles_after_compute_fee_are_less_than_estimated(
     // These constants should always be updated together with the equivalent constants in
     // epilogue.masm.
     const SMT_SET_ADDITIONAL_CYCLES: usize = 250;
-    const NUM_POST_COMPUTE_FEE_CYCLES: usize = 500;
+    const NUM_POST_COMPUTE_FEE_CYCLES: usize = 608;
 
     assert!(
         tx.measurements().after_tx_cycles_obtained

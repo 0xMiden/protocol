@@ -1,5 +1,12 @@
 use miden_protocol::account::AccountId;
-use miden_protocol::asset::{AssetId, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_protocol::asset::{
+    AssetCallbackFlag,
+    AssetId,
+    AssetVaultKey,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::errors::MasmError;
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
@@ -217,6 +224,42 @@ async fn test_validate_fungible_asset(
     let exec_result = CodeExecutor::with_default_host().run(&code).await;
 
     assert_execution_error!(exec_result, expected_err);
+
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case::without_callbacks(AssetCallbackFlag::Disabled)]
+#[case::with_callbacks(AssetCallbackFlag::Enabled)]
+#[tokio::test]
+async fn test_key_to_asset_metadata(#[case] callbacks: AssetCallbackFlag) -> anyhow::Result<()> {
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?;
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, callbacks)?;
+
+    let code = format!(
+        "
+        use $kernel::asset
+
+        begin
+            push.{ASSET_KEY}
+            exec.asset::key_to_callbacks_enabled
+            # => [callbacks_enabled, ASSET_KEY]
+
+            # truncate stack
+            swapw dropw swap drop
+            # => [callbacks_enabled]
+        end
+        ",
+        ASSET_KEY = vault_key.to_word(),
+    );
+
+    let exec_output = CodeExecutor::with_default_host().run(&code).await?;
+
+    assert_eq!(
+        exec_output.get_stack_element(0).as_canonical_u64(),
+        callbacks.as_u8() as u64,
+        "MASM key_to_asset_category returned wrong value for {callbacks:?}"
+    );
 
     Ok(())
 }

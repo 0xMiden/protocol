@@ -76,19 +76,26 @@ impl AuthSingleSig {
             StorageSlotSchema::value("Scheme ID", SchemaType::auth_scheme()),
         )
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new(vec![
+            Self::public_key_slot_schema(),
+            Self::auth_scheme_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description(
+                "Authentication component using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
+            )
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<AuthSingleSig> for AccountComponent {
     fn from(basic_signature: AuthSingleSig) -> Self {
-        let storage_schema = StorageSchema::new(vec![
-            AuthSingleSig::public_key_slot_schema(),
-            AuthSingleSig::auth_scheme_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthSingleSig::NAME, AccountType::all())
-            .with_description("Authentication component using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthSingleSig::component_metadata();
 
         let storage_slots = vec![
             StorageSlot::with_value(

@@ -11,6 +11,7 @@ pub use ::miden::protocol::util::asset::key_to_faucet_id
 pub use ::miden::protocol::util::asset::key_into_faucet_id
 pub use ::miden::protocol::util::asset::key_to_asset_id
 pub use ::miden::protocol::util::asset::key_into_asset_id
+pub use ::miden::protocol::util::asset::key_to_callbacks_enabled
 pub use ::miden::protocol::util::asset::store
 pub use ::miden::protocol::util::asset::load
 pub use ::miden::protocol::util::asset::fungible_value_into_amount
@@ -31,10 +32,11 @@ const ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID="failed to build the 
 
 #! Creates a fungible asset for the specified fungible faucet and amount.
 #!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - amount is the amount of the asset to create.
@@ -44,17 +46,18 @@ const ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID="failed to build the 
 #! Panics if:
 #! - the provided faucet ID is not a fungible faucet.
 #! - the provided amount exceeds FUNGIBLE_ASSET_MAX_AMOUNT.
+#! - enable_callbacks is not 0 or 1.
 #!
 #! Invocation: exec
 pub proc create_fungible_asset
     # assert the faucet is a fungible faucet
-    dup.1 exec.account_id::is_fungible_faucet assert.err=ERR_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
-    # => [faucet_id_suffix, faucet_id_prefix, amount]
+    dup.2 exec.account_id::is_fungible_faucet assert.err=ERR_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 
     # assert the amount is valid
-    dup.2 lte.FUNGIBLE_ASSET_MAX_AMOUNT
+    dup.3 lte.FUNGIBLE_ASSET_MAX_AMOUNT
     assert.err=ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_ALLOWED_AMOUNT
-    # => [faucet_id_suffix, faucet_id_prefix, amount]
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
 
     # SAFETY: faucet ID and amount were validated
     exec.asset::create_fungible_asset_unchecked
@@ -63,10 +66,11 @@ end
 
 #! Creates a non fungible asset for the specified non-fungible faucet.
 #!
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix, DATA_HASH]
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 #! Outputs: [ASSET_KEY, ASSET_VALUE]
 #!
 #! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
 #! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
 #!   for.
 #! - DATA_HASH is the data hash of the non-fungible asset to create.
@@ -75,13 +79,14 @@ end
 #!
 #! Panics if:
 #! - the provided faucet ID is not a non-fungible faucet.
+#! - enable_callbacks is not 0 or 1.
 #!
 #! Invocation: exec
 pub proc create_non_fungible_asset
     # assert the faucet is a non-fungible faucet
-    dup.1 exec.account_id::is_non_fungible_faucet
+    dup.2 exec.account_id::is_non_fungible_faucet
     assert.err=ERR_NON_FUNGIBLE_ASSET_PROVIDED_FAUCET_ID_IS_INVALID
-    # => [faucet_id_suffix, faucet_id_prefix, DATA_HASH]
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
 
     # SAFETY: faucet ID was validated
     exec.::miden::protocol::util::asset::create_non_fungible_asset_unchecked

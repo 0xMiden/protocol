@@ -236,7 +236,7 @@ where
                 .account_delta_tracker()
                 .vault_delta()
                 .fungible()
-                .amount(&initial_fee_asset.faucet_id())
+                .amount(&initial_fee_asset.vault_key())
                 .unwrap_or(0);
 
             // SAFETY: Initial native asset faucet ID should be a fungible faucet and amount should
