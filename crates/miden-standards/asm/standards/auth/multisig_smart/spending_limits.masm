@@ -1,10 +1,12 @@
 use miden::protocol::active_account
+use miden::protocol::asset
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::account_id
 use miden::protocol::tx
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart::common
+use miden::standards::auth::multisig_smart::oracle
 
 # CONSTANTS
 # =================================================================================================
@@ -343,14 +345,31 @@ end
 
 #! Computes the total spending amount for all output notes (USD terms).
 #!
+#! Behavior:
+#! - iterates over output notes: tx::get_num_output_notes
+#! - for each note: output_note::get_assets(dest_ptr, note_index) writes assets into memory
+#! - iterates loaded assets as [ASSET_KEY, ASSET_VALUE]
+#! - if the asset is from a fungible faucet, extracts [faucet_id_suffix, faucet_id_prefix, amount]
+#! - calls a get_price-style reader and adds tracked values
+#! 
 #! Inputs:  []
-#! Outputs: [amount_in_usdc]
+#! Outputs: [amount_in_usd]
+#! 
+#! Temporary pricing path:
+#! - uses oracle::get_price_test for a tracked 1:1 price mapping
+#! - keeps the same stack contract as oracle::get_price so we can swap it in later
+#! 
+#! Assumes get_price-style interface:
+#!   Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#!   Outputs: [is_tracked, amount_in_usd]
 #!
 #! Locals:
 #!
 #! 0: running_sum
 #! 1: dest_ptr
-@locals(2)
+#! 4..7: current ASSET_VALUE
+#! 8..11: current ASSET_KEY
+@locals(12)
 proc compute_spending_amount
     push.0
     loc_store.0
@@ -421,14 +440,44 @@ proc compute_spending_amount
             # => [is_fungible, ASSET_VALUE, ASSET_KEY, remaining, note_index_keep]
 
             if.true
-                dup
-                loc_load.0
-                add
-                loc_store.0
-            end
+                # Store the loaded asset words in locals so we can prepare the get_price-style
+                # inputs without disturbing the outer loop state.
+                loc_storew_le.4
+                dropw
+                # => [ASSET_KEY, remaining, note_index_keep]
 
-            dropw
-            dropw
+                loc_storew_le.8
+                dropw
+                # => [remaining, note_index_keep]
+
+                padw
+                loc_loadw_le.8
+                exec.asset::key_into_faucet_id
+                # => [faucet_id_suffix, faucet_id_prefix, remaining, note_index_keep]
+
+                padw
+                loc_loadw_le.4
+                exec.asset::fungible_value_into_amount
+                movdn.2
+                # => [faucet_id_suffix, faucet_id_prefix, amount, remaining, note_index_keep]
+
+                exec.oracle::get_price_test
+                # => [is_tracked, amount_in_usd, remaining, note_index_keep]
+
+                if.true
+                    loc_load.0
+                    add
+                    loc_store.0
+                    # => [remaining, note_index_keep]
+                else
+                    drop
+                    # => [remaining, note_index_keep]
+                end
+            else
+                dropw
+                dropw
+                # => [remaining, note_index_keep]
+            end
             # => [remaining, note_index_keep]
 
             dup neq.0
@@ -444,7 +493,7 @@ proc compute_spending_amount
     # => []
 
     loc_load.0
-    # => [amount_in_usdc]
+    # => [amount_in_usd]
 end
 
 #! Maps a computed tier index (0..3) to the required approvals threshold.

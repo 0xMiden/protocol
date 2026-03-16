@@ -115,6 +115,22 @@ end
 
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [is_tracked, amount_in_usd]
+#! Temporary oracle stub (for development).
+#! 
+#! Behaves as if every fungible faucet is tracked and priced 1:1:
+#! - is_tracked = 1
+#! - amount_in_usd = amount
+#! Drops faucet_id and returns the amount unchanged.
+#! 
+#! This mirrors the future get_price I/O so compute_spending_amount can switch from
+#! get_price_test to get_price without changing its stack plumbing.
+pub proc get_price_test
+    drop drop
+    push.1
+end
+
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [is_tracked, amount_in_usd]
 pub proc get_price
     exec.get_oracle_price_proc_root
     # => [get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
