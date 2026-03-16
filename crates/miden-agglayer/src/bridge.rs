@@ -72,6 +72,10 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger_manager")
         .expect("GER manager storage slot name should be valid")
 });
+static CLAIM_NULLIFIERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::claim_nullifiers")
+        .expect("claim nullifiers storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
@@ -94,6 +98,8 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (PROOF_DATA_KEY →
+///   \[1, 0, 0, 0\]).
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -163,6 +169,11 @@ impl AggLayerBridge {
     /// Storage slot name for the GER manager account ID.
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
+    }
+
+    /// Storage slot name for the CLAIM note nullifiers map.
+    pub fn claim_nullifiers_slot_name() -> &'static StorageSlotName {
+        &CLAIM_NULLIFIERS_SLOT_NAME
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
@@ -329,6 +340,7 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
+            &*CLAIM_NULLIFIERS_SLOT_NAME,
         ]
     }
 }
@@ -358,6 +370,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
         ];
         bridge_component(bridge_storage_slots)
     }

@@ -21,6 +21,8 @@ pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainne
 /// Error Message: "mainnet flag must be 0 for a rollup deposit"
 pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet flag must be 0 for a rollup deposit");
 
+/// Error Message: "claim note has already been spent"
+pub const ERR_CLAIM_ALREADY_SPENT: MasmError = MasmError::from_static_str("claim note has already been spent");
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 

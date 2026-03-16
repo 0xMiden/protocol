@@ -11,6 +11,7 @@ use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
@@ -33,9 +34,20 @@ const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
 
 # CONSTANTS
 # =================================================================================================
+
+# Storage Slots
+# -------------------------------------------------------------------------------------------------
+
+# The slot in this component's storage layout where claim nullifiers are stored.
+# Map entries: PROOF_DATA_KEY => [1, 0, 0, 0]
+const CLAIM_NULLIFIERS_SLOT = word("miden::agglayer::bridge::claim_nullifiers")
+
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -367,6 +379,13 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
+    # Assert the claim has not been spent and mark it as spent
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(16)]
+
+    exec.assert_claim_not_spent
+    # => [pad(16)]
+
     # Look up the faucet account ID from the origin token address
     exec.get_origin_token_address
     # => [origin_token_addr(5), pad(16)]
@@ -391,6 +410,39 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Checks that the CLAIM note identified by PROOF_DATA_KEY has not already been spent,
+#! and marks it as spent by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#!
+#! This is analogous to the multisig's `assert_new_tx` procedure which tracks executed
+#! transactions. Here we track consumed CLAIM notes via their PROOF_DATA_KEY.
+#!
+#! Inputs:  [PROOF_DATA_KEY]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (PROOF_DATA_KEY already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc assert_claim_not_spent(proof_data_key: BeWord)
+    push.IS_CLAIMED_FLAG
+    # => [IS_CLAIMED_FLAG, PROOF_DATA_KEY]
+
+    swapw
+    # => [PROOF_DATA_KEY, IS_CLAIMED_FLAG]
+
+    push.CLAIM_NULLIFIERS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, PROOF_DATA_KEY, IS_CLAIMED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    drop drop drop
+    # => [old_is_claimed]
+
+    assertz.err=ERR_CLAIM_ALREADY_SPENT
+    # => []
+end
 
 #! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
 #! scaled down by the faucet's scale factor.
