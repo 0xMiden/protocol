@@ -36,7 +36,14 @@ static BURN_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // BURN NOTE
 // ================================================================================================
 
-/// TODO: add docs
+/// Represents a BURN note.
+///
+/// A `BurnNote` is a standard note type used to burn fungible assets via a faucet.
+/// When the note is consumed by a compatible faucet account, the assets contained
+/// in the note are removed from circulation.
+///
+/// The note uses the standard BURN note script defined in the Miden standards
+/// library and can be processed by both basic and network fungible faucets.
 pub struct BurnNote;
 
 impl BurnNote {
