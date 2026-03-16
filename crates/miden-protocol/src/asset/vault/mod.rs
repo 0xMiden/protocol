@@ -179,9 +179,12 @@ impl AssetVault {
     /// - If the delta contains a non-fungible asset addition that is already stored in the vault.
     /// - The maximum number of leaves per asset is exceeded.
     pub fn apply_delta(&mut self, delta: &AccountVaultDelta) -> Result<(), AssetVaultError> {
-        for (&faucet_id, &delta) in delta.fungible().iter() {
-            let asset = FungibleAsset::new(faucet_id, delta.unsigned_abs())
-                .expect("Not a fungible faucet ID or delta is too large");
+        for (vault_key, &delta) in delta.fungible().iter() {
+            // SAFETY: fungible asset delta should only contain fungible faucet IDs and delta amount
+            // should be in bounds
+            let asset = FungibleAsset::new(vault_key.faucet_id(), delta.unsigned_abs())
+                .expect("fungible asset delta should be valid")
+                .with_callbacks(vault_key.callback_flag());
             match delta >= 0 {
                 true => self.add_fungible_asset(asset),
                 false => self.remove_fungible_asset(asset),
