@@ -112,7 +112,7 @@ impl NonFungibleAsset {
         let asset_id_prefix = self.value[1];
         let asset_id = AssetId::new(asset_id_suffix, asset_id_prefix);
 
-        AssetVaultKey::new(asset_id, self.faucet_id)
+        AssetVaultKey::new_native(asset_id, self.faucet_id)
             .expect("constructors should ensure account ID is of type non-fungible faucet")
     }
 
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn fungible_asset_from_key_value_fails_on_invalid_asset_id() -> anyhow::Result<()> {
-        let invalid_key = AssetVaultKey::new(
+        let invalid_key = AssetVaultKey::new_native(
             AssetId::new(Felt::from(1u32), Felt::from(2u32)),
             ACCOUNT_ID_PRIVATE_NON_FUNGIBLE_FAUCET.try_into()?,
         )?;

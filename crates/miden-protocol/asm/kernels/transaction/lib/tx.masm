@@ -205,9 +205,7 @@ end
 
 #! Ends a foreign account context.
 #!
-#! This pops the top of the account stack, making the previous account the active account, and 
-#! resets the foreign procedure info (foreign account ID and foreign procedure root) in the kernel
-#! memory.
+#! This pops the top of the account stack, making the previous account the active account.
 #!
 #! Inputs:  []
 #! Outputs: []
@@ -219,7 +217,14 @@ end
 pub proc end_foreign_context
     exec.memory::pop_ptr_from_account_stack
     # => []
+end
 
+#! Resets the foreign procedure info (foreign account ID and foreign procedure root) in the kernel
+#! memory to zeros.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc clear_fpi_memory
     # set the upcoming foreign account ID to zero
     push.0 push.0 exec.memory::set_fpi_account_id
     # => []
