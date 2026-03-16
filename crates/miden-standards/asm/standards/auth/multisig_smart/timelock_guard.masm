@@ -6,7 +6,7 @@ use miden::standards::auth::multisig_smart::common
 # =================================================================================================
 
 # [min_delay, propose_expiration_delta, 0, 0]
-const TIMELOCK_POLICY_SLOT = word("miden::standards::auth::multisig_smart::timelock_policy")
+const TIMELOCK_CONTROLLER_SLOT = word("miden::standards::auth::multisig_smart::timelock_controller")
 
 # Map entries: [tx_summary_hash] -> [unlock_timestamp, proposal_timestamp, min_cancel_sigs, 1]
 const TX_PROPOSALS_SLOT = word("miden::standards::auth::multisig_smart::tx_proposals")
@@ -31,17 +31,17 @@ const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
 
 #! High-impact action.
 #!
-#! Sets the timelock policy used by proposal lifecycle checks.
+#! Sets the timelock controller used by proposal lifecycle checks.
 #!
 #! Inputs:  [min_delay, propose_expiration_delta]
 #! Outputs: []
 #!
 #! Side effects:
-#!   - Writes TIMELOCK_POLICY_SLOT.
+#!   - Writes TIMELOCK_CONTROLLER_SLOT.
 #! 0: min_delay
 #! 1: propose_expiration_delta
 @locals(2)
-pub proc update_timelock_policy
+pub proc update_timelock_controller
     u32assert.err=ERR_U32
     dup eq.0 assertz.err=ERR_MIN_DELAY_ZERO
     loc_store.0
@@ -57,7 +57,7 @@ pub proc update_timelock_policy
     push.0 push.0
     # => [0, 0, propose_expiration_delta, min_delay]
 
-    push.TIMELOCK_POLICY_SLOT[0..2]
+    push.TIMELOCK_CONTROLLER_SLOT[0..2]
     # => [slot_prefix, slot_suffix, 0, 0, propose_expiration_delta, min_delay]
 
     exec.native_account::set_item
@@ -67,15 +67,15 @@ pub proc update_timelock_policy
     # => []
 end
 
-# TIMELOCK POLICY HELPERS
+# TIMELOCK CONTROLLER HELPERS
 # =================================================================================================
 
-#! Loads the timelock policy configuration.
+#! Loads the timelock controller configuration.
 #!
 #! Inputs:  []
 #! Outputs: [min_delay, propose_expiration_delta, 0, 0]
-proc get_timelock_policy
-    push.TIMELOCK_POLICY_SLOT[0..2]
+proc get_timelock_controller
+    push.TIMELOCK_CONTROLLER_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
 
     exec.active_account::get_initial_item
@@ -85,7 +85,7 @@ end
 #! Inputs:  []
 #! Outputs: [min_delay]
 proc get_min_delay
-    exec.get_timelock_policy
+    exec.get_timelock_controller
     # => [min_delay, propose_expiration_delta, 0, 0]
 
     movdn.3
@@ -102,7 +102,7 @@ end
 #! Outputs: [propose_expiration_delta]
 @locals(2)
 proc get_propose_expiration_delta
-    exec.get_timelock_policy
+    exec.get_timelock_controller
     # => [min_delay, propose_expiration_delta, 0, 0]
 
     loc_store.0

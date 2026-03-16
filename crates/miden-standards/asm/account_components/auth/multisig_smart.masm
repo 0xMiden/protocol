@@ -19,7 +19,7 @@ pub use oracle::update_oracle_config_and_proc_root
 pub use spending_limits::update_spending_window_policy
 pub use spending_limits::update_spending_limits
 pub use spending_limits::update_threshold_config
-pub use timelock_guard::update_timelock_policy
+pub use timelock_guard::update_timelock_controller
 pub use timelock_guard::propose_transaction
 pub use timelock_guard::cancel_transaction_proposal
 pub use timelock_guard::cancel_and_propose_new_transaction

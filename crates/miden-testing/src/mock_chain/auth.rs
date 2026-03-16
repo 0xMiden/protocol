@@ -143,7 +143,7 @@ impl Auth {
                     .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
                     .expect("invalid multisig smart config")
                     .with_spending_window(*spending_window)
-                    .with_timelock_policy(*min_delay, *propose_expiration_delta)
+                    .with_timelock_controller(*min_delay, *propose_expiration_delta)
                     .with_amount_limits(*amount_limits)
                     .with_tier_thresholds(*tier_thresholds)
                     .with_oracle_config(*oracle_id)
