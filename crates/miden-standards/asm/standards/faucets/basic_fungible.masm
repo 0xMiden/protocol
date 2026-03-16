@@ -30,6 +30,7 @@ use miden::standards::mint_policies::policy_manager
 #!
 #! Invocation: call
 pub proc mint_and_send
+    # TODO: Remove once AccountComponentInterface is refactored
     # Keep this procedure digest distinct from network_fungible::mint_and_send.
     push.0 drop
     

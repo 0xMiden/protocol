@@ -390,14 +390,14 @@ mod tests {
         // The config slot of the auth component stores:
         // [num_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0].
         //
-        // With 1 trigger procedure (mint), allow_unauthorized_output_notes=false, and
+        // With 1 trigger procedure (mint_and_send), allow_unauthorized_output_notes=false, and
         // allow_unauthorized_input_notes=true, this should be [1, 0, 1, 0].
         assert_eq!(
             faucet_account.storage().get_item(AuthSingleSigAcl::config_slot()).unwrap(),
             [Felt::ONE, Felt::ZERO, Felt::ONE, Felt::ZERO].into()
         );
 
-        // The procedure root map should contain the mint procedure root.
+        // The procedure root map should contain the mint_and_send procedure root.
         let mint_root = BasicFungibleFaucet::mint_and_send_digest();
         assert_eq!(
             faucet_account

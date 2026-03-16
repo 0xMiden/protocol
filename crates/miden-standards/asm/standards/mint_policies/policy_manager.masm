@@ -18,7 +18,7 @@ const ACTIVE_POLICY_PROC_ROOT_SLOT=word("miden::standards::mint_policy_manager::
 
 # Allowlist map slot for policy roots.
 # Map entries: [PROC_ROOT] -> [1, 0, 0, 0]
-# This slot ensure `dynexec` runs only allowed mint-policy roots, not arbitrary procedures.
+# This slot ensures the policy manager runs only allowed mint-policy roots, not arbitrary procedures.
 # A root that is not in this allowlist is always rejected, even if it exists in account code.
 # This prevents arbitrary procedure root execution through policy selection.
 # Component constructors initialize this map with known allowed mint-policy roots by default.
