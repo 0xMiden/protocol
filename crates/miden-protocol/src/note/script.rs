@@ -145,23 +145,27 @@ impl NoteScript {
     /// # Arguments
     ///
     /// * `package` - The package containing the
-    ///   [`Library`](miden_mast_package::MastArtifact::Executable).
+    ///   [`Executable`](miden_mast_package::MastArtifact::Executable) or
+    ///   [`Library`](miden_mast_package::MastArtifact::Library).
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The package does not contain an executable artifact
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
-        let program = match &package.mast {
-            MastArtifact::Executable(executable) => executable.as_ref().clone(),
-            MastArtifact::Library(_) => {
-                return Err(NoteError::other(
-                    "expected Package to contain an executable, but got a library",
-                ));
-            },
-        };
+        match &package.mast {
+            MastArtifact::Executable(executable) => {
+                // `NoteScript` s are compiled as executables by the miden
+                // compiler's cargo extension. Source, the
+                // "midenc_flags_from_target" function:
+                // https://github.com/0xMiden/compiler/blob/d3cd8cd4a2c1dfeae8a61643aa42734a35e3e840/tools/cargo-miden/src/commands/build.rs#L334
+                // However
+                let program = executable.as_ref().clone();
 
-        Ok(NoteScript::from_parts(program.mast_forest().clone(), program.entrypoint()))
+                Ok(NoteScript::new(program))
+            },
+            MastArtifact::Library(library) => Ok(NoteScript::from_library(library))?,
+        }
     }
 
     // PUBLIC ACCESSORS
