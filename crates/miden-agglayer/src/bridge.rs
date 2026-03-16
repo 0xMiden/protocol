@@ -183,7 +183,7 @@ impl AggLayerBridge {
         &CGI_CHAIN_HASH_LO_SLOT_NAME
     }
 
-    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    /// Storage slot name for the upper 128 bits of the CGI chain hash.
     pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
         &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
@@ -387,6 +387,8 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
+            &*CGI_CHAIN_HASH_LO_SLOT_NAME,
+            &*CGI_CHAIN_HASH_HI_SLOT_NAME,
         ]
     }
 }
