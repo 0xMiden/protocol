@@ -31,7 +31,7 @@ use miden_protocol::errors::MasmError;
 use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::procedure_digest;
 use miden_standards::testing::account_component::MockFaucetComponent;
@@ -683,7 +683,9 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let basic_faucet = BasicFungibleFaucet::new("SYM".try_into()?, 8, Felt::new(1_000_000))?;
+    let faucet_metadata =
+        FungibleTokenMetadataBuilder::new(TokenName::default(), "SYM".try_into()?, 8, Felt::new(1_000_000))
+            .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
     let callback_metadata =
@@ -695,7 +697,8 @@ fn add_faucet_with_callbacks(
     let account_builder = AccountBuilder::new([42; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
         .with_component(callback_component);
 
     builder.add_account_from_builder(

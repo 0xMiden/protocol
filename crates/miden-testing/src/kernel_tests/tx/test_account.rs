@@ -54,7 +54,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -1704,12 +1704,15 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let basic_faucet = BasicFungibleFaucet::new("CBK".try_into()?, 8, Felt::new(1_000_000))?;
+    let faucet_metadata =
+        FungibleTokenMetadataBuilder::new(TokenName::default(), "CBK".try_into()?, 8, Felt::new(1_000_000))
+            .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)
         .account_type(AccountType::FungibleFaucet)
-        .with_component(basic_faucet)
+        .with_component(faucet_metadata)
+        .with_component(BasicFungibleFaucet)
         .with_component(MockAccountComponent::with_slots(callback_slots))
         .with_auth_component(Auth::IncrNonce)
         .build_existing()?;
