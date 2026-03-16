@@ -310,10 +310,6 @@ fn agglayer_faucet_conversion_slots(
 // AGGLAYER FAUCET STRUCT
 // ================================================================================================
 
-static AGGLAYER_FAUCET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet")
-        .expect("agglayer faucet storage slot name should be valid")
-});
 static CONVERSION_INFO_1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
         .expect("conversion info 1 storage slot name should be valid")
@@ -340,7 +336,6 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
-/// - [`Self::bridge_account_id_slot`]: Stores the AggLayer bridge account ID.
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
@@ -396,11 +391,6 @@ impl AggLayerFaucet {
         TokenMetadata::metadata_slot()
     }
 
-    /// Storage slot name for the AggLayer bridge account ID.
-    pub fn bridge_account_id_slot() -> &'static StorageSlotName {
-        &AGGLAYER_FAUCET_SLOT_NAME
-    }
-
     /// Storage slot name for the first 4 felts of the origin token address.
     pub fn conversion_info_1_slot() -> &'static StorageSlotName {
         &CONVERSION_INFO_1_SLOT_NAME
@@ -420,15 +410,6 @@ impl AggLayerFaucet {
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
         let metadata_slot = StorageSlot::from(faucet.metadata);
-
-        let bridge_account_id_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-        ]);
-        let bridge_slot =
-            StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
 
         let (conversion_slot1_word, conversion_slot2_word) = agglayer_faucet_conversion_slots(
             &faucet.origin_token_address,
@@ -450,7 +431,7 @@ impl From<AggLayerFaucet> for AccountComponent {
         let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
 
         let agglayer_storage_slots =
-            vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2, owner_slot];
+            vec![metadata_slot, conversion_slot1, conversion_slot2, owner_slot];
         agglayer_faucet_component(agglayer_storage_slots)
     }
 }
@@ -472,9 +453,9 @@ pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
 ///
 /// This function creates all the necessary storage slots for an agglayer faucet:
 /// - Network faucet metadata slot (token_supply, max_supply, decimals, token_symbol)
-/// - Bridge account reference slot for FPI validation
 /// - Conversion info slot 1: first 4 felts of origin token address
 /// - Conversion info slot 2: 5th address felt + origin network + scale
+/// - Owner config slot: bridge account ID for MINT note authorization
 ///
 /// # Parameters
 /// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")
