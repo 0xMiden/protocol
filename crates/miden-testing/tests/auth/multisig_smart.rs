@@ -275,7 +275,8 @@ fn create_multisig_account_with_schemes(
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
     let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
-    let tier_thresholds = [1u32, 2u32, 3u32, 4u32];
+    let num_approvers = approvers.len() as u32;
+    let tier_thresholds = [1u32, 2u32.min(num_approvers), 3u32.min(num_approvers), num_approvers];
     let oracle_id = test_oracle_id();
     let get_price_proc_root = test_get_price_proc_root();
     let approvers: Vec<_> =
@@ -3173,6 +3174,50 @@ async fn test_multisig_smart_replay_protection_same_tx_different_signer_subset(
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
+async fn test_multisig_smart_equal_tier_config_is_accepted_by_update_threshold_config(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let mut multisig_account = create_multisig_account(2, &public_keys, auth_scheme, 100, vec![])?;
+    let mock_chain =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+
+    let update_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.2
+            push.2
+            push.2
+            push.1
+            call.::miden::standards::components::auth::multisig_smart::update_threshold_config
+            dropw dropw dropw dropw dropw
+        end
+        ",
+    )?;
+
+    let update_tx = execute_script_with_signers(
+        &mock_chain,
+        multisig_account.id(),
+        update_script,
+        Word::from([Felt::new(1000); 4]),
+        &[0, 1],
+        &public_keys,
+        &authenticators,
+        None,
+        None,
+    )
+    .await?
+    .expect("equal tier config update should succeed");
+    multisig_account.apply_delta(update_tx.account_delta())?;
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
 async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_config(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
@@ -3227,7 +3272,7 @@ async fn test_multisig_smart_invalid_tier_config_rejected_by_update_threshold_co
     let tier3_too_high_script = compile_multisig_smart_tx_script(
         "
         begin
-            push.4
+            push.5
             push.3
             push.2
             push.1

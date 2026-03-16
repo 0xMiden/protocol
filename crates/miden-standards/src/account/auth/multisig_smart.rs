@@ -257,6 +257,25 @@ impl AuthMultisigSmartConfig {
     }
 }
 
+fn validate_tier_thresholds(
+    num_approvers: u32,
+    tier_thresholds: &[u32; 4],
+) -> Result<(), AccountError> {
+    let [tier_0, tier_1, tier_2, tier_3] = *tier_thresholds;
+
+    if tier_0 == 0 {
+        return Err(AccountError::other("tier_0 must be > 0"));
+    }
+    if tier_0 > tier_1 || tier_1 > tier_2 || tier_2 > tier_3 {
+        return Err(AccountError::other("tier config is invalid"));
+    }
+    if tier_3 > num_approvers {
+        return Err(AccountError::other("tier_3 must be <= num_approvers"));
+    }
+
+    Ok(())
+}
+
 /// An [`AccountComponent`] implementing a multisig auth component with smart-policy slots.
 #[derive(Debug)]
 pub struct AuthMultisigSmart {
@@ -281,6 +300,7 @@ impl AuthMultisigSmart {
         if config.propose_expiration_delta() == 0 {
             return Err(AccountError::other("propose expiration delta must be non-zero"));
         }
+        validate_tier_thresholds(config.approvers().len() as u32, config.tier_thresholds())?;
         Ok(Self { config })
     }
 
@@ -767,6 +787,46 @@ mod tests {
             .with_amount_limits([u32::MAX as u64 + 1, 0, 0, 0]);
         let result = AuthMultisigSmart::new(config);
         assert!(result.unwrap_err().to_string().contains("amount limits must fit into u32"));
+    }
+
+    #[test]
+    fn test_multisig_smart_component_rejects_invalid_tier_thresholds() {
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let approvers = vec![
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let result = AuthMultisigSmart::new(
+            AuthMultisigSmartConfig::new(approvers.clone(), 2)
+                .expect("config should be valid")
+                .with_spending_window(100)
+                .with_timelock_controller(30, 3)
+                .with_amount_limits([500, 1000, 2000, 1500])
+                .with_tier_thresholds([0, 2, 2, 2]),
+        );
+        assert!(result.unwrap_err().to_string().contains("tier_0 must be > 0"));
+
+        let result = AuthMultisigSmart::new(
+            AuthMultisigSmartConfig::new(approvers.clone(), 2)
+                .expect("config should be valid")
+                .with_spending_window(100)
+                .with_timelock_controller(30, 3)
+                .with_amount_limits([500, 1000, 2000, 1500])
+                .with_tier_thresholds([1, 2, 1, 2]),
+        );
+        assert!(result.unwrap_err().to_string().contains("tier config is invalid"));
+
+        let result = AuthMultisigSmart::new(
+            AuthMultisigSmartConfig::new(approvers, 2)
+                .expect("config should be valid")
+                .with_spending_window(100)
+                .with_timelock_controller(30, 3)
+                .with_amount_limits([500, 1000, 2000, 1500])
+                .with_tier_thresholds([1, 2, 2, 3]),
+        );
+        assert!(result.unwrap_err().to_string().contains("tier_3 must be <= num_approvers"));
     }
 
     #[test]

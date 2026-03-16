@@ -36,7 +36,7 @@ const ERR_LAST_WINDOW_START_GT_CURRENT =
     "window_start_timestamp is greater than current_timestamp"
 const ERR_INVALID_TIER_INDEX = "invalid tier index (must be 0..3)"
 const ERR_TIER0_MUST_BE_POSITIVE = "tier_0 must be > 0"
-const ERR_TIER3_TOO_HIGH = "tier_3 must be < num_approvers"
+const ERR_TIER3_TOO_HIGH = "tier_3 must be <= num_approvers"
 const ERR_INVALID_TIER_CONFIG = "tier config is invalid"
 const ERR_INVALID_AMOUNT_LIMITS = "invalid amount limits (must satisfy limit0 <= limit1 <= limit2)"
 
@@ -110,12 +110,13 @@ pub proc update_threshold_config
     # => []
 
     # ------ Monotonic check tier_0 <= tier_1 <= tier_2 <= tier_3 ------
-    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
-    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
-    loc_load.2 loc_load.3 u32assert2.err=ERR_U32 u32gte assertz.err=ERR_INVALID_TIER_CONFIG
+    # the stack is [tier_1, tier_0] and `u32gt assertz` enforces `tier_0 <= tier_1`.
+    loc_load.0 loc_load.1 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    loc_load.1 loc_load.2 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
+    loc_load.2 loc_load.3 u32assert2.err=ERR_U32 u32gt assertz.err=ERR_INVALID_TIER_CONFIG
     # => []
 
-    # ------ Check the threshold < num_approvers
+    # ------ Check the threshold <= num_approvers
     exec.multisig::get_threshold_and_num_approvers
     # => [default_threshold, num_approvers]
 
@@ -125,7 +126,7 @@ pub proc update_threshold_config
     loc_load.3
     # => [tier_3, num_approvers]
 
-    u32lt
+    u32gte
     assert.err=ERR_TIER3_TOO_HIGH
     # => []
 
