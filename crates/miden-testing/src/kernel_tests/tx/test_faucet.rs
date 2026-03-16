@@ -2,7 +2,13 @@ use alloc::sync::Arc;
 
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
-use miden_protocol::asset::{FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{
+    AssetCallbackFlag,
+    AssetId,
+    AssetVaultKey,
+    FungibleAsset,
+    NonFungibleAsset,
+};
 use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_AMOUNT_EXCEEDS_MAX_AMOUNT,
     ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
@@ -290,6 +296,42 @@ async fn mint_non_fungible_asset_fails_on_non_faucet_account() -> anyhow::Result
         .execute()
         .await;
     assert_transaction_executor_error!(result, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+
+    Ok(())
+}
+
+/// Tests minting a fungible asset with callbacks enabled.
+#[tokio::test]
+async fn test_mint_fungible_asset_with_callbacks_enabled() -> anyhow::Result<()> {
+    let faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let asset = FungibleAsset::new(faucet_id, FUNGIBLE_ASSET_AMOUNT)?;
+
+    // Build a vault key with callbacks enabled.
+    let vault_key = AssetVaultKey::new(AssetId::default(), faucet_id, AssetCallbackFlag::Enabled)?;
+
+    let code = format!(
+        r#"
+        use mock::faucet->mock_faucet
+        use $kernel::prologue
+
+        begin
+            exec.prologue::prepare_transaction
+
+            push.{FUNGIBLE_ASSET_VALUE}
+            push.{FUNGIBLE_ASSET_KEY}
+            call.mock_faucet::mint
+
+            dropw dropw
+        end
+        "#,
+        FUNGIBLE_ASSET_KEY = vault_key.to_word(),
+        FUNGIBLE_ASSET_VALUE = asset.to_value_word(),
+    );
+
+    TransactionContextBuilder::with_fungible_faucet(faucet_id.into())
+        .build()?
+        .execute_code(&code)
+        .await?;
 
     Ok(())
 }

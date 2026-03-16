@@ -31,7 +31,7 @@ use miden_protocol::account::{
 use miden_protocol::assembly::diagnostics::NamedSource;
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
 use miden_protocol::assembly::{DefaultSourceManager, Library};
-use miden_protocol::asset::{Asset, FungibleAsset};
+use miden_protocol::asset::{Asset, AssetCallbacks, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
     ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO,
     ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO,
@@ -54,6 +54,7 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
+use miden_standards::account::faucets::BasicFungibleFaucet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;
@@ -1673,6 +1674,65 @@ async fn test_has_procedure() -> anyhow::Result<()> {
         .execute()
         .await
         .map_err(|err| anyhow::anyhow!("Failed to execute transaction: {err}"))?;
+
+    Ok(())
+}
+
+/// Tests that the `has_callbacks` faucet procedure correctly reports whether a faucet defines
+/// callbacks.
+///
+/// - `with_callbacks`: callback slot has a non-empty value -> returns 1
+/// - `with_empty_callback`: callback slot exists but value is the empty word -> returns 0
+/// - `without_callbacks`: no callback slot at all -> returns 0
+#[rstest::rstest]
+#[case::with_callbacks(
+    vec![StorageSlot::with_value(
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+        Word::from([1, 2, 3, 4u32]),
+    )],
+    true,
+)]
+#[case::with_empty_callback(
+    vec![StorageSlot::with_empty_value(
+        AssetCallbacks::on_before_asset_added_to_account_slot().clone(),
+    )],
+    false,
+)]
+#[case::without_callbacks(vec![], false)]
+#[tokio::test]
+async fn test_faucet_has_callbacks(
+    #[case] callback_slots: Vec<StorageSlot>,
+    #[case] expected_has_callbacks: bool,
+) -> anyhow::Result<()> {
+    let basic_faucet = BasicFungibleFaucet::new("CBK".try_into()?, 8, Felt::new(1_000_000))?;
+
+    let account = AccountBuilder::new([1u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::FungibleFaucet)
+        .with_component(basic_faucet)
+        .with_component(MockAccountComponent::with_slots(callback_slots))
+        .with_auth_component(Auth::IncrNonce)
+        .build_existing()?;
+
+    let tx_script_code = format!(
+        r#"
+        use miden::protocol::faucet
+
+        begin
+            exec.faucet::has_callbacks
+            push.{has_callbacks}
+            assert_eq.err="has_callbacks returned unexpected value"
+        end
+        "#,
+        has_callbacks = u8::from(expected_has_callbacks)
+    );
+    let tx_script = CodeBuilder::default().compile_tx_script(&tx_script_code)?;
+
+    TransactionContextBuilder::new(account)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
 
     Ok(())
 }

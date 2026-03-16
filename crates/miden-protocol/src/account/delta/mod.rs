@@ -201,7 +201,9 @@ impl AccountDelta {
     /// - Fungible Asset Delta
     ///   - For each **updated** fungible asset, sorted by its vault key, whose amount delta is
     ///     **non-zero**:
-    ///     - Append `[domain = 1, was_added, faucet_id_suffix, faucet_id_prefix]`.
+    ///     - Append `[domain = 1, was_added, faucet_id_suffix_and_metadata, faucet_id_prefix]`
+    ///       where `faucet_id_suffix_and_metadata` is the faucet ID suffix with asset metadata
+    ///       (including the callbacks flag) encoded in the lower 8 bits.
     ///     - Append `[amount_delta, 0, 0, 0]` where `amount_delta` is the delta by which the
     ///       fungible asset's amount has changed and `was_added` is a boolean flag indicating
     ///       whether the amount was added (1) or subtracted (0).
