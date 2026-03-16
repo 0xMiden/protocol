@@ -223,6 +223,66 @@ impl From<BlockList> for AccountComponent {
 // TESTS
 // ================================================================================================
 
+/// Tests that consuming a callbacks-enabled asset succeeds even when the issuing faucet does not
+/// have the callback storage slot.
+#[rstest::rstest]
+#[case::fungible(AccountType::FungibleFaucet)]
+#[case::non_fungible(AccountType::NonFungibleFaucet)]
+#[tokio::test]
+async fn test_faucet_without_callback_slot_skips_callback(
+    #[case] account_type: AccountType,
+) -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
+
+    // Create a faucet WITHOUT any AssetCallbacks component.
+    let account_builder = AccountBuilder::new([45u8; 32])
+        .storage_mode(AccountStorageMode::Public)
+        .account_type(account_type)
+        .with_component(MockFaucetComponent);
+    let faucet = builder.add_account_from_builder(
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
+        account_builder,
+        AccountState::Exists,
+    )?;
+
+    // Create a P2ID note with a callbacks-enabled asset from this faucet.
+    // The faucet does not have the callback slot, but the asset has callbacks enabled.
+    let asset = match account_type {
+        AccountType::FungibleFaucet => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
+        AccountType::NonFungibleFaucet => Asset::from(NonFungibleAsset::new(
+            &NonFungibleAssetDetails::new(faucet.id(), vec![1])?,
+        )?),
+        _ => unreachable!("test only uses faucet account types"),
+    }
+    .with_callbacks(AssetCallbackFlag::Enabled);
+
+    let note =
+        builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
+
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+
+    // Consuming the note should succeed: the callback is gracefully skipped because the
+    // faucet does not define the callback storage slot.
+    mock_chain
+        .build_tx_context(target_account.id(), &[note.id()], &[])?
+        .foreign_accounts(vec![faucet_inputs])
+        .build()?
+        .execute()
+        .await?;
+
+    Ok(())
+}
+
+// ON_ASSET_ADDED_TO_ACCOUNT TESTS
+// ================================================================================================
+
 /// Tests that the `on_before_asset_added_to_account` callback receives the correct inputs.
 #[tokio::test]
 async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs()
@@ -299,7 +359,7 @@ async fn test_on_before_asset_added_to_account_callback_receives_correct_inputs(
     Ok(())
 }
 
-/// Tests that a blocked account cannot receive a fungible asset with callbacks enabled.
+/// Tests that a blocked account cannot receive an asset with callbacks enabled.
 #[rstest::rstest]
 #[case::fungible(
     AccountType::FungibleFaucet,
@@ -348,22 +408,34 @@ async fn test_blocked_account_cannot_receive_asset(
     Ok(())
 }
 
+// ON_ASSET_ADDED_TO_NOTE TESTS
+// ================================================================================================
+
 /// Tests that a blocked account cannot add a callbacks-enabled asset to an output note.
+#[rstest::rstest]
+#[case::fungible(
+    AccountType::FungibleFaucet,
+    |faucet_id| {
+        Ok(FungibleAsset::new(faucet_id, 100)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+    }
+)]
+#[case::non_fungible(
+    AccountType::NonFungibleFaucet,
+    |faucet_id| {
+        let details = NonFungibleAssetDetails::new(faucet_id, vec![1, 2, 3, 4])?;
+        Ok(NonFungibleAsset::new(&details)?.with_callbacks(AssetCallbackFlag::Enabled).into())
+    }
+)]
 #[tokio::test]
-async fn test_blocked_account_cannot_add_asset_to_note() -> anyhow::Result<()> {
+async fn test_blocked_account_cannot_add_asset_to_note(
+    #[case] account_type: AccountType,
+    #[case] create_asset: impl FnOnce(AccountId) -> anyhow::Result<Asset>,
+) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-    let faucet = add_faucet_with_block_list(
-        &mut builder,
-        AccountType::FungibleFaucet,
-        [target_account.id()],
-    )?;
-
-    // Build the callbacks-enabled fungible asset.
-    let fungible_asset =
-        FungibleAsset::new(faucet.id(), 100)?.with_callbacks(AssetCallbackFlag::Enabled);
-    let asset = Asset::Fungible(fungible_asset);
+    let faucet = add_faucet_with_block_list(&mut builder, account_type, [target_account.id()])?;
+    let asset = create_asset(faucet.id())?;
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
@@ -406,63 +478,6 @@ async fn test_blocked_account_cannot_add_asset_to_note() -> anyhow::Result<()> {
         .await;
 
     assert_transaction_executor_error!(result, ERR_ACCOUNT_BLOCKED);
-
-    Ok(())
-}
-
-/// Tests that consuming a callbacks-enabled asset succeeds even when the issuing faucet does not
-/// have the callback storage slot.
-#[rstest::rstest]
-#[case::fungible(AccountType::FungibleFaucet)]
-#[case::non_fungible(AccountType::NonFungibleFaucet)]
-#[tokio::test]
-async fn test_faucet_without_callback_slot_skips_callback(
-    #[case] account_type: AccountType,
-) -> anyhow::Result<()> {
-    let mut builder = MockChain::builder();
-
-    let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
-
-    // Create a faucet WITHOUT any AssetCallbacks component.
-    let account_builder = AccountBuilder::new([45u8; 32])
-        .storage_mode(AccountStorageMode::Public)
-        .account_type(account_type)
-        .with_component(MockFaucetComponent);
-    let faucet = builder.add_account_from_builder(
-        Auth::BasicAuth {
-            auth_scheme: AuthScheme::Falcon512Poseidon2,
-        },
-        account_builder,
-        AccountState::Exists,
-    )?;
-
-    // Create a P2ID note with a callbacks-enabled asset from this faucet.
-    // The faucet does not have the callback slot, but the asset has callbacks enabled.
-    let asset = match account_type {
-        AccountType::FungibleFaucet => Asset::from(FungibleAsset::new(faucet.id(), 100)?),
-        AccountType::NonFungibleFaucet => Asset::from(NonFungibleAsset::new(
-            &NonFungibleAssetDetails::new(faucet.id(), vec![1])?,
-        )?),
-        _ => unreachable!("test only uses faucet account types"),
-    }
-    .with_callbacks(AssetCallbackFlag::Enabled);
-
-    let note =
-        builder.add_p2id_note(faucet.id(), target_account.id(), &[asset], NoteType::Public)?;
-
-    let mut mock_chain = builder.build()?;
-    mock_chain.prove_next_block()?;
-
-    let faucet_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
-
-    // Consuming the note should succeed: the callback is gracefully skipped because the
-    // faucet does not define the callback storage slot.
-    mock_chain
-        .build_tx_context(target_account.id(), &[note.id()], &[])?
-        .foreign_accounts(vec![faucet_inputs])
-        .build()?
-        .execute()
-        .await?;
 
     Ok(())
 }
