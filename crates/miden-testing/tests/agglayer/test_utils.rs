@@ -38,6 +38,12 @@ const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
     "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
 );
 
+/// Rollup deposit test vectors JSON — contains test data for a rollup deposit with two-level
+/// Merkle proofs.
+const ROLLUP_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_rollup_tx.json"
+);
+
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
@@ -237,6 +243,12 @@ pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(
         .expect("failed to parse bridge asset vectors JSON")
 });
 
+/// Lazily parsed rollup deposit test vector from the JSON file.
+pub static CLAIM_ASSET_VECTOR_ROLLUP: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(ROLLUP_ASSET_VECTORS_JSON)
+        .expect("failed to parse rollup asset vectors JSON")
+});
+
 /// Lazily parsed Merkle proof vectors from the JSON file.
 pub static SOLIDITY_MERKLE_PROOF_VECTORS: LazyLock<MerkleProofVerificationFile> =
     LazyLock::new(|| {
@@ -265,6 +277,8 @@ pub enum ClaimDataSource {
     Real,
     /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
     Simulated,
+    /// Rollup deposit data from claim_asset_vectors_rollup_tx.json.
+    Rollup,
 }
 
 impl ClaimDataSource {
@@ -273,6 +287,7 @@ impl ClaimDataSource {
         let vector = match self {
             ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
+            ClaimDataSource::Rollup => &*CLAIM_ASSET_VECTOR_ROLLUP,
         };
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),

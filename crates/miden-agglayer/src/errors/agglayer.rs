@@ -16,8 +16,10 @@ pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::f
 /// Error Message: "B2AGG script requires exactly 1 note asset"
 pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("B2AGG script requires exactly 1 note asset");
 
-/// Error Message: "bridge not mainnet"
-pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
+/// Error Message: "mainnet flag must be 1 for a mainnet deposit"
+pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainnet flag must be 1 for a mainnet deposit");
+/// Error Message: "mainnet flag must be 0 for a rollup deposit"
+pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet flag must be 0 for a rollup deposit");
 
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
@@ -38,6 +40,9 @@ pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not fou
 
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
+
+/// Error Message: "mainnet flag must be 0 or 1"
+pub const ERR_MAINNET_FLAG_INVALID: MasmError = MasmError::from_static_str("mainnet flag must be 0 or 1");
 
 /// Error Message: "number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)"
 pub const ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT: MasmError = MasmError::from_static_str("number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)");
