@@ -13,10 +13,16 @@ static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
         .expect("storage slot name should be valid")
 });
 
+/// Identifies which authority is allowed to manage the active mint policy for a faucet.
+///
+/// This value is stored in the policy authority slot so the account can distinguish whether mint
+/// policy updates are governed by authentication component logic or by the account owner.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MintPolicyAuthority {
+    /// Mint policy changes are authorized by the account's authentication component logic.
     AuthControlled = 0,
+    /// Mint policy changes are authorized by the external account owner.
     OwnerControlled = 1,
 }
 
