@@ -154,7 +154,7 @@ impl AccountComponentInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::distribute dropw dropw drop
+    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -162,7 +162,7 @@ impl AccountComponentInterface {
     /// - the interface does not support the generation of the standard `send_note` procedure.
     /// - the sender of the note isn't the account for which the script is being built.
     /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to distribute an asset with a different faucet ID.
+    /// - a faucet tries to mint an asset with a different faucet ID.
     pub(crate) fn send_note_body(
         &self,
         sender_account_id: AccountId,
@@ -208,7 +208,7 @@ impl AccountComponentInterface {
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::distribute
+                        call.::miden::standards::faucets::basic_fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n
