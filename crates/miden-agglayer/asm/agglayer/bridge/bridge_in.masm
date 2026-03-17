@@ -28,8 +28,10 @@ type MemoryAddress = u32
 # ERRORS
 # =================================================================================================
 
-const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
+const ERR_BRIDGE_NOT_MAINNET = "mainnet flag must be 1 for a mainnet deposit"
+const ERR_BRIDGE_NOT_ROLLUP = "mainnet flag must be 0 for a rollup deposit"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
+const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
@@ -61,7 +63,6 @@ const CLAIM_LEAF_DATA_WORD_LEN = 8
 const MINT_NOTE_NUM_STORAGE_ITEMS = 18
 
 # P2ID output note constants
-const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
 const OUTPUT_NOTE_TYPE_PUBLIC = 1
 
 # P2ID attachment constants (the P2ID note created by the faucet has no attachment)
@@ -71,13 +72,23 @@ const P2ID_ATTACHMENT_SCHEME_NONE = 0
 # -------------------------------------------------------------------------------------------------
 
 # Memory pointers for proof data layout (used by verify_leaf / get_leaf_value)
-const PROOF_DATA_PTR = 0
-const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = 0 # local SMT proof is first
-const GLOBAL_INDEX_PTR = PROOF_DATA_PTR + 2 * 256 # 512
-const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8 # 520
-const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR # it's the first exit root
+# Memory layout for proof data (loaded from advice map via pipe_preimage_to_memory).
+# The proof data occupies addresses [PROOF_DATA_PTR .. PROOF_DATA_PTR + 535]:
+#   [0..255]   smtProofLocalExitRoot  (256 felts = 32 Keccak256 nodes)
+#   [256..511] smtProofRollupExitRoot (256 felts = 32 Keccak256 nodes)
+#   [512..519] globalIndex            (8 felts)
+#   [520..527] mainnetExitRoot        (8 felts)
+#   [528..535] rollupExitRoot         (8 felts)
 
-# the memory address where leaf data is stored for get_leaf_value
+const PROOF_DATA_PTR = 0
+const SMT_PROOF_LOCAL_EXIT_ROOT_PTR = PROOF_DATA_PTR
+const SMT_PROOF_ROLLUP_EXIT_ROOT_PTR = SMT_PROOF_LOCAL_EXIT_ROOT_PTR + 256
+const GLOBAL_INDEX_PTR = SMT_PROOF_ROLLUP_EXIT_ROOT_PTR + 256
+const EXIT_ROOTS_PTR = GLOBAL_INDEX_PTR + 8
+const MAINNET_EXIT_ROOT_PTR = EXIT_ROOTS_PTR
+const ROLLUP_EXIT_ROOT_PTR = EXIT_ROOTS_PTR + 8
+
+# Memory layout for leaf data (loaded separately via get_leaf_value)
 const LEAF_DATA_START_PTR = 0
 
 # Memory pointers for piped advice map data (used by claim procedure)
@@ -212,23 +223,54 @@ end
 #!
 #! Invocation: exec
 pub proc process_global_index_mainnet
-    # for v0.1, let's only implement the mainnet branch
     # the top 191 bits of the global index are zero
     repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
 
     # the next element is the mainnet flag (LE-packed u32)
     # byte-swap to get the BE value, then assert it is exactly 1
-    # => [mainnet_flag_le, rollup_index_le, leaf_index_le, ...]
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
     exec.utils::swap_u32_bytes
     assert.err=ERR_BRIDGE_NOT_MAINNET
 
-    # the next element is the rollup index, must be zero for a mainnet deposit
+    # the rollup index must be zero for a mainnet deposit
     # (zero is byte-order-independent, so no swap needed)
     assertz.err=ERR_ROLLUP_INDEX_NON_ZERO
 
     # the leaf index is the last element; byte-swap from LE to BE to get the actual index
     exec.utils::swap_u32_bytes
     # => [leaf_index]
+end
+
+#! Assert the global index is valid for a rollup deposit.
+#!
+#! Each element of the global index is a LE-packed u32 felt (as produced by
+#! `bytes_to_packed_u32_felts` / `GlobalIndex::to_elements()`).
+#!
+#! Inputs: [GLOBAL_INDEX[8]]
+#! Outputs: [leaf_index, rollup_index]
+#!
+#! Panics if:
+#! - the leading bits of the global index are not zero.
+#! - the mainnet flag is not 0.
+#!
+#! Invocation: exec
+pub proc process_global_index_rollup
+    # the top 191 bits of the global index are zero
+    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+
+    # the next element is the mainnet flag (LE-packed u32)
+    # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
+    # so no swap is needed before asserting
+    # => [mainnet_flag_le, rollup_index_le, leaf_index_le]
+    assertz.err=ERR_BRIDGE_NOT_ROLLUP
+
+    # byte-swap rollup_index from LE to BE
+    exec.utils::swap_u32_bytes
+    # => [rollup_index, leaf_index_le]
+
+    # byte-swap leaf_index from LE to BE
+    swap exec.utils::swap_u32_bytes
+    # => [leaf_index, rollup_index]
 end
 
 #! Computes the Global Exit Tree (GET) root from the mainnet and rollup exit roots.
@@ -579,27 +621,69 @@ proc verify_leaf
     padw push.GLOBAL_INDEX_PTR add.4 mem_loadw_le swapw
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
-    # to see if we're dealing with a deposit from mainnet or from a rollup, process the global index
-    # TODO currently only implemented for mainnet deposits (mainnet flag must be 1)
-    exec.process_global_index_mainnet
-    # => [leaf_index, LEAF_VALUE[8]]
+    # Determine if we're dealing with a deposit from mainnet or from a rollup.
+    # The global index is laid out as:
+    # [gi0, gi1, gi2, gi3, gi4, mainnet_flag_le, rollup_index_le, leaf_index_le]
+    # gi0 is on top (position 0). The mainnet flag is at stack position 5.
 
-    # load the pointers to the merkle proof and root, to pass to `verify_merkle_proof`
-    push.MAINNET_EXIT_ROOT_PTR swap
-    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
-    # => [smt_proof_ptr, leaf_index, mainnet_exit_root_ptr, LEAF_VALUE[8]]
+    # Duplicate the mainnet flag element, byte-swap from LE to BE,
+    # assert it is a valid boolean (0 or 1), then use it to branch.
+    dup.5 exec.utils::swap_u32_bytes dup
+    # => [mainnet_flag, mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
-    # prepare the stack for the verify_merkle_proof procedure: move the pointers deep in the stack
-    movdn.10 movdn.10 movdn.10
-    # => [LEAF_VALUE[8], smt_proof_ptr, leaf_index, mainnet_exit_root_ptr]
+    u32lt.2 assert.err=ERR_MAINNET_FLAG_INVALID
+    # => [mainnet_flag, GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
-    exec.verify_merkle_proof
-    # => [verification_flag]
+    if.true
+        # ==================== MAINNET DEPOSIT ====================
+        exec.process_global_index_mainnet
+        # => [leaf_index, LEAF_VALUE[8]]
 
-    # verify_merkle_proof procedure returns `true` if the verification was successful and `false` 
-    # otherwise. Assert that `true` was returned.
-    assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
-    # => []
+        # verify single Merkle proof: leaf against mainnetExitRoot
+        push.MAINNET_EXIT_ROOT_PTR swap
+        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
+        # => [smt_proof_ptr, leaf_index, mainnet_exit_root_ptr, LEAF_VALUE[8]]
+
+        movdn.10 movdn.10 movdn.10
+        # => [LEAF_VALUE[8], smt_proof_ptr, leaf_index, mainnet_exit_root_ptr]
+
+        exec.verify_merkle_proof
+        # => [verification_flag]
+
+        assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+        # => []
+    else
+        # ==================== ROLLUP DEPOSIT ====================
+        # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
+        # then do two-level verification
+        exec.process_global_index_rollup
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
+        # calculate_root expects: [LEAF_VALUE_LO, LEAF_VALUE_HI, merkle_path_ptr, leaf_index]
+        movdn.9 movdn.9
+        # => [LEAF_VALUE[8], leaf_index, rollup_index]
+
+        # Insert smt_proof_local_ptr before leaf_index
+        push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR movdn.8
+        # => [LEAF_VALUE[8], smt_proof_local_ptr, leaf_index, rollup_index]
+
+        exec.calculate_root
+        # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index]
+
+        # Step 2: verify_merkle_proof(localExitRoot, smtProofRollupExitRoot, rollupIndex, rollupExitRootPtr)
+        push.ROLLUP_EXIT_ROOT_PTR movdn.9
+        # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
+        push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
+
+        # => [LOCAL_EXIT_ROOT[8], smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr]
+
+        exec.verify_merkle_proof
+        # => [verification_flag]
+
+        assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
+        # => []
+    end
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
