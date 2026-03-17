@@ -47,10 +47,6 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 // AGGLAYER FAUCET STRUCT
 // ================================================================================================
 
-static AGGLAYER_FAUCET_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet")
-        .expect("agglayer faucet storage slot name should be valid")
-});
 static CONVERSION_INFO_1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
         .expect("conversion info 1 storage slot name should be valid")
@@ -59,13 +55,17 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
+static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::access::ownable::owner_config")
+        .expect("owner config storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
 /// It reexports the procedures from `miden::agglayer::faucet`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
-/// - `claim`, which validates a CLAIM note against one of the stored GERs in the bridge.
+/// - `distribute`, which mints assets and creates output notes (with owner verification).
 /// - `asset_to_origin_asset`, which converts an asset to the origin asset (used in FPI from
 ///   bridge).
 /// - `burn`, which burns an asset.
@@ -73,10 +73,10 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// ## Storage Layout
 ///
 /// - [`Self::metadata_slot`]: Stores [`TokenMetadata`].
-/// - [`Self::bridge_account_id_slot`]: Stores the AggLayer bridge account ID.
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
+/// - [`Self::owner_config_slot`]: Stores the owner account ID (bridge) for MINT note authorization.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
@@ -134,11 +134,6 @@ impl AggLayerFaucet {
         TokenMetadata::metadata_slot()
     }
 
-    /// Storage slot name for the AggLayer bridge account ID.
-    pub fn bridge_account_id_slot() -> &'static StorageSlotName {
-        &AGGLAYER_FAUCET_SLOT_NAME
-    }
-
     /// Storage slot name for the first 4 felts of the origin token address.
     pub fn conversion_info_1_slot() -> &'static StorageSlotName {
         &CONVERSION_INFO_1_SLOT_NAME
@@ -147,6 +142,11 @@ impl AggLayerFaucet {
     /// Storage slot name for the 5th felt of the origin token address, origin network, and scale.
     pub fn conversion_info_2_slot() -> &'static StorageSlotName {
         &CONVERSION_INFO_2_SLOT_NAME
+    }
+
+    /// Storage slot name for the owner account ID (bridge) used by `ownable::verify_owner`.
+    pub fn owner_config_slot() -> &'static StorageSlotName {
+        &OWNER_CONFIG_SLOT_NAME
     }
 
     /// Extracts the token metadata from the corresponding storage slot of the provided account.
@@ -166,7 +166,7 @@ impl AggLayerFaucet {
         TokenMetadata::try_from(metadata_word).map_err(AgglayerFaucetError::FungibleFaucetError)
     }
 
-    /// Extracts the bridge account ID from the corresponding storage slot of the provided account.
+    /// Extracts the bridge account ID from the owner config storage slot of the provided account.
     ///
     /// # Errors
     ///
@@ -176,11 +176,11 @@ impl AggLayerFaucet {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
-        let bridge_id_word = faucet_account
+        let owner_word = faucet_account
             .storage()
-            .get_item(&AGGLAYER_FAUCET_SLOT_NAME)
-            .expect("should be able to read account ID slot");
-        AccountId::try_from([bridge_id_word[3], bridge_id_word[2]])
+            .get_item(&OWNER_CONFIG_SLOT_NAME)
+            .expect("should be able to read owner config slot");
+        AccountId::try_from([owner_word[3], owner_word[2]])
             .map_err(AgglayerFaucetError::AccountIdError)
     }
 
@@ -323,9 +323,9 @@ impl AggLayerFaucet {
     /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
     fn slot_names() -> Vec<&'static StorageSlotName> {
         vec![
-            &*AGGLAYER_FAUCET_SLOT_NAME,
             &*CONVERSION_INFO_1_SLOT_NAME,
             &*CONVERSION_INFO_2_SLOT_NAME,
+            &*OWNER_CONFIG_SLOT_NAME,
         ]
     }
 }
@@ -333,15 +333,6 @@ impl AggLayerFaucet {
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
         let metadata_slot = StorageSlot::from(faucet.metadata);
-
-        let bridge_account_id_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-        ]);
-        let bridge_slot =
-            StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
 
         let (conversion_slot1_word, conversion_slot2_word) = agglayer_faucet_conversion_slots(
             &faucet.origin_token_address,
@@ -353,8 +344,17 @@ impl From<AggLayerFaucet> for AccountComponent {
         let conversion_slot2 =
             StorageSlot::with_value(CONVERSION_INFO_2_SLOT_NAME.clone(), conversion_slot2_word);
 
+        // Owner config slot: bridge account ID as the owner for MINT note authorization
+        let owner_word = Word::new([
+            Felt::ZERO,
+            Felt::ZERO,
+            faucet.bridge_account_id.suffix(),
+            faucet.bridge_account_id.prefix().as_felt(),
+        ]);
+        let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
+
         let agglayer_storage_slots =
-            vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
+            vec![metadata_slot, conversion_slot1, conversion_slot2, owner_slot];
         agglayer_faucet_component(agglayer_storage_slots)
     }
 }

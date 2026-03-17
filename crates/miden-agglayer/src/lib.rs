@@ -29,7 +29,7 @@ pub mod update_ger_note;
 pub mod utils;
 
 pub use b2agg_note::B2AggNote;
-pub use bridge::AggLayerBridge;
+pub use bridge::{AggLayerBridge, AgglayerBridgeError};
 pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
 pub use config_note::ConfigAggBridgeNote;
 pub use eth_types::{
@@ -40,7 +40,7 @@ pub use eth_types::{
     GlobalIndexError,
     MetadataHash,
 };
-pub use faucet::AggLayerFaucet;
+pub use faucet::{AggLayerFaucet, AgglayerFaucetError, faucet_registry_key};
 pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS
@@ -98,9 +98,9 @@ fn agglayer_faucet_component_library() -> Library {
 ///
 /// This function creates all the necessary storage slots for an agglayer faucet:
 /// - Network faucet metadata slot (token_supply, max_supply, decimals, token_symbol)
-/// - Bridge account reference slot for FPI validation
 /// - Conversion info slot 1: first 4 felts of origin token address
 /// - Conversion info slot 2: 5th address felt + origin network + scale
+/// - Owner config slot: bridge account ID for MINT note authorization
 ///
 /// # Parameters
 /// - `token_symbol`: The symbol for the fungible token (e.g., "AGG")

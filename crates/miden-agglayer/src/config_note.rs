@@ -7,9 +7,10 @@ extern crate alloc;
 
 use alloc::string::ToString;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use miden_assembly::utils::Deserializable;
-use miden_core::{Program, Word};
+use miden_core::{Felt, Program, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -25,6 +26,8 @@ use miden_protocol::note::{
 };
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
+
+use crate::EthAddressFormat;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -43,8 +46,8 @@ static CONFIG_AGG_BRIDGE_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 
 /// CONFIG_AGG_BRIDGE note.
 ///
-/// This note is used to register a faucet in the bridge's faucet registry.
-/// It carries the faucet account ID and is always public.
+/// This note is used to register a faucet in the bridge's faucet and token registries.
+/// It carries the origin token address and faucet account ID, and is always public.
 pub struct ConfigAggBridgeNote;
 
 impl ConfigAggBridgeNote {
@@ -52,7 +55,8 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    pub const NUM_STORAGE_ITEMS: usize = 2;
+    /// Layout: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix]
+    pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -72,12 +76,14 @@ impl ConfigAggBridgeNote {
 
     /// Creates a CONFIG_AGG_BRIDGE note to register a faucet in the bridge's registry.
     ///
-    /// The note storage contains 2 felts:
+    /// The note storage contains 7 felts:
+    /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
     /// - `faucet_id_prefix`: The prefix of the faucet account ID
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to register
+    /// - `origin_token_address`: The origin EVM token address for the token registry
     /// - `sender_account_id`: The account ID of the note creator
     /// - `target_account_id`: The bridge account ID that will consume this note
     /// - `rng`: Random number generator for creating the note serial number
@@ -86,12 +92,17 @@ impl ConfigAggBridgeNote {
     /// Returns an error if note creation fails.
     pub fn create<R: FeltRng>(
         faucet_account_id: AccountId,
+        origin_token_address: &EthAddressFormat,
         sender_account_id: AccountId,
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 2 felts: [faucet_id_prefix, faucet_id_suffix]
-        let storage_values = vec![faucet_account_id.prefix().as_felt(), faucet_account_id.suffix()];
+        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_prefix,
+        // faucet_id_suffix]
+        let addr_elements = origin_token_address.to_elements();
+        let mut storage_values: Vec<Felt> = addr_elements;
+        storage_values.push(faucet_account_id.prefix().as_felt());
+        storage_values.push(faucet_account_id.suffix());
 
         let note_storage = NoteStorage::new(storage_values)?;
 
