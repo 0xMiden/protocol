@@ -117,6 +117,8 @@ fn merkle_proof_verification_code(
 #[case::rollup(ClaimDataSource::Rollup)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
+    use miden_agglayer::AggLayerBridge;
+
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
@@ -138,7 +140,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // GET CLAIM DATA FROM JSON (source depends on the test case)
     // --------------------------------------------------------------------------------------------
-    let (proof_data, leaf_data, ger) = data_source.get_data();
+    let (proof_data, leaf_data, ger, cgi_chain_hash) = data_source.get_data();
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with agglayer_faucet component)
     // Use the origin token address and network from the claim data.
@@ -281,6 +283,16 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .build()?;
 
     let claim_executed = claim_tx_context.execute().await?;
+
+    // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
+    // --------------------------------------------------------------------------------------------
+
+    let mut updated_bridge_account = bridge_account.clone();
+    updated_bridge_account.apply_delta(claim_executed.account_delta())?;
+
+    let actual_cgi_chain_hash = AggLayerBridge::cgi_chain_hash(&updated_bridge_account)?;
+
+    assert_eq!(cgi_chain_hash, actual_cgi_chain_hash);
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
