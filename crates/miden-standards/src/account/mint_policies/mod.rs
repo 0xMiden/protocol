@@ -26,6 +26,13 @@ pub enum MintPolicyAuthority {
     OwnerControlled = 1,
 }
 
+impl MintPolicyAuthority {
+    /// Returns the [`StorageSlotName`] containing the mint policy authority mode.
+    pub fn slot() -> &'static StorageSlotName {
+        &POLICY_AUTHORITY_SLOT_NAME
+    }
+}
+
 impl From<MintPolicyAuthority> for Word {
     fn from(value: MintPolicyAuthority) -> Self {
         Word::from([value as u32, 0, 0, 0])
@@ -34,10 +41,6 @@ impl From<MintPolicyAuthority> for Word {
 
 impl From<MintPolicyAuthority> for StorageSlot {
     fn from(value: MintPolicyAuthority) -> Self {
-        StorageSlot::with_value(policy_authority_slot_name().clone(), value.into())
+        StorageSlot::with_value(MintPolicyAuthority::slot().clone(), value.into())
     }
-}
-
-pub(super) fn policy_authority_slot_name() -> &'static StorageSlotName {
-    &POLICY_AUTHORITY_SLOT_NAME
 }

@@ -16,7 +16,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::utils::sync::LazyLock;
 
-use super::{MintPolicyAuthority, policy_authority_slot_name};
+use super::MintPolicyAuthority;
 use crate::account::components::owner_controlled_library;
 use crate::procedure_digest;
 
@@ -129,7 +129,7 @@ impl OwnerControlled {
 
     /// Returns the [`StorageSlotName`] containing policy authority mode.
     pub fn policy_authority_slot() -> &'static StorageSlotName {
-        policy_authority_slot_name()
+        MintPolicyAuthority::slot()
     }
 
     /// Returns the storage slot schema for policy authority mode.
