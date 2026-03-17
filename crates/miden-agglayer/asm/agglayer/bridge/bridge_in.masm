@@ -233,7 +233,9 @@ end
 #! Invocation: exec
 pub proc process_global_index_rollup
     # the top 191 bits of the global index are zero
-    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
 
     # the next element is the mainnet flag (LE-packed u32)
     # for a rollup deposit it must be exactly 0; zero is byte-order-independent,
@@ -569,6 +571,7 @@ proc verify_leaf
         # Step 2: verify_merkle_proof(localExitRoot, smtProofRollupExitRoot, rollupIndex, rollupExitRootPtr)
         push.ROLLUP_EXIT_ROOT_PTR movdn.9
         # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
+        
         push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
 
         # => [LOCAL_EXIT_ROOT[8], smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr]
