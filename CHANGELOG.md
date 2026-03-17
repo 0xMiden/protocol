@@ -95,6 +95,7 @@
 - [BREAKING] Changed `asset::create_fungible_asset` and `faucet::create_fungible_asset` signature to take `enable_callbacks` flag ([#2571](https://github.com/0xMiden/protocol/pull/2571)).
 
 - [BREAKING] Fixed `TokenSymbol::try_from(Felt)` to reject values below `MIN_ENCODED_VALUE`; implemented `Display` for `TokenSymbol` replacing the fallible `to_string()` method; removed `Default` derive ([#2464](https://github.com/0xMiden/protocol/issues/2464)).
+- Moved `AccountSchemaCommitment` component into a sub-module ([#2603](https://github.com/0xMiden/protocol/pull/2603)).
 
 ## 0.13.3 (2026-01-27)
 
