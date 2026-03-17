@@ -66,7 +66,7 @@ Assets in Miden can be burned through various methods, such as rendering them un
 
 ### Callbacks
 
-Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or to an output note. This gives faucet issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
+Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or to an output note. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
 
 #### How callbacks work
 
