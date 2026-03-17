@@ -24,7 +24,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::{Felt, Word};
+use miden_protocol::{Felt, WORD_SIZE, Word};
 
 // ENCODING CONSTANT
 // ================================================================================================
@@ -63,14 +63,6 @@ impl<const N: usize> FixedWidthString<N> {
         Ok(Self(value.into()))
     }
 
-    /// Creates a [`FixedWidthString`] without checking the capacity limit.
-    ///
-    /// # Safety
-    /// The caller must ensure `value.len() <= Self::CAPACITY`.
-    pub(crate) fn from_str_unchecked(value: &str) -> Self {
-        Self(value.into())
-    }
-
     /// Returns the string content.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -78,7 +70,7 @@ impl<const N: usize> FixedWidthString<N> {
 
     /// Encodes the string into `N` Words (7 bytes/felt, length-prefixed, zero-padded).
     pub fn to_words(&self) -> Vec<Word> {
-        let n_felts = N * 4;
+        let n_felts = N * WORD_SIZE;
         let buf_len = n_felts * BYTES_PER_FELT;
         let bytes = self.0.as_bytes();
         debug_assert!(bytes.len() < buf_len);
@@ -88,9 +80,9 @@ impl<const N: usize> FixedWidthString<N> {
         buf[1..1 + bytes.len()].copy_from_slice(bytes);
 
         (0..N)
-            .map(|i| {
-                let felts: [Felt; 4] = core::array::from_fn(|j| {
-                    let start = (i * 4 + j) * BYTES_PER_FELT;
+            .map(|word_idx| {
+                let felts: [Felt; 4] = core::array::from_fn(|felt_idx| {
+                    let start = (word_idx * 4 + felt_idx) * BYTES_PER_FELT;
                     let mut le_bytes = [0u8; 8];
                     le_bytes[..BYTES_PER_FELT].copy_from_slice(&buf[start..start + BYTES_PER_FELT]);
                     Felt::try_from(u64::from_le_bytes(le_bytes))
@@ -106,19 +98,19 @@ impl<const N: usize> FixedWidthString<N> {
         if words.len() != N {
             return Err(FixedWidthStringError::InvalidLength { expected: N, got: words.len() });
         }
-        let n_felts = N * 4;
+        let n_felts = N * WORD_SIZE;
         let buf_len = n_felts * BYTES_PER_FELT;
         let mut buf = alloc::vec![0u8; buf_len];
 
-        for (i, word) in words.iter().enumerate() {
-            for (j, felt) in word.as_slice().iter().enumerate() {
-                let v = felt.as_canonical_u64();
-                let le = v.to_le_bytes();
-                if le[BYTES_PER_FELT] != 0 {
+        for (word_idx, word) in words.iter().enumerate() {
+            for (felt_idx, felt) in word.as_slice().iter().enumerate() {
+                let felt_value = felt.as_canonical_u64();
+                let le_bytes = felt_value.to_le_bytes();
+                if le_bytes[BYTES_PER_FELT] != 0 {
                     return Err(FixedWidthStringError::InvalidUtf8);
                 }
-                let start = (i * 4 + j) * BYTES_PER_FELT;
-                buf[start..start + BYTES_PER_FELT].copy_from_slice(&le[..BYTES_PER_FELT]);
+                let start = (word_idx * 4 + felt_idx) * BYTES_PER_FELT;
+                buf[start..start + BYTES_PER_FELT].copy_from_slice(&le_bytes[..BYTES_PER_FELT]);
             }
         }
 

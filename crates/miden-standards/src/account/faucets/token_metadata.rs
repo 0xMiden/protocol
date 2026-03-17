@@ -41,7 +41,7 @@ impl TokenName {
         if s.len() > Self::MAX_BYTES {
             return Err(NameUtf8Error::TooLong(s.len()));
         }
-        Ok(Self(FixedWidthString::from_str_unchecked(s)))
+        Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
     }
 
     /// Returns the name as a string slice.
@@ -228,10 +228,10 @@ pub struct FungibleTokenMetadataBuilder {
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
-    description_mutable: bool,
-    logo_uri_mutable: bool,
-    external_link_mutable: bool,
-    max_supply_mutable: bool,
+    is_description_mutable: bool,
+    is_logo_uri_mutable: bool,
+    is_external_link_mutable: bool,
+    is_max_supply_mutable: bool,
 }
 
 impl FungibleTokenMetadataBuilder {
@@ -246,10 +246,10 @@ impl FungibleTokenMetadataBuilder {
             description: None,
             logo_uri: None,
             external_link: None,
-            description_mutable: false,
-            logo_uri_mutable: false,
-            external_link_mutable: false,
-            max_supply_mutable: false,
+            is_description_mutable: false,
+            is_logo_uri_mutable: false,
+            is_external_link_mutable: false,
+            is_max_supply_mutable: false,
         }
     }
 
@@ -279,25 +279,25 @@ impl FungibleTokenMetadataBuilder {
 
     /// Sets whether the description can be updated by the owner.
     pub fn description_mutable(mut self, mutable: bool) -> Self {
-        self.description_mutable = mutable;
+        self.is_description_mutable = mutable;
         self
     }
 
     /// Sets whether the logo URI can be updated by the owner.
     pub fn logo_uri_mutable(mut self, mutable: bool) -> Self {
-        self.logo_uri_mutable = mutable;
+        self.is_logo_uri_mutable = mutable;
         self
     }
 
     /// Sets whether the external link can be updated by the owner.
     pub fn external_link_mutable(mut self, mutable: bool) -> Self {
-        self.external_link_mutable = mutable;
+        self.is_external_link_mutable = mutable;
         self
     }
 
     /// Sets whether the max supply can be updated by the owner.
     pub fn max_supply_mutable(mut self, mutable: bool) -> Self {
-        self.max_supply_mutable = mutable;
+        self.is_max_supply_mutable = mutable;
         self
     }
 
@@ -314,10 +314,10 @@ impl FungibleTokenMetadataBuilder {
             self.external_link,
         )?;
         meta = meta
-            .with_description_mutable(self.description_mutable)
-            .with_logo_uri_mutable(self.logo_uri_mutable)
-            .with_external_link_mutable(self.external_link_mutable)
-            .with_max_supply_mutable(self.max_supply_mutable);
+            .with_description_mutable(self.is_description_mutable)
+            .with_logo_uri_mutable(self.is_logo_uri_mutable)
+            .with_external_link_mutable(self.is_external_link_mutable)
+            .with_max_supply_mutable(self.is_max_supply_mutable);
         Ok(meta)
     }
 }
@@ -744,8 +744,8 @@ mod tests {
         assert_eq!(metadata.external_link(), Some(&external_link));
         let slots = metadata.storage_slots();
         let config_word = slots[3].value();
-        assert_eq!(config_word[0], Felt::from(1u32), "desc_mutable");
-        assert_eq!(config_word[3], Felt::from(1u32), "max_supply_mutable");
+        assert_eq!(config_word[0], Felt::from(1u32), "is_desc_mutable");
+        assert_eq!(config_word[3], Felt::from(1u32), "is_max_supply_mutable");
     }
 
     #[test]
@@ -928,10 +928,10 @@ mod tests {
         // Slot layout (no owner slot): [0]=metadata, [1]=name_0, [2]=name_1, [3]=mutability_config
         let config_slot = &slots[3];
         let config_word = config_slot.value();
-        assert_eq!(config_word[0], Felt::from(1u32), "desc_mutable");
-        assert_eq!(config_word[1], Felt::from(1u32), "logo_mutable");
-        assert_eq!(config_word[2], Felt::from(0u32), "extlink_mutable");
-        assert_eq!(config_word[3], Felt::from(1u32), "max_supply_mutable");
+        assert_eq!(config_word[0], Felt::from(1u32), "is_desc_mutable");
+        assert_eq!(config_word[1], Felt::from(1u32), "is_logo_mutable");
+        assert_eq!(config_word[2], Felt::from(0u32), "is_extlink_mutable");
+        assert_eq!(config_word[3], Felt::from(1u32), "is_max_supply_mutable");
     }
 
     #[test]
@@ -945,10 +945,10 @@ mod tests {
 
         let slots = metadata.storage_slots();
         let config_word = slots[3].value();
-        assert_eq!(config_word[0], Felt::ZERO, "desc_mutable default");
-        assert_eq!(config_word[1], Felt::ZERO, "logo_mutable default");
-        assert_eq!(config_word[2], Felt::ZERO, "extlink_mutable default");
-        assert_eq!(config_word[3], Felt::ZERO, "max_supply_mutable default");
+        assert_eq!(config_word[0], Felt::ZERO, "is_desc_mutable default");
+        assert_eq!(config_word[1], Felt::ZERO, "is_logo_mutable default");
+        assert_eq!(config_word[2], Felt::ZERO, "is_extlink_mutable default");
+        assert_eq!(config_word[3], Felt::ZERO, "is_max_supply_mutable default");
     }
 
     #[test]
@@ -1051,7 +1051,7 @@ mod tests {
 
         // Verify mutability config
         let config = account.storage().get_item(metadata::mutability_config_slot()).unwrap();
-        assert_eq!(config[3], Felt::from(1u32), "max_supply_mutable");
+        assert_eq!(config[3], Felt::from(1u32), "is_max_supply_mutable");
     }
 
     #[test]

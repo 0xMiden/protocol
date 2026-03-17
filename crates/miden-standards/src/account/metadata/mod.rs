@@ -11,7 +11,7 @@
 //! | `metadata::token_metadata` | `[token_supply, max_supply, decimals, token_symbol]` |
 //! | `metadata::name_0` | first 4 felts of name |
 //! | `metadata::name_1` | last 4 felts of name |
-//! | `metadata::mutability_config` | `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]` |
+//! | `metadata::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
 //! | `metadata::description_0..6` | description (7 Words, max 195 bytes) |
 //! | `metadata::logo_uri_0..6` | logo URI (7 Words, max 195 bytes) |
 //! | `metadata::external_link_0..6` | external link (7 Words, max 195 bytes) |
@@ -23,7 +23,8 @@
 //!
 //! A single config Word stores per-field boolean flags:
 //!
-//! **mutability_config**: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
+//! **mutability_config**: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+//! is_max_supply_mutable]`
 //! - Each flag is 0 (immutable) or 1 (mutable / owner can update).
 //!
 //! Whether a field is *present* is determined by whether its storage words are all zero
@@ -112,7 +113,8 @@ pub enum NameUtf8Error {
     InvalidUtf8,
 }
 
-/// Mutability config slot: `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`.
+/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+/// is_max_supply_mutable]`.
 ///
 /// Each flag is 0 (immutable) or 1 (mutable / owner can update).
 pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -279,17 +281,21 @@ mod tests {
         let account = build_account_with_metadata(metadata);
 
         let mut_word = account.storage().get_item(mutability_config_slot()).unwrap();
-        assert_eq!(mut_word[0], Felt::from(1u32), "desc_mutable should be 1");
-        assert_eq!(mut_word[1], Felt::from(0u32), "logo_mutable should be 0");
-        assert_eq!(mut_word[2], Felt::from(0u32), "extlink_mutable should be 0");
-        assert_eq!(mut_word[3], Felt::from(1u32), "max_supply_mutable should be 1");
+        assert_eq!(mut_word[0], Felt::from(1u32), "is_desc_mutable should be 1");
+        assert_eq!(mut_word[1], Felt::from(0u32), "is_logo_mutable should be 0");
+        assert_eq!(mut_word[2], Felt::from(0u32), "is_extlink_mutable should be 0");
+        assert_eq!(mut_word[3], Felt::from(1u32), "is_max_supply_mutable should be 1");
 
         let name_default = TokenName::new("T").unwrap();
         let metadata_default = build_faucet_metadata(name_default, None);
         let account_default = build_account_with_metadata(metadata_default);
         let mut_default = account_default.storage().get_item(mutability_config_slot()).unwrap();
-        assert_eq!(mut_default[0], Felt::from(0u32), "desc_mutable should be 0 by default");
-        assert_eq!(mut_default[3], Felt::from(0u32), "max_supply_mutable should be 0 by default");
+        assert_eq!(mut_default[0], Felt::from(0u32), "is_desc_mutable should be 0 by default");
+        assert_eq!(
+            mut_default[3],
+            Felt::from(0u32),
+            "is_max_supply_mutable should be 0 by default"
+        );
     }
 
     #[test]
