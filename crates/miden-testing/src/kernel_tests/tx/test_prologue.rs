@@ -282,7 +282,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
 
     assert_eq!(
         exec_output.get_kernel_mem_word(FEE_PARAMETERS_PTR)[NATIVE_ASSET_ID_SUFFIX_IDX],
-        inputs.tx_inputs().block_header().fee_parameters().native_asset_id().suffix(),
+        inputs.tx_inputs().block_header().fee_parameters().fee_faucet_id().suffix(),
         "The native asset ID suffix should be stored at FEE_PARAMETERS_PTR[NATIVE_ASSET_ID_SUFFIX_IDX]"
     );
 
@@ -292,7 +292,7 @@ fn block_data_memory_assertions(exec_output: &ExecutionOutput, inputs: &Transact
             .tx_inputs()
             .block_header()
             .fee_parameters()
-            .native_asset_id()
+            .fee_faucet_id()
             .prefix()
             .as_felt(),
         "The native asset ID prefix should be stored at FEE_PARAMETERS_PTR[NATIVE_ASSET_ID_PREFIX_IDX]"

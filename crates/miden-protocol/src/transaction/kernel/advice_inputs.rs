@@ -177,8 +177,8 @@ impl TransactionAdviceInputs {
         self.extend_stack([
             ZERO,
             Felt::from(header.fee_parameters().verification_base_fee()),
-            header.fee_parameters().native_asset_id().suffix(),
-            header.fee_parameters().native_asset_id().prefix().as_felt(),
+            header.fee_parameters().fee_faucet_id().suffix(),
+            header.fee_parameters().fee_faucet_id().prefix().as_felt(),
         ]);
         self.extend_stack([ZERO, ZERO, ZERO, ZERO]);
         self.extend_stack(header.note_root());

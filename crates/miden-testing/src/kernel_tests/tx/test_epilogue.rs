@@ -116,7 +116,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let account_update_commitment =
         Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
     let fee_asset = FungibleAsset::new(
-        tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
+        tx_context.tx_inputs().block_header().fee_parameters().fee_faucet_id(),
         0,
     )?;
 

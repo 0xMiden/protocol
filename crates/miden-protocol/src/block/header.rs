@@ -245,8 +245,8 @@ impl BlockHeader {
         elements.extend([
             ZERO,
             Felt::from(fee_parameters.verification_base_fee()),
-            fee_parameters.native_asset_id().suffix(),
-            fee_parameters.native_asset_id().prefix().as_felt(),
+            fee_parameters.fee_faucet_id().suffix(),
+            fee_parameters.fee_faucet_id().prefix().as_felt(),
         ]);
         elements.extend([ZERO, ZERO, ZERO, ZERO]);
         Hasher::hash_elements(&elements)
@@ -333,7 +333,7 @@ impl Deserializable for BlockHeader {
 pub struct FeeParameters {
     /// The [`AccountId`] of the fungible faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the native asset of the blockchain.
-    native_asset_id: AccountId,
+    fee_faucet_id: AccountId,
     /// The base fee (in base units) capturing the cost for the verification of a transaction.
     verification_base_fee: u32,
 }
@@ -348,24 +348,24 @@ impl FeeParameters {
     ///
     /// Returns an error if:
     /// - the provided native asset ID is not a fungible faucet account ID.
-    pub fn new(native_asset_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
-        if !matches!(native_asset_id.account_type(), AccountType::FungibleFaucet) {
-            return Err(FeeError::NativeAssetIdNotFungible {
-                account_type: native_asset_id.account_type(),
-            });
-        }
-
-        Ok(Self { native_asset_id, verification_base_fee })
+    pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
+    if !matches!(fee_faucet_id.account_type(), AccountType::FungibleFaucet) {
+        return Err(FeeError::NativeAssetIdNotFungible {
+            account_type: fee_faucet_id.account_type(),
+        });
     }
+
+    Ok(Self { fee_faucet_id, verification_base_fee })
+}
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the native asset of the blockchain.
-    pub fn native_asset_id(&self) -> AccountId {
-        self.native_asset_id
-    }
+    pub fn fee_faucet_id(&self) -> AccountId {
+    self.fee_faucet_id
+} 
 
     /// Returns the base fee capturing the cost for the verification of a transaction.
     pub fn verification_base_fee(&self) -> u32 {
@@ -378,7 +378,7 @@ impl FeeParameters {
 
 impl Serializable for FeeParameters {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        self.native_asset_id.write_into(target);
+        self.fee_faucet_id.write_into(target);
         self.verification_base_fee.write_into(target);
     }
 }

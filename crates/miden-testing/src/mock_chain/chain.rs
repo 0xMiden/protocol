@@ -439,7 +439,7 @@ impl MockChain {
     /// This value is taken from the genesis block because it is assumed not to change throughout
     /// the chain's lifecycle.
     pub fn native_asset_id(&self) -> AccountId {
-        self.genesis_block_header().fee_parameters().native_asset_id()
+        self.genesis_block_header().fee_parameters().fee_faucet_id()
     }
 
     /// Returns a reference to the nullifier tree.
