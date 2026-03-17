@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_crypto::hash::rpo::Rpo256;
+use miden_crypto::hash::poseidon2::Poseidon2;
 use miden_crypto::rand::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
@@ -172,10 +172,10 @@ fn field_advice_map_value(field: &[Word; 7]) -> Vec<Felt> {
     value
 }
 
-/// Compute the Rpo256 hash of the field data (used as the advice map key).
+/// Compute the Poseidon2 hash of the field data (used as the advice map key).
 fn compute_field_hash(data: &[Word; 7]) -> Word {
     let felts = field_advice_map_value(data);
-    Word::from(*Rpo256::hash_elements(&felts))
+    Poseidon2::hash_elements(&felts)
 }
 
 /// Execute a tx script against the given account and assert success.
