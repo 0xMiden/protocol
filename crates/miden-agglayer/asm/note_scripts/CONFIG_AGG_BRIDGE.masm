@@ -8,20 +8,23 @@ use miden::standards::attachments::network_account_target
 # =================================================================================================
 
 const STORAGE_START_PTR = 0
-const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 2
+const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
+
+const FAUCET_ID_SUFFIX = 6
+const FAUCET_ID_PREFIX = 5
+const ORIGIN_TOKEN_ADDR_4 = 4
 
 # ERRORS
 # =================================================================================================
 
-const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 2 note storage items"
+const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
-#! Registers a faucet in the bridge's faucet registry.
+#! Registers a faucet in the bridge's faucet registry and token registry.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
 #! attachment, and only if the note was sent by the bridge admin.
-#! Upon consumption, it registers the faucet ID from note storage in the bridge's
-#! faucet registry.
+#! Upon consumption, it registers the faucet ID and origin token address mapping in the bridge.
 #!
 #! Requires that the account exposes:
 #! - agglayer::bridge_config::register_faucet procedure.
@@ -29,19 +32,19 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (2 felts total):
-#! - faucet_id_prefix [0]: 1 felt
-#! - faucet_id_suffix [1]: 1 felt
-#!
-#! Where:
-#! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
-#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
+#! NoteStorage layout (7 felts total):
+#! - origin_token_addr_0 [0]: 1 felt
+#! - origin_token_addr_1 [1]: 1 felt
+#! - origin_token_addr_2 [2]: 1 felt
+#! - origin_token_addr_3 [3]: 1 felt
+#! - origin_token_addr_4 [4]: 1 felt
+#! - faucet_id_prefix    [5]: 1 felt
+#! - faucet_id_suffix    [6]: 1 felt
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
-#! - The note does not contain exactly 2 storage items.
+#! - The note does not contain exactly 7 storage items.
 #! - The account does not expose the register_faucet procedure.
-#!
 begin
     dropw
     # => [pad(16)]
@@ -58,11 +61,19 @@ begin
     push.CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS assert_eq.err=ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS drop
     # => [pad(16)]
 
-    # Load the faucet ID from memory, replacing the top 4 zeros
-    mem_loadw_le.STORAGE_START_PTR
-    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
+    # Load origin_token_addr(5) and faucet_id from memory
+    # register_faucet expects: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
 
-    # Register the faucet in the bridge's faucet registry
+    # Load all 7 values individually in the correct order
+    mem_load.FAUCET_ID_SUFFIX mem_load.FAUCET_ID_PREFIX mem_load.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, faucet_id_prefix, faucet_id_suffix, pad(12)]
+
+    padw mem_loadw_le.STORAGE_START_PTR
+    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_prefix, faucet_id_suffix, pad(12)]
+
+    # Register the faucet in the bridge
     call.bridge_config::register_faucet
     # => [pad(16)]
+
+    dropw dropw
 end

@@ -105,6 +105,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     // CONFIG_AGG_BRIDGE note to register the faucet in the bridge (sent by bridge admin)
     let config_note = ConfigAggBridgeNote::create(
         faucet.id(),
+        &origin_token_address,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

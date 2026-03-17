@@ -11,6 +11,7 @@ use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
+use crate::claim_note::Keccak256Output;
 pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
@@ -60,6 +61,10 @@ static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
         .expect("faucet registry storage slot name should be valid")
 });
+static TOKEN_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::token_registry")
+        .expect("token registry storage slot name should be valid")
+});
 static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::admin")
         .expect("bridge admin storage slot name should be valid")
@@ -67,6 +72,14 @@ static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger_manager")
         .expect("GER manager storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_lo")
+        .expect("CGI chain hash lo storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_hi")
+        .expect("CGI chain hash hi storage slot name should be valid")
 });
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
@@ -78,6 +91,8 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - `update_ger`, which injects a new GER into the storage map.
 /// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
+/// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
+///   AggFaucet.
 ///
 /// ## Storage Layout
 ///
@@ -87,8 +102,11 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
 /// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
+/// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::cgi_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
+/// - [`Self::cgi_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -145,6 +163,11 @@ impl AggLayerBridge {
         &FAUCET_REGISTRY_SLOT_NAME
     }
 
+    /// Storage slot name for the token registry map.
+    pub fn token_registry_slot_name() -> &'static StorageSlotName {
+        &TOKEN_REGISTRY_SLOT_NAME
+    }
+
     /// Storage slot name for the bridge admin account ID.
     pub fn bridge_admin_slot_name() -> &'static StorageSlotName {
         &BRIDGE_ADMIN_SLOT_NAME
@@ -153,6 +176,16 @@ impl AggLayerBridge {
     /// Storage slot name for the GER manager account ID.
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    pub fn cgi_lo_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the upper 128 bits of the CGI chain hash.
+    pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
@@ -244,6 +277,41 @@ impl AggLayerBridge {
         value.to_vec()[0].as_int()
     }
 
+    /// Returns the claimed global index (CGI) chain hash from the corresponding storage slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn cgi_chain_hash(
+        bridge_account: &Account,
+    ) -> Result<Keccak256Output, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(bridge_account)?;
+
+        let cgi_chain_hash_lo = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_lo_slot_name())
+            .expect("failed to get CGI hash chain lo slot");
+        let cgi_chain_hash_hi = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_hi_slot_name())
+            .expect("failed to get CGI hash chain hi slot");
+
+        let cgi_chain_hash_bytes = cgi_chain_hash_lo
+            .iter()
+            .rev()
+            .chain(cgi_chain_hash_hi.iter().rev())
+            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .collect::<Vec<u8>>();
+
+        Ok(Keccak256Output::new(
+            cgi_chain_hash_bytes
+                .try_into()
+                .expect("keccak hash should consist of exactly 32 bytes"),
+        ))
+    }
+
     // HELPER FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
@@ -316,8 +384,11 @@ impl AggLayerBridge {
             &*LET_ROOT_HI_SLOT_NAME,
             &*LET_NUM_LEAVES_SLOT_NAME,
             &*FAUCET_REGISTRY_SLOT_NAME,
+            &*TOKEN_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
+            &*CGI_CHAIN_HASH_LO_SLOT_NAME,
+            &*CGI_CHAIN_HASH_HI_SLOT_NAME,
         ]
     }
 }
@@ -344,8 +415,11 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_empty_map(FAUCET_REGISTRY_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
         ];
         bridge_component(bridge_storage_slots)
     }
