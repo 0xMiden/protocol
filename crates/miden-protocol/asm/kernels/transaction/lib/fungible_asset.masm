@@ -148,10 +148,10 @@ end
 #!
 #! Panics if:
 #! - the asset key's account ID is not valid.
+#! - the asset key's metadata is not valid.
 #! - the asset key's faucet ID is not a fungible one.
 pub proc validate_key
-    exec.asset::key_to_faucet_id
-    exec.account_id::validate
+    exec.asset::validate_issuer
     # => [ASSET_KEY]
 
     exec.asset::is_fungible_asset_key

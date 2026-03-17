@@ -1,16 +1,22 @@
+# NETWORK FUNGIBLE FAUCET CONTRACT
+#
+# Note: This component requires `MintPolicyManager` component to also be present in the account.
+# =================================================================================================
+
 use miden::standards::faucets
-use miden::standards::access::ownable2step
+use miden::standards::mint_policies::policy_manager
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-# ASSET DISTRIBUTION
+# ASSET MINTING
 # ------------------------------------------------------------------------------------------------
 
-#! Distributes freshly minted fungible assets to the provided recipient.
+#! Mints fungible assets to the provided recipient by creating a note.
 #!
-#! This procedure first checks if the note sender is the owner of the faucet, and then
-#! mints the asset and creates an output note with that asset for the recipient.
+#! This procedure first executes the active mint policy configured via
+#! `active_policy_proc_root`, and then mints the asset and creates an output note
+#! with that asset for the recipient.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
@@ -23,15 +29,15 @@ use miden::standards::access::ownable2step
 #! - note_idx is the index of the created note.
 #!
 #! Panics if:
-#! - the note sender is not the owner of this faucet.
-#! - any of the validations in faucets::distribute fail.
+#! - active mint policy validation fails.
+#! - any of the validations in faucets::mint_and_send fail.
 #!
 #! Invocation: call
-pub proc distribute
-    exec.ownable2step::assert_sender_is_owner
-    # => [amount, tag, aux, note_type, execution_hint, RECIPIENT, pad(7)]
+pub proc mint_and_send
+    exec.policy_manager::execute_mint_policy
+    # => [new_amount, new_tag, new_note_type, NEW_RECIPIENT, pad(9)]
 
-    exec.faucets::distribute
+    exec.faucets::mint_and_send
     # => [note_idx, pad(15)]
 end
 
