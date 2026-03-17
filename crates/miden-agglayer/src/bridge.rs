@@ -98,8 +98,8 @@ static CLAIM_NULLIFIERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 /// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
-/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (PROOF_DATA_KEY →
-///   \[1, 0, 0, 0\]).
+/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
+///   source_bridge_network) → \[1, 0, 0, 0\]).
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.

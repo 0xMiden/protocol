@@ -100,14 +100,6 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
-# Memory address for the leaf_index field within the global index.
-# leaf_index is the last u32 of the GlobalIndex (uint256), i.e., `leafIndex = uint32(globalIndex)`
-# See: https://github.com/agglayer/agglayer-contracts/blob/110bda5a03e70ee7331bc06407a8e79226d3e520/contracts/AgglayerBridge.sol#L1139
-const CLAIM_LEAF_INDEX_MEM_ADDR = GLOBAL_INDEX_PTR + 7
-
-# Memory address for the originNetwork (source_bridge_network) field within the leaf data
-const CLAIM_ORIGIN_NETWORK_MEM_ADDR = CLAIM_LEAF_DATA_START_PTR + 1
-
 # Memory address used as scratch space for computing the claim nullifier hash
 const CLAIM_NULLIFIER_HASH_INPUT_PTR = 900
 
@@ -390,14 +382,6 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
-    # Compute the claim nullifier as RPO(leaf_index, source_bridge_network)
-    # and assert the claim has not been spent, then mark it as spent
-    exec.compute_claim_nullifier
-    # => [NULLIFIER, pad(16)]
-
-    exec.assert_claim_not_spent
-    # => [pad(16)]
-
     # Look up the faucet account ID from the origin token address
     exec.get_origin_token_address
     # => [origin_token_addr(5), pad(16)]
@@ -423,34 +407,23 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Computes the claim nullifier as the RPO hash of (leaf_index, source_bridge_network).
+#! Computes the claim nullifier as RPO(leaf_index, source_bridge_network), then checks
+#! that the claim has not been spent and marks it as spent.
 #!
-#! This procedure reads the leaf_index from the global index in memory and the
-#! source_bridge_network (originNetwork) from the leaf data in memory, writes them
-#! to a scratch memory area, and hashes them using RPO to produce a unique nullifier.
+#! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
+#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
 #!
-#! Inputs:  []
-#! Outputs: [NULLIFIER]
+#! Inputs:  [leaf_index, source_bridge_network]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
 #!
 #! Invocation: exec
-proc compute_claim_nullifier
-    # Load leaf_index: the last u32 of the GlobalIndex (uint256).
-    # In Solidity: `leafIndex = uint32(globalIndex)`
-    # Stored as LE-packed u32 felt; byte-swap to get the canonical uint32 value.
-    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
-    exec.utils::swap_u32_bytes
-    # => [leaf_index]
-
-    # Load source_bridge_network (originNetwork) from leaf data memory (also LE-packed u32)
-    # and byte-swap to get the canonical uint32 value
-    mem_load.CLAIM_ORIGIN_NETWORK_MEM_ADDR
-    exec.utils::swap_u32_bytes
-    # => [source_bridge_network, leaf_index]
-
+proc set_and_check_claimed
     # Write both values to scratch memory for hashing
     # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
     # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = source_bridge_network
-    swap
     mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
     # => [source_bridge_network]
 
@@ -462,6 +435,9 @@ proc compute_claim_nullifier
     push.2 push.CLAIM_NULLIFIER_HASH_INPUT_PTR
     exec.rpo256::hash_elements
     # => [NULLIFIER]
+
+    exec.assert_claim_not_spent
+    # => []
 end
 
 #! Checks that the CLAIM note has not already been spent, and marks it as spent
@@ -586,7 +562,12 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     # => [LEAF_VALUE[8]]
 end
 
-#! Verify leaf and checks that it has not been claimed.
+#! Verify leaf, check that it has not been claimed, and mark it as claimed.
+#!
+#! This mimics the Solidity `_verifyLeaf` function which calls `_setAndCheckClaimed`
+#! internally, since the global index (containing leaf_index and source_bridge_network)
+#! is already extracted during verification.
+#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
 #!
 #! Inputs:
 #!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
@@ -597,6 +578,7 @@ end
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#! - the claim has already been spent.
 #!
 #! Invocation: exec
 proc verify_leaf
@@ -641,6 +623,10 @@ proc verify_leaf
         exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
+        # Save leaf_index to scratch memory for set_and_check_claimed after proof verification
+        dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        # => [leaf_index, LEAF_VALUE[8]]
+
         # verify single Merkle proof: leaf against mainnetExitRoot
         push.MAINNET_EXIT_ROOT_PTR swap
         push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
@@ -654,11 +640,25 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For mainnet deposits, source_bridge_network = 0 (_MAINNET_NETWORK_ID)
+        # See Solidity: networkID == _MAINNET_NETWORK_ID && sourceBridgeNetwork == _ZKEVM_NETWORK_ID
+        # In this case globalIndex = uint256(leafIndex), so source_bridge_network = 0
+        push.0 mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        # => [leaf_index, source_bridge_network]
     else
         # ==================== ROLLUP DEPOSIT ====================
         # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
         # then do two-level verification
         exec.process_global_index_rollup
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Save leaf_index and rollup_index to scratch memory for set_and_check_claimed
+        # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
+        # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = rollup_index
+        dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+        dup.1 push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
@@ -686,7 +686,24 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For rollup deposits, source_bridge_network = rollup_index + 1
+        # See Solidity: sourceBridgeNetwork = indexRollup + 1
+        # https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L961
+        # Reload saved values: leaf_index and rollup_index
+        # source_bridge_network = rollup_index + 1
+        push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load u32wrapping_add.1
+        # => [source_bridge_network]
+        mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        # => [leaf_index, source_bridge_network]
     end
+
+    # 4. Check the claim has not been spent and mark it as spent.
+    # Both branches leave [leaf_index, source_bridge_network] on the stack.
+    # This mimics Solidity's _setAndCheckClaimed(leafIndex, sourceBridgeNetwork) called
+    # from within _verifyLeaf.
+    exec.set_and_check_claimed
+    # => []
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
