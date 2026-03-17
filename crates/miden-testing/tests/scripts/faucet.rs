@@ -34,10 +34,12 @@ use miden_standards::account::faucets::{
     FungibleTokenMetadata,
     NetworkFungibleFaucet,
 };
+use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
+    ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::note::{BurnNote, MintNote, MintNoteStorage, StandardNote};
@@ -72,7 +74,7 @@ pub fn create_mint_script_code(params: &FaucetTestParams) -> String {
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -127,6 +129,29 @@ pub fn verify_minted_output_note(
     Ok(())
 }
 
+async fn execute_faucet_note_script(
+    mock_chain: &MockChain,
+    faucet_id: AccountId,
+    sender_account_id: AccountId,
+    note_script_code: &str,
+    rng_seed: u32,
+) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+
+    let mut rng = RpoRandomCoin::new([Felt::from(rng_seed); 4].into());
+    let note = NoteBuilder::new(sender_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(note_script_code)
+        .build()?;
+
+    let tx_context = mock_chain
+        .build_tx_context(faucet_id, &[], &[note])?
+        .with_source_manager(source_manager)
+        .build()?;
+
+    Ok(tx_context.execute().await)
+}
+
 // TESTS MINT FUNGIBLE ASSET
 // ================================================================================================
 
@@ -158,7 +183,7 @@ async fn minting_fungible_asset_on_existing_faucet_succeeds() -> anyhow::Result<
     Ok(())
 }
 
-/// Tests that distribute fails when the minted amount would exceed the max supply.
+/// Tests that mint fails when the minted amount would exceed the max supply.
 #[tokio::test]
 async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyhow::Result<()> {
     // CONSTRUCT AND EXECUTE TX (Failure)
@@ -190,7 +215,7 @@ async fn faucet_contract_mint_fungible_asset_fails_exceeds_max_supply() -> anyho
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack
@@ -367,7 +392,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
 /// Tests that a public note can be created during note consumption by fetching the note script
 /// from the data store. This test verifies the functionality added in issue #1972.
 ///
-/// The test creates a note that calls the faucet's `distribute` function to create a PUBLIC
+/// The test creates a note that calls the faucet's `mint` function to create a PUBLIC
 /// P2ID output note. The P2ID script is fetched from the data store during transaction execution.
 #[tokio::test]
 async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Result<()> {
@@ -445,13 +470,13 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
                 exec.note::build_recipient
                 # => [RECIPIENT]
 
-                # Now call distribute with the computed recipient
+                # Now call mint with the computed recipient
                 push.{note_type}
                 push.{tag}
                 push.{amount}
                 # => [amount, tag, note_type, RECIPIENT]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # Truncate the stack
@@ -472,7 +497,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
         amount = amount,
     );
 
-    // Create the trigger note that will call distribute
+    // Create the trigger note that will call mint
     let mut rng = RpoRandomCoin::new([Felt::from(1u32); 4].into());
     let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
@@ -560,6 +585,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
         max_supply,
         faucet_owner_account_id,
         Some(token_supply),
+        OwnerControlledInitConfig::OwnerOnly,
     )?;
 
     // Create a target account to consume the minted note
@@ -674,7 +700,13 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
@@ -710,6 +742,56 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that set_mint_policy rejects policy roots outside the allowed policy roots map.
+#[tokio::test]
+async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(0),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+    let mock_chain = builder.build()?;
+
+    // This root exists in account code, but is not in the mint policy allowlist.
+    let invalid_policy_root = NetworkFungibleFaucet::mint_and_send_digest();
+    let set_policy_note_script = format!(
+        r#"
+        use miden::standards::mint_policies::policy_manager->policy_manager
+
+        begin
+            repeat.12 push.0 end
+            push.{invalid_policy_root}
+            call.policy_manager::set_mint_policy
+            dropw dropw dropw dropw
+        end
+        "#
+    );
+
+    let result = execute_faucet_note_script(
+        &mock_chain,
+        faucet.id(),
+        owner_account_id,
+        &set_policy_note_script,
+        400,
+    )
+    .await?;
+
+    assert_transaction_executor_error!(result, ERR_MINT_POLICY_ROOT_NOT_ALLOWED);
+
+    Ok(())
+}
+
 /// Tests that a non-owner cannot mint assets on network faucet.
 #[tokio::test]
 async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
@@ -729,7 +811,13 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
     let mock_chain = builder.build()?;
 
@@ -761,7 +849,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let tx_context = mock_chain.build_tx_context(faucet.id(), &[], &[mint_note])?.build()?;
     let result = tx_context.execute().await;
 
-    // The distribute function uses ERR_ONLY_OWNER, which is "note sender is not the owner"
+    // The mint function uses ERR_ONLY_OWNER, which is "note sender is not the owner"
     let expected_error = ERR_SENDER_NOT_OWNER;
     assert_transaction_executor_error!(result, expected_error);
 
@@ -780,7 +868,13 @@ async fn test_network_faucet_owner_storage() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let _mock_chain = builder.build()?;
 
     // Verify owner is stored correctly
@@ -817,8 +911,13 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet =
-        builder.add_existing_network_faucet("NET", 1000, initial_owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        initial_owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
@@ -965,7 +1064,13 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let mock_chain = builder.build()?;
 
     // Create transfer ownership note script
@@ -1026,7 +1131,13 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let faucet = builder.add_existing_network_faucet("NET", 1000, owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
 
     // Check stored value before renouncing
     let stored_owner_before = faucet.storage().get_item(Ownable2Step::slot_name())?;
@@ -1146,8 +1257,13 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         AccountStorageMode::Private,
     );
 
-    let mut faucet =
-        builder.add_existing_network_faucet("NET", 200, faucet_owner_account_id, Some(100))?;
+    let mut faucet = builder.add_existing_network_faucet(
+        "NET",
+        200,
+        faucet_owner_account_id,
+        Some(100),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
 
     let burn_amount = 100u64;
     let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
@@ -1213,8 +1329,13 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         AccountStorageMode::Private,
     );
 
-    let faucet =
-        builder.add_existing_network_faucet("NET", 1000, faucet_owner_account_id, Some(50))?;
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        faucet_owner_account_id,
+        Some(50),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
     let target_account = builder.add_existing_wallet(Auth::IncrNonce)?;
 
     let amount = Felt::new(75);
@@ -1305,10 +1426,10 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
     Ok(())
 }
 
-/// Tests that calling distribute multiple times in a single transaction produces output notes
+/// Tests that calling mint multiple times in a single transaction produces output notes
 /// with the correct individual amounts, not the cumulative vault totals.
 #[tokio::test]
-async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
+async fn multiple_mints_in_single_tx_produce_correct_amounts() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
@@ -1330,7 +1451,7 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
     let tx_script_code = format!(
         "
             begin
-                # --- First distribute: mint {amount_1} tokens to recipient_1 ---
+                # --- First mint: mint {amount_1} tokens to recipient_1 ---
                 padw padw push.0
 
                 push.{recipient_1}
@@ -1339,13 +1460,13 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
                 push.{amount_1}
                 # => [amount_1, tag, note_type, RECIPIENT_1, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # clean up the stack before the second call
                 dropw dropw dropw dropw
 
-                # --- Second distribute: mint {amount_2} tokens to recipient_2 ---
+                # --- Second mint: mint {amount_2} tokens to recipient_2 ---
                 padw padw push.0
 
                 push.{recipient_2}
@@ -1354,7 +1475,7 @@ async fn multiple_distributes_in_single_tx_produce_correct_amounts() -> anyhow::
                 push.{amount_2}
                 # => [amount_2, tag, note_type, RECIPIENT_2, pad(9)]
 
-                call.::miden::standards::faucets::basic_fungible::distribute
+                call.::miden::standards::faucets::basic_fungible::mint_and_send
                 # => [note_idx, pad(15)]
 
                 # truncate the stack

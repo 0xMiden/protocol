@@ -53,6 +53,7 @@ use miden_standards::account::faucets::{
     NetworkFungibleFaucet,
     TokenName,
 };
+use miden_standards::account::mint_policies::{OwnerControlled, OwnerControlledInitConfig};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
@@ -393,6 +394,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
+        mint_policy: OwnerControlledInitConfig,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
@@ -415,6 +417,7 @@ impl MockChainBuilder {
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
+            .with_component(OwnerControlled::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

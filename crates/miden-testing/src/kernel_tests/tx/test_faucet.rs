@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 
+use miden_protocol::Felt;
 use miden_protocol::account::{Account, AccountBuilder, AccountComponent, AccountId, AccountType};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::{
@@ -14,6 +15,7 @@ use miden_protocol::errors::tx_kernel::{
     ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN,
     ERR_VAULT_FUNGIBLE_ASSET_AMOUNT_LESS_THAN_AMOUNT_TO_WITHDRAW,
+    ERR_VAULT_INVALID_ENABLE_CALLBACKS,
     ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND,
 };
 use miden_protocol::testing::account_id::{
@@ -148,6 +150,41 @@ async fn test_mint_fungible_asset_inconsistent_faucet_id() -> anyhow::Result<()>
     let exec_output = tx_context.execute_code(&code).await;
 
     assert_execution_error!(exec_output, ERR_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN);
+    Ok(())
+}
+
+/// Tests that minting a fungible asset on a non-faucet account fails when the key has its asset
+/// metadata (lower 8 bits) set to u8::MAX.
+#[tokio::test]
+async fn mint_fungible_asset_fails_on_invalid_asset_metadata() -> anyhow::Result<()> {
+    let asset = FungibleAsset::mock(50);
+
+    let mut vault_key_word = asset.to_key_word();
+    vault_key_word[2] = Felt::try_from(vault_key_word[2].as_canonical_u64() | u8::MAX as u64)?;
+
+    let code = format!(
+        "
+      use $kernel::prologue
+      use mock::faucet
+
+      begin
+          exec.prologue::prepare_transaction
+          push.{ASSET_VALUE}
+          push.{ASSET_KEY}
+          call.faucet::mint
+          dropw dropw
+      end
+      ",
+        ASSET_KEY = vault_key_word,
+        ASSET_VALUE = asset.to_value_word(),
+    );
+
+    let result = TransactionContextBuilder::with_fungible_faucet(asset.faucet_id().into())
+        .build()?
+        .execute_code(&code)
+        .await;
+    assert_execution_error!(result, ERR_VAULT_INVALID_ENABLE_CALLBACKS);
+
     Ok(())
 }
 

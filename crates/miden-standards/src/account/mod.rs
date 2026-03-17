@@ -7,6 +7,7 @@ pub mod encoding;
 pub mod faucets;
 pub mod interface;
 pub mod metadata;
+pub mod mint_policies;
 pub mod wallets;
 
 pub use metadata::AccountBuilderSchemaCommitmentExt;
