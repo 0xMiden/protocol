@@ -3,6 +3,7 @@ extern crate alloc;
 use miden_agglayer::{
     AggLayerBridge,
     ConfigAggBridgeNote,
+    EthAddressFormat,
     create_existing_bridge_account,
     faucet_registry_key,
 };
@@ -60,8 +61,12 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
+    // Use a dummy origin token address for this test
+    let origin_token_address =
+        EthAddressFormat::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
     let config_note = ConfigAggBridgeNote::create(
         faucet_to_register,
+        &origin_token_address,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),
