@@ -196,9 +196,8 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// The storage layout of the faucet account is defined by the combination of the following
 /// components (see their docs for details):
 /// - [`FungibleTokenMetadata`] (token metadata, name, description, etc.)
-/// - [`BasicFungibleFaucet`] (distribute and burn procedures)
+/// - [`BasicFungibleFaucet`] (mint_and_send and burn procedures)
 /// - [`AuthSingleSigAcl`]
-/// - [`AuthControlled`]
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     metadata: FungibleTokenMetadata,
