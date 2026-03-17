@@ -301,7 +301,7 @@ proc build_p2id_output_note
     mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_SUFFIX_PTR
     mem_store.OUTPUT_NOTE_TARGET_ACCOUNT_ID_PREFIX_PTR
 
-    # store amount in memory locals for use in faucets::distribute
+    # store amount in memory locals for use in faucets::mint_and_send
     loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
     # => [pad(16)]
 
@@ -344,7 +344,7 @@ proc build_p2id_output_note
     exec.asset_conversion::verify_u256_to_native_amount_conversion
     # => [amount, tag, note_type, RECIPIENT]
 
-    exec.faucets::distribute
+    exec.faucets::mint_and_send
     # => [pad(16)]
 end
 
@@ -387,7 +387,7 @@ end
 #!
 #! Panics if:
 #! - the rollup exit root Merkle Proof validation via FPI fails.
-#! - any of the validations in faucets::distribute fail.
+#! - any of the validations in faucets::mint_and_send fail.
 #!
 #! Invocation: call
 @locals(10) # 2 for prefix and suffix, 8 for amount
