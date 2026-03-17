@@ -41,6 +41,13 @@ use super::test_utils::{
     SOLIDITY_MERKLE_PROOF_VECTORS,
 };
 
+// CONSTANTS
+// ================================================================================================
+
+/// Maximum allowed cycle count for CLAIM note processing.
+/// Current observed values: ~25,662 (real/simulated), ~38,547 (rollup).
+const MAX_CLAIM_NOTE_PROCESSING_CYCLES: usize = 40_000;
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -281,6 +288,12 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .build()?;
 
     let claim_executed = claim_tx_context.execute().await?;
+
+    let claim_cycles = claim_executed.measurements().notes_processing;
+    assert!(
+        claim_cycles <= MAX_CLAIM_NOTE_PROCESSING_CYCLES,
+        "CLAIM note processing exceeded cycle budget: {claim_cycles} > {MAX_CLAIM_NOTE_PROCESSING_CYCLES}"
+    );
 
     // VERIFY MINT NOTE WAS CREATED BY THE BRIDGE
     // --------------------------------------------------------------------------------------------
