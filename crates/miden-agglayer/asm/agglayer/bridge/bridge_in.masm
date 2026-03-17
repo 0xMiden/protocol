@@ -216,7 +216,9 @@ end
 #! Invocation: exec
 pub proc process_global_index_mainnet
     # the top 191 bits of the global index are zero
-    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
 
     # the next element is the mainnet flag (LE-packed u32)
     # byte-swap to get the BE value, then assert it is exactly 1
