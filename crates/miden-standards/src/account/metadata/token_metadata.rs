@@ -32,7 +32,8 @@ use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 /// ## Storage Layout
 ///
 /// - Slot 0–1: name (2 Words = 8 felts)
-/// - Slot 2: mutability_config `[desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]`
+/// - Slot 2: mutability_config `[desc_mutable, logo_mutable, extlink_mutable,
+///   is_max_supply_mutable]`
 /// - Slot 3–9: description (7 Words)
 /// - Slot 10–16: logo_uri (7 Words)
 /// - Slot 17–23: external_link (7 Words)
@@ -45,10 +46,10 @@ pub struct TokenMetadata {
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
-    description_mutable: bool,
-    logo_uri_mutable: bool,
-    external_link_mutable: bool,
-    max_supply_mutable: bool,
+    is_description_mutable: bool,
+    is_logo_uri_mutable: bool,
+    is_external_link_mutable: bool,
+    is_max_supply_mutable: bool,
 }
 
 impl TokenMetadata {
@@ -69,45 +70,45 @@ impl TokenMetadata {
     /// Sets the description and its mutability flag together.
     pub fn with_description(mut self, description: Description, mutable: bool) -> Self {
         self.description = Some(description);
-        self.description_mutable = mutable;
+        self.is_description_mutable = mutable;
         self
     }
 
     /// Sets whether the description can be updated by the owner.
     pub fn with_description_mutable(mut self, mutable: bool) -> Self {
-        self.description_mutable = mutable;
+        self.is_description_mutable = mutable;
         self
     }
 
     /// Sets the logo URI and its mutability flag together.
     pub fn with_logo_uri(mut self, logo_uri: LogoURI, mutable: bool) -> Self {
         self.logo_uri = Some(logo_uri);
-        self.logo_uri_mutable = mutable;
+        self.is_logo_uri_mutable = mutable;
         self
     }
 
     /// Sets whether the logo URI can be updated by the owner.
     pub fn with_logo_uri_mutable(mut self, mutable: bool) -> Self {
-        self.logo_uri_mutable = mutable;
+        self.is_logo_uri_mutable = mutable;
         self
     }
 
     /// Sets the external link and its mutability flag together.
     pub fn with_external_link(mut self, external_link: ExternalLink, mutable: bool) -> Self {
         self.external_link = Some(external_link);
-        self.external_link_mutable = mutable;
+        self.is_external_link_mutable = mutable;
         self
     }
 
     /// Sets whether the external link can be updated by the owner.
     pub fn with_external_link_mutable(mut self, mutable: bool) -> Self {
-        self.external_link_mutable = mutable;
+        self.is_external_link_mutable = mutable;
         self
     }
 
     /// Sets whether the max supply can be updated by the owner.
     pub fn with_max_supply_mutable(mut self, mutable: bool) -> Self {
-        self.max_supply_mutable = mutable;
+        self.is_max_supply_mutable = mutable;
         self
     }
 
@@ -228,10 +229,10 @@ impl TokenMetadata {
         ));
 
         let mutability_config_word = Word::from([
-            miden_protocol::Felt::from(self.description_mutable as u32),
-            miden_protocol::Felt::from(self.logo_uri_mutable as u32),
-            miden_protocol::Felt::from(self.external_link_mutable as u32),
-            miden_protocol::Felt::from(self.max_supply_mutable as u32),
+            miden_protocol::Felt::from(self.is_description_mutable as u32),
+            miden_protocol::Felt::from(self.is_logo_uri_mutable as u32),
+            miden_protocol::Felt::from(self.is_external_link_mutable as u32),
+            miden_protocol::Felt::from(self.is_max_supply_mutable as u32),
         ]);
         slots.push(StorageSlot::with_value(
             mutability_config_slot().clone(),

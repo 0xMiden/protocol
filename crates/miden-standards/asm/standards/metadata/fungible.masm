@@ -4,6 +4,7 @@
 # external_link, token_metadata), and owner-gated setters.
 # Depends on ownable2step for ownership checks.
 
+use miden::core::mem
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
@@ -41,8 +42,6 @@ const EXTERNAL_LINK_4_SLOT = word("miden::standards::metadata::external_link_4")
 const EXTERNAL_LINK_5_SLOT = word("miden::standards::metadata::external_link_5")
 const EXTERNAL_LINK_6_SLOT = word("miden::standards::metadata::external_link_6")
 
-const CHUNK_1_LOC = 0
-const CHUNK_0_LOC = 4
 const FIELD_0_LOC = 0
 const FIELD_1_LOC = 4
 const FIELD_2_LOC = 8
@@ -81,52 +80,86 @@ proc get_name_chunk_1
 end
 
 #! Loads the mutability config word.
-#! Output: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)].
+#! Output: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(16)].
 #! (word[0] on top after get_item, little-endian)
 proc get_mutability_config_word
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
 end
 
+#! Pipes 28 felts (7 words) from the advice stack into write_ptr and asserts the hash
+#! matches COMMITMENT. adv.push_mapval must be called before this procedure to load
+#! the data onto the advice stack.
+#!
+#! Inputs:  [write_ptr, COMMITMENT]
+#! Outputs: []
+proc pipe_to_memory
+    push.7
+    # => [7, write_ptr, COMMITMENT, ...]
+    exec.mem::pipe_preimage_to_memory
+    # => [write_ptr', ...]
+    drop
+end
+
+#! Returns the token metadata (token_supply, max_supply, decimals, token_symbol).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [token_supply, max_supply, decimals, token_symbol, pad(12)]
 #!
 #! Invocation: call
 pub proc get_token_metadata
-    exec.get_token_metadata_word
+    call.get_token_metadata_word
     swapw dropw
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
 end
 
 #! Returns the maximum supply.
-#! Inputs:  [pad(16)]  Outputs: [max_supply, pad(15)]  Invocation: call
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [max_supply, pad(15)]
+#!
+#! Invocation: call
 pub proc get_max_supply
-    exec.get_token_metadata
+    call.get_token_metadata
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
     drop movdn.2 drop drop
     # => [max_supply, pad(15)]
 end
 
 #! Returns decimals (single felt; e.g. 8).
-#! Inputs:  [pad(16)]  Outputs: [decimals, pad(15)]  Invocation: call
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [decimals, pad(15)]
+#!
+#! Invocation: call
 pub proc get_decimals
-    exec.get_token_metadata
+    call.get_token_metadata
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
     drop drop swap drop
     # => [decimals, pad(15)]
 end
 
 #! Returns token_symbol (single felt).
-#! Inputs:  [pad(16)]  Outputs: [token_symbol, pad(15)]  Invocation: call
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [token_symbol, pad(15)]
+#!
+#! Invocation: call
 pub proc get_token_symbol
-    exec.get_token_metadata
+    call.get_token_metadata
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
     drop drop drop
     # => [token_symbol, pad(15)]
 end
 
 #! Returns token_supply (single felt).
-#! Inputs:  [pad(16)]  Outputs: [token_supply, pad(15)]  Invocation: call
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [token_supply, pad(15)]
+#!
+#! Invocation: call
 pub proc get_token_supply
-    exec.get_token_metadata
+    call.get_token_metadata
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
     movdn.3 drop drop drop
     # => [token_supply, pad(15)]
@@ -142,103 +175,117 @@ end
 #! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]  (16 felts; chunk_0 on top)
 #!
 #! Invocation: call
-@locals(8)
 pub proc get_name
     exec.get_name_chunk_1
-    loc_storew_le.CHUNK_1_LOC dropw
-
     exec.get_name_chunk_0
-    loc_storew_le.CHUNK_0_LOC dropw
-
-    loc_loadw_le.CHUNK_1_LOC
-    swapw
-    loc_loadw_le.CHUNK_0_LOC
+    swapdw dropw dropw
     # => [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
 end
 
 # =================================================================================================
-# MUTABILITY CONFIG — [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable]
+# MUTABILITY CONFIG — [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
 # =================================================================================================
 
 #! Returns the mutability config word.
 #!
-#! After get_item, stack has word[0] on top (little-endian):
-#! [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
-#!
 #! Inputs:  [pad(16)]
-#! Outputs: [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+#! Outputs: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(12)]
 #!
 #! Invocation: call
 pub proc get_mutability_config
     exec.get_mutability_config_word
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(16)]
+
+    # truncate the stack
     swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(12)]
 end
 
 # =================================================================================================
 # MUTABILITY CHECKS — read mutability_config
 # =================================================================================================
 
-#! Returns whether max supply is mutable (single felt: 0 or 1).
-#!
-#! Reads mutability_config word felt[3] (max_supply_mutable).
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_max_supply_mutable
-    exec.get_mutability_config_word
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
-    drop drop drop
-    # => [max_supply_mutable, pad(15)]
-end
+# Private helpers — load the mutability config word and extract a single flag.
+# Used by both the public is_* procedures and the set_* procedures.
 
-#! Returns whether description is mutable (flag == 1).
-#!
-#! Reads mutability_config word felt[0] (desc_mutable). Returns 1 if mutable, 0 otherwise.
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_description_mutable
+proc is_description_mutable_inner
     exec.get_mutability_config_word
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
     movdn.3 drop drop drop
-    # => [desc_mutable, pad(15)]
-    push.1 eq
-    # => [is_mutable, pad(15)]
+    # => [is_desc_mutable, ...]
 end
 
-#! Returns whether logo URI is mutable (flag == 1).
-#!
-#! Reads mutability_config word felt[1] (logo_mutable). Returns 1 if mutable, 0 otherwise.
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_logo_uri_mutable
+proc is_logo_uri_mutable_inner
     exec.get_mutability_config_word
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
     drop movdn.2 drop drop
-    # => [logo_mutable, pad(15)]
-    push.1 eq
-    # => [is_mutable, pad(15)]
+    # => [is_logo_mutable, ...]
 end
 
-#! Returns whether external link is mutable (flag == 1).
-#!
-#! Reads mutability_config word felt[2] (extlink_mutable). Returns 1 if mutable, 0 otherwise.
-#!
-#! Inputs:  [pad(16)]  Outputs: [flag, pad(15)]  Invocation: call
-pub proc is_external_link_mutable
+proc is_external_link_mutable_inner
     exec.get_mutability_config_word
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(16)]
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
     drop drop swap drop
-    # => [extlink_mutable, pad(15)]
-    push.1 eq
-    # => [is_mutable, pad(15)]
+    # => [is_extlink_mutable, ...]
+end
+
+proc is_max_supply_mutable_inner
+    exec.get_mutability_config_word
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
+    drop drop drop
+    # => [is_max_supply_mutable, ...]
+end
+
+#! Returns 1 if description is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_description_mutable, pad(15)]
+#!
+#! Invocation: call
+pub proc is_description_mutable
+    exec.is_description_mutable_inner
+    # => [is_desc_mutable, pad(16)]
+    swap drop
+    # => [is_desc_mutable, pad(15)]
+end
+
+#! Returns 1 if logo URI is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_logo_uri_mutable, pad(15)]
+#!
+#! Invocation: call
+pub proc is_logo_uri_mutable
+    exec.is_logo_uri_mutable_inner
+    # => [is_logo_mutable, pad(16)]
+    swap drop
+    # => [is_logo_mutable, pad(15)]
+end
+
+#! Returns 1 if external link is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_external_link_mutable, pad(15)]
+#!
+#! Invocation: call
+pub proc is_external_link_mutable
+    exec.is_external_link_mutable_inner
+    # => [is_extlink_mutable, pad(16)]
+    swap drop
+    # => [is_extlink_mutable, pad(15)]
+end
+
+#! Returns 1 if max supply is mutable, and 0 otherwise.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [is_max_supply_mutable, pad(15)]
+#!
+#! Invocation: call
+pub proc is_max_supply_mutable
+    exec.is_max_supply_mutable_inner
+    # => [is_max_supply_mutable, pad(16)]
+    swap drop
+    # => [is_max_supply_mutable, pad(15)]
 end
 
 # =================================================================================================
@@ -248,9 +295,9 @@ end
 #! Updates the description (7 Words) if the description mutability flag is 1
 #! and the note sender is the owner.
 #!
-#! The caller passes the hash of the new description on the stack and provides the
-#! actual 7 Words in the advice map under that hash. The VM retrieves the data by
-#! looking up the hash in the advice map.
+#! The caller passes the Poseidon hash of the new description on the stack and provides
+#! the actual 7 Words in the advice map under that hash. The hash is verified against
+#! the preimage during loading.
 #!
 #! Inputs:
 #!    Stack: [DESCRIPTION_HASH, pad(12)]
@@ -263,59 +310,57 @@ end
 #! Panics if:
 #! - the description mutability flag is not 1.
 #! - the note sender is not the owner.
+#! - the preimage does not match DESCRIPTION_HASH.
 #!
-#! Invocation: call (from note script context)
-@locals(4)
+#! Invocation: call
+@locals(8)
 pub proc set_description
-    # Save DESCRIPTION_HASH to locals, check mutability, verify owner, then restore hash
+    # Save DESCRIPTION_HASH to local word 0; check mutability; verify owner.
     loc_storew_le.0 dropw
     # => [pad(12)]
 
-    # Read mutability config word
-    exec.get_mutability_config_word
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
-    movdn.3 drop drop drop
-    # => [desc_mutable, pad(15)]
-    push.1 eq
+    exec.is_description_mutable_inner
+    # => [is_desc_mutable, pad(12)]
     assert.err=ERR_DESCRIPTION_NOT_MUTABLE
     # => [pad(16)]
 
     exec.ownable2step::assert_sender_is_owner
     # => [pad(16)]
 
-    # Restore hash and load 7 Words from advice map
+    # Restore hash; pipe 7 words from advice map into local words 1–7, validating the hash.
     loc_loadw_le.0
     # => [DESCRIPTION_HASH, pad(12)]
     adv.push_mapval
-    dropw
-    # => [pad(16)]
+    locaddr.1
+    # => [locaddr.1, DESCRIPTION_HASH, pad(12)]
+    exec.pipe_to_memory
+    # => [pad(12)]
 
-    padw adv_loadw
+    locaddr.1 mem_loadw_le
     push.DESCRIPTION_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.2 mem_loadw_le
     push.DESCRIPTION_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.3 mem_loadw_le
     push.DESCRIPTION_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.4 mem_loadw_le
     push.DESCRIPTION_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.5 mem_loadw_le
     push.DESCRIPTION_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.6 mem_loadw_le
     push.DESCRIPTION_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.7 mem_loadw_le
     push.DESCRIPTION_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -326,6 +371,10 @@ end
 
 #! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
 #! and the note sender is the owner.
+#!
+#! The caller passes the Poseidon hash of the new logo URI on the stack and provides
+#! the actual 7 Words in the advice map under that hash. The hash is verified against
+#! the preimage during loading.
 #!
 #! Inputs:
 #!    Stack: [LOGO_URI_HASH, pad(12)]
@@ -338,53 +387,55 @@ end
 #! Panics if:
 #! - the logo URI mutability flag is not 1.
 #! - the note sender is not the owner.
+#! - the preimage does not match LOGO_URI_HASH.
 #!
-#! Invocation: call (from note script context)
-@locals(4)
+#! Invocation: call
+@locals(8)
 pub proc set_logo_uri
     loc_storew_le.0 dropw
     # => [pad(12)]
 
-    exec.get_mutability_config_word
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
-    drop movdn.2 drop drop
-    # => [logo_mutable, pad(15)]
-    push.1 eq
+    exec.is_logo_uri_mutable_inner
+    # => [is_logo_mutable, pad(12)]
     assert.err=ERR_LOGO_URI_NOT_MUTABLE
     # => [pad(16)]
 
     exec.ownable2step::assert_sender_is_owner
+    # => [pad(16)]
 
     loc_loadw_le.0
+    # => [LOGO_URI_HASH, pad(12)]
     adv.push_mapval
-    dropw
+    locaddr.1
+    # => [locaddr.1, LOGO_URI_HASH, pad(12)]
+    exec.pipe_to_memory
+    # => [pad(12)]
 
-    padw adv_loadw
+    locaddr.1 mem_loadw_le
     push.LOGO_URI_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.2 mem_loadw_le
     push.LOGO_URI_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.3 mem_loadw_le
     push.LOGO_URI_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.4 mem_loadw_le
     push.LOGO_URI_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.5 mem_loadw_le
     push.LOGO_URI_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.6 mem_loadw_le
     push.LOGO_URI_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.7 mem_loadw_le
     push.LOGO_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -395,6 +446,10 @@ end
 
 #! Updates the external link (7 Words) if the external link mutability flag is 1
 #! and the note sender is the owner.
+#!
+#! The caller passes the Poseidon hash of the new external link on the stack and provides
+#! the actual 7 Words in the advice map under that hash. The hash is verified against
+#! the preimage during loading.
 #!
 #! Inputs:
 #!    Stack: [EXTERNAL_LINK_HASH, pad(12)]
@@ -407,53 +462,55 @@ end
 #! Panics if:
 #! - the external link mutability flag is not 1.
 #! - the note sender is not the owner.
+#! - the preimage does not match EXTERNAL_LINK_HASH.
 #!
-#! Invocation: call (from note script context)
-@locals(4)
+#! Invocation: call
+@locals(8)
 pub proc set_external_link
     loc_storew_le.0 dropw
     # => [pad(12)]
 
-    exec.get_mutability_config_word
-    swapw dropw
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, pad(12)]
-    drop drop swap drop
-    # => [extlink_mutable, pad(15)]
-    push.1 eq
+    exec.is_external_link_mutable_inner
+    # => [is_extlink_mutable, pad(12)]
     assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
     # => [pad(16)]
 
     exec.ownable2step::assert_sender_is_owner
+    # => [pad(16)]
 
     loc_loadw_le.0
+    # => [EXTERNAL_LINK_HASH, pad(12)]
     adv.push_mapval
-    dropw
+    locaddr.1
+    # => [locaddr.1, EXTERNAL_LINK_HASH, pad(12)]
+    exec.pipe_to_memory
+    # => [pad(12)]
 
-    padw adv_loadw
+    locaddr.1 mem_loadw_le
     push.EXTERNAL_LINK_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.2 mem_loadw_le
     push.EXTERNAL_LINK_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.3 mem_loadw_le
     push.EXTERNAL_LINK_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.4 mem_loadw_le
     push.EXTERNAL_LINK_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.5 mem_loadw_le
     push.EXTERNAL_LINK_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.6 mem_loadw_le
     push.EXTERNAL_LINK_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    padw adv_loadw
+    locaddr.7 mem_loadw_le
     push.EXTERNAL_LINK_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -473,17 +530,11 @@ end
 #! - the note sender is not the owner.
 #! - the new max supply is less than the current token supply.
 #!
-#! Invocation: call (from note script context)
+#! Invocation: call
 pub proc set_max_supply
     # 1. Check max supply mutability
-    exec.get_mutability_config_word
-    # => [desc_mutable, logo_mutable, extlink_mutable, max_supply_mutable, new_max_supply, pad(15)]
-    # Note: unlike other optional_set_* procedures, we cannot use swapw dropw here because
-    # new_max_supply occupies position 4 and would be discarded. Instead, drop 3 elements
-    # directly; the assert then brings the stack back to depth 16.
-    drop drop drop
-    # => [max_supply_mutable, new_max_supply, pad(15)]
-    push.1 eq
+    exec.is_max_supply_mutable_inner
+    # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_IMMUTABLE
     # => [new_max_supply, pad(15)]
 
@@ -492,7 +543,7 @@ pub proc set_max_supply
     # => [new_max_supply, pad(15)]
 
     # 3. Read current metadata word
-    exec.get_token_metadata_word
+    call.get_token_metadata_word
     # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
     # 4. Validate: new_max_supply >= token_supply (i.e. token_supply <= new_max_supply)
