@@ -22,6 +22,7 @@ use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::mint_policies::OwnerControlled;
 use crate::procedure_digest;
 
 /// The schema type for token symbols.
@@ -30,11 +31,11 @@ const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::t
 // NETWORK FUNGIBLE FAUCET ACCOUNT COMPONENT
 // ================================================================================================
 
-// Initialize the digest of the `distribute` procedure of the Network Fungible Faucet only once.
+// Initialize the digest of the `mint_and_send` procedure of the Network Fungible Faucet only once.
 procedure_digest!(
-    NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE,
+    NETWORK_FUNGIBLE_FAUCET_MINT_AND_SEND,
     NetworkFungibleFaucet::NAME,
-    NetworkFungibleFaucet::DISTRIBUTE_PROC_NAME,
+    NetworkFungibleFaucet::MINT_PROC_NAME,
     network_fungible_faucet_library
 );
 
@@ -52,15 +53,15 @@ procedure_digest!(
 /// against this component, the `miden` library (i.e.
 /// [`ProtocolLib`](miden_protocol::ProtocolLib)) must be available to the assembler which is the
 /// case when using [`CodeBuilder`][builder]. The procedures of this component are:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `distribute` and `burn` can only be called from note scripts. `distribute` requires
+/// Both `mint_and_send` and `burn` can only be called from note scripts. `mint_and_send` requires
 /// authentication while `burn` does not require authentication and can be called by anyone.
 /// Thus, this component must be combined with a component providing authentication.
 ///
 /// This component relies on [`crate::account::access::Ownable2Step`] for ownership checks in
-/// `distribute`. When building an account with this component,
+/// `mint_and_send`. When building an account with this component,
 /// [`crate::account::access::Ownable2Step`] must also be included.
 ///
 /// ## Storage Layout
@@ -82,7 +83,7 @@ impl NetworkFungibleFaucet {
     /// The maximum number of decimals supported by the component.
     pub const MAX_DECIMALS: u8 = TokenMetadata::MAX_DECIMALS;
 
-    const DISTRIBUTE_PROC_NAME: &str = "distribute";
+    const MINT_PROC_NAME: &str = "mint_and_send";
     const BURN_PROC_NAME: &str = "burn";
 
     // CONSTRUCTORS
@@ -198,9 +199,9 @@ impl NetworkFungibleFaucet {
         self.metadata.token_supply()
     }
 
-    /// Returns the digest of the `distribute` account procedure.
-    pub fn distribute_digest() -> Word {
-        *NETWORK_FUNGIBLE_FAUCET_DISTRIBUTE
+    /// Returns the digest of the `mint_and_send` account procedure.
+    pub fn mint_and_send_digest() -> Word {
+        *NETWORK_FUNGIBLE_FAUCET_MINT_AND_SEND
     }
 
     /// Returns the digest of the `burn` account procedure.
@@ -271,10 +272,10 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// (token symbol, decimals, max supply) and access control.
 ///
 /// The network faucet interface exposes two procedures:
-/// - `distribute`, which mints an assets and create a note for the provided recipient.
+/// - `mint_and_send`, which mints an assets and create a note for the provided recipient.
 /// - `burn`, which burns the provided asset.
 ///
-/// Both `distribute` and `burn` can only be called from note scripts. `distribute` requires
+/// Both `mint_and_send` and `burn` can only be called from note scripts. `mint_and_send` requires
 /// authentication using the NoAuth scheme. `burn` does not require authentication and can be
 /// called by anyone.
 ///
@@ -283,8 +284,8 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`crate::account::access::Ownable2Step`] types, and contains no additional storage slots for
-/// its auth ([`NoAuth`]).
+/// [`OwnerControlled`] and [`crate::account::access::Ownable2Step`] component types and
+/// contains no additional storage slots for its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,
@@ -292,6 +293,19 @@ pub fn create_network_fungible_faucet(
     max_supply: Felt,
     access_control: AccessControl,
 ) -> Result<Account, FungibleFaucetError> {
+    // Validate that access_control is Ownable2Step, as this faucet depends on it.
+    // When new variants are added to AccessControl, update this match to either support
+    // them or return Err(FungibleFaucetError::UnsupportedAccessControl).
+    match access_control {
+        AccessControl::Ownable2Step { .. } => {},
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(FungibleFaucetError::UnsupportedAccessControl(
+                "network fungible faucets require Ownable2Step access control".into(),
+            ));
+        },
+    }
+
     let auth_component: AccountComponent = NoAuth::new().into();
 
     let account = AccountBuilder::new(init_seed)
@@ -300,6 +314,7 @@ pub fn create_network_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply)?)
         .with_component(access_control)
+        .with_component(OwnerControlled::owner_only())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 
