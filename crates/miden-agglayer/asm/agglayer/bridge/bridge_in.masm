@@ -100,7 +100,8 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
-# Memory address used as scratch space for computing the claim nullifier hash
+# Memory address used to temporarily store leaf_index and source_bridge_network
+# across proof verification, and later as input to the claim nullifier hash.
 const CLAIM_NULLIFIER_HASH_INPUT_PTR = 900
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
@@ -423,7 +424,7 @@ end
 #!
 #! Invocation: exec
 proc set_and_check_claimed
-    # Write both values to scratch memory for hashing
+    # Write both values to memory for hashing
     # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
     # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = source_bridge_network
     mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
@@ -566,11 +567,6 @@ end
 
 #! Verify leaf, check that it has not been claimed, and mark it as claimed.
 #!
-#! This mimics the Solidity `_verifyLeaf` function which calls `_setAndCheckClaimed`
-#! internally, since the global index (containing leaf_index and source_bridge_network)
-#! is already extracted during verification.
-#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
-#!
 #! Inputs:
 #!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
 #!
@@ -625,7 +621,7 @@ proc verify_leaf
         exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
-        # Save leaf_index to scratch memory for set_and_check_claimed after proof verification
+        # Save leaf_index to memory for set_and_check_claimed after proof verification
         dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
         # => [leaf_index, LEAF_VALUE[8]]
 
@@ -643,11 +639,10 @@ proc verify_leaf
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
 
-        # For mainnet deposits, source_bridge_network = 0 (_MAINNET_NETWORK_ID)
-        # See Solidity: networkID == _MAINNET_NETWORK_ID && sourceBridgeNetwork == _ZKEVM_NETWORK_ID
-        # In this case globalIndex = uint256(leafIndex), so source_bridge_network = 0
-        push.0 mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
-        # => [leaf_index, source_bridge_network]
+        # For mainnet deposits, source_bridge_network = 0
+        # globalIndex = uint256(leafIndex), so source_bridge_network is always 0
+        push.0 push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+        # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
         # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
@@ -655,7 +650,7 @@ proc verify_leaf
         exec.process_global_index_rollup
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
-        # Save leaf_index and rollup_index to scratch memory for set_and_check_claimed
+        # Save leaf_index and rollup_index to memory for set_and_check_claimed
         # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
         # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = rollup_index
         dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
@@ -691,21 +686,20 @@ proc verify_leaf
         # => []
 
         # For rollup deposits, source_bridge_network = rollup_index + 1
-        # See Solidity: sourceBridgeNetwork = indexRollup + 1
-        # https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L961
-        # Reload saved values: leaf_index and rollup_index
-        # source_bridge_network = rollup_index + 1
+        # Compute source_bridge_network and store it to memory
         push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load u32wrapping_add.1
         # => [source_bridge_network]
-        
-        mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
-        # => [leaf_index, source_bridge_network]
+
+        push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+        # => []
     end
 
     # 4. Check the claim has not been spent and mark it as spent.
-    # Both branches leave [leaf_index, source_bridge_network] on the stack.
-    # This mimics Solidity's _setAndCheckClaimed(leafIndex, sourceBridgeNetwork) called
-    # from within _verifyLeaf.
+    # Load leaf_index and source_bridge_network from memory.
+    push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load
+    mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    # => [leaf_index, source_bridge_network]
+
     exec.set_and_check_claimed
     # => []
 end
