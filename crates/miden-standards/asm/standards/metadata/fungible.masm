@@ -108,7 +108,7 @@ end
 #!
 #! Invocation: call
 pub proc get_token_metadata
-    call.get_token_metadata_word
+    exec.get_token_metadata_word
     swapw dropw
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
 end
@@ -313,7 +313,7 @@ end
 #! - the preimage does not match DESCRIPTION_HASH.
 #!
 #! Invocation: call
-@locals(8)
+@locals(32)
 pub proc set_description
     # Save DESCRIPTION_HASH to local word 0; check mutability; verify owner.
     loc_storew_le.0 dropw
@@ -331,36 +331,36 @@ pub proc set_description
     loc_loadw_le.0
     # => [DESCRIPTION_HASH, pad(12)]
     adv.push_mapval
-    locaddr.1
-    # => [locaddr.1, DESCRIPTION_HASH, pad(12)]
+    locaddr.4
+    # => [locaddr.4, DESCRIPTION_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.1 mem_loadw_le
+    locaddr.4 mem_loadw_le
     push.DESCRIPTION_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.2 mem_loadw_le
+    locaddr.8 mem_loadw_le
     push.DESCRIPTION_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.3 mem_loadw_le
+    locaddr.12 mem_loadw_le
     push.DESCRIPTION_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.4 mem_loadw_le
+    locaddr.16 mem_loadw_le
     push.DESCRIPTION_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.5 mem_loadw_le
+    locaddr.20 mem_loadw_le
     push.DESCRIPTION_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.6 mem_loadw_le
+    locaddr.24 mem_loadw_le
     push.DESCRIPTION_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.7 mem_loadw_le
+    locaddr.28 mem_loadw_le
     push.DESCRIPTION_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -390,7 +390,7 @@ end
 #! - the preimage does not match LOGO_URI_HASH.
 #!
 #! Invocation: call
-@locals(8)
+@locals(32)
 pub proc set_logo_uri
     loc_storew_le.0 dropw
     # => [pad(12)]
@@ -406,36 +406,36 @@ pub proc set_logo_uri
     loc_loadw_le.0
     # => [LOGO_URI_HASH, pad(12)]
     adv.push_mapval
-    locaddr.1
-    # => [locaddr.1, LOGO_URI_HASH, pad(12)]
+    locaddr.4
+    # => [locaddr.4, LOGO_URI_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.1 mem_loadw_le
+    locaddr.4 mem_loadw_le
     push.LOGO_URI_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.2 mem_loadw_le
+    locaddr.8 mem_loadw_le
     push.LOGO_URI_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.3 mem_loadw_le
+    locaddr.12 mem_loadw_le
     push.LOGO_URI_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.4 mem_loadw_le
+    locaddr.16 mem_loadw_le
     push.LOGO_URI_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.5 mem_loadw_le
+    locaddr.20 mem_loadw_le
     push.LOGO_URI_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.6 mem_loadw_le
+    locaddr.24 mem_loadw_le
     push.LOGO_URI_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.7 mem_loadw_le
+    locaddr.28 mem_loadw_le
     push.LOGO_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -465,7 +465,7 @@ end
 #! - the preimage does not match EXTERNAL_LINK_HASH.
 #!
 #! Invocation: call
-@locals(8)
+@locals(32)
 pub proc set_external_link
     loc_storew_le.0 dropw
     # => [pad(12)]
@@ -481,36 +481,36 @@ pub proc set_external_link
     loc_loadw_le.0
     # => [EXTERNAL_LINK_HASH, pad(12)]
     adv.push_mapval
-    locaddr.1
-    # => [locaddr.1, EXTERNAL_LINK_HASH, pad(12)]
+    locaddr.4
+    # => [locaddr.4, EXTERNAL_LINK_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.1 mem_loadw_le
+    locaddr.4 mem_loadw_le
     push.EXTERNAL_LINK_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.2 mem_loadw_le
+    locaddr.8 mem_loadw_le
     push.EXTERNAL_LINK_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.3 mem_loadw_le
+    locaddr.12 mem_loadw_le
     push.EXTERNAL_LINK_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.4 mem_loadw_le
+    locaddr.16 mem_loadw_le
     push.EXTERNAL_LINK_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.5 mem_loadw_le
+    locaddr.20 mem_loadw_le
     push.EXTERNAL_LINK_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.6 mem_loadw_le
+    locaddr.24 mem_loadw_le
     push.EXTERNAL_LINK_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.7 mem_loadw_le
+    locaddr.28 mem_loadw_le
     push.EXTERNAL_LINK_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -543,7 +543,7 @@ pub proc set_max_supply
     # => [new_max_supply, pad(15)]
 
     # 3. Read current metadata word
-    call.get_token_metadata_word
+    exec.get_token_metadata_word
     # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
     # 4. Validate: new_max_supply >= token_supply (i.e. token_supply <= new_max_supply)
