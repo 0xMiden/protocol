@@ -9,7 +9,13 @@
 use alloc::collections::BTreeMap;
 
 use miden_protocol::Word;
-use miden_protocol::account::component::{AccountComponentMetadata, StorageSchema};
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
+    WordSchema,
+};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -18,21 +24,30 @@ use miden_protocol::account::{
     StorageSlot,
     StorageSlotName,
 };
+use miden_protocol::assembly::Library;
 use miden_protocol::errors::{AccountError, ComponentMetadataError};
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
-
-use crate::account::components::storage_schema_library;
 
 // CONSTANTS
 // ================================================================================================
 
+// Initialize the Storage Schema library only once.
+static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/metadata/schema_commitment.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
+});
+
 /// Schema commitment slot name.
 pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::metadata::schema_commitment")
+    StorageSlotName::new("miden::standards::metadata::storage_schema::commitment")
         .expect("storage slot name should be valid")
 });
 
-// SCHEMA COMMITMENT COMPONENT
+// ACCOUNT SCHEMA COMMITMENT
 // ================================================================================================
 
 /// An [`AccountComponent`] exposing the account storage schema commitment.
@@ -52,6 +67,9 @@ pub struct AccountSchemaCommitment {
 }
 
 impl AccountSchemaCommitment {
+    /// Name of the component is set to match the path of the corresponding module in the standards
+    /// library.
+    const NAME: &str = "miden::standards::metadata::storage_schema";
     /// Creates a new [`AccountSchemaCommitment`] component from storage schemas.
     ///
     /// The input schemas are merged into a single schema before the final commitment is computed.
@@ -79,26 +97,31 @@ impl AccountSchemaCommitment {
 
     /// Returns the [`AccountComponentMetadata`] for this component.
     pub fn component_metadata() -> AccountComponentMetadata {
-        AccountComponentMetadata::new("miden::metadata::schema_commitment", AccountType::all())
+        let storage_schema = StorageSchema::new([(
+            Self::schema_commitment_slot().clone(),
+            StorageSlotSchema::value(
+                "Commitment to the storage schema of an account",
+                WordSchema::new_simple(SchemaType::native_word()),
+            ),
+        )])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
             .with_description("Component exposing the account storage schema commitment")
+            .with_storage_schema(storage_schema)
     }
 }
 
 impl From<AccountSchemaCommitment> for AccountComponent {
     fn from(schema_commitment: AccountSchemaCommitment) -> Self {
         let metadata = AccountSchemaCommitment::component_metadata();
+        let storage = vec![StorageSlot::with_value(
+            AccountSchemaCommitment::schema_commitment_slot().clone(),
+            schema_commitment.schema_commitment,
+        )];
 
-        AccountComponent::new(
-            storage_schema_library(),
-            vec![StorageSlot::with_value(
-                AccountSchemaCommitment::schema_commitment_slot().clone(),
-                schema_commitment.schema_commitment,
-            )],
-            metadata,
-        )
-        .expect(
-            "AccountSchemaCommitment component should satisfy the requirements of a valid account component",
-        )
+        AccountComponent::new(STORAGE_SCHEMA_LIBRARY.clone(), storage, metadata)
+            .expect("AccountSchemaCommitment is a valid account component")
     }
 }
 
