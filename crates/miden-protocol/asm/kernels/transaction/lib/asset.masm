@@ -1,8 +1,9 @@
 use $kernel::account_id
 use $kernel::fungible_asset
 use $kernel::non_fungible_asset
+use $kernel::util::asset->util_asset
 
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault key must be either of type fungible or non-fungible faucet"
@@ -62,6 +63,30 @@ pub proc validate_key
         exec.non_fungible_asset::validate_key
         # => [ASSET_KEY]
     end
+    # => [ASSET_KEY]
+end
+
+#! Validates the issuer (faucet ID) and metadata in an asset vault key.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset metadata is invalid (not 0 or 1).
+#! - the faucet ID in the key is not a valid account ID.
+pub proc validate_issuer
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    dup.3 dup.3 exec.util_asset::split_suffix_and_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+
+    exec.util_asset::validate_metadata
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+
+    exec.account_id::validate
     # => [ASSET_KEY]
 end
 
