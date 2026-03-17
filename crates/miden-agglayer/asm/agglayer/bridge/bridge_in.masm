@@ -13,10 +13,11 @@ use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::tx
 use miden::standards::note_tag
+use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
+use miden::standards::note::execution_hint::ALWAYS
 use miden::protocol::native_account
 use miden::protocol::active_account
-use miden::standards::note::execution_hint::ALWAYS
 
 # TYPE ALIASES
 # =================================================================================================
@@ -48,9 +49,7 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_has
 # Data sizes
 # -------------------------------------------------------------------------------------------------
 
-const PROOF_DATA_WORD_LEN = 134
 # the number of words (4 felts each) in the advice map leaf data
-const LEAF_DATA_NUM_WORDS = 8
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
@@ -338,16 +337,15 @@ pub proc claim
 
     exec.get_destination_account_id_data
     loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [pad(7)]
+    # => [pad(16)]
 
-    # VALIDATE CLAIM - call verify_leaf_bridge directly (bridge is the native account)
+    # Validate CLAIM data
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, pad(7)]
+    # => [PROOF_DATA_KEY, pad(12)]
 
     swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
-    # Call verify_leaf_bridge directly (no FPI needed - bridge is the native account)
     exec.verify_leaf_bridge
     # => [pad(16)]
 
@@ -455,7 +453,7 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     adv.push_mapval
     # => [LEAF_DATA_KEY]
 
-    push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+    push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
     # => []
 
@@ -484,7 +482,7 @@ proc verify_leaf
     adv.push_mapval
     # => [PROOF_DATA_KEY, LEAF_VALUE[8]]
 
-    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.PROOF_DATA_WORD_LEN
+    push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR push.CLAIM_PROOF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
 
     # 1. compute GER from mainnet + rollup exit roots
@@ -739,16 +737,14 @@ proc create_mint_note_with_attachment
     push.OUTPUT_NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
-    dup.5
-    # => [faucet_id_prefix, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
-
-    # Compute note tag targeting the faucet account
-    exec.note_tag::create_account_target
-    # => [faucet_tag, note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
+    # Set tag to DEFAULT
+    push.DEFAULT_TAG
+    # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Create the output note (no assets - MINT notes carry no assets)
     exec.output_note::create
     # => [note_idx, faucet_id_prefix, faucet_id_suffix]
+    
     movdn.2
     # => [faucet_id_prefix, faucet_id_suffix, note_idx]
 

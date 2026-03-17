@@ -150,13 +150,13 @@ pub proc register_faucet
 
     # Build VALUE = [faucet_id_prefix, faucet_id_suffix, 0, 0]
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH, pad(9)]
+    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH, pad(10)]
 
     push.0.0 movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH, pad(9)]
+    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH, pad(10)]
 
     swapw
-    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, 0, 0, pad(9)]
+    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, 0, 0, pad(10)]
 
     push.TOKEN_REGISTRY_SLOT[0..2]
     exec.native_account::set_map_item
