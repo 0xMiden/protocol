@@ -114,6 +114,7 @@ fn merkle_proof_verification_code(
 #[rstest::rstest]
 #[case::real(ClaimDataSource::Real)]
 #[case::simulated(ClaimDataSource::Simulated)]
+#[case::rollup(ClaimDataSource::Rollup)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
@@ -172,8 +173,11 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .to_account_id()
         .expect("destination address is not an embedded Miden AccountId");
 
-    // For the simulated case, create the destination account so we can consume the P2ID note
-    let destination_account = if matches!(data_source, ClaimDataSource::Simulated) {
+    // For the simulated/rollup case, create the destination account so we can consume the P2ID note
+    let destination_account = if matches!(
+        data_source,
+        ClaimDataSource::Simulated | ClaimDataSource::Rollup
+    ) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);
         // Ensure the mock account ID matches the destination embedded in the JSON test vector,
