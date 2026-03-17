@@ -120,15 +120,6 @@ static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(||
 // METADATA LIBRARIES
 // ================================================================================================
 
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
-});
-
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
@@ -157,11 +148,6 @@ pub fn owner_controlled_library() -> Library {
 /// Returns the Mint Policy Auth Controlled Library.
 pub fn auth_controlled_library() -> Library {
     MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
-}
-
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
