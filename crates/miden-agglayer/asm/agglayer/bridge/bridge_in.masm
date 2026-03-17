@@ -658,6 +658,7 @@ proc verify_leaf
         # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = rollup_index
         dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+        
         dup.1 push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
@@ -694,6 +695,7 @@ proc verify_leaf
         # source_bridge_network = rollup_index + 1
         push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load u32wrapping_add.1
         # => [source_bridge_network]
+        
         mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
         # => [leaf_index, source_bridge_network]
     end
