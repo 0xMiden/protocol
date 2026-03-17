@@ -203,5 +203,8 @@
     "0xcf038032ed455f73f04d503cf5796b196dea55d967ec6617f0a1a1623f144ebd",
     "0xfa9da8a43eff2ac92f2c3996b2f5b18a92b95a56e61f26bb30ed47122cfc9e9f",
     "0x1a17ad0ab073918397c17419deab441d666c0abdeb9f2104c47af4589dd4a2c3"
-  ]
+  ],
+  "token_decimals": 8,
+  "token_name": "AGG",
+  "token_symbol": "AGG"
 }
