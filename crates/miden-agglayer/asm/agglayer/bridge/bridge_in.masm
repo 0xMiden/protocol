@@ -33,7 +33,6 @@ const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
-const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
 # CONSTANTS
 # =================================================================================================
@@ -130,10 +129,6 @@ const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
 const CLAIM_DEST_ID_PREFIX_LOCAL = 0
 const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
-# Offsets in the local memory of the leaf value
-const LEAF_VALUE_LO_LOCAL = 0
-const LEAF_VALUE_HI_LOCAL = 4
-
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -185,19 +180,13 @@ pub proc verify_leaf_bridge
     movupw.3 dropw
     # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
 
-    # save the leaf value to the local memory to reuse it during the computation of the CGI chain
-    # hash 
-    loc_storew_le.LEAF_VALUE_LO_LOCAL swapw
-    loc_storew_le.LEAF_VALUE_HI_LOCAL swapw
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
+    # duplicate the leaf value to use it later during the CGI chain hash computation
+    movupw.2 dupw.2 dupw.2
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8], pad(4)]
 
     # delegate proof verification
     exec.verify_leaf
-    # => [pad(16)]
-
-    # load the pointer to the leaf value back to the stack
-    locaddr.LEAF_VALUE_LO_LOCAL
-    # => [leaf_value_ptr, pad(16)]
+    # => [LEAF_VALUE[8], pad(8)]
 
     # update the CGI chain hash
     exec.update_cgi_chain_hash
@@ -469,9 +458,7 @@ end
 
 #! Verify leaf and checks that it has not been claimed.
 #!
-#! Inputs:
-#!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
-#!
+#! Inputs:  [LEAF_VALUE[8], PROOF_DATA_KEY]
 #! Outputs: []
 #!
 #! Panics if:
@@ -853,7 +840,7 @@ end
 #! value of the CGI chain hash:
 #! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
 #!
-#! Inputs:  [leaf_value_ptr]
+#! Inputs:  [LEAF_VALUE[8]]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -877,7 +864,7 @@ end
 #! Loads the old CGI chain hash, the leaf value, and the global index onto the stack as a
 #! preparation for the new CGI chain hash computation.
 #!
-#! Inputs: [leaf_value_ptr]
+#! Inputs: [LEAF_VALUE[8]]
 #! Outputs: [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
 #!
 #! Invocation: exec
@@ -885,14 +872,14 @@ proc load_cgi_chain_hash_data
     # load the old CGI chain hash onto the stack
     push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
     exec.active_account::get_item
-    # => [OLD_CGI_CHAIN_HASH_HI, leaf_value_ptr]
+    # => [OLD_CGI_CHAIN_HASH_HI, LEAF_VALUE[8]]
 
     push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
     exec.active_account::get_item
-    # => [OLD_CGI_CHAIN_HASH[8], leaf_value_ptr]
+    # => [OLD_CGI_CHAIN_HASH[8], LEAF_VALUE[8]]
 
-    # load the leaf value onto the stack
-    movup.8 exec.utils::mem_load_double_word
+    # move the leaf value to the top of the stack
+    swapdw
     # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
 
     # load the global index onto the stack

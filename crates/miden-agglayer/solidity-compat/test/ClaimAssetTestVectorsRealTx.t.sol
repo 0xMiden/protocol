@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@agglayer/v2/sovereignChains/BridgeL2SovereignChain.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
 import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
+import "./DepositContractTestHelpers.sol";
 
 contract MockGlobalExitRootManagerReal is IBasePolygonZkEVMGlobalExitRoot {
     mapping(bytes32 => uint256) public override globalExitRootMap;
@@ -28,7 +28,7 @@ contract MockGlobalExitRootManagerReal is IBasePolygonZkEVMGlobalExitRoot {
  *
  * The output can be compared against the Rust ClaimNoteStorage implementation.
  */
-contract ClaimAssetTestVectorsRealTx is Test, BridgeL2SovereignChain {
+contract ClaimAssetTestVectorsRealTx is Test, DepositContractTestHelpers {
     /**
      * @notice Generates claim asset test vectors from real Katana transaction and saves to JSON.
      *         Uses real transaction data from Katana explorer:
@@ -187,38 +187,5 @@ contract ClaimAssetTestVectorsRealTx is Test, BridgeL2SovereignChain {
             string memory outputPath = "test-vectors/claim_asset_vectors_real_tx.json";
             vm.writeJson(json, outputPath);
         }
-    }
-
-    /**
-     * @notice Harness function to call _verifyLeafBridge externally
-     */
-    function verifyLeafBridgeHarness(
-        bytes32[32] calldata smtProofLocalExitRoot,
-        bytes32[32] calldata smtProofRollupExitRoot,
-        uint256 globalIndex,
-        bytes32 mainnetExitRoot,
-        bytes32 rollupExitRoot,
-        uint8 leafType,
-        uint32 originNetwork,
-        address originTokenAddress,
-        uint32 destinationNetwork,
-        address destinationAddress,
-        uint256 amount,
-        bytes32 metadataHash
-    ) external {
-        _verifyLeafBridge(
-            smtProofLocalExitRoot,
-            smtProofRollupExitRoot,
-            globalIndex,
-            mainnetExitRoot,
-            rollupExitRoot,
-            leafType,
-            originNetwork,
-            originTokenAddress,
-            destinationNetwork,
-            destinationAddress,
-            amount,
-            metadataHash
-        );
     }
 }

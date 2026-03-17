@@ -36,9 +36,6 @@ pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combine
 /// Error Message: "GER not found in storage"
 pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not found in storage");
 
-/// Error Message: "invalid claim proof"
-pub const ERR_INVALID_CLAIM_PROOF: MasmError = MasmError::from_static_str("invalid claim proof");
-
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
 

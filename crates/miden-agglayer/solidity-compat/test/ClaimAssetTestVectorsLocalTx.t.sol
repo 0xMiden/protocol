@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@agglayer/v2/sovereignChains/BridgeL2SovereignChain.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
 import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
 import "./DepositContractTestHelpers.sol";
@@ -28,7 +27,7 @@ contract MockGlobalExitRootManagerLocal is IBasePolygonZkEVMGlobalExitRoot {
  *
  * The output can be used to verify Miden's ability to process L1 bridge transactions.
  */
-contract ClaimAssetTestVectorsLocalTx is Test, BridgeL2SovereignChain, DepositContractTestHelpers {
+contract ClaimAssetTestVectorsLocalTx is Test, DepositContractTestHelpers {
     /**
      * @notice Generates bridge asset test vectors with VALID Merkle proofs.
      *         Simulates a user calling bridgeAsset() to bridge tokens from L1 to Miden.
@@ -175,39 +174,6 @@ contract ClaimAssetTestVectorsLocalTx is Test, BridgeL2SovereignChain, DepositCo
             console.log("Leaf index:", leafIndex);
             console.log("Deposit count:", depositCountValue);
         }
-    }
-
-    /**
-     * @notice Harness function to call _verifyLeafBridge externally
-     */
-    function verifyLeafBridgeHarness(
-        bytes32[32] calldata smtProofLocalExitRoot,
-        bytes32[32] calldata smtProofRollupExitRoot,
-        uint256 globalIndex,
-        bytes32 mainnetExitRoot,
-        bytes32 rollupExitRoot,
-        uint8 leafType,
-        uint32 originNetwork,
-        address originTokenAddress,
-        uint32 destinationNetwork,
-        address destinationAddress,
-        uint256 amount,
-        bytes32 metadataHash
-    ) external {
-        _verifyLeafBridge(
-            smtProofLocalExitRoot,
-            smtProofRollupExitRoot,
-            globalIndex,
-            mainnetExitRoot,
-            rollupExitRoot,
-            leafType,
-            originNetwork,
-            originTokenAddress,
-            destinationNetwork,
-            destinationAddress,
-            amount,
-            metadataHash
-        );
     }
 
     /**
