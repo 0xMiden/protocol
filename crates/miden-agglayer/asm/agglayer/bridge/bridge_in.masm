@@ -16,6 +16,8 @@ use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
+use miden::protocol::native_account
+use miden::protocol::active_account
 
 # TYPE ALIASES
 # =================================================================================================
@@ -36,6 +38,14 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 
 # CONSTANTS
 # =================================================================================================
+
+# Storage slots
+# -------------------------------------------------------------------------------------------------
+
+# Storage slot constants for the CGI (claimed global index) chain hash. 
+# It is stored in two separate value slots.
+const CGI_CHAIN_HASH_LO_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_lo")
+const CGI_CHAIN_HASH_HI_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_hi")
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -172,6 +182,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
 #! Invocation: call
+@locals(8) # leaf value
 pub proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
@@ -180,8 +191,16 @@ pub proc verify_leaf_bridge
     movupw.3 dropw
     # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
 
+    # duplicate the leaf value to use it later during the CGI chain hash computation
+    movupw.2 dupw.2 dupw.2
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8], pad(4)]
+
     # delegate proof verification
     exec.verify_leaf
+    # => [LEAF_VALUE[8], pad(8)]
+
+    # update the CGI chain hash
+    exec.update_cgi_chain_hash
     # => [pad(16)]
 end
 
@@ -483,9 +502,7 @@ end
 
 #! Verify leaf and checks that it has not been claimed.
 #!
-#! Inputs:
-#!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
-#!
+#! Inputs:  [LEAF_VALUE[8], PROOF_DATA_KEY]
 #! Outputs: []
 #!
 #! Panics if:
@@ -514,8 +531,7 @@ proc verify_leaf
     # => [LEAF_VALUE[8]]
 
     # 3. load global index from memory
-    padw mem_loadw_le.GLOBAL_INDEX_PTR
-    padw push.GLOBAL_INDEX_PTR add.4 mem_loadw_le swapw
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
     # Determine if we're dealing with a deposit from mainnet or from a rollup.
@@ -903,3 +919,73 @@ proc calculate_root(
     padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
     # => [ROOT_LO, ROOT_HI]
 end
+
+#! Updates the claimed global index (CGI) chain hash by recomputing it and storing into the
+#! corresponding storage slot.
+#!
+#! The resulting hash is computed as a sequential hash of leaf value, global index, and previous 
+#! value of the CGI chain hash:
+#! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
+#!
+#! Inputs:  [LEAF_VALUE[8]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc update_cgi_chain_hash
+    # load the required CGI chain data values onto the stack
+    exec.load_cgi_chain_hash_data
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # compute the new CGI chain hash
+    exec.keccak256::merge swapdw
+    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
+
+    exec.keccak256::merge
+    # => [NEW_CGI_CHAIN_HASH[8]]
+
+    # store the new CGI chain hash
+    exec.store_cgi_chain_hash
+    # => []
+end
+
+#! Loads the old CGI chain hash, the leaf value, and the global index onto the stack as a
+#! preparation for the new CGI chain hash computation.
+#!
+#! Inputs: [LEAF_VALUE[8]]
+#! Outputs: [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+#!
+#! Invocation: exec
+proc load_cgi_chain_hash_data
+    # load the old CGI chain hash onto the stack
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH_HI, LEAF_VALUE[8]]
+
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH[8], LEAF_VALUE[8]]
+
+    # move the leaf value to the top of the stack
+    swapdw
+    # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # load the global index onto the stack
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+end
+
+#! Stores the computed global index (CGI) chain hash into the corresponding storage slots.
+#!
+#! Inputs: [NEW_CGI_CHAIN_HASH_LO, NEW_CGI_CHAIN_HASH_HI]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc store_cgi_chain_hash
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => [NEW_CGI_CHAIN_HASH_HI]
+
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => []
+end 

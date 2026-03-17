@@ -144,6 +144,7 @@ pub struct ProofValueVector {
     /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
     #[allow(dead_code)]
     pub global_exit_root: String,
+    pub claimed_global_index_hash_chain: String,
 }
 
 impl ProofValueVector {
@@ -282,7 +283,7 @@ pub enum ClaimDataSource {
 
 impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
-    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
         let vector = match self {
             ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
@@ -291,7 +292,12 @@ impl ClaimDataSource {
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
-        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+        let cgi_chain_hash = Keccak256Output::new(
+            hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
+                .expect("invalid CGI chain hash"),
+        );
+
+        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger, cgi_chain_hash)
     }
 }
 

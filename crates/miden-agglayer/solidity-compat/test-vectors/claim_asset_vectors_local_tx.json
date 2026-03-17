@@ -1,5 +1,6 @@
 {
-  "amount": 100000000000000000000,
+  "amount": "100000000000000000000",
+  "claimed_global_index_hash_chain": "0xbce0afc98c69ea85e9cfbf98c87c58a77c12d857551f1858530341392f70c22d",
   "deposit_count": 1,
   "description": "L1 bridgeAsset transaction test vectors with valid Merkle proofs",
   "destination_address": "0x00000000AA0000000000bb000000cc000000Dd00",
