@@ -151,7 +151,10 @@ impl NoteScript {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The package does not contain an executable artifact
+    /// - The package contains a library which does not contain a procedure with the `@note_script`
+    ///   attribute.
+    /// - The package contains a library which contains multiple procedures with the `@note_script`
+    ///   attribute.
     pub fn from_package(package: &Package) -> Result<Self, NoteError> {
         match &package.mast {
             // `NoteScript`s are compiled as executables by the miden compiler's
