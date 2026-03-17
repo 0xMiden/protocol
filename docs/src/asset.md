@@ -72,13 +72,15 @@ Asset callbacks allow a faucet to execute custom logic whenever one of its asset
 
 Callbacks involve two parts: a **per-asset flag** and **faucet-level callback procedures**.
 
-**Per-asset callback flag.** Every asset carries a single-bit callback flag in its vault key. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever the asset is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely. This flag is set at asset creation time — faucets that define callbacks will automatically enable the flag on assets they create via `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
+**Per-asset callback flag.** Every asset carries a single-bit callback flag in its vault key. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever the asset is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely. This flag is set at asset creation time and the protocol does not prevent issuing assets with different flags from the same faucet. Technically, this gives faucets the ability to issue a callback-enabled and a callback-disabled variant of their assets.
 
-:::tip
-Two assets issued by the same faucet with _different_ callback flags are considered completely different assets. It is recommended that faucets issue all of their assets with the same callback flag.
+:::warning
+Two assets issued by the same faucet with _different_ callback flags are considered completely different assets by the protocol.
 :::
 
-**Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of a callback procedure in a well-known storage slot. Two callbacks are supported:
+It is recommended that faucets issue all of their assets with the same flag to ensure all assets issued by a faucet are treated as one type of asset. This is ensured when using `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
+
+**Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
 
 | Callback | Storage slot name | Triggered when |
 |---|---|---|
