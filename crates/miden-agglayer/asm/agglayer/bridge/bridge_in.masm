@@ -39,7 +39,6 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 # -------------------------------------------------------------------------------------------------
 
 # the number of words (4 felts each) in the advice map leaf data
-const LEAF_DATA_NUM_WORDS = 8
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
@@ -428,7 +427,7 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     adv.push_mapval
     # => [LEAF_DATA_KEY]
 
-    push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+    push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
     exec.mem::pipe_preimage_to_memory drop
     # => []
 
