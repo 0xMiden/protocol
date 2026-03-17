@@ -11,6 +11,7 @@ use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
@@ -31,9 +32,20 @@ const ERR_BRIDGE_NOT_MAINNET = "bridge not mainnet"
 const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
 
 # CONSTANTS
 # =================================================================================================
+
+# Storage Slots
+# -------------------------------------------------------------------------------------------------
+
+# The slot in this component's storage layout where claim nullifiers are stored.
+# Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+const CLAIM_NULLIFIERS_SLOT = word("miden::agglayer::bridge::claim_nullifiers")
+
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -76,6 +88,17 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 # Memory addresses for stored keys (used by claim procedure)
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
+
+# Memory address for the leaf_index field within the global index.
+# leaf_index is the last u32 of the GlobalIndex (uint256), i.e., `leafIndex = uint32(globalIndex)`
+# See: https://github.com/agglayer/agglayer-contracts/blob/110bda5a03e70ee7331bc06407a8e79226d3e520/contracts/AgglayerBridge.sol#L1139
+const CLAIM_LEAF_INDEX_MEM_ADDR = GLOBAL_INDEX_PTR + 7
+
+# Memory address for the originNetwork (source_bridge_network) field within the leaf data
+const CLAIM_ORIGIN_NETWORK_MEM_ADDR = CLAIM_LEAF_DATA_START_PTR + 1
+
+# Memory address used as scratch space for computing the claim nullifier hash
+const CLAIM_NULLIFIER_HASH_INPUT_PTR = 900
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
@@ -323,6 +346,14 @@ pub proc claim
     exec.verify_leaf_bridge
     # => [pad(16)]
 
+    # Compute the claim nullifier as RPO(leaf_index, source_bridge_network)
+    # and assert the claim has not been spent, then mark it as spent
+    exec.compute_claim_nullifier
+    # => [NULLIFIER, pad(16)]
+
+    exec.assert_claim_not_spent
+    # => [pad(16)]
+
     # Look up the faucet account ID from the origin token address
     exec.get_origin_token_address
     # => [origin_token_addr(5), pad(16)]
@@ -347,6 +378,80 @@ end
 
 # HELPER PROCEDURES
 # =================================================================================================
+
+#! Computes the claim nullifier as the RPO hash of (leaf_index, source_bridge_network).
+#!
+#! This procedure reads the leaf_index from the global index in memory and the
+#! source_bridge_network (originNetwork) from the leaf data in memory, writes them
+#! to a scratch memory area, and hashes them using RPO to produce a unique nullifier.
+#!
+#! Inputs:  []
+#! Outputs: [NULLIFIER]
+#!
+#! Invocation: exec
+proc compute_claim_nullifier
+    # Load leaf_index: the last u32 of the GlobalIndex (uint256).
+    # In Solidity: `leafIndex = uint32(globalIndex)`
+    # Stored as LE-packed u32 felt; byte-swap to get the canonical uint32 value.
+    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
+    exec.utils::swap_u32_bytes
+    # => [leaf_index]
+
+    # Load source_bridge_network (originNetwork) from leaf data memory (also LE-packed u32)
+    # and byte-swap to get the canonical uint32 value
+    mem_load.CLAIM_ORIGIN_NETWORK_MEM_ADDR
+    exec.utils::swap_u32_bytes
+    # => [source_bridge_network, leaf_index]
+
+    # Write both values to scratch memory for hashing
+    # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
+    # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = source_bridge_network
+    swap
+    mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    # => [source_bridge_network]
+
+    push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+    # => []
+
+    # Hash the two elements using RPO to produce the nullifier
+    # TODO: Replace rpo256::hash_elements with poseidon2::hash_elements when VM is updated
+    push.2 push.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    exec.rpo256::hash_elements
+    # => [NULLIFIER]
+end
+
+#! Checks that the CLAIM note has not already been spent, and marks it as spent
+#! by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#!
+#! The nullifier is computed as RPO(leaf_index, source_bridge_network), which uniquely
+#! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
+#!
+#! Inputs:  [NULLIFIER]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc assert_claim_not_spent(nullifier: BeWord)
+    push.IS_CLAIMED_FLAG
+    # => [IS_CLAIMED_FLAG, NULLIFIER]
+
+    swapw
+    # => [NULLIFIER, IS_CLAIMED_FLAG]
+
+    push.CLAIM_NULLIFIERS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, NULLIFIER, IS_CLAIMED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    drop drop drop
+    # => [old_is_claimed]
+
+    assertz.err=ERR_CLAIM_ALREADY_SPENT
+    # => []
+end
 
 #! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
 #! scaled down by the faucet's scale factor.

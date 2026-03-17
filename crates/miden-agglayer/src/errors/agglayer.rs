@@ -19,6 +19,8 @@ pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_s
 /// Error Message: "bridge not mainnet"
 pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
 
+/// Error Message: "claim note has already been spent"
+pub const ERR_CLAIM_ALREADY_SPENT: MasmError = MasmError::from_static_str("claim note has already been spent");
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 

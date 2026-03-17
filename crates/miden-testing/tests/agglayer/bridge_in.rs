@@ -5,6 +5,7 @@ use alloc::string::String;
 
 use anyhow::Context;
 use miden_agglayer::claim_note::Keccak256Output;
+use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
@@ -378,6 +379,160 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
             "destination account balance does not match"
         );
     }
+    Ok(())
+}
+
+/// Tests that consuming a CLAIM note with the same PROOF_DATA_KEY twice fails.
+///
+/// This test verifies the nullifier tracking mechanism:
+/// 1. Sets up the bridge (CONFIG + UPDATE_GER)
+/// 2. Executes the first CLAIM note successfully
+/// 3. Creates a second CLAIM note with the same proof data
+/// 4. Attempts to execute the second CLAIM note and asserts it fails with "claim note has already
+///    been spent"
+#[tokio::test]
+async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
+    let data_source = ClaimDataSource::Simulated;
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE GER MANAGER ACCOUNT
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE BRIDGE ACCOUNT
+    let bridge_seed = builder.rng_mut().draw_word();
+    let bridge_account =
+        create_existing_bridge_account(bridge_seed, bridge_admin.id(), ger_manager.id());
+    builder.add_account(bridge_account.clone())?;
+
+    // GET CLAIM DATA FROM JSON
+    let (proof_data, leaf_data, ger) = data_source.get_data();
+
+    // CREATE AGGLAYER FAUCET ACCOUNT
+    let token_symbol = "AGG";
+    let decimals = 8u8;
+    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let agglayer_faucet_seed = builder.rng_mut().draw_word();
+
+    let origin_token_address = leaf_data.origin_token_address;
+    let origin_network = leaf_data.origin_network;
+    let scale = 10u8;
+
+    let agglayer_faucet = create_existing_agglayer_faucet(
+        agglayer_faucet_seed,
+        token_symbol,
+        decimals,
+        max_supply,
+        Felt::ZERO,
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+    );
+    builder.add_account(agglayer_faucet.clone())?;
+
+    // Calculate the scaled-down Miden amount
+    let miden_claim_amount = leaf_data
+        .amount
+        .scale_to_token_amount(scale as u32)
+        .expect("amount should scale successfully");
+
+    // CREATE FIRST CLAIM NOTE
+    let claim_inputs_1 = ClaimNoteStorage {
+        proof_data: proof_data.clone(),
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+
+    let claim_note_1 = create_claim_note(
+        claim_inputs_1,
+        bridge_account.id(),
+        bridge_admin.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(OutputNote::Full(claim_note_1.clone()));
+
+    // CREATE SECOND CLAIM NOTE (same proof data = same PROOF_DATA_KEY)
+    let claim_inputs_2 = ClaimNoteStorage {
+        proof_data: proof_data.clone(),
+        leaf_data: leaf_data.clone(),
+        miden_claim_amount,
+    };
+
+    let claim_note_2 = create_claim_note(
+        claim_inputs_2,
+        bridge_account.id(),
+        bridge_admin.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(OutputNote::Full(claim_note_2.clone()));
+
+    // CREATE CONFIG_AGG_BRIDGE NOTE
+    let config_note = ConfigAggBridgeNote::create(
+        agglayer_faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(OutputNote::Full(config_note.clone()));
+
+    // CREATE UPDATE_GER NOTE
+    let update_ger_note =
+        UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
+    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+
+    // BUILD MOCK CHAIN
+    let mut mock_chain = builder.clone().build()?;
+
+    // TX0: CONFIG_AGG_BRIDGE
+    let config_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?;
+    let config_executed = config_tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: UPDATE_GER
+    let update_ger_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[update_ger_note.id()], &[])?
+        .build()?;
+    let update_ger_executed = update_ger_tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&update_ger_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX2: FIRST CLAIM (should succeed)
+    let faucet_foreign_inputs_1 = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx_context_1 = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note_1])?
+        .foreign_accounts(vec![faucet_foreign_inputs_1])
+        .build()?;
+    let claim_executed_1 = claim_tx_context_1.execute().await?;
+    assert_eq!(claim_executed_1.output_notes().num_notes(), 1);
+
+    mock_chain.add_pending_executed_transaction(&claim_executed_1)?;
+    mock_chain.prove_next_block()?;
+
+    // TX3: SECOND CLAIM WITH SAME PROOF_DATA_KEY (should fail)
+    let faucet_foreign_inputs_2 = mock_chain.get_foreign_account_inputs(agglayer_faucet.id())?;
+    let claim_tx_context_2 = mock_chain
+        .build_tx_context(bridge_account.id(), &[], &[claim_note_2])?
+        .foreign_accounts(vec![faucet_foreign_inputs_2])
+        .build()?;
+    let result = claim_tx_context_2.execute().await;
+
+    assert!(result.is_err(), "Second claim with same PROOF_DATA_KEY should fail");
+    let error_msg = result.unwrap_err().to_string();
+    let expected_err_code = ERR_CLAIM_ALREADY_SPENT.code().to_string();
+    assert!(
+        error_msg.contains(&expected_err_code),
+        "Expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
+    );
+
     Ok(())
 }
 
