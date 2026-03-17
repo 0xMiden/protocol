@@ -153,7 +153,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
 #!
 #! Inputs:
-#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY]
 #!   Advice map: {
 #!     PROOF_DATA_KEY => [
 #!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -174,34 +174,31 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!     ],
 #!   }
 #!
-#! Outputs: [pad(16)]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
-#! Invocation: call
+#! Invocation: exec
 @locals(8) # leaf value
-pub proc verify_leaf_bridge
+proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(8)]
-
-    movupw.3 dropw
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY]
 
     # duplicate the leaf value to use it later during the CGI chain hash computation
     movupw.2 dupw.2 dupw.2
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8], pad(4)]
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8]]
 
     # delegate proof verification
     exec.verify_leaf
-    # => [LEAF_VALUE[8], pad(8)]
+    # => [LEAF_VALUE[8]]
 
     # update the CGI chain hash
     exec.update_cgi_chain_hash
-    # => [pad(16)]
+    # => []
 end
 
 #! Assert the global index is valid for a mainnet deposit.
