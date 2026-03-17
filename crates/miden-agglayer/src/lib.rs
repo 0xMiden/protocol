@@ -33,6 +33,7 @@ pub use bridge::{AggLayerBridge, AgglayerBridgeError};
 pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
 pub use config_note::ConfigAggBridgeNote;
 pub use eth_types::{
+    EthAccountIdFormat,
     EthAddressFormat,
     EthAmount,
     EthAmountError,

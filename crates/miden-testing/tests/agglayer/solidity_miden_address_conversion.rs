@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-use miden_agglayer::{EthAddressFormat, agglayer_library};
+use miden_agglayer::{EthAccountIdFormat, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_processor::fast::{ExecutionOutput, FastProcessor};
@@ -46,7 +46,7 @@ async fn execute_program_with_default_host(
 #[test]
 fn test_account_id_to_ethereum_roundtrip() {
     let original_account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-    let eth_address = EthAddressFormat::from_account_id(original_account_id);
+    let eth_address = EthAccountIdFormat::from_account_id(original_account_id);
     let recovered_account_id = eth_address.to_account_id().unwrap();
     assert_eq!(original_account_id, recovered_account_id);
 }
@@ -68,7 +68,7 @@ fn test_bech32_to_ethereum_roundtrip() {
     for (bech32, expected_evm) in test_addresses.iter().zip(evm_addresses.iter()) {
         let (network_id, account_id) = AccountId::from_bech32(bech32).unwrap();
 
-        let eth = EthAddressFormat::from_account_id(account_id);
+        let eth = EthAccountIdFormat::from_account_id(account_id);
         let recovered = eth.to_account_id().unwrap();
         let recovered_bech32 = recovered.to_bech32(network_id);
 
@@ -86,7 +86,7 @@ fn test_random_bech32_to_ethereum_roundtrip() {
     for _ in 0..3 {
         let account_id = AccountIdBuilder::new().build_with_rng(&mut rng);
         let bech32_address = account_id.to_bech32(network_id.clone());
-        let eth_address = EthAddressFormat::from_account_id(account_id);
+        let eth_address = EthAccountIdFormat::from_account_id(account_id);
         let recovered_account_id = eth_address.to_account_id().unwrap();
         let recovered_bech32 = recovered_account_id.to_bech32(network_id.clone());
 
@@ -106,7 +106,7 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
     ];
 
     for (idx, original_account_id) in test_account_ids.iter().enumerate() {
-        let eth_address = EthAddressFormat::from_account_id(*original_account_id);
+        let eth_address = EthAccountIdFormat::from_account_id(*original_account_id);
 
         let address_felts = eth_address.to_elements().to_vec();
         let limbs: Vec<u32> = address_felts

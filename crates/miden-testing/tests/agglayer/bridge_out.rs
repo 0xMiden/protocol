@@ -306,7 +306,6 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
     let b2agg_note = B2AggNote::create(
         1u32, // destination_network
         eth_address,
@@ -392,7 +391,6 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender.
@@ -511,7 +509,6 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
         EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
-
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note targeting the real bridge account

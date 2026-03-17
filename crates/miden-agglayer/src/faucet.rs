@@ -25,6 +25,7 @@ pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    EthAccountIdFormat,
     EthAddressFormat,
     EthAmount,
     EthAmountError,

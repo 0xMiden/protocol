@@ -29,6 +29,7 @@
 
 ### Changes
 
+- [BREAKING] Separated `EthAddressFormat` (plain 20-byte Ethereum address) and `EthAccountIdFormat` (Miden AccountId encoded as Ethereum address) into distinct types in `miden-agglayer`, replacing the single `EthAddressFormat` struct. `EthAccountIdFormat` is a newtype around `EthAddressFormat` with `from_account_id()`/`to_account_id()` conversion methods for the bridge-in flow ([#2357](https://github.com/0xMiden/miden-base/issues/2357)).
 - Introduced `StorageMapKey` and `StorageMapKeyHash` Word wrappers for type-safe storage map key handling ([#2431](https://github.com/0xMiden/miden-base/pull/2431)).
 - Restructured `miden-agglayer/asm` directory to separate bridge and faucet into per-component libraries, preventing cross-component procedure exposure ([#2294](https://github.com/0xMiden/miden-base/issues/2294)).
 - Made kernel procedure offset constants public and replaced accessor procedures with direct constant usage ([#2375](https://github.com/0xMiden/miden-base/pull/2375)).

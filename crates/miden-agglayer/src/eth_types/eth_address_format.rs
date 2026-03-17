@@ -5,14 +5,18 @@ use core::fmt;
 
 use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_protocol::Felt;
-use miden_protocol::account::AccountId;
 use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 
 // ================================================================================================
-// ETHEREUM ADDRESS
+// ETHEREUM ADDRESS FORMAT
 // ================================================================================================
 
-/// Represents an Ethereum address format (20 bytes).
+/// Represents a plain Ethereum address (20 bytes).
+///
+/// This is the base type for any 20-byte Ethereum address. It is used for:
+/// - Origin token addresses (EVM token contract addresses)
+/// - Destination addresses in the bridge-out flow (real Ethereum addresses)
+/// - Any other context where a plain 20-byte Ethereum address is needed
 ///
 /// # Representations used in this module
 ///
@@ -20,22 +24,16 @@ use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 ///   most-significant byte).
 /// - MASM "address\[5\]" limbs: 5 x u32 limbs in *big-endian limb order* (each limb encodes its 4
 ///   bytes in little-endian order so felts map to keccak bytes directly):
-///   - `address[0]` = bytes[0..4]   (most-significant 4 bytes, zero for embedded AccountId)
+///   - `address[0]` = bytes[0..4]   (most-significant 4 bytes)
 ///   - `address[1]` = bytes[4..8]
 ///   - `address[2]` = bytes[8..12]
 ///   - `address[3]` = bytes[12..16]
 ///   - `address[4]` = bytes[16..20] (least-significant 4 bytes)
-/// - Embedded AccountId format: `0x00000000 || prefix(8) || suffix(8)`, where:
-///   - prefix = bytes[4..12] as a big-endian u64
-///   - suffix = bytes[12..20] as a big-endian u64
-///
-/// Note: prefix/suffix are *conceptual* 64-bit words; when converting to [`Felt`], we must ensure
-/// `Felt::new(u64)` does not reduce mod p (checked explicitly in `to_account_id`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EthAddressFormat([u8; 20]);
 
 impl EthAddressFormat {
-    // EXTERNAL API - For integrators (Gateway, claim managers, etc.)
+    // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new [`EthAddressFormat`] from a 20-byte array.
@@ -64,29 +62,8 @@ impl EthAddressFormat {
         Ok(Self(bytes))
     }
 
-    /// Creates an [`EthAddressFormat`] from an [`AccountId`].
-    ///
-    /// **External API**: This function is used by integrators (Gateway, claim managers) to convert
-    /// Miden AccountIds into the Ethereum address format for constructing CLAIM notes or
-    /// interfacing when calling the Agglayer Bridge function bridgeAsset().
-    ///
-    /// This conversion is infallible: an [`AccountId`] is two felts, and `as_int()` yields `u64`
-    /// words which we embed as `0x00000000 || prefix(8) || suffix(8)` (big-endian words).
-    ///
-    /// # Example
-    /// ```ignore
-    /// let destination_address = EthAddressFormat::from_account_id(destination_account_id).into_bytes();
-    /// // then construct the CLAIM note with destination_address...
-    /// ```
-    pub fn from_account_id(account_id: AccountId) -> Self {
-        let felts: [Felt; 2] = account_id.into();
-
-        let mut out = [0u8; 20];
-        out[4..12].copy_from_slice(&felts[0].as_int().to_be_bytes());
-        out[12..20].copy_from_slice(&felts[1].as_int().to_be_bytes());
-
-        Self(out)
-    }
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
 
     /// Returns the raw 20-byte array.
     pub const fn as_bytes(&self) -> &[u8; 20] {
@@ -103,17 +80,10 @@ impl EthAddressFormat {
         bytes_to_hex_string(self.0)
     }
 
-    // INTERNAL API - For CLAIM note processing
-    // --------------------------------------------------------------------------------------------
-
-    /// Converts the Ethereum address format into an array of 5 [`Felt`] values for Miden VM.
-    ///
-    /// **Internal API**: This function is used internally during CLAIM note processing to convert
-    /// the address into the MASM `address[5]` representation expected by the
-    /// `to_account_id` procedure.
+    /// Converts the Ethereum address into an array of 5 [`Felt`] values for Miden VM.
     ///
     /// The returned order matches the Solidity ABI encoding convention (*big-endian limb order*):
-    /// - `address[0]` = bytes[0..4]   (most-significant 4 bytes, zero for embedded AccountId)
+    /// - `address[0]` = bytes[0..4]   (most-significant 4 bytes)
     /// - `address[1]` = bytes[4..8]
     /// - `address[2]` = bytes[8..12]
     /// - `address[3]` = bytes[12..16]
@@ -122,51 +92,6 @@ impl EthAddressFormat {
     /// Each limb is interpreted as a little-endian `u32` and stored in a [`Felt`].
     pub fn to_elements(&self) -> Vec<Felt> {
         bytes_to_packed_u32_felts(&self.0)
-    }
-
-    /// Converts the Ethereum address format back to an [`AccountId`].
-    ///
-    /// **Internal API**: This function is used internally during CLAIM note processing to extract
-    /// the original AccountId from the Ethereum address format. It mirrors the functionality of
-    /// the MASM `to_account_id` procedure.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - the first 4 bytes are not zero (not in the embedded AccountId format),
-    /// - packing the 8-byte prefix/suffix into [`Felt`] would reduce mod p,
-    /// - or the resulting felts do not form a valid [`AccountId`].
-    pub fn to_account_id(&self) -> Result<AccountId, AddressConversionError> {
-        let (prefix, suffix) = Self::bytes20_to_prefix_suffix(self.0)?;
-
-        // Use `Felt::try_from(u64)` to avoid potential truncating conversion
-        let prefix_felt =
-            Felt::try_from(prefix).map_err(|_| AddressConversionError::FeltOutOfField)?;
-
-        let suffix_felt =
-            Felt::try_from(suffix).map_err(|_| AddressConversionError::FeltOutOfField)?;
-
-        AccountId::try_from([prefix_felt, suffix_felt])
-            .map_err(|_| AddressConversionError::InvalidAccountId)
-    }
-
-    // HELPER FUNCTIONS
-    // --------------------------------------------------------------------------------------------
-
-    /// Convert `[u8; 20]` -> `(prefix, suffix)` by extracting the last 16 bytes.
-    /// Requires the first 4 bytes be zero.
-    /// Returns prefix and suffix values that match the MASM little-endian limb byte encoding:
-    /// - prefix = bytes[4..12] as big-endian u64 = (addr3 << 32) | addr2
-    /// - suffix = bytes[12..20] as big-endian u64 = (addr1 << 32) | addr0
-    fn bytes20_to_prefix_suffix(bytes: [u8; 20]) -> Result<(u64, u64), AddressConversionError> {
-        if bytes[0..4] != [0, 0, 0, 0] {
-            return Err(AddressConversionError::NonZeroBytePrefix);
-        }
-
-        let prefix = u64::from_be_bytes(bytes[4..12].try_into().unwrap());
-        let suffix = u64::from_be_bytes(bytes[12..20].try_into().unwrap());
-
-        Ok((prefix, suffix))
     }
 }
 
@@ -179,12 +104,6 @@ impl fmt::Display for EthAddressFormat {
 impl From<[u8; 20]> for EthAddressFormat {
     fn from(bytes: [u8; 20]) -> Self {
         Self(bytes)
-    }
-}
-
-impl From<AccountId> for EthAddressFormat {
-    fn from(account_id: AccountId) -> Self {
-        EthAddressFormat::from_account_id(account_id)
     }
 }
 
