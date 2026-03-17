@@ -50,6 +50,9 @@ impl From<NoAuth> for AccountComponent {
     }
 }
 
+// TESTS
+// ================================================================================================
+
 #[cfg(test)]
 mod tests {
     use miden_protocol::account::AccountBuilder;

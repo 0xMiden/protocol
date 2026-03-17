@@ -2,5 +2,5 @@
 #
 # See the `BasicFungibleFaucet` Rust type's documentation for more details.
 
-pub use ::miden::standards::faucets::basic_fungible::distribute
+pub use ::miden::standards::faucets::basic_fungible::mint_and_send
 pub use ::miden::standards::faucets::basic_fungible::burn
