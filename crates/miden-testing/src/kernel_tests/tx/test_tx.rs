@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
@@ -466,7 +466,7 @@ async fn user_code_can_abort_transaction_with_summary() -> anyhow::Result<()> {
         .context("failed to build account")?;
 
     // Consume and create a note so the input and outputs notes commitment is not the empty word.
-    let mut rng = RpoRandomCoin::new(Word::empty());
+    let mut rng = RandomCoin::new(Word::empty());
     let output_note = P2idNote::create(
         account.id(),
         account.id(),
@@ -511,7 +511,7 @@ async fn tx_summary_commitment_is_signed_by_falcon_auth() -> anyhow::Result<()> 
     let account = builder.add_existing_mock_account(Auth::BasicAuth {
         auth_scheme: AuthScheme::Falcon512Poseidon2,
     })?;
-    let mut rng = RpoRandomCoin::new(Word::empty());
+    let mut rng = RandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
         account.id(),
@@ -570,7 +570,7 @@ async fn tx_summary_commitment_is_signed_by_ecdsa_auth() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let account = builder
         .add_existing_mock_account(Auth::BasicAuth { auth_scheme: AuthScheme::EcdsaK256Keccak })?;
-    let mut rng = RpoRandomCoin::new(Word::empty());
+    let mut rng = RandomCoin::new(Word::empty());
     let p2id_note = P2idNote::create(
         account.id(),
         account.id(),

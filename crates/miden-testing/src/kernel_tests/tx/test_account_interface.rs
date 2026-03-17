@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -57,7 +57,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let p2ide_note = P2ideNote::create(
@@ -70,7 +70,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let notes = vec![p2id_note, p2ide_note];
@@ -805,7 +805,7 @@ fn create_p2ide_note_with_storage(
     storage: impl IntoIterator<Item = u64>,
     sender: AccountId,
 ) -> Note {
-    let serial_num = RpoRandomCoin::new(Default::default()).draw_word();
+    let serial_num = RandomCoin::new(Default::default()).draw_word();
     let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,
