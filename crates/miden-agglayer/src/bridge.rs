@@ -89,7 +89,6 @@ static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
-/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
 ///   AggFaucet.
