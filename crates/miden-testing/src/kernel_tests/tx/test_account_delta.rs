@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::string::String;
 
 use anyhow::Context;
+use miden_crypto::rand::test_utils::rand_value;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -18,7 +19,13 @@ use miden_protocol::account::{
     StorageSlotDelta,
     StorageSlotName,
 };
-use miden_protocol::asset::{Asset, AssetVault, FungibleAsset, NonFungibleAsset};
+use miden_protocol::asset::{
+    Asset,
+    AssetVault,
+    FungibleAsset,
+    NonFungibleAsset,
+    NonFungibleAssetDetails,
+};
 use miden_protocol::note::{Note, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
@@ -28,7 +35,6 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
     AccountIdBuilder,
 };
-use miden_protocol::testing::asset::NonFungibleAssetBuilder;
 use miden_protocol::testing::constants::{
     CONSUMED_ASSET_1_AMOUNT,
     CONSUMED_ASSET_3_AMOUNT,
@@ -38,13 +44,12 @@ use miden_protocol::testing::constants::{
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
-use miden_protocol::{EMPTY_WORD, Felt, FieldElement, LexicographicWord, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, LexicographicWord, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use winter_rand_utils::rand_value;
 
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain, TransactionContextBuilder};
@@ -148,37 +153,37 @@ async fn storage_delta_for_value_slots() -> anyhow::Result<()> {
       begin
           push.{slot_0_tmp_value}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_0_final_value}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_1_final_value}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_2_final_value}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_tmp_value}
           push.SLOT_3_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
 
           push.{slot_3_final_value}
           push.SLOT_3_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, VALUE]
           exec.set_item
           # => []
       end
@@ -286,55 +291,55 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
       begin
           push.{key0_final_value} push.{key0}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_tmp_value} push.{key1}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key1_final_value} push.{key1}
           push.SLOT_0_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key2_final_value} push.{key2}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key3_final_value} push.{key3}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_tmp_value} push.{key4}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key4_final_value} push.{key4}
           push.SLOT_1_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_tmp_value} push.{key5}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
 
           push.{key5_final_value} push.{key5}
           push.SLOT_2_NAME[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           exec.set_map_item
           # => []
       end
@@ -428,20 +433,31 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
     let tx_script = parse_tx_script(format!(
         "
     begin
-        push.{asset0} exec.create_note_with_asset
+        push.{ASSET0_VALUE} push.{ASSET0_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset1} exec.create_note_with_asset
+
+        push.{ASSET1_VALUE} push.{ASSET1_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset2} exec.create_note_with_asset
+
+        push.{ASSET2_VALUE} push.{ASSET2_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset3} exec.create_note_with_asset
+
+        push.{ASSET3_VALUE} push.{ASSET3_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
     end
     ",
-        asset0 = Word::from(removed_asset0),
-        asset1 = Word::from(removed_asset1),
-        asset2 = Word::from(removed_asset2),
-        asset3 = Word::from(removed_asset3),
+        ASSET0_KEY = removed_asset0.to_key_word(),
+        ASSET0_VALUE = removed_asset0.to_value_word(),
+        ASSET1_KEY = removed_asset1.to_key_word(),
+        ASSET1_VALUE = removed_asset1.to_value_word(),
+        ASSET2_KEY = removed_asset2.to_key_word(),
+        ASSET2_VALUE = removed_asset2.to_value_word(),
+        ASSET3_KEY = removed_asset3.to_key_word(),
+        ASSET3_VALUE = removed_asset3.to_value_word(),
     ))?;
 
     let executed_tx = mock_chain
@@ -509,10 +525,22 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         .account_type(AccountType::NonFungibleFaucet)
         .build_with_seed(rng.random());
 
-    let asset0 = NonFungibleAssetBuilder::new(faucet0.prefix(), &mut rng)?.build()?;
-    let asset1 = NonFungibleAssetBuilder::new(faucet1.prefix(), &mut rng)?.build()?;
-    let asset2 = NonFungibleAssetBuilder::new(faucet2.prefix(), &mut rng)?.build()?;
-    let asset3 = NonFungibleAssetBuilder::new(faucet3.prefix(), &mut rng)?.build()?;
+    let asset0 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet0,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset1 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet1,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset2 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet2,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
+    let asset3 = NonFungibleAsset::new(&NonFungibleAssetDetails::new(
+        faucet3,
+        rng.random::<[u8; 32]>().to_vec(),
+    )?)?;
 
     let TestSetup { mock_chain, account_id, notes } =
         setup_test([], [asset1, asset3].map(Asset::from), [asset0, asset2].map(Asset::from))?;
@@ -520,22 +548,32 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
     let tx_script = parse_tx_script(format!(
         "
     begin
-        push.{asset1} exec.create_note_with_asset
+        push.{ASSET1_VALUE} push.{ASSET1_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
-        push.{asset2} exec.create_note_with_asset
+
+        push.{ASSET2_VALUE} push.{ASSET2_KEY}
+        exec.util::create_default_note_with_moved_asset
         # => []
 
         # remove and re-add asset 3
-        push.{asset3}
+        push.{ASSET3_VALUE}
+        push.{ASSET3_KEY}
         exec.remove_asset
-        # => [ASSET]
+        # => [ASSET_VALUE]
+
+        push.{ASSET3_KEY}
+        # => [ASSET_KEY, ASSET_VALUE]
         exec.add_asset dropw
         # => []
     end
     ",
-        asset1 = Word::from(asset1),
-        asset2 = Word::from(asset2),
-        asset3 = Word::from(asset3),
+        ASSET1_KEY = asset1.to_key_word(),
+        ASSET1_VALUE = asset1.to_value_word(),
+        ASSET2_KEY = asset2.to_key_word(),
+        ASSET2_VALUE = asset2.to_value_word(),
+        ASSET3_KEY = asset3.to_key_word(),
+        ASSET3_VALUE = asset3.to_value_word(),
     ))?;
 
     let executed_tx = mock_chain
@@ -550,20 +588,20 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         .account_delta()
         .vault()
         .added_assets()
-        .map(|asset| (asset.faucet_id_prefix(), asset.unwrap_non_fungible()))
+        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
         .collect::<BTreeMap<_, _>>();
     let mut removed_assets = executed_tx
         .account_delta()
         .vault()
         .removed_assets()
-        .map(|asset| (asset.faucet_id_prefix(), asset.unwrap_non_fungible()))
+        .map(|asset| (asset.faucet_id(), asset.unwrap_non_fungible()))
         .collect::<BTreeMap<_, _>>();
 
     assert_eq!(added_assets.len(), 1);
     assert_eq!(removed_assets.len(), 1);
 
-    assert_eq!(added_assets.remove(&asset0.faucet_id_prefix()).unwrap(), asset0);
-    assert_eq!(removed_assets.remove(&asset1.faucet_id_prefix()).unwrap(), asset1);
+    assert_eq!(added_assets.remove(&asset0.faucet_id()).unwrap(), asset0);
+    assert_eq!(removed_assets.remove(&asset1.faucet_id()).unwrap(), asset1);
 
     Ok(())
 }
@@ -623,16 +661,19 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
             # => [note_idx, pad(15)]
 
             # move an asset to the created note to partially deplete fungible asset balance
-            swapw dropw push.{REMOVED_ASSET}
+            swapw dropw
+            push.{REMOVED_ASSET_VALUE}
+            push.{REMOVED_ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            # => [ASSET, note_idx, pad(11)]
+            # => [pad(16)]
 
             # clear the stack
             dropw dropw dropw dropw
         ",
             NOTETYPE = note_types[i] as u8,
             tag = tags[i],
-            REMOVED_ASSET = Word::from(removed_assets[i])
+            REMOVED_ASSET_KEY = removed_assets[i].to_key_word(),
+            REMOVED_ASSET_VALUE = removed_assets[i].to_value_word(),
         ));
     }
 
@@ -655,7 +696,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # get the index of account storage slot
             push.MOCK_VALUE_SLOT0[0..2]
-            # => [slot_id_prefix, slot_id_suffix, 13, 11, 9, 7]
+            # => [slot_id_suffix, slot_id_prefix, 13, 11, 9, 7]
             # update the storage value
             call.account::set_item dropw
             # => []
@@ -672,7 +713,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
 
             # get the index of account storage slot
             push.MOCK_MAP_SLOT[0..2]
-            # => [slot_id_prefix, slot_id_suffix, 14, 15, 16, 17, 18, 19, 20, 21]
+            # => [slot_id_suffix, slot_id_prefix, 14, 15, 16, 17, 18, 19, 20, 21]
 
             # update the storage value
             call.account::set_map_item dropw dropw dropw
@@ -836,7 +877,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
           push.{value0}
           push.{existing_key}
           push.MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           exec.::miden::core::sys::truncate_stack
@@ -1084,13 +1125,14 @@ fn parse_tx_script(code: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
 
 const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
       use mock::account
+      use mock::util
       use miden::protocol::output_note
 
-      #! Inputs:  [slot_id_prefix, slot_id_suffix, VALUE]
+      #! Inputs:  [slot_id_suffix, slot_id_prefix, VALUE]
       #! Outputs: []
       proc set_item
           repeat.10 push.0 movdn.6 end
-          # => [slot_id_prefix, slot_id_suffix, VALUE, pad(10)]
+          # => [slot_id_suffix, slot_id_prefix, VALUE, pad(10)]
 
           call.account::set_item
           # => [OLD_VALUE, pad(12)]
@@ -1098,7 +1140,7 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           dropw dropw dropw dropw
       end
 
-      #! Inputs:  [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+      #! Inputs:  [slot_id_suffix, slot_id_prefix, KEY, VALUE]
       #! Outputs: []
       proc set_map_item
           repeat.6 push.0 movdn.10 end
@@ -1111,59 +1153,29 @@ const TEST_ACCOUNT_CONVENIENCE_WRAPPERS: &str = "
           # => []
       end
 
-      #! Inputs:  [ASSET]
-      #! Outputs: []
-      proc create_note_with_asset
-          push.0.1.2.3           # recipient
-          push.2                 # note_type private
-          push.0xC0000000        # tag
-          # => [tag, note_type, RECIPIENT, ASSET]
-
-          exec.output_note::create
-          # => [note_idx, ASSET]
-
-          movdn.4
-          # => [ASSET, note_idx]
-
-          exec.move_asset_to_note
-          # => []
-      end
-
-      #! Inputs:  [ASSET, note_idx]
-      #! Outputs: []
-      proc move_asset_to_note
-          repeat.11 push.0 movdn.5 end
-          # => [ASSET, note_idx, pad(11)]
-
-          call.account::move_asset_to_note
-
-          # return values are unused
-          dropw dropw dropw dropw
-      end
-
-      #! Inputs:  [ASSET]
-      #! Outputs: [ASSET']
+      #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+      #! Outputs: [ASSET_VALUE']
       proc add_asset
-          repeat.12 push.0 movdn.4 end
-          # => [ASSET, pad(12)]
+          repeat.8 push.0 movdn.8 end
+          # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
           call.account::add_asset
-          # => [ASSET', pad(12)]
+          # => [ASSET_VALUE', pad(12)]
 
           repeat.12 movup.4 drop end
-          # => [ASSET']
+          # => [ASSET_VALUE']
       end
 
-      #! Inputs:  [ASSET]
-      #! Outputs: [ASSET]
+      #! Inputs:  [ASSET_KEY, ASSET_VALUE]
+      #! Outputs: [ASSET_VALUE]
       proc remove_asset
-          repeat.12 push.0 movdn.4 end
-          # => [ASSET, pad(12)]
+          padw padw swapdw
+          # => [ASSET_KEY, ASSET_VALUE, pad(8)]
 
           call.account::remove_asset
-          # => [ASSET, pad(12)]
+          # => [ASSET_VALUE, pad(12)]
 
           repeat.12 movup.4 drop end
-          # => [ASSET]
+          # => [ASSET_VALUE]
       end
 ";

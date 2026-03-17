@@ -85,7 +85,7 @@ impl TryFrom<Felt> for NoteType {
     type Error = NoteError;
 
     fn try_from(value: Felt) -> Result<Self, Self::Error> {
-        value.as_int().try_into()
+        value.as_canonical_u64().try_into()
     }
 }
 
@@ -107,6 +107,10 @@ impl FromStr for NoteType {
 impl Serializable for NoteType {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         (*self as u8).write_into(target)
+    }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u8>()
     }
 }
 

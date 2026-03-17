@@ -2,6 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
+use miden_crypto::merkle::mmr::MmrProof;
+
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
@@ -67,11 +69,13 @@ impl PartialBlockchain {
         for (block_num, block) in partial_chain.blocks.iter() {
             // SAFETY: new_unchecked returns an error if a block is not tracked in the MMR, so
             // retrieving a proof here should succeed.
-            let proof = partial_chain
+            let path = partial_chain
                 .mmr
                 .open(block_num.as_usize())
                 .expect("block should not exceed chain length")
                 .expect("block should be tracked in the partial MMR");
+            // This should go away again once https://github.com/0xMiden/crypto/pull/787 is propagated here.
+            let proof = MmrProof::new(path, block.commitment());
 
             partial_chain.mmr.peaks().verify(block.commitment(), proof).map_err(|source| {
                 PartialBlockchainError::BlockHeaderCommitmentMismatch {
@@ -281,7 +285,6 @@ impl Default for PartialBlockchain {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_core::utils::{Deserializable, Serializable};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -293,6 +296,7 @@ mod tests {
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -312,7 +316,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -323,7 +327,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -334,7 +338,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            mmr.open(block_num as usize).unwrap(),
+            *mmr.open(block_num as usize).unwrap().path(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
     }
@@ -353,7 +357,7 @@ mod tests {
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         for i in 0..3 {
             partial_mmr
-                .track(i, mmr.get(i).unwrap(), &mmr.open(i).unwrap().merkle_path)
+                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
 
@@ -403,7 +407,7 @@ mod tests {
 
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         partial_mmr
-            .track(1, block_header1.commitment(), &mmr.open(1).unwrap().merkle_path)
+            .track(1, block_header1.commitment(), mmr.open(1).unwrap().merkle_path())
             .unwrap();
 
         let error =
@@ -470,7 +474,7 @@ mod tests {
         for i in 0..total_blocks {
             let i: usize = i as usize;
             partial_mmr
-                .track(i, full_mmr.get(i).unwrap(), &full_mmr.open(i).unwrap().merkle_path)
+                .track(i, full_mmr.get(i).unwrap(), full_mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
         let mut chain = PartialBlockchain::new(partial_mmr, headers).unwrap();

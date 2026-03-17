@@ -43,8 +43,8 @@ use crate::note::{NoteAttachment, NoteAttachmentKind, NoteAttachmentScheme};
 /// The felt validity of each part of the layout is guaranteed:
 /// - 1st felt: The lower 8 bits of the account ID suffix are `0` by construction, so that they can
 ///   be overwritten with other data. The suffix' most significant bit must be zero such that the
-///   entire felt retains its validity even if all of its lower 8 bits are be set to `1`. So the
-///   note type can be comfortably encoded.
+///   entire felt retains its validity even if all of its lower 8 bits are set to `1`. So the note
+///   type can be comfortably encoded.
 /// - 2nd felt: Is equivalent to the prefix of the account ID so it inherits its validity.
 /// - 3rd felt: The upper 32 bits are always zero.
 /// - 4th felt: The upper 30 bits are always zero.
@@ -89,6 +89,38 @@ impl NoteMetadata {
         }
     }
 
+    /// Reconstructs a [`NoteMetadata`] from a [`NoteMetadataHeader`] and a
+    /// [`NoteAttachment`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the attachment's kind or scheme do not match those in the header.
+    pub fn try_from_header(
+        header: NoteMetadataHeader,
+        attachment: NoteAttachment,
+    ) -> Result<Self, NoteError> {
+        if header.attachment_kind != attachment.attachment_kind() {
+            return Err(NoteError::AttachmentKindMismatch {
+                header_kind: header.attachment_kind,
+                attachment_kind: attachment.attachment_kind(),
+            });
+        }
+
+        if header.attachment_scheme != attachment.attachment_scheme() {
+            return Err(NoteError::AttachmentSchemeMismatch {
+                header_scheme: header.attachment_scheme,
+                attachment_scheme: attachment.attachment_scheme(),
+            });
+        }
+
+        Ok(Self {
+            sender: header.sender,
+            note_type: header.note_type,
+            tag: header.tag,
+            attachment,
+        })
+    }
+
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -120,7 +152,7 @@ impl NoteMetadata {
     /// Returns the header of a [`NoteMetadata`] as a [`Word`].
     ///
     /// See [`NoteMetadata`] docs for more details.
-    fn to_header(&self) -> NoteMetadataHeader {
+    pub fn to_header(&self) -> NoteMetadataHeader {
         NoteMetadataHeader {
             sender: self.sender,
             note_type: self.note_type,
@@ -193,6 +225,13 @@ impl Serializable for NoteMetadata {
         self.tag().write_into(target);
         self.attachment().write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.note_type().get_size_hint()
+            + self.sender().get_size_hint()
+            + self.tag().get_size_hint()
+            + self.attachment().get_size_hint()
+    }
 }
 
 impl Deserializable for NoteMetadata {
@@ -212,15 +251,43 @@ impl Deserializable for NoteMetadata {
 /// The header representation of [`NoteMetadata`].
 ///
 /// See the metadata's type for details on this type's [`Word`] layout.
-///
-/// This is intended to be a private type meant for encapsulating the conversion from and to words.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct NoteMetadataHeader {
+pub struct NoteMetadataHeader {
     sender: AccountId,
     note_type: NoteType,
     tag: NoteTag,
     attachment_kind: NoteAttachmentKind,
     attachment_scheme: NoteAttachmentScheme,
+}
+
+impl NoteMetadataHeader {
+    // ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the account which created the note.
+    pub fn sender(&self) -> AccountId {
+        self.sender
+    }
+
+    /// Returns the note's type.
+    pub fn note_type(&self) -> NoteType {
+        self.note_type
+    }
+
+    /// Returns the tag associated with the note.
+    pub fn tag(&self) -> NoteTag {
+        self.tag
+    }
+
+    /// Returns the attachment kind.
+    pub fn attachment_kind(&self) -> NoteAttachmentKind {
+        self.attachment_kind
+    }
+
+    /// Returns the attachment scheme.
+    pub fn attachment_scheme(&self) -> NoteAttachmentScheme {
+        self.attachment_scheme
+    }
 }
 
 impl From<NoteMetadataHeader> for Word {
@@ -244,14 +311,18 @@ impl TryFrom<Word> for NoteMetadataHeader {
     fn try_from(word: Word) -> Result<Self, Self::Error> {
         let (sender_suffix, note_type) = unmerge_sender_suffix_and_note_type(word[0])?;
         let sender_prefix = word[1];
-        let tag = u32::try_from(word[2]).map(NoteTag::new).map_err(|_| {
+        let tag = u32::try_from(word[2].as_canonical_u64()).map(NoteTag::new).map_err(|_| {
             NoteError::other("failed to convert note tag from metadata header to u32")
         })?;
         let (attachment_kind, attachment_scheme) = unmerge_attachment_kind_scheme(word[3])?;
 
-        let sender = AccountId::try_from([sender_prefix, sender_suffix]).map_err(|source| {
-            NoteError::other_with_source("failed to decode account ID from metadata header", source)
-        })?;
+        let sender =
+            AccountId::try_from_elements(sender_suffix, sender_prefix).map_err(|source| {
+                NoteError::other_with_source(
+                    "failed to decode account ID from metadata header",
+                    source,
+                )
+            })?;
 
         Ok(Self {
             sender,
@@ -279,7 +350,7 @@ impl TryFrom<Word> for NoteMetadataHeader {
 ///
 /// The `sender_id_suffix` is the suffix of the sender's account ID.
 fn merge_sender_suffix_and_note_type(sender_id_suffix: Felt, note_type: NoteType) -> Felt {
-    let mut merged = sender_id_suffix.as_int();
+    let mut merged = sender_id_suffix.as_canonical_u64();
 
     let note_type_byte = note_type as u8;
     debug_assert!(note_type_byte < 4, "note type must not contain values >= 4");
@@ -296,14 +367,14 @@ fn unmerge_sender_suffix_and_note_type(element: Felt) -> Result<(Felt, NoteType)
     // Inverts the note type mask.
     const SENDER_SUFFIX_MASK: u64 = !(NOTE_TYPE_MASK as u64);
 
-    let note_type_byte = element.as_int() as u8 & NOTE_TYPE_MASK;
+    let note_type_byte = element.as_canonical_u64() as u8 & NOTE_TYPE_MASK;
     let note_type = NoteType::try_from(note_type_byte).map_err(|source| {
         NoteError::other_with_source("failed to decode note type from metadata header", source)
     })?;
 
     // No bits were set so felt should still be valid.
-    let sender_suffix =
-        Felt::try_from(element.as_int() & SENDER_SUFFIX_MASK).expect("felt should still be valid");
+    let sender_suffix = Felt::try_from(element.as_canonical_u64() & SENDER_SUFFIX_MASK)
+        .expect("felt should still be valid");
 
     Ok((sender_suffix, note_type))
 }
@@ -331,8 +402,8 @@ fn merge_attachment_kind_scheme(
 fn unmerge_attachment_kind_scheme(
     element: Felt,
 ) -> Result<(NoteAttachmentKind, NoteAttachmentScheme), NoteError> {
-    let attachment_scheme = element.as_int() as u32;
-    let attachment_kind = (element.as_int() >> 32) as u8;
+    let attachment_scheme = element.as_canonical_u64() as u32;
+    let attachment_kind = (element.as_canonical_u64() >> 32) as u8;
 
     let attachment_scheme = NoteAttachmentScheme::new(attachment_scheme);
     let attachment_kind = NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {

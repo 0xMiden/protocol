@@ -6,28 +6,32 @@ inputs:
     description: "Release mode: dry-run or publish"
     required: true
     default: "dry-run"
-  verify-main-head:
-    description: "If true, ensure the triggering SHA matches main's HEAD"
+  verify-branch-head:
+    description: "If true, ensure the triggering SHA matches the release branch HEAD"
     required: false
     default: "false"
+  release-branch:
+    description: "Branch to verify HEAD against (used when verify-branch-head is true)"
+    required: false
+    default: "main"
 
 runs:
   using: "composite"
   steps:
-    # Optional: guard that release happens from latest main
-    - name: Verify tag matches main HEAD
-      if: ${{ inputs.verify-main-head == 'true' }}
+    # Optional: guard that release happens from latest release branch
+    - name: Verify tag matches release branch HEAD
+      if: ${{ inputs.verify-branch-head == 'true' }}
       shell: bash
       run: |
-        git fetch origin main --depth=1
-        main_sha="$(git rev-parse origin/main)"
+        git fetch origin ${{ inputs.release-branch }} --depth=1
+        branch_sha="$(git rev-parse origin/${{ inputs.release-branch }})"
         tag_sha="$(git rev-parse HEAD)"
 
-        echo "main_sha=$main_sha"
+        echo "branch_sha=$branch_sha"
         echo "tag_sha=$tag_sha"
 
-        if [ "$main_sha" != "$tag_sha" ]; then
-          echo "::error::The release/tag commit does not match origin/main HEAD. Aborting."
+        if [ "$branch_sha" != "$tag_sha" ]; then
+          echo "::error::The release/tag commit does not match origin/${{ inputs.release-branch }} HEAD. Aborting."
           exit 1
         fi
 

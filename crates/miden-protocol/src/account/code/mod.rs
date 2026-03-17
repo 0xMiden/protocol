@@ -283,7 +283,9 @@ impl Deserializable for AccountCode {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let module = Arc::new(MastForest::read_from(source)?);
         let num_procedures = (source.read_u8()? as usize) + 1;
-        let procedures = source.read_many::<AccountProcedureRoot>(num_procedures)?;
+        let procedures = source
+            .read_many_iter(num_procedures)?
+            .collect::<Result<Vec<AccountProcedureRoot>, _>>()?;
 
         Ok(Self::from_parts(module, procedures))
     }
@@ -446,7 +448,7 @@ mod tests {
     #[test]
     fn test_account_code_no_auth_component() {
         let library = Assembler::default().assemble_library([CODE]).unwrap();
-        let metadata = AccountComponentMetadata::new("test::no_auth").with_supports_all_types();
+        let metadata = AccountComponentMetadata::new("test::no_auth", AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         let err =
@@ -484,8 +486,7 @@ mod tests {
         ";
 
         let library = Assembler::default().assemble_library([code_with_multiple_auth]).unwrap();
-        let metadata =
-            AccountComponentMetadata::new("test::multiple_auth").with_supports_all_types();
+        let metadata = AccountComponentMetadata::new("test::multiple_auth", AccountType::all());
         let component = AccountComponent::new(library, vec![], metadata).unwrap();
 
         let err =

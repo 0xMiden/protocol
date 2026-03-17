@@ -6,8 +6,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_assembly::Library;
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::program::Program;
+use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -20,6 +21,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::note::NoteScript;
 use miden_standards::account::auth::NoAuth;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
@@ -31,7 +33,6 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod update_ger_note;
-pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
@@ -97,9 +98,8 @@ fn agglayer_faucet_component_library() -> Library {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer")
-        .with_supports_all_types();
+    let metadata = AccountComponentMetadata::new("agglayer::bridge", AccountType::all())
+        .with_description("Bridge component for AggLayer");
 
     AccountComponent::new(library, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")
@@ -220,18 +220,8 @@ impl AggLayerBridge {
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            bridge.bridge_admin_id.suffix(),
-            bridge.bridge_admin_id.prefix().as_felt(),
-        ]);
-        let ger_manager_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            bridge.ger_manager_id.suffix(),
-            bridge.ger_manager_id.prefix().as_felt(),
-        ]);
+        let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
+        let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
 
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
@@ -254,9 +244,8 @@ impl From<AggLayerBridge> for AccountComponent {
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet")
-        .with_description("AggLayer faucet component with bridge validation")
-        .with_supported_type(AccountType::FungibleFaucet);
+    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
+        .with_description("AggLayer faucet component with bridge validation");
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",
@@ -400,12 +389,7 @@ impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
         let metadata_slot = StorageSlot::from(faucet.metadata);
 
-        let bridge_account_id_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-        ]);
+        let bridge_account_id_word = AccountIdKey::new(faucet.bridge_account_id).as_word();
         let bridge_slot =
             StorageSlot::with_value(AGGLAYER_FAUCET_SLOT_NAME.clone(), bridge_account_id_word);
 
@@ -423,16 +407,6 @@ impl From<AggLayerFaucet> for AccountComponent {
             vec![metadata_slot, bridge_slot, conversion_slot1, conversion_slot2];
         agglayer_faucet_component(agglayer_storage_slots)
     }
-}
-
-// FAUCET REGISTRY HELPERS
-// ================================================================================================
-
-/// Creates a faucet registry map key from a faucet account ID.
-///
-/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
-pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
 }
 
 // AGGLAYER ACCOUNT CREATION HELPERS

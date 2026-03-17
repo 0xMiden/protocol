@@ -1,0 +1,197 @@
+use $kernel::tx
+use $kernel::asset
+use $kernel::account
+use miden::core::word
+
+# CONSTANTS
+# ==================================================================================================
+
+# The index of the local memory slot that contains the procedure root of the callback.
+const CALLBACK_PROC_ROOT_LOC = 0
+
+# The name of the storage slot where the procedure root for the on_before_asset_added_to_account callback
+# is stored.
+pub const ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_account")
+
+# The name of the storage slot where the procedure root for the on_before_asset_added_to_note callback
+# is stored.
+pub const ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT = word("miden::protocol::faucet::callback::on_before_asset_added_to_note")
+
+# PROCEDURES
+# ==================================================================================================
+
+#! Invokes the `on_before_asset_added_to_account` callback on the faucet that issued the asset,
+#! if the asset has callbacks enabled.
+#!
+#! The callback invocation is skipped in these cases:
+#! - If the global callback flag in the asset key is `Disabled`.
+#! - If the faucet does not have the callback storage slot.
+#! - If the callback storage slot contains the empty word.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [PROCESSED_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset being added.
+#! - ASSET_VALUE is the value of the asset being added.
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
+#!   ASSET_VALUE if callbacks are disabled.
+pub proc on_before_asset_added_to_account
+    exec.asset::key_to_callbacks_enabled
+    # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE]
+
+    if.true
+        # set custom_data = 0
+        push.0 movdn.8
+        # => [ASSET_KEY, ASSET_VALUE, custom_data = 0]
+
+        push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
+        exec.invoke_callback
+        # => [PROCESSED_ASSET_VALUE]
+    else
+        # drop asset key
+        dropw
+        # => [ASSET_VALUE]
+    end
+    # => [PROCESSED_ASSET_VALUE]
+end
+
+#! Invokes the `on_before_asset_added_to_note` callback on the faucet that issued the asset,
+#! if the asset has callbacks enabled.
+#!
+#! The callback invocation is skipped in these cases:
+#! - If the global callback flag in the asset key is `Disabled`.
+#! - If the faucet does not have the callback storage slot.
+#! - If the callback storage slot contains the empty word.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx]
+#! Outputs: [PROCESSED_ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset being added.
+#! - ASSET_VALUE is the value of the asset being added.
+#! - note_idx is the index of the output note the asset is being added to.
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
+#!   ASSET_VALUE if callbacks are disabled.
+pub proc on_before_asset_added_to_note
+    exec.asset::key_to_callbacks_enabled
+    # => [callbacks_enabled, ASSET_KEY, ASSET_VALUE, note_idx]
+
+    if.true
+        push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
+        exec.invoke_callback
+        # => [PROCESSED_ASSET_VALUE]
+    else
+        # drop asset key and note index
+        dropw movup.4 drop
+        # => [ASSET_VALUE]
+    end
+    # => [PROCESSED_ASSET_VALUE]
+end
+
+#! Invokes a callback by starting a foreign context against the faucet, reading the callback
+#! procedure root from the provided slot ID in the faucet's storage, and invoking it via `dyncall`.
+#!
+#! If the faucet does not have the callback storage slot, or if the slot contains the empty word,
+#! the callback is skipped and the original ASSET_VALUE is returned.
+#!
+#! custom_data should be set to 0 for the account callback and to note_idx for the note callback.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE, custom_data]
+#! Outputs: [PROCESSED_ASSET_VALUE]
+#!
+#! Where:
+#! - slot_id* is the ID of the slot that contains the callback procedure root.
+#! - ASSET_KEY is the vault key of the asset being added.
+#! - ASSET_VALUE is the value of the asset being added.
+#! - PROCESSED_ASSET_VALUE is the asset value returned by the callback, or the original
+#!   ASSET_VALUE if no callback is configured.
+@locals(4)
+proc invoke_callback
+    exec.start_foreign_callback_context
+    # => [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE, custom_data]
+
+    # only invoke the callback if the procedure root is not the empty word
+    if.true
+        # prepare for dyncall by storing procedure root in local memory
+        loc_storew_le.CALLBACK_PROC_ROOT_LOC dropw
+        # => [ASSET_KEY, ASSET_VALUE, custom_data]
+
+        # pad the stack to 16 for the call
+        repeat.7 push.0 movdn.9 end
+        # => [ASSET_KEY, ASSET_VALUE, custom_data, pad(7)]
+
+        # invoke the callback
+        locaddr.CALLBACK_PROC_ROOT_LOC
+        dyncall
+        # => [PROCESSED_ASSET_VALUE, pad(12)]
+
+        # truncate the stack after the call
+        swapdw dropw dropw swapw dropw
+        # => [PROCESSED_ASSET_VALUE]
+    else
+        # drop proc root, asset key and custom_data
+        dropw dropw movup.4 drop
+        # => [ASSET_VALUE]
+    end
+    # => [PROCESSED_ASSET_VALUE]
+
+    exec.end_foreign_callback_context
+    # => [PROCESSED_ASSET_VALUE]
+end
+
+#! Prepares the invocation of a faucet callback by starting a foreign context against the faucet
+#! identified by the asset key's faucet ID, looking up the callback procedure root from the
+#! faucet's storage, and computing whether the callback should be invoked.
+#!
+#! The callback should be invoked if the storage slot exists and contains a non-empty procedure
+#! root.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - slot_id_suffix and slot_id_prefix identify the storage slot containing the callback procedure root.
+#! - ASSET_KEY is the vault key of the asset being added.
+#! - ASSET_VALUE is the value of the asset being added.
+#! - should_invoke is 1 if the callback should be invoked, 0 otherwise.
+#! - PROC_ROOT is the procedure root of the callback, or the empty word if not found.
+proc start_foreign_callback_context
+    # move slot IDs past ASSET_KEY and ASSET_VALUE
+    movdn.9 movdn.9
+    # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
+
+    exec.asset::key_to_faucet_id
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
+
+    # start a foreign context against the faucet
+    exec.tx::start_foreign_context
+    # => [ASSET_KEY, ASSET_VALUE, slot_id_suffix, slot_id_prefix]
+
+    # bring slot IDs back to top
+    movup.9 movup.9
+    # => [slot_id_suffix, slot_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    # try to find the callback procedure root in the faucet's storage
+    exec.account::find_item
+    # => [is_found, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+
+    movdn.4 exec.word::testz not
+    # => [is_non_empty_word, PROC_ROOT, is_found, ASSET_KEY, ASSET_VALUE]
+
+    # should_invoke = is_found && is_non_empty_word
+    movup.5 and
+    # => [should_invoke, PROC_ROOT, ASSET_KEY, ASSET_VALUE]
+end
+
+#! Ends a foreign callback context.
+#!
+#! This pops the top of the account stack, making the previous account the active account.
+#!
+#! This wrapper exists only for uniformity with start_foreign_callback_context.
+#!
+#! Inputs:  []
+#! Outputs: []
+proc end_foreign_callback_context
+    exec.tx::end_foreign_context
+end

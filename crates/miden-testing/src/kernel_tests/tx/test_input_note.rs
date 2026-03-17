@@ -2,6 +2,7 @@ use alloc::string::String;
 
 use miden_protocol::Word;
 use miden_protocol::note::Note;
+use miden_protocol::transaction::memory::{ASSET_SIZE, ASSET_VALUE_OFFSET};
 use miden_standards::code_builder::CodeBuilder;
 
 use super::{TestSetup, setup_test};
@@ -168,16 +169,16 @@ async fn test_get_sender() -> anyhow::Result<()> {
             # get the sender from the input note
             push.0
             exec.input_note::get_sender
-            # => [sender_id_prefix, sender_id_suffix]
-
-            # assert the correctness of the prefix
-            push.{sender_prefix}
-            assert_eq.err="sender id prefix of the note 0 is incorrect"
-            # => [sender_id_suffix]
+            # => [sender_id_suffix, sender_id_prefix]
 
             # assert the correctness of the suffix
             push.{sender_suffix}
             assert_eq.err="sender id suffix of the note 0 is incorrect"
+            # => [sender_id_prefix]
+
+            # assert the correctness of the prefix
+            push.{sender_prefix}
+            assert_eq.err="sender id prefix of the note 0 is incorrect"
             # => []
         end
     "#,
@@ -234,20 +235,32 @@ async fn test_get_assets() -> anyhow::Result<()> {
         for (asset_index, asset) in note.assets().iter().enumerate() {
             check_assets_code.push_str(&format!(
                 r#"
-                    # load the asset stored in memory
-                    padw dup.4 mem_loadw_be
-                    # => [STORED_ASSET, dest_ptr, note_index]
+                    # load the asset key stored in memory
+                    padw dup.4 mem_loadw_le
+                    # => [STORED_ASSET_KEY, dest_ptr, note_index]
 
-                    # assert the asset
-                    push.{NOTE_ASSET}
-                    assert_eqw.err="asset {asset_index} of the note {note_index} is incorrect"
+                    # assert the asset key matches
+                    push.{NOTE_ASSET_KEY}
+                    assert_eqw.err="expected asset key at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_KEY}"
+                    # => [dest_ptr, note_index]
+
+                    # load the asset value stored in memory
+                    padw dup.4 add.{ASSET_VALUE_OFFSET} mem_loadw_le
+                    # => [STORED_ASSET_VALUE, dest_ptr, note_index]
+
+                    # assert the asset value matches
+                    push.{NOTE_ASSET_VALUE}
+                    assert_eqw.err="expected asset value at asset index {asset_index} of the note\
+                    {note_index} to be {NOTE_ASSET_VALUE}"
                     # => [dest_ptr, note_index]
 
                     # move the pointer
-                    add.4
-                    # => [dest_ptr+4, note_index]
+                    add.{ASSET_SIZE}
+                    # => [dest_ptr+ASSET_SIZE, note_index]
                 "#,
-                NOTE_ASSET = Word::from(*asset),
+                NOTE_ASSET_KEY = asset.to_key_word(),
+                NOTE_ASSET_VALUE = asset.to_value_word(),
                 asset_index = asset_index,
                 note_index = note_index,
             ));
@@ -272,8 +285,8 @@ async fn test_get_assets() -> anyhow::Result<()> {
         end
     ",
         check_note_0 = check_assets_code(0, 0, &p2id_note_0_assets),
-        check_note_1 = check_assets_code(1, 4, &p2id_note_1_asset),
-        check_note_2 = check_assets_code(2, 8, &p2id_note_2_assets),
+        check_note_1 = check_assets_code(1, 8, &p2id_note_1_asset),
+        check_note_2 = check_assets_code(2, 16, &p2id_note_2_assets),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(code)?;

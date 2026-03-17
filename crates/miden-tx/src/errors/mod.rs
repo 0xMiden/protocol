@@ -3,7 +3,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::error::Error;
 
-use miden_processor::{DeserializationError, ExecutionError};
+use miden_processor::ExecutionError;
+use miden_processor::serde::DeserializationError;
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{AccountId, StorageMapKey};
 use miden_protocol::assembly::diagnostics::reporting::PrintDiagnostic;
@@ -15,6 +16,7 @@ use miden_protocol::errors::{
     AccountError,
     AssetError,
     NoteError,
+    OutputNoteError,
     ProvenTransactionError,
     TransactionInputError,
     TransactionInputsExtractionError,
@@ -148,6 +150,8 @@ pub enum TransactionProverError {
     RemoveFeeAssetFromDelta(#[source] AccountDeltaError),
     #[error("failed to construct transaction outputs")]
     TransactionOutputConstructionFailed(#[source] TransactionOutputError),
+    #[error("failed to shrink output note")]
+    OutputNoteShrinkFailed(#[source] OutputNoteError),
     #[error("failed to build proven transaction")]
     ProvenTransactionBuildFailed(#[source] ProvenTransactionError),
     // Print the diagnostic directly instead of returning the source error. In the source error

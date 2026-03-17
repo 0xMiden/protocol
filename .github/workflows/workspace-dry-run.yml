@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - next
+      - 'release/**'
 
 permissions:
   contents: read
@@ -29,5 +30,5 @@ jobs:
         uses: ./.github/actions/workspace-release
         with:
           mode: "dry-run"
-          verify-main-head: "false"
+          verify-branch-head: "false"
           # ref left blank: uses the pushed ref

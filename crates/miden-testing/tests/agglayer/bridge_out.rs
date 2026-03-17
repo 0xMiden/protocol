@@ -22,7 +22,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::faucets::TokenMetadata;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -54,8 +54,8 @@ fn read_local_exit_root(account: &Account) -> Vec<Felt> {
         .expect("should be able to read LET root hi");
 
     let mut root = Vec::with_capacity(8);
-    root.extend(root_lo.to_vec().into_iter().rev());
-    root.extend(root_hi.to_vec().into_iter().rev());
+    root.extend(root_lo.to_vec());
+    root.extend(root_hi.to_vec());
     root
 }
 
@@ -65,7 +65,7 @@ fn read_let_num_leaves(account: &Account) -> u64 {
         .storage()
         .get_item(num_leaves_slot)
         .expect("should be able to read LET num leaves");
-    value.to_vec()[0].as_int()
+    value.to_vec()[0].as_canonical_u64()
 }
 
 /// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
@@ -103,12 +103,14 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     let mut bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
@@ -150,7 +152,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE ALL B2AGG NOTES UPFRONT (before building mock chain)
     // --------------------------------------------------------------------------------------------
@@ -169,7 +171,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             faucet.id(),
             builder.rng_mut(),
         )?;
-        builder.add_output_note(OutputNote::Full(note.clone()));
+        builder.add_output_note(RawOutputNote::Full(note.clone()));
         notes.push(note);
     }
 
@@ -210,7 +212,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
             i + 1
         );
         let burn_note = match executed_tx.output_notes().get_note(0) {
-            OutputNote::Full(note) => note,
+            RawOutputNote::Full(note) => note,
             _ => panic!("Expected OutputNote::Full variant for BURN note"),
         };
         burn_note_ids.push(burn_note.id());
@@ -289,7 +291,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let final_token_supply = TokenMetadata::try_from(faucet.storage())?.token_supply();
     assert_eq!(
         final_token_supply,
-        Felt::new(initial_token_supply.as_int() - total_burned),
+        Felt::new(initial_token_supply.as_canonical_u64() - total_burned),
         "Token supply should decrease by the sum of 32 bridged amounts"
     );
 
@@ -309,12 +311,14 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in this test, but distinct from admin)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT (empty faucet registry — no faucets registered)
     // --------------------------------------------------------------------------------------------
@@ -344,7 +348,8 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     // CREATE B2AGG NOTE WITH ASSETS FROM THE UNREGISTERED FAUCET
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new(100);
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
     let eth_address =
@@ -359,7 +364,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
     mock_chain.prove_next_block()?;
 
@@ -407,12 +412,14 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a bridge admin account
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create a GER manager account (not used in this test, but distinct from admin)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create a bridge account (includes a `bridge` component)
     let bridge_account = create_existing_bridge_account(
@@ -423,13 +430,15 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account that will create and consume the B2AGG note
-    let mut user_account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let mut user_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE B2AGG NOTE WITH USER ACCOUNT AS SENDER
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new(50);
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -449,7 +458,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mut mock_chain = builder.build()?;
 
     // Store the initial asset balance of the user account
@@ -478,7 +487,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
     let final_balance = user_account.vault().get_balance(faucet.id()).unwrap_or(0u64);
     assert_eq!(
         final_balance,
-        initial_balance + amount.as_int(),
+        initial_balance + amount.as_canonical_u64(),
         "User account should have received the assets back from the B2AGG note"
     );
 
@@ -518,12 +527,14 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.add_existing_network_faucet("AGG", 1000, faucet_owner_account_id, Some(100))?;
 
     // Create a bridge admin account
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create a GER manager account (not used in this test, but distinct from admin)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create a bridge account as the designated TARGET for the B2AGG note
     let bridge_account = create_existing_bridge_account(
@@ -534,8 +545,9 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     builder.add_account(bridge_account.clone())?;
 
     // Create a user account as the SENDER of the B2AGG note
-    let sender_account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let sender_account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create a "malicious" account with a bridge interface
     let malicious_account = create_existing_bridge_account(
@@ -548,7 +560,8 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
     // CREATE B2AGG NOTE
     // --------------------------------------------------------------------------------------------
     let amount = Felt::new(50);
-    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
+    let bridge_asset: Asset =
+        FungibleAsset::new(faucet.id(), amount.as_canonical_u64()).unwrap().into();
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
@@ -567,7 +580,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
     let mock_chain = builder.build()?;
 
     // ATTEMPT TO CONSUME B2AGG NOTE WITH MALICIOUS ACCOUNT (SHOULD FAIL)

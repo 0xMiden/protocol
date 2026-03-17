@@ -27,9 +27,9 @@ mod constants;
 pub use constants::*;
 pub use miden_core::mast::{MastForest, MastNodeId};
 pub use miden_core::prettier::PrettyPrint;
-pub use miden_core::{EMPTY_WORD, Felt, FieldElement, ONE, StarkField, WORD_SIZE, ZERO};
+pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
 pub use miden_core_lib::CoreLibrary;
-pub use miden_crypto::hash::rpo::Rpo256 as Hasher;
+pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 pub use miden_crypto::word;
 pub use miden_crypto::word::{LexicographicWord, Word, WordError};
 pub use protocol::ProtocolLib;
@@ -66,20 +66,23 @@ pub mod utils {
     pub use miden_utils_sync as sync;
 
     pub mod serde {
-        pub use miden_core::utils::{
+        pub use miden_crypto::utils::{
+            BudgetedReader,
             ByteReader,
             ByteWriter,
             Deserializable,
             DeserializationError,
             Serializable,
+            SliceReader,
         };
     }
 }
 
 pub mod vm {
     pub use miden_assembly_syntax::ast::{AttributeSet, QualifiedProcedureName};
-    pub use miden_core::sys_events::SystemEvent;
-    pub use miden_core::{AdviceMap, EventId, Program, ProgramInfo};
+    pub use miden_core::advice::{AdviceInputs, AdviceMap};
+    pub use miden_core::events::{EventId, SystemEvent};
+    pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::{
         MastArtifact,
         Package,
@@ -90,6 +93,7 @@ pub mod vm {
         Section,
         SectionId,
     };
-    pub use miden_processor::{AdviceInputs, FutureMaybeSend, RowIndex, StackInputs, StackOutputs};
+    pub use miden_processor::trace::RowIndex;
+    pub use miden_processor::{FutureMaybeSend, StackInputs, StackOutputs};
     pub use miden_verifier::ExecutionProof;
 }

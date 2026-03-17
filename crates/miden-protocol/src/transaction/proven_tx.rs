@@ -71,6 +71,69 @@ pub struct ProvenTransaction {
 }
 
 impl ProvenTransaction {
+    // CONSTRUCTOR
+    // --------------------------------------------------------------------------------------------
+
+    /// Creates a new [ProvenTransaction] from the specified components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The total number of input notes is greater than
+    ///   [`MAX_INPUT_NOTES_PER_TX`](crate::constants::MAX_INPUT_NOTES_PER_TX).
+    /// - The vector of input notes contains duplicates.
+    /// - The total number of output notes is greater than
+    ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
+    /// - The vector of output notes contains duplicates.
+    /// - The transaction is empty, which is the case if the account state is unchanged or the
+    ///   number of input notes is zero.
+    /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
+    ///   not match its declared account delta commitment.
+    pub fn new(
+        account_update: TxAccountUpdate,
+        input_notes: impl IntoIterator<Item = impl Into<InputNoteCommitment>>,
+        output_notes: impl IntoIterator<Item = impl Into<OutputNote>>,
+        ref_block_num: BlockNumber,
+        ref_block_commitment: Word,
+        fee: FungibleAsset,
+        expiration_block_num: BlockNumber,
+        proof: ExecutionProof,
+    ) -> Result<Self, ProvenTransactionError> {
+        let input_notes: Vec<InputNoteCommitment> =
+            input_notes.into_iter().map(Into::into).collect();
+        let output_notes: Vec<OutputNote> = output_notes.into_iter().map(Into::into).collect();
+
+        let input_notes =
+            InputNotes::new(input_notes).map_err(ProvenTransactionError::InputNotesError)?;
+        let output_notes =
+            OutputNotes::new(output_notes).map_err(ProvenTransactionError::OutputNotesError)?;
+
+        let id = TransactionId::new(
+            account_update.initial_state_commitment(),
+            account_update.final_state_commitment(),
+            input_notes.commitment(),
+            output_notes.commitment(),
+            fee,
+        );
+
+        let proven_transaction = Self {
+            id,
+            account_update,
+            input_notes,
+            output_notes,
+            ref_block_num,
+            ref_block_commitment,
+            fee,
+            expiration_block_num,
+            proof,
+        };
+
+        proven_transaction.validate()
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
     /// Returns unique identifier of this transaction.
     pub fn id(&self) -> TransactionId {
         self.id
@@ -218,6 +281,7 @@ impl Deserializable for ProvenTransaction {
             account_update.final_state_commitment(),
             input_notes.commitment(),
             output_notes.commitment(),
+            fee,
         );
 
         let proven_transaction = Self {
@@ -235,171 +299,6 @@ impl Deserializable for ProvenTransaction {
         proven_transaction
             .validate()
             .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
-    }
-}
-
-// PROVEN TRANSACTION BUILDER
-// ================================================================================================
-
-/// Builder for a proven transaction.
-#[derive(Clone, Debug)]
-pub struct ProvenTransactionBuilder {
-    /// ID of the account that the transaction was executed against.
-    account_id: AccountId,
-
-    /// The commitment of the account before the transaction was executed.
-    initial_account_commitment: Word,
-
-    /// The commitment of the account after the transaction was executed.
-    final_account_commitment: Word,
-
-    /// The commitment of the account delta produced by the transaction.
-    account_delta_commitment: Word,
-
-    /// State changes to the account due to the transaction.
-    account_update_details: AccountUpdateDetails,
-
-    /// List of [InputNoteCommitment]s of all consumed notes by the transaction.
-    input_notes: Vec<InputNoteCommitment>,
-
-    /// List of [OutputNote]s of all notes created by the transaction.
-    output_notes: Vec<OutputNote>,
-
-    /// [`BlockNumber`] of the transaction's reference block.
-    ref_block_num: BlockNumber,
-
-    /// Block digest of the transaction's reference block.
-    ref_block_commitment: Word,
-
-    /// The fee of the transaction.
-    fee: FungibleAsset,
-
-    /// The block number by which the transaction will expire, as defined by the executed scripts.
-    expiration_block_num: BlockNumber,
-
-    /// A STARK proof that attests to the correct execution of the transaction.
-    proof: ExecutionProof,
-}
-
-impl ProvenTransactionBuilder {
-    // CONSTRUCTOR
-    // --------------------------------------------------------------------------------------------
-
-    /// Returns a [ProvenTransactionBuilder] used to build a [ProvenTransaction].
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        account_id: AccountId,
-        initial_account_commitment: Word,
-        final_account_commitment: Word,
-        account_delta_commitment: Word,
-        ref_block_num: BlockNumber,
-        ref_block_commitment: Word,
-        fee: FungibleAsset,
-        expiration_block_num: BlockNumber,
-        proof: ExecutionProof,
-    ) -> Self {
-        Self {
-            account_id,
-            initial_account_commitment,
-            final_account_commitment,
-            account_delta_commitment,
-            account_update_details: AccountUpdateDetails::Private,
-            input_notes: Vec::new(),
-            output_notes: Vec::new(),
-            ref_block_num,
-            ref_block_commitment,
-            fee,
-            expiration_block_num,
-            proof,
-        }
-    }
-
-    // PUBLIC ACCESSORS
-    // --------------------------------------------------------------------------------------------
-
-    /// Sets the account's update details.
-    pub fn account_update_details(mut self, details: AccountUpdateDetails) -> Self {
-        self.account_update_details = details;
-        self
-    }
-
-    /// Add notes consumed by the transaction.
-    pub fn add_input_notes<I, T>(mut self, notes: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<InputNoteCommitment>,
-    {
-        self.input_notes.extend(notes.into_iter().map(|note| note.into()));
-        self
-    }
-
-    /// Add notes produced by the transaction.
-    pub fn add_output_notes<T>(mut self, notes: T) -> Self
-    where
-        T: IntoIterator<Item = OutputNote>,
-    {
-        self.output_notes.extend(notes);
-        self
-    }
-
-    /// Builds the [`ProvenTransaction`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The total number of input notes is greater than
-    ///   [`MAX_INPUT_NOTES_PER_TX`](crate::constants::MAX_INPUT_NOTES_PER_TX).
-    /// - The vector of input notes contains duplicates.
-    /// - The total number of output notes is greater than
-    ///   [`MAX_OUTPUT_NOTES_PER_TX`](crate::constants::MAX_OUTPUT_NOTES_PER_TX).
-    /// - The vector of output notes contains duplicates.
-    /// - The transaction is empty, which is the case if the account state is unchanged or the
-    ///   number of input notes is zero.
-    /// - The commitment computed on the actual account delta contained in [`TxAccountUpdate`] does
-    ///   not match its declared account delta commitment.
-    /// - The size of the serialized account update exceeds [`ACCOUNT_UPDATE_MAX_SIZE`].
-    /// - The transaction was executed against a _new_ account with public state and its account ID
-    ///   does not match the ID in the account update.
-    /// - The transaction was executed against a _new_ account with public state and its commitment
-    ///   does not match the final state commitment of the account update.
-    /// - The transaction creates a _new_ account with public state and the update is of type
-    ///   [`AccountUpdateDetails::Delta`] but the account delta is not a full state delta.
-    /// - The transaction was executed against a private account and the account update is _not_ of
-    ///   type [`AccountUpdateDetails::Private`].
-    /// - The transaction was executed against an account with public state and the update is of
-    ///   type [`AccountUpdateDetails::Private`].
-    pub fn build(self) -> Result<ProvenTransaction, ProvenTransactionError> {
-        let input_notes =
-            InputNotes::new(self.input_notes).map_err(ProvenTransactionError::InputNotesError)?;
-        let output_notes = OutputNotes::new(self.output_notes)
-            .map_err(ProvenTransactionError::OutputNotesError)?;
-        let id = TransactionId::new(
-            self.initial_account_commitment,
-            self.final_account_commitment,
-            input_notes.commitment(),
-            output_notes.commitment(),
-        );
-        let account_update = TxAccountUpdate::new(
-            self.account_id,
-            self.initial_account_commitment,
-            self.final_account_commitment,
-            self.account_delta_commitment,
-            self.account_update_details,
-        )?;
-
-        let proven_transaction = ProvenTransaction {
-            id,
-            account_update,
-            input_notes,
-            output_notes,
-            ref_block_num: self.ref_block_num,
-            ref_block_commitment: self.ref_block_commitment,
-            fee: self.fee,
-            expiration_block_num: self.expiration_block_num,
-            proof: self.proof,
-        };
-
-        proven_transaction.validate()
     }
 }
 
@@ -599,6 +498,16 @@ pub struct InputNoteCommitment {
 }
 
 impl InputNoteCommitment {
+    /// Returns a new [InputNoteCommitment] instantiated from the provided nullifier and optional
+    /// note header.
+    ///
+    /// Note: this method does not validate that the provided nullifier and header are consistent
+    /// with each other (i.e., it does not check that the nullifier was derived from the note
+    /// referenced by the header).
+    pub fn from_parts_unchecked(nullifier: Nullifier, header: Option<NoteHeader>) -> Self {
+        Self { nullifier, header }
+    }
+
     /// Returns the nullifier of the input note committed to by this commitment.
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
@@ -684,11 +593,11 @@ impl Deserializable for InputNoteCommitment {
 #[cfg(test)]
 mod tests {
     use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
 
     use anyhow::Context;
-    use miden_core::utils::Deserializable;
+    use miden_crypto::rand::test_utils::rand_value;
     use miden_verifier::ExecutionProof;
-    use winter_rand_utils::rand_value;
 
     use super::ProvenTransaction;
     use crate::account::delta::AccountUpdateDetails;
@@ -714,8 +623,8 @@ mod tests {
     };
     use crate::testing::add_component::AddComponent;
     use crate::testing::noop_auth_component::NoopAuthComponent;
-    use crate::transaction::{ProvenTransactionBuilder, TxAccountUpdate};
-    use crate::utils::Serializable;
+    use crate::transaction::{InputNoteCommitment, OutputNote, TxAccountUpdate};
+    use crate::utils::serde::{Deserializable, Serializable};
     use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, LexicographicWord, ONE, Word};
 
     fn check_if_sync<T: Sync>() {}
@@ -816,18 +725,25 @@ mod tests {
         let expiration_block_num = BlockNumber::from(2);
         let proof = ExecutionProof::new_dummy();
 
-        let tx = ProvenTransactionBuilder::new(
+        let account_update = TxAccountUpdate::new(
             account_id,
             initial_account_commitment,
             final_account_commitment,
             account_delta_commitment,
+            AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        let tx = ProvenTransaction::new(
+            account_update,
+            Vec::<InputNoteCommitment>::new(),
+            Vec::<OutputNote>::new(),
             ref_block_num,
             ref_block_commitment,
             FungibleAsset::mock(42).unwrap_fungible(),
             expiration_block_num,
             proof,
         )
-        .build()
         .context("failed to build proven transaction")?;
 
         let deserialized = ProvenTransaction::read_from_bytes(&tx.to_bytes()).unwrap();

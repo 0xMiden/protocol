@@ -4,14 +4,14 @@ use std::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_protocol::Felt;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionHeader};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
@@ -171,7 +171,7 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
 
     assert_matches!(account_update.details(), AccountUpdateDetails::Delta(delta) => {
         assert_eq!(delta.vault().fungible().num_assets(), 1);
-        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().faucet_id()).unwrap(), 300);
+        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().vault_key()).unwrap(), 300);
     });
 
     Ok(())
@@ -279,8 +279,8 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
     let noop_note1 =
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
-    builder.add_output_note(OutputNote::Full(noop_note0.clone()));
-    builder.add_output_note(OutputNote::Full(noop_note1.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note0.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note1.clone()));
     let mut chain = builder.build()?;
 
     let noop_tx = generate_conditional_tx(&mut chain, account0.id(), noop_note0, false).await;
@@ -333,11 +333,11 @@ async fn generate_conditional_tx(
     modify_storage: bool,
 ) -> ExecutedTransaction {
     let auth_args = [
+        Felt::new(97),
+        Felt::new(98),
+        Felt::new(99),
         // increment nonce if modify_storage is true
         if modify_storage { Felt::ONE } else { Felt::ZERO },
-        Felt::new(99),
-        Felt::new(98),
-        Felt::new(97),
     ];
 
     let tx_context = chain
