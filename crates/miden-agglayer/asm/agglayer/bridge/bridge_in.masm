@@ -130,6 +130,10 @@ const CUR_HASH_HI_LOCAL = 4 # second half of the current Keccak256 hash value
 const CLAIM_DEST_ID_PREFIX_LOCAL = 0
 const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
+# Offsets in the local memory of the leaf value
+const LEAF_VALUE_LO_LOCAL = 0
+const LEAF_VALUE_HI_LOCAL = 4
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -183,8 +187,8 @@ pub proc verify_leaf_bridge
 
     # save the leaf value to the local memory to reuse it during the computation of the CGI chain
     # hash 
-    loc_storew_le.0 swapw
-    loc_storew_le.4 swapw
+    loc_storew_le.LEAF_VALUE_LO_LOCAL swapw
+    loc_storew_le.LEAF_VALUE_HI_LOCAL swapw
     # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
 
     # delegate proof verification
@@ -192,7 +196,7 @@ pub proc verify_leaf_bridge
     # => [pad(16)]
 
     # load the pointer to the leaf value back to the stack
-    locaddr.0
+    locaddr.LEAF_VALUE_LO_LOCAL
     # => [leaf_value_ptr, pad(16)]
 
     # update the CGI chain hash
