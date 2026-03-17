@@ -311,14 +311,14 @@ pub proc claim
 
     exec.get_destination_account_id_data
     loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [pad(7)]
+    # => [pad(16)]
 
     # Validate CLAIM data
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, pad(7)]
+    # => [PROOF_DATA_KEY, pad(12)]
 
     swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
 
     exec.verify_leaf_bridge
     # => [pad(16)]
