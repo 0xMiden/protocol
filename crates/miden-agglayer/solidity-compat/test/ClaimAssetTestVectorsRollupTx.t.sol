@@ -4,7 +4,18 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "@agglayer/v2/lib/DepositContractV2.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
+import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
 import "./DepositContractTestHelpers.sol";
+
+contract MockGlobalExitRootManagerRollup is IBasePolygonZkEVMGlobalExitRoot {
+    mapping(bytes32 => uint256) public override globalExitRootMap;
+
+    function updateExitRoot(bytes32) external override {}
+
+    function setGlobalExitRoot(bytes32 globalExitRoot) external {
+        globalExitRootMap[globalExitRoot] = block.number;
+    }
+}
 
 /**
  * @title RollupExitTree
@@ -133,6 +144,34 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         // Global index for rollup deposits: (indexRollup << 32) | leafIndex (no mainnet flag bit)
         uint256 globalIndex = (uint256(indexRollup) << 32) | uint256(leafIndex);
 
+        // ====== STEP 5: COMPUTE CLAIMED GLOBAL INDEX HASH CHAIN ======
+        // Use the actual BridgeL2SovereignChain to compute the authoritative value.
+
+        MockGlobalExitRootManagerRollup gerManager = new MockGlobalExitRootManagerRollup();
+        gerManager.setGlobalExitRoot(globalExitRoot);
+        globalExitRootManager = IBasePolygonZkEVMGlobalExitRoot(address(gerManager));
+
+        // Use a non-zero network ID to match sovereign-chain requirements
+        networkID = 10;
+
+        // Call _verifyLeafBridge to update claimedGlobalIndexHashChain
+        this.verifyLeafBridgeHarness(
+            smtProofLocal,
+            smtProofRollup,
+            globalIndex,
+            mainnetExitRoot,
+            rollupExitRoot,
+            leafType,
+            originNetwork,
+            originTokenAddress,
+            destinationNetwork,
+            destinationAddress,
+            amount,
+            metadataHash
+        );
+
+        bytes32 claimedHashChain = claimedGlobalIndexHashChain;
+
         // ====== SERIALIZE TO JSON ======
         _serializeProofs(obj, smtProofLocal, smtProofRollup);
 
@@ -151,6 +190,7 @@ contract ClaimAssetTestVectorsRollupTx is Test, DepositContractV2, DepositContra
         {
             vm.serializeUint(obj, "deposit_count", uint256(depositCount));
             vm.serializeBytes32(obj, "global_index", bytes32(globalIndex));
+            vm.serializeBytes32(obj, "claimed_global_index_hash_chain", claimedHashChain);
             vm.serializeBytes32(obj, "local_exit_root", localExitRoot);
             vm.serializeBytes32(obj, "mainnet_exit_root", mainnetExitRoot);
             vm.serializeBytes32(obj, "rollup_exit_root", rollupExitRoot);

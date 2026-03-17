@@ -1,5 +1,6 @@
 {
   "amount": "100000000000000000000",
+  "claimed_global_index_hash_chain": "0x68ace2f015593d5f6de5338c9eca6e748764574491b9f0eed941a2b49db1a7a3",
   "deposit_count": 3,
   "description": "Rollup deposit test vectors with valid two-level Merkle proofs (non-zero indices)",
   "destination_address": "0x00000000AA0000000000bb000000cc000000Dd00",
