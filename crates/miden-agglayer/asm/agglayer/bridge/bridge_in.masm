@@ -182,7 +182,6 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
 #! Invocation: exec
-@locals(8) # leaf value
 proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
