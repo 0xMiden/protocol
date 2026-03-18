@@ -1,9 +1,9 @@
-use miden::agglayer::bridge::bridge_config
-use miden::agglayer::bridge::leaf_utils
-use miden::agglayer::common::utils
-use miden::agglayer::common::asset_conversion
-use miden::agglayer::common::eth_address
-use miden::agglayer::faucet -> agglayer_faucet
+use agglayer::bridge::bridge_config
+use agglayer::bridge::leaf_utils
+use agglayer::common::utils
+use agglayer::common::asset_conversion
+use agglayer::common::eth_address
+use agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
@@ -41,23 +41,20 @@ const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32
 # CONSTANTS
 # =================================================================================================
 
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+
 # Storage slots
-# -------------------------------------------------------------------------------------------------
-
-# Storage slot constants for the CGI (claimed global index) chain hash. 
-# It is stored in two separate value slots.
-const CGI_CHAIN_HASH_LO_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_lo")
-const CGI_CHAIN_HASH_HI_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_hi")
-
-# Storage Slots
 # -------------------------------------------------------------------------------------------------
 
 # The slot in this component's storage layout where claim nullifiers are stored.
 # Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
-const CLAIM_NULLIFIERS_SLOT = word("miden::agglayer::bridge::claim_nullifiers")
+const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
 
-# Claim Nullifier Flag
-const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+# Storage slot constants for the CGI (claimed global index) chain hash. 
+# It is stored in two separate value slots.
+const CGI_CHAIN_HASH_LO_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_lo")
+const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -160,7 +157,6 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
-
 
 #! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
 #!

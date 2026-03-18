@@ -1,7 +1,7 @@
 use miden::core::sys
-use miden::agglayer::common::utils
-use miden::agglayer::common::asset_conversion
-use miden::agglayer::common::eth_address
+use agglayer::common::utils
+use agglayer::common::asset_conversion
+use agglayer::common::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
@@ -13,9 +13,9 @@ use miden::core::word
 
 # Storage slots for conversion metadata.
 # Slot 1: [addr_felt0, addr_felt1, addr_felt2, addr_felt3] — first 4 felts of origin token address
-const CONVERSION_INFO_1_SLOT = word("miden::agglayer::faucet::conversion_info_1")
+const CONVERSION_INFO_1_SLOT = word("agglayer::faucet::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
-const CONVERSION_INFO_2_SLOT = word("miden::agglayer::faucet::conversion_info_2")
+const CONVERSION_INFO_2_SLOT = word("agglayer::faucet::conversion_info_2")
 
 # PUBLIC INTERFACE
 # =================================================================================================

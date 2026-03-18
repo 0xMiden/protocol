@@ -7,7 +7,7 @@
 # - `get_scale` for bridge-in FPI (amount verification)
 # - `burn` for bridge-out
 
-pub use ::miden::agglayer::faucet::mint_and_send
-pub use ::miden::agglayer::faucet::asset_to_origin_asset
-pub use ::miden::agglayer::faucet::get_scale
-pub use ::miden::agglayer::faucet::burn
+pub use ::agglayer::faucet::mint_and_send
+pub use ::agglayer::faucet::asset_to_origin_asset
+pub use ::agglayer::faucet::get_scale
+pub use ::agglayer::faucet::burn

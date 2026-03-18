@@ -53,7 +53,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // Verify the faucet is NOT in the registry before registration
-    let registry_slot_name = AggLayerBridge::faucet_registry_slot_name();
+    let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();
     let key = AccountIdKey::new(faucet_to_register).as_word();
     let value_before = bridge_account.storage().get_map_item(registry_slot_name, key)?;
     assert_eq!(
