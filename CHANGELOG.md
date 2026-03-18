@@ -30,9 +30,11 @@
 - Added `Ownable2Step` account component with two-step ownership transfer (`transfer_ownership`, `accept_ownership`, `renounce_ownership`) and `owner`, `nominated_owner` procedures ([#2292](https://github.com/0xMiden/miden-base/pull/2292)).
 - Added PSM authentication procedures and integrated them into `AuthMultisig` ([#2527](https://github.com/0xMiden/protocol/pull/2527)).
 - Added `CodeBuilder::with_warnings_as_errors()` to promote assembler warning diagnostics to errors ([#2558](https://github.com/0xMiden/protocol/pull/2558)).
+- Added `MintPolicyConfig` for flexible minting policy enforcement ([#2559](https://github.com/0xMiden/protocol/pull/2559))
 - Added `MockChain::add_pending_batch()` to allow submitting user batches directly ([#2565](https://github.com/0xMiden/protocol/pull/2565)).
 - Added `create_fungible_key` for construction of fungible asset keys ([#2575](https://github.com/0xMiden/protocol/pull/2575)).
 - Implemented the `on_before_asset_added_to_account` asset callback ([#2571](https://github.com/0xMiden/protocol/pull/2571)).
+- Implemented the `on_before_asset_added_to_note` asset callback ([#2595](https://github.com/0xMiden/protocol/pull/2595)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
 - Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
 - Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
@@ -94,6 +96,7 @@
 - [BREAKING] Changed `asset::create_fungible_asset` and `faucet::create_fungible_asset` signature to take `enable_callbacks` flag ([#2571](https://github.com/0xMiden/protocol/pull/2571)).
 
 - [BREAKING] Fixed `TokenSymbol::try_from(Felt)` to reject values below `MIN_ENCODED_VALUE`; implemented `Display` for `TokenSymbol` replacing the fallible `to_string()` method; removed `Default` derive ([#2464](https://github.com/0xMiden/protocol/issues/2464)).
+- Moved `AccountSchemaCommitment` component into a sub-module ([#2603](https://github.com/0xMiden/protocol/pull/2603)).
 
 ## 0.13.3 (2026-01-27)
 

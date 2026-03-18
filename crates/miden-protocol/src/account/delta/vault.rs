@@ -504,11 +504,12 @@ impl NonFungibleAssetDelta {
                 NonFungibleDeltaAction::Add => ONE,
             };
 
+            let key_word = asset.vault_key().to_word();
             elements.extend_from_slice(&[
                 DOMAIN_ASSET,
                 was_added,
-                asset.faucet_id().suffix(),
-                asset.faucet_id().prefix().as_felt(),
+                key_word[2], // faucet_id_suffix_and_metadata
+                key_word[3], // faucet_id_prefix
             ]);
             elements.extend_from_slice(asset.to_value_word().as_elements());
         }
