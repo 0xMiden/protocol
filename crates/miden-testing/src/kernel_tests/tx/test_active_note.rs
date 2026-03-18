@@ -4,7 +4,7 @@ use anyhow::Context;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::FungibleAsset;
-use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
+use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::tx_kernel::ERR_NOTE_ATTEMPT_TO_ACCESS_NOTE_METADATA_WHILE_NO_NOTE_BEING_PROCESSED;
 use miden_protocol::note::{
     Note,
@@ -420,7 +420,7 @@ async fn test_active_note_get_exactly_8_inputs() -> anyhow::Result<()> {
     )?;
 
     // prepare note data
-    let serial_num = RpoRandomCoin::new(Word::from([4u32; 4])).draw_word();
+    let serial_num = RandomCoin::new(Word::from([4u32; 4])).draw_word();
     let tag = NoteTag::with_account_target(target_id);
     let metadata = NoteMetadata::new(sender_id, NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![]).context("failed to create input note assets")?;

@@ -155,7 +155,7 @@ impl BlockNoteIndex {
         );
 
         self.leaf_index()
-            .value()
+            .position()
             .try_into()
             .expect("Unreachable: Input values must be valid at this point")
     }

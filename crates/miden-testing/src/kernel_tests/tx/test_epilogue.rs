@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
 use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -161,7 +161,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_id() -> anyhow::Result<()> {
-    let mut rng = RpoRandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
     let asset0 = assets.next().unwrap();

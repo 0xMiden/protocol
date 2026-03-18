@@ -3,7 +3,7 @@ use alloc::string::String;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
-use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::errors::tx_kernel::{
     ERR_NON_FUNGIBLE_ASSET_ALREADY_EXISTS,
     ERR_TX_NUMBER_OF_OUTPUT_NOTES_EXCEEDS_LIMIT,
@@ -207,7 +207,7 @@ async fn test_create_note_too_many_notes() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_get_output_notes_commitment() -> anyhow::Result<()> {
-    let mut rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let mut rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
 
     let asset_1 = FungibleAsset::mock(100);
@@ -752,7 +752,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         vec![fungible_asset_0],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
     let output_note_1 = P2idNote::create(
@@ -761,7 +761,7 @@ async fn test_get_asset_info() -> anyhow::Result<()> {
         vec![fungible_asset_0, fungible_asset_1],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([4, 3, 2, 1u32])),
+        &mut RandomCoin::new(Word::from([4, 3, 2, 1u32])),
     )?;
 
     let tx_script_src = &format!(
@@ -882,7 +882,7 @@ async fn test_get_recipient_and_metadata() -> anyhow::Result<()> {
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
     let tx_script_src = &format!(
@@ -1062,7 +1062,7 @@ async fn test_get_assets() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_none_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NoteAttachment::default();
     let output_note =
         RawOutputNote::Full(NoteBuilder::new(account.id(), rng).attachment(attachment).build()?);
@@ -1117,7 +1117,7 @@ async fn test_set_none_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_word_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment =
         NoteAttachment::new_word(NoteAttachmentScheme::new(u32::MAX), Word::from([3, 4, 5, 6u32]));
     let output_note =
@@ -1171,7 +1171,7 @@ async fn test_set_word_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_array_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let elements = [3, 4, 5, 6, 7, 8, 9u32].map(Felt::from).to_vec();
     let attachment = NoteAttachment::new_array(NoteAttachmentScheme::new(42), elements.clone())?;
     let output_note =
@@ -1227,7 +1227,7 @@ async fn test_set_array_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
     let account = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let rng = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32]));
+    let rng = RandomCoin::new(Word::from([1, 2, 3, 4u32]));
     let attachment = NetworkAccountTarget::new(
         ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET.try_into()?,
         NoteExecutionHint::on_block_slot(5, 32, 3),
@@ -1258,7 +1258,7 @@ async fn test_set_network_target_account_attachment() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_network_note() -> anyhow::Result<()> {
     let sender = Account::mock(ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET, Auth::IncrNonce);
-    let mut rng = RpoRandomCoin::new(Word::from([9, 8, 7, 6u32]));
+    let mut rng = RandomCoin::new(Word::from([9, 8, 7, 6u32]));
 
     // --- Valid network note ---
     let target_id = AccountId::try_from(ACCOUNT_ID_NETWORK_NON_FUNGIBLE_FAUCET)?;

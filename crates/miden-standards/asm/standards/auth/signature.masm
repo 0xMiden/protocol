@@ -1,4 +1,4 @@
-use miden::core::crypto::dsa::falcon512poseidon2
+use miden::core::crypto::dsa::falcon512_poseidon2
 use miden::core::crypto::hashes::poseidon2
 use miden::core::crypto::dsa::ecdsa_k256_keccak
 use miden::protocol::active_account
@@ -120,7 +120,7 @@ proc verify_signature_by_scheme
             drop
             # OS => [PUB_KEY, MESSAGE]
 
-            exec.falcon512poseidon2::verify
+            exec.falcon512_poseidon2::verify
             # OS => []
             # AS => []
         else
