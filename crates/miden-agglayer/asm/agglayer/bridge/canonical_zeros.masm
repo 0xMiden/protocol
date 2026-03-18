@@ -101,7 +101,7 @@ const ZERO_30_R = [1078065138, 2904706143, 1223587258, 1350312851]
 const ZERO_31_L = [2840985724, 1653344606, 4049365781, 2389186238]
 const ZERO_31_R = [3759582231, 2660540036, 1648733876, 2340505732]
 
-use ::miden::agglayer::common::utils::mem_store_double_word
+use ::agglayer::common::utils::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []

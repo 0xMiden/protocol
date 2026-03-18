@@ -72,7 +72,7 @@ fn merkle_proof_verification_code(
 
     format!(
         r#"
-        use miden::agglayer::bridge::bridge_in
+        use agglayer::bridge::bridge_in
         use miden::core::word
 
         begin
