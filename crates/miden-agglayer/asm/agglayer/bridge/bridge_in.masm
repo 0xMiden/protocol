@@ -872,21 +872,21 @@ proc write_mint_note_storage
     # => []
 
     # ATTACHMENT = empty word [4..7]
-    padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
+    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
     # => []
 
     # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => []
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
     # => []
 end
 
