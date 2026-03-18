@@ -25,10 +25,12 @@ use crate::account::metadata;
 use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 pub mod builder;
-pub mod symbol;
 
 pub use builder::FungibleTokenMetadataBuilder;
-use symbol::TOKEN_SYMBOL_TYPE;
+
+/// Schema type string for the token symbol field in fungible token metadata storage.
+pub(super) const TOKEN_SYMBOL_TYPE: &str =
+    "miden::standards::fungible_faucets::metadata::token_symbol";
 
 // FIELD TYPES
 // ================================================================================================
@@ -173,41 +175,23 @@ impl FungibleTokenMetadata {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`FungibleTokenMetadata`] with the specified metadata and zero token supply.
+    /// Returns a builder for [`FungibleTokenMetadata`] with the required fields set.
     ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The decimals parameter exceeds [`Self::MAX_DECIMALS`].
-    /// - The max supply parameter exceeds [`FungibleAsset::MAX_AMOUNT`].
-    pub fn new(
+    /// This is the main entry point for constructing metadata; optional fields and token supply
+    /// can be set via the builder before calling [`FungibleTokenMetadataBuilder::build`].
+    pub fn builder(
+        name: TokenName,
         symbol: TokenSymbol,
         decimals: u8,
         max_supply: Felt,
-        name: TokenName,
-        description: Option<Description>,
-        logo_uri: Option<LogoURI>,
-        external_link: Option<ExternalLink>,
-    ) -> Result<Self, FungibleFaucetError> {
-        Self::with_supply(
-            symbol,
-            decimals,
-            max_supply,
-            Felt::ZERO,
-            name,
-            description,
-            logo_uri,
-            external_link,
-        )
+    ) -> FungibleTokenMetadataBuilder {
+        FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply)
     }
 
     /// Creates a new [`FungibleTokenMetadata`] with the specified metadata and token supply.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The decimals parameter exceeds [`Self::MAX_DECIMALS`].
-    /// - The max supply parameter exceeds [`FungibleAsset::MAX_AMOUNT`].
-    /// - The token supply exceeds the max supply.
-    pub fn with_supply(
+    /// Used internally by the builder.
+    #[doc(hidden)]
+    pub(super) fn with_supply(
         symbol: TokenSymbol,
         decimals: u8,
         max_supply: Felt,
@@ -324,23 +308,25 @@ impl FungibleTokenMetadata {
         )
     }
 
-    /// Returns all the storage slots for this component (metadata word + name + config +
-    /// description + logo_uri + external_link).
-    pub fn storage_slots(&self) -> Vec<StorageSlot> {
-        let mut slots: Vec<StorageSlot> = Vec::new();
-
-        // Slot 0: metadata word [token_supply, max_supply, decimals, symbol]
-        let metadata_word = Word::new([
+    /// Returns the single storage slot for the metadata word
+    /// `[token_supply, max_supply, decimals, symbol]`. Useful when only this slot is needed (e.g.
+    /// for components that extend the fungible metadata with additional slots).
+    pub fn metadata_word_slot(&self) -> StorageSlot {
+        let word = Word::new([
             self.token_supply,
             self.max_supply,
             Felt::from(self.decimals),
             self.symbol.clone().into(),
         ]);
-        slots.push(StorageSlot::with_value(Self::metadata_slot().clone(), metadata_word));
+        StorageSlot::with_value(Self::metadata_slot().clone(), word)
+    }
 
-        // Slots 1-24: name, mutability config, description, logo_uri, external_link
+    /// Returns all the storage slots for this component (metadata word + name + config +
+    /// description + logo_uri + external_link).
+    pub fn storage_slots(&self) -> Vec<StorageSlot> {
+        let mut slots: Vec<StorageSlot> = Vec::new();
+        slots.push(self.metadata_word_slot());
         slots.extend(self.metadata.storage_slots());
-
         slots
     }
 
@@ -394,45 +380,40 @@ impl FungibleTokenMetadata {
 // TRAIT IMPLEMENTATIONS
 // ================================================================================================
 
-impl TryFrom<Word> for FungibleTokenMetadata {
-    type Error = FungibleFaucetError;
-
-    /// Parses token metadata from a Word.
-    ///
-    /// The Word is expected to be in the format: `[token_supply, max_supply, decimals, symbol]`.
-    ///
-    /// **Note:** The name is set to an empty string and optional fields (description,
-    /// logo_uri, external_link) are `None`, because these are stored in separate
-    /// storage slots (via [`super::TokenMetadata`]),
-    /// not in the metadata Word itself.
-    fn try_from(word: Word) -> Result<Self, Self::Error> {
+impl FungibleTokenMetadata {
+    /// Reconstructs from the metadata word and the name/optionals/mutability read from storage.
+    pub(crate) fn from_metadata_word_and_token_metadata(
+        word: Word,
+        metadata: TokenMetadata,
+    ) -> Result<Self, FungibleFaucetError> {
         let [token_supply, max_supply, decimals, token_symbol] = *word;
-
         let symbol =
             TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-
         let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
             FungibleFaucetError::TooManyDecimals {
                 actual: decimals.as_canonical_u64(),
                 max: Self::MAX_DECIMALS,
             }
         })?;
-
-        FungibleTokenMetadataBuilder::new(TokenName::default(), symbol, decimals, max_supply)
-            .token_supply(token_supply)
-            .build()
-    }
-}
-
-impl From<FungibleTokenMetadata> for Word {
-    fn from(m: FungibleTokenMetadata) -> Self {
-        Word::new([m.token_supply, m.max_supply, Felt::from(m.decimals), m.symbol.into()])
-    }
-}
-
-impl From<FungibleTokenMetadata> for StorageSlot {
-    fn from(metadata: FungibleTokenMetadata) -> Self {
-        StorageSlot::with_value(FungibleTokenMetadata::metadata_slot().clone(), metadata.into())
+        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
+            return Err(FungibleFaucetError::MaxSupplyTooLarge {
+                actual: max_supply.as_canonical_u64(),
+                max: FungibleAsset::MAX_AMOUNT,
+            });
+        }
+        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
+            return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
+                token_supply: token_supply.as_canonical_u64(),
+                max_supply: max_supply.as_canonical_u64(),
+            });
+        }
+        Ok(Self {
+            token_supply,
+            max_supply,
+            decimals,
+            symbol,
+            metadata,
+        })
     }
 }
 
@@ -457,40 +438,44 @@ impl From<FungibleTokenMetadata> for AccountComponent {
     }
 }
 
-impl TryFrom<&StorageSlot> for FungibleTokenMetadata {
-    type Error = FungibleFaucetError;
-
-    /// Tries to create [`FungibleTokenMetadata`] from a storage slot.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The slot name does not match the expected metadata slot name.
-    /// - The slot value cannot be parsed as valid token metadata.
-    fn try_from(slot: &StorageSlot) -> Result<Self, Self::Error> {
-        if slot.name() != Self::metadata_slot() {
-            return Err(FungibleFaucetError::SlotNameMismatch {
-                expected: Self::metadata_slot().clone(),
-                actual: slot.name().clone(),
-            });
-        }
-        FungibleTokenMetadata::try_from(slot.value())
-    }
-}
-
 impl TryFrom<&AccountStorage> for FungibleTokenMetadata {
     type Error = FungibleFaucetError;
 
-    /// Tries to create [`FungibleTokenMetadata`] from account storage.
+    /// Reconstructs [`FungibleTokenMetadata`] by reading all relevant storage slots: the metadata
+    /// word, name, mutability config, description, logo URI, and external link.
     fn try_from(storage: &AccountStorage) -> Result<Self, Self::Error> {
-        let metadata_word =
-            storage.get_item(FungibleTokenMetadata::metadata_slot()).map_err(|err| {
-                FungibleFaucetError::StorageLookupFailed {
-                    slot_name: FungibleTokenMetadata::metadata_slot().clone(),
-                    source: err,
-                }
-            })?;
+        let metadata_word = storage.get_item(Self::metadata_slot()).map_err(|err| {
+            FungibleFaucetError::StorageLookupFailed {
+                slot_name: Self::metadata_slot().clone(),
+                source: err,
+            }
+        })?;
 
-        FungibleTokenMetadata::try_from(metadata_word)
+        let (name, description, logo_uri, external_link) =
+            TokenMetadata::read_metadata_from_storage(storage);
+
+        let mutability_word = storage
+            .get_item(metadata::mutability_config_slot())
+            .unwrap_or_else(|_| Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]));
+
+        let name = name.unwrap_or_default();
+        let mut token_metadata = TokenMetadata::new().with_name(name);
+        if let Some(d) = description {
+            token_metadata = token_metadata.with_description(d, mutability_word[0] != Felt::ZERO);
+        }
+        if let Some(l) = logo_uri {
+            token_metadata = token_metadata.with_logo_uri(l, mutability_word[1] != Felt::ZERO);
+        }
+        if let Some(e) = external_link {
+            token_metadata = token_metadata.with_external_link(e, mutability_word[2] != Felt::ZERO);
+        }
+        token_metadata = token_metadata
+            .with_description_mutable(mutability_word[0] != Felt::ZERO)
+            .with_logo_uri_mutable(mutability_word[1] != Felt::ZERO)
+            .with_external_link_mutable(mutability_word[2] != Felt::ZERO)
+            .with_max_supply_mutable(mutability_word[3] != Felt::ZERO);
+
+        Self::from_metadata_word_and_token_metadata(metadata_word, token_metadata)
     }
 }
 
@@ -565,8 +550,8 @@ mod tests {
         .description(description.clone())
         .logo_uri(logo_uri.clone())
         .external_link(external_link.clone())
-        .description_mutable(true)
-        .max_supply_mutable(true)
+        .is_description_mutable(true)
+        .is_max_supply_mutable(true)
         .build()
         .unwrap();
 
@@ -582,6 +567,11 @@ mod tests {
 
     #[test]
     fn token_metadata_with_name_and_description() {
+        use miden_protocol::account::{AccountBuilder, AccountType};
+
+        use crate::account::auth::NoAuth;
+        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+
         let symbol = TokenSymbol::new("POL").unwrap();
         let decimals = 2u8;
         let max_supply = Felt::new(123);
@@ -597,10 +587,19 @@ mod tests {
         assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.name(), &name);
         assert_eq!(metadata.description(), Some(&description));
-        let word: Word = metadata.into();
-        let restored = FungibleTokenMetadata::try_from(word).unwrap();
+
+        let account = AccountBuilder::new([2u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(metadata.clone())
+            .with_component(BasicFungibleFaucet)
+            .build()
+            .expect("account build should succeed");
+
+        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
         assert_eq!(restored.symbol(), &symbol);
-        assert!(restored.description().is_none());
+        assert_eq!(restored.name(), &name);
+        assert_eq!(restored.description(), Some(&description));
     }
 
     #[test]
@@ -691,7 +690,7 @@ mod tests {
         let metadata = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply)
             .build()
             .unwrap();
-        let word: Word = metadata.into();
+        let word = metadata.metadata_word_slot().value();
 
         assert_eq!(word[0], Felt::ZERO);
         assert_eq!(word[1], max_supply);
@@ -700,7 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn token_metadata_from_storage_slot() {
+    fn token_metadata_from_account_storage() {
+        use miden_protocol::account::{AccountBuilder, AccountType};
+
+        use crate::account::auth::NoAuth;
+        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+
         let symbol = TokenSymbol::new("POL").unwrap();
         let decimals = 2u8;
         let max_supply = Felt::new(123);
@@ -710,9 +714,16 @@ mod tests {
             FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
                 .build()
                 .unwrap();
-        let slot: StorageSlot = original.into();
 
-        let restored = FungibleTokenMetadata::try_from(&slot).unwrap();
+        let account = AccountBuilder::new([3u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(original)
+            .with_component(BasicFungibleFaucet)
+            .build()
+            .expect("account build should succeed");
+
+        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
 
         assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
@@ -722,6 +733,11 @@ mod tests {
 
     #[test]
     fn token_metadata_roundtrip_with_supply() {
+        use miden_protocol::account::{AccountBuilder, AccountType};
+
+        use crate::account::auth::NoAuth;
+        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+
         let symbol = TokenSymbol::new("POL").unwrap();
         let decimals = 2u8;
         let max_supply = Felt::new(1000);
@@ -733,8 +749,16 @@ mod tests {
                 .token_supply(token_supply)
                 .build()
                 .unwrap();
-        let word: Word = original.into();
-        let restored = FungibleTokenMetadata::try_from(word).unwrap();
+
+        let account = AccountBuilder::new([4u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(original)
+            .with_component(BasicFungibleFaucet)
+            .build()
+            .expect("account build should succeed");
+
+        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
 
         assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
@@ -748,10 +772,10 @@ mod tests {
         let name = TokenName::new("T").unwrap();
 
         let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(1_000))
-            .description_mutable(true)
-            .logo_uri_mutable(true)
-            .external_link_mutable(false)
-            .max_supply_mutable(true)
+            .is_description_mutable(true)
+            .is_logo_uri_mutable(true)
+            .is_external_link_mutable(false)
+            .is_max_supply_mutable(true)
             .build()
             .unwrap();
 
@@ -863,7 +887,7 @@ mod tests {
 
         let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 4, Felt::new(10_000))
             .description(description)
-            .max_supply_mutable(true)
+            .is_max_supply_mutable(true)
             .build()
             .unwrap();
 
@@ -884,6 +908,62 @@ mod tests {
         // Verify mutability config
         let config = account.storage().get_item(metadata::mutability_config_slot()).unwrap();
         assert_eq!(config[3], Felt::from(1u32), "is_max_supply_mutable");
+    }
+
+    #[test]
+    fn roundtrip_via_storage_matches_original() {
+        use miden_protocol::account::{AccountBuilder, AccountType};
+
+        use crate::account::auth::NoAuth;
+        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+
+        let symbol = TokenSymbol::new("RND").unwrap();
+        let name = TokenName::new("Roundtrip Token").unwrap();
+        let description = Description::new("Description").unwrap();
+        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
+        let external_link = ExternalLink::new("https://example.com").unwrap();
+
+        let original = FungibleTokenMetadataBuilder::new(
+            name.clone(),
+            symbol.clone(),
+            6,
+            Felt::new(2_000_000),
+        )
+        .token_supply(Felt::new(100_000))
+        .description(description.clone())
+        .logo_uri(logo_uri.clone())
+        .external_link(external_link.clone())
+        .is_description_mutable(true)
+        .is_logo_uri_mutable(false)
+        .is_external_link_mutable(true)
+        .is_max_supply_mutable(false)
+        .build()
+        .unwrap();
+
+        let account = AccountBuilder::new([5u8; 32])
+            .account_type(AccountType::FungibleFaucet)
+            .with_auth_component(NoAuth)
+            .with_component(original)
+            .with_component(BasicFungibleFaucet)
+            .build()
+            .expect("account build should succeed");
+
+        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
+
+        assert_eq!(restored.symbol(), &symbol);
+        assert_eq!(restored.name(), &name);
+        assert_eq!(restored.decimals(), 6);
+        assert_eq!(restored.max_supply(), Felt::new(2_000_000));
+        assert_eq!(restored.token_supply(), Felt::new(100_000));
+        assert_eq!(restored.description(), Some(&description));
+        assert_eq!(restored.logo_uri(), Some(&logo_uri));
+        assert_eq!(restored.external_link(), Some(&external_link));
+        let slots = restored.storage_slots();
+        let config = slots[3].value();
+        assert_eq!(config[0], Felt::from(1u32), "is_desc_mutable");
+        assert_eq!(config[1], Felt::ZERO, "is_logo_mutable");
+        assert_eq!(config[2], Felt::from(1u32), "is_extlink_mutable");
+        assert_eq!(config[3], Felt::ZERO, "is_max_supply_mutable");
     }
 
     #[test]
@@ -924,23 +1004,13 @@ mod tests {
     }
 
     #[test]
-    fn slot_name_mismatch() {
-        use miden_protocol::account::StorageSlotName;
-
-        let wrong_slot_name = StorageSlotName::new("wrong::slot::name").expect("valid slot name");
-        let slot = StorageSlot::with_value(wrong_slot_name, Word::default());
-
-        let result = FungibleTokenMetadata::try_from(&slot);
-        assert!(matches!(result, Err(FungibleFaucetError::SlotNameMismatch { .. })));
-    }
-
-    #[test]
-    fn invalid_token_symbol_in_word() {
+    fn invalid_token_symbol_in_metadata_word() {
         // TokenSymbol::try_from(Felt) fails when the value exceeds MAX_ENCODED_VALUE.
-        // The Word layout is [token_supply, max_supply, decimals, token_symbol] — symbol is [3].
         let bad_symbol = Felt::new(TokenSymbol::MAX_ENCODED_VALUE + 1);
         let bad_word = Word::from([Felt::ZERO, Felt::new(100), Felt::new(2), bad_symbol]);
-        let result = FungibleTokenMetadata::try_from(bad_word);
+        let token_metadata = TokenMetadata::new().with_name(TokenName::default());
+        let result =
+            FungibleTokenMetadata::from_metadata_word_and_token_metadata(bad_word, token_metadata);
         assert!(matches!(result, Err(FungibleFaucetError::InvalidTokenSymbol(_))));
     }
 }

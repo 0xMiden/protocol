@@ -396,7 +396,7 @@ impl AggLayerFaucet {
 
 impl From<AggLayerFaucet> for AccountComponent {
     fn from(faucet: AggLayerFaucet) -> Self {
-        let metadata_slot = StorageSlot::from(faucet.metadata);
+        let metadata_slot = faucet.metadata.metadata_word_slot();
 
         let bridge_account_id_word = AccountIdKey::new(faucet.bridge_account_id).as_word();
         let bridge_slot =

@@ -87,25 +87,25 @@ impl FungibleTokenMetadataBuilder {
     }
 
     /// Sets whether the description can be updated by the owner.
-    pub fn description_mutable(mut self, mutable: bool) -> Self {
+    pub fn is_description_mutable(mut self, mutable: bool) -> Self {
         self.is_description_mutable = mutable;
         self
     }
 
     /// Sets whether the logo URI can be updated by the owner.
-    pub fn logo_uri_mutable(mut self, mutable: bool) -> Self {
+    pub fn is_logo_uri_mutable(mut self, mutable: bool) -> Self {
         self.is_logo_uri_mutable = mutable;
         self
     }
 
     /// Sets whether the external link can be updated by the owner.
-    pub fn external_link_mutable(mut self, mutable: bool) -> Self {
+    pub fn is_external_link_mutable(mut self, mutable: bool) -> Self {
         self.is_external_link_mutable = mutable;
         self
     }
 
     /// Sets whether the max supply can be updated by the owner.
-    pub fn max_supply_mutable(mut self, mutable: bool) -> Self {
+    pub fn is_max_supply_mutable(mut self, mutable: bool) -> Self {
         self.is_max_supply_mutable = mutable;
         self
     }
