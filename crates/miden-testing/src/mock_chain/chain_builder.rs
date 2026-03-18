@@ -18,6 +18,7 @@ use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
     AccountDelta,
     AccountId,
     AccountStorageMode,
@@ -492,6 +493,20 @@ impl MockChainBuilder {
         }
 
         Ok(account)
+    }
+    pub fn add_existing_account_from_components(
+        &mut self,
+        auth: Auth,
+        components: impl IntoIterator<Item = AccountComponent>,
+    ) -> anyhow::Result<Account> {
+        let mut account_builder =
+            Account::builder(rand::rng().random()).storage_mode(AccountStorageMode::Public);
+
+        for component in components {
+            account_builder = account_builder.with_component(component);
+        }
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
     }
 
     /// Adds the provided account to the list of genesis accounts.

@@ -3322,9 +3322,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.0.5+spec-1.1.0"
+version = "1.0.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8825697d11e3935e3ab440a9d672022e540d016ff2f193de4295d11d18244774"
+checksum = "c94c3321114413476740df133f0d8862c61d87c8d26f04c6841e033c8c80db47"
 dependencies = [
  "indexmap",
  "serde_core",
