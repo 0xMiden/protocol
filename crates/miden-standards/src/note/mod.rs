@@ -27,7 +27,7 @@ mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod swap;
-pub use swap::SwapNote;
+pub use swap::{SwapNote, SwapNoteStorage};
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
