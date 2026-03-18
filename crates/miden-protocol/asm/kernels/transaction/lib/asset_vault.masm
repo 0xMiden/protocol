@@ -347,15 +347,15 @@ pub proc remove_non_fungible_asset
     exec.smt::set
     # => [REMOVED_ASSET_VALUE, NEW_VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
 
-    dupw.2 assert_eqw.err=ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND
-    # => [NEW_VAULT_ROOT, ASSET_VALUE, vault_root_ptr]
+    movupw.2 assert_eqw.err=ERR_VAULT_NON_FUNGIBLE_ASSET_TO_REMOVE_NOT_FOUND
+    # => [NEW_VAULT_ROOT, vault_root_ptr]
 
     # update the vault root
-    movup.8 mem_storew_le dropw
-    # => [ASSET_VALUE]
+    movup.4 mem_storew_le dropw
+    # => []
 
-    # replace ASSET_VALUE with EMPTY_WORD (nothing remains after non-fungible removal)
-    padw swapw dropw
+    # push EMPTY_WORD to represent that nothing remains after non-fungible removal
+    padw
     # => [REMAINING_ASSET_VALUE]
 end
 
