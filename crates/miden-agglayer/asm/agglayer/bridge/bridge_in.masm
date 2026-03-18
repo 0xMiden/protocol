@@ -36,6 +36,7 @@ const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
 const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
+const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
 
 # CONSTANTS
 # =================================================================================================
@@ -109,9 +110,10 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
-# Memory address used to temporarily store leaf_index and source_bridge_network
+# Memory addresses used to temporarily store leaf_index and source_bridge_network
 # across proof verification, and later as input to the claim nullifier hash.
-const CLAIM_NULLIFIER_HASH_INPUT_PTR = 900
+const CLAIM_LEAF_INDEX_MEM_ADDR = 900
+const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
 
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
@@ -567,7 +569,7 @@ proc verify_leaf
         # => [leaf_index, LEAF_VALUE[8]]
 
         # Save leaf_index to memory for set_and_check_claimed after proof verification
-        dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
         # => [leaf_index, LEAF_VALUE[8]]
 
         # verify single Merkle proof: leaf against mainnetExitRoot
@@ -586,7 +588,7 @@ proc verify_leaf
 
         # For mainnet deposits, source_bridge_network = 0
         # globalIndex = uint256(leafIndex), so source_bridge_network is always 0
-        push.0 push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+        push.0 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
         # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
@@ -596,12 +598,12 @@ proc verify_leaf
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Save leaf_index and rollup_index to memory for set_and_check_claimed
-        # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
-        # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = rollup_index
-        dup mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+        # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+        # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = rollup_index (temporarily, updated below)
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
         
-        dup.1 push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+        dup.1 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
@@ -632,17 +634,17 @@ proc verify_leaf
 
         # For rollup deposits, source_bridge_network = rollup_index + 1
         # Compute source_bridge_network and store it to memory
-        push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load u32wrapping_add.1
+        mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR u32overflowing_add.1 assertz.err=ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW
         # => [source_bridge_network]
 
-        push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+        mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
         # => []
     end
 
     # 4. Check the claim has not been spent and mark it as spent.
     # Load leaf_index and source_bridge_network from memory.
-    push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_load
-    mem_load.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
     # => [leaf_index, source_bridge_network]
 
     exec.set_and_check_claimed
@@ -664,17 +666,17 @@ end
 #! Invocation: exec
 proc set_and_check_claimed
     # Write both values to memory for hashing
-    # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR] = leaf_index
-    # mem[CLAIM_NULLIFIER_HASH_INPUT_PTR + 1] = source_bridge_network
-    mem_store.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+    # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = source_bridge_network
+    mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
     # => [source_bridge_network]
 
-    push.CLAIM_NULLIFIER_HASH_INPUT_PTR add.1 mem_store
+    mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
     # => []
 
     # Hash the two elements using RPO to produce the nullifier
     # TODO: Replace rpo256::hash_elements with poseidon2::hash_elements when VM is updated
-    push.2 push.CLAIM_NULLIFIER_HASH_INPUT_PTR
+    push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
     exec.rpo256::hash_elements
     # => [NULLIFIER]
 

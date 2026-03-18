@@ -72,6 +72,9 @@ pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("no
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
 
+/// Error Message: "source bridge network overflowed u32"
+pub const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW: MasmError = MasmError::from_static_str("source bridge network overflowed u32");
+
 /// Error Message: "token address is not registered in the bridge's token registry"
 pub const ERR_TOKEN_NOT_REGISTERED: MasmError = MasmError::from_static_str("token address is not registered in the bridge's token registry");
 

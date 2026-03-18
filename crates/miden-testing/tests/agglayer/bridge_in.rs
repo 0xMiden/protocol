@@ -546,7 +546,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let expected_err_code = ERR_CLAIM_ALREADY_SPENT.code().to_string();
     assert!(
         error_msg.contains(&expected_err_code),
-        "Expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
+        "expected error code {expected_err_code} for 'claim note has already been spent', got: {error_msg}"
     );
 
     Ok(())
