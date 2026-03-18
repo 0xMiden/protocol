@@ -2,13 +2,25 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "@agglayer/v2/lib/DepositContractV2.sol";
 import "@agglayer/lib/GlobalExitRootLib.sol";
+import "@agglayer/interfaces/IBasePolygonZkEVMGlobalExitRoot.sol";
+import "./DepositContractTestHelpers.sol";
+
+contract MockGlobalExitRootManagerReal is IBasePolygonZkEVMGlobalExitRoot {
+    mapping(bytes32 => uint256) public override globalExitRootMap;
+
+    function updateExitRoot(bytes32) external override {}
+
+    function setGlobalExitRoot(bytes32 globalExitRoot) external {
+        globalExitRootMap[globalExitRoot] = block.number;
+    }
+}
 
 /**
  * @title ClaimAssetTestVectorsRealTx
  * @notice Test contract that generates comprehensive test vectors for verifying
  *         compatibility between Solidity's claimAsset and Miden's implementation.
+ *         Uses BridgeL2SovereignChain to get the authoritative claimedGlobalIndexHashChain.
  *
  *         Generates vectors for both LeafData and ProofData from a real transaction.
  *
@@ -16,7 +28,7 @@ import "@agglayer/lib/GlobalExitRootLib.sol";
  *
  * The output can be compared against the Rust ClaimNoteStorage implementation.
  */
-contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
+contract ClaimAssetTestVectorsRealTx is Test, DepositContractTestHelpers {
     /**
      * @notice Generates claim asset test vectors from real Katana transaction and saves to JSON.
      *         Uses real transaction data from Katana explorer:
@@ -28,10 +40,17 @@ contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
         string memory obj = "root";
 
         // ====== PROOF DATA ======
+        bytes32[32] memory smtProofLocalExitRoot;
+        bytes32[32] memory smtProofRollupExitRoot;
+        uint256 globalIndex;
+        bytes32 mainnetExitRoot;
+        bytes32 rollupExitRoot;
+        bytes32 globalExitRoot;
+
         // Scoped block keeps stack usage under Solidity limits.
         {
             // SMT proof for local exit root (32 nodes)
-            bytes32[32] memory smtProofLocalExitRoot = [
+            smtProofLocalExitRoot = [
                 bytes32(0x0000000000000000000000000000000000000000000000000000000000000000),
                 bytes32(0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5),
                 bytes32(0xb4c11951957c6f8f642c4af61cd6b24640fec6dc7fc607ee8206a99e92410d30),
@@ -66,24 +85,28 @@ contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
                 bytes32(0x8448818bb4ae4562849e949e17ac16e0be16688e156b5cf15e098c627c0056a9)
             ];
 
-            // forge-std JSON serialization supports `bytes32[]` but not `bytes32[32]`.
-            bytes32[] memory smtProofLocalExitRootDyn = new bytes32[](32);
+            // SMT proof for rollup exit root (32 nodes - all zeros for this rollup claim).
             for (uint256 i = 0; i < 32; i++) {
-                smtProofLocalExitRootDyn[i] = smtProofLocalExitRoot[i];
+                smtProofRollupExitRoot[i] = bytes32(0);
             }
 
-            // SMT proof for rollup exit root (32 nodes - all zeros for this rollup claim).
-            bytes32[] memory smtProofRollupExitRootDyn = new bytes32[](32);
-
             // Global index (uint256) - encodes rollup_id and deposit_count.
-            uint256 globalIndex = 18446744073709788808;
+            globalIndex = 18446744073709788808;
 
             // Exit roots
-            bytes32 mainnetExitRoot = 0x31d3268d3a0145d65482b336935fa07dab0822f7dccd865f361d2bf122c4905c;
-            bytes32 rollupExitRoot = 0x8452a95fd710163c5fa8ca2b2fe720d8781f0222bb9e82c2a442ec986c374858;
+            mainnetExitRoot = 0x31d3268d3a0145d65482b336935fa07dab0822f7dccd865f361d2bf122c4905c;
+            rollupExitRoot = 0x8452a95fd710163c5fa8ca2b2fe720d8781f0222bb9e82c2a442ec986c374858;
 
             // Compute global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
-            bytes32 globalExitRoot = GlobalExitRootLib.calculateGlobalExitRoot(mainnetExitRoot, rollupExitRoot);
+            globalExitRoot = GlobalExitRootLib.calculateGlobalExitRoot(mainnetExitRoot, rollupExitRoot);
+
+            // forge-std JSON serialization supports `bytes32[]` but not `bytes32[32]`.
+            bytes32[] memory smtProofLocalExitRootDyn = new bytes32[](32);
+            bytes32[] memory smtProofRollupExitRootDyn = new bytes32[](32);
+            for (uint256 i = 0; i < 32; i++) {
+                smtProofLocalExitRootDyn[i] = smtProofLocalExitRoot[i];
+                smtProofRollupExitRootDyn[i] = smtProofRollupExitRoot[i];
+            }
 
             vm.serializeBytes32(obj, "smt_proof_local_exit_root", smtProofLocalExitRootDyn);
             vm.serializeBytes32(obj, "smt_proof_rollup_exit_root", smtProofRollupExitRootDyn);
@@ -120,6 +143,36 @@ contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
                 metadataHash
             );
 
+            // ====== COMPUTE CLAIMED GLOBAL INDEX HASH CHAIN ======
+            // Use the actual BridgeL2SovereignChain to compute the authoritative value
+
+            // Set up the global exit root manager
+            MockGlobalExitRootManagerReal gerManager = new MockGlobalExitRootManagerReal();
+            gerManager.setGlobalExitRoot(globalExitRoot);
+            globalExitRootManager = IBasePolygonZkEVMGlobalExitRoot(address(gerManager));
+
+            // Use a non-zero network ID to match sovereign-chain requirements
+            networkID = 10;
+
+            // Call _verifyLeafBridge to update claimedGlobalIndexHashChain
+            this.verifyLeafBridgeHarness(
+                smtProofLocalExitRoot,
+                smtProofRollupExitRoot,
+                globalIndex,
+                mainnetExitRoot,
+                rollupExitRoot,
+                leafType,
+                originNetwork,
+                originTokenAddress,
+                destinationNetwork,
+                destinationAddress,
+                amount,
+                metadataHash
+            );
+
+            // Read the updated claimedGlobalIndexHashChain
+            bytes32 claimedHashChain = claimedGlobalIndexHashChain;
+
             vm.serializeUint(obj, "leaf_type", leafType);
             vm.serializeUint(obj, "origin_network", originNetwork);
             vm.serializeAddress(obj, "origin_token_address", originTokenAddress);
@@ -127,7 +180,8 @@ contract ClaimAssetTestVectorsRealTx is Test, DepositContractV2 {
             vm.serializeAddress(obj, "destination_address", destinationAddress);
             vm.serializeUint(obj, "amount", amount);
             vm.serializeBytes32(obj, "metadata_hash", metadataHash);
-            string memory json = vm.serializeBytes32(obj, "leaf_value", leafValue);
+            vm.serializeBytes32(obj, "leaf_value", leafValue);
+            string memory json = vm.serializeBytes32(obj, "claimed_global_index_hash_chain", claimedHashChain);
 
             // Save to file
             string memory outputPath = "test-vectors/claim_asset_vectors_real_tx.json";

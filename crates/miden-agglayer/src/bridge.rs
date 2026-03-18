@@ -11,6 +11,7 @@ use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
+use crate::claim_note::Keccak256Output;
 pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
@@ -72,6 +73,14 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger_manager")
         .expect("GER manager storage slot name should be valid")
 });
+static CGI_CHAIN_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_lo")
+        .expect("CGI chain hash lo storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_hi")
+        .expect("CGI chain hash hi storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
@@ -80,8 +89,9 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
-/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
+/// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
+///   AggFaucet.
 ///
 /// ## Storage Layout
 ///
@@ -94,6 +104,8 @@ static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
 /// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
+/// - [`Self::cgi_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
+/// - [`Self::cgi_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -163,6 +175,16 @@ impl AggLayerBridge {
     /// Storage slot name for the GER manager account ID.
     pub fn ger_manager_slot_name() -> &'static StorageSlotName {
         &GER_MANAGER_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    pub fn cgi_lo_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the upper 128 bits of the CGI chain hash.
+    pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
@@ -254,6 +276,41 @@ impl AggLayerBridge {
         value.to_vec()[0].as_int()
     }
 
+    /// Returns the claimed global index (CGI) chain hash from the corresponding storage slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the provided account is not an [`AggLayerBridge`] account.
+    pub fn cgi_chain_hash(
+        bridge_account: &Account,
+    ) -> Result<Keccak256Output, AgglayerBridgeError> {
+        // check that the provided account is a bridge account
+        Self::assert_bridge_account(bridge_account)?;
+
+        let cgi_chain_hash_lo = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_lo_slot_name())
+            .expect("failed to get CGI hash chain lo slot");
+        let cgi_chain_hash_hi = bridge_account
+            .storage()
+            .get_item(AggLayerBridge::cgi_hi_slot_name())
+            .expect("failed to get CGI hash chain hi slot");
+
+        let cgi_chain_hash_bytes = cgi_chain_hash_lo
+            .iter()
+            .rev()
+            .chain(cgi_chain_hash_hi.iter().rev())
+            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .collect::<Vec<u8>>();
+
+        Ok(Keccak256Output::new(
+            cgi_chain_hash_bytes
+                .try_into()
+                .expect("keccak hash should consist of exactly 32 bytes"),
+        ))
+    }
+
     // HELPER FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
@@ -329,6 +386,8 @@ impl AggLayerBridge {
             &*TOKEN_REGISTRY_SLOT_NAME,
             &*BRIDGE_ADMIN_SLOT_NAME,
             &*GER_MANAGER_SLOT_NAME,
+            &*CGI_CHAIN_HASH_LO_SLOT_NAME,
+            &*CGI_CHAIN_HASH_HI_SLOT_NAME,
         ]
     }
 }
@@ -358,6 +417,8 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
             StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
         ];
         bridge_component(bridge_storage_slots)
     }
