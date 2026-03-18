@@ -6,22 +6,22 @@ use thiserror::Error;
 
 use crate::account::access::Ownable2StepError;
 
-mod basic_fungible;
+pub mod basic_fungible;
 mod network_fungible;
-mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
-pub use token_metadata::{
+
+pub use crate::account::metadata::token_metadata::TokenName;
+pub use crate::account::metadata::token_metadata::fungible_token::{
     Description,
     ExternalLink,
+    FieldBytesError,
     FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
     LogoURI,
-    TokenName,
 };
-
-pub use crate::account::encoding::{FixedWidthString, FixedWidthStringError};
+pub use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================

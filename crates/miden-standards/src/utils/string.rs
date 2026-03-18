@@ -2,7 +2,9 @@
 //!
 //! [`FixedWidthString<N>`] is the generic building block used by [`TokenName`], [`Description`],
 //! [`LogoURI`], and [`ExternalLink`] to encode arbitrary UTF-8 strings into a fixed number of
-//! storage words.
+//! storage words. `N` must be at most 9; with N=9 the capacity is 9×4×7−1 = 251 bytes, which is
+//! the maximum that fits in the u8 length prefix (leaving 251 bytes for payload). The maximum
+//! storable string length is therefore **251 bytes** (when N=9).
 //!
 //! ## Buffer layout (N × 4 × 7 bytes)
 //!
@@ -15,10 +17,10 @@
 //! Each 7-byte chunk is stored as a little-endian `u64` with the high byte always zero, so the
 //! value is always < 2^56 and fits safely in a Goldilocks field element.
 //!
-//! [`TokenName`]: crate::account::faucets::TokenName
-//! [`Description`]: crate::account::faucets::Description
-//! [`LogoURI`]: crate::account::faucets::LogoURI
-//! [`ExternalLink`]: crate::account::faucets::ExternalLink
+//! [`TokenName`]: crate::account::metadata::TokenName
+//! [`Description`]: crate::account::metadata::Description
+//! [`LogoURI`]: crate::account::metadata::LogoURI
+//! [`ExternalLink`]: crate::account::metadata::ExternalLink
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -30,15 +32,16 @@ use miden_protocol::{Felt, WORD_SIZE, Word};
 // ================================================================================================
 
 /// Number of data bytes packed into each felt (7 bytes = 56 bits, always < Goldilocks prime).
-pub(super) const BYTES_PER_FELT: usize = 7;
+const BYTES_PER_FELT: usize = 7;
 
 // FIXED-WIDTH STRING
 // ================================================================================================
 
 /// A UTF-8 string stored in exactly `N` Words (N×4 felts, 7 bytes/felt, length-prefixed).
 ///
-/// The capacity (maximum storable bytes) is `N * 4 * 7 - 1`. Wrapper types such as
-/// [`TokenName`](crate::account::faucets::TokenName) may impose a tighter limit.
+/// `N` must be at most 9. With N=9 the maximum storable string length is **251 bytes** (the
+/// full buffer is 252 bytes, one of which is consumed by the length prefix). Wrapper types such
+/// as [`TokenName`](crate::account::metadata::TokenName) may impose a tighter limit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedWidthString<const N: usize>(Box<str>);
 
@@ -48,9 +51,17 @@ impl<const N: usize> Default for FixedWidthString<N> {
     }
 }
 
+/// Maximum storable string length (one byte is used for the length prefix).
+const MAX_PAYLOAD_BYTES: usize = 251;
+
 impl<const N: usize> FixedWidthString<N> {
     /// Maximum bytes that can be stored (full capacity of the N words minus the length byte).
+    /// Never exceeds 251 because the length is encoded in a single u8 (bytes 0..=251).
     pub const CAPACITY: usize = N * 4 * BYTES_PER_FELT - 1;
+
+    /// Compile-time check: N must be at most 9 so that CAPACITY ≤ 251 and the length
+    /// fits in the u8 prefix.
+    const _CAPACITY_FITS_LENGTH_PREFIX: () = assert!(N <= 9);
 
     /// Creates a [`FixedWidthString`] from a UTF-8 string, validating it fits within capacity.
     pub fn new(value: &str) -> Result<Self, FixedWidthStringError> {
@@ -107,7 +118,7 @@ impl<const N: usize> FixedWidthString<N> {
                 let felt_value = felt.as_canonical_u64();
                 let le_bytes = felt_value.to_le_bytes();
                 if le_bytes[BYTES_PER_FELT] != 0 {
-                    return Err(FixedWidthStringError::InvalidUtf8);
+                    return Err(FixedWidthStringError::InvalidPadding);
                 }
                 let start = (word_idx * 4 + felt_idx) * BYTES_PER_FELT;
                 buf[start..start + BYTES_PER_FELT].copy_from_slice(&le_bytes[..BYTES_PER_FELT]);
@@ -115,8 +126,11 @@ impl<const N: usize> FixedWidthString<N> {
         }
 
         let len = buf[0] as usize;
+        if len > MAX_PAYLOAD_BYTES {
+            return Err(FixedWidthStringError::InvalidLengthPrefix);
+        }
         if len + 1 > buf_len {
-            return Err(FixedWidthStringError::InvalidUtf8);
+            return Err(FixedWidthStringError::InvalidLengthPrefix);
         }
         String::from_utf8(buf[1..1 + len].to_vec())
             .map_err(|_| FixedWidthStringError::InvalidUtf8)
@@ -133,9 +147,16 @@ pub enum FixedWidthStringError {
     /// String exceeds the maximum capacity for this word width.
     #[error("string must be at most {max} bytes, got {actual}")]
     TooLong { actual: usize, max: usize },
-    /// Decoded bytes are not valid UTF-8 (or a felt's high byte was non-zero).
+    /// Decoded bytes are not valid UTF-8.
     #[error("string is not valid UTF-8")]
     InvalidUtf8,
+    /// A felt's high byte (byte index 7 in LE) is non-zero, violating the 7-bytes-per-felt
+    /// invariant.
+    #[error("felt high byte is non-zero (invalid padding)")]
+    InvalidPadding,
+    /// The length prefix byte claims more bytes than the buffer can hold, or the length is >= 252.
+    #[error("length prefix is invalid or exceeds buffer capacity")]
+    InvalidLengthPrefix,
     /// Slice length does not match the expected word count.
     #[error("expected {expected} words, got {got}")]
     InvalidLength { expected: usize, got: usize },
@@ -225,11 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn felt_with_high_byte_set_returns_invalid_utf8() {
-        // Construct a Word where one felt has its 8th byte non-zero,
-        // which violates the 7-bytes-per-felt invariant.
-        // A value with byte[7] != 0: 2^56 exceeds the Goldilocks prime so we need a
-        // different approach — set a byte in positions 0..7 that decodes to invalid UTF-8.
+    fn length_prefix_overflow_returns_invalid_length_prefix() {
         // The length byte will claim len=0xFF (255) which exceeds the buffer, triggering the error.
         let overflow_len = Felt::try_from(0xff_u64).unwrap();
         let words = [
@@ -238,7 +255,7 @@ mod tests {
         ];
         assert!(matches!(
             FixedWidthString::<2>::try_from_words(&words),
-            Err(FixedWidthStringError::InvalidUtf8)
+            Err(FixedWidthStringError::InvalidLengthPrefix)
         ));
     }
 
