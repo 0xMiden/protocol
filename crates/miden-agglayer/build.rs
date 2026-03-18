@@ -15,6 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
+use miden_standards::account::mint_policies::OwnerControlled;
 
 // CONSTANTS
 // ================================================================================================
@@ -248,12 +249,26 @@ fn generate_agglayer_constants(
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
+        // The faucet account includes Ownable2Step and OwnerControlled components
+        // alongside the agglayer faucet component, since network_fungible::mint_and_send
+        // requires these for access control.
+        let mut components: Vec<AccountComponent> =
+            vec![AccountComponent::from(NoAuth), agglayer_component];
+        if lib_name == "faucet" {
+            // Use a dummy owner for commitment computation - the actual owner is set at runtime
+            let dummy_owner = miden_protocol::account::AccountId::try_from(
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+            )
+            .unwrap();
+            components.push(AccountComponent::from(
+                miden_standards::account::access::Ownable2Step::new(dummy_owner),
+            ));
+            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+        }
+
         // use `AccountCode` to merge codes of agglayer and authentication components
-        let account_code = AccountCode::from_components(
-            &[AccountComponent::from(NoAuth), agglayer_component],
-            AccountType::FungibleFaucet,
-        )
-        .expect("account code creation failed");
+        let account_code = AccountCode::from_components(&components, AccountType::FungibleFaucet)
+            .expect("account code creation failed");
 
         let code_commitment = account_code.commitment();
 
