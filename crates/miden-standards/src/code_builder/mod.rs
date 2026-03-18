@@ -782,7 +782,7 @@ mod tests {
             .compile_component_code("test::component", "pub proc test nop end")
             .context("failed to compile component code with advice map")?;
 
-        let mast = component_code.mast_forest();
+        let mast = component_code.mast();
         let stored_value = mast
             .advice_map()
             .get(&key)

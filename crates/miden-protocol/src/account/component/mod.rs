@@ -13,7 +13,7 @@ pub use storage::*;
 mod code;
 pub use code::AccountComponentCode;
 
-use crate::account::{AccountType, StorageSlot};
+use crate::account::{AccountProcedureRoot, AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 use crate::{MastForest, Word};
@@ -166,9 +166,9 @@ impl AccountComponent {
         &self.code
     }
 
-    /// Returns a reference to the underlying [`MastForest`] of this component.
-    pub fn mast_forest(&self) -> &MastForest {
-        self.code.mast_forest()
+    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`].
+    pub fn mast(&self) -> alloc::sync::Arc<MastForest> {
+        self.code.mast()
     }
 
     /// Returns a slice of the underlying [`StorageSlot`]s of this component.
@@ -196,19 +196,20 @@ impl AccountComponent {
         self.metadata.supported_types().contains(&account_type)
     }
 
-    /// Returns an iterator over (digest, is_auth) for all procedures in this component.
+    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
+    /// component.
     ///
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
     /// attribute.
-    pub fn get_procedures(&self) -> impl Iterator<Item = (Word, bool)> + '_ {
-        let mast = self.code.mast_forest();
+    pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
+        let mast = self.code.mast();
         self.code.exports().iter().map(move |proc_export| {
             let digest = mast
                 .get_node_by_id(proc_export.node)
                 .expect("export node not in the forest")
                 .digest();
             let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-            (digest, is_auth)
+            (AccountProcedureRoot::from_raw(digest), is_auth)
         })
     }
 
