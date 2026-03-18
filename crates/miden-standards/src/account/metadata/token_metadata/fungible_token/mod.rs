@@ -1,3 +1,37 @@
+//! Fungible token metadata stored in account storage.
+//!
+//! ## Storage layout
+//!
+//! | Slot name | Contents |
+//! |-----------|----------|
+//! | `metadata::fungible_token_metadata` | `[token_supply, max_supply, decimals, token_symbol]` |
+//! | `metadata::name_0` | first 4 felts of name |
+//! | `metadata::name_1` | last 4 felts of name |
+//! | `metadata::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
+//! | `metadata::description_0..6` | description (7 Words, max 195 bytes) |
+//! | `metadata::logo_uri_0..6` | logo URI (7 Words, max 195 bytes) |
+//! | `metadata::external_link_0..6` | external link (7 Words, max 195 bytes) |
+//!
+//! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
+//! Any change to slot names must be applied in both Rust and MASM.
+//!
+//! ## Config Word
+//!
+//! `mutability_config`: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+//! is_max_supply_mutable]` — each flag is 0 (immutable) or 1 (mutable / owner can update).
+//!
+//! Whether a field is *present* is determined by whether its storage words are all zero (absent)
+//! or not (present).
+//!
+//! ## String encoding (UTF-8)
+//!
+//! All string fields use **7-bytes-per-felt, length-prefixed** encoding. The N felts are
+//! serialized into a flat buffer of N × 7 bytes; byte 0 is the string length, followed by UTF-8
+//! content, zero-padded. Each 7-byte chunk is stored as a LE u64 with the high byte always zero,
+//! so it always fits in a Goldilocks field element.
+//!
+//! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32).
+
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -21,7 +55,6 @@ use thiserror::Error;
 use super::{TokenMetadata, TokenName};
 use crate::account::components::fungible_token_metadata_library;
 use crate::account::faucets::FungibleFaucetError;
-use crate::account::metadata;
 use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 pub mod builder;
@@ -248,7 +281,7 @@ impl FungibleTokenMetadata {
     /// Returns the [`StorageSlotName`] where the token metadata is stored (canonical slot shared
     /// with the metadata module).
     pub fn metadata_slot() -> &'static StorageSlotName {
-        metadata::token_metadata_slot()
+        super::fungible_token_metadata_slot()
     }
 
     /// Returns the current token supply (amount issued).
@@ -455,7 +488,7 @@ impl TryFrom<&AccountStorage> for FungibleTokenMetadata {
             TokenMetadata::read_metadata_from_storage(storage);
 
         let mutability_word = storage
-            .get_item(metadata::mutability_config_slot())
+            .get_item(super::mutability_config_slot())
             .unwrap_or_else(|_| Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]));
 
         let name = name.unwrap_or_default();
@@ -487,6 +520,7 @@ mod tests {
     use miden_protocol::asset::TokenSymbol;
     use miden_protocol::{Felt, Word};
 
+    use super::super::mutability_config_slot;
     use super::*;
     use crate::account::metadata::{Description, ExternalLink, LogoURI};
 
@@ -906,7 +940,7 @@ mod tests {
         assert_eq!(md_word[2], Felt::from(4u32)); // decimals
 
         // Verify mutability config
-        let config = account.storage().get_item(metadata::mutability_config_slot()).unwrap();
+        let config = account.storage().get_item(mutability_config_slot()).unwrap();
         assert_eq!(config[3], Felt::from(1u32), "is_max_supply_mutable");
     }
 
@@ -976,6 +1010,23 @@ mod tests {
     fn external_link_too_long() {
         let s = "a".repeat(ExternalLink::MAX_BYTES + 1);
         assert!(ExternalLink::new(&s).is_err());
+    }
+
+    #[test]
+    fn name_max_32_bytes_accepted() {
+        let s = "a".repeat(TokenName::MAX_BYTES);
+        assert_eq!(s.len(), 32);
+        let name = TokenName::new(&s).unwrap();
+        let words = name.to_words();
+        let decoded = TokenName::try_from_words(&words).unwrap();
+        assert_eq!(decoded.as_str(), s);
+    }
+
+    #[test]
+    fn description_max_bytes_accepted() {
+        let s = "a".repeat(Description::MAX_BYTES);
+        let desc = Description::new(&s).unwrap();
+        assert_eq!(desc.to_words().len(), 7);
     }
 
     #[test]
