@@ -150,20 +150,8 @@ pub proc add_fungible_asset
     padw loc_load.0 mem_loadw_le
     # => [VAULT_ROOT, MERGED_ASSET_VALUE, ASSET_KEY, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
 
-    movdnw.2 padw
-    # => [EMPTY_WORD, MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
-
-    # check if amount of new asset is zero
-    # if it is zero, insert EMPTY_WORD to keep the merkle tree sparse
-    dupw.1
-    exec.fungible_asset::value_into_amount
-    eq.0
-    # => [is_amount_zero, EMPTY_WORD, MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
-
-    # If is_amount_zero EMPTY_WORD remains.
-    # If !is_amount_zero MERGED_ASSET_VALUE remains.
-    cdropw
-    # => [EMPTY_WORD_OR_MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
+    movdnw.2
+    # => [MERGED_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, CUR_VAULT_VALUE, MERGED_ASSET_VALUE]
 
     # update asset in vault
     exec.smt::set
@@ -297,30 +285,19 @@ pub proc remove_fungible_asset
     dupw.2 swapw
     # => [ASSET_VALUE, PEEKED_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    # compute PEEKED_ASSET_VALUE - ASSET_VALUE
+    # compute REMAINING_ASSET_VALUE = PEEKED_ASSET_VALUE - ASSET_VALUE
     exec.fungible_asset::split
-    # => [NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [REMAINING_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
-    padw dupw.1 exec.fungible_asset::value_into_amount
-    # => [new_amount, EMPTY_WORD, NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    eq.0
-    # => [is_new_amount_zero, EMPTY_WORD, NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    # If is_new_amount_zero EMPTY_WORD remains.
-    # If !is_new_amount_zero NEW_ASSET_VALUE remains.
-    cdropw
-    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    # store remaining value so we can return it later
+    # store remaining asset value so we can return it later
     loc_storew_le.0
-    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [REMAINING_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     dup.12 padw movup.4 mem_loadw_le
-    # => [VAULT_ROOT, EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [VAULT_ROOT, REMAINING_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     movdnw.2
-    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
+    # => [REMAINING_ASSET_VALUE, ASSET_KEY, VAULT_ROOT, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     # update asset in vault and assert the old value is equivalent to the peeked value provided
     # via peek_asset
