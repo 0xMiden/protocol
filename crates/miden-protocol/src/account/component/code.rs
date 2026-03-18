@@ -34,19 +34,23 @@ impl AccountComponentCode {
         Self { mast, exports }
     }
 
-    /// Creates a new [`AccountComponentCode`] containing only external node references to the
+    /// Returns a new [`AccountComponentCode`] containing only external node references to the
     /// procedures in the provided [`Library`].
     ///
-    /// This creates a minimal [`MastForest`] where each exported procedure is represented by an
-    /// external node referencing its digest, rather than copying the entire library's MAST forest.
-    /// The actual procedure code will be resolved at runtime via the `MastForestStore`.
+    /// Note: This method creates a minimal [`MastForest`] where each exported procedure is
+    /// represented by an external node referencing its digest, rather than copying the entire
+    /// library's MAST forest. The actual procedure code will be resolved at runtime via the
+    /// `MastForestStore`.
     pub fn from_library_reference(library: &Library) -> Self {
         let mut mast = MastForest::new();
         let mut exports = Vec::new();
 
         for export in library.exports() {
             if let Some(proc_export) = export.as_procedure() {
+                // Get the digest of the procedure from the library
                 let digest = library.mast_forest()[proc_export.node].digest();
+
+                // Create an external node referencing the digest
                 let node_id = ExternalNodeBuilder::new(digest)
                     .add_to_forest(&mut mast)
                     .expect("adding external node to forest should not fail");
