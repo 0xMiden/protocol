@@ -81,6 +81,10 @@ static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_hi")
         .expect("CGI chain hash hi storage slot name should be valid")
 });
+static CLAIM_NULLIFIERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::agglayer::bridge::claim_nullifiers")
+        .expect("claim nullifiers storage slot name should be valid")
+});
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
@@ -106,6 +110,8 @@ static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
 /// - [`Self::cgi_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
 /// - [`Self::cgi_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
+/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
+///   source_bridge_network) → \[1, 0, 0, 0\]).
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -185,6 +191,11 @@ impl AggLayerBridge {
     /// Storage slot name for the upper 128 bits of the CGI chain hash.
     pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
         &CGI_CHAIN_HASH_HI_SLOT_NAME
+    }
+
+    /// Storage slot name for the CLAIM note nullifiers map.
+    pub fn claim_nullifiers_slot_name() -> &'static StorageSlotName {
+        &CLAIM_NULLIFIERS_SLOT_NAME
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
@@ -388,6 +399,7 @@ impl AggLayerBridge {
             &*GER_MANAGER_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
+            &*CLAIM_NULLIFIERS_SLOT_NAME,
         ]
     }
 }
@@ -419,6 +431,7 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
         ];
         bridge_component(bridge_storage_slots)
     }

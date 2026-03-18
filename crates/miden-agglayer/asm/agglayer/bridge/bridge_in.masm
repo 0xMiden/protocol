@@ -11,13 +11,13 @@ use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
-use miden::protocol::native_account
-use miden::protocol::active_account
 
 # TYPE ALIASES
 # =================================================================================================
@@ -35,6 +35,8 @@ const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
+const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
 
 # CONSTANTS
 # =================================================================================================
@@ -46,6 +48,16 @@ const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: prov
 # It is stored in two separate value slots.
 const CGI_CHAIN_HASH_LO_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_lo")
 const CGI_CHAIN_HASH_HI_SLOT_NAME = word("miden::agglayer::bridge::cgi_chain_hash_hi")
+
+# Storage Slots
+# -------------------------------------------------------------------------------------------------
+
+# The slot in this component's storage layout where claim nullifiers are stored.
+# Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+const CLAIM_NULLIFIERS_SLOT = word("miden::agglayer::bridge::claim_nullifiers")
+
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -98,6 +110,11 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
+# Memory addresses used to temporarily store leaf_index and source_bridge_network
+# across proof verification, and later as input to the claim nullifier hash.
+const CLAIM_LEAF_INDEX_MEM_ADDR = 900
+const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
+
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
@@ -142,6 +159,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 
 # PUBLIC INTERFACE
 # =================================================================================================
+
 
 #! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
 #!
@@ -217,7 +235,7 @@ pub proc claim
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
     # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
-
+    
     # Build MINT output note targeting the aggfaucet
     loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
@@ -302,7 +320,9 @@ end
 #! Invocation: exec
 pub proc process_global_index_mainnet
     # the top 191 bits of the global index are zero
-    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
 
     # the next element is the mainnet flag (LE-packed u32)
     # byte-swap to get the BE value, then assert it is exactly 1
@@ -495,7 +515,7 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     # => [LEAF_VALUE[8]]
 end
 
-#! Verify leaf and checks that it has not been claimed.
+#! Verify leaf, check that it has not been claimed, and mark it as claimed.
 #!
 #! Inputs:  [LEAF_VALUE[8], PROOF_DATA_KEY]
 #! Outputs: []
@@ -504,6 +524,7 @@ end
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#! - the claim has already been spent.
 #!
 #! Invocation: exec
 proc verify_leaf
@@ -547,6 +568,10 @@ proc verify_leaf
         exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
+        # Save leaf_index to memory for set_and_check_claimed after proof verification
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, LEAF_VALUE[8]]
+
         # verify single Merkle proof: leaf against mainnetExitRoot
         push.MAINNET_EXIT_ROOT_PTR swap
         push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
@@ -560,11 +585,25 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For mainnet deposits, source_bridge_network = 0
+        # globalIndex = uint256(leafIndex), so source_bridge_network is always 0
+        push.0 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
         # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
         # then do two-level verification
         exec.process_global_index_rollup
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Save leaf_index and rollup_index to memory for set_and_check_claimed
+        # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+        # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = rollup_index (temporarily, updated below)
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+        
+        dup.1 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
@@ -592,7 +631,90 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For rollup deposits, source_bridge_network = rollup_index + 1
+        # Compute source_bridge_network and store it to memory
+        mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR u32overflowing_add.1 assertz.err=ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW
+        # => [source_bridge_network]
+
+        mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
     end
+
+    # 4. Check the claim has not been spent and mark it as spent.
+    # Load leaf_index and source_bridge_network from memory.
+    mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [leaf_index, source_bridge_network]
+
+    exec.set_and_check_claimed
+    # => []
+end
+
+#! Computes the claim nullifier as RPO(leaf_index, source_bridge_network), then checks
+#! that the claim has not been spent and marks it as spent.
+#!
+#! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
+#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
+#!
+#! Inputs:  [leaf_index, source_bridge_network]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc set_and_check_claimed
+    # Write both values to memory for hashing
+    # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+    # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = source_bridge_network
+    mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [source_bridge_network]
+
+    mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    # => []
+
+    # Hash the two elements using RPO to produce the nullifier
+    # TODO: Replace rpo256::hash_elements with poseidon2::hash_elements when VM is updated
+    push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
+    exec.rpo256::hash_elements
+    # => [NULLIFIER]
+
+    exec.assert_claim_not_spent
+    # => []
+end
+
+#! Checks that the CLAIM note has not already been spent, and marks it as spent
+#! by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#!
+#! The nullifier is computed as RPO(leaf_index, source_bridge_network), which uniquely
+#! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
+#!
+#! Inputs:  [NULLIFIER]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc assert_claim_not_spent(nullifier: BeWord)
+    push.IS_CLAIMED_FLAG
+    # => [IS_CLAIMED_FLAG, NULLIFIER]
+
+    swapw
+    # => [NULLIFIER, IS_CLAIMED_FLAG]
+
+    push.CLAIM_NULLIFIERS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, NULLIFIER, IS_CLAIMED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    drop drop drop
+    # => [old_is_claimed]
+
+    assertz.err=ERR_CLAIM_ALREADY_SPENT
+    # => []
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
@@ -795,6 +917,8 @@ proc build_mint_recipient
     exec.note::build_recipient
     # => [MINT_RECIPIENT]
 end
+
+
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
