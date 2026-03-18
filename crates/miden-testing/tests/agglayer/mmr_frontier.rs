@@ -73,7 +73,7 @@ impl<const TREE_HEIGHT: usize> KeccakMmrFrontier32<TREE_HEIGHT> {
 async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let mut mmr_frontier = KeccakMmrFrontier32::<32>::new();
 
-    let mut source = "use miden::agglayer::bridge::mmr_frontier32_keccak \
+    let mut source = "use agglayer::bridge::mmr_frontier32_keccak \
              use miden::core::word begin"
         .to_string();
 
@@ -111,7 +111,7 @@ async fn test_check_empty_mmr_root() -> anyhow::Result<()> {
     let zero_31 = *CANONICAL_ZEROS_32.get(31).expect("zeros should have 32 values total");
     let empty_mmr_root = Keccak256::merge(&[zero_31, zero_31]);
 
-    let mut source = "use miden::agglayer::bridge::mmr_frontier32_keccak \
+    let mut source = "use agglayer::bridge::mmr_frontier32_keccak \
              use miden::core::word begin"
         .to_string();
 
