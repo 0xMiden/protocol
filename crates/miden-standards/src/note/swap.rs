@@ -99,18 +99,17 @@ impl SwapNote {
             payback_serial_num,
         );
 
-        let storage = NoteStorage::from(swap_storage);
+        let serial_num = rng.draw_word();
+        let recipient = swap_storage.into_recipient(serial_num);
 
         // build the tag for the SWAP use case
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
-        let serial_num = rng.draw_word();
 
         // build the outgoing note
         let metadata = NoteMetadata::new(sender, swap_note_type)
             .with_tag(tag)
             .with_attachment(swap_note_attachment);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let recipient = NoteRecipient::new(serial_num, Self::script(), storage);
         let note = Note::new(assets, metadata, recipient);
 
         // build the payback note details
