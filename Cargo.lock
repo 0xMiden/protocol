@@ -225,10 +225,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion 0.6.0",
+ "miden-agglayer",
  "miden-protocol",
  "miden-standards",
  "miden-testing",
  "miden-tx",
+ "rand",
  "serde",
  "serde_json",
  "tokio",

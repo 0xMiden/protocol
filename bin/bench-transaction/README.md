@@ -2,6 +2,17 @@
 
 Below we describe how to benchmark Miden transactions.
 
+### Benchmarked Transactions
+
+The following transactions are benchmarked:
+
+- **P2ID notes**: Consume single/two P2ID notes, create single P2ID note
+- **CLAIM notes (agglayer)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
+
+The CLAIM note benchmarks measure the full bridge-in flow: the benchmark setup executes
+prerequisite transactions (CONFIG_AGG_BRIDGE and UPDATE_GER) to prepare the bridge account,
+then benchmarks the CLAIM note consumption transaction itself.
+
 Benchmarks consist of two groups:
 - Benchmarking the transaction execution.
 
