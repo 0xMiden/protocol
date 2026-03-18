@@ -1,5 +1,5 @@
 use miden_processor::advice::AdviceInputs;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
@@ -607,7 +607,7 @@ async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow
         vec![output_note_asset],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::empty()),
+        &mut RandomCoin::new(Word::empty()),
     )?;
 
     // Create a new spawn note for the second transaction
@@ -1185,7 +1185,7 @@ async fn test_multisig_proc_threshold_overrides(
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([Felt::new(42); 4])),
+        &mut RandomCoin::new(Word::from([Felt::new(42); 4])),
     )?;
     let multisig_account_interface = AccountInterface::from_account(&multisig_account);
     let send_note_transaction_script =

@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use miden_processor::FastProcessor;
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::account::AccountId;
 use miden_protocol::block::BlockNumber;
@@ -15,7 +14,7 @@ use miden_protocol::transaction::{
 };
 use miden_standards::note::{NoteConsumptionStatus, StandardNote};
 
-use super::TransactionExecutor;
+use super::{ProgramExecutor, TransactionExecutor};
 use crate::auth::TransactionAuthenticator;
 use crate::errors::TransactionCheckerError;
 use crate::executor::map_execution_error;
@@ -73,15 +72,18 @@ impl NoteConsumptionInfo {
 /// The check is performed using the [NoteConsumptionChecker::check_notes_consumability] procedure.
 /// Essentially runs the transaction to make sure that provided input notes could be consumed by the
 /// account.
-pub struct NoteConsumptionChecker<'a, STORE, AUTH>(&'a TransactionExecutor<'a, 'a, STORE, AUTH>);
+pub struct NoteConsumptionChecker<'a, STORE, AUTH, EXEC: ProgramExecutor>(
+    &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>,
+);
 
-impl<'a, STORE, AUTH> NoteConsumptionChecker<'a, STORE, AUTH>
+impl<'a, STORE, AUTH, EXEC> NoteConsumptionChecker<'a, STORE, AUTH, EXEC>
 where
     STORE: DataStore + Sync,
     AUTH: TransactionAuthenticator + Sync,
+    EXEC: ProgramExecutor,
 {
     /// Creates a new [`NoteConsumptionChecker`] instance with the given transaction executor.
-    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH>) -> Self {
+    pub fn new(tx_executor: &'a TransactionExecutor<'a, 'a, STORE, AUTH, EXEC>) -> Self {
         NoteConsumptionChecker(tx_executor)
     }
 
@@ -337,7 +339,7 @@ where
                 .await
                 .map_err(TransactionCheckerError::TransactionPreparation)?;
 
-        let processor = FastProcessor::new(stack_inputs).with_advice(advice_inputs);
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.0.exec_options);
         let result = processor
             .execute(&TransactionKernel::main(), &mut host)
             .await

@@ -13,11 +13,12 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
     AccountDelta,
     AccountId,
     AccountStorageMode,
@@ -115,7 +116,7 @@ pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
-    rng: RpoRandomCoin,
+    rng: RandomCoin,
     // Fee parameters.
     native_asset_id: AccountId,
     verification_base_fee: u32,
@@ -139,7 +140,7 @@ impl MockChainBuilder {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
-            rng: RpoRandomCoin::new(Default::default()),
+            rng: RandomCoin::new(Default::default()),
             native_asset_id,
             verification_base_fee: 0,
         }
@@ -536,6 +537,20 @@ impl MockChainBuilder {
 
         Ok(account)
     }
+    pub fn add_existing_account_from_components(
+        &mut self,
+        auth: Auth,
+        components: impl IntoIterator<Item = AccountComponent>,
+    ) -> anyhow::Result<Account> {
+        let mut account_builder =
+            Account::builder(rand::rng().random()).storage_mode(AccountStorageMode::Public);
+
+        for component in components {
+            account_builder = account_builder.with_component(component);
+        }
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
+    }
 
     /// Adds the provided account to the list of genesis accounts.
     ///
@@ -707,7 +722,7 @@ impl MockChainBuilder {
     /// Returns a mutable reference to the builder's RNG.
     ///
     /// This can be used when creating accounts or notes and randomness is required.
-    pub fn rng_mut(&mut self) -> &mut RpoRandomCoin {
+    pub fn rng_mut(&mut self) -> &mut RandomCoin {
         &mut self.rng
     }
 
