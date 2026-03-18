@@ -34,7 +34,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
 
     // Fixed seed for deterministic "random" destination vectors.
     // Keeping this constant ensures everyone regenerates the exact same JSON vectors.
-    uint256 constant VECTOR_SEED = uint256(keccak256("miden::agglayer::mmr_frontier_vectors::v2"));
+    uint256 constant VECTOR_SEED = uint256(keccak256("agglayer::mmr_frontier_vectors::v2"));
 
     /**
      * @notice Builds a leaf hash identical to what bridge_out.masm would produce for the

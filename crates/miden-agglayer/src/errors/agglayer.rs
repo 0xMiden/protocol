@@ -21,6 +21,8 @@ pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainne
 /// Error Message: "mainnet flag must be 0 for a rollup deposit"
 pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet flag must be 0 for a rollup deposit");
 
+/// Error Message: "claim note has already been spent"
+pub const ERR_CLAIM_ALREADY_SPENT: MasmError = MasmError::from_static_str("claim note has already been spent");
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 
@@ -69,6 +71,9 @@ pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("no
 
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
+
+/// Error Message: "source bridge network overflowed u32"
+pub const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW: MasmError = MasmError::from_static_str("source bridge network overflowed u32");
 
 /// Error Message: "token address is not registered in the bridge's token registry"
 pub const ERR_TOKEN_NOT_REGISTERED: MasmError = MasmError::from_static_str("token address is not registered in the bridge's token registry");

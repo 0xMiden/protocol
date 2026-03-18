@@ -48,11 +48,11 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 // ================================================================================================
 
 static CONVERSION_INFO_1_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::conversion_info_1")
+    StorageSlotName::new("agglayer::faucet::conversion_info_1")
         .expect("conversion info 1 storage slot name should be valid")
 });
 static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
+    StorageSlotName::new("agglayer::faucet::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
 static METADATA_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
@@ -70,7 +70,7 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
-/// It reexports the procedures from `miden::agglayer::faucet`. When linking against this
+/// It reexports the procedures from `agglayer::faucet`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
 /// - `distribute`, which mints assets and creates output notes (with owner verification).
@@ -435,9 +435,9 @@ pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
 /// Builds the two storage slot values for faucet conversion metadata.
 ///
 /// The conversion metadata is stored in two value storage slots:
-/// - Slot 1 (`miden::agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first
-///   4 felts of the origin token address (5 × u32 limbs).
-/// - Slot 2 (`miden::agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
+/// - Slot 1 (`agglayer::faucet::conversion_info_1`): `[addr0, addr1, addr2, addr3]` — first 4 felts
+///   of the origin token address (5 × u32 limbs).
+/// - Slot 2 (`agglayer::faucet::conversion_info_2`): `[addr4, origin_network, scale, 0]` —
 ///   remaining address felt + origin network + scale factor.
 ///
 /// # Parameters
