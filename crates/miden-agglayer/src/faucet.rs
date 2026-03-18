@@ -180,9 +180,7 @@ impl AggLayerFaucet {
 
         let ownership = Ownable2Step::try_from_storage(faucet_account.storage())
             .map_err(AgglayerFaucetError::Ownable2StepError)?;
-        ownership
-            .owner()
-            .ok_or(AgglayerFaucetError::OwnershipRenounced)
+        ownership.owner().ok_or(AgglayerFaucetError::OwnershipRenounced)
     }
 
     /// Extracts the origin token address from the corresponding storage slot of the provided

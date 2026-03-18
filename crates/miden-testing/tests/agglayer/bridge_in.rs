@@ -282,7 +282,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 
-    let claim_executed = claim_tx_context.execute().await?;
+    let claim_executed = claim_tx_context
+        .execute()
+        .await
+        .context("TX2: CLAIM note execution against bridge failed")?;
 
     // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
     // --------------------------------------------------------------------------------------------
@@ -314,7 +317,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .add_note_script(P2idNote::script())
         .build()?;
 
-    let mint_executed = mint_tx_context.execute().await?;
+    let mint_executed = mint_tx_context
+        .execute()
+        .await
+        .context("TX3: MINT note execution against faucet failed")?;
 
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------

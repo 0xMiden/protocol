@@ -270,8 +270,8 @@ impl AggLayerBridge {
             .expect("should be able to read LET root hi");
 
         let mut root = Vec::with_capacity(8);
-        root.extend(root_lo.to_vec().into_iter());
-        root.extend(root_hi.to_vec().into_iter());
+        root.extend(root_lo.to_vec());
+        root.extend(root_hi.to_vec());
 
         Ok(root)
     }
