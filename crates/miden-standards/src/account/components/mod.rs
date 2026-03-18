@@ -97,17 +97,28 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
-// METADATA LIBRARIES
-// ================================================================================================
-
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Mint Policy Owner Controlled library only once.
+static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
+        "/assets/account_components/mint_policies/owner_controlled.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Owner Controlled library is well-formed")
 });
+
+// Initialize the Mint Policy Auth Controlled library only once.
+static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/mint_policies/auth_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Auth Controlled library is well-formed")
+});
+
+// METADATA LIBRARIES
+// ================================================================================================
 
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
@@ -129,9 +140,14 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
+/// Returns the Mint Policy Owner Controlled Library.
+pub fn owner_controlled_library() -> Library {
+    MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
+}
+
+/// Returns the Mint Policy Auth Controlled Library.
+pub fn auth_controlled_library() -> Library {
+    MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
 }
 
 /// Returns the Singlesig Library.
