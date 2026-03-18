@@ -10,8 +10,8 @@ use miden::standards::attachments::network_account_target
 const STORAGE_START_PTR = 0
 const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
 
-const FAUCET_ID_SUFFIX = 6
-const FAUCET_ID_PREFIX = 5
+const FAUCET_ID_SUFFIX = 5
+const FAUCET_ID_PREFIX = 6
 const ORIGIN_TOKEN_ADDR_4 = 4
 
 # ERRORS

@@ -56,7 +56,7 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    /// Layout: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix]
+    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix]
     pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
