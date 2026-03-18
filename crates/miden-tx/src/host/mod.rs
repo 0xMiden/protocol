@@ -11,7 +11,8 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::vm::EventId;
+use miden_protocol::transaction::TransactionEventId;
+use miden_protocol::vm::{EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -273,6 +274,20 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Resolves an [`EventId`] to its corresponding [`EventName`], if known.
+    ///
+    /// First checks if the event is a core library event, then checks if it is a transaction
+    /// kernel event.
+    pub fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        if let Some(name) = self.core_lib_handlers.resolve_event(event_id) {
+            return Some(name);
+        }
+
+        TransactionEventId::try_from(event_id)
+            .ok()
+            .map(|event_id| event_id.event_name())
     }
 
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
