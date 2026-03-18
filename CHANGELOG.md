@@ -36,6 +36,7 @@
 - Implemented the `on_before_asset_added_to_account` asset callback ([#2571](https://github.com/0xMiden/protocol/pull/2571)).
 - Implemented the `on_before_asset_added_to_note` asset callback ([#2595](https://github.com/0xMiden/protocol/pull/2595)).
 - Added `InputNoteCommitment::from_parts()` for construction of input note commitments from a nullifier and optional note header ([#2588](https://github.com/0xMiden/protocol/pull/2588)).
+- Added `SwapNoteStorage` for typed serialization/deserialization of SWAP note storage ([#2585](https://github.com/0xMiden/protocol/pull/2585)).
 - Added `bool` schema type to the type registry and updated ACL auth component to use it for boolean config fields ([#2591](https://github.com/0xMiden/protocol/pull/2591)).
 - Added `component_metadata()` to all account components to expose their metadata ([#2596](https://github.com/0xMiden/protocol/pull/2596)).
 - Added `Package` support in `MockChainBuilder` & `NoteScript` ([#2502](https://github.com/0xMiden/protocol/pull/2502)).
