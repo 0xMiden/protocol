@@ -1,4 +1,5 @@
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_mast_package::{MastArtifact, Package};
@@ -166,8 +167,8 @@ impl AccountComponent {
         &self.code
     }
 
-    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`](alloc::sync::Arc).
-    pub fn mast(&self) -> alloc::sync::Arc<MastForest> {
+    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`].
+    pub fn mast(&self) -> Arc<MastForest> {
         self.code.mast()
     }
 
