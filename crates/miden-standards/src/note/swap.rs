@@ -9,9 +9,6 @@ use miden_protocol::note::{
     Note,
     NoteAssets,
     NoteAttachment,
-    NoteAttachmentContent,
-    NoteAttachmentKind,
-    NoteAttachmentScheme,
     NoteDetails,
     NoteMetadata,
     NoteRecipient,
@@ -102,7 +99,7 @@ impl SwapNote {
             payback_serial_num,
         );
 
-        let inputs = NoteStorage::from(swap_storage);
+        let storage = NoteStorage::from(swap_storage);
 
         // build the tag for the SWAP use case
         let tag = Self::build_tag(swap_note_type, &offered_asset, &requested_asset);
@@ -113,7 +110,7 @@ impl SwapNote {
             .with_tag(tag)
             .with_attachment(swap_note_attachment);
         let assets = NoteAssets::new(vec![offered_asset])?;
-        let recipient = NoteRecipient::new(serial_num, Self::script(), inputs);
+        let recipient = NoteRecipient::new(serial_num, Self::script(), storage);
         let note = Note::new(assets, metadata, recipient);
 
         // build the payback note details
@@ -284,71 +281,8 @@ impl From<SwapNoteStorage> for NoteStorage {
     }
 }
 
-impl TryFrom<&[Felt]> for SwapNoteStorage {
-    type Error = NoteError;
-
-    fn try_from(note_storage: &[Felt]) -> Result<Self, Self::Error> {
-        if note_storage.len() != SwapNote::NUM_STORAGE_ITEMS {
-            return Err(NoteError::InvalidNoteStorageLength {
-                expected: SwapNote::NUM_STORAGE_ITEMS,
-                actual: note_storage.len(),
-            });
-        }
-
-        let payback_note_type = NoteType::try_from(note_storage[0])
-            .map_err(|err| NoteError::other_with_source("invalid payback note type", err))?;
-
-        let payback_tag = NoteTag::new(
-            note_storage[1]
-                .as_canonical_u64()
-                .try_into()
-                .map_err(|e| NoteError::other_with_source("invalid payback tag value", e))?,
-        );
-
-        let attachment_scheme_u32: u32 = note_storage[2]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|e| NoteError::other_with_source("invalid attachment scheme value", e))?;
-        let attachment_scheme = NoteAttachmentScheme::new(attachment_scheme_u32);
-
-        let attachment_kind_u8: u8 = note_storage[3]
-            .as_canonical_u64()
-            .try_into()
-            .map_err(|e| NoteError::other_with_source("invalid attachment kind value", e))?;
-        let attachment_kind = NoteAttachmentKind::try_from(attachment_kind_u8)
-            .map_err(|e| NoteError::other_with_source("invalid attachment kind", e))?;
-
-        let attachment_content_word =
-            Word::new([note_storage[4], note_storage[5], note_storage[6], note_storage[7]]);
-
-        let attachment_content = match attachment_kind {
-            NoteAttachmentKind::None => NoteAttachmentContent::None,
-            NoteAttachmentKind::Word => NoteAttachmentContent::new_word(attachment_content_word),
-            NoteAttachmentKind::Array => NoteAttachmentContent::new_word(attachment_content_word),
-        };
-
-        let payback_attachment = NoteAttachment::new(attachment_scheme, attachment_content)
-            .map_err(|e| NoteError::other_with_source("invalid note attachment", e))?;
-
-        let asset_key =
-            Word::new([note_storage[8], note_storage[9], note_storage[10], note_storage[11]]);
-        let asset_value =
-            Word::new([note_storage[12], note_storage[13], note_storage[14], note_storage[15]]);
-        let requested_asset = Asset::from_key_value_words(asset_key, asset_value)
-            .map_err(|err| NoteError::other_with_source("invalid requested asset", err))?;
-
-        let payback_recipient_digest =
-            Word::new([note_storage[16], note_storage[17], note_storage[18], note_storage[19]]);
-
-        Ok(Self {
-            payback_note_type,
-            payback_tag,
-            payback_attachment,
-            requested_asset,
-            payback_recipient_digest,
-        })
-    }
-}
+// NOTE: TryFrom<&[Felt]> for SwapNoteStorage is not implemented because
+// array attachment content cannot be reconstructed from storage alone. See https://github.com/0xMiden/protocol/issues/2555
 
 // TESTS
 // ================================================================================================
@@ -358,7 +292,6 @@ mod tests {
     use miden_protocol::Felt;
     use miden_protocol::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::{FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
-    use miden_protocol::errors::NoteError;
     use miden_protocol::note::{NoteAttachment, NoteStorage, NoteTag, NoteType};
     use miden_protocol::testing::account_id::{
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -402,19 +335,15 @@ mod tests {
             payback_recipient_digest,
         );
 
+        assert_eq!(storage.payback_note_type(), payback_note_type);
+        assert_eq!(storage.payback_tag(), payback_tag);
+        assert_eq!(storage.payback_attachment(), &payback_attachment);
+        assert_eq!(storage.requested_asset(), requested_asset);
+        assert_eq!(storage.payback_recipient_digest(), payback_recipient_digest);
+
         // Convert to NoteStorage
-        let note_storage = NoteStorage::from(storage.clone());
+        let note_storage = NoteStorage::from(storage);
         assert_eq!(note_storage.num_items() as usize, SwapNoteStorage::NUM_ITEMS);
-
-        // Convert back from storage items
-        let decoded = SwapNoteStorage::try_from(note_storage.items())
-            .expect("valid SWAP storage should decode");
-
-        assert_eq!(decoded.payback_note_type(), payback_note_type);
-        assert_eq!(decoded.payback_tag(), payback_tag);
-        assert_eq!(decoded.payback_attachment(), &payback_attachment);
-        assert_eq!(decoded.requested_asset(), requested_asset);
-        assert_eq!(decoded.payback_recipient_digest(), payback_recipient_digest);
     }
 
     #[test]
@@ -429,45 +358,16 @@ mod tests {
         let storage = SwapNoteStorage::from_parts(
             payback_note_type,
             payback_tag,
-            payback_attachment.clone(),
+            payback_attachment,
             requested_asset,
             payback_recipient_digest,
         );
 
+        assert_eq!(storage.payback_note_type(), payback_note_type);
+        assert_eq!(storage.requested_asset(), requested_asset);
+
         let note_storage = NoteStorage::from(storage);
-        let decoded = SwapNoteStorage::try_from(note_storage.items())
-            .expect("valid SWAP storage should decode");
-
-        assert_eq!(decoded.payback_note_type(), payback_note_type);
-        assert_eq!(decoded.requested_asset(), requested_asset);
-    }
-
-    #[test]
-    fn try_from_invalid_length_fails() {
-        let storage = vec![Felt::ZERO; 10];
-
-        let err =
-            SwapNoteStorage::try_from(storage.as_slice()).expect_err("wrong length must fail");
-
-        assert!(matches!(
-            err,
-            NoteError::InvalidNoteStorageLength {
-                expected: SwapNote::NUM_STORAGE_ITEMS,
-                actual: 10
-            }
-        ));
-    }
-
-    #[test]
-    fn try_from_invalid_note_type_fails() {
-        let mut storage = vec![Felt::ZERO; SwapNoteStorage::NUM_ITEMS];
-        // Set invalid note type (value > 2)
-        storage[0] = Felt::new(99);
-
-        let err =
-            SwapNoteStorage::try_from(storage.as_slice()).expect_err("invalid note type must fail");
-
-        assert!(matches!(err, NoteError::Other { source: Some(_), .. }));
+        assert_eq!(note_storage.num_items() as usize, SwapNoteStorage::NUM_ITEMS);
     }
 
     #[test]
