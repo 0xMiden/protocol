@@ -166,7 +166,7 @@ impl AccountComponent {
         &self.code
     }
 
-    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`].
+    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`](alloc::sync::Arc).
     pub fn mast(&self) -> alloc::sync::Arc<MastForest> {
         self.code.mast()
     }
