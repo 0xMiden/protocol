@@ -11,16 +11,93 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
+use miden_protocol::utils::sync::LazyLock;
 
-use super::{
-    DESCRIPTION_SLOTS,
-    EXTERNAL_LINK_SLOTS,
-    LOGO_URI_SLOTS,
-    NAME_SLOTS,
-    NameUtf8Error,
-    mutability_config_slot,
-};
+use crate::errors::NameUtf8Error;
 use crate::utils::string::FixedWidthString;
+
+// SLOT NAMES — canonical layout (sync with asm/standards/metadata/fungible.masm)
+// ================================================================================================
+
+/// Fungible token metadata word: `[token_supply, max_supply, decimals, token_symbol]`.
+pub(crate) static FUNGIBLE_TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::fungible_token_metadata")
+        .expect("storage slot name should be valid")
+});
+
+/// Token name (2 Words = 8 felts), split across 2 slots.
+pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::name_1").expect("valid slot name"),
+    ]
+});
+
+/// Maximum length of a name in bytes when using the UTF-8 encoding (capped at 32).
+pub(crate) const NAME_UTF8_MAX_BYTES: usize = 32;
+
+/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+/// is_max_supply_mutable]`.
+pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::mutability_config")
+        .expect("storage slot name should be valid")
+});
+
+/// Description (7 Words), split across 7 slots.
+pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::description_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::description_6").expect("valid slot name"),
+    ]
+});
+
+/// Logo URI (7 Words), split across 7 slots.
+pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::logo_uri_0").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_1").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_2").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_3").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_4").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_5").expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::logo_uri_6").expect("valid slot name"),
+    ]
+});
+
+/// External link (7 Words), split across 7 slots.
+pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::external_link_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::external_link_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Returns the [`StorageSlotName`] for the fungible token metadata word (slot 0).
+pub(crate) fn fungible_token_metadata_slot() -> &'static StorageSlotName {
+    &FUNGIBLE_TOKEN_METADATA_SLOT
+}
+
+/// Returns the [`StorageSlotName`] for the mutability config Word.
+pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
+    &MUTABILITY_CONFIG_SLOT
+}
 
 pub mod fungible_token;
 
@@ -38,7 +115,7 @@ pub struct TokenName(FixedWidthString<2>);
 
 impl TokenName {
     /// Maximum byte length for a token name (capped at 32, below the 55-byte capacity).
-    pub const MAX_BYTES: usize = super::NAME_UTF8_MAX_BYTES;
+    pub const MAX_BYTES: usize = NAME_UTF8_MAX_BYTES;
 
     /// Creates a token name from a UTF-8 string (at most 32 bytes).
     pub fn new(s: &str) -> Result<Self, NameUtf8Error> {

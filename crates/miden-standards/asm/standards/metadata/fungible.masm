@@ -13,7 +13,7 @@ use miden::standards::access::ownable2step
 # CONSTANTS — slot names
 # =================================================================================================
 
-const TOKEN_METADATA_SLOT = word("miden::standards::metadata::token_metadata")
+const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_token_metadata")
 const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::name_0")
 const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::name_1")
 const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::mutability_config")

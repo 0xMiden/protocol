@@ -5,4 +5,7 @@ pub mod standards {
 }
 
 mod code_builder_errors;
+mod name_utf8_error;
+
 pub use code_builder_errors::CodeBuilderError;
+pub use name_utf8_error::NameUtf8Error;

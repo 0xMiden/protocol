@@ -34,7 +34,7 @@ const METADATA_SLOT_LOCAL=0
 
 # The standard slot where fungible faucet metadata is stored (canonical with metadata module).
 # Layout: [token_supply, max_supply, decimals, token_symbol]
-const METADATA_SLOT=word("miden::standards::metadata::token_metadata")
+const METADATA_SLOT=word("miden::standards::metadata::fungible_token_metadata")
 
 #! Mints fungible assets to the provided recipient by creating a note.
 #!
