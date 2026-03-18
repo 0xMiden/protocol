@@ -1,4 +1,3 @@
-use miden::agglayer::bridge::bridge_in
 use miden::core::sys
 use miden::agglayer::common::utils
 use miden::agglayer::common::asset_conversion
@@ -6,77 +5,18 @@ use miden::agglayer::common::eth_address
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
-use miden::standards::note_tag
-use miden::protocol::note
-use miden::protocol::tx
-use miden::core::mem
+use miden::standards::faucets::network_fungible
+use miden::standards::access::ownable
 use miden::core::word
-
-# ERRORS
-# =================================================================================================
-
-const ERR_INVALID_CLAIM_PROOF = "invalid claim proof"
 
 # CONSTANTS
 # =================================================================================================
 
-# Storage slots
-# The slot in this component's storage layout where the bridge account ID is stored.
-const BRIDGE_ID_SLOT = word("miden::agglayer::bridge::id")
 # Storage slots for conversion metadata.
 # Slot 1: [addr_felt0, addr_felt1, addr_felt2, addr_felt3] — first 4 felts of origin token address
 const CONVERSION_INFO_1_SLOT = word("miden::agglayer::bridge::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
 const CONVERSION_INFO_2_SLOT = word("miden::agglayer::bridge::conversion_info_2")
-
-# Memory pointers for piped advice map data
-const PROOF_DATA_START_PTR = 0
-const LEAF_DATA_START_PTR = 536
-const OUTPUT_NOTE_DATA_START_PTR = 568
-
-# Memory addresses for stored keys
-const PROOF_DATA_KEY_MEM_ADDR = 700
-const LEAF_DATA_KEY_MEM_ADDR = 704
-const OUTPUT_NOTE_DATA_MEM_ADDR = 708
-const CLAIM_NOTE_DATA_MEM_ADDR = 712
-
-# Memory addresses for output note fields (derived from leaf data layout)
-const DESTINATION_ADDRESS_0 = 544
-const DESTINATION_ADDRESS_1 = 545
-const DESTINATION_ADDRESS_2 = 546
-const DESTINATION_ADDRESS_3 = 547
-const DESTINATION_ADDRESS_4 = 548
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0 = 549
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1 = 550
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2 = 551
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3 = 552
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4 = 553
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5 = 554
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6 = 555
-const OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7 = 556
-const OUTPUT_NOTE_STORAGE_MEM_ADDR = 0
-const OUTPUT_NOTE_FAUCET_AMOUNT = 568 
-
-# Memory locals in claim
-const CLAIM_PREFIX_MEM_LOC = 8
-const CLAIM_SUFFIX_MEM_LOC = 9
-const CLAIM_AMOUNT_MEM_LOC_0 = 0
-const CLAIM_AMOUNT_MEM_LOC_1 = 4
-
-# Memory locals in build_p2id_output_note
-const BUILD_P2ID_AMOUNT_MEM_LOC_0 = 0
-const BUILD_P2ID_AMOUNT_MEM_LOC_1 = 4
-const BUILD_P2ID_PREFIX_MEM_LOC = 8
-
-# Data sizes
-const PROOF_DATA_WORD_LEN = 134
-const LEAF_DATA_WORD_LEN = 8
-const OUTPUT_NOTE_DATA_WORD_LEN = 2
-
-# P2ID output note constants
-const P2ID_NOTE_NUM_STORAGE_ITEMS = 2
-const OUTPUT_NOTE_TYPE_PUBLIC = 1
-const OUTPUT_NOTE_AUX = 0
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -130,13 +70,29 @@ end
 #! Outputs: [scale]
 #!
 #! Invocation: exec
-pub proc get_scale
+proc get_scale_inner
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
     # => [0, scale, origin_network, addr4]
 
     drop movdn.2 drop drop
     # => [scale]
+end
+
+#! Returns the scale factor from faucet conversion storage.
+#!
+#! Called via FPI from the bridge account.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [scale, pad(15)]
+#!
+#! Invocation: call
+pub proc get_scale
+    exec.get_scale_inner
+    # => [scale, pad(16)]
+    
+    swap drop
+    # => [scale, pad(15)]
 end
 
 #! Converts a native Miden asset amount to origin asset data using the stored
@@ -160,7 +116,7 @@ pub proc asset_to_origin_asset
     # => [amount, pad(15)]
 
     # Step 1: Get scale from storage
-    exec.get_scale
+    exec.get_scale_inner
     # => [scale, amount, pad(15)]
     swap
     # => [amount, scale, pad(15)]
@@ -190,253 +146,6 @@ pub proc asset_to_origin_asset
     exec.sys::truncate_stack
 end
 
-# CLAIM PROCEDURES
-# =================================================================================================
-
-#! Inputs:  [LEAF_DATA_KEY, PROOF_DATA_KEY]
-#! Outputs: []
-#!
-#! Panics if:
-#! - the bridge account ID is not properly configured in storage.
-#! - the foreign procedure invocation fails.
-#! - the claim proof validation fails.
-#!
-#! Invocation: exec
-proc validate_claim
-    # get bridge_in::verify_leaf_bridge procedure MAST root
-    procref.bridge_in::verify_leaf_bridge
-    # => [BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
-
-    push.BRIDGE_ID_SLOT[0..2]
-    # => [bridge_id_idx, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
-
-    # get bridge account ID
-    exec.active_account::get_item
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, 0, 0, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
-
-    movup.2 drop movup.2 drop
-    # => [bridge_account_id_prefix, bridge_account_id_suffix, BRIDGE_PROC_MAST_ROOT, LEAF_DATA_KEY, PROOF_DATA_KEY]
-
-    # call bridge_in::verify_leaf_bridge
-    exec.tx::execute_foreign_procedure
-    # => []
-end
-
-# Inputs: []
-# Outputs: [U256[0], U256[1]]
-proc get_raw_claim_amount
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_4
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_3
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
-    mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-end
-
-# Inputs: [U256[0], U256[1]]
-# Outputs: [amount]
-proc scale_down_amount
-    repeat.7 drop end
-end
-
-# Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
-# Outputs: []
-proc batch_pipe_double_words
-    # 1) Verify PROOF_DATA_KEY
-    mem_storew_be.PROOF_DATA_KEY_MEM_ADDR 
-    adv.push_mapval
-    # => [PROOF_DATA_KEY]
-
-    push.PROOF_DATA_START_PTR push.PROOF_DATA_WORD_LEN
-    exec.mem::pipe_double_words_preimage_to_memory drop
-
-    # 2) Verify LEAF_DATA_KEY
-    mem_storew_be.LEAF_DATA_KEY_MEM_ADDR
-    adv.push_mapval
-    # => [LEAF_DATA_KEY]
-
-    push.LEAF_DATA_START_PTR push.LEAF_DATA_WORD_LEN
-    exec.mem::pipe_double_words_preimage_to_memory drop
-end
-
-#! Extracts the destination account ID as address[5] from memory.
-#!
-#! This procedure reads the destination address from the leaf data and converts it from
-#! Ethereum address format to AccountId format (prefix, suffix).
-#!
-#! Inputs:  []
-#! Outputs: [prefix, suffix]
-#!
-#! Invocation: exec
-proc get_destination_account_id_data
-    mem_load.DESTINATION_ADDRESS_4
-    mem_load.DESTINATION_ADDRESS_3
-    mem_load.DESTINATION_ADDRESS_2
-    mem_load.DESTINATION_ADDRESS_1
-    mem_load.DESTINATION_ADDRESS_0
-    # => [address[5]]
-
-    exec.eth_address::to_account_id
-    # => [prefix, suffix]
-end
-
-#! Builds a P2ID output note for the claim recipient.
-#!
-#! This procedure expects the claim data to be already written to memory via batch_pipe_double_words.
-#! It reads the destination account ID, amount, and other note parameters from memory to construct
-#! the output note.
-#!
-#! Inputs: [prefix, suffix, AMOUNT[0], AMOUNT[1]]
-#! Outputs: []
-#!
-#! WARNING: This procedure currently assumes the claim amount fits within 128 bits (i.e. AMOUNT[1]
-#! is all zeros). This assumption holds for all practical token amounts but is not explicitly
-#! enforced here. See the TODO below.
-#!
-#! TODO: Add an explicit assertion that AMOUNT[1] is zero.
-#!
-#! Note: This procedure will be refactored in a follow-up to use leaf data to build the output note.
-@locals(9)
-proc build_p2id_output_note
-    # save prefix to local memory for later use in note tag computation
-    dup loc_store.BUILD_P2ID_PREFIX_MEM_LOC
-
-    # write destination account id into memory for use in note::build_recipient
-    push.OUTPUT_NOTE_STORAGE_MEM_ADDR add.1 mem_store mem_store.OUTPUT_NOTE_STORAGE_MEM_ADDR
-
-    # store amount in memory locals for use in faucets::distribute
-    loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_0 dropw loc_storew_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 dropw
-    # => [pad(16)]
-
-    # Build P2ID output note
-    procref.::miden::standards::notes::p2id::main
-    # => [SCRIPT_ROOT]
-
-    # Use PROOF_DATA_KEY as the P2ID serial number
-    swapw mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR
-    # => [SERIAL_NUM, SCRIPT_ROOT]
-
-    push.P2ID_NOTE_NUM_STORAGE_ITEMS
-    # => [note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    push.OUTPUT_NOTE_STORAGE_MEM_ADDR
-    # => [storage_ptr, note_num_storage_items, SERIAL_NUM, SCRIPT_ROOT]
-
-    exec.note::build_recipient
-    # => [RECIPIENT]
-
-    push.OUTPUT_NOTE_TYPE_PUBLIC
-    # => [note_type, RECIPIENT]
-
-    # Compute note tag from destination account prefix (read from local memory)
-    loc_load.BUILD_P2ID_PREFIX_MEM_LOC
-    # => [account_id_prefix, note_type, RECIPIENT]
-
-    exec.note_tag::create_account_target
-    # => [tag, note_type, RECIPIENT]
-
-    padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_1 padw loc_loadw_be.BUILD_P2ID_AMOUNT_MEM_LOC_0
-    # => [AMOUNT[0], AMOUNT[1], tag, note_type, RECIPIENT]
-
-    mem_load.OUTPUT_NOTE_FAUCET_AMOUNT movdn.8
-    # => [AMOUNT[0], AMOUNT[1], native_amount, tag, note_type, RECIPIENT]
-
-    exec.get_scale movdn.8
-    # => [AMOUNT[0], AMOUNT[1], scale, native_amount, tag, note_type, RECIPIENT]
-
-    exec.asset_conversion::verify_u256_to_native_amount_conversion
-    # => [amount, tag, note_type, RECIPIENT]
-
-    exec.faucets::distribute
-    # => [pad(16)]
-end
-
-#! Validates a claim against the AggLayer bridge and mints the corresponding asset to the recipient.
-#!
-#! This procedure validates the rollup exit root Merkle Proof via FPI against the agglayer bridge,
-#! and if validation passes, mints the asset and creates an output note for the recipient.
-#!
-#! WARNING: The EVM claim asset amount is currently assumed to fit within 128 bits. See the WARNING in
-#! build_p2id_output_note for details.
-#!
-#! TODO: Expand this description to cover the double-spend protection mechanism in detail.
-#! Double-spend can be prevented in two ways:
-#! 1) While it's possible to create two identical P2ID notes, only one can actually be consumed.
-#!    If the claim note is consumed twice, only one P2ID output note will be successfully consumed.
-#! 2) We can have a mapping in the bridge or in the faucet that stores consumed claim proofs
-#!    as a hash -> bool value (similar to how it's done in the agglayer solidity contract).
-#!
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
-#! Outputs: [pad(16)]
-#!
-#! Advice map: {
-#!   PROOF_DATA_KEY => [
-#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
-#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
-#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts, bytes32 as 8 u32 felts)
-#!   ],
-#!   LEAF_DATA_KEY => [
-#!     leafType[1],                     // Leaf type (1 felt, uint8)
-#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
-#!     originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
-#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
-#!     destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
-#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
-#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!   ],
-#! }
-#!
-#! Panics if:
-#! - the rollup exit root Merkle Proof validation via FPI fails.
-#! - any of the validations in faucets::distribute fail.
-#!
-#! Invocation: call
-@locals(10) # 2 for prefix and suffix, 8 for amount
-pub proc claim
-    # Write output note faucet amount to memory
-    movup.8 mem_store.OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(7)]
-
-    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
-    exec.batch_pipe_double_words
-    # => [pad(7)]
-
-    # validate_claim will overwrite memory in-place, so we need to load the account and amount
-    # before calling validate_claim and store it in memory locals
-    exec.get_destination_account_id_data
-    loc_store.CLAIM_PREFIX_MEM_LOC loc_store.CLAIM_SUFFIX_MEM_LOC
-    # => [pad(7)]
-
-    exec.get_raw_claim_amount
-    loc_storew_be.CLAIM_AMOUNT_MEM_LOC_0 dropw loc_storew_be.CLAIM_AMOUNT_MEM_LOC_1 dropw
-    # => [pad(7)]
-
-    # VALIDATE CLAIM 
-    mem_loadw_be.PROOF_DATA_KEY_MEM_ADDR 
-    # => [PROOF_DATA_KEY, pad(7)]
-    
-    swapw mem_loadw_be.LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(7)]
-
-    # Errors on invalid proof
-    exec.validate_claim
-    # => [pad(16)]
-
-    # Create P2ID output note
-    loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_1 swapw loc_loadw_be.CLAIM_AMOUNT_MEM_LOC_0
-    # => [AMOUNT[0], AMOUNT[1], pad(8)]
-    
-    loc_load.CLAIM_SUFFIX_MEM_LOC loc_load.CLAIM_PREFIX_MEM_LOC
-    # => [prefix, suffix, AMOUNT[0], AMOUNT[1], pad(8)]
-
-    exec.build_p2id_output_note
-    # => [pad(16)] 
-end
-
 #! Burns the fungible asset from the active note.
 #!
 #! This procedure retrieves the asset from the active note and burns it. The note must contain
@@ -454,3 +163,15 @@ end
 #!
 #! Invocation: call
 pub use ::miden::standards::faucets::basic_fungible::burn
+
+#! Re-export the network fungible faucet's distribute procedure.
+#!
+#! This procedure first checks if the note sender is the owner of the faucet, and then
+#! mints the asset and creates an output note with that asset for the recipient.
+#! Used by the standard MINT note to mint assets on the aggfaucet.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [note_idx, pad(15)]
+#!
+#! Invocation: call
+pub use ::miden::standards::faucets::network_fungible::distribute

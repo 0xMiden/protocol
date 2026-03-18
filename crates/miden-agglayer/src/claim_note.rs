@@ -195,12 +195,13 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 // CLAIM NOTE CREATION
 // ================================================================================================
 
-/// Generates a CLAIM note - a note that instructs an agglayer faucet to validate and mint assets.
+/// Generates a CLAIM note - a note that instructs the bridge to validate a claim and create
+/// a MINT note for the aggfaucet.
 ///
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note
-/// - `target_faucet_id`: The account ID of the agglayer faucet that should consume this note.
-///   Encoded as a `NetworkAccountTarget` attachment on the note metadata.
+/// - `target_bridge_id`: The account ID of the bridge that should consume this note. Encoded as a
+///   `NetworkAccountTarget` attachment on the note metadata.
 /// - `sender_account_id`: The account ID of the CLAIM note creator
 /// - `rng`: Random number generator for creating the CLAIM note serial number
 ///
@@ -208,13 +209,13 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 /// Returns an error if note creation fails.
 pub fn create_claim_note<R: FeltRng>(
     storage: ClaimNoteStorage,
-    target_faucet_id: AccountId,
+    target_bridge_id: AccountId,
     sender_account_id: AccountId,
     rng: &mut R,
 ) -> Result<Note, NoteError> {
     let note_storage = NoteStorage::try_from(storage.clone())?;
 
-    let attachment = NetworkAccountTarget::new(target_faucet_id, NoteExecutionHint::Always)
+    let attachment = NetworkAccountTarget::new(target_bridge_id, NoteExecutionHint::Always)
         .map_err(|e| NoteError::other(e.to_string()))?
         .into();
 

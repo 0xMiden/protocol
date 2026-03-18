@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@agglayer/v2/lib/DepositContractBase.sol";
+import "@agglayer/v2/sovereignChains/BridgeL2SovereignChain.sol";
 
 /**
  * @title DepositContractTestHelpers
- * @notice Shared helpers for Sparse Merkle Tree test vector generation.
- *         Inherited by SMTMerkleProofVectors and ClaimAssetTestVectorsLocalTx.
+ * @notice Shared helpers for Sparse Merkle Tree and claim-asset vector generation.
+ *         Inherited by SMTMerkleProofVectors and ClaimAssetTestVectors*.
  */
-abstract contract DepositContractTestHelpers is DepositContractBase {
+abstract contract DepositContractTestHelpers is BridgeL2SovereignChain {
     /**
      * @notice Computes the canonical zero hashes for the Sparse Merkle Tree.
      * @dev Each level i has zero hash: keccak256(zero[i-1], zero[i-1])
@@ -43,5 +43,38 @@ abstract contract DepositContractTestHelpers is DepositContractBase {
                 smtProof[i] = canonicalZeros[i];
             }
         }
+    }
+
+    /**
+     * @notice Harness function to call _verifyLeafBridge externally
+     */
+    function verifyLeafBridgeHarness(
+        bytes32[32] calldata smtProofLocalExitRoot,
+        bytes32[32] calldata smtProofRollupExitRoot,
+        uint256 globalIndex,
+        bytes32 mainnetExitRoot,
+        bytes32 rollupExitRoot,
+        uint8 leafType,
+        uint32 originNetwork,
+        address originTokenAddress,
+        uint32 destinationNetwork,
+        address destinationAddress,
+        uint256 amount,
+        bytes32 metadataHash
+    ) external {
+        _verifyLeafBridge(
+            smtProofLocalExitRoot,
+            smtProofRollupExitRoot,
+            globalIndex,
+            mainnetExitRoot,
+            rollupExitRoot,
+            leafType,
+            originNetwork,
+            originTokenAddress,
+            destinationNetwork,
+            destinationAddress,
+            amount,
+            metadataHash
+        );
     }
 }
