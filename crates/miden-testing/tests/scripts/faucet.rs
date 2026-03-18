@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::slice;
 
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{
     Account,
@@ -138,7 +138,7 @@ async fn execute_faucet_note_script(
 ) -> anyhow::Result<Result<ExecutedTransaction, miden_tx::TransactionExecutorError>> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(rng_seed); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(rng_seed); 4].into());
     let note = NoteBuilder::new(sender_account_id, &mut rng)
         .note_type(NoteType::Private)
         .code(note_script_code)
@@ -492,7 +492,7 @@ async fn test_public_note_creation_with_script_from_datastore() -> anyhow::Resul
     );
 
     // Create the trigger note that will call mint
-    let mut rng = RpoRandomCoin::new([Felt::from(1u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(1u32); 4].into());
     let trigger_note = NoteBuilder::new(faucet.id(), &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -627,7 +627,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
     // Create the MINT note using the helper function
     let mint_storage = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,
@@ -719,7 +719,7 @@ async fn test_network_faucet_owner_can_mint() -> anyhow::Result<()> {
 
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         owner_account_id,
@@ -831,7 +831,7 @@ async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
     // Create mint note from NON-OWNER
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         non_owner_account_id,
@@ -930,7 +930,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     // Sanity Check: Prove that the initial owner can mint assets
     let mint_inputs = MintNoteStorage::new_private(recipient, amount, output_note_tag.into());
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         initial_owner_account_id,
@@ -959,7 +959,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     // Create the transfer note and add it to the builder so it exists on-chain
-    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
     let transfer_note = NoteBuilder::new(initial_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1004,7 +1004,7 @@ async fn test_network_faucet_transfer_ownership() -> anyhow::Result<()> {
         end
         "#;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(400u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(400u32); 4].into());
     let accept_note = NoteBuilder::new(new_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1087,7 +1087,7 @@ async fn test_network_faucet_only_owner_can_transfer() -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
 
     // Create a note from NON-OWNER that tries to transfer ownership
-    let mut rng = RpoRandomCoin::new([Felt::from(100u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(100u32); 4].into());
     let transfer_note = NoteBuilder::new(non_owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1168,7 +1168,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         new_owner_suffix = Felt::new(new_owner_account_id.suffix().as_canonical_u64()),
     );
 
-    let mut rng = RpoRandomCoin::new([Felt::from(200u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(200u32); 4].into());
     let renounce_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1176,7 +1176,7 @@ async fn test_network_faucet_renounce_ownership() -> anyhow::Result<()> {
         .code(renounce_note_script_code)
         .build()?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(300u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(300u32); 4].into());
     let transfer_note = NoteBuilder::new(owner_account_id, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1264,7 +1264,7 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
 
     // CREATE BURN NOTE
     // --------------------------------------------------------------------------------------------
-    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note = BurnNote::create(
         faucet_owner_account_id,
         faucet.id(),
@@ -1365,7 +1365,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
         },
     };
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let mint_note = MintNote::create(
         faucet.id(),
         faucet_owner_account_id,

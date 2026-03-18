@@ -2,8 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::ops::RangeTo;
 
-use miden_crypto::merkle::mmr::MmrProof;
-
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::crypto::merkle::mmr::{MmrPeaks, PartialMmr};
@@ -69,13 +67,11 @@ impl PartialBlockchain {
         for (block_num, block) in partial_chain.blocks.iter() {
             // SAFETY: new_unchecked returns an error if a block is not tracked in the MMR, so
             // retrieving a proof here should succeed.
-            let path = partial_chain
+            let proof = partial_chain
                 .mmr
                 .open(block_num.as_usize())
                 .expect("block should not exceed chain length")
                 .expect("block should be tracked in the partial MMR");
-            // This should go away again once https://github.com/0xMiden/crypto/pull/787 is propagated here.
-            let proof = MmrProof::new(path, block.commitment());
 
             partial_chain.mmr.peaks().verify(block.commitment(), proof).map_err(|source| {
                 PartialBlockchainError::BlockHeaderCommitmentMismatch {
@@ -316,7 +312,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            *mmr.open(block_num as usize).unwrap().path(),
+            mmr.open(block_num as usize).unwrap(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -327,7 +323,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            *mmr.open(block_num as usize).unwrap().path(),
+            mmr.open(block_num as usize).unwrap(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
 
@@ -338,7 +334,7 @@ mod tests {
         partial_blockchain.add_block(&block_header, true);
 
         assert_eq!(
-            *mmr.open(block_num as usize).unwrap().path(),
+            mmr.open(block_num as usize).unwrap(),
             partial_blockchain.mmr.open(block_num as usize).unwrap().unwrap()
         );
     }
