@@ -199,13 +199,13 @@ impl SwapNoteStorage {
         let payback_recipient = P2idNoteStorage::new(sender).into_recipient(payback_serial_number);
         let payback_tag = NoteTag::with_account_target(sender);
 
-        Self {
+        Self::from_parts(
             payback_note_type,
             payback_tag,
             payback_attachment,
             requested_asset,
-            payback_recipient_digest: payback_recipient.digest(),
-        }
+            payback_recipient.digest(),
+        )
     }
 
     /// Creates a [`SwapNoteStorage`] from raw parts.
