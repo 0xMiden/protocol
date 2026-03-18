@@ -1,6 +1,4 @@
-use alloc::string::ToString;
-
-use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -9,9 +7,8 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::{Felt, Word};
 
-use super::{FungibleFaucetError, FungibleTokenMetadata, FungibleTokenMetadataBuilder, TokenName};
+use super::{FungibleFaucetError, FungibleTokenMetadata};
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
@@ -89,35 +86,6 @@ impl BasicFungibleFaucet {
             .with_description("Basic fungible faucet component for minting and burning tokens")
     }
 
-    /// Creates a minimal basic fungible faucet [`Account`].
-    ///
-    /// This is a convenience constructor used by downstream crates/tests which need a quick way
-    /// to instantiate a faucet account.
-    ///
-    /// The created account uses:
-    /// - a deterministic seed derived from `(symbol, decimals, max_supply)`
-    /// - [`AccountStorageMode::Private`]
-    /// - a default single-signature authentication method (Falcon512Poseidon2)
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        symbol: miden_protocol::asset::TokenSymbol,
-        decimals: u8,
-        max_supply: Felt,
-    ) -> Result<Account, FungibleFaucetError> {
-        let metadata =
-            FungibleTokenMetadataBuilder::new(TokenName::default(), symbol, decimals, max_supply)
-                .build()?;
-
-        let init_seed = derive_faucet_seed(metadata.symbol(), decimals, max_supply);
-
-        let pub_key = PublicKeyCommitment::from(Word::from([1u32, 2, 3, 4]));
-        let auth_method = AuthMethod::SingleSig {
-            approver: (pub_key, AuthScheme::Falcon512Poseidon2),
-        };
-
-        create_basic_fungible_faucet(init_seed, metadata, AccountStorageMode::Private, auth_method)
-    }
-
     /// Checks that the account contains the basic fungible faucet interface.
     fn try_from_interface(
         interface: AccountInterface,
@@ -129,29 +97,6 @@ impl BasicFungibleFaucet {
 
         Ok(BasicFungibleFaucet)
     }
-}
-
-fn derive_faucet_seed(
-    symbol: &miden_protocol::asset::TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
-) -> [u8; 32] {
-    let mut seed = [0u8; 32];
-
-    let symbol_str = symbol.to_string();
-    let symbol_bytes = symbol_str.as_bytes();
-    let symbol_len = core::cmp::min(symbol_bytes.len(), 12);
-    seed[..symbol_len].copy_from_slice(&symbol_bytes[..symbol_len]);
-
-    seed[12] = decimals;
-    seed[13..21].copy_from_slice(&max_supply.as_canonical_u64().to_le_bytes());
-
-    for (offset, byte) in seed[21..].iter_mut().enumerate() {
-        let i = 21 + offset;
-        *byte = (i as u8).wrapping_mul(31) ^ 0xa5;
-    }
-
-    seed
 }
 
 impl From<BasicFungibleFaucet> for AccountComponent {

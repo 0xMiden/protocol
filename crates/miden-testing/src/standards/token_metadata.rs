@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_crypto::hash::poseidon2::Poseidon2;
-use miden_crypto::rand::RandomCoin;
+use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
     AccountId,
@@ -65,21 +65,21 @@ fn network_faucet_metadata(
 
     let mut builder = FungibleTokenMetadataBuilder::new(name, token_symbol, 10, max_supply)
         .token_supply(token_supply)
-        .max_supply_mutable(max_supply_mutable);
+        .is_max_supply_mutable(max_supply_mutable);
     if let Some((words, mutable)) = description {
         builder = builder
             .description(Description::try_from_words(&words).expect("valid description words"))
-            .description_mutable(mutable);
+            .is_description_mutable(mutable);
     }
     if let Some((words, mutable)) = logo_uri {
         builder = builder
             .logo_uri(LogoURI::try_from_words(&words).expect("valid logo_uri words"))
-            .logo_uri_mutable(mutable);
+            .is_logo_uri_mutable(mutable);
     }
     if let Some((words, mutable)) = external_link {
         builder = builder
             .external_link(ExternalLink::try_from_words(&words).expect("valid external_link words"))
-            .external_link_mutable(mutable);
+            .is_external_link_mutable(mutable);
     }
 
     Ok(builder.build()?)
@@ -407,8 +407,8 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         Felt::new(1_000),
     )
     .description(Description::new("test").unwrap())
-    .description_mutable(true)
-    .max_supply_mutable(true)
+    .is_description_mutable(true)
+    .is_max_supply_mutable(true)
     .build()
     .unwrap();
 
@@ -456,7 +456,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 Felt::new(1_000),
             )
             .description(desc.clone())
-            .description_mutable(true)
+            .is_description_mutable(true)
             .build()
             .unwrap(),
             "is_description_mutable",
@@ -483,7 +483,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 Felt::new(1_000),
             )
             .logo_uri(logo.clone())
-            .logo_uri_mutable(true)
+            .is_logo_uri_mutable(true)
             .build()
             .unwrap(),
             "is_logo_uri_mutable",
@@ -510,7 +510,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 Felt::new(1_000),
             )
             .external_link(link.clone())
-            .external_link_mutable(true)
+            .is_external_link_mutable(true)
             .build()
             .unwrap(),
             "is_external_link_mutable",
@@ -946,7 +946,7 @@ async fn test_field_setter_owner_succeeds(
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1016,7 +1016,7 @@ async fn test_field_setter_non_owner_fails(
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1187,7 +1187,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1237,7 +1237,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())

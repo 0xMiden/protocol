@@ -42,6 +42,13 @@ const BYTES_PER_FELT: usize = 7;
 /// `N` must be at most 9. With N=9 the maximum storable string length is **251 bytes** (the
 /// full buffer is 252 bytes, one of which is consumed by the length prefix). Wrapper types such
 /// as [`TokenName`](crate::account::metadata::TokenName) may impose a tighter limit.
+///
+/// Using N=10 (or larger) fails at compile time:
+///
+/// ```compile_fail
+/// # use miden_standards::utils::string::FixedWidthString;
+/// let _ = FixedWidthString::<10>::CAPACITY; // assertion failed: N <= 9
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixedWidthString<const N: usize>(Box<str>);
 
@@ -55,13 +62,14 @@ impl<const N: usize> Default for FixedWidthString<N> {
 const MAX_PAYLOAD_BYTES: usize = 251;
 
 impl<const N: usize> FixedWidthString<N> {
+    /// Compile-time check: N must be at most 9 so that CAPACITY ≤ 251 and the length
+    /// fits in the u8 prefix. (Referenced by CAPACITY so the assert is always evaluated.)
+    const _CAPACITY_FITS_LENGTH_PREFIX: () = assert!(N <= 9);
+
     /// Maximum bytes that can be stored (full capacity of the N words minus the length byte).
     /// Never exceeds 251 because the length is encoded in a single u8 (bytes 0..=251).
-    pub const CAPACITY: usize = N * 4 * BYTES_PER_FELT - 1;
-
-    /// Compile-time check: N must be at most 9 so that CAPACITY ≤ 251 and the length
-    /// fits in the u8 prefix.
-    const _CAPACITY_FITS_LENGTH_PREFIX: () = assert!(N <= 9);
+    pub const CAPACITY: usize =
+        N * 4 * BYTES_PER_FELT - 1 + (Self::_CAPACITY_FITS_LENGTH_PREFIX, 0).1;
 
     /// Creates a [`FixedWidthString`] from a UTF-8 string, validating it fits within capacity.
     pub fn new(value: &str) -> Result<Self, FixedWidthStringError> {
@@ -133,7 +141,7 @@ impl<const N: usize> FixedWidthString<N> {
             return Err(FixedWidthStringError::InvalidLengthPrefix);
         }
         String::from_utf8(buf[1..1 + len].to_vec())
-            .map_err(|_| FixedWidthStringError::InvalidUtf8)
+            .map_err(FixedWidthStringError::InvalidUtf8)
             .map(|s| Self(s.into()))
     }
 }
@@ -149,7 +157,7 @@ pub enum FixedWidthStringError {
     TooLong { actual: usize, max: usize },
     /// Decoded bytes are not valid UTF-8.
     #[error("string is not valid UTF-8")]
-    InvalidUtf8,
+    InvalidUtf8(#[source] alloc::string::FromUtf8Error),
     /// A felt's high byte (byte index 7 in LE) is non-zero, violating the 7-bytes-per-felt
     /// invariant.
     #[error("felt high byte is non-zero (invalid padding)")]
@@ -229,6 +237,27 @@ mod tests {
     }
 
     #[test]
+    fn capacity_9_words_is_max() {
+        // Max N is 9: 9*4*7 - 1 = 251 (one byte for length prefix).
+        assert_eq!(FixedWidthString::<9>::CAPACITY, 251);
+        let s = "x".repeat(251);
+        let fw = FixedWidthString::<9>::new(&s).unwrap();
+        let decoded = FixedWidthString::<9>::try_from_words(&fw.to_words()).unwrap();
+        assert_eq!(decoded.as_str(), s);
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn n10_would_exceed_length_prefix() {
+        // N=10 would give 10*4*7 - 1 = 279 > 251, so it is disallowed. CAPACITY is defined so
+        // that it depends on _CAPACITY_FITS_LENGTH_PREFIX; therefore any use of
+        // FixedWidthString::<10> (e.g. CAPACITY) fails at compile time with "assertion failed: N <=
+        // 9". That compile-time failure is also tested by the `compile_fail` doctest in the
+        // doc comment above (on [`FixedWidthString`]).
+        assert!(10 * 4 * BYTES_PER_FELT - 1 > MAX_PAYLOAD_BYTES);
+    }
+
+    #[test]
     fn to_words_returns_correct_count() {
         let s = FixedWidthString::<7>::new("test").unwrap();
         assert_eq!(s.to_words().len(), 7);
@@ -247,7 +276,8 @@ mod tests {
 
     #[test]
     fn length_prefix_overflow_returns_invalid_length_prefix() {
-        // The length byte will claim len=0xFF (255) which exceeds the buffer, triggering the error.
+        // The length byte (first byte of first felt) is set to 0xFF, which exceeds the buffer
+        // and triggers InvalidLengthPrefix. (This is the low byte of the felt, not the high byte.)
         let overflow_len = Felt::try_from(0xff_u64).unwrap();
         let words = [
             Word::from([overflow_len, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
@@ -256,6 +286,21 @@ mod tests {
         assert!(matches!(
             FixedWidthString::<2>::try_from_words(&words),
             Err(FixedWidthStringError::InvalidLengthPrefix)
+        ));
+    }
+
+    #[test]
+    fn felt_with_high_byte_set_returns_invalid_padding() {
+        // Construct words where one felt has its 8th byte (LE index 7) non-zero, violating the
+        // 7-bytes-per-felt invariant. Bit 63 set gives a valid Felt but invalid length/padding.
+        let high_byte_non_zero = Felt::try_from(2u64.pow(63)).unwrap();
+        let words = [
+            Word::from([Felt::ZERO, high_byte_non_zero, Felt::ZERO, Felt::ZERO]),
+            Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        ];
+        assert!(matches!(
+            FixedWidthString::<2>::try_from_words(&words),
+            Err(FixedWidthStringError::InvalidPadding)
         ));
     }
 
@@ -272,7 +317,7 @@ mod tests {
         ];
         assert!(matches!(
             FixedWidthString::<2>::try_from_words(&words),
-            Err(FixedWidthStringError::InvalidUtf8)
+            Err(FixedWidthStringError::InvalidUtf8(_))
         ));
     }
 
