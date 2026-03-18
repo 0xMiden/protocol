@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_crypto::hash::poseidon2::Poseidon2;
-use miden_crypto::rand::RpoRandomCoin;
+use miden_crypto::rand::RandomCoin;
 use miden_protocol::account::{
     AccountBuilder,
     AccountId,
@@ -946,7 +946,7 @@ async fn test_field_setter_owner_succeeds(
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1016,7 +1016,7 @@ async fn test_field_setter_non_owner_fails(
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1187,7 +1187,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(42u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(42u32); 4].into());
     let note = NoteBuilder::new(owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
@@ -1237,7 +1237,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let note_script = CodeBuilder::with_source_manager(source_manager.clone())
         .compile_note_script(&note_script_code)?;
 
-    let mut rng = RpoRandomCoin::new([Felt::from(99u32); 4].into());
+    let mut rng = RandomCoin::new([Felt::from(99u32); 4].into());
     let note = NoteBuilder::new(non_owner, &mut rng)
         .note_type(NoteType::Private)
         .tag(NoteTag::default().into())
