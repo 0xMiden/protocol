@@ -3,11 +3,13 @@ use miden::protocol::active_note
 use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
+use miden::protocol::asset
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================
 
+const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
 # ERRORS
@@ -33,7 +35,7 @@ const METADATA_SLOT_LOCAL=0
 # Layout: [token_supply, max_supply, decimals, token_symbol]
 const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 
-#! Distributes freshly minted fungible assets to the provided recipient by creating a note.
+#! Mints fungible assets to the provided recipient by creating a note.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -54,16 +56,16 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #!
 #! Invocation: exec
 @locals(4)
-pub proc distribute
+pub proc mint_and_send
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
-    # => [token_symbol, decimals, max_supply, token_supply, amount, tag, note_type, RECIPIENT]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, tag, note_type, RECIPIENT]
 
     # store a copy of the current slot content for the token_supply update later
-    loc_storew_be.METADATA_SLOT_LOCAL
-    drop drop
+    loc_storew_le.METADATA_SLOT_LOCAL
+    swap movup.2 drop movup.2 drop
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
@@ -111,46 +113,44 @@ pub proc distribute
     dup.1 add
     # => [new_token_supply, amount, tag, note_type, RECIPIENT]
 
-    padw loc_loadw_be.METADATA_SLOT_LOCAL
-    # => [[token_symbol, decimals, max_supply, token_supply], new_token_supply, amount, tag, note_type, RECIPIENT]
+    padw loc_loadw_le.METADATA_SLOT_LOCAL
+    # => [[token_supply, max_supply, decimals, token_symbol], new_token_supply, amount, tag, note_type, RECIPIENT]
 
-    movup.3 drop
-    # => [[token_symbol, decimals, max_supply, new_token_supply], amount, tag, note_type, RECIPIENT]
+    drop movup.3
+    # => [[new_token_supply, max_supply, decimals, token_symbol], amount, tag, note_type, RECIPIENT]
 
     # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw
     # => [amount, tag, note_type, RECIPIENT]
 
+    # Create a new note.
+    # ---------------------------------------------------------------------------------------------
+
+    movdn.6 exec.output_note::create
+    # => [note_idx, amount]
+
+    dup movup.2
+    # => [amount, note_idx, note_idx]
+
     # Mint the asset.
     # ---------------------------------------------------------------------------------------------
 
     # creating the asset
-    exec.faucet::create_fungible_asset dupw
-    # => [ASSET, ASSET, tag, note_type, RECIPIENT]
+    exec.faucet::create_fungible_asset
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
     # mint the asset; this is needed to satisfy asset preservation logic.
     # this ensures that the asset's faucet ID matches the native account's ID.
     # this is ensured because create_fungible_asset creates the asset with the native account's ID
     exec.faucet::mint
-    # => [ASSET', ASSET, tag, note_type, RECIPIENT]
-
-    # drop the asset that represents the total amount in the vault after minting
     dropw
-    # => [ASSET, tag, note_type, RECIPIENT]
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    movdn.9 movdn.9 movdn.9 movdn.9
-    # => [tag, note_type, RECIPIENT, ASSET]
-
-    # Create a new note with the asset.
+    # Add the asset to the note.
     # ---------------------------------------------------------------------------------------------
-
-    # create a note
-    exec.output_note::create
-    # => [note_idx, ASSET]
-
-    # load the ASSET and add it to the note
-    dup movdn.5 movdn.5
-    # => [ASSET, note_idx, note_idx]
 
     exec.output_note::add_asset
     # => [note_idx]
@@ -179,22 +179,21 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
 
     # this will fail if not called from a note context.
-    push.0 exec.active_note::get_assets
+    push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
 
     # Verify we have exactly one asset
     assert.err=ERR_BASIC_FUNGIBLE_BURN_WRONG_NUMBER_OF_ASSETS
     # => [dest_ptr, pad(16)]
 
-    mem_loadw_be
-    # => [ASSET, pad(16)]
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, amount], pad(16)]
+    exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault
     # ---------------------------------------------------------------------------------------------
 
-    dup.3 movdn.4
-    # => [ASSET, amount, pad(16)]
+    exec.asset::fungible_to_amount movdn.8
+    # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are
@@ -206,24 +205,21 @@ pub proc burn
     # ---------------------------------------------------------------------------------------------
 
     push.METADATA_SLOT[0..2] exec.active_account::get_item
-    # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
-    dup.4 dup.4
-    # => [token_supply, amount, token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    dup.4 dup.1
+    # => [token_supply, amount, token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
     # assert that amount <= token_supply
     lte assert.err=ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY
-    # => [token_symbol, decimals, max_supply, token_supply, amount, pad(16)]
+    # => [token_supply, max_supply, decimals, token_symbol, amount, pad(16)]
 
-    movup.3 movup.4
-    # => [amount, token_supply, token_symbol, decimals, max_supply, pad(16)]
+    movup.4
+    # => [amount, token_supply, max_supply, decimals, token_symbol, pad(16)]
 
     # compute new_token_supply = token_supply - amount
     sub
-    # => [new_token_supply, token_symbol, decimals, max_supply, pad(16)]
-
-    movdn.3
-    # => [token_symbol, decimals, max_supply, new_token_supply, pad(16)]
+    # => [new_token_supply, max_supply, decimals, token_symbol, pad(16)]
 
     # update the metadata slot with the new supply
     push.METADATA_SLOT[0..2] exec.native_account::set_item dropw

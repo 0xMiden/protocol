@@ -43,15 +43,19 @@ async fn adding_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result<(
       use mock::account
 
       begin
-          push.{FUNGIBLE_ASSET1}
-          call.account::add_asset dropw
+          push.{FUNGIBLE_ASSET_VALUE1}
+          push.{FUNGIBLE_ASSET_KEY1}
+          call.account::add_asset dropw dropw
 
-          push.{FUNGIBLE_ASSET2}
-          call.account::add_asset dropw
+          push.{FUNGIBLE_ASSET_VALUE2}
+          push.{FUNGIBLE_ASSET_KEY2}
+          call.account::add_asset dropw dropw
       end
       ",
-        FUNGIBLE_ASSET1 = Word::from(fungible_asset1),
-        FUNGIBLE_ASSET2 = Word::from(fungible_asset2)
+        FUNGIBLE_ASSET_KEY1 = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET_VALUE1 = fungible_asset1.to_value_word(),
+        FUNGIBLE_ASSET_KEY2 = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET_VALUE2 = fungible_asset2.to_value_word()
     );
 
     let builder = CodeBuilder::with_mock_libraries();
@@ -91,25 +95,37 @@ async fn removing_fungible_assets_with_lazy_loading_succeeds() -> anyhow::Result
       use mock::util
 
       begin
-          push.{FUNGIBLE_ASSET1}
+          push.{FUNGIBLE_ASSET1_VALUE}
+          push.{FUNGIBLE_ASSET1_KEY}
           call.account::remove_asset
+          # drop the excess words from the call
+          dropw dropw
           # => []
 
           # move asset to note to adhere to asset preservation rules
+          push.{FUNGIBLE_ASSET1_VALUE}
+          push.{FUNGIBLE_ASSET1_KEY}
           exec.util::create_default_note_with_asset
           # => []
 
-          push.{FUNGIBLE_ASSET2}
+          push.{FUNGIBLE_ASSET2_VALUE}
+          push.{FUNGIBLE_ASSET2_KEY}
           call.account::remove_asset
-          # => [ASSET]
+          # drop the excess words from the call
+          dropw dropw
+          # => []
 
           # move asset to note to adhere to asset preservation rules
+          push.{FUNGIBLE_ASSET2_VALUE}
+          push.{FUNGIBLE_ASSET2_KEY}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        FUNGIBLE_ASSET1 = Word::from(fungible_asset1),
-        FUNGIBLE_ASSET2 = Word::from(fungible_asset2)
+        FUNGIBLE_ASSET1_KEY = fungible_asset1.to_key_word(),
+        FUNGIBLE_ASSET1_VALUE = fungible_asset1.to_value_word(),
+        FUNGIBLE_ASSET2_KEY = fungible_asset2.to_key_word(),
+        FUNGIBLE_ASSET2_VALUE = fungible_asset2.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();
@@ -194,14 +210,14 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           push.{value0}
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           # Insert a non-existent key.
           push.{value1}
           push.{non_existent_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY, VALUE]
+          # => [slot_id_suffix, slot_id_prefix, KEY, VALUE]
           call.account::set_map_item
 
           exec.::miden::core::sys::truncate_stack
@@ -262,7 +278,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Fetch value from existing key.
           push.{existing_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY]
+          # => [slot_id_suffix, slot_id_prefix, KEY]
           call.account::get_map_item
 
           push.{existing_value}
@@ -271,7 +287,7 @@ async fn getting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
           # Fetch a non-existent key.
           push.{non_existent_key}
           push.MOCK_MAP_SLOT[0..2]
-          # => [slot_id_prefix, slot_id_suffix, KEY]
+          # => [slot_id_suffix, slot_id_prefix, KEY]
           call.account::get_map_item
 
           padw assert_eqw.err="non-existent value should be the empty word"

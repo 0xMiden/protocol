@@ -3,8 +3,9 @@
 extern crate alloc;
 
 use miden_assembly::Library;
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_core::{Felt, Word};
+use miden_protocol::vm::Program;
+use miden_assembly::serde::Deserializable;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -26,7 +27,6 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 pub mod update_ger_note;
-pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
@@ -40,7 +40,7 @@ pub use eth_types::{
     GlobalIndexError,
     MetadataHash,
 };
-pub use faucet::{AggLayerFaucet, AgglayerFaucetError, faucet_registry_key};
+pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS

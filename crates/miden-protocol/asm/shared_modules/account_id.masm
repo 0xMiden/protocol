@@ -51,11 +51,11 @@ const ACCOUNT_ID_STORAGE_MODE_INVALID_U32=0xc0 # 0b1100_0000
 
 #! Returns a boolean indicating whether the account is a fungible faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_fungible_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_fungible_faucet is a boolean indicating whether the account is a fungible faucet.
 pub proc is_fungible_faucet
     exec.id_type eq.FUNGIBLE_FAUCET_ACCOUNT
@@ -64,11 +64,11 @@ end
 
 #! Returns a boolean indicating whether the account is a non-fungible faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_non_fungible_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_non_fungible_faucet is a boolean indicating whether the account is a non-fungible faucet.
 pub proc is_non_fungible_faucet
     exec.id_type eq.NON_FUNGIBLE_FAUCET_ACCOUNT
@@ -77,43 +77,43 @@ end
 
 #! Returns a boolean indicating whether the given account_ids are equal.
 #!
-#! Inputs:  [acct_id_prefix, acct_id_suffix, other_acct_id_prefix, other_acct_id_suffix]
+#! Inputs:  [account_id_suffix, account_id_prefix, other_account_id_suffix, other_account_id_prefix]
 #! Outputs: [is_id_equal]
 #!
 #! Where:
-#! - acct_id_{prefix,suffix} are the prefix and suffix felts of an account ID.
-#! - other_acct_id_{prefix,suffix} are the prefix and suffix felts of the other account ID to
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of an account ID.
+#! - other_account_id_{suffix,prefix} are the suffix and prefix felts of the other account ID to
 #!   compare against.
 #! - is_id_equal is a boolean indicating whether the account IDs are equal.
 pub proc is_equal
     movup.2 eq
-    # => [is_prefix_equal, acct_id_suffix, other_acct_id_suffix]
+    # => [is_suffix_equal, account_id_prefix, other_account_id_prefix]
     movdn.2 eq
-    # => [is_suffix_equal, is_prefix_equal]
+    # => [is_prefix_equal, is_suffix_equal]
     and
     # => [is_id_equal]
 end
 
 #! Returns a boolean indicating whether the account is a faucet.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_faucet]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_faucet is a boolean indicating whether the account is a faucet.
 pub proc is_faucet
-    u32split drop u32and.FAUCET_ACCOUNT neq.0
+    u32split swap drop u32and.FAUCET_ACCOUNT neq.0
     # => [is_faucet]
 end
 
 #! Returns a boolean indicating whether the account is a regular updatable account.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_updatable_account]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_updatable_account is a boolean indicating whether the account is a regular updatable
 #!   account.
 pub proc is_updatable_account
@@ -123,11 +123,11 @@ end
 
 #! Returns a boolean indicating whether the account is a regular immutable account.
 #!
-#! Inputs:  [acct_id_prefix]
+#! Inputs:  [account_id_prefix]
 #! Outputs: [is_immutable_account]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
+#! - account_id_prefix is the prefix of the account ID.
 #! - is_immutable_account is a boolean indicating whether the account is a regular immutable
 #!   account.
 pub proc is_immutable_account
@@ -138,11 +138,11 @@ end
 #! Validates an account ID. Note that this does not validate anything about the account type,
 #! since any 2-bit pattern is a valid account type.
 #!
-#! Inputs:  [account_id_prefix, account_id_suffix]
+#! Inputs:  [account_id_suffix, account_id_prefix]
 #! Outputs: []
 #!
 #! Where:
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the account ID.
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the account ID.
 #!
 #! Panics if:
 #! - account_id_prefix does not contain version zero.
@@ -150,13 +150,31 @@ end
 #! - account_id_suffix does not have its most significant bit set to zero.
 #! - account_id_suffix does not have its lower 8 bits set to zero.
 pub proc validate
+    # Validate lower 8 bits of suffix are zero.
+    # ---------------------------------------------------------------------------------------------
+
+    u32split
+    # => [account_id_suffix_lo, account_id_suffix_hi, account_id_prefix]
+    u32and.0xff eq.0
+    # => [is_least_significant_byte_zero, account_id_suffix_hi, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
+    # => [account_id_suffix_hi, account_id_prefix]
+
+    # Validate most significant bit in suffix is zero.
+    # ---------------------------------------------------------------------------------------------
+
+    u32shr.31 eq.0
+    # => [is_most_significant_bit_zero, account_id_prefix]
+    assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
+    # => [account_id_prefix]
+
     # Validate version in prefix. For now only version 0 is supported.
     # ---------------------------------------------------------------------------------------------
 
     dup exec.id_version
-    # => [id_version, account_id_prefix, account_id_suffix]
+    # => [id_version, account_id_prefix]
     assertz.err=ERR_ACCOUNT_ID_UNKNOWN_VERSION
-    # => [account_id_prefix, account_id_suffix]
+    # => [account_id_prefix]
 
     # Validate storage mode in prefix.
     # ---------------------------------------------------------------------------------------------
@@ -164,30 +182,13 @@ pub proc validate
     # there are 3 valid and 1 invalid storage mode
     # instead of checking the presence of any of the valid modes, we check the absence of the
     # invalid mode
-    u32split drop
-    # => [account_id_prefix_lo, account_id_suffix]
+    u32split swap drop
+    # => [account_id_prefix_lo]
     u32and.ACCOUNT_ID_STORAGE_MODE_MASK_U32
-    # => [id_storage_mode_masked, account_id_suffix]
+    # => [id_storage_mode_masked]
     eq.ACCOUNT_ID_STORAGE_MODE_INVALID_U32
-    # => [is_storage_mode_invalid, account_id_suffix]
+    # => [is_storage_mode_invalid]
     assertz.err=ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE
-    # => [account_id_suffix]
-
-    # Validate most significant bit in suffix is zero.
-    # ---------------------------------------------------------------------------------------------
-
-    u32split
-    # => [account_id_suffix_hi, account_id_suffix_lo]
-    u32shr.31 eq.0
-    # => [is_most_significant_bit_zero, account_id_suffix_lo]
-    assert.err=ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO
-
-    # Validate lower 8 bits of suffix are zero.
-    # ---------------------------------------------------------------------------------------------
-
-    u32and.0xff eq.0
-    # => [is_least_significant_byte_zero]
-    assert.err=ERR_ACCOUNT_ID_SUFFIX_LEAST_SIGNIFICANT_BYTE_MUST_BE_ZERO
     # => []
 end
 
@@ -202,7 +203,7 @@ end
 #!   of an account ID.
 #! - account_id_suffix is the suffix of an account ID.
 pub proc shape_suffix
-    u32split swap
+    u32split
     # => [seed_digest_suffix_lo, seed_digest_suffix_hi]
 
     # clear lower 8 bits of the lo part
@@ -227,7 +228,7 @@ end
 #! - id_version is the version number of the ID.
 proc id_version
     # extract the lower 32 bits
-    u32split drop
+    u32split swap drop
     # => [account_id_prefix_lo]
 
     # mask out the version
@@ -243,13 +244,13 @@ end
 #! - FUNGIBLE_FAUCET_ACCOUNT
 #! - NON_FUNGIBLE_FAUCET_ACCOUNT
 #!
-#! Inputs:  [acct_id_prefix]
-#! Outputs: [acct_type]
+#! Inputs:  [account_id_prefix]
+#! Outputs: [account_type]
 #!
 #! Where:
-#! - acct_id_prefix is the prefix of the account ID.
-#! - acct_type is the account type.
+#! - account_id_prefix is the prefix of the account ID.
+#! - account_type is the account type.
 proc id_type
-    u32split drop u32and.ACCOUNT_ID_TYPE_MASK_U32
-    # => [acct_type]
+    u32split swap drop u32and.ACCOUNT_ID_TYPE_MASK_U32
+    # => [account_type]
 end

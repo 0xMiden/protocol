@@ -27,7 +27,7 @@ mod p2ide;
 pub use p2ide::{P2ideNote, P2ideNoteStorage};
 
 mod swap;
-pub use swap::SwapNote;
+pub use swap::{SwapNote, SwapNoteStorage};
 
 mod network_account_target;
 pub use network_account_target::{NetworkAccountTarget, NetworkAccountTargetError};
@@ -154,7 +154,7 @@ impl StandardNote {
                 // note-based authentication (checking if the note sender equals the faucet owner)
                 // to authorize minting, while basic faucets have different mint procedures that
                 // are not compatible with MINT notes.
-                interface_proc_digests.contains(&NetworkFungibleFaucet::distribute_digest())
+                interface_proc_digests.contains(&NetworkFungibleFaucet::mint_and_send_digest())
             },
             Self::BURN => {
                 // BURN notes work with both basic and network fungible faucets because both

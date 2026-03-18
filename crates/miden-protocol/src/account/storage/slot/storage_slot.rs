@@ -1,6 +1,13 @@
 use crate::Word;
 use crate::account::storage::slot::StorageSlotId;
 use crate::account::{StorageMap, StorageSlotContent, StorageSlotName, StorageSlotType};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// An individual storage slot in [`AccountStorage`](crate::account::AccountStorage).
 ///
@@ -101,23 +108,11 @@ impl StorageSlot {
     }
 }
 
-impl Ord for StorageSlot {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.name().cmp(&other.name)
-    }
-}
-
-impl PartialOrd for StorageSlot {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 // SERIALIZATION
 // ================================================================================================
 
-impl crate::utils::serde::Serializable for StorageSlot {
-    fn write_into<W: crate::utils::serde::ByteWriter>(&self, target: &mut W) {
+impl Serializable for StorageSlot {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(&self.name);
         target.write(&self.content);
     }
@@ -127,10 +122,8 @@ impl crate::utils::serde::Serializable for StorageSlot {
     }
 }
 
-impl crate::utils::serde::Deserializable for StorageSlot {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, crate::utils::serde::DeserializationError> {
+impl Deserializable for StorageSlot {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let name: StorageSlotName = source.read()?;
         let content: StorageSlotContent = source.read()?;
 

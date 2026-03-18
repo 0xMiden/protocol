@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
@@ -17,8 +16,15 @@ use miden_agglayer::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
+};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
@@ -321,10 +327,11 @@ pub async fn execute_program_with_default_host(
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();
 
-    let stack_inputs = StackInputs::new(vec![]).unwrap();
+    let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = advice_inputs.unwrap_or_default();
 
-    let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+    let processor =
+        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 

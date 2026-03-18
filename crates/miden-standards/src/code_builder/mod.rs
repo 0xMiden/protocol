@@ -111,6 +111,18 @@ impl CodeBuilder {
         }
     }
 
+    // CONFIGURATION
+    // --------------------------------------------------------------------------------------------
+
+    /// Configures the assembler to treat warning diagnostics as errors.
+    ///
+    /// When enabled, any warning emitted during compilation will be promoted to an error,
+    /// causing the compilation to fail.
+    pub fn with_warnings_as_errors(mut self, yes: bool) -> Self {
+        self.assembler = self.assembler.with_warnings_as_errors(yes);
+        self
+    }
+
     // LIBRARY MANAGEMENT
     // --------------------------------------------------------------------------------------------
 
@@ -424,7 +436,7 @@ impl CodeBuilder {
     ///
     /// [account_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_account_library
     /// [faucet_lib]: crate::testing::mock_account_code::MockAccountCodeExt::mock_faucet_library
-    /// [util_lib]: miden_protocol::testing::mock_util_lib::mock_util_library
+    /// [util_lib]: crate::testing::mock_util_lib::mock_util_library
     #[cfg(any(feature = "testing", test))]
     pub fn with_mock_libraries() -> Self {
         Self::with_mock_libraries_with_source_manager(Arc::new(DefaultSourceManager::default()))
@@ -444,7 +456,7 @@ impl CodeBuilder {
     pub fn with_mock_libraries_with_source_manager(
         source_manager: Arc<dyn SourceManagerSync>,
     ) -> Self {
-        use miden_protocol::testing::mock_util_lib::mock_util_library;
+        use crate::testing::mock_util_lib::mock_util_library;
 
         // Start with the builder linking against the transaction kernel, protocol library and
         // standards library.
@@ -693,6 +705,12 @@ mod tests {
             .context("failed to parse tx script with static and dynamic libraries")?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_code_builder_warnings_as_errors() {
+        let assembler: Assembler = CodeBuilder::default().with_warnings_as_errors(true).into();
+        assert!(assembler.warnings_as_errors());
     }
 
     #[test]

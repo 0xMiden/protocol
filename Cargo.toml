@@ -31,11 +31,6 @@ lto           = true
 inherits  = "dev"
 opt-level = 1
 
-# Avoid running the expensive debug assertion in winter-prover
-# https://github.com/facebook/winterfell/blob/cd32dce2fd4986c94516113568eefd938fafe31c/prover/src/lib.rs#L355C1-L356
-[profile.test-dev.package.winter-prover]
-debug-assertions = false
-
 [profile.bench]
 codegen-units = 1
 lto           = true
@@ -52,17 +47,16 @@ miden-tx              = { default-features = false, path = "crates/miden-tx", ve
 miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "=0.14.0-alpha.2" }
 
 # Miden dependencies
-miden-air             = { default-features = false, version = "0.20" }
-miden-assembly        = { default-features = false, version = "0.20" }
-miden-assembly-syntax = { default-features = false, version = "0.20" }
-miden-core            = { default-features = false, version = "0.20" }
-miden-core-lib        = { default-features = false, version = "0.20" }
-miden-crypto          = { default-features = false, version = "0.19" }
-miden-mast-package    = { default-features = false, version = "0.20" }
-miden-processor       = { default-features = false, version = "0.20" }
-miden-prover          = { default-features = false, version = "0.20" }
-miden-utils-sync      = { default-features = false, version = "0.20" }
-miden-verifier        = { default-features = false, version = "0.20" }
+miden-assembly        = { default-features = false, version = "0.21" }
+miden-assembly-syntax = { default-features = false, version = "0.21" }
+miden-core            = { default-features = false, version = "0.21" }
+miden-core-lib        = { default-features = false, version = "0.21" }
+miden-crypto          = { default-features = false, version = "0.22" }
+miden-mast-package    = { default-features = false, version = "0.21" }
+miden-processor       = { default-features = false, version = "0.21" }
+miden-prover          = { default-features = false, version = "0.21" }
+miden-utils-sync      = { default-features = false, version = "0.21" }
+miden-verifier        = { default-features = false, version = "0.21" }
 
 # External dependencies
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }

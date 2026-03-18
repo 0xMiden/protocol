@@ -1,7 +1,6 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_core::utils::{Deserializable, Serializable};
 use miden_core::{Felt, ZERO};
 
 use super::{Account, AccountCode, AccountId, PartialStorage};
@@ -10,7 +9,13 @@ use crate::account::{AccountHeader, validate_account_seed};
 use crate::asset::PartialVault;
 use crate::crypto::SequentialCommit;
 use crate::errors::AccountError;
-use crate::utils::serde::DeserializationError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A partial representation of an account.
 ///
@@ -209,7 +214,7 @@ impl SequentialCommit for PartialAccount {
 // ================================================================================================
 
 impl Serializable for PartialAccount {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(self.id);
         target.write(self.nonce);
         target.write(&self.code);
@@ -220,9 +225,7 @@ impl Serializable for PartialAccount {
 }
 
 impl Deserializable for PartialAccount {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_processor::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account_id = source.read()?;
         let nonce = source.read()?;
         let account_code = source.read()?;

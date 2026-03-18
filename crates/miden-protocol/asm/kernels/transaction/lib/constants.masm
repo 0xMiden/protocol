@@ -14,7 +14,7 @@ pub const MAX_ASSETS_PER_NOTE = 256
 pub const MAX_INPUT_NOTES_PER_TX = 1024
 
 # The size of the memory segment allocated to each note.
-pub const NOTE_MEM_SIZE = 2048
+pub const NOTE_MEM_SIZE = 3072
 
 # The depth of the Merkle tree used to commit to notes produced in a block.
 pub const NOTE_TREE_DEPTH = 16
@@ -29,7 +29,7 @@ pub const ACCOUNT_PROCEDURE_DATA_LENGTH = 4
 # =================================================================================================
 
 # Root of an empty Sparse Merkle Tree
-pub const EMPTY_SMT_ROOT = [15321474589252129342, 17373224439259377994, 15071539326562317628, 3312677166725950353]
+pub const EMPTY_SMT_ROOT = [11569107685829756166, 7187477731240244145, 8326334713638926095, 2239973196746300865]
 
 # Type of storage slot item in the account storage
 pub const STORAGE_SLOT_TYPE_VALUE = 0

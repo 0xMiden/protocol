@@ -1,13 +1,6 @@
 use alloc::vec::Vec;
 
 use miden_core::Word;
-use miden_core::utils::{
-    ByteReader,
-    ByteWriter,
-    Deserializable,
-    DeserializationError,
-    Serializable,
-};
 
 use crate::block::{
     BlockAccountUpdate,
@@ -18,6 +11,13 @@ use crate::block::{
 };
 use crate::note::Nullifier;
 use crate::transaction::{OrderedTransactionHeaders, OutputNote};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // BLOCK BODY
 // ================================================================================================

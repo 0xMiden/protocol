@@ -12,6 +12,7 @@ use miden_protocol::account::component::{
 };
 use miden_protocol::account::{
     AccountComponent,
+    AccountType,
     StorageMap,
     StorageMapKey,
     StorageSlot,
@@ -21,6 +22,9 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::components::multisig_library;
+
+// CONSTANTS
+// ================================================================================================
 
 static THRESHOLD_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::threshold_config")
@@ -122,19 +126,13 @@ impl AuthMultisigConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing a multisig based on ECDSA signatures.
+/// An [`AccountComponent`] implementing a multisig authentication.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
-/// per-procedure thresholds overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts, as a single approver could withhold
-///  the new state from other approvers, effectively locking them out.
-///
-/// The storage layout is:
-/// - Slot 0(value): [threshold, num_approvers, 0, 0]
-/// - Slot 1(map): A map with approver public keys (index -> pubkey)
-/// - Slot 2(map): A map with approver scheme ids (index -> scheme_id)
-/// - Slot 3(map): A map which stores executed transactions
-/// - Slot 4(map): A map which stores procedure thresholds (PROC_ROOT -> threshold)
+/// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
+/// should be used with caution for private multisig accounts, without Private State Manager (PSM),
+/// a single approver may advance state and withhold updates from other approvers, effectively
+/// locking them out.
 ///
 /// This component supports all account types.
 #[derive(Debug)]
@@ -144,7 +142,7 @@ pub struct AuthMultisig {
 
 impl AuthMultisig {
     /// The name of the component.
-    pub const NAME: &'static str = "miden::auth::multisig";
+    pub const NAME: &'static str = "miden::standards::components::auth::multisig";
 
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
@@ -239,6 +237,22 @@ impl AuthMultisig {
             ),
         )
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([
+            Self::threshold_config_slot_schema(),
+            Self::approver_public_keys_slot_schema(),
+            Self::approver_auth_scheme_slot_schema(),
+            Self::executed_transactions_slot_schema(),
+            Self::procedure_thresholds_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Multisig authentication component using hybrid signature schemes")
+            .with_storage_schema(storage_schema)
+    }
 }
 
 impl From<AuthMultisig> for AccountComponent {
@@ -294,25 +308,16 @@ impl From<AuthMultisig> for AccountComponent {
             proc_threshold_roots,
         ));
 
-        let storage_schema = StorageSchema::new([
-            AuthMultisig::threshold_config_slot_schema(),
-            AuthMultisig::approver_public_keys_slot_schema(),
-            AuthMultisig::approver_auth_scheme_slot_schema(),
-            AuthMultisig::executed_transactions_slot_schema(),
-            AuthMultisig::procedure_thresholds_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthMultisig::NAME)
-            .with_description("Multisig authentication component using hybrid signature schemes")
-            .with_supports_all_types()
-            .with_storage_schema(storage_schema);
+        let metadata = AuthMultisig::component_metadata();
 
         AccountComponent::new(multisig_library(), storage_slots, metadata).expect(
             "Multisig auth component should satisfy the requirements of a valid account component",
         )
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {
@@ -329,9 +334,9 @@ mod tests {
     #[test]
     fn test_multisig_component_setup() {
         // Create test secret keys
-        let sec_key_1 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_2 = AuthSecretKey::new_falcon512_rpo();
-        let sec_key_3 = AuthSecretKey::new_falcon512_rpo();
+        let sec_key_1 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_2 = AuthSecretKey::new_falcon512_poseidon2();
+        let sec_key_3 = AuthSecretKey::new_falcon512_poseidon2();
 
         // Create approvers list for multisig config
         let approvers = vec![

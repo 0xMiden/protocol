@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, Word};
+use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -14,6 +14,7 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
+use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
 use miden_utils_sync::LazyLock;
@@ -172,7 +173,7 @@ impl AggLayerFaucet {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerFaucet`] account.
-    pub fn bridge_account_id(faucet_account: &Account) -> Result<AccountId, AgglayerFaucetError> {
+    pub fn owner_account_id(faucet_account: &Account) -> Result<AccountId, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
@@ -180,7 +181,7 @@ impl AggLayerFaucet {
             .storage()
             .get_item(&OWNER_CONFIG_SLOT_NAME)
             .expect("should be able to read owner config slot");
-        AccountId::try_from([owner_word[3], owner_word[2]])
+        AccountId::try_from_elements(owner_word[2], owner_word[3])
             .map_err(AgglayerFaucetError::AccountIdError)
     }
 
@@ -210,7 +211,7 @@ impl AggLayerFaucet {
         let addr_bytes_vec = conversion_info_1
             .iter()
             .chain([&conversion_info_2[0]])
-            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .flat_map(|felt| u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32").to_le_bytes())
             .collect::<Vec<u8>>();
 
         Ok(EthAddressFormat::new(
@@ -236,7 +237,7 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[1].try_into().expect("origin network ID should fit into u32"))
+        Ok(conversion_info_2[1].as_canonical_u64().try_into().expect("origin network ID should fit into u32"))
     }
 
     /// Extracts the scaling factor in form of the u8 from the corresponding storage slot of the
@@ -255,7 +256,7 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[2].try_into().expect("scaling factor should fit into u8"))
+        Ok(conversion_info_2[2].as_canonical_u64().try_into().expect("scaling factor should fit into u8"))
     }
 
     // HELPER FUNCTIONS
@@ -345,12 +346,7 @@ impl From<AggLayerFaucet> for AccountComponent {
             StorageSlot::with_value(CONVERSION_INFO_2_SLOT_NAME.clone(), conversion_slot2_word);
 
         // Owner config slot: bridge account ID as the owner for MINT note authorization
-        let owner_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-        ]);
+        let owner_word = AccountIdKey::new(faucet.bridge_account_id).as_word();
         let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
 
         let agglayer_storage_slots =
@@ -375,16 +371,6 @@ pub enum AgglayerFaucetError {
     FungibleFaucetError(#[source] FungibleFaucetError),
     #[error("account ID error")]
     AccountIdError(#[source] AccountIdError),
-}
-
-// FAUCET REGISTRY HELPERS
-// ================================================================================================
-
-/// Creates a faucet registry map key from a faucet account ID.
-///
-/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
-pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
 }
 
 // FAUCET CONVERSION STORAGE HELPERS
@@ -430,9 +416,8 @@ fn agglayer_faucet_conversion_slots(
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet")
-        .with_description("AggLayer faucet component with bridge validation")
-        .with_supported_type(AccountType::FungibleFaucet);
+    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
+        .with_description("AggLayer faucet component with bridge validation");
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",

@@ -24,7 +24,7 @@ const ERR_P2IDE_TIMELOCK_HEIGHT_NOT_REACHED="failed to consume P2IDE note becaus
 #!
 #! Inputs:  [current_block_height, timelock_block_height]
 #! Outputs: [current_block_height]
-proc verify_unlocked
+proc assert_unlocked
     dup movdn.2
     # => [current_block_height, timelock_block_height, current_block_height]
 
@@ -37,7 +37,7 @@ end
 #!
 #! Checks if P2IDE reclaim is enabled and if true, if reclaim height has been reached.
 #!
-#! Inputs:  [account_id_prefix, account_id_suffix, current_block_height, reclaim_block_height]
+#! Inputs:  [account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height]
 #! Outputs: []
 #!
 #! Panics if:
@@ -47,18 +47,18 @@ end
 proc reclaim_note
     # check that the reclaim of the active note is enabled
     movup.3 dup neq.0 assert.err=ERR_P2IDE_RECLAIM_DISABLED
-    # => [reclaim_block_height, account_id_prefix, account_id_suffix, current_block_height]
+    # => [reclaim_block_height, account_id_suffix, account_id_prefix, current_block_height]
 
     # now check that sender is allowed to reclaim, reclaim block height <= current block height
     movup.3
-    # => [current_block_height, reclaim_block_height, account_id_prefix, account_id_suffix]
+    # => [current_block_height, reclaim_block_height, account_id_suffix, account_id_prefix]
 
     lte assert.err=ERR_P2IDE_RECLAIM_HEIGHT_NOT_REACHED
-    # => [account_id_prefix, account_id_suffix]
+    # => [account_id_suffix, account_id_prefix]
 
     # if active account is not the target, we need to ensure it is the sender
     exec.active_note::get_sender
-    # => [sender_account_id_prefix, sender_account_id_suffix, account_id_prefix, account_id_suffix]
+    # => [sender_account_id_suffix, sender_account_id_prefix, account_id_suffix, account_id_prefix]
 
     # ensure active account ID = sender account ID
     exec.account_id::is_equal assert.err=ERR_P2IDE_RECLAIM_ACCT_IS_NOT_SENDER
@@ -110,25 +110,28 @@ pub proc main
     eq.4 assert.err=ERR_P2IDE_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
     # => [storage_ptr]
 
-    # read the reclaim block height, timelock_block_height, and target account ID from the note storage
-    mem_loadw_be
-    # => [timelock_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
+    # read the target account ID, reclaim block height, and timelock_block_height from the note storage
+    mem_loadw_le
+    # => [target_account_id_suffix, target_account_id_prefix, reclaim_block_height, timelock_block_height]
+
+    movup.3
+    # => [timelock_block_height, target_account_id_suffix, target_account_id_prefix, reclaim_block_height]
 
     # read the current block number
     exec.tx::get_block_number
-    # => [current_block_height, timelock_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
+    # => [current_block_height, timelock_block_height, target_account_id_suffix, target_account_id_prefix, reclaim_block_height]
 
-    # fails if note is locked
-    exec.verify_unlocked
-    # => [current_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
+    # assert note is unlocked
+    exec.assert_unlocked
+    # => [current_block_height, target_account_id_suffix, target_account_id_prefix, reclaim_block_height]
 
     # get active account id
     exec.active_account::get_id dup.1 dup.1
-    # => [account_id_prefix, account_id_suffix, account_id_prefix, account_id_suffix, current_block_height, reclaim_block_height, target_account_id_prefix, target_account_id_suffix]
+    # => [account_id_suffix, account_id_prefix, account_id_suffix, account_id_prefix, current_block_height, target_account_id_suffix, target_account_id_prefix, reclaim_block_height]
 
     # determine if the active account is the target account
-    movup.7 movup.7 exec.account_id::is_equal
-    # => [is_target, account_id_prefix, account_id_suffix, current_block_height, reclaim_block_height]
+    movup.6 movup.6 exec.account_id::is_equal
+    # => [is_target, account_id_suffix, account_id_prefix, current_block_height, reclaim_block_height]
 
     if.true
         # we can safely consume the note since the active account is the target of the note

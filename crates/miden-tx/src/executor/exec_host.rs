@@ -3,15 +3,10 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_processor::{
-    AdviceMutation,
-    AsyncHost,
-    BaseHost,
-    EventError,
-    FutureMaybeSend,
-    MastForest,
-    ProcessState,
-};
+use miden_processor::advice::AdviceMutation;
+use miden_processor::event::EventError;
+use miden_processor::mast::MastForest;
+use miden_processor::{FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::account::auth::PublicKeyCommitment;
 use miden_protocol::account::{
     AccountCode,
@@ -31,7 +26,7 @@ use miden_protocol::note::{NoteMetadata, NoteRecipient, NoteScript, NoteStorage}
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    OutputNote,
+    RawOutputNote,
     TransactionAdviceInputs,
     TransactionSummary,
 };
@@ -241,7 +236,7 @@ where
                 .account_delta_tracker()
                 .vault_delta()
                 .fungible()
-                .amount(&initial_fee_asset.faucet_id())
+                .amount(&initial_fee_asset.vault_key())
                 .unwrap_or(0);
 
             // SAFETY: Initial native asset faucet ID should be a fungible faucet and amount should
@@ -304,7 +299,7 @@ where
         let smt_proof = SmtProof::from(storage_map_witness);
         let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
             smt_proof.leaf().hash(),
-            smt_proof.leaf().to_elements(),
+            smt_proof.leaf().to_elements().collect::<Vec<_>>(),
         )]));
 
         Ok(vec![merkle_store_ext, map_ext])
@@ -446,7 +441,7 @@ where
     ) -> (
         AccountDelta,
         InputNotes<InputNote>,
-        Vec<OutputNote>,
+        Vec<RawOutputNote>,
         Vec<AccountCode>,
         BTreeMap<Word, Vec<Felt>>,
         TransactionProgress,
@@ -469,10 +464,10 @@ where
 // HOST IMPLEMENTATION
 // ================================================================================================
 
-impl<STORE, AUTH> BaseHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
+impl<STORE, AUTH> Host for TransactionExecutorHost<'_, '_, STORE, AUTH>
 where
-    STORE: DataStore,
-    AUTH: TransactionAuthenticator,
+    STORE: DataStore + Sync,
+    AUTH: TransactionAuthenticator + Sync,
 {
     fn get_label_and_source_file(
         &self,
@@ -483,13 +478,7 @@ where
         let span = source_manager.location_to_span(location.clone()).unwrap_or_default();
         (span, maybe_file)
     }
-}
 
-impl<STORE, AUTH> AsyncHost for TransactionExecutorHost<'_, '_, STORE, AUTH>
-where
-    STORE: DataStore + Sync,
-    AUTH: TransactionAuthenticator + Sync,
-{
     fn get_mast_forest(&self, node_digest: &Word) -> impl FutureMaybeSend<Option<Arc<MastForest>>> {
         let mast_forest = self.base_host.get_mast_forest(node_digest);
         async move { mast_forest }
@@ -497,7 +486,7 @@ where
 
     fn on_event(
         &mut self,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let core_lib_event_result = self.base_host.handle_core_lib_events(process);
 
@@ -717,7 +706,7 @@ fn asset_witness_to_advice_mutation(asset_witness: AssetWitness) -> [AdviceMutat
     let smt_proof = SmtProof::from(asset_witness);
     let map_ext = AdviceMutation::extend_map(AdviceMap::from_iter([(
         smt_proof.leaf().hash(),
-        smt_proof.leaf().to_elements(),
+        smt_proof.leaf().to_elements().collect::<Vec<_>>(),
     )]));
 
     [merkle_store_ext, map_ext]

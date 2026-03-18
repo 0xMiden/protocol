@@ -1,8 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use miden_core::FieldElement;
-
 use crate::account::component::StorageSchema;
 use crate::account::{
     Account,
@@ -198,7 +196,8 @@ impl AccountBuilder {
     /// - Authentication component is missing.
     /// - Multiple authentication procedures are found.
     /// - The number of [`StorageSlot`](crate::account::StorageSlot)s of all components exceeds 255.
-    /// - [`MastForest::merge`](miden_processor::MastForest::merge) fails on the given components.
+    /// - [`MastForest::merge`](miden_processor::mast::MastForest::merge) fails on the given
+    ///   components.
     /// - If duplicate assets were added to the builder (only under the `testing` feature).
     /// - If the vault is not empty on new accounts (only under the `testing` feature).
     pub fn build(mut self) -> Result<Account, AccountError> {
@@ -294,8 +293,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use miden_assembly::{Assembler, Library};
-    use miden_core::FieldElement;
-    use miden_processor::MastNodeExt;
+    use miden_core::mast::MastNodeExt;
 
     use super::*;
     use crate::account::component::AccountComponentMetadata;
@@ -346,7 +344,7 @@ mod tests {
             value[0] = Felt::new(custom.slot0);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component1").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component1", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY1.clone(),
                 vec![StorageSlot::with_value(CUSTOM_COMPONENT1_SLOT_NAME.clone(), value)],
@@ -368,7 +366,7 @@ mod tests {
             value1[3] = Felt::new(custom.slot1);
 
             let metadata =
-                AccountComponentMetadata::new("test::custom_component2").with_supports_all_types();
+                AccountComponentMetadata::new("test::custom_component2", AccountType::all());
             AccountComponent::new(
                 CUSTOM_LIBRARY2.clone(),
                 vec![

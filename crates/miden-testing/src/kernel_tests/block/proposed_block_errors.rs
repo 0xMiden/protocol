@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::vec::Vec;
 
 use assert_matches::assert_matches;
-use miden_processor::crypto::MerklePath;
+use miden_processor::crypto::merkle::MerklePath;
 use miden_protocol::MAX_BATCHES_PER_BLOCK;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, BlockNumber, ProposedBlock};

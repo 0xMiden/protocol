@@ -41,17 +41,15 @@ itertools   = { default-features = false, features = ["use_alloc"], version = "0
 rand        = { features = ["os_rng", "small_rng"], workspace = true }
 rand_chacha = { workspace = true }
 thiserror   = { workspace = true }
-winterfell  = { version = "0.13" }
 
 [dev-dependencies]
-anyhow            = { features = ["backtrace", "std"], workspace = true }
-assert_matches    = { workspace = true }
-hex               = { version = "0.4" }
-miden-crypto      = { workspace = true }
-miden-protocol    = { features = ["std"], workspace = true }
-primitive-types   = { workspace = true }
-rstest            = { workspace = true }
-serde             = { features = ["derive"], workspace = true }
-serde_json        = { features = ["arbitrary_precision"], version = "1.0" }
-tokio             = { features = ["macros", "rt"], workspace = true }
-winter-rand-utils = { version = "0.13" }
+anyhow          = { features = ["backtrace", "std"], workspace = true }
+assert_matches  = { workspace = true }
+hex             = { version = "0.4" }
+miden-crypto    = { workspace = true }
+miden-protocol  = { features = ["std"], workspace = true }
+primitive-types = { workspace = true }
+rstest          = { workspace = true }
+serde           = { features = ["derive"], workspace = true }
+serde_json      = { features = ["arbitrary_precision"], version = "1.0" }
+tokio           = { features = ["macros", "rt"], workspace = true }
