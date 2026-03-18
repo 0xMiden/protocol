@@ -261,21 +261,22 @@ end
 # REMOVE ASSET
 # =================================================================================================
 
-#! Splits ASSET_VALUE off the existing asset in the vault associated with the ASSET_KEY.
+#! Splits ASSET_VALUE off the existing asset in the vault associated with the ASSET_KEY
+#! and returns the remaining asset value.
 #!
 #! For instance, if ASSET_KEY points to a fungible asset with amount 100, and ASSET_VALUE has
-#! amount 30, then a fungible asset with amount 70 remains in the vault.
+#! amount 30, then a fungible asset with amount 70 remains in the vault and is returned.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the fungible asset to remove from the vault.
-#! - ASSET_VALUE is the fungible asset that was removed from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the fungible asset remaining in the vault after removal.
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #!
 #! Locals:
-#! - 0..4: ASSET_VALUE
+#! - 0..4: REMAINING_ASSET_VALUE
 #!
 #! Panics if:
 #! - the amount of the asset in the vault is less than the amount to be removed.
@@ -291,10 +292,6 @@ pub proc remove_fungible_asset
     # => [PEEKED_ASSET_VALUE, ASSET_VALUE, ASSET_KEY, vault_root_ptr]
 
     movdnw.2
-    # => [ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
-
-    # store ASSET_VALUE so we can return it later
-    loc_storew_le.0
     # => [ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     dupw.2 swapw
@@ -313,6 +310,10 @@ pub proc remove_fungible_asset
     # If is_new_amount_zero EMPTY_WORD remains.
     # If !is_new_amount_zero NEW_ASSET_VALUE remains.
     cdropw
+    # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
+
+    # store remaining value so we can return it later
+    loc_storew_le.0
     # => [EMPTY_WORD_OR_NEW_ASSET_VALUE, ASSET_KEY, PEEKED_ASSET_VALUE, vault_root_ptr]
 
     dup.12 padw movup.4 mem_loadw_le
@@ -335,20 +336,23 @@ pub proc remove_fungible_asset
     # => [NEW_VAULT_ROOT]
 
     loc_loadw_le.0
-    # => [ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE]
 end
 
-#! Remove the specified non-fungible asset from the vault.
+#! Remove the specified non-fungible asset from the vault and return the remaining asset value.
+#!
+#! Since non-fungible assets are either fully present or absent, the remaining value after
+#! removal is always EMPTY_WORD.
 #!
 #! Note that the ASSET_VALUE is only needed to check against the asset that was removed from the
 #! vault.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the non-fungible asset to remove from the vault.
-#! - ASSET_VALUE is the non-fungible asset that was removed from the vault.
+#! - REMAINING_ASSET_VALUE is always EMPTY_WORD (nothing remains after removing a non-fungible asset).
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #!
 #! Panics if:
@@ -372,16 +376,21 @@ pub proc remove_non_fungible_asset
     # update the vault root
     movup.8 mem_storew_le dropw
     # => [ASSET_VALUE]
+
+    # replace ASSET_VALUE with EMPTY_WORD (nothing remains after non-fungible removal)
+    padw swapw dropw
+    # => [REMAINING_ASSET_VALUE]
 end
 
-#! Remove the specified asset from the vault.
+#! Remove the specified asset from the vault and return the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, vault_root_ptr]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #! - vault_root_ptr is a pointer to the memory location at which the vault root is stored.
 #!
 #! Panics if:
@@ -396,9 +405,9 @@ pub proc remove_asset
     # remove the asset from the asset vault
     if.true
         exec.remove_fungible_asset
-        # => [ASSET_VALUE]
+        # => [REMAINING_ASSET_VALUE]
     else
         exec.remove_non_fungible_asset
-        # => [ASSET_VALUE]
+        # => [REMAINING_ASSET_VALUE]
     end
 end

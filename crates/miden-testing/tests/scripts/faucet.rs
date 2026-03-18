@@ -298,10 +298,7 @@ async fn prove_burning_fungible_asset_on_existing_faucet_succeeds() -> anyhow::R
             # => []
 
             call.::miden::standards::faucets::basic_fungible::burn
-            # => [ASSET_VALUE]
-
-            # truncate the stack
-            dropw
+            # => [pad(16)]
         end
         ";
 
@@ -364,10 +361,7 @@ async fn faucet_burn_fungible_asset_fails_amount_exceeds_token_supply() -> anyho
             # => []
 
             call.::miden::standards::faucets::basic_fungible::burn
-            # => [ASSET_VALUE]
-
-            # truncate the stack
-            dropw
+            # => [pad(16)]
         end
         ";
 
