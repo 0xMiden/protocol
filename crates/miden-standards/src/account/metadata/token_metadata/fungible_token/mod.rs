@@ -16,57 +16,37 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::{Felt, Word};
+use thiserror::Error;
 
-use super::FungibleFaucetError;
+use super::{TokenMetadata, TokenName};
 use crate::account::components::fungible_token_metadata_library;
-use crate::account::encoding::{FixedWidthString, FixedWidthStringError};
-use crate::account::metadata::{self, FieldBytesError, NameUtf8Error, TokenMetadata};
+use crate::account::faucets::FungibleFaucetError;
+use crate::account::metadata;
+use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
-// TOKEN NAME
+pub mod builder;
+pub mod symbol;
+
+pub use builder::FungibleTokenMetadataBuilder;
+use symbol::TOKEN_SYMBOL_TYPE;
+
+// FIELD TYPES
 // ================================================================================================
 
-/// Token display name (max 32 bytes UTF-8), stored in 2 Words.
-///
-/// The maximum is intentionally capped at 32 bytes even though the 2-Word encoding could
-/// hold up to 55 bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct TokenName(FixedWidthString<2>);
+/// Maximum length of a metadata field (description, logo_uri, external_link) in bytes.
+/// 7 Words = 28 felts × 7 bytes = 196 byte buffer − 1 length byte = 195 bytes.
+pub(crate) const FIELD_MAX_BYTES: usize = 195;
 
-impl TokenName {
-    /// Maximum byte length for a token name (capped at 32, below the 55-byte capacity).
-    pub const MAX_BYTES: usize = metadata::NAME_UTF8_MAX_BYTES;
-
-    /// Creates a token name from a UTF-8 string (at most 32 bytes).
-    pub fn new(s: &str) -> Result<Self, NameUtf8Error> {
-        if s.len() > Self::MAX_BYTES {
-            return Err(NameUtf8Error::TooLong(s.len()));
-        }
-        Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
-    }
-
-    /// Returns the name as a string slice.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    /// Encodes the name into 2 Words for storage.
-    pub fn to_words(&self) -> Vec<Word> {
-        self.0.to_words()
-    }
-
-    /// Decodes a token name from a 2-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, NameUtf8Error> {
-        let inner =
-            FixedWidthString::<2>::try_from_words(words).map_err(|_| NameUtf8Error::InvalidUtf8)?;
-        if inner.as_str().len() > Self::MAX_BYTES {
-            return Err(NameUtf8Error::TooLong(inner.as_str().len()));
-        }
-        Ok(Self(inner))
-    }
+/// Errors when encoding or decoding metadata fields.
+#[derive(Debug, Clone, Error)]
+pub enum FieldBytesError {
+    /// Field exceeds the maximum of 195 bytes.
+    #[error("field must be at most 195 bytes, got {0}")]
+    TooLong(usize),
+    /// Decoded bytes are not valid UTF-8.
+    #[error("field is not valid UTF-8")]
+    InvalidUtf8,
 }
-
-// DESCRIPTION
-// ================================================================================================
 
 /// Token description (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,7 +54,7 @@ pub struct Description(FixedWidthString<7>);
 
 impl Description {
     /// Maximum byte length for a description (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
+    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
 
     /// Creates a description from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
@@ -102,16 +82,13 @@ impl Description {
     }
 }
 
-// LOGO URI
-// ================================================================================================
-
 /// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogoURI(FixedWidthString<7>);
 
 impl LogoURI {
     /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
+    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
 
     /// Creates a logo URI from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
@@ -139,16 +116,13 @@ impl LogoURI {
     }
 }
 
-// EXTERNAL LINK
-// ================================================================================================
-
 /// Token external link (max 195 bytes UTF-8), stored in 7 Words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalLink(FixedWidthString<7>);
 
 impl ExternalLink {
     /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = metadata::FIELD_MAX_BYTES;
+    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
 
     /// Creates an external link from a UTF-8 string.
     pub fn new(s: &str) -> Result<Self, FieldBytesError> {
@@ -176,151 +150,8 @@ impl ExternalLink {
     }
 }
 
-// TOKEN METADATA
+// FUNGIBLE TOKEN METADATA
 // ================================================================================================
-
-/// Token metadata for fungible faucet accounts.
-///
-/// This struct encapsulates the metadata associated with a fungible token faucet:
-/// - `token_supply`: The current amount of tokens issued by the faucet.
-/// - `max_supply`: The maximum amount of tokens that can be issued.
-/// - `decimals`: The number of decimal places for token amounts.
-/// - `symbol`: The token symbol.
-///
-/// The metadata is stored in a single storage slot as:
-/// `[token_supply, max_supply, decimals, symbol]`
-///
-/// `name` and optional `description`/`logo_uri`/`external_link` are stored in separate
-/// storage slots (slots 2–25). All fields are serialized into the component's storage
-/// via [`storage_slots`](Self::storage_slots) when converting to an [`AccountComponent`].
-/// The schema type for token symbols.
-const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
-
-/// Builder for [`FungibleTokenMetadata`] to avoid unwieldy optional arguments.
-///
-/// Required fields are set in [`Self::new`]; optional fields and token supply
-/// can be set via chainable methods. Token supply defaults to zero.
-///
-/// # Example
-///
-/// ```
-/// # use miden_protocol::asset::TokenSymbol;
-/// # use miden_protocol::Felt;
-/// # use miden_standards::account::faucets::{
-/// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
-/// # };
-/// let name = TokenName::new("My Token").unwrap();
-/// let symbol = TokenSymbol::new("MTK").unwrap();
-/// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, Felt::new(1_000_000))
-///     .token_supply(Felt::new(100))
-///     .description(Description::new("A test token").unwrap())
-///     .logo_uri(LogoURI::new("https://example.com/logo.png").unwrap())
-///     .build()
-///     .unwrap();
-/// ```
-#[derive(Debug, Clone)]
-pub struct FungibleTokenMetadataBuilder {
-    name: TokenName,
-    symbol: TokenSymbol,
-    decimals: u8,
-    max_supply: Felt,
-    token_supply: Felt,
-    description: Option<Description>,
-    logo_uri: Option<LogoURI>,
-    external_link: Option<ExternalLink>,
-    is_description_mutable: bool,
-    is_logo_uri_mutable: bool,
-    is_external_link_mutable: bool,
-    is_max_supply_mutable: bool,
-}
-
-impl FungibleTokenMetadataBuilder {
-    /// Creates a new builder with required fields. Token supply defaults to zero.
-    pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: Felt) -> Self {
-        Self {
-            name,
-            symbol,
-            decimals,
-            max_supply,
-            token_supply: Felt::ZERO,
-            description: None,
-            logo_uri: None,
-            external_link: None,
-            is_description_mutable: false,
-            is_logo_uri_mutable: false,
-            is_external_link_mutable: false,
-            is_max_supply_mutable: false,
-        }
-    }
-
-    /// Sets the initial token supply (default is zero).
-    pub fn token_supply(mut self, token_supply: Felt) -> Self {
-        self.token_supply = token_supply;
-        self
-    }
-
-    /// Sets the optional description.
-    pub fn description(mut self, description: Description) -> Self {
-        self.description = Some(description);
-        self
-    }
-
-    /// Sets the optional logo URI.
-    pub fn logo_uri(mut self, logo_uri: LogoURI) -> Self {
-        self.logo_uri = Some(logo_uri);
-        self
-    }
-
-    /// Sets the optional external link.
-    pub fn external_link(mut self, external_link: ExternalLink) -> Self {
-        self.external_link = Some(external_link);
-        self
-    }
-
-    /// Sets whether the description can be updated by the owner.
-    pub fn description_mutable(mut self, mutable: bool) -> Self {
-        self.is_description_mutable = mutable;
-        self
-    }
-
-    /// Sets whether the logo URI can be updated by the owner.
-    pub fn logo_uri_mutable(mut self, mutable: bool) -> Self {
-        self.is_logo_uri_mutable = mutable;
-        self
-    }
-
-    /// Sets whether the external link can be updated by the owner.
-    pub fn external_link_mutable(mut self, mutable: bool) -> Self {
-        self.is_external_link_mutable = mutable;
-        self
-    }
-
-    /// Sets whether the max supply can be updated by the owner.
-    pub fn max_supply_mutable(mut self, mutable: bool) -> Self {
-        self.is_max_supply_mutable = mutable;
-        self
-    }
-
-    /// Builds [`FungibleTokenMetadata`].
-    pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
-        let mut meta = FungibleTokenMetadata::with_supply(
-            self.symbol,
-            self.decimals,
-            self.max_supply,
-            self.token_supply,
-            self.name,
-            self.description,
-            self.logo_uri,
-            self.external_link,
-        )?;
-        meta = meta
-            .with_description_mutable(self.is_description_mutable)
-            .with_logo_uri_mutable(self.is_logo_uri_mutable)
-            .with_external_link_mutable(self.is_external_link_mutable)
-            .with_max_supply_mutable(self.is_max_supply_mutable);
-        Ok(meta)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct FungibleTokenMetadata {
@@ -672,6 +503,7 @@ mod tests {
     use miden_protocol::{Felt, Word};
 
     use super::*;
+    use crate::account::metadata::{Description, ExternalLink, LogoURI};
 
     #[test]
     fn token_metadata_new() {

@@ -97,6 +97,15 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
+// Initialize the Fungible Token Metadata library only once.
+static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/faucets/fungible_token_metadata.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
+});
+
 // Initialize the Mint Policy Owner Controlled library only once.
 static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
@@ -117,17 +126,6 @@ static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(||
         .expect("Shipped Mint Policy Auth Controlled library is well-formed")
 });
 
-// METADATA LIBRARIES
-// ================================================================================================
-
-// Initialize the Fungible Token Metadata library only once.
-static FUNGIBLE_TOKEN_METADATA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/faucets/fungible_token_metadata.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Fungible Token Metadata library is well-formed")
-});
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()

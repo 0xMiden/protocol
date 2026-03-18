@@ -48,8 +48,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use miden_standards::account::metadata::TokenMetadata;
-//! use miden_standards::account::faucets::{TokenName, Description, LogoURI};
+//! use miden_standards::account::metadata::{TokenMetadata, TokenName, Description, LogoURI};
 //!
 //! let info = TokenMetadata::new()
 //!     .with_name(TokenName::new("My Token").unwrap())
@@ -64,7 +63,7 @@
 //! ```
 
 mod schema_commitment;
-mod token_metadata;
+pub mod token_metadata;
 
 use miden_protocol::account::StorageSlotName;
 use miden_protocol::utils::sync::LazyLock;
@@ -74,7 +73,15 @@ pub use schema_commitment::{
     SCHEMA_COMMITMENT_SLOT_NAME,
 };
 use thiserror::Error;
-pub use token_metadata::TokenMetadata;
+pub use token_metadata::fungible_token::{
+    Description,
+    ExternalLink,
+    FieldBytesError,
+    FungibleTokenMetadata,
+    FungibleTokenMetadataBuilder,
+    LogoURI,
+};
+pub use token_metadata::{TokenMetadata, TokenName};
 
 // CONSTANTS — canonical layout: slots 0–22
 // ================================================================================================
@@ -88,9 +95,7 @@ pub(crate) static TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new
 /// Token name (2 Words = 8 felts), split across 2 slots.
 ///
 /// The encoding is not specified; the value is opaque word data. For human-readable names,
-/// use [`TokenName::new`](crate::account::faucets::TokenName::new) /
-/// [`TokenName::to_words`](crate::account::faucets::TokenName::to_words) /
-/// [`TokenName::try_from_words`](crate::account::faucets::TokenName::try_from_words).
+/// use [`TokenName::new`] / [`TokenName::to_words`] / [`TokenName::try_from_words`].
 pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
     [
         StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
@@ -121,21 +126,6 @@ pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::
     StorageSlotName::new("miden::standards::metadata::mutability_config")
         .expect("storage slot name should be valid")
 });
-
-/// Maximum length of a metadata field (description, logo_uri, external_link) in bytes.
-/// 7 Words = 28 felts × 7 bytes = 196 byte buffer − 1 length byte = 195 bytes.
-pub(crate) const FIELD_MAX_BYTES: usize = 195;
-
-/// Errors when encoding or decoding metadata fields.
-#[derive(Debug, Clone, Error)]
-pub enum FieldBytesError {
-    /// Field exceeds the maximum of 195 bytes.
-    #[error("field must be at most 195 bytes, got {0}")]
-    TooLong(usize),
-    /// Decoded bytes are not valid UTF-8.
-    #[error("field is not valid UTF-8")]
-    InvalidUtf8,
-}
 
 /// Description (7 Words = 28 felts), split across 7 slots.
 pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {

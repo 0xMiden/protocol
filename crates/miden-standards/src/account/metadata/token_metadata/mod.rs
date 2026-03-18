@@ -17,9 +17,57 @@ use super::{
     EXTERNAL_LINK_SLOTS,
     LOGO_URI_SLOTS,
     NAME_SLOTS,
+    NameUtf8Error,
     mutability_config_slot,
 };
-use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
+use crate::utils::string::FixedWidthString;
+
+pub mod fungible_token;
+
+use fungible_token::{Description, ExternalLink, LogoURI};
+
+// TOKEN NAME
+// ================================================================================================
+
+/// Token display name (max 32 bytes UTF-8), stored in 2 Words.
+///
+/// The maximum is intentionally capped at 32 bytes even though the 2-Word encoding could
+/// hold up to 55 bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TokenName(FixedWidthString<2>);
+
+impl TokenName {
+    /// Maximum byte length for a token name (capped at 32, below the 55-byte capacity).
+    pub const MAX_BYTES: usize = super::NAME_UTF8_MAX_BYTES;
+
+    /// Creates a token name from a UTF-8 string (at most 32 bytes).
+    pub fn new(s: &str) -> Result<Self, NameUtf8Error> {
+        if s.len() > Self::MAX_BYTES {
+            return Err(NameUtf8Error::TooLong(s.len()));
+        }
+        Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
+    }
+
+    /// Returns the name as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Encodes the name into 2 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
+    }
+
+    /// Decodes a token name from a 2-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, NameUtf8Error> {
+        let inner =
+            FixedWidthString::<2>::try_from_words(words).map_err(|_| NameUtf8Error::InvalidUtf8)?;
+        if inner.as_str().len() > Self::MAX_BYTES {
+            return Err(NameUtf8Error::TooLong(inner.as_str().len()));
+        }
+        Ok(Self(inner))
+    }
+}
 
 // TOKEN METADATA
 // ================================================================================================
@@ -38,7 +86,7 @@ use crate::account::faucets::{Description, ExternalLink, LogoURI, TokenName};
 /// - Slot 10–16: logo_uri (7 Words)
 /// - Slot 17–23: external_link (7 Words)
 ///
-/// [`FungibleTokenMetadata`]: crate::account::faucets::FungibleTokenMetadata
+/// [`FungibleTokenMetadata`]: crate::account::metadata::FungibleTokenMetadata
 /// [`name_chunk_0_slot`]: TokenMetadata::name_chunk_0_slot
 #[derive(Debug, Clone, Default)]
 pub struct TokenMetadata {
