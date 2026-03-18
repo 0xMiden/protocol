@@ -4,10 +4,17 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_core::{Felt, ONE, Word, ZERO};
-use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountComponent, AccountId, AccountType, StorageSlot, StorageSlotName};
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -238,9 +245,9 @@ impl AggLayerBridge {
     /// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
     /// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
     ///
-    /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo`, followed by the 4 elements of `root_hi`. For an empty/uninitialized tree, all elements are
-    /// TODO (check if reverse storage order in docs is correct)
-    /// zeros.
+    /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo`, followed by the 4
+    /// elements of `root_hi`. For an empty/uninitialized tree, all elements are TODO (check if
+    /// reverse storage order in docs is correct) zeros.
     ///
     /// # Errors
     ///
@@ -302,9 +309,11 @@ impl AggLayerBridge {
 
         let cgi_chain_hash_bytes = cgi_chain_hash_lo
             .iter()
-            .rev()
-            .chain(cgi_chain_hash_hi.iter().rev())
-            .flat_map(|felt| (felt.as_canonical_u64()).to_le_bytes())
+            .chain(cgi_chain_hash_hi.iter())
+            .flat_map(|felt| {
+                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
+                    .to_le_bytes()
+            })
             .collect::<Vec<u8>>();
 
         Ok(Keccak256Output::new(
@@ -398,8 +407,7 @@ impl AggLayerBridge {
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = 
-        AccountIdKey::new(bridge.bridge_admin_id).as_word();
+        let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
         let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
 
         let bridge_storage_slots = vec![

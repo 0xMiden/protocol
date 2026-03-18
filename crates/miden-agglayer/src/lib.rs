@@ -3,9 +3,8 @@
 extern crate alloc;
 
 use miden_assembly::Library;
-use miden_core::{Felt, Word};
-use miden_protocol::vm::Program;
 use miden_assembly::serde::Deserializable;
+use miden_core::{Felt, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -16,6 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
+use miden_protocol::vm::Program;
 use miden_standards::account::auth::NoAuth;
 use miden_utils_sync::LazyLock;
 

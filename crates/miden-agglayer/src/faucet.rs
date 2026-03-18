@@ -211,7 +211,11 @@ impl AggLayerFaucet {
         let addr_bytes_vec = conversion_info_1
             .iter()
             .chain([&conversion_info_2[0]])
-            .flat_map(|felt| u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32").to_le_bytes())
+            .flat_map(|felt| {
+                u32::try_from(felt.as_canonical_u64())
+                    .expect("Felt value does not fit into u32")
+                    .to_le_bytes()
+            })
             .collect::<Vec<u8>>();
 
         Ok(EthAddressFormat::new(
@@ -237,7 +241,10 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[1].as_canonical_u64().try_into().expect("origin network ID should fit into u32"))
+        Ok(conversion_info_2[1]
+            .as_canonical_u64()
+            .try_into()
+            .expect("origin network ID should fit into u32"))
     }
 
     /// Extracts the scaling factor in form of the u8 from the corresponding storage slot of the
@@ -256,7 +263,10 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[2].as_canonical_u64().try_into().expect("scaling factor should fit into u8"))
+        Ok(conversion_info_2[2]
+            .as_canonical_u64()
+            .try_into()
+            .expect("scaling factor should fit into u8"))
     }
 
     // HELPER FUNCTIONS

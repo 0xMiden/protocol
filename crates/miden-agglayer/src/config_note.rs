@@ -9,8 +9,8 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, Word};
 use miden_assembly::serde::Deserializable;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -98,7 +98,8 @@ impl ConfigAggBridgeNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix]
+        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_suffix,
+        // faucet_id_prefix]
         let addr_elements = origin_token_address.to_elements();
         let mut storage_values: Vec<Felt> = addr_elements;
         storage_values.push(faucet_account_id.suffix());
