@@ -40,7 +40,7 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 
 static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::bridge::ger")
-        .expect("bridge storage slot name should be valid")
+        .expect("GER storage slot name should be valid")
 });
 static LET_FRONTIER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
