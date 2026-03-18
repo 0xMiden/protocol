@@ -107,9 +107,9 @@ pub proc bridge_out
 
     # --- 1. Validate faucet registration and convert asset via FPI ---
     loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
-    # => [ASSET, pad(12)]
+    # => [ASSET(4), pad(12)]
     exec.convert_asset
-    # => [AMOUNT_U256_0, AMOUNT_U256_1, origin_addr(5), origin_network, pad(12)]
+    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(12)]
 
     # --- 2. Write all leaf data fields to memory (except metadata hash) ---
     # Store scaled AMOUNT (8 felts)
@@ -153,23 +153,23 @@ pub proc bridge_out
 
     # --- 3. Fetch metadata hash from the faucet via FPI and write to memory ---
     procref.agglayer_faucet::get_metadata_hash
-    # => [PROC_MAST_ROOT, pad(16)]
+    # => [PROC_MAST_ROOT(4), pad(16)]
 
     # Reload asset to extract faucet ID for the FPI call
     padw loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
-    # => [ASSET, PROC_MAST_ROOT, pad(16)]
+    # => [ASSET(4), PROC_MAST_ROOT(4), pad(16)]
     # ASSET layout: [faucet_id_prefix, faucet_id_suffix, 0, amount]
 
     # Extract faucet ID, drop padding and amount
     movup.2 drop movup.2 drop
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT, pad(16)]
+    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
 
     exec.tx::execute_foreign_procedure
-    # => [METADATA_HASH_LO, METADATA_HASH_HI, pad(8)]
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
 
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
-    # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), metadata_hash_ptr, pad(8)]
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
@@ -195,7 +195,7 @@ pub proc bridge_out
 
     # --- 5. Create BURN output note for ASSET ---
     loc_loadw_be.BRIDGE_OUT_BURN_ASSET_LOC
-    # => [ASSET, pad(12)]
+    # => [ASSET(4), pad(12)]
     exec.create_burn_note
     # => [pad(16)]
 end
