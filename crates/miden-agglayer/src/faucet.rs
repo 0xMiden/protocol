@@ -14,8 +14,8 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::TokenSymbol;
-use miden_protocol::block::account_tree::AccountIdKey;
 use miden_protocol::errors::AccountIdError;
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
@@ -56,11 +56,6 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("miden::agglayer::faucet::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
-static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::ownable::owner_config")
-        .expect("owner config storage slot name should be valid")
-});
-
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
 /// It reexports the procedures from `miden::agglayer::faucet`. When linking against this
@@ -77,11 +72,17 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
-/// - [`Self::owner_config_slot`]: Stores the owner account ID (bridge) for MINT note authorization.
+///
+/// ## Required Companion Components
+///
+/// This component re-exports `network_fungible::mint_and_send`, which requires:
+/// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
+/// - [`miden_standards::account::mint_policies::OwnerControlled`]: Provides mint policy management.
+///
+/// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
-    bridge_account_id: AccountId,
     origin_token_address: EthAddressFormat,
     origin_network: u32,
     scale: u8,
@@ -103,7 +104,6 @@ impl AggLayerFaucet {
         decimals: u8,
         max_supply: Felt,
         token_supply: Felt,
-        bridge_account_id: AccountId,
         origin_token_address: EthAddressFormat,
         origin_network: u32,
         scale: u8,
@@ -111,7 +111,6 @@ impl AggLayerFaucet {
         let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply)?;
         Ok(Self {
             metadata,
-            bridge_account_id,
             origin_token_address,
             origin_network,
             scale,
@@ -145,9 +144,10 @@ impl AggLayerFaucet {
         &CONVERSION_INFO_2_SLOT_NAME
     }
 
-    /// Storage slot name for the owner account ID (bridge) used by `ownable::verify_owner`.
+    /// Storage slot name for the owner account ID (bridge), provided by the
+    /// [`Ownable2Step`] companion component.
     pub fn owner_config_slot() -> &'static StorageSlotName {
-        &OWNER_CONFIG_SLOT_NAME
+        Ownable2Step::slot_name()
     }
 
     /// Extracts the token metadata from the corresponding storage slot of the provided account.
@@ -167,7 +167,8 @@ impl AggLayerFaucet {
         TokenMetadata::try_from(metadata_word).map_err(AgglayerFaucetError::FungibleFaucetError)
     }
 
-    /// Extracts the bridge account ID from the owner config storage slot of the provided account.
+    /// Extracts the bridge account ID from the [`Ownable2Step`] owner config storage slot
+    /// of the provided account.
     ///
     /// # Errors
     ///
@@ -177,12 +178,11 @@ impl AggLayerFaucet {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
-        let owner_word = faucet_account
-            .storage()
-            .get_item(&OWNER_CONFIG_SLOT_NAME)
-            .expect("should be able to read owner config slot");
-        AccountId::try_from_elements(owner_word[2], owner_word[3])
-            .map_err(AgglayerFaucetError::AccountIdError)
+        let ownership = Ownable2Step::try_from_storage(faucet_account.storage())
+            .map_err(AgglayerFaucetError::Ownable2StepError)?;
+        ownership
+            .owner()
+            .ok_or(AgglayerFaucetError::OwnershipRenounced)
     }
 
     /// Extracts the origin token address from the corresponding storage slot of the provided
@@ -333,11 +333,7 @@ impl AggLayerFaucet {
 
     /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
     fn slot_names() -> Vec<&'static StorageSlotName> {
-        vec![
-            &*CONVERSION_INFO_1_SLOT_NAME,
-            &*CONVERSION_INFO_2_SLOT_NAME,
-            &*OWNER_CONFIG_SLOT_NAME,
-        ]
+        vec![&*CONVERSION_INFO_1_SLOT_NAME, &*CONVERSION_INFO_2_SLOT_NAME]
     }
 }
 
@@ -355,12 +351,7 @@ impl From<AggLayerFaucet> for AccountComponent {
         let conversion_slot2 =
             StorageSlot::with_value(CONVERSION_INFO_2_SLOT_NAME.clone(), conversion_slot2_word);
 
-        // Owner config slot: bridge account ID as the owner for MINT note authorization
-        let owner_word = AccountIdKey::new(faucet.bridge_account_id).as_word();
-        let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
-
-        let agglayer_storage_slots =
-            vec![metadata_slot, conversion_slot1, conversion_slot2, owner_slot];
+        let agglayer_storage_slots = vec![metadata_slot, conversion_slot1, conversion_slot2];
         agglayer_faucet_component(agglayer_storage_slots)
     }
 }
@@ -381,6 +372,10 @@ pub enum AgglayerFaucetError {
     FungibleFaucetError(#[source] FungibleFaucetError),
     #[error("account ID error")]
     AccountIdError(#[source] AccountIdError),
+    #[error("ownable2step error")]
+    Ownable2StepError(#[source] miden_standards::account::access::Ownable2StepError),
+    #[error("faucet ownership has been renounced")]
+    OwnershipRenounced,
 }
 
 // FAUCET CONVERSION STORAGE HELPERS
