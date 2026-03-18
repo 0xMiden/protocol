@@ -2,8 +2,8 @@
 //!
 //! [`TokenMetadata`] is a builder-pattern struct used to manage name and optional fields
 //! (description, logo_uri, external_link) with their mutability flags in fixed value slots.
-//! It is intended to be embedded inside [`FungibleTokenMetadata`] rather than used as a
-//! standalone [`AccountComponent`].
+//! It is intended to be embedded inside [`fungible_token::FungibleTokenMetadata`] rather than used as a
+//! standalone component.
 //!
 //! Ownership is handled by the `Ownable2Step` component.
 

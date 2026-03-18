@@ -403,7 +403,7 @@ impl TryFrom<Word> for FungibleTokenMetadata {
     ///
     /// **Note:** The name is set to an empty string and optional fields (description,
     /// logo_uri, external_link) are `None`, because these are stored in separate
-    /// storage slots (via [`TokenMetadata`](crate::account::metadata::TokenMetadata)),
+    /// storage slots (via [`super::TokenMetadata`]),
     /// not in the metadata Word itself.
     fn try_from(word: Word) -> Result<Self, Self::Error> {
         let [token_supply, max_supply, decimals, token_symbol] = *word;
