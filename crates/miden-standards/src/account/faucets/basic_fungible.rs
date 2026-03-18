@@ -171,7 +171,7 @@ impl BasicFungibleFaucet {
     }
 
     /// Returns the symbol of the faucet.
-    pub fn symbol(&self) -> TokenSymbol {
+    pub fn symbol(&self) -> &TokenSymbol {
         self.metadata.symbol()
     }
 
@@ -205,6 +205,16 @@ impl BasicFungibleFaucet {
         *BASIC_FUNGIBLE_FAUCET_BURN
     }
 
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new([Self::metadata_slot_schema()])
+            .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, [AccountType::FungibleFaucet])
+            .with_description("Basic fungible faucet component for minting and burning tokens")
+            .with_storage_schema(storage_schema)
+    }
+
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -223,14 +233,7 @@ impl BasicFungibleFaucet {
 impl From<BasicFungibleFaucet> for AccountComponent {
     fn from(faucet: BasicFungibleFaucet) -> Self {
         let storage_slot = faucet.metadata.into();
-
-        let storage_schema = StorageSchema::new([BasicFungibleFaucet::metadata_slot_schema()])
-            .expect("storage schema should be valid");
-
-        let metadata =
-            AccountComponentMetadata::new(BasicFungibleFaucet::NAME, [AccountType::FungibleFaucet])
-                .with_description("Basic fungible faucet component for minting and burning tokens")
-                .with_storage_schema(storage_schema);
+        let metadata = BasicFungibleFaucet::component_metadata();
 
         AccountComponent::new(basic_fungible_faucet_library(), vec![storage_slot], metadata)
             .expect("basic fungible faucet component should satisfy the requirements of a valid account component")
@@ -364,9 +367,10 @@ mod tests {
         let decimals = 2u8;
         let storage_mode = AccountStorageMode::Private;
 
+        let token_symbol_felt = token_symbol.as_element();
         let faucet_account = create_basic_fungible_faucet(
             init_seed,
-            token_symbol,
+            token_symbol.clone(),
             decimals,
             max_supply,
             storage_mode,
@@ -407,7 +411,7 @@ mod tests {
         // Storage layout: [token_supply, max_supply, decimals, symbol]
         assert_eq!(
             faucet_account.storage().get_item(BasicFungibleFaucet::metadata_slot()).unwrap(),
-            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol.into()].into()
+            [Felt::ZERO, Felt::new(123), Felt::new(2), token_symbol_felt].into()
         );
 
         assert!(faucet_account.is_faucet());
@@ -416,7 +420,7 @@ mod tests {
 
         // Verify the faucet can be extracted and has correct metadata
         let faucet_component = BasicFungibleFaucet::try_from(faucet_account.clone()).unwrap();
-        assert_eq!(faucet_component.symbol(), token_symbol);
+        assert_eq!(faucet_component.symbol(), &token_symbol);
         assert_eq!(faucet_component.decimals(), decimals);
         assert_eq!(faucet_component.max_supply(), max_supply);
         assert_eq!(faucet_component.token_supply(), Felt::ZERO);
@@ -434,7 +438,7 @@ mod tests {
         let faucet_account = AccountBuilder::new(mock_seed)
             .account_type(AccountType::FungibleFaucet)
             .with_component(
-                BasicFungibleFaucet::new(token_symbol, 10, Felt::new(100))
+                BasicFungibleFaucet::new(token_symbol.clone(), 10, Felt::new(100))
                     .expect("failed to create a fungible faucet component"),
             )
             .with_auth_component(AuthSingleSig::new(
@@ -446,7 +450,7 @@ mod tests {
 
         let basic_ff = BasicFungibleFaucet::try_from(faucet_account)
             .expect("basic fungible faucet creation failed");
-        assert_eq!(basic_ff.symbol(), token_symbol);
+        assert_eq!(basic_ff.symbol(), &token_symbol);
         assert_eq!(basic_ff.decimals(), 10);
         assert_eq!(basic_ff.max_supply(), Felt::new(100));
         assert_eq!(basic_ff.token_supply(), Felt::ZERO);

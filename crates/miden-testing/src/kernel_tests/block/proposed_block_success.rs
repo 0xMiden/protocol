@@ -171,7 +171,7 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
 
     assert_matches!(account_update.details(), AccountUpdateDetails::Delta(delta) => {
         assert_eq!(delta.vault().fungible().num_assets(), 1);
-        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().faucet_id()).unwrap(), 300);
+        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().vault_key()).unwrap(), 300);
     });
 
     Ok(())

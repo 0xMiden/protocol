@@ -484,12 +484,7 @@ impl FeltType for TokenSymbol {
                 value.as_canonical_u64()
             ))
         })?;
-        token.to_string().map_err(|err| {
-            SchemaTypeError::ConversionError(format!(
-                "failed to display token_symbol value `{}`: {err}",
-                value.as_canonical_u64()
-            ))
-        })
+        Ok(token.to_string())
     }
 }
 
