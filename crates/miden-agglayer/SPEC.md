@@ -52,7 +52,6 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 
 - `bridge_config::register_faucet`
 - `bridge_config::update_ger`
-- `bridge_in::verify_leaf_bridge`
 - `bridge_out::bridge_out`
 
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
@@ -107,6 +106,7 @@ Asserts the note sender matches the GER manager stored in
 `KEY -> [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
 
 #### `bridge_in::verify_leaf_bridge`
+TODO ([#2624](https://github.com/0xMiden/protocol/issues/2624)): document new CLAIM note flow.
 
 | | |
 |-|-|

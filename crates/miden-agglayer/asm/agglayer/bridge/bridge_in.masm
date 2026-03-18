@@ -143,6 +143,92 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 # PUBLIC INTERFACE
 # =================================================================================================
 
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
+#!
+#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
+#! looks up the faucet account ID from the token registry using the origin token address from
+#! the leaf data, and creates a MINT note targeting the aggfaucet.
+#!
+#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
+#! See `write_mint_note_storage` for the full storage layout.
+#!
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Advice map: {
+#!   PROOF_DATA_KEY => [
+#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
+#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
+#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
+#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
+#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
+#!   ],
+#!   LEAF_DATA_KEY => [
+#!     leafType[1],                     // Leaf type (1 felt, uint32)
+#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!     originTokenAddress[5],           // Origin token address (5 felts)
+#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!     destinationAddress[5],           // Destination address (5 felts)
+#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!     padding[3],                      // padding (3 felts)
+#!   ],
+#! }
+#!
+#! Panics if:
+#! - the Merkle proof validation fails.
+#! - the origin token address is not registered in the bridge's token registry.
+#!
+#! Invocation: call
+@locals(2) # 0: dest_prefix, 1: dest_suffix
+pub proc claim
+    # Write output note faucet amount to memory
+    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+
+    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
+    exec.claim_batch_pipe_double_words
+    # => [pad(16)]
+
+    exec.get_destination_account_id_data
+    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
+    # => [pad(16)]
+
+    # Validate CLAIM data
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(12)]
+
+    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+
+    exec.verify_leaf_bridge
+    # => [pad(16)]
+
+    # Look up the faucet account ID from the origin token address
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    dup.1 dup.1
+    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    # Verify faucet_mint_amount matches the leaf data amount
+    exec.verify_claim_amount
+    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    # Build MINT output note targeting the aggfaucet
+    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
+    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
+
+    exec.build_mint_output_note
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
 #!
 #! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
@@ -153,7 +239,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
 #!
 #! Inputs:
-#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY]
 #!   Advice map: {
 #!     PROOF_DATA_KEY => [
 #!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -174,34 +260,30 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!     ],
 #!   }
 #!
-#! Outputs: [pad(16)]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
-#! Invocation: call
-@locals(8) # leaf value
-pub proc verify_leaf_bridge
+#! Invocation: exec
+proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(8)]
-
-    movupw.3 dropw
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY]
 
     # duplicate the leaf value to use it later during the CGI chain hash computation
     movupw.2 dupw.2 dupw.2
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8], pad(4)]
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8]]
 
     # delegate proof verification
     exec.verify_leaf
-    # => [LEAF_VALUE[8], pad(8)]
+    # => [LEAF_VALUE[8]]
 
     # update the CGI chain hash
     exec.update_cgi_chain_hash
-    # => [pad(16)]
+    # => []
 end
 
 #! Assert the global index is valid for a mainnet deposit.
@@ -324,93 +406,6 @@ pub proc verify_merkle_proof(
     movdn.8 exec.word::eq and
     # => [verification_flag]
 end
-
-#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
-#!
-#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
-#! looks up the faucet account ID from the token registry using the origin token address from
-#! the leaf data, and creates a MINT note targeting the aggfaucet.
-#!
-#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
-#! See `write_mint_note_storage` for the full storage layout.
-#!
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
-#! Outputs: [pad(16)]
-#!
-#! Advice map: {
-#!   PROOF_DATA_KEY => [
-#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
-#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
-#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
-#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
-#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
-#!   ],
-#!   LEAF_DATA_KEY => [
-#!     leafType[1],                     // Leaf type (1 felt, uint32)
-#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
-#!     originTokenAddress[5],           // Origin token address (5 felts)
-#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
-#!     destinationAddress[5],           // Destination address (5 felts)
-#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
-#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!     padding[3],                      // padding (3 felts)
-#!   ],
-#! }
-#!
-#! Panics if:
-#! - the Merkle proof validation fails.
-#! - the origin token address is not registered in the bridge's token registry.
-#!
-#! Invocation: call
-@locals(2) # 0: dest_prefix, 1: dest_suffix
-pub proc claim
-    # Write output note faucet amount to memory
-    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
-
-    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
-    exec.claim_batch_pipe_double_words
-    # => [pad(16)]
-
-    exec.get_destination_account_id_data
-    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [pad(16)]
-
-    # Validate CLAIM data
-    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, pad(12)]
-
-    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
-
-    exec.verify_leaf_bridge
-    # => [pad(16)]
-
-    # Look up the faucet account ID from the origin token address
-    exec.get_origin_token_address
-    # => [origin_token_addr(5), pad(16)]
-
-    exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    # Verify faucet_mint_amount matches the leaf data amount
-    exec.verify_claim_amount
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
-    
-    # Build MINT output note targeting the aggfaucet
-    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
-    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    exec.build_mint_output_note
-    # => [pad(16)]
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
 #! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
 #! scaled down by the faucet's scale factor.
 #!
