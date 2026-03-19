@@ -111,7 +111,7 @@ fn compile_agglayer_lib(
     let standards_lib = miden_standards::StandardsLib::default();
     assembler.link_static_library(standards_lib)?;
 
-    let agglayer_lib = assembler.assemble_library_from_dir(source_dir, "miden::agglayer")?;
+    let agglayer_lib = assembler.assemble_library_from_dir(source_dir, "agglayer")?;
 
     let output_file = target_dir.join("agglayer").with_extension(Library::LIBRARY_EXTENSION);
     agglayer_lib.write_to_file(output_file).into_diagnostic()?;
@@ -382,7 +382,7 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
     // remove once CANONICAL_ZEROS advice map is available
     zero_constants.push_str(
         "
-use ::miden::agglayer::common::utils::mem_store_double_word
+use ::agglayer::common::utils::mem_store_double_word
     
 #! Inputs:  [zeros_ptr]
 #! Outputs: []

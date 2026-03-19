@@ -39,75 +39,92 @@ include!(concat!(env!("OUT_DIR"), "/agglayer_constants.rs"));
 // AGGLAYER BRIDGE STRUCT
 // ================================================================================================
 
-static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::ger")
-        .expect("bridge storage slot name should be valid")
+// bridge config
+// ------------------------------------------------------------------------------------------------
+
+static BRIDGE_ADMIN_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::admin_account_id")
+        .expect("bridge admin account ID storage slot name should be valid")
 });
+static GER_MANAGER_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::ger_manager_account_id")
+        .expect("GER manager account ID storage slot name should be valid")
+});
+static GER_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::ger_map")
+        .expect("GER map storage slot name should be valid")
+});
+static FAUCET_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::faucet_registry_map")
+        .expect("faucet registry map storage slot name should be valid")
+});
+static TOKEN_REGISTRY_MAP_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::token_registry_map")
+        .expect("token registry map storage slot name should be valid")
+});
+
+// bridge in
+// ------------------------------------------------------------------------------------------------
+
+static CLAIM_NULLIFIERS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::claim_nullifiers")
+        .expect("claim nullifiers storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::cgi_chain_hash_lo")
+        .expect("CGI chain hash_lo storage slot name should be valid")
+});
+static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::bridge::cgi_chain_hash_hi")
+        .expect("CGI chain hash_hi storage slot name should be valid")
+});
+
+// bridge out
+// ------------------------------------------------------------------------------------------------
+
 static LET_FRONTIER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let").expect("LET storage slot name should be valid")
+    StorageSlotName::new("agglayer::bridge::let_frontier")
+        .expect("LET frontier storage slot name should be valid")
 });
 static LET_ROOT_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_lo")
+    StorageSlotName::new("agglayer::bridge::let_root_lo")
         .expect("LET root_lo storage slot name should be valid")
 });
 static LET_ROOT_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::root_hi")
+    StorageSlotName::new("agglayer::bridge::let_root_hi")
         .expect("LET root_hi storage slot name should be valid")
 });
 static LET_NUM_LEAVES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::let::num_leaves")
+    StorageSlotName::new("agglayer::bridge::let_num_leaves")
         .expect("LET num_leaves storage slot name should be valid")
-});
-static FAUCET_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::faucet_registry")
-        .expect("faucet registry storage slot name should be valid")
-});
-static TOKEN_REGISTRY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::token_registry")
-        .expect("token registry storage slot name should be valid")
-});
-static BRIDGE_ADMIN_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::admin")
-        .expect("bridge admin storage slot name should be valid")
-});
-static GER_MANAGER_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::ger_manager")
-        .expect("GER manager storage slot name should be valid")
-});
-static CGI_CHAIN_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_lo")
-        .expect("CGI chain hash lo storage slot name should be valid")
-});
-static CGI_CHAIN_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::bridge::cgi_chain_hash_hi")
-        .expect("CGI chain hash hi storage slot name should be valid")
 });
 
 /// An [`AccountComponent`] implementing the AggLayer Bridge.
 ///
-/// It reexports the procedures from `miden::agglayer::bridge`. When linking against this
+/// It reexports the procedures from `agglayer::bridge`. When linking against this
 /// component, the `agglayer` library must be available to the assembler.
 /// The procedures of this component are:
 /// - `register_faucet`, which registers a faucet in the bridge.
 /// - `update_ger`, which injects a new GER into the storage map.
-/// - `verify_leaf_bridge`, which verifies a deposit leaf against one of the stored GERs.
 /// - `bridge_out`, which bridges an asset out of Miden to the destination network.
 /// - `claim`, which validates a claim against the AggLayer bridge and creates a MINT note for the
 ///   AggFaucet.
 ///
 /// ## Storage Layout
 ///
+/// - [`Self::bridge_admin_id_slot_name`]: Stores the bridge admin account ID.
+/// - [`Self::ger_manager_id_slot_name`]: Stores the GER manager account ID.
 /// - [`Self::ger_map_slot_name`]: Stores the GERs.
+/// - [`Self::faucet_registry_map_slot_name`]: Stores the faucet registry map.
+/// - [`Self::token_registry_map_slot_name`]: Stores the token address → faucet ID map.
+/// - [`Self::claim_nullifiers_slot_name`]: Stores the CLAIM note nullifiers map (RPO(leaf_index,
+///   source_bridge_network) → \[1, 0, 0, 0\]).
+/// - [`Self::cgi_chain_hash_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
+/// - [`Self::cgi_chain_hash_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 /// - [`Self::let_frontier_slot_name`]: Stores the Local Exit Tree (LET) frontier.
-/// - [`Self::ler_lo_slot_name`]: Stores the lower 32 bits of the LET root.
-/// - [`Self::ler_hi_slot_name`]: Stores the upper 32 bits of the LET root.
+/// - [`Self::let_root_lo_slot_name`]: Stores the lower 32 bits of the LET root.
+/// - [`Self::let_root_hi_slot_name`]: Stores the upper 32 bits of the LET root.
 /// - [`Self::let_num_leaves_slot_name`]: Stores the number of leaves in the LET frontier.
-/// - [`Self::faucet_registry_slot_name`]: Stores the faucet registry map.
-/// - [`Self::token_registry_slot_name`]: Stores the token address → faucet ID map.
-/// - [`Self::bridge_admin_slot_name`]: Stores the bridge admin account ID.
-/// - [`Self::ger_manager_slot_name`]: Stores the GER manager account ID.
-/// - [`Self::cgi_lo_slot_name`]: Stores the lower 128 bits of the CGI chain hash.
-/// - [`Self::cgi_hi_slot_name`]: Stores the upper 128 bits of the CGI chain hash.
 ///
 /// The bridge starts with an empty faucet registry; faucets are registered at runtime via
 /// CONFIG_AGG_BRIDGE notes.
@@ -134,10 +151,51 @@ impl AggLayerBridge {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
+    // --- bridge config ----
+
+    /// Storage slot name for the bridge admin account ID.
+    pub fn bridge_admin_id_slot_name() -> &'static StorageSlotName {
+        &BRIDGE_ADMIN_ID_SLOT_NAME
+    }
+
+    /// Storage slot name for the GER manager account ID.
+    pub fn ger_manager_id_slot_name() -> &'static StorageSlotName {
+        &GER_MANAGER_ID_SLOT_NAME
+    }
+
     /// Storage slot name for the GERs map.
     pub fn ger_map_slot_name() -> &'static StorageSlotName {
         &GER_MAP_SLOT_NAME
     }
+
+    /// Storage slot name for the faucet registry map.
+    pub fn faucet_registry_map_slot_name() -> &'static StorageSlotName {
+        &FAUCET_REGISTRY_MAP_SLOT_NAME
+    }
+
+    /// Storage slot name for the token registry map.
+    pub fn token_registry_map_slot_name() -> &'static StorageSlotName {
+        &TOKEN_REGISTRY_MAP_SLOT_NAME
+    }
+
+    // --- bridge in --------
+
+    /// Storage slot name for the CLAIM note nullifiers map.
+    pub fn claim_nullifiers_slot_name() -> &'static StorageSlotName {
+        &CLAIM_NULLIFIERS_SLOT_NAME
+    }
+
+    /// Storage slot name for the lower 128 bits of the CGI chain hash.
+    pub fn cgi_chain_hash_lo_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the upper 128 bits of the CGI chain hash.
+    pub fn cgi_chain_hash_hi_slot_name() -> &'static StorageSlotName {
+        &CGI_CHAIN_HASH_HI_SLOT_NAME
+    }
+
+    // --- bridge out -------
 
     /// Storage slot name for the Local Exit Tree (LET) frontier.
     pub fn let_frontier_slot_name() -> &'static StorageSlotName {
@@ -145,48 +203,18 @@ impl AggLayerBridge {
     }
 
     /// Storage slot name for the lower 32 bits of the LET root.
-    pub fn ler_lo_slot_name() -> &'static StorageSlotName {
+    pub fn let_root_lo_slot_name() -> &'static StorageSlotName {
         &LET_ROOT_LO_SLOT_NAME
     }
 
     /// Storage slot name for the upper 32 bits of the LET root.
-    pub fn ler_hi_slot_name() -> &'static StorageSlotName {
+    pub fn let_root_hi_slot_name() -> &'static StorageSlotName {
         &LET_ROOT_HI_SLOT_NAME
     }
 
     /// Storage slot name for the number of leaves in the LET frontier.
     pub fn let_num_leaves_slot_name() -> &'static StorageSlotName {
         &LET_NUM_LEAVES_SLOT_NAME
-    }
-
-    /// Storage slot name for the faucet registry map.
-    pub fn faucet_registry_slot_name() -> &'static StorageSlotName {
-        &FAUCET_REGISTRY_SLOT_NAME
-    }
-
-    /// Storage slot name for the token registry map.
-    pub fn token_registry_slot_name() -> &'static StorageSlotName {
-        &TOKEN_REGISTRY_SLOT_NAME
-    }
-
-    /// Storage slot name for the bridge admin account ID.
-    pub fn bridge_admin_slot_name() -> &'static StorageSlotName {
-        &BRIDGE_ADMIN_SLOT_NAME
-    }
-
-    /// Storage slot name for the GER manager account ID.
-    pub fn ger_manager_slot_name() -> &'static StorageSlotName {
-        &GER_MANAGER_SLOT_NAME
-    }
-
-    /// Storage slot name for the lower 128 bits of the CGI chain hash.
-    pub fn cgi_lo_slot_name() -> &'static StorageSlotName {
-        &CGI_CHAIN_HASH_LO_SLOT_NAME
-    }
-
-    /// Storage slot name for the upper 128 bits of the CGI chain hash.
-    pub fn cgi_hi_slot_name() -> &'static StorageSlotName {
-        &CGI_CHAIN_HASH_HI_SLOT_NAME
     }
 
     /// Returns a boolean indicating whether the provided GER is present in storage of the provided
@@ -233,8 +261,8 @@ impl AggLayerBridge {
     /// Reads the Local Exit Root (double-word) from the bridge account's storage.
     ///
     /// The Local Exit Root is stored in two dedicated value slots:
-    /// - [`AggLayerBridge::ler_lo_slot_name`] — low word of the root
-    /// - [`AggLayerBridge::ler_hi_slot_name`] — high word of the root
+    /// - [`AggLayerBridge::let_root_lo_slot_name`] — low word of the root
+    /// - [`AggLayerBridge::let_root_hi_slot_name`] — high word of the root
     ///
     /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
     /// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
@@ -249,8 +277,8 @@ impl AggLayerBridge {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(account)?;
 
-        let root_lo_slot = AggLayerBridge::ler_lo_slot_name();
-        let root_hi_slot = AggLayerBridge::ler_hi_slot_name();
+        let root_lo_slot = AggLayerBridge::let_root_lo_slot_name();
+        let root_hi_slot = AggLayerBridge::let_root_hi_slot_name();
 
         let root_lo = account
             .storage()
@@ -292,11 +320,11 @@ impl AggLayerBridge {
 
         let cgi_chain_hash_lo = bridge_account
             .storage()
-            .get_item(AggLayerBridge::cgi_lo_slot_name())
+            .get_item(AggLayerBridge::cgi_chain_hash_lo_slot_name())
             .expect("failed to get CGI hash chain lo slot");
         let cgi_chain_hash_hi = bridge_account
             .storage()
-            .get_item(AggLayerBridge::cgi_hi_slot_name())
+            .get_item(AggLayerBridge::cgi_chain_hash_hi_slot_name())
             .expect("failed to get CGI hash chain hi slot");
 
         let cgi_chain_hash_bytes = cgi_chain_hash_lo
@@ -384,12 +412,13 @@ impl AggLayerBridge {
             &*LET_ROOT_LO_SLOT_NAME,
             &*LET_ROOT_HI_SLOT_NAME,
             &*LET_NUM_LEAVES_SLOT_NAME,
-            &*FAUCET_REGISTRY_SLOT_NAME,
-            &*TOKEN_REGISTRY_SLOT_NAME,
-            &*BRIDGE_ADMIN_SLOT_NAME,
-            &*GER_MANAGER_SLOT_NAME,
+            &*FAUCET_REGISTRY_MAP_SLOT_NAME,
+            &*TOKEN_REGISTRY_MAP_SLOT_NAME,
+            &*BRIDGE_ADMIN_ID_SLOT_NAME,
+            &*GER_MANAGER_ID_SLOT_NAME,
             &*CGI_CHAIN_HASH_LO_SLOT_NAME,
             &*CGI_CHAIN_HASH_HI_SLOT_NAME,
+            &*CLAIM_NULLIFIERS_SLOT_NAME,
         ]
     }
 }
@@ -415,12 +444,13 @@ impl From<AggLayerBridge> for AccountComponent {
             StorageSlot::with_value(LET_ROOT_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_ROOT_HI_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(LET_NUM_LEAVES_SLOT_NAME.clone(), Word::empty()),
-            StorageSlot::with_empty_map(FAUCET_REGISTRY_SLOT_NAME.clone()),
-            StorageSlot::with_empty_map(TOKEN_REGISTRY_SLOT_NAME.clone()),
-            StorageSlot::with_value(BRIDGE_ADMIN_SLOT_NAME.clone(), bridge_admin_word),
-            StorageSlot::with_value(GER_MANAGER_SLOT_NAME.clone(), ger_manager_word),
+            StorageSlot::with_empty_map(FAUCET_REGISTRY_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_empty_map(TOKEN_REGISTRY_MAP_SLOT_NAME.clone()),
+            StorageSlot::with_value(BRIDGE_ADMIN_ID_SLOT_NAME.clone(), bridge_admin_word),
+            StorageSlot::with_value(GER_MANAGER_ID_SLOT_NAME.clone(), ger_manager_word),
             StorageSlot::with_value(CGI_CHAIN_HASH_LO_SLOT_NAME.clone(), Word::empty()),
             StorageSlot::with_value(CGI_CHAIN_HASH_HI_SLOT_NAME.clone(), Word::empty()),
+            StorageSlot::with_empty_map(CLAIM_NULLIFIERS_SLOT_NAME.clone()),
         ];
         bridge_component(bridge_storage_slots)
     }
