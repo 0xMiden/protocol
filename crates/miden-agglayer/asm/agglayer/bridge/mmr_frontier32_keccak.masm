@@ -1,7 +1,7 @@
 use miden::core::crypto::hashes::keccak256
-use ::miden::agglayer::bridge::canonical_zeros::load_zeros_to_memory
-use ::miden::agglayer::common::utils::mem_store_double_word
-use ::miden::agglayer::common::utils::mem_load_double_word
+use ::agglayer::bridge::canonical_zeros::load_zeros_to_memory
+use ::agglayer::common::utils::mem_store_double_word
+use ::agglayer::common::utils::mem_load_double_word
 
 # An MMR Frontier is a data structure based on an MMR, which combines some features of an MMR and an
 # SMT.

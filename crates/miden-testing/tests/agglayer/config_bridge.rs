@@ -1,6 +1,11 @@
 extern crate alloc;
 
-use miden_agglayer::{AggLayerBridge, ConfigAggBridgeNote, create_existing_bridge_account};
+use miden_agglayer::{
+    AggLayerBridge,
+    ConfigAggBridgeNote,
+    EthAddressFormat,
+    create_existing_bridge_account,
+};
 use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
@@ -48,7 +53,7 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // Verify the faucet is NOT in the registry before registration
-    let registry_slot_name = AggLayerBridge::faucet_registry_slot_name();
+    let registry_slot_name = AggLayerBridge::faucet_registry_map_slot_name();
     let key = AccountIdKey::new(faucet_to_register).as_word();
     let value_before = bridge_account.storage().get_map_item(registry_slot_name, key)?;
     assert_eq!(
@@ -58,8 +63,12 @@ async fn test_config_agg_bridge_registers_faucet() -> anyhow::Result<()> {
     );
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
+    // Use a dummy origin token address for this test
+    let origin_token_address =
+        EthAddressFormat::from_hex("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
     let config_note = ConfigAggBridgeNote::create(
         faucet_to_register,
+        &origin_token_address,
         bridge_admin.id(),
         bridge_account.id(),
         builder.rng_mut(),

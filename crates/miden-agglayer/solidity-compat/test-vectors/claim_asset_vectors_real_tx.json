@@ -1,5 +1,6 @@
 {
   "amount": 100000000000000,
+  "claimed_global_index_hash_chain": "0xd2bb2f0231ee9ea0c88e89049bea6dbcf7dd96a1015ca9e66ab38ef3c8dc928e",
   "destination_address": "0x00000000b0E79c68cafC54802726C6F102Cca300",
   "destination_network": 20,
   "global_exit_root": "0xe1cbfbde30bd598ee9aa2ac913b60d53e3297e51ed138bf86c500dd7d2391e7d",

@@ -15,9 +15,7 @@ use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
-use miden_crypto::hash::poseidon2::Poseidon2;
 use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
-use miden_protocol::Word;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::transaction::RawOutputNote;
@@ -100,24 +98,8 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
-    // The MASM loads GER_LOWER and GER_UPPER from note storage via mem_loadw_le,
-    // then calls poseidon2::merge which computes hash(GER_LOWER || GER_UPPER).
-    let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
-    let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
-
-    let ger_hash = Poseidon2::merge(&[ger_lower, ger_upper]);
-    // TODO: use a helper getter on AggLayerBridge once available
-    // (see https://github.com/0xMiden/protocol/issues/2548)
-    let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
-    let stored_value = updated_bridge_account
-        .storage()
-        .get_map_item(ger_storage_slot, ger_hash)
-        .expect("GER hash should be stored in the map");
-
-    // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
-    let expected_value: Word = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
-    assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
+    let is_registered = AggLayerBridge::is_ger_registered(ger, updated_bridge_account)?;
+    assert!(is_registered, "GER was not registered in the bridge account");
 
     Ok(())
 }
@@ -170,7 +152,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::bridge::bridge_in
+                use agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -253,7 +235,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::bridge_in
+            use agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots
