@@ -3,6 +3,7 @@ extern crate alloc;
 use miden_agglayer::{
     AggLayerFaucet,
     EthAddressFormat,
+    MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -41,6 +42,8 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let origin_network = 42u32;
     let scale = 6u8;
 
+    let metadata_hash = MetadataHash::from_token_info(token_symbol, token_symbol, decimals);
+
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         token_symbol,
@@ -51,6 +54,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         &origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     );
 
     assert_eq!(AggLayerFaucet::owner_account_id(&faucet)?, bridge_account.id());

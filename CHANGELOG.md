@@ -42,6 +42,8 @@
 - Added `Package` support in `MockChainBuilder` & `NoteScript` ([#2502](https://github.com/0xMiden/protocol/pull/2502)).
 - Added `ProgramExecutor` hooks to support DAP and other custom transaction program executors ([#2574](https://github.com/0xMiden/protocol/pull/2574)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
+
 
 ### Changes
 

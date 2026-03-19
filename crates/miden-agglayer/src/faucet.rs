@@ -57,6 +57,14 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
     StorageSlotName::new("agglayer::faucet::conversion_info_2")
         .expect("conversion info 2 storage slot name should be valid")
 });
+static METADATA_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::faucet::metadata_hash_lo")
+        .expect("metadata hash lo storage slot name should be valid")
+});
+static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("agglayer::faucet::metadata_hash_hi")
+        .expect("metadata hash hi storage slot name should be valid")
+});
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
 /// It reexports the procedures from `agglayer::faucet`. When linking against this
@@ -73,6 +81,8 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
 /// - [`Self::conversion_info_1_slot`]: Stores the first 4 felts of the origin token address.
 /// - [`Self::conversion_info_2_slot`]: Stores the remaining 5th felt of the origin token address +
 ///   origin network + scale.
+/// - [`Self::metadata_hash_lo_slot`]: Stores the first 4 u32 felts of the metadata hash.
+/// - [`Self::metadata_hash_hi_slot`]: Stores the last 4 u32 felts of the metadata hash.
 ///
 /// ## Required Companion Components
 ///
@@ -87,6 +97,7 @@ pub struct AggLayerFaucet {
     origin_token_address: EthAddressFormat,
     origin_network: u32,
     scale: u8,
+    metadata_hash: MetadataHash,
 }
 
 impl AggLayerFaucet {
@@ -100,6 +111,7 @@ impl AggLayerFaucet {
     /// - The decimals parameter exceeds maximum value of [`TokenMetadata::MAX_DECIMALS`].
     /// - The max supply exceeds maximum possible amount for a fungible asset.
     /// - The token supply exceeds the max supply.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         symbol: TokenSymbol,
         decimals: u8,
@@ -108,6 +120,7 @@ impl AggLayerFaucet {
         origin_token_address: EthAddressFormat,
         origin_network: u32,
         scale: u8,
+        metadata_hash: MetadataHash,
     ) -> Result<Self, FungibleFaucetError> {
         let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply)?;
         Ok(Self {
@@ -115,6 +128,7 @@ impl AggLayerFaucet {
             origin_token_address,
             origin_network,
             scale,
+            metadata_hash,
         })
     }
 
@@ -145,6 +159,15 @@ impl AggLayerFaucet {
         &CONVERSION_INFO_2_SLOT_NAME
     }
 
+    /// Storage slot name for the first 4 u32 felts of the metadata hash.
+    pub fn metadata_hash_lo_slot() -> &'static StorageSlotName {
+        &METADATA_HASH_LO_SLOT_NAME
+    }
+
+    /// Storage slot name for the last 4 u32 felts of the metadata hash.
+    pub fn metadata_hash_hi_slot() -> &'static StorageSlotName {
+        &METADATA_HASH_HI_SLOT_NAME
+    }
     /// Storage slot name for the owner account ID (bridge), provided by the
     /// [`Ownable2Step`] companion component.
     pub fn owner_config_slot() -> &'static StorageSlotName {
@@ -335,6 +358,8 @@ impl AggLayerFaucet {
         vec![
             &*CONVERSION_INFO_1_SLOT_NAME,
             &*CONVERSION_INFO_2_SLOT_NAME,
+            &*METADATA_HASH_LO_SLOT_NAME,
+            &*METADATA_HASH_HI_SLOT_NAME,
             TokenMetadata::metadata_slot(),
             Ownable2Step::slot_name(),
             OwnerControlled::active_policy_proc_root_slot(),
@@ -358,7 +383,23 @@ impl From<AggLayerFaucet> for AccountComponent {
         let conversion_slot2 =
             StorageSlot::with_value(CONVERSION_INFO_2_SLOT_NAME.clone(), conversion_slot2_word);
 
-        let agglayer_storage_slots = vec![metadata_slot, conversion_slot1, conversion_slot2];
+        let hash_elements = faucet.metadata_hash.to_elements();
+        let metadata_hash_lo = StorageSlot::with_value(
+            METADATA_HASH_LO_SLOT_NAME.clone(),
+            Word::new([hash_elements[0], hash_elements[1], hash_elements[2], hash_elements[3]]),
+        );
+        let metadata_hash_hi = StorageSlot::with_value(
+            METADATA_HASH_HI_SLOT_NAME.clone(),
+            Word::new([hash_elements[4], hash_elements[5], hash_elements[6], hash_elements[7]]),
+        );
+
+        let agglayer_storage_slots = vec![
+            metadata_slot,
+            conversion_slot1,
+            conversion_slot2,
+            metadata_hash_lo,
+            metadata_hash_hi,
+        ];
         agglayer_faucet_component(agglayer_storage_slots)
     }
 }
