@@ -198,7 +198,7 @@ pub proc burn
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are
     # fungible)
-    exec.faucet::burn dropw
+    exec.faucet::burn
     # => [amount, pad(16)]
 
     # Subtract burnt amount from current token_supply in storage.

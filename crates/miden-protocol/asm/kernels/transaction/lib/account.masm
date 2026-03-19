@@ -742,14 +742,15 @@ pub proc add_asset_to_vault
     # => [PROCESSED_ASSET_VALUE']
 end
 
-#! Removes the specified asset from the account vault.
+#! Removes the specified asset from the account vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -770,17 +771,17 @@ pub proc remove_asset_from_vault
 
     # remove the asset from the account vault
     exec.asset_vault::remove_asset
-    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
-    swapw
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE]
+    movdnw.2
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
 
     # emit event to signal that an asset is being removed from the account vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE]
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
 
     exec.account_delta::remove_asset
-    # => [ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE]
 end
 
 #! Returns the ASSET_VALUE associated with the provided asset vault key in the active account's vault.
