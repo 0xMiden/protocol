@@ -17,6 +17,7 @@ use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
+use miden_standards::account::mint_policies::OwnerControlled;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -331,7 +332,15 @@ impl AggLayerFaucet {
 
     /// Returns a vector of all [`AggLayerFaucet`] storage slot names.
     fn slot_names() -> Vec<&'static StorageSlotName> {
-        vec![&*CONVERSION_INFO_1_SLOT_NAME, &*CONVERSION_INFO_2_SLOT_NAME]
+        vec![
+            &*CONVERSION_INFO_1_SLOT_NAME,
+            &*CONVERSION_INFO_2_SLOT_NAME,
+            TokenMetadata::metadata_slot(),
+            Ownable2Step::slot_name(),
+            OwnerControlled::active_policy_proc_root_slot(),
+            OwnerControlled::allowed_policy_proc_roots_slot(),
+            OwnerControlled::policy_authority_slot(),
+        ]
     }
 }
 
