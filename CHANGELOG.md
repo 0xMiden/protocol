@@ -41,6 +41,7 @@
 - Added `component_metadata()` to all account components to expose their metadata ([#2596](https://github.com/0xMiden/protocol/pull/2596)).
 - Added `Package` support in `MockChainBuilder` & `NoteScript` ([#2502](https://github.com/0xMiden/protocol/pull/2502)).
 - Added `ProgramExecutor` hooks to support DAP and other custom transaction program executors ([#2574](https://github.com/0xMiden/protocol/pull/2574)).
+- Implement `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
 
 ### Changes
