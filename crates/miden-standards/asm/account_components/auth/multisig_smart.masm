@@ -7,15 +7,15 @@ use miden::protocol::auth::AUTH_UNAUTHORIZED_EVENT
 use miden::standards::auth
 use miden::standards::auth::multisig
 use miden::standards::auth::multisig_smart::oracle
+use miden::standards::auth::multisig_smart::procedure_policies
 use miden::standards::auth::multisig_smart::spending_limits
 use miden::standards::auth::multisig_smart::timelock_controller
 
-pub use multisig::update_signers_and_threshold
 pub use multisig::get_threshold_and_num_approvers
-pub use multisig::set_procedure_threshold
 pub use multisig::get_signer_at
 pub use multisig::is_signer
 pub use oracle::update_oracle_config_and_proc_root
+pub use procedure_policies::set_procedure_policy
 pub use spending_limits::update_spending_window_policy
 pub use spending_limits::update_spending_limits
 pub use spending_limits::update_threshold_config
@@ -28,12 +28,6 @@ pub use timelock_controller::execute_proposed_transaction
 # CONSTANTS
 # =================================================================================================
 
-# The slot in this component's storage layout where the default signature threshold and
-# number of approvers are stored as:
-# [default_threshold, num_approvers, 0, 0].
-# The threshold is guaranteed to be less than or equal to num_approvers.
-const THRESHOLD_CONFIG_SLOT = word("miden::standards::auth::multisig::threshold_config")
-
 # The slot in this component's storage layout where the public keys map is stored.
 # Map entries: [key_index, 0, 0, 0] => APPROVER_PUBLIC_KEY
 const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approver_public_keys")
@@ -42,50 +36,44 @@ const APPROVER_PUBLIC_KEYS_SLOT = word("miden::standards::auth::multisig::approv
 # Map entries: [key_index, 0, 0, 0] => [scheme_id, 0, 0, 0]
 const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver_schemes")
 
-# The slot in this component's storage layout where procedure thresholds are stored.
-# Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
-const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
-
 # Computes the effective transaction threshold for multisig smart policy.
 #
-#! Inputs:  [default_threshold, spending_threshold]
+#! Inputs:  [policy_threshold, spending_threshold, default_threshold]
 #! Outputs: [transaction_threshold]
 #!
 #! Locals:
 #!
-#! 0: default_threshold
+#! 0: policy_threshold
 #! 1: spending_threshold
-@locals(2)
-proc compute_tx_threshold_smart(default_threshold: u32, spending_threshold: u32) -> u32
-    # 1. compute max threshold override over called procedures
-    # 2. combine with spending threshold: combined = max(proc_override_max, spending_threshold)
-    # 3. if combined == 0, revert to using default_threshold
-    # 4. otherwise, use combined as effective transaction threshold
+#! 2: default_threshold
+@locals(3)
+proc compute_tx_threshold_smart(policy_threshold: u32, spending_threshold: u32, default_threshold: u32) -> u32
     loc_store.0
-    # => [spending_threshold]
+    # => [spending_threshold, default_threshold]
 
     loc_store.1
+    # => [default_threshold]
+
+    loc_store.2
     # => []
 
-    exec.multisig::compute_max_called_proc_threshold
-    # => [max_called_proc_threshold]
-
+    loc_load.0
     loc_load.1
-    # => [spending_threshold, max_called_proc_threshold]
+    # => [spending_threshold, policy_threshold]
 
     dup.1 dup.1
-    # => [spending_threshold, max_called_proc_threshold, spending_threshold, max_called_proc_threshold]
+    # => [spending_threshold, policy_threshold, spending_threshold, policy_threshold]
 
     swap
-    # => [max_called_proc_threshold, spending_threshold, spending_threshold, max_called_proc_threshold]
+    # => [policy_threshold, spending_threshold, spending_threshold, policy_threshold]
 
     u32gt
-    # => [is_spending_gt, spending_threshold, max_called_proc_threshold]
+    # => [is_policy_gt, spending_threshold, policy_threshold]
 
     cdrop
     # => [combined_threshold]
 
-    loc_load.0
+    loc_load.2
     # => [default_threshold, combined_threshold]
 
     dup.1 eq.0
@@ -93,6 +81,23 @@ proc compute_tx_threshold_smart(default_threshold: u32, spending_threshold: u32)
 
     cdrop
     # => [effective_transaction_threshold]
+end
+
+#! Updates signers/threshold and re-validates smart procedure policies against the new approver count.
+#!
+#! Inputs:
+#!   Operand stack: [MULTISIG_CONFIG_HASH, pad(12)]
+#! Outputs:
+#!   Operand stack: []
+pub proc update_signers_and_threshold(multisig_config_hash: word)
+    exec.multisig::update_signers_and_threshold
+    # => []
+
+    exec.procedure_policies::get_current_num_approvers
+    # => [num_approvers]
+
+    exec.procedure_policies::assert_proc_policies_lte_num_approvers
+    # => []
 end
 
 #! Authenticate a transaction using multisig smart-policy rules.
@@ -104,21 +109,26 @@ end
 #! Locals:
 #!
 #! 0: spending_threshold
-#! 1: requires_delay
-#! 2: num_verified_signatures
+#! 1: spending_requires_delay
+#! 2: policy_threshold
+#! 3: policy_requires_delay
+#! 4: requires_isolated_tx
+#! 5: requires_no_input_output_notes
+#! 6: num_verified_signatures
+#! 7: is_execute_path
 #! Invocation: call
 @auth_script
-@locals(3)
+@locals(8)
 pub proc auth_tx_multisig_smart(salt: word)
     exec.native_account::incr_nonce drop
     # => [SALT]
 
-    #------- Computing spending policy ------
+    # ------ Computing spending policy ------
     exec.spending_limits::compute_spending_policy
-    # => [threshold_tier, requires_delay]
+    # => [spending_threshold, spending_requires_delay]
 
     loc_store.0
-    # => [requires_delay]
+    # => [spending_requires_delay]
 
     loc_store.1
     # => []
@@ -131,6 +141,28 @@ pub proc auth_tx_multisig_smart(salt: word)
     # => [SALT, OUTPUT_NOTES_COMMITMENT, INPUT_NOTES_COMMITMENT, ACCOUNT_DELTA_COMMITMENT]
 
     exec.auth::hash_tx_summary
+    # => [TX_SUMMARY_COMMITMENT]
+
+    # ------ Computing procedure policy ------
+    exec.procedure_policies::compute_procedure_policy_context
+    # => [policy_threshold, policy_requires_delay, requires_isolated_tx,
+    #     requires_no_input_output_notes, is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    loc_store.2
+    # => [policy_requires_delay, requires_isolated_tx, requires_no_input_output_notes,
+    #     is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    loc_store.3
+    # => [requires_isolated_tx, requires_no_input_output_notes, is_execute_path,
+    #     TX_SUMMARY_COMMITMENT]
+
+    loc_store.4
+    # => [requires_no_input_output_notes, is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    loc_store.5
+    # => [is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    loc_store.7
     # => [TX_SUMMARY_COMMITMENT]
 
     # ------ Verifying approver signatures ------
@@ -152,7 +184,7 @@ pub proc auth_tx_multisig_smart(salt: word)
     dup
     # => [num_verified_signatures, num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
-    loc_store.2
+    loc_store.6
     # => [num_verified_signatures, TX_SUMMARY_COMMITMENT, default_threshold]
 
     movup.5
@@ -161,8 +193,9 @@ pub proc auth_tx_multisig_smart(salt: word)
     loc_load.0
     # => [spending_threshold, default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    swap
-    # => [default_threshold, spending_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
+    loc_load.2
+    # => [policy_threshold, spending_threshold, default_threshold,
+    #     num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     exec.compute_tx_threshold_smart
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
@@ -175,11 +208,22 @@ pub proc auth_tx_multisig_smart(salt: word)
         push.0 assert.err="insufficient number of signatures"
     end
 
+    # Delay requirements are enforced only after signature verification so callers can still
+    # obtain the tx summary they need for propose/execute flows from an unauthorized dry-run.
+    loc_load.7
+    loc_load.3
+    # => [policy_requires_delay, is_execute_path, TX_SUMMARY_COMMITMENT]
+
+    exec.procedure_policies::assert_execute_path_for_delay
+    # => [TX_SUMMARY_COMMITMENT]
+
     # ------ Finalize Tx Proposals ------
     loc_load.1
+    loc_load.3
+    or
     # => [requires_delay, TX_HASH]
 
-    loc_load.2
+    loc_load.6
     # => [num_verified_signatures, requires_delay, TX_HASH]
 
     exec.timelock_controller::finalize_timelock_proposals

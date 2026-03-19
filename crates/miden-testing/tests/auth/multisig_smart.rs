@@ -20,12 +20,18 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::AuthMultisigSmart;
+use miden_standards::account::auth::{
+    AuthMultisigSmart,
+    AuthMultisigSmartPresets,
+    ProcedurePolicy,
+    ProcedurePolicyConstraints,
+};
 use miden_standards::account::components::multisig_smart_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES,
     ERR_CANCEL_INSUFFICIENT_SIGNATURES,
     ERR_INVALID_AMOUNT_LIMITS,
     ERR_INVALID_TIER_CONFIG,
@@ -75,6 +81,34 @@ fn test_get_price_proc_root() -> Word {
         Felt::new(TEST_GET_PRICE_PROC_ROOT[2]),
         Felt::new(TEST_GET_PRICE_PROC_ROOT[3]),
     ])
+}
+
+fn immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
+    ProcedurePolicy::with_immediate_threshold(required_signatures)
+}
+
+fn delayed_only_policy(required_signatures: u32) -> ProcedurePolicy {
+    ProcedurePolicy::with_delay_threshold(required_signatures)
+}
+
+fn isolated_immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
+    ProcedurePolicy::with_immediate_threshold(required_signatures)
+        .with_constraints(ProcedurePolicyConstraints::isolated_tx())
+}
+
+fn no_notes_immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
+    ProcedurePolicy::with_immediate_threshold(required_signatures)
+        .with_constraints(ProcedurePolicyConstraints::no_input_output_notes())
+}
+
+fn assert_program_execution_failed(
+    result: Result<ExecutedTransaction, TransactionExecutorError>,
+) {
+    match result {
+        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
+        Err(err) => panic!("expected transaction program failure, got: {err}"),
+        Ok(_) => panic!("execution was unexpectedly successful"),
+    }
 }
 
 /// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
@@ -150,7 +184,7 @@ fn create_multisig_smart_account_with_assets(
     tier_thresholds: [u32; 4],
     oracle_id: [Felt; 2],
     get_price_proc_root: Word,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
@@ -160,7 +194,7 @@ fn create_multisig_smart_account_with_assets(
         .with_auth_component(Auth::MultisigSmart {
             threshold,
             approvers,
-            proc_threshold_map,
+            proc_policy_map,
             spending_window,
             min_delay,
             propose_expiration_delta,
@@ -182,7 +216,7 @@ fn create_multisig_smart_with_fixed_test_configuration(
     threshold: u32,
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
@@ -203,7 +237,7 @@ fn create_multisig_smart_with_fixed_test_configuration(
         .with_auth_component(Auth::MultisigSmart {
             threshold,
             approvers,
-            proc_threshold_map,
+            proc_policy_map,
             spending_window: TEST_SPENDING_WINDOW,
             min_delay: TEST_MIN_DELAY,
             propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
@@ -256,7 +290,7 @@ fn create_multisig_account(
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     starting_balance: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     let approvers = public_keys.iter().map(|pk| (pk.clone(), auth_scheme)).collect::<Vec<_>>();
 
@@ -264,7 +298,7 @@ fn create_multisig_account(
         threshold,
         &approvers,
         starting_balance,
-        proc_threshold_map,
+        proc_policy_map,
     )
 }
 
@@ -272,7 +306,7 @@ fn create_multisig_account_with_schemes(
     threshold: u32,
     approvers: &[(PublicKey, AuthScheme)],
     starting_balance: u64,
-    proc_threshold_map: Vec<(Word, u32)>,
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
     let num_approvers = approvers.len() as u32;
@@ -286,7 +320,7 @@ fn create_multisig_account_with_schemes(
         .with_auth_component(Auth::MultisigSmart {
             threshold,
             approvers,
-            proc_threshold_map,
+            proc_policy_map,
             spending_window: TEST_SPENDING_WINDOW,
             min_delay: TEST_MIN_DELAY,
             propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
@@ -2131,7 +2165,7 @@ async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_si
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+    let proc_policy_map = vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(1))];
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
@@ -2158,7 +2192,7 @@ async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_si
         tier_thresholds,
         oracle_id,
         get_price_proc_root,
-        proc_threshold_map,
+        proc_policy_map,
     )?;
 
     // SECTION 1: Test note consumption with 1 signature
@@ -2211,6 +2245,290 @@ async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_si
     multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
     mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
     mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+/// Mirrors the base multisig override behavior for smart multisig: even if the account default
+/// threshold is 3-of-3, a `receive_asset` immediate-only policy with threshold 1 must allow the
+/// note-consumption path to execute with a single signature.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_three_to_one_signature(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
+
+    let receive_asset_one_signature_policy = ProcedurePolicy::with_immediate_threshold(1);
+    let proc_policy_map =
+        vec![(BasicWallet::receive_asset_digest(), receive_asset_one_signature_policy)];
+
+    let assets = vec![FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+        10,
+    )?];
+    let mut multisig_account = create_multisig_smart_account_with_assets(
+        3,
+        &public_keys,
+        auth_scheme,
+        assets,
+        TEST_SPENDING_WINDOW,
+        TEST_MIN_DELAY,
+        TEST_PROPOSE_EXPIRATION_DELTA,
+        [500, 1000, 2000, 1500],
+        [3, 3, 3, 3],
+        test_oracle_id(),
+        test_get_price_proc_root(),
+        proc_policy_map,
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = mock_chain_builder.build()?;
+
+    let salt = Word::from([Felt::new(11); 4]);
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_summary) => tx_summary,
+        error => panic!("expected abort with tx summary: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary_signing = SigningInputs::TransactionSummary(tx_summary);
+    let one_signature = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary_signing)
+        .await?;
+
+    let tx_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .add_signature(public_keys[0].to_commitment(), msg, one_signature)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        tx_result.is_ok(),
+        "receive_asset policy threshold=1 should override the default 3-of-3 requirement"
+    );
+
+    multisig_account.apply_delta(tx_result.as_ref().unwrap().account_delta())?;
+    mock_chain.add_pending_executed_transaction(&tx_result.unwrap())?;
+    mock_chain.prove_next_block()?;
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_account(
+        2,
+        &public_keys,
+        auth_scheme,
+        100,
+        vec![(
+            AuthMultisigSmartPresets::update_timelock_controller(),
+            delayed_only_policy(1),
+        )],
+    )?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let update_timelock_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_timelock_controller
+            drop
+            drop
+        end
+        ",
+    )?;
+
+    let blind_inputs = SigningInputs::Blind(Word::from([Felt::new(900); 4]));
+    let blind_msg = blind_inputs.to_commitment();
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &blind_inputs)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &blind_inputs)
+        .await?;
+
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(update_timelock_script)
+        .auth_args(Word::from([Felt::new(901); 4]))
+        .add_signature(public_keys[0].to_commitment(), blind_msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), blind_msg, sig_1)
+        .build()?
+        .execute()
+        .await;
+
+    assert_program_execution_failed(result);
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_on_dry_run(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_account(
+        2,
+        &public_keys,
+        auth_scheme,
+        100,
+        vec![(
+            AuthMultisigSmartPresets::update_timelock_controller(),
+            delayed_only_policy(1),
+        )],
+    )?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let execute_update_timelock_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::execute_proposed_transaction
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_timelock_controller
+            drop
+            drop
+        end
+        ",
+    )?;
+
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(execute_update_timelock_script)
+        .auth_args(Word::from([Felt::new(902); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    match result {
+        Err(TransactionExecutorError::Unauthorized(_)) => Ok(()),
+        error => panic!("expected unauthorized dry-run with tx summary, got: {error:?}"),
+    }
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_account(
+        2,
+        &public_keys,
+        auth_scheme,
+        100,
+        vec![(
+            BasicWallet::receive_asset_digest(),
+            no_notes_immediate_only_policy(1),
+        )],
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mock_chain = mock_chain_builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[note.id()], &[])?
+        .auth_args(Word::from([Felt::new(903); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES);
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_proc_policy_isolated_constraint_is_enforced(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_account(
+        2,
+        &public_keys,
+        auth_scheme,
+        100,
+        vec![(
+            AuthMultisigSmartPresets::update_timelock_controller(),
+            isolated_immediate_only_policy(1),
+        )],
+    )?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let tx_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            push.2
+            push.40
+            call.::miden::standards::components::auth::multisig_smart::update_timelock_controller
+            drop
+            drop
+            push.123
+            call.::miden::standards::components::auth::multisig_smart::update_spending_window_policy
+            drop
+        end
+        ",
+    )?;
+
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(tx_script)
+        .auth_args(Word::from([Felt::new(904); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    assert_program_execution_failed(result);
 
     Ok(())
 }
@@ -3161,12 +3479,71 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
+async fn test_multisig_smart_update_signers_uses_current_num_approvers_for_policy_validation(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+    let multisig_account = create_multisig_account(
+        2,
+        &public_keys,
+        auth_scheme,
+        100,
+        vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(2))],
+    )?;
+    let account_id = multisig_account.id();
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
+
+    let update_signers_script = compile_multisig_smart_tx_script(
+        "
+        begin
+            call.::miden::standards::components::auth::multisig_smart::update_signers_and_threshold
+        end
+        ",
+    )?;
+
+    let shrink_data = build_update_signers_config_vector(1, 1, &public_keys[0..1], auth_scheme);
+    let shrink_hash = Hasher::hash_elements(&shrink_data);
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(shrink_hash, shrink_data);
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+
+    let blind_inputs = SigningInputs::Blind(Word::from([Felt::new(906); 4]));
+    let blind_msg = blind_inputs.to_commitment();
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &blind_inputs)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &blind_inputs)
+        .await?;
+
+    let result = mock_chain
+        .build_tx_context(account_id, &[], &[])?
+        .tx_script(update_signers_script)
+        .tx_script_args(shrink_hash)
+        .auth_args(Word::from([Felt::new(905); 4]))
+        .extend_advice_inputs(advice_inputs)
+        .add_signature(public_keys[0].to_commitment(), blind_msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), blind_msg, sig_1)
+        .build()?
+        .execute()
+        .await;
+
+    assert_program_execution_failed(result);
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
 async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
-    let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 4)];
+    let proc_policy_map = vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(4))];
 
     let assets =
         vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
@@ -3183,7 +3560,7 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
         [1, 2, 3, 4],
         test_oracle_id(),
         test_get_price_proc_root(),
-        proc_threshold_map,
+        proc_policy_map,
     )?;
 
     let mut mock_chain_builder =

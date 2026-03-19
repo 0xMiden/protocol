@@ -1,4 +1,3 @@
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
@@ -21,7 +20,11 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
+use super::policy::ProcedurePolicy;
+use super::types::{AmountLimits, OracleId, TierThresholds};
 use crate::account::components::multisig_smart_library;
+use crate::account::auth::multisig::AuthMultisigConfig;
 
 // CONSTANTS
 // ================================================================================================
@@ -46,8 +49,13 @@ static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::ne
         .expect("storage slot name should be valid")
 });
 
-static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static LEGACY_PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
+        .expect("storage slot name should be valid")
+});
+
+static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
         .expect("storage slot name should be valid")
 });
 
@@ -112,16 +120,11 @@ static PENDING_EXECUTE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Configuration for [`AuthMultisigSmart`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigSmartConfig {
-    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-    default_threshold: u32,
-    proc_thresholds: Vec<(Word, u32)>,
-    spending_window: u32,
-    min_delay: u32,
-    propose_expiration_delta: u16,
-    amount_limits: [u64; 4],
-    tier_thresholds: [u32; 4],
-    oracle_id: [Felt; 2],
-    get_price_proc_root: Word,
+    multisig: AuthMultisigConfig,
+    procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    spending_policy: SpendingPolicyConfig,
+    timelock_controller: TimelockControllerConfig,
+    oracle_reader: OracleReaderConfig,
 }
 
 impl AuthMultisigSmartConfig {
@@ -132,57 +135,52 @@ impl AuthMultisigSmartConfig {
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         default_threshold: u32,
     ) -> Result<Self, AccountError> {
-        if default_threshold == 0 {
-            return Err(AccountError::other("threshold must be at least 1"));
-        }
-        if default_threshold > approvers.len() as u32 {
-            return Err(AccountError::other(
-                "threshold cannot be greater than number of approvers",
-            ));
-        }
-
-        // Check for duplicate approvers
-        let unique_approvers: BTreeSet<_> = approvers.iter().map(|(pk, _)| pk).collect();
-        if approvers.len() != unique_approvers.len() {
-            return Err(AccountError::other("duplicate approver public keys are not allowed"));
-        }
-
         Ok(Self {
-            approvers,
-            default_threshold,
-            proc_thresholds: Vec::new(),
-            spending_window: 0,
-            min_delay: 0,
-            propose_expiration_delta: 0,
-            amount_limits: [0; 4],
-            tier_thresholds: [0; 4],
-            oracle_id: [Felt::new(0), Felt::new(0)],
-            get_price_proc_root: Word::empty(),
+            multisig: AuthMultisigConfig::new(approvers, default_threshold)?,
+            procedure_policies: Vec::new(),
+            spending_policy: SpendingPolicyConfig::default(),
+            timelock_controller: TimelockControllerConfig::default(),
+            oracle_reader: OracleReaderConfig::default(),
         })
     }
 
-    /// Attaches a per-procedure threshold map. Each procedure threshold must be at least 1 and
-    /// at most the number of approvers.
-    pub fn with_proc_thresholds(
+    /// Attaches a per-procedure smart policy map.
+    pub fn with_proc_policies(
         mut self,
-        proc_thresholds: Vec<(Word, u32)>,
+        proc_policies: Vec<(Word, ProcedurePolicy)>,
     ) -> Result<Self, AccountError> {
-        for (_, threshold) in &proc_thresholds {
-            if *threshold == 0 {
-                return Err(AccountError::other("procedure threshold must be at least 1"));
-            }
-            if *threshold > self.approvers.len() as u32 {
-                return Err(AccountError::other(
-                    "procedure threshold cannot be greater than number of approvers",
-                ));
-            }
+        let num_approvers = self.multisig.approvers().len() as u32;
+        for (_, policy) in &proc_policies {
+            policy.assert_valid_for_num_approvers(num_approvers)?;
         }
-        self.proc_thresholds = proc_thresholds;
+        self.procedure_policies = proc_policies;
         Ok(self)
     }
 
+    pub fn with_spending(mut self, spending_policy: SpendingPolicyConfig) -> Self {
+        self.spending_policy = spending_policy;
+        self
+    }
+
+    pub fn with_timelock_controller_config(
+        mut self,
+        timelock_controller: TimelockControllerConfig,
+    ) -> Self {
+        self.timelock_controller = timelock_controller;
+        self
+    }
+
+    pub fn with_oracle_reader(mut self, oracle_reader: OracleReaderConfig) -> Self {
+        self.oracle_reader = oracle_reader;
+        self
+    }
+
     pub fn with_spending_window(mut self, spending_window: u32) -> Self {
-        self.spending_window = spending_window;
+        self.spending_policy = SpendingPolicyConfig::new(
+            spending_window,
+            self.spending_policy.amount_limits(),
+            self.spending_policy.tier_thresholds(),
+        );
         self
     }
 
@@ -191,77 +189,99 @@ impl AuthMultisigSmartConfig {
         min_delay: u32,
         propose_expiration_delta: u16,
     ) -> Self {
-        self.min_delay = min_delay;
-        self.propose_expiration_delta = propose_expiration_delta;
+        self.timelock_controller =
+            TimelockControllerConfig::new(min_delay, propose_expiration_delta);
         self
     }
 
-    pub fn with_amount_limits(mut self, amount_limits: [u64; 4]) -> Self {
-        self.amount_limits = amount_limits;
+    pub fn with_amount_limits(mut self, [limit_0, limit_1, limit_2, delay_trigger_amount]: [u64; 4]) -> Self {
+        self.spending_policy = SpendingPolicyConfig::new(
+            self.spending_policy.spending_window(),
+            AmountLimits::new(limit_0, limit_1, limit_2, delay_trigger_amount),
+            self.spending_policy.tier_thresholds(),
+        );
         self
     }
 
-    pub fn with_tier_thresholds(mut self, tier_thresholds: [u32; 4]) -> Self {
-        self.tier_thresholds = tier_thresholds;
+    pub fn with_tier_thresholds(mut self, [tier_0, tier_1, tier_2, tier_3]: [u32; 4]) -> Self {
+        self.spending_policy = SpendingPolicyConfig::new(
+            self.spending_policy.spending_window(),
+            self.spending_policy.amount_limits(),
+            TierThresholds::new(tier_0, tier_1, tier_2, tier_3),
+        );
         self
     }
 
-    pub fn with_oracle_config(mut self, oracle_id: [Felt; 2]) -> Self {
-        self.oracle_id = oracle_id;
+    pub fn with_oracle_config(mut self, [prefix, suffix]: [Felt; 2]) -> Self {
+        self.oracle_reader =
+            OracleReaderConfig::new(OracleId::new(prefix, suffix), self.oracle_reader.get_price_proc_root());
         self
     }
 
     pub fn with_get_price_proc_root(mut self, get_price_proc_root: Word) -> Self {
-        self.get_price_proc_root = get_price_proc_root;
+        self.oracle_reader =
+            OracleReaderConfig::new(self.oracle_reader.oracle_id(), get_price_proc_root);
         self
     }
 
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
-        &self.approvers
+        self.multisig.approvers()
     }
 
     pub fn default_threshold(&self) -> u32 {
-        self.default_threshold
+        self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(Word, u32)] {
-        &self.proc_thresholds
+    pub fn proc_policies(&self) -> &[(Word, ProcedurePolicy)] {
+        &self.procedure_policies
+    }
+
+    pub fn spending_policy(&self) -> SpendingPolicyConfig {
+        self.spending_policy
+    }
+
+    pub fn timelock_controller(&self) -> TimelockControllerConfig {
+        self.timelock_controller
+    }
+
+    pub fn oracle_reader(&self) -> OracleReaderConfig {
+        self.oracle_reader
     }
 
     pub fn spending_window(&self) -> u32 {
-        self.spending_window
+        self.spending_policy.spending_window()
     }
 
     pub fn min_delay(&self) -> u32 {
-        self.min_delay
+        self.timelock_controller.min_delay()
     }
 
     pub fn propose_expiration_delta(&self) -> u16 {
-        self.propose_expiration_delta
+        self.timelock_controller.propose_expiration_delta()
     }
 
-    pub fn amount_limits(&self) -> &[u64; 4] {
-        &self.amount_limits
+    pub fn amount_limits(&self) -> AmountLimits {
+        self.spending_policy.amount_limits()
     }
 
-    pub fn tier_thresholds(&self) -> &[u32; 4] {
-        &self.tier_thresholds
+    pub fn tier_thresholds(&self) -> TierThresholds {
+        self.spending_policy.tier_thresholds()
     }
 
-    pub fn oracle_id(&self) -> &[Felt; 2] {
-        &self.oracle_id
+    pub fn oracle_id(&self) -> OracleId {
+        self.oracle_reader.oracle_id()
     }
 
-    pub fn get_price_proc_root(&self) -> &Word {
-        &self.get_price_proc_root
+    pub fn get_price_proc_root(&self) -> Word {
+        self.oracle_reader.get_price_proc_root()
     }
 }
 
 fn validate_tier_thresholds(
     num_approvers: u32,
-    tier_thresholds: &[u32; 4],
+    tier_thresholds: TierThresholds,
 ) -> Result<(), AccountError> {
-    let [tier_0, tier_1, tier_2, tier_3] = *tier_thresholds;
+    let [tier_0, tier_1, tier_2, tier_3] = tier_thresholds.as_array();
 
     if tier_0 == 0 {
         return Err(AccountError::other("tier_0 must be > 0"));
@@ -271,6 +291,17 @@ fn validate_tier_thresholds(
     }
     if tier_3 > num_approvers {
         return Err(AccountError::other("tier_3 must be <= num_approvers"));
+    }
+
+    Ok(())
+}
+
+fn validate_proc_policies(
+    num_approvers: u32,
+    proc_policies: &[(Word, ProcedurePolicy)],
+) -> Result<(), AccountError> {
+    for (_, policy) in proc_policies {
+        policy.assert_valid_for_num_approvers(num_approvers)?;
     }
 
     Ok(())
@@ -288,19 +319,29 @@ impl AuthMultisigSmart {
 
     /// Creates a new [`AuthMultisigSmart`] component from the provided configuration.
     pub fn new(config: AuthMultisigSmartConfig) -> Result<Self, AccountError> {
-        if config.amount_limits.iter().any(|v| *v > u32::MAX as u64) {
+        if config
+            .spending_policy()
+            .amount_limits()
+            .as_array()
+            .iter()
+            .any(|v| *v > u32::MAX as u64)
+        {
             return Err(AccountError::other("amount limits must fit into u32"));
         }
-        if config.spending_window() == 0 {
+        if config.spending_policy().spending_window() == 0 {
             return Err(AccountError::other("spending window must be non-zero"));
         }
-        if config.min_delay() == 0 {
+        if config.timelock_controller().min_delay() == 0 {
             return Err(AccountError::other("min delay must be non-zero"));
         }
-        if config.propose_expiration_delta() == 0 {
+        if config.timelock_controller().propose_expiration_delta() == 0 {
             return Err(AccountError::other("propose expiration delta must be non-zero"));
         }
-        validate_tier_thresholds(config.approvers().len() as u32, config.tier_thresholds())?;
+        validate_tier_thresholds(
+            config.approvers().len() as u32,
+            config.spending_policy().tier_thresholds(),
+        )?;
+        validate_proc_policies(config.approvers().len() as u32, config.proc_policies())?;
         Ok(Self { config })
     }
 
@@ -320,8 +361,12 @@ impl AuthMultisigSmart {
         &EXECUTED_TRANSACTIONS_SLOT_NAME
     }
 
-    pub fn procedure_thresholds_slot() -> &'static StorageSlotName {
-        &PROCEDURE_THRESHOLDS_SLOT_NAME
+    fn legacy_procedure_thresholds_slot() -> &'static StorageSlotName {
+        &LEGACY_PROCEDURE_THRESHOLDS_SLOT_NAME
+    }
+
+    pub fn procedure_policies_slot() -> &'static StorageSlotName {
+        &PROCEDURE_POLICIES_SLOT_NAME
     }
 
     pub fn timelock_controller_slot() -> &'static StorageSlotName {
@@ -416,13 +461,24 @@ impl AuthMultisigSmart {
         )
     }
 
-    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    fn legacy_procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::procedure_thresholds_slot().clone(),
+            Self::legacy_procedure_thresholds_slot().clone(),
             StorageSlotSchema::map(
-                "Procedure thresholds",
+                "Legacy procedure thresholds",
                 SchemaType::native_word(),
                 SchemaType::u32(),
+            ),
+        )
+    }
+
+    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        (
+            Self::procedure_policies_slot().clone(),
+            StorageSlotSchema::map(
+                "Procedure policies",
+                SchemaType::native_word(),
+                SchemaType::native_word(),
             ),
         )
     }
@@ -559,7 +615,7 @@ impl AuthMultisigSmart {
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(16);
+        let mut storage_slots = Vec::with_capacity(17);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -594,31 +650,45 @@ impl From<AuthMultisigSmart> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Procedure thresholds slot (map)
-        let proc_threshold_roots = StorageMap::with_entries(
-            multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
-                (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
+        // Legacy procedure thresholds slot (map). This remains empty for smart accounts and exists
+        // only so the shared multisig signer-rotation helper can read its historical slot.
+        storage_slots.push(StorageSlot::with_map(
+            AuthMultisigSmart::legacy_procedure_thresholds_slot().clone(),
+            StorageMap::default(),
+        ));
+
+        // Procedure policies slot (map)
+        let procedure_policies = StorageMap::with_entries(
+            multisig.config.proc_policies().iter().map(|(proc_root, policy)| {
+                (StorageMapKey::from_raw(*proc_root), policy.to_word())
             }),
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::procedure_thresholds_slot().clone(),
-            proc_threshold_roots,
+            AuthMultisigSmart::procedure_policies_slot().clone(),
+            procedure_policies,
         ));
 
         // Smart policy slots
+        let timelock_controller = multisig.config.timelock_controller();
+        let spending_policy = multisig.config.spending_policy();
+        let amount_limits = spending_policy.amount_limits();
+        let tier_thresholds = spending_policy.tier_thresholds();
+        let oracle_reader = multisig.config.oracle_reader();
+        let oracle_id = oracle_reader.oracle_id();
+
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::timelock_controller_slot().clone(),
             Word::from([
-                multisig.config.min_delay(),
-                multisig.config.propose_expiration_delta() as u32,
+                timelock_controller.min_delay(),
+                timelock_controller.propose_expiration_delta() as u32,
                 0u32,
                 0u32,
             ]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::spending_window_slot().clone(),
-            Word::from([multisig.config.spending_window(), 0u32, 0u32, 0u32]),
+            Word::from([spending_policy.spending_window(), 0u32, 0u32, 0u32]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::spending_tracker_slot().clone(),
@@ -627,33 +697,33 @@ impl From<AuthMultisigSmart> for AccountComponent {
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::amount_limits_slot().clone(),
             Word::from([
-                multisig.config.amount_limits()[0] as u32,
-                multisig.config.amount_limits()[1] as u32,
-                multisig.config.amount_limits()[2] as u32,
-                multisig.config.amount_limits()[3] as u32,
+                amount_limits.limit_0() as u32,
+                amount_limits.limit_1() as u32,
+                amount_limits.limit_2() as u32,
+                amount_limits.delay_trigger_amount() as u32,
             ]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::tier_threshold_config_slot().clone(),
             Word::from([
-                multisig.config.tier_thresholds()[0],
-                multisig.config.tier_thresholds()[1],
-                multisig.config.tier_thresholds()[2],
-                multisig.config.tier_thresholds()[3],
+                tier_thresholds.tier_0(),
+                tier_thresholds.tier_1(),
+                tier_thresholds.tier_2(),
+                tier_thresholds.tier_3(),
             ]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::oracle_config_slot().clone(),
             Word::from([
-                multisig.config.oracle_id()[0],
-                multisig.config.oracle_id()[1],
+                oracle_id.prefix(),
+                oracle_id.suffix(),
                 Felt::new(0),
                 Felt::new(0),
             ]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::get_price_proc_root_slot().clone(),
-            *multisig.config.get_price_proc_root(),
+            oracle_reader.get_price_proc_root(),
         ));
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::tx_proposals_slot().clone(),
@@ -677,7 +747,8 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::approver_public_keys_slot_schema(),
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::procedure_thresholds_slot_schema(),
+            AuthMultisigSmart::legacy_procedure_thresholds_slot_schema(),
+            AuthMultisigSmart::procedure_policies_slot_schema(),
             AuthMultisigSmart::timelock_controller_slot_schema(),
             AuthMultisigSmart::spending_window_slot_schema(),
             AuthMultisigSmart::spending_tracker_slot_schema(),
@@ -710,6 +781,15 @@ mod tests {
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
+    use crate::account::auth::{
+        AmountLimits,
+        OracleId,
+        OracleReaderConfig,
+        ProcedurePolicyConstraints,
+        SpendingPolicyConfig,
+        TierThresholds,
+        TimelockControllerConfig,
+    };
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -723,12 +803,21 @@ mod tests {
 
         let config = AuthMultisigSmartConfig::new(approvers.clone(), 2)
             .expect("invalid multisig smart config")
-            .with_spending_window(100)
-            .with_timelock_controller(30, 3)
-            .with_amount_limits([500, 1000, 2000, 1500])
-            .with_tier_thresholds([1, 2, 2, 2])
-            .with_oracle_config([Felt::new(1), Felt::new(2)])
-            .with_get_price_proc_root(Word::from([7u32, 8, 9, 10]));
+            .with_proc_policies(vec![(
+                BasicWallet::receive_asset_digest(),
+                ProcedurePolicy::with_immediate_threshold(1),
+            )])
+            .expect("procedure policy config should be valid")
+            .with_spending(SpendingPolicyConfig::new(
+                100,
+                AmountLimits::new(500, 1000, 2000, 1500),
+                TierThresholds::new(1, 2, 2, 2),
+            ))
+            .with_timelock_controller_config(TimelockControllerConfig::new(30, 3))
+            .with_oracle_reader(OracleReaderConfig::new(
+                OracleId::new(Felt::new(1), Felt::new(2)),
+                Word::from([7u32, 8, 9, 10]),
+            ));
 
         let component =
             AuthMultisigSmart::new(config).expect("multisig smart component creation failed");
@@ -762,6 +851,15 @@ mod tests {
             .get_item(AuthMultisigSmart::amount_limits_slot())
             .expect("amount limits should be present");
         assert_eq!(amount_limits, Word::from([500u32, 1000, 2000, 1500]));
+
+        let receive_asset_policy = account
+            .storage()
+            .get_map_item(
+                AuthMultisigSmart::procedure_policies_slot(),
+                BasicWallet::receive_asset_digest(),
+            )
+            .expect("receive_asset policy should be present");
+        assert_eq!(receive_asset_policy, Word::from([1u32, 0u32, 0u32, 0u32]));
     }
 
     #[test]
@@ -787,6 +885,39 @@ mod tests {
             .with_amount_limits([u32::MAX as u64 + 1, 0, 0, 0]);
         let result = AuthMultisigSmart::new(config);
         assert!(result.unwrap_err().to_string().contains("amount limits must fit into u32"));
+
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let approvers = vec![
+            (sec_key.public_key().to_commitment(), sec_key.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let result = AuthMultisigSmartConfig::new(approvers.clone(), 2).and_then(|cfg| {
+            cfg.with_proc_policies(vec![(
+                Word::from([1u32, 2, 3, 4]),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2),
+            )])
+        });
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("delay threshold cannot exceed immediate threshold")
+        );
+
+        let result = AuthMultisigSmartConfig::new(approvers, 2).and_then(|cfg| {
+            cfg.with_proc_policies(vec![(
+                Word::from([4u32, 3, 2, 1]),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(0, 0)
+                    .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
+            )])
+        });
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("immediate and delayed thresholds must both be at least 1")
+        );
     }
 
     #[test]

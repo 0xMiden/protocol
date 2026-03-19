@@ -16,6 +16,7 @@ use miden_standards::account::auth::{
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
+    ProcedurePolicy,
     PsmConfig,
 };
 use miden_standards::testing::account_component::{
@@ -52,7 +53,7 @@ pub enum Auth {
     MultisigSmart {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
-        proc_threshold_map: Vec<(Word, u32)>,
+        proc_policy_map: Vec<(Word, ProcedurePolicy)>,
         spending_window: u32,
         min_delay: u32,
         propose_expiration_delta: u16,
@@ -130,7 +131,7 @@ impl Auth {
             Auth::MultisigSmart {
                 threshold,
                 approvers,
-                proc_threshold_map,
+                proc_policy_map,
                 spending_window,
                 min_delay,
                 propose_expiration_delta,
@@ -140,7 +141,7 @@ impl Auth {
                 get_price_proc_root,
             } => {
                 let config = AuthMultisigSmartConfig::new(approvers.clone(), *threshold)
-                    .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                    .and_then(|cfg| cfg.with_proc_policies(proc_policy_map.clone()))
                     .expect("invalid multisig smart config")
                     .with_spending_window(*spending_window)
                     .with_timelock_controller(*min_delay, *propose_expiration_delta)
