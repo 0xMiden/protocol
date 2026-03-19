@@ -13,7 +13,7 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
@@ -111,7 +111,7 @@ pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
     notes: Vec<RawOutputNote>,
-    rng: RpoRandomCoin,
+    rng: RandomCoin,
     // Fee parameters.
     native_asset_id: AccountId,
     verification_base_fee: u32,
@@ -135,7 +135,7 @@ impl MockChainBuilder {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
-            rng: RpoRandomCoin::new(Default::default()),
+            rng: RandomCoin::new(Default::default()),
             native_asset_id,
             verification_base_fee: 0,
         }
@@ -679,7 +679,7 @@ impl MockChainBuilder {
     /// Returns a mutable reference to the builder's RNG.
     ///
     /// This can be used when creating accounts or notes and randomness is required.
-    pub fn rng_mut(&mut self) -> &mut RpoRandomCoin {
+    pub fn rng_mut(&mut self) -> &mut RandomCoin {
         &mut self.rng
     }
 

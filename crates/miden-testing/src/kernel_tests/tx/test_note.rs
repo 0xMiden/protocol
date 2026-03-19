@@ -8,7 +8,7 @@ use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
-use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
+use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -514,7 +514,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         .with_component(BasicWallet)
         .build_existing()?;
 
-    let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
     let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;
