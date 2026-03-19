@@ -175,7 +175,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // (first 4 bytes must be zero).
     let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
         .expect("destination address is not an embedded Miden AccountId")
-        .to_account_id();
+        .into_account_id();
 
     // For the simulated/rollup case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(

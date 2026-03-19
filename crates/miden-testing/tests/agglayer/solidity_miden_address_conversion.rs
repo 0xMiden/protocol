@@ -47,7 +47,7 @@ async fn execute_program_with_default_host(
 fn test_account_id_to_ethereum_roundtrip() {
     let original_account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let eth_address = EthEmbeddedAccountId::from_account_id(original_account_id);
-    let recovered_account_id = eth_address.to_account_id();
+    let recovered_account_id = eth_address.into_account_id();
     assert_eq!(original_account_id, recovered_account_id);
 }
 
@@ -69,7 +69,7 @@ fn test_bech32_to_ethereum_roundtrip() {
         let (network_id, account_id) = AccountId::from_bech32(bech32).unwrap();
 
         let eth = EthEmbeddedAccountId::from_account_id(account_id);
-        let recovered = eth.to_account_id();
+        let recovered = eth.into_account_id();
         let recovered_bech32 = recovered.to_bech32(network_id);
 
         assert_eq!(&account_id, &recovered);
@@ -87,7 +87,7 @@ fn test_random_bech32_to_ethereum_roundtrip() {
         let account_id = AccountIdBuilder::new().build_with_rng(&mut rng);
         let bech32_address = account_id.to_bech32(network_id.clone());
         let eth_address = EthEmbeddedAccountId::from_account_id(account_id);
-        let recovered_account_id = eth_address.to_account_id();
+        let recovered_account_id = eth_address.into_account_id();
         let recovered_bech32 = recovered_account_id.to_bech32(network_id.clone());
 
         assert_eq!(account_id, recovered_account_id);

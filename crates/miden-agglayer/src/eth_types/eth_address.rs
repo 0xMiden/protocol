@@ -65,7 +65,7 @@ impl EthAddress {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the raw 20-byte array.
+    /// Returns a reference to the underlying 20-byte array.
     pub const fn as_bytes(&self) -> &[u8; 20] {
         &self.0
     }

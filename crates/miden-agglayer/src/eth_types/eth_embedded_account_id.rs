@@ -34,13 +34,13 @@ impl EthEmbeddedAccountId {
 
     /// Creates an [`EthEmbeddedAccountId`] from a 20-byte array.
     ///
-    /// The bytes are interpreted as an Ethereum-encoded Miden [`AccountId`]:
+    /// The bytes are interpreted as an Ethereum-encoded Miden [`AccountId`] (big-endian):
     /// `0x00000000 || prefix(8) || suffix(8)`.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the first 4 bytes are not zero,
+    /// - the first 4 bytes (i.e., the most significant bytes) are not zero,
     /// - packing the 8-byte prefix/suffix into [`Felt`] would reduce mod p,
     /// - or the resulting felts do not form a valid [`AccountId`].
     pub fn new(bytes: [u8; 20]) -> Result<Self, AddressConversionError> {
@@ -101,9 +101,9 @@ impl EthEmbeddedAccountId {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the inner [`AccountId`].
-    pub const fn to_account_id(&self) -> AccountId {
-        self.0
+    /// Returns a reference to the inner [`AccountId`].
+    pub const fn to_account_id(&self) -> &AccountId {
+        &self.0
     }
 
     /// Consumes self and returns the inner [`AccountId`].
@@ -116,11 +116,9 @@ impl EthEmbeddedAccountId {
     /// The resulting 20-byte address has the format:
     /// `0x00000000 || prefix(8) || suffix(8)` (big-endian words).
     pub fn to_eth_address(&self) -> EthAddress {
-        let felts: [Felt; 2] = self.0.into();
-
         let mut out = [0u8; 20];
-        out[4..12].copy_from_slice(&felts[0].as_int().to_be_bytes());
-        out[12..20].copy_from_slice(&felts[1].as_int().to_be_bytes());
+        out[4..12].copy_from_slice(&self.0.prefix().as_u64().to_be_bytes());
+        out[12..20].copy_from_slice(&self.0.suffix().as_int().to_be_bytes());
 
         EthAddress::new(out)
     }
@@ -163,15 +161,11 @@ impl From<EthEmbeddedAccountId> for EthAddress {
     }
 }
 
-impl From<[u8; 20]> for EthEmbeddedAccountId {
-    /// Creates an [`EthEmbeddedAccountId`] from a 20-byte array.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the bytes do not represent a valid embedded [`AccountId`].
-    /// Prefer [`EthEmbeddedAccountId::new`] for fallible construction.
-    fn from(bytes: [u8; 20]) -> Self {
-        Self::new(bytes).expect("bytes should represent a valid embedded AccountId")
+impl TryFrom<[u8; 20]> for EthEmbeddedAccountId {
+    type Error = AddressConversionError;
+
+    fn try_from(bytes: [u8; 20]) -> Result<Self, Self::Error> {
+        Self::new(bytes)
     }
 }
 
