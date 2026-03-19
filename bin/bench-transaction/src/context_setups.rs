@@ -1,14 +1,10 @@
 use anyhow::Result;
-use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
+pub use miden_agglayer::testing::ClaimDataSource;
 use miden_agglayer::{
+    B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthAddressFormat,
-    EthAmount,
-    ExitRoot,
-    GlobalIndex,
-    LeafData,
-    MetadataHash,
     UpdateGerNote,
     create_claim_note,
     create_existing_agglayer_faucet,
@@ -17,157 +13,14 @@ use miden_agglayer::{
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::note::NoteType;
+use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::OutputNote;
 use miden_protocol::{Felt, FieldElement, Word};
 use miden_standards::code_builder::CodeBuilder;
+use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
-use miden_tx::utils::hex_to_bytes;
 use rand::Rng;
-use serde::Deserialize;
-
-// EMBEDDED TEST VECTOR JSON FILES
-// ================================================================================================
-
-/// Bridge asset test vectors JSON — contains test data for an L1 bridgeAsset transaction.
-const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
-    "../../../crates/miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
-);
-
-/// Rollup deposit test vectors JSON — contains test data for a rollup deposit with two-level
-/// Merkle proofs.
-const ROLLUP_ASSET_VECTORS_JSON: &str = include_str!(
-    "../../../crates/miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_rollup_tx.json"
-);
-
-// TEST VECTOR TYPES
-// ================================================================================================
-
-/// Deserializes a JSON value that may be either a number or a string into a `String`.
-fn deserialize_uint_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    match value {
-        serde_json::Value::String(s) => Ok(s),
-        serde_json::Value::Number(n) => Ok(n.to_string()),
-        _ => Err(serde::de::Error::custom("expected a number or string for amount")),
-    }
-}
-
-/// Deserialized leaf value test vector from Solidity-generated JSON.
-#[derive(Debug, Deserialize)]
-struct LeafValueVector {
-    origin_network: u32,
-    origin_token_address: String,
-    #[allow(dead_code)]
-    destination_network: u32,
-    destination_address: String,
-    #[serde(deserialize_with = "deserialize_uint_to_string")]
-    amount: String,
-    metadata_hash: String,
-}
-
-impl LeafValueVector {
-    fn to_leaf_data(&self) -> LeafData {
-        LeafData {
-            origin_network: self.origin_network,
-            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
-                .expect("valid origin token address hex"),
-            destination_network: self.destination_network,
-            destination_address: EthAddressFormat::from_hex(&self.destination_address)
-                .expect("valid destination address hex"),
-            amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
-            metadata_hash: MetadataHash::new(
-                hex_to_bytes(&self.metadata_hash).expect("valid metadata hash hex"),
-            ),
-        }
-    }
-}
-
-/// Deserialized proof value test vector from Solidity-generated JSON.
-#[derive(Debug, Deserialize)]
-struct ProofValueVector {
-    smt_proof_local_exit_root: Vec<String>,
-    smt_proof_rollup_exit_root: Vec<String>,
-    global_index: String,
-    mainnet_exit_root: String,
-    rollup_exit_root: String,
-    global_exit_root: String,
-    claimed_global_index_hash_chain: String,
-}
-
-impl ProofValueVector {
-    fn to_proof_data(&self) -> ProofData {
-        let smt_proof_local: [SmtNode; 32] = self
-            .smt_proof_local_exit_root
-            .iter()
-            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("expected 32 SMT proof nodes for local exit root");
-
-        let smt_proof_rollup: [SmtNode; 32] = self
-            .smt_proof_rollup_exit_root
-            .iter()
-            .map(|s| SmtNode::new(hex_to_bytes(s).expect("valid smt proof hex")))
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("expected 32 SMT proof nodes for rollup exit root");
-
-        ProofData {
-            smt_proof_local_exit_root: smt_proof_local,
-            smt_proof_rollup_exit_root: smt_proof_rollup,
-            global_index: GlobalIndex::from_hex(&self.global_index)
-                .expect("valid global index hex"),
-            mainnet_exit_root: Keccak256Output::new(
-                hex_to_bytes(&self.mainnet_exit_root).expect("valid mainnet exit root hex"),
-            ),
-            rollup_exit_root: Keccak256Output::new(
-                hex_to_bytes(&self.rollup_exit_root).expect("valid rollup exit root hex"),
-            ),
-        }
-    }
-}
-
-/// Deserialized claim asset test vector from Solidity-generated JSON.
-#[derive(Debug, Deserialize)]
-struct ClaimAssetVector {
-    #[serde(flatten)]
-    proof: ProofValueVector,
-    #[serde(flatten)]
-    leaf: LeafValueVector,
-}
-
-/// Identifies the source of claim data used in CLAIM note benchmarks.
-#[derive(Debug, Clone, Copy)]
-pub enum ClaimDataSource {
-    /// Locally simulated bridgeAsset data (L1 to Miden bridging).
-    L1ToMiden,
-    /// Rollup deposit data (L2 to Miden bridging).
-    L2ToMiden,
-}
-
-impl ClaimDataSource {
-    fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
-        let json = match self {
-            ClaimDataSource::L1ToMiden => BRIDGE_ASSET_VECTORS_JSON,
-            ClaimDataSource::L2ToMiden => ROLLUP_ASSET_VECTORS_JSON,
-        };
-        let vector: ClaimAssetVector =
-            serde_json::from_str(json).expect("failed to parse claim asset vectors JSON");
-        let ger = ExitRoot::new(
-            hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
-        );
-        let cgi_chain_hash = Keccak256Output::new(
-            hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
-                .expect("invalid CGI chain hash"),
-        );
-        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger, cgi_chain_hash)
-    }
-}
 
 // P2ID NOTE SETUPS
 // ================================================================================================
@@ -424,4 +277,107 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         .build()?;
 
     Ok(claim_tx_context)
+}
+
+// B2AGG NOTE SETUPS
+// ================================================================================================
+
+/// Sets up and returns the transaction context for executing a B2AGG (bridge-out) note against
+/// the bridge account.
+///
+/// This requires executing a prerequisite CONFIG_AGG_BRIDGE transaction to register the faucet
+/// in the bridge before the B2AGG note can be consumed. The returned context is ready to execute
+/// the B2AGG note consumption.
+///
+/// The setup uses the first entry from the MMR frontier test vectors for destination data.
+pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
+    let vectors = &*miden_agglayer::testing::SOLIDITY_MMR_FRONTIER_VECTORS;
+
+    let mut builder = MockChain::builder();
+
+    // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
+    let bridge_admin =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE GER MANAGER ACCOUNT (not used in bridge-out, but required for bridge creation)
+    let ger_manager =
+        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+
+    // CREATE BRIDGE ACCOUNT
+    let bridge_account = create_existing_bridge_account(
+        builder.rng_mut().draw_word(),
+        bridge_admin.id(),
+        ger_manager.id(),
+    );
+    builder.add_account(bridge_account.clone())?;
+
+    // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
+    let origin_token_address = EthAddressFormat::from_hex(&vectors.origin_token_address)
+        .expect("valid shared origin token address");
+    let origin_network = 64u32;
+    let scale = 0u8;
+    let bridge_amount: u64 = vectors.amounts[0].parse().expect("valid amount decimal string");
+
+    let faucet = create_existing_agglayer_faucet(
+        builder.rng_mut().draw_word(),
+        "AGG",
+        8,
+        Felt::new(FungibleAsset::MAX_AMOUNT),
+        Felt::new(bridge_amount),
+        bridge_account.id(),
+        &origin_token_address,
+        origin_network,
+        scale,
+    );
+    builder.add_account(faucet.clone())?;
+
+    // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
+    let config_note = ConfigAggBridgeNote::create(
+        faucet.id(),
+        &origin_token_address,
+        bridge_admin.id(),
+        bridge_account.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(OutputNote::Full(config_note.clone()));
+
+    // CREATE B2AGG NOTE
+    let destination_network = vectors.destination_networks[0];
+    let destination_address = EthAddressFormat::from_hex(&vectors.destination_addresses[0])
+        .expect("valid destination address");
+    let bridge_asset: Asset = FungibleAsset::new(faucet.id(), bridge_amount)?.into();
+    let b2agg_note = B2AggNote::create(
+        destination_network,
+        destination_address,
+        NoteAssets::new(vec![bridge_asset])?,
+        bridge_account.id(),
+        faucet.id(),
+        builder.rng_mut(),
+    )?;
+    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+
+    // BUILD MOCK CHAIN
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    // TX0: EXECUTE CONFIG_AGG_BRIDGE NOTE TO REGISTER FAUCET IN BRIDGE
+    let config_executed = mock_chain
+        .build_tx_context(bridge_account.id(), &[config_note.id()], &[])?
+        .build()?
+        .execute()
+        .await?;
+    mock_chain.add_pending_executed_transaction(&config_executed)?;
+    mock_chain.prove_next_block()?;
+
+    // TX1: BUILD B2AGG NOTE TRANSACTION CONTEXT (ready to execute)
+    let burn_note_script = StandardNote::BURN.script();
+    let foreign_account_inputs = mock_chain.get_foreign_account_inputs(faucet.id())?;
+    let b2agg_tx_context = mock_chain
+        .build_tx_context(bridge_account.id(), &[b2agg_note.id()], &[])?
+        .add_note_script(burn_note_script)
+        .foreign_accounts(vec![foreign_account_inputs])
+        .disable_debug_mode()
+        .build()?;
+
+    Ok(b2agg_tx_context)
 }

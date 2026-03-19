@@ -62,5 +62,18 @@
       "auth_procedure": 848,
       "after_tx_cycles_obtained": 571
     }
+  },
+  "consume B2AGG note (bridge-out)": {
+    "prologue": 3438,
+    "notes_processing": 143143,
+    "note_execution": {
+      "0x0f03c3a54ba9b21fdd8179410967784f6696dc624ab705fd098eba3f463ae10b": 143103
+    },
+    "tx_script_processing": 42,
+    "epilogue": {
+      "total": 13374,
+      "auth_procedure": 848,
+      "after_tx_cycles_obtained": 571
+    }
   }
 }

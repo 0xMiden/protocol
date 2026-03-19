@@ -8,6 +8,7 @@ use miden_protocol::transaction::TransactionMeasurements;
 mod context_setups;
 use context_setups::{
     ClaimDataSource,
+    tx_consume_b2agg_note,
     tx_consume_claim_note,
     tx_consume_single_p2id_note,
     tx_consume_two_p2id_notes,
@@ -63,6 +64,15 @@ async fn main() -> Result<()> {
         (
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
             tx_consume_claim_note(ClaimDataSource::L2ToMiden)
+                .await?
+                .execute()
+                .await
+                .map(TransactionMeasurements::from)?
+                .into(),
+        ),
+        (
+            ExecutionBenchmark::ConsumeB2AggNote,
+            tx_consume_b2agg_note()
                 .await?
                 .execute()
                 .await

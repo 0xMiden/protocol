@@ -7,11 +7,17 @@ Below we describe how to benchmark Miden transactions.
 The following transactions are benchmarked:
 
 - **P2ID notes**: Consume single/two P2ID notes, create single P2ID note
-- **CLAIM notes (agglayer)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
+- **CLAIM notes (agglayer bridge-in)**: Consume CLAIM note for L1-to-Miden bridging and L2-to-Miden bridging
+- **B2AGG note (agglayer bridge-out)**: Consume B2AGG note for Miden-to-AggLayer bridging
 
 The CLAIM note benchmarks measure the full bridge-in flow: the benchmark setup executes
 prerequisite transactions (CONFIG_AGG_BRIDGE and UPDATE_GER) to prepare the bridge account,
 then benchmarks the CLAIM note consumption transaction itself.
+
+The B2AGG note benchmark measures the bridge-out flow: the benchmark setup registers a faucet
+in the bridge via CONFIG_AGG_BRIDGE, then benchmarks the B2AGG note consumption which validates
+the faucet, performs FPI to get origin asset data, computes the Keccak leaf hash for the MMR,
+and creates a BURN note.
 
 Benchmarks consist of two groups:
 - Benchmarking the transaction execution.

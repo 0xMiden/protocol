@@ -114,15 +114,15 @@ fn merkle_proof_verification_code(
 /// Parameterized over two claim data sources:
 /// - [`ClaimDataSource::Real`]: uses real [`ProofData`] and [`LeafData`] from
 ///   `claim_asset_vectors_real_tx.json`, captured from an actual on-chain `claimAsset` transaction.
-/// - [`ClaimDataSource::Simulated`]: uses locally generated [`ProofData`] and [`LeafData`] from
+/// - [`ClaimDataSource::L1ToMiden`]: uses locally generated [`ProofData`] and [`LeafData`] from
 ///   `claim_asset_vectors_local_tx.json`, produced by simulating a `bridgeAsset()` call.
 ///
 /// Note: Modifying anything in the real test vectors would invalidate the Merkle proof,
 /// as the proof was computed for the original leaf data including the original destination.
 #[rstest::rstest]
 #[case::real(ClaimDataSource::Real)]
-#[case::simulated(ClaimDataSource::Simulated)]
-#[case::rollup(ClaimDataSource::Rollup)]
+#[case::simulated(ClaimDataSource::L1ToMiden)]
+#[case::rollup(ClaimDataSource::L2ToMiden)]
 #[tokio::test]
 async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> anyhow::Result<()> {
     use miden_agglayer::AggLayerBridge;
@@ -186,7 +186,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // For the simulated/rollup case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(
         data_source,
-        ClaimDataSource::Simulated | ClaimDataSource::Rollup
+        ClaimDataSource::L1ToMiden | ClaimDataSource::L2ToMiden
     ) {
         let dest =
             Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE, IncrNonceAuthComponent);

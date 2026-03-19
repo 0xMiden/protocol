@@ -9,6 +9,7 @@ pub enum ExecutionBenchmark {
     CreateSingleP2ID,
     ConsumeClaimNoteL1ToMiden,
     ConsumeClaimNoteL2ToMiden,
+    ConsumeB2AggNote,
 }
 
 impl fmt::Display for ExecutionBenchmark {
@@ -22,6 +23,9 @@ impl fmt::Display for ExecutionBenchmark {
             },
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden => {
                 write!(f, "consume CLAIM note (L2 to Miden)")
+            },
+            ExecutionBenchmark::ConsumeB2AggNote => {
+                write!(f, "consume B2AGG note (bridge-out)")
             },
         }
     }
