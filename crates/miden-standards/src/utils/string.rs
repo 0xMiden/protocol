@@ -117,7 +117,7 @@ impl<const N: usize> FixedWidthString<N> {
 
         for (word_idx, word) in words.iter().enumerate() {
             for (felt_idx, felt) in word.as_slice().iter().enumerate() {
-                let felt_value = felt.as_int();
+                let felt_value = felt.as_canonical_u64();
                 let le_bytes = felt_value.to_le_bytes();
                 if le_bytes[BYTES_PER_FELT] != 0 {
                     return Err(FixedWidthStringError::InvalidPadding);
@@ -169,8 +169,6 @@ pub enum FixedWidthStringError {
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::FieldElement;
-
     use super::*;
 
     #[test]
