@@ -131,22 +131,21 @@ pub proc bridge_out
     exec.utils::mem_store_double_word_unaligned
     # => [origin_addr(5), origin_network, pad(12)]
 
-    # Store origin_token_address (5 felts)
+    # Store origin_token_address and origin_network
     push.LEAF_DATA_START_PTR push.ORIGIN_TOKEN_ADDRESS_OFFSET add
     exec.write_address_to_memory
     # => [origin_network, pad(15)]
 
-    # Store origin_network
     push.LEAF_DATA_START_PTR push.ORIGIN_NETWORK_OFFSET add
     mem_store
     # => [pad(16)]
 
-    # Leaf type
+    # Store leaf type
     push.LEAF_TYPE_ASSET
     exec.utils::swap_u32_bytes
     push.LEAF_DATA_START_PTR push.LEAF_TYPE_OFFSET add
-    # => [leaf_type_ptr, leaf_type, pad(16)]
     mem_store
+    # => [pad(16)]
 
     # Store destination_network
     loc_load.DESTINATION_NETWORK_LOC
