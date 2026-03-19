@@ -264,8 +264,7 @@ impl AggLayerBridge {
     /// - [`AggLayerBridge::let_root_hi_slot_name`] — high word of the root
     ///
     /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo`, followed by the 4
-    /// elements of `root_hi`. For an empty/uninitialized tree, all elements are TODO (check if
-    /// reverse storage order in docs is correct) zeros.
+    /// elements of `root_hi`. For an empty/uninitialized tree, all elements are zeros.
     ///
     /// # Errors
     ///
