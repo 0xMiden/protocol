@@ -7,6 +7,7 @@ use miden_agglayer::{
     ConfigAggBridgeNote,
     EthAddress,
     ExitRoot,
+    MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
@@ -86,16 +87,22 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
-        "AGG",
-        8,
+        &vectors.token_symbol,
+        vectors.token_decimals,
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(total_burned),
         bridge_account.id(),
         &origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
@@ -284,17 +291,24 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
+    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
     let origin_token_address = EthAddress::new([0u8; 20]);
+    let metadata_hash = MetadataHash::from_token_info(
+        &vectors.token_name,
+        &vectors.token_symbol,
+        vectors.token_decimals,
+    );
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
-        "AGG",
-        8,
+        &vectors.token_symbol,
+        vectors.token_decimals,
         Felt::new(FungibleAsset::MAX_AMOUNT),
         Felt::new(100),
         bridge_account.id(),
         &origin_token_address,
         0, // origin_network
         0, // scale
+        metadata_hash,
     );
     builder.add_account(faucet.clone())?;
 
