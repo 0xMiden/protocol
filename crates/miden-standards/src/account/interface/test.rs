@@ -461,7 +461,7 @@ fn test_custom_account_custom_notes() {
         end
     ";
     let note_script = CodeBuilder::default()
-        .with_dynamically_linked_library(account_component.component_code().clone())
+        .with_dynamically_linked_library(account_component.component_code())
         .unwrap()
         .compile_note_script(compatible_source_code)
         .unwrap();
@@ -488,7 +488,7 @@ fn test_custom_account_custom_notes() {
         end
     ";
     let note_script = CodeBuilder::default()
-        .with_dynamically_linked_library(account_component.component_code().clone())
+        .with_dynamically_linked_library(account_component.component_code())
         .unwrap()
         .compile_note_script(incompatible_source_code)
         .unwrap();
@@ -571,7 +571,7 @@ fn test_custom_account_multiple_components_custom_notes() {
         end
     ";
     let note_script = CodeBuilder::default()
-        .with_dynamically_linked_library(custom_component.component_code().clone())
+        .with_dynamically_linked_library(custom_component.component_code())
         .unwrap()
         .compile_note_script(compatible_source_code)
         .unwrap();
@@ -609,7 +609,7 @@ fn test_custom_account_multiple_components_custom_notes() {
         end
     ";
     let note_script = CodeBuilder::default()
-        .with_dynamically_linked_library(custom_component.component_code().clone())
+        .with_dynamically_linked_library(custom_component.component_code())
         .unwrap()
         .compile_note_script(incompatible_source_code)
         .unwrap();

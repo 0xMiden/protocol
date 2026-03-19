@@ -82,7 +82,7 @@ async fn test_auth_procedure_called_from_wrong_context() -> anyhow::Result<()> {
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(auth_component.component_code().clone())?
+        .with_dynamically_linked_library(auth_component.component_code())?
         .compile_tx_script(tx_script_source)?;
 
     let tx_context = TransactionContextBuilder::new(account).tx_script(tx_script).build()?;

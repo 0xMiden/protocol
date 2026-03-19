@@ -93,9 +93,8 @@ impl AccountCode {
     pub(super) fn from_components_unchecked(
         components: &[AccountComponent],
     ) -> Result<Self, AccountError> {
-        let mast_forests: Vec<_> = components.iter().map(|component| component.mast()).collect();
         let (merged_mast_forest, _) =
-            MastForest::merge(mast_forests.iter().map(|mast| mast.as_ref()))
+            MastForest::merge(components.iter().map(|component| component.mast_forest()))
                 .map_err(AccountError::AccountComponentMastForestMergeError)?;
 
         let mut builder = AccountProcedureBuilder::new();

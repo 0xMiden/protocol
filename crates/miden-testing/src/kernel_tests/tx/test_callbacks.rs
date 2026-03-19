@@ -136,14 +136,14 @@ procedure_digest!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_ACCOUNT,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.clone() }
+    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
 );
 
 procedure_digest!(
     BLOCK_LIST_ON_BEFORE_ASSET_ADDED_TO_NOTE,
     BlockList::NAME,
     BlockList::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_NAME,
-    || { BLOCK_LIST_COMPONENT_CODE.clone() }
+    || { BLOCK_LIST_COMPONENT_CODE.as_library() }
 );
 
 // BLOCK LIST
@@ -668,6 +668,7 @@ fn add_faucet_with_callbacks(
     if account_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_account");
         let proc_root = callback_code
+            .as_library()
             .get_procedure_root_by_path(path.as_str())
             .expect("account callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_account(proc_root);
@@ -676,6 +677,7 @@ fn add_faucet_with_callbacks(
     if note_callback_masm.is_some() {
         let path = format!("{component_name}::on_before_asset_added_to_note");
         let proc_root = callback_code
+            .as_library()
             .get_procedure_root_by_path(path.as_str())
             .expect("note callback procedure should exist");
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);

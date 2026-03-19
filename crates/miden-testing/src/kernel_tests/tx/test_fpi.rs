@@ -711,7 +711,7 @@ async fn test_fpi_execute_foreign_procedure() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -833,7 +833,7 @@ async fn foreign_account_can_get_balance_and_presence_of_asset() -> anyhow::Resu
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
@@ -939,7 +939,7 @@ async fn foreign_account_get_initial_balance() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain.get_foreign_account_inputs(foreign_account.id())?;
@@ -1175,7 +1175,7 @@ async fn test_nested_fpi_cyclic_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     mock_chain
@@ -1262,7 +1262,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
 
     // Link against the second foreign account.
     let first_foreign_account_code = CodeBuilder::with_kernel_library(source_manager.clone())
-        .with_dynamically_linked_library(second_foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(second_foreign_account_component.component_code())?
         .compile_component_code("first_foreign_account", first_foreign_account_code_source)?;
     let first_foreign_account_component = AccountComponent::new(
         first_foreign_account_code,
@@ -1333,7 +1333,7 @@ async fn test_prove_fpi_two_foreign_accounts_chain() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::with_source_manager(source_manager.clone())
-        .with_dynamically_linked_library(first_foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(first_foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let executed_transaction = mock_chain
@@ -1610,7 +1610,7 @@ async fn test_nested_fpi_native_account_invocation() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1834,7 +1834,7 @@ async fn test_fpi_get_account_id() -> anyhow::Result<()> {
     );
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     let foreign_account_inputs = mock_chain
@@ -1949,7 +1949,7 @@ async fn test_get_initial_item_and_get_initial_map_item_with_foreign_account() -
     );
 
     let tx_script = CodeBuilder::with_mock_libraries()
-        .with_dynamically_linked_library(foreign_account_component.component_code().clone())?
+        .with_dynamically_linked_library(foreign_account_component.component_code())?
         .compile_tx_script(code)?;
 
     mock_chain

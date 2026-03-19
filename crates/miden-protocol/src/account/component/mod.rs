@@ -1,5 +1,4 @@
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use miden_mast_package::{MastArtifact, Package};
@@ -167,9 +166,9 @@ impl AccountComponent {
         &self.code
     }
 
-    /// Returns the [`MastForest`] of this component wrapped in an [`Arc`].
-    pub fn mast(&self) -> Arc<MastForest> {
-        self.code.mast()
+    /// Returns a reference to the underlying [`MastForest`] of this component.
+    pub fn mast_forest(&self) -> &MastForest {
+        self.code.mast_forest()
     }
 
     /// Returns a slice of the underlying [`StorageSlot`]s of this component.
@@ -203,21 +202,24 @@ impl AccountComponent {
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
     /// attribute.
     pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
-        let mast = self.code.mast();
-        self.code.exports().iter().map(move |proc_export| {
-            let digest = mast
-                .get_node_by_id(proc_export.node)
-                .expect("export node not in the forest")
-                .digest();
-            let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-            (AccountProcedureRoot::from_raw(digest), is_auth)
+        let library = self.code.as_library();
+        library.exports().filter_map(|export| {
+            export.as_procedure().map(|proc_export| {
+                let digest = library
+                    .mast_forest()
+                    .get_node_by_id(proc_export.node)
+                    .expect("export node not in the forest")
+                    .digest();
+                let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
+                (AccountProcedureRoot::from_raw(digest), is_auth)
+            })
         })
     }
 
     /// Returns the digest of the procedure with the specified path, or `None` if it was not found
-    /// in this component.
+    /// in this component's library or its library path is malformed.
     pub fn get_procedure_root_by_path(&self, proc_name: impl AsRef<Path>) -> Option<Word> {
-        self.code.get_procedure_root_by_path(proc_name)
+        self.code.as_library().get_procedure_root_by_path(proc_name)
     }
 }
 

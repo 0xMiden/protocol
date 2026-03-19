@@ -1571,7 +1571,7 @@ async fn transaction_executor_account_code_using_custom_library() -> anyhow::Res
         .build_existing()?;
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(account_component_lib.clone())?
+        .with_dynamically_linked_library(&account_component_lib)?
         .compile_tx_script(tx_script_src)?;
 
     let tx_context = TransactionContextBuilder::new(native_account.clone())
