@@ -1,10 +1,9 @@
 //! Fixed-width UTF-8 string stored as N Words (7 bytes/felt, length-prefixed).
 //!
-//! [`FixedWidthString<N>`] is the generic building block used by [`TokenName`], [`Description`],
-//! [`LogoURI`], and [`ExternalLink`] to encode arbitrary UTF-8 strings into a fixed number of
-//! storage words. `N` must be at most 9; with N=9 the capacity is 9×4×7−1 = 251 bytes, which is
-//! the maximum that fits in the u8 length prefix (leaving 251 bytes for payload). The maximum
-//! storable string length is therefore **251 bytes** (when N=9).
+//! [`FixedWidthString<N>`] is the generic building block for encoding arbitrary UTF-8 strings into
+//! a fixed number of storage words. `N` must be at most 9; with N=9 the capacity is 9×4×7−1 = 251
+//! bytes, which is the maximum that fits in the u8 length prefix (leaving 251 bytes for payload).
+//! The maximum storable string length is therefore **251 bytes** (when N=9).
 //!
 //! ## Buffer layout (N × 4 × 7 bytes)
 //!
@@ -16,11 +15,6 @@
 //!
 //! Each 7-byte chunk is stored as a little-endian `u64` with the high byte always zero, so the
 //! value is always < 2^56 and fits safely in a Goldilocks field element.
-//!
-//! [`TokenName`]: crate::account::metadata::TokenName
-//! [`Description`]: crate::account::metadata::Description
-//! [`LogoURI`]: crate::account::metadata::LogoURI
-//! [`ExternalLink`]: crate::account::metadata::ExternalLink
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -40,8 +34,8 @@ const BYTES_PER_FELT: usize = 7;
 /// A UTF-8 string stored in exactly `N` Words (N×4 felts, 7 bytes/felt, length-prefixed).
 ///
 /// `N` must be at most 9. With N=9 the maximum storable string length is **251 bytes** (the
-/// full buffer is 252 bytes, one of which is consumed by the length prefix). Wrapper types such
-/// as [`TokenName`](crate::account::metadata::TokenName) may impose a tighter limit.
+/// full buffer is 252 bytes, one of which is consumed by the length prefix). Higher-level wrapper
+/// types may impose a tighter limit.
 ///
 /// Using N=10 (or larger) fails at compile time:
 ///
