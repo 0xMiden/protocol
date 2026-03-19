@@ -2,11 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 
-use super::{
-    AuthMultisigSmart,
-    ProcedurePolicy,
-    ProcedurePolicyConstraints,
-};
+use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyConstraints};
 use crate::account::components::multisig_smart_library;
 use crate::procedure_digest;
 

@@ -15,7 +15,11 @@ impl SpendingPolicyConfig {
         amount_limits: AmountLimits,
         tier_thresholds: TierThresholds,
     ) -> Self {
-        Self { spending_window, amount_limits, tier_thresholds }
+        Self {
+            spending_window,
+            amount_limits,
+            tier_thresholds,
+        }
     }
 
     pub const fn spending_window(&self) -> u32 {

@@ -101,9 +101,7 @@ fn no_notes_immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
         .with_constraints(ProcedurePolicyConstraints::no_input_output_notes())
 }
 
-fn assert_program_execution_failed(
-    result: Result<ExecutedTransaction, TransactionExecutorError>,
-) {
+fn assert_program_execution_failed(result: Result<ExecutedTransaction, TransactionExecutorError>) {
     match result {
         Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
         Err(err) => panic!("expected transaction program failure, got: {err}"),
@@ -294,12 +292,7 @@ fn create_multisig_account(
 ) -> anyhow::Result<Account> {
     let approvers = public_keys.iter().map(|pk| (pk.clone(), auth_scheme)).collect::<Vec<_>>();
 
-    create_multisig_account_with_schemes(
-        threshold,
-        &approvers,
-        starting_balance,
-        proc_policy_map,
-    )
+    create_multisig_account_with_schemes(threshold, &approvers, starting_balance, proc_policy_map)
 }
 
 fn create_multisig_account_with_schemes(
@@ -2266,10 +2259,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
     let proc_policy_map =
         vec![(BasicWallet::receive_asset_digest(), receive_asset_one_signature_policy)];
 
-    let assets = vec![FungibleAsset::new(
-        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
-        10,
-    )?];
+    let assets =
+        vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
     let mut multisig_account = create_multisig_smart_account_with_assets(
         3,
         &public_keys,
@@ -2348,10 +2339,7 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
         &public_keys,
         auth_scheme,
         100,
-        vec![(
-            AuthMultisigSmartPresets::update_timelock_controller(),
-            delayed_only_policy(1),
-        )],
+        vec![(AuthMultisigSmartPresets::update_timelock_controller(), delayed_only_policy(1))],
     )?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
@@ -2406,10 +2394,7 @@ async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_
         &public_keys,
         auth_scheme,
         100,
-        vec![(
-            AuthMultisigSmartPresets::update_timelock_controller(),
-            delayed_only_policy(1),
-        )],
+        vec![(AuthMultisigSmartPresets::update_timelock_controller(), delayed_only_policy(1))],
     )?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
@@ -2455,10 +2440,7 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
         &public_keys,
         auth_scheme,
         100,
-        vec![(
-            BasicWallet::receive_asset_digest(),
-            no_notes_immediate_only_policy(1),
-        )],
+        vec![(BasicWallet::receive_asset_digest(), no_notes_immediate_only_policy(1))],
     )?;
 
     let mut mock_chain_builder =
@@ -2478,7 +2460,10 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
         .execute()
         .await;
 
-    assert_transaction_executor_error!(result, ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES);
+    assert_transaction_executor_error!(
+        result,
+        ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
+    );
 
     Ok(())
 }

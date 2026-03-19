@@ -23,8 +23,8 @@ use miden_protocol::{Felt, Word};
 use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
 use super::policy::ProcedurePolicy;
 use super::types::{AmountLimits, OracleId, TierThresholds};
-use crate::account::components::multisig_smart_library;
 use crate::account::auth::multisig::AuthMultisigConfig;
+use crate::account::components::multisig_smart_library;
 
 // CONSTANTS
 // ================================================================================================
@@ -46,11 +46,6 @@ static APPROVER_SCHEME_ID_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|
 
 static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::auth::multisig::executed_transactions")
-        .expect("storage slot name should be valid")
-});
-
-static LEGACY_PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
         .expect("storage slot name should be valid")
 });
 
@@ -194,7 +189,10 @@ impl AuthMultisigSmartConfig {
         self
     }
 
-    pub fn with_amount_limits(mut self, [limit_0, limit_1, limit_2, delay_trigger_amount]: [u64; 4]) -> Self {
+    pub fn with_amount_limits(
+        mut self,
+        [limit_0, limit_1, limit_2, delay_trigger_amount]: [u64; 4],
+    ) -> Self {
         self.spending_policy = SpendingPolicyConfig::new(
             self.spending_policy.spending_window(),
             AmountLimits::new(limit_0, limit_1, limit_2, delay_trigger_amount),
@@ -213,8 +211,10 @@ impl AuthMultisigSmartConfig {
     }
 
     pub fn with_oracle_config(mut self, [prefix, suffix]: [Felt; 2]) -> Self {
-        self.oracle_reader =
-            OracleReaderConfig::new(OracleId::new(prefix, suffix), self.oracle_reader.get_price_proc_root());
+        self.oracle_reader = OracleReaderConfig::new(
+            OracleId::new(prefix, suffix),
+            self.oracle_reader.get_price_proc_root(),
+        );
         self
     }
 
@@ -361,10 +361,6 @@ impl AuthMultisigSmart {
         &EXECUTED_TRANSACTIONS_SLOT_NAME
     }
 
-    fn legacy_procedure_thresholds_slot() -> &'static StorageSlotName {
-        &LEGACY_PROCEDURE_THRESHOLDS_SLOT_NAME
-    }
-
     pub fn procedure_policies_slot() -> &'static StorageSlotName {
         &PROCEDURE_POLICIES_SLOT_NAME
     }
@@ -457,17 +453,6 @@ impl AuthMultisigSmart {
                 "Executed transactions",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
-            ),
-        )
-    }
-
-    fn legacy_procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
-        (
-            Self::legacy_procedure_thresholds_slot().clone(),
-            StorageSlotSchema::map(
-                "Legacy procedure thresholds",
-                SchemaType::native_word(),
-                SchemaType::u32(),
             ),
         )
     }
@@ -615,7 +600,7 @@ impl AuthMultisigSmart {
 
 impl From<AuthMultisigSmart> for AccountComponent {
     fn from(multisig: AuthMultisigSmart) -> Self {
-        let mut storage_slots = Vec::with_capacity(17);
+        let mut storage_slots = Vec::with_capacity(16);
 
         // Threshold config slot (value: [threshold, num_approvers, 0, 0])
         let num_approvers = multisig.config.approvers().len() as u32;
@@ -650,20 +635,12 @@ impl From<AuthMultisigSmart> for AccountComponent {
             StorageMap::default(),
         ));
 
-        // Legacy procedure thresholds slot (map). This remains empty for smart accounts and exists
-        // only so the shared multisig signer-rotation helper can read its historical slot.
-        storage_slots.push(StorageSlot::with_map(
-            AuthMultisigSmart::legacy_procedure_thresholds_slot().clone(),
-            StorageMap::default(),
-        ));
-
         // Procedure policies slot (map)
-        let procedure_policies = StorageMap::with_entries(
-            multisig.config.proc_policies().iter().map(|(proc_root, policy)| {
-                (StorageMapKey::from_raw(*proc_root), policy.to_word())
-            }),
-        )
-        .unwrap();
+        let procedure_policies =
+            StorageMap::with_entries(multisig.config.proc_policies().iter().map(
+                |(proc_root, policy)| (StorageMapKey::from_raw(*proc_root), policy.to_word()),
+            ))
+            .unwrap();
         storage_slots.push(StorageSlot::with_map(
             AuthMultisigSmart::procedure_policies_slot().clone(),
             procedure_policies,
@@ -714,12 +691,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::oracle_config_slot().clone(),
-            Word::from([
-                oracle_id.prefix(),
-                oracle_id.suffix(),
-                Felt::new(0),
-                Felt::new(0),
-            ]),
+            Word::from([oracle_id.prefix(), oracle_id.suffix(), Felt::new(0), Felt::new(0)]),
         ));
         storage_slots.push(StorageSlot::with_value(
             AuthMultisigSmart::get_price_proc_root_slot().clone(),
@@ -747,7 +719,6 @@ impl From<AuthMultisigSmart> for AccountComponent {
             AuthMultisigSmart::approver_public_keys_slot_schema(),
             AuthMultisigSmart::approver_auth_scheme_slot_schema(),
             AuthMultisigSmart::executed_transactions_slot_schema(),
-            AuthMultisigSmart::legacy_procedure_thresholds_slot_schema(),
             AuthMultisigSmart::procedure_policies_slot_schema(),
             AuthMultisigSmart::timelock_controller_slot_schema(),
             AuthMultisigSmart::spending_window_slot_schema(),

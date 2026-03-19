@@ -230,6 +230,11 @@ impl AuthMultisigPsm {
         AuthMultisig::procedure_thresholds_slot()
     }
 
+    /// Returns the [`StorageSlotName`] where the procedure policies are stored.
+    pub fn procedure_policies_slot() -> &'static StorageSlotName {
+        AuthMultisig::procedure_policies_slot()
+    }
+
     /// Returns the [`StorageSlotName`] where the private state manager public key is stored.
     pub fn psm_public_key_slot() -> &'static StorageSlotName {
         PsmConfig::public_key_slot()
@@ -263,6 +268,11 @@ impl AuthMultisigPsm {
     /// Returns the storage slot schema for the procedure thresholds slot.
     pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         AuthMultisig::procedure_thresholds_slot_schema()
+    }
+
+    /// Returns the storage slot schema for the procedure policies slot.
+    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        AuthMultisig::procedure_policies_slot_schema()
     }
 
     /// Returns the storage slot schema for the private state manager public key slot.

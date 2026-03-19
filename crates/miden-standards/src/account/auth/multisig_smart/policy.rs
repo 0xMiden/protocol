@@ -1,5 +1,5 @@
-use miden_protocol::errors::AccountError;
 use miden_protocol::Word;
+use miden_protocol::errors::AccountError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicyThresholds {
@@ -10,9 +10,16 @@ pub struct ProcedurePolicyThresholds {
 /// Selects how a procedure may be executed and which threshold each execution lane requires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedurePolicyMode {
-    ImmediateOnly { immediate_threshold: u32 },
-    DelayOnly { delay_threshold: u32 },
-    ImmediateOrDelay { immediate_threshold: u32, delay_threshold: u32 },
+    ImmediateOnly {
+        immediate_threshold: u32,
+    },
+    DelayOnly {
+        delay_threshold: u32,
+    },
+    ImmediateOrDelay {
+        immediate_threshold: u32,
+        delay_threshold: u32,
+    },
 }
 
 /// Additional constraints that may be imposed on transactions calling a protected procedure.
@@ -24,19 +31,31 @@ pub struct ProcedurePolicyConstraints {
 
 impl ProcedurePolicyConstraints {
     pub const fn none() -> Self {
-        Self { isolated_tx: false, no_input_output_notes: false }
+        Self {
+            isolated_tx: false,
+            no_input_output_notes: false,
+        }
     }
 
     pub const fn isolated_tx() -> Self {
-        Self { isolated_tx: true, no_input_output_notes: false }
+        Self {
+            isolated_tx: true,
+            no_input_output_notes: false,
+        }
     }
 
     pub const fn no_input_output_notes() -> Self {
-        Self { isolated_tx: false, no_input_output_notes: true }
+        Self {
+            isolated_tx: false,
+            no_input_output_notes: true,
+        }
     }
 
     pub const fn isolated_no_input_output_notes() -> Self {
-        Self { isolated_tx: true, no_input_output_notes: true }
+        Self {
+            isolated_tx: true,
+            no_input_output_notes: true,
+        }
     }
 }
 
@@ -75,10 +94,7 @@ impl ProcedurePolicy {
         delay_threshold: u32,
     ) -> Self {
         Self::new(
-            ProcedurePolicyMode::ImmediateOrDelay {
-                immediate_threshold,
-                delay_threshold,
-            },
+            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold },
             ProcedurePolicyConstraints::none(),
         )
     }
@@ -98,20 +114,21 @@ impl ProcedurePolicy {
 
     pub const fn thresholds(&self) -> ProcedurePolicyThresholds {
         match self.mode {
-            ProcedurePolicyMode::ImmediateOnly { immediate_threshold } => ProcedurePolicyThresholds {
-                immediate_threshold: Some(immediate_threshold),
-                delay_threshold: None,
+            ProcedurePolicyMode::ImmediateOnly { immediate_threshold } => {
+                ProcedurePolicyThresholds {
+                    immediate_threshold: Some(immediate_threshold),
+                    delay_threshold: None,
+                }
             },
             ProcedurePolicyMode::DelayOnly { delay_threshold } => ProcedurePolicyThresholds {
                 immediate_threshold: None,
                 delay_threshold: Some(delay_threshold),
             },
-            ProcedurePolicyMode::ImmediateOrDelay {
-                immediate_threshold,
-                delay_threshold,
-            } => ProcedurePolicyThresholds {
-                immediate_threshold: Some(immediate_threshold),
-                delay_threshold: Some(delay_threshold),
+            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold } => {
+                ProcedurePolicyThresholds {
+                    immediate_threshold: Some(immediate_threshold),
+                    delay_threshold: Some(delay_threshold),
+                }
             },
         }
     }
@@ -132,10 +149,7 @@ impl ProcedurePolicy {
                     ));
                 }
             },
-            ProcedurePolicyMode::ImmediateOrDelay {
-                immediate_threshold,
-                delay_threshold,
-            } => {
+            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold } => {
                 if immediate_threshold == 0 || delay_threshold == 0 {
                     return Err(AccountError::other(
                         "immediate and delayed thresholds must both be at least 1",
@@ -152,10 +166,7 @@ impl ProcedurePolicy {
         Ok(())
     }
 
-    pub fn assert_valid_for_num_approvers(
-        &self,
-        num_approvers: u32,
-    ) -> Result<(), AccountError> {
+    pub fn assert_valid_for_num_approvers(&self, num_approvers: u32) -> Result<(), AccountError> {
         let thresholds = self.thresholds();
 
         self.assert_valid_shape()?;
@@ -196,11 +207,7 @@ impl ProcedurePolicy {
 mod tests {
     use alloc::string::ToString;
 
-    use super::{
-        ProcedurePolicy,
-        ProcedurePolicyConstraints,
-        ProcedurePolicyThresholds,
-    };
+    use super::{ProcedurePolicy, ProcedurePolicyConstraints, ProcedurePolicyThresholds};
 
     #[test]
     fn procedure_policy_word_encoding_matches_storage_layout() {

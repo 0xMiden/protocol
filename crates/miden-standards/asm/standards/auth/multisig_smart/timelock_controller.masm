@@ -28,6 +28,7 @@ const ERR_TX_STILL_TIMELOCKED = "tx still timelocked"
 const ERR_PENDING_ALREADY_SET = "pending action already set"
 const ERR_PROPOSE_ZERO_SIGNATURES = "num_verified_signatures cannot be zero"
 const ERR_CANCEL_INSUFFICIENT_SIGNATURES = "insufficient signatures for cancel"
+const ERR_EXECUTE_PATH_MISMATCH = "execute path must match delay requirement"
 
 #! High-impact action.
 #!
@@ -80,6 +81,17 @@ proc get_timelock_controller
 
     exec.active_account::get_initial_item
     # => [min_delay, propose_expiration_delta, 0, 0]
+end
+
+#! Returns 1 if `execute_proposed_transaction` was called in the current transaction, 0 otherwise.
+#!
+#! Inputs:  []
+#! Outputs: [is_execute_path]
+pub proc is_execute_path
+    push.PENDING_EXECUTE_SLOT[0..2]
+    exec.active_account::get_item
+    exec.common::is_empty_word
+    eq.0
 end
 
 #! Inputs:  []
@@ -258,6 +270,18 @@ proc assert_unlock_reached
 
     assertz.err=ERR_TX_STILL_TIMELOCKED
     # => []
+end
+
+#! Asserts that delayed-only procedure policies are executed exclusively via the execute lane.
+#!
+#! Inputs:  [policy_requires_delay, is_execute_path]
+#! Outputs: []
+pub proc assert_execute_path_for_delay(policy_requires_delay: u32, is_execute_path: u32)
+    if.true
+        assert.err=ERR_EXECUTE_PATH_MISMATCH
+    else
+        drop
+    end
 end
 
 #! Enforces that TX_HASH is proposed and the stored unlock timestamp has been reached.

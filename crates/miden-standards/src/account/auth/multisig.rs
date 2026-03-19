@@ -46,8 +46,8 @@ static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::ne
         .expect("storage slot name should be valid")
 });
 
-static PROCEDURE_THRESHOLDS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig::procedure_thresholds")
+static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
         .expect("storage slot name should be valid")
 });
 
@@ -169,9 +169,15 @@ impl AuthMultisig {
         &EXECUTED_TRANSACTIONS_SLOT_NAME
     }
 
-    /// Returns the [`StorageSlotName`] where the procedure thresholds are stored.
+    /// Returns the [`StorageSlotName`] where the procedure policies are stored.
+    pub fn procedure_policies_slot() -> &'static StorageSlotName {
+        &PROCEDURE_POLICIES_SLOT_NAME
+    }
+
+    /// Returns the [`StorageSlotName`] where the immediate-threshold-compatible procedure policies
+    /// are stored.
     pub fn procedure_thresholds_slot() -> &'static StorageSlotName {
-        &PROCEDURE_THRESHOLDS_SLOT_NAME
+        Self::procedure_policies_slot()
     }
 
     /// Returns the storage slot schema for the threshold configuration slot.
@@ -226,16 +232,22 @@ impl AuthMultisig {
         )
     }
 
-    /// Returns the storage slot schema for the procedure thresholds slot.
-    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+    /// Returns the storage slot schema for the procedure policies slot.
+    pub fn procedure_policies_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
-            Self::procedure_thresholds_slot().clone(),
+            Self::procedure_policies_slot().clone(),
             StorageSlotSchema::map(
-                "Procedure thresholds",
+                "Procedure policies",
                 SchemaType::native_word(),
-                SchemaType::u32(),
+                SchemaType::native_word(),
             ),
         )
+    }
+
+    /// Returns the storage slot schema for the immediate-threshold-compatible procedure policies
+    /// slot.
+    pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
+        Self::procedure_policies_slot_schema()
     }
 }
 
@@ -280,7 +292,7 @@ impl From<AuthMultisig> for AccountComponent {
             executed_transactions,
         ));
 
-        // Procedure thresholds slot (map: PROC_ROOT -> threshold)
+        // Procedure policies slot (map: PROC_ROOT -> [immediate_threshold, 0, 0, 0])
         let proc_threshold_roots = StorageMap::with_entries(
             multisig.config.proc_thresholds().iter().map(|(proc_root, threshold)| {
                 (StorageMapKey::from_raw(*proc_root), Word::from([*threshold, 0, 0, 0]))
@@ -288,7 +300,7 @@ impl From<AuthMultisig> for AccountComponent {
         )
         .unwrap();
         storage_slots.push(StorageSlot::with_map(
-            AuthMultisig::procedure_thresholds_slot().clone(),
+            AuthMultisig::procedure_policies_slot().clone(),
             proc_threshold_roots,
         ));
 
@@ -297,7 +309,7 @@ impl From<AuthMultisig> for AccountComponent {
             AuthMultisig::approver_public_keys_slot_schema(),
             AuthMultisig::approver_auth_scheme_slot_schema(),
             AuthMultisig::executed_transactions_slot_schema(),
-            AuthMultisig::procedure_thresholds_slot_schema(),
+            AuthMultisig::procedure_policies_slot_schema(),
         ])
         .expect("storage schema should be valid");
 

@@ -9,13 +9,13 @@ pub struct AmountLimits {
 }
 
 impl AmountLimits {
-    pub const fn new(
-        limit_0: u64,
-        limit_1: u64,
-        limit_2: u64,
-        delay_trigger_amount: u64,
-    ) -> Self {
-        Self { limit_0, limit_1, limit_2, delay_trigger_amount }
+    pub const fn new(limit_0: u64, limit_1: u64, limit_2: u64, delay_trigger_amount: u64) -> Self {
+        Self {
+            limit_0,
+            limit_1,
+            limit_2,
+            delay_trigger_amount,
+        }
     }
 
     pub const fn limit_0(&self) -> u64 {
