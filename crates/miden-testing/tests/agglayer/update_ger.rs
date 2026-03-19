@@ -151,7 +151,7 @@ async fn compute_ger() -> anyhow::Result<()> {
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::bridge::bridge_in
+                use agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -234,7 +234,7 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::bridge_in
+            use agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots
