@@ -65,6 +65,7 @@ miden-utils-sync      = { default-features = false, version = "0.20" }
 miden-verifier        = { default-features = false, version = "0.20" }
 
 # External dependencies
+alloy-sol-types = { default-features = false, version = "1.5" }
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
 assert_matches  = { default-features = false, version = "1.5" }
 fs-err          = { default-features = false, version = "3" }

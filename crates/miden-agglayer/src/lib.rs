@@ -117,6 +117,7 @@ fn agglayer_faucet_component_library() -> Library {
 ///
 /// # Panics
 /// Panics if the token symbol is invalid or metadata validation fails.
+#[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_component(
     token_symbol: &str,
     decimals: u8,
@@ -126,6 +127,7 @@ fn create_agglayer_faucet_component(
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
+    metadata_hash: MetadataHash,
 ) -> AccountComponent {
     let symbol = TokenSymbol::new(token_symbol).expect("token symbol should be valid");
     AggLayerFaucet::new(
@@ -137,6 +139,7 @@ fn create_agglayer_faucet_component(
         *origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     )
     .expect("agglayer faucet metadata should be valid")
     .into()
@@ -197,6 +200,7 @@ fn create_agglayer_faucet_builder(
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
+    metadata_hash: MetadataHash,
 ) -> AccountBuilder {
     let agglayer_component = create_agglayer_faucet_component(
         token_symbol,
@@ -207,6 +211,7 @@ fn create_agglayer_faucet_builder(
         origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     );
 
     Account::builder(seed.into())
@@ -218,6 +223,7 @@ fn create_agglayer_faucet_builder(
 /// Creates a new agglayer faucet account with the specified configuration.
 ///
 /// This creates a new account suitable for production use.
+#[allow(clippy::too_many_arguments)]
 pub fn create_agglayer_faucet(
     seed: Word,
     token_symbol: &str,
@@ -227,6 +233,7 @@ pub fn create_agglayer_faucet(
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
+    metadata_hash: MetadataHash,
 ) -> Account {
     create_agglayer_faucet_builder(
         seed,
@@ -238,6 +245,7 @@ pub fn create_agglayer_faucet(
         origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     )
     .with_auth_component(AccountComponent::from(NoAuth))
     .build()
@@ -259,6 +267,7 @@ pub fn create_existing_agglayer_faucet(
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
+    metadata_hash: MetadataHash,
 ) -> Account {
     create_agglayer_faucet_builder(
         seed,
@@ -270,6 +279,7 @@ pub fn create_existing_agglayer_faucet(
         origin_token_address,
         origin_network,
         scale,
+        metadata_hash,
     )
     .with_auth_component(AccountComponent::from(NoAuth))
     .build_existing()

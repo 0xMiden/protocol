@@ -18,6 +18,11 @@ const CONVERSION_INFO_1_SLOT = word("agglayer::faucet::conversion_info_1")
 # Slot 2: [addr_felt4, origin_network, scale, 0] — remaining address felt + origin network + scale
 const CONVERSION_INFO_2_SLOT = word("agglayer::faucet::conversion_info_2")
 
+# Storage slots for the pre-computed metadata hash (keccak256 of ABI-encoded token metadata).
+# The 32-byte hash is split across two value slots, each holding 4 u32 felts.
+const METADATA_HASH_LO_SLOT = word("miden::agglayer::faucet::metadata_hash_lo")
+const METADATA_HASH_HI_SLOT = word("miden::agglayer::faucet::metadata_hash_hi")
+
 # PUBLIC INTERFACE
 # =================================================================================================
 
@@ -79,6 +84,39 @@ proc get_scale_inner
     # => [scale]
 end
 
+#! Returns the pre-computed metadata hash (8 u32 felts) from faucet storage.
+#!
+#! The metadata hash is `keccak256(abi.encode(name, symbol, decimals))` and is stored
+#! across two value slots (lo and hi, 4 felts each).
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
+#!
+#! Invocation: call
+pub proc get_metadata_hash
+    push.METADATA_HASH_LO_SLOT[0..2]
+    exec.active_account::get_item
+    # => [lo3, lo2, lo1, lo0, pad(16)]
+
+    exec.word::reverse
+    # => [lo0, lo1, lo2, lo3, pad(16)]
+
+    push.METADATA_HASH_HI_SLOT[0..2]
+    exec.active_account::get_item
+    # => [hi3, hi2, hi1, hi0, lo0, lo1, lo2, lo3, pad(16)]
+
+    exec.word::reverse
+    # => [hi0, hi1, hi2, hi3, lo0, lo1, lo2, lo3, pad(16)]
+
+    # Rearrange: move hi below lo
+    swapw
+    # => [lo0, lo1, lo2, lo3, hi0, hi1, hi2, hi3, pad(16)]
+
+    # Drop 8 excess padding elements (24 -> 16)
+    swapdw dropw dropw
+    # => [METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]
+end
+
 #! Returns the scale factor from faucet conversion storage.
 #!
 #! Called via FPI from the bridge account.
@@ -90,7 +128,7 @@ end
 pub proc get_scale
     exec.get_scale_inner
     # => [scale, pad(16)]
-    
+
     swap drop
     # => [scale, pad(15)]
 end

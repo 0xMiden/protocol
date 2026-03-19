@@ -227,6 +227,10 @@ pub struct MTFVectorsFile {
     pub origin_token_address: String,
     pub destination_networks: Vec<u32>,
     pub destination_addresses: Vec<String>,
+    #[allow(dead_code)]
+    pub token_name: String,
+    pub token_symbol: String,
+    pub token_decimals: u8,
 }
 
 // LAZY-PARSED TEST VECTORS
