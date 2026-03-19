@@ -193,9 +193,13 @@ impl AssetVault {
 
         for (&asset, &action) in delta.non_fungible().iter() {
             match action {
-                NonFungibleDeltaAction::Add => self.add_non_fungible_asset(asset),
-                NonFungibleDeltaAction::Remove => self.remove_non_fungible_asset(asset),
-            }?;
+                NonFungibleDeltaAction::Add => {
+                    self.add_non_fungible_asset(asset)?;
+                },
+                NonFungibleDeltaAction::Remove => {
+                    self.remove_non_fungible_asset(asset)?;
+                },
+            }
         }
 
         Ok(())
@@ -267,27 +271,32 @@ impl AssetVault {
 
     // REMOVE ASSET
     // --------------------------------------------------------------------------------------------
-    /// Remove the specified asset from the vault and returns the asset that was just removed.
+    /// Remove the specified asset from the vault and returns the remaining asset, if any.
+    ///
+    /// - For fungible assets, returns `Some(Asset::Fungible(remaining))` with the remaining balance
+    ///   (which may have amount 0).
+    /// - For non-fungible assets, returns `None` since non-fungible assets are either fully present
+    ///   or absent.
     ///
     /// # Errors
     /// - The fungible asset is not found in the vault.
     /// - The amount of the fungible asset in the vault is less than the amount to be removed.
     /// - The non-fungible asset is not found in the vault.
-    pub fn remove_asset(&mut self, asset: Asset) -> Result<Asset, AssetVaultError> {
+    pub fn remove_asset(&mut self, asset: Asset) -> Result<Option<Asset>, AssetVaultError> {
         match asset {
             Asset::Fungible(asset) => {
-                let asset = self.remove_fungible_asset(asset)?;
-                Ok(Asset::Fungible(asset))
+                let remaining = self.remove_fungible_asset(asset)?;
+                Ok(Some(Asset::Fungible(remaining)))
             },
             Asset::NonFungible(asset) => {
-                let asset = self.remove_non_fungible_asset(asset)?;
-                Ok(Asset::NonFungible(asset))
+                self.remove_non_fungible_asset(asset)?;
+                Ok(None)
             },
         }
     }
 
-    /// Remove the specified fungible asset from the vault and returns the asset that was just
-    /// removed. If the final amount of the asset is zero, the asset is removed from the vault.
+    /// Remove the specified fungible asset from the vault and returns the remaining fungible
+    /// asset. If the final amount of the asset is zero, the asset is removed from the vault.
     ///
     /// # Errors
     /// - The asset is not found in the vault.
@@ -325,11 +334,10 @@ impl AssetVault {
             .insert(new_asset.vault_key().to_word(), new_asset.to_value_word())
             .map_err(AssetVaultError::MaxLeafEntriesExceeded)?;
 
-        Ok(other_asset)
+        Ok(new_asset)
     }
 
-    /// Remove the specified non-fungible asset from the vault and returns the asset that was just
-    /// removed.
+    /// Remove the specified non-fungible asset from the vault.
     ///
     /// # Errors
     /// - The non-fungible asset is not found in the vault.
@@ -337,7 +345,7 @@ impl AssetVault {
     fn remove_non_fungible_asset(
         &mut self,
         asset: NonFungibleAsset,
-    ) -> Result<NonFungibleAsset, AssetVaultError> {
+    ) -> Result<(), AssetVaultError> {
         // remove the asset from the vault.
         let old = self
             .asset_tree
@@ -349,8 +357,7 @@ impl AssetVault {
             return Err(AssetVaultError::NonFungibleAssetNotFound(asset));
         }
 
-        // return the asset that was removed.
-        Ok(asset)
+        Ok(())
     }
 }
 

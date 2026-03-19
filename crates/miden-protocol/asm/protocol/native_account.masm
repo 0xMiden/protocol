@@ -231,14 +231,16 @@ pub proc add_asset
     # => [ASSET_VALUE']
 end
 
-#! Remove the specified asset from the vault.
+#! Remove the specified asset from the vault and return the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal which may
+#!   be the empty word if nothing remains (e.g. if a non-fungible asset is removed).
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -255,11 +257,11 @@ pub proc remove_asset
     # => [offset, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [ASSET_VALUE, pad(12)]
+    # => [REMAINING_ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE]
 end
 
 # CODE

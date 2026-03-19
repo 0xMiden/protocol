@@ -400,10 +400,6 @@ async fn test_burn_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{FUNGIBLE_ASSET_KEY}
             call.mock_faucet::burn
 
-            # assert the correct asset is returned
-            push.{FUNGIBLE_ASSET_VALUE}
-            assert_eqw.err="burnt asset does not match expected asset"
-
             # assert the input vault has been updated
             exec.memory::get_input_vault_root_ptr
 
@@ -565,10 +561,7 @@ async fn test_burn_non_fungible_asset_succeeds() -> anyhow::Result<()> {
             push.{NON_FUNGIBLE_ASSET_VALUE}
             push.{NON_FUNGIBLE_ASSET_KEY}
             call.mock_faucet::burn
-
-            # assert the correct asset is returned
-            push.{NON_FUNGIBLE_ASSET_VALUE}
-            assert_eqw.err="burnt asset does not match expected asset"
+            dropw
 
             # assert the input vault has been updated and does not have the burnt asset
             exec.memory::get_input_vault_root_ptr
