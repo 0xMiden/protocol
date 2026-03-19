@@ -1,5 +1,6 @@
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
+use core::marker::PhantomData;
 
 use miden_processor::advice::AdviceInputs;
 use miden_processor::{ExecutionError, FastProcessor, StackInputs};
@@ -40,6 +41,9 @@ pub use notes_checker::{
     NoteConsumptionInfo,
 };
 
+mod program_executor;
+pub use program_executor::ProgramExecutor;
+
 // TRANSACTION EXECUTOR
 // ================================================================================================
 
@@ -52,11 +56,18 @@ pub use notes_checker::{
 /// The transaction executor uses dynamic dispatch with trait objects for the [DataStore] and
 /// [TransactionAuthenticator], allowing it to be used with different backend implementations.
 /// At the moment of execution, the [DataStore] is expected to provide all required MAST nodes.
-pub struct TransactionExecutor<'store, 'auth, STORE: 'store, AUTH: 'auth> {
+pub struct TransactionExecutor<
+    'store,
+    'auth,
+    STORE: 'store,
+    AUTH: 'auth,
+    EXEC: ProgramExecutor = FastProcessor,
+> {
     data_store: &'store STORE,
     authenticator: Option<&'auth AUTH>,
     source_manager: Arc<dyn SourceManagerSync>,
     exec_options: ExecutionOptions,
+    _executor: PhantomData<EXEC>,
 }
 
 impl<'store, 'auth, STORE, AUTH> TransactionExecutor<'store, 'auth, STORE, AUTH>
@@ -71,9 +82,13 @@ where
     ///
     /// The created executor will not have the authenticator or source manager set, and tracing and
     /// debug mode will be turned off.
+    ///
+    /// By default, the executor uses [`FastProcessor`](miden_processor::FastProcessor) for program
+    /// execution. Use [`with_program_executor`](Self::with_program_executor) to plug in a
+    /// different execution engine.
     pub fn new(data_store: &'store STORE) -> Self {
         const _: () = assert!(MIN_TX_EXECUTION_CYCLES <= MAX_TX_EXECUTION_CYCLES);
-        TransactionExecutor {
+        Self {
             data_store,
             authenticator: None,
             source_manager: Arc::new(DefaultSourceManager::default()),
@@ -85,6 +100,30 @@ where
                 false,
             )
             .expect("Must not fail while max cycles is more than min trace length"),
+            _executor: PhantomData,
+        }
+    }
+}
+
+impl<'store, 'auth, STORE, AUTH, EXEC> TransactionExecutor<'store, 'auth, STORE, AUTH, EXEC>
+where
+    STORE: DataStore + 'store + Sync,
+    AUTH: TransactionAuthenticator + 'auth + Sync,
+    EXEC: ProgramExecutor,
+{
+    /// Replaces the transaction program executor with a different implementation.
+    ///
+    /// This allows plugging in alternative execution engines while preserving the rest of the
+    /// transaction executor configuration.
+    pub fn with_program_executor<EXEC2: ProgramExecutor>(
+        self,
+    ) -> TransactionExecutor<'store, 'auth, STORE, AUTH, EXEC2> {
+        TransactionExecutor::<'store, 'auth, STORE, AUTH, EXEC2> {
+            data_store: self.data_store,
+            authenticator: self.authenticator,
+            source_manager: self.source_manager,
+            exec_options: self.exec_options,
+            _executor: PhantomData,
         }
     }
 
@@ -186,8 +225,7 @@ where
 
         // instantiate the processor in debug mode only when debug mode is specified via execution
         // options; this is important because in debug mode execution is almost 100x slower
-        let processor =
-            FastProcessor::new_with_options(stack_inputs, advice_inputs, self.exec_options);
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
 
         let output = processor
             .execute(&TransactionKernel::main(), &mut host)
@@ -233,7 +271,7 @@ where
 
         let (mut host, stack_inputs, advice_inputs) = self.prepare_transaction(&tx_inputs).await?;
 
-        let processor = FastProcessor::new(stack_inputs).with_advice(advice_inputs);
+        let processor = EXEC::new(stack_inputs, advice_inputs, self.exec_options);
         let output = processor
             .execute(&TransactionKernel::tx_script_main(), &mut host)
             .await

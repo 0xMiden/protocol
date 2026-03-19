@@ -1,5 +1,4 @@
 use assert_matches::assert_matches;
-use miden_protocol::ONE;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::{
     Asset,
@@ -24,6 +23,7 @@ use miden_protocol::testing::account_id::{
 };
 use miden_protocol::testing::constants::{FUNGIBLE_ASSET_AMOUNT, NON_FUNGIBLE_ASSET_DATA};
 use miden_protocol::transaction::memory;
+use miden_protocol::{ONE, Word};
 
 use crate::executor::CodeExecutor;
 use crate::kernel_tests::tx::ExecutionOutputExt;
@@ -362,13 +362,10 @@ async fn test_remove_fungible_asset_success_no_balance_remaining() -> anyhow::Re
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(
-        exec_output.get_stack_word(0),
-        account_vault
-            .remove_asset(Asset::Fungible(remove_fungible_asset))
-            .unwrap()
-            .to_value_word()
-    );
+    let remaining = account_vault
+        .remove_asset(Asset::Fungible(remove_fungible_asset))?
+        .expect("fungible removal should return remaining asset");
+    assert_eq!(exec_output.get_stack_word(0), remaining.to_value_word());
 
     assert_eq!(
         exec_output.get_kernel_mem_word(memory::NATIVE_ACCT_VAULT_ROOT_PTR),
@@ -441,13 +438,10 @@ async fn test_remove_fungible_asset_success_balance_remaining() -> anyhow::Resul
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(
-        exec_output.get_stack_word(0),
-        account_vault
-            .remove_asset(Asset::Fungible(remove_fungible_asset))
-            .unwrap()
-            .to_value_word()
-    );
+    let remaining = account_vault
+        .remove_asset(Asset::Fungible(remove_fungible_asset))?
+        .expect("fungible removal should return remaining asset");
+    assert_eq!(exec_output.get_stack_word(0), remaining.to_value_word());
 
     assert_eq!(
         exec_output.get_kernel_mem_word(memory::NATIVE_ACCT_VAULT_ROOT_PTR),
@@ -533,10 +527,11 @@ async fn test_remove_non_fungible_asset_success() -> anyhow::Result<()> {
 
     let exec_output = &tx_context.execute_code(&code).await?;
 
-    assert_eq!(
-        exec_output.get_stack_word(0),
-        account_vault.remove_asset(non_fungible_asset).unwrap().to_value_word()
+    assert!(
+        account_vault.remove_asset(non_fungible_asset)?.is_none(),
+        "non-fungible removal should return None"
     );
+    assert_eq!(exec_output.get_stack_word(0), Word::default());
 
     assert_eq!(
         exec_output.get_kernel_mem_word(memory::NATIVE_ACCT_VAULT_ROOT_PTR),

@@ -216,7 +216,7 @@ const ACCT_INITIAL_STORAGE_SLOTS_SECTION_OFFSET=1320
 
 # Offset at which the account's active storage slot section is kept. This section contains the
 # current values of the account storage slots.
-const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=2340
+const ACCT_ACTIVE_STORAGE_SLOTS_SECTION_OFFSET=3360
 
 # NATIVE ACCOUNT DELTA
 # -------------------------------------------------------------------------------------------------

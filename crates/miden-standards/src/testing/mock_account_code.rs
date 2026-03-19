@@ -15,10 +15,10 @@ const MOCK_FAUCET_CODE: &str = "
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [pad(16)]
     pub proc burn
         exec.faucet::burn
-        # => [ASSET_VALUE, pad(12)]
+        # => [pad(16)]
     end
 ";
 
@@ -113,10 +113,10 @@ const MOCK_ACCOUNT_CODE: &str = "
     end
 
     #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-    #! Outputs: [ASSET_VALUE, pad(12)]
+    #! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
     pub proc remove_asset
         exec.native_account::remove_asset
-        # => [ASSET_VALUE, pad(12)]
+        # => [REMAINING_ASSET_VALUE, pad(12)]
     end
 
     #! Inputs:  [pad(16)]
