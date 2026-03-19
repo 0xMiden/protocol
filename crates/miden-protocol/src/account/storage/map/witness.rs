@@ -4,7 +4,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use miden_crypto::merkle::smt::SmtProof;
 
 use crate::Word;
-use crate::account::StorageMap;
+use crate::account::StorageMapKey;
 use crate::errors::StorageMapError;
 
 /// A witness of an asset in a [`StorageMap`](super::StorageMap).
@@ -26,7 +26,7 @@ pub struct StorageMapWitness {
     ///
     /// It is an invariant of this type that the map's entries are always consistent with the SMT's
     /// entries and vice-versa.
-    entries: BTreeMap<Word, Word>,
+    entries: BTreeMap<StorageMapKey, Word>,
 }
 
 impl StorageMapWitness {
@@ -41,21 +41,20 @@ impl StorageMapWitness {
     /// - Any of the map keys is not contained in the proof.
     pub fn new(
         proof: SmtProof,
-        raw_keys: impl IntoIterator<Item = Word>,
+        keys: impl IntoIterator<Item = StorageMapKey>,
     ) -> Result<Self, StorageMapError> {
         let mut entries = BTreeMap::new();
 
-        for raw_key in raw_keys.into_iter() {
-            let hashed_map_key = StorageMap::hash_key(raw_key);
-            let value =
-                proof.get(&hashed_map_key).ok_or(StorageMapError::MissingKey { raw_key })?;
-            entries.insert(raw_key, value);
+        for key in keys.into_iter() {
+            let hashed_map_key = key.hash().as_word();
+            let value = proof.get(&hashed_map_key).ok_or(StorageMapError::MissingKey { key })?;
+            entries.insert(key, value);
         }
 
         Ok(Self { proof, entries })
     }
 
-    /// Creates a new [`StorageMapWitness`] from an SMT proof and a set of raw key value pairs.
+    /// Creates a new [`StorageMapWitness`] from an SMT proof and a set of key value pairs.
     ///
     /// # Warning
     ///
@@ -63,11 +62,11 @@ impl StorageMapWitness {
     /// details.
     pub fn new_unchecked(
         proof: SmtProof,
-        raw_key_values: impl IntoIterator<Item = (Word, Word)>,
+        key_values: impl IntoIterator<Item = (StorageMapKey, Word)>,
     ) -> Self {
         Self {
             proof,
-            entries: raw_key_values.into_iter().collect(),
+            entries: key_values.into_iter().collect(),
         }
     }
 
@@ -83,15 +82,13 @@ impl StorageMapWitness {
     /// - a non-empty [`Word`] if the key is tracked by this witness and exists in it,
     /// - [`Word::empty`] if the key is tracked by this witness and does not exist,
     /// - `None` if the key is not tracked by this witness.
-    pub fn get(&self, raw_key: &Word) -> Option<Word> {
-        let hashed_key = StorageMap::hash_key(*raw_key);
-        self.proof.get(&hashed_key)
+    pub fn get(&self, key: StorageMapKey) -> Option<Word> {
+        let hash_word = key.hash().as_word();
+        self.proof.get(&hash_word)
     }
 
     /// Returns an iterator over the key-value pairs in this witness.
-    ///
-    /// Note that the returned key is the raw map key.
-    pub fn entries(&self) -> impl Iterator<Item = (&Word, &Word)> {
+    pub fn entries(&self) -> impl Iterator<Item = (&StorageMapKey, &Word)> {
         self.entries.iter()
     }
 
@@ -99,7 +96,7 @@ impl StorageMapWitness {
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         self.proof
             .path()
-            .authenticated_nodes(self.proof.leaf().index().value(), self.proof.leaf().hash())
+            .authenticated_nodes(self.proof.leaf().index().position(), self.proof.leaf().hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
 }
@@ -120,7 +117,7 @@ mod tests {
     #[test]
     fn creating_witness_fails_on_missing_key() {
         // Create a storage map with one key-value pair
-        let key1 = Word::from([1, 2, 3, 4u32]);
+        let key1 = StorageMapKey::from_array([1, 2, 3, 4]);
         let value1 = Word::from([10, 20, 30, 40u32]);
         let entries = [(key1, value1)];
         let storage_map = StorageMap::with_entries(entries).unwrap();
@@ -129,11 +126,11 @@ mod tests {
         let proof = storage_map.open(&key1).into();
 
         // Try to create a witness for a different key that's not in the proof
-        let missing_key = Word::from([5, 6, 7, 8u32]);
+        let missing_key = StorageMapKey::from_array([5, 6, 7, 8u32]);
         let result = StorageMapWitness::new(proof, [missing_key]);
 
-        assert_matches!(result, Err(StorageMapError::MissingKey { raw_key }) => {
-            assert_eq!(raw_key, missing_key);
+        assert_matches!(result, Err(StorageMapError::MissingKey { key }) => {
+            assert_eq!(key, missing_key);
         });
     }
 }

@@ -1,11 +1,10 @@
-use miden::agglayer::agglayer_faucet -> agg_faucet
-use miden::protocol::account_id
-use miden::protocol::active_account
+use miden::agglayer::faucet -> agg_faucet
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
+use miden::standards::attachments::network_account_target
 
 # CONSTANTS
 # =================================================================================================
@@ -16,39 +15,12 @@ const OUTPUT_NOTE_SIZE = 8
 
 const PROOF_DATA_START_PTR = 0
 const LEAF_DATA_START_PTR = 536
-const OUTPUT_NOTE_DATA_START_PTR = 568
-
-const TARGET_FAUCET_PREFIX_MEM_ADDR = 572
-const TARGET_FAUCET_SUFFIX_MEM_ADDR = 573
+const FAUCET_MINT_AMOUNT = 568
 
 # ERRORS
 # =================================================================================================
 
-const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM's target account address and transaction address do not match"
-
-#! Asserts that the consuming account matches the target agglayer faucet account.
-#!
-#! This procedure ensures that only the specified agglayer faucet account can consume
-#! this CLAIM note. It assumes that the note storage has already been loaded into memory
-#! via active_note::get_storage.
-#!
-#! Inputs: []
-#! Output: []
-#!
-#! Panics if:
-#! - The consuming account ID does not match the target faucet account ID stored in memory
-proc assert_aggfaucet_is_consumer
-    # Load target faucet ID (assumes active_note::get_storage has been called)
-    mem_load.TARGET_FAUCET_SUFFIX_MEM_ADDR mem_load.TARGET_FAUCET_PREFIX_MEM_ADDR
-    # => [target_faucet_prefix, target_faucet_suffix]
-
-    exec.active_account::get_id
-    # => [account_id_prefix, account_id_suffix, target_faucet_prefix, target_faucet_suffix]
-
-    # ensure only the specified target faucet can consume this CLAIM note, not any other account
-    exec.account_id::is_equal assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
-    # => []
-end
+const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
 
 #! Reads claim data from memory and inserts it into the advice map under three separate keys.
 #!
@@ -56,7 +28,7 @@ end
 #! into the advice map under separate keys for easier access.
 #!
 #! Inputs: []
-#! Outputs: [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+#! Outputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
 #!
 #! Advice map entries created:
 #! PROOF_DATA_KEY => [
@@ -69,77 +41,53 @@ end
 #!
 #! LEAF_DATA_KEY => [
 #!   leafType[1],                     // Leaf type (1 felt, uint32)
-#!   padding[3],                      // padding (3 felts)
 #!   originNetwork[1],                // Origin network identifier (1 felt, uint32)
 #!   originTokenAddress[5],           // Origin token address (5 felts, address as 5 u32 felts)
 #!   destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
 #!   destinationAddress[5],           // Destination address (5 felts, address as 5 u32 felts)
 #!   amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
 #!   metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#! ]
-#!
-#! TODO: Will be removed in future PR
-#! OUTPUT_NOTE_DATA_KEY => [
-#!   output_p2id_serial_num[4],       // P2ID note serial number (4 felts, Word)
-#!   target_faucet_account_id[2],     // Target faucet account ID (2 felts, prefix and suffix)
-#!   output_note_tag[1],              // P2ID output note tag
-#!   padding[1],                      // padding (1 felt)
+#!   padding[3],                      // padding (3 felts)
 #! ]
 #!
 #! Invocation: exec
 proc write_claim_data_into_advice_map_by_key
-    # 1) Get OUTPUT_NOTE_DATA_KEY
-    push.OUTPUT_NOTE_SIZE push.OUTPUT_NOTE_DATA_START_PTR
-    exec.rpo256::hash_elements
-    # => [OUTPUT_NOTE_DATA_KEY]
-
-    push.OUTPUT_NOTE_SIZE add.OUTPUT_NOTE_DATA_START_PTR push.OUTPUT_NOTE_DATA_START_PTR
-    movdn.5 movdn.5
-    # => [OUTPUT_NOTE_DATA_KEY, start_ptr, end_ptr]
-
-    adv.insert_mem
-    # OS => [OUTPUT_NOTE_DATA_KEY, start_ptr, end_ptr, pad(16)]
-    # AM => {OUTPUT_NOTE_DATA_KEY: mem[start_ptr..end_ptr] }
-
-    movup.4 drop movup.4 drop
-    # => [OUTPUT_NOTE_DATA_KEY]
-
-    # 2) Get LEAF_DATA_KEY
+    # 1) Get LEAF_DATA_KEY
     push.LEAF_DATA_SIZE push.LEAF_DATA_START_PTR
-    exec.rpo256::hash_elements
-    # => [LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    exec.poseidon2::hash_elements
+    # => [LEAF_DATA_KEY]
 
     push.LEAF_DATA_SIZE add.LEAF_DATA_START_PTR push.LEAF_DATA_START_PTR
     movdn.5 movdn.5
-    # => [LEAF_DATA_KEY, start_ptr, end_ptr, OUTPUT_NOTE_DATA_KEY]
+    # => [LEAF_DATA_KEY, start_ptr, end_ptr]
 
     adv.insert_mem
     # OS => [LEAF_DATA_KEY, start_ptr, end_ptr]
     # AM => {LEAF_DATA_KEY: mem[start_ptr..end_ptr] }
     movup.4 drop movup.4 drop
-    # => [LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [LEAF_DATA_KEY]
 
-    # 3) Get PROOF_DATA_KEY
+    # 2) Get PROOF_DATA_KEY
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
-    exec.rpo256::hash_elements
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    exec.poseidon2::hash_elements
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
     movdn.5 movdn.5
-    # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
 
     adv.insert_mem
-    # OS => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # OS => [PROOF_DATA_KEY, start_ptr, end_ptr, LEAF_DATA_KEY]
     # AM => {PROOF_DATA_KEY: mem[start_ptr..end_ptr] }
 
     movup.4 drop movup.4 drop
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 end
 
 #! Agglayer Faucet CLAIM script: claims assets by calling the agglayer faucet's claim function.
 #!
 #! This note can only be consumed by the specific agglayer faucet account whose ID is provided
-#! in the note storage (target_faucet_account_id). Upon consumption, it will create a P2ID note.
+#! in the note attachment (NetworkAccountTarget). Upon consumption, it will create a P2ID note.
 #!
 #! Requires that the account exposes:
 #! - agglayer::agglayer_faucet::claim procedure.
@@ -147,24 +95,21 @@ end
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
 #!
-#! NoteStorage layout (576 felts total):
+#! NoteStorage layout (569 felts total):
 #! - smtProofLocalExitRoot      [0..255]  : 256 felts
 #! - smtProofRollupExitRoot     [256..511]: 256 felts
 #! - globalIndex                [512..519]: 8 felts
 #! - mainnetExitRoot            [520..527]: 8 felts
 #! - rollupExitRoot             [528..535]: 8 felts
 #! - leafType                   [536]     : 1 felt
-#! - padding                    [537..539]: 3 felts
-#! - originNetwork              [540]     : 1 felt
-#! - originTokenAddress         [541..545]: 5 felts
-#! - destinationNetwork         [546]     : 1 felt
-#! - destinationAddress         [547..551]: 5 felts
-#! - amount                     [552..559]: 8 felts
-#! - metadata                   [560..567]: 8 felts
-#! - output_p2id_serial_num     [568..571]: 4 felts
-#! - target_faucet_account_id   [572..573]: 2 felts
-#! - output_note_tag            [574]     : 1 felt
-#! - padding                    [575]     : 1 felt
+#! - originNetwork              [537]     : 1 felt
+#! - originTokenAddress         [538..542]: 5 felts
+#! - destinationNetwork         [543]     : 1 felt
+#! - destinationAddress         [544..548]: 5 felts
+#! - amount                     [549..556]: 8 felts
+#! - metadata                   [557..564]: 8 felts
+#! - padding                    [565..567]: 3 felts
+#! - miden_claim_amount         [568]     : 1 felt
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -180,38 +125,42 @@ end
 #! - originNetwork: Origin network identifier (uint32)
 #! - originTokenAddress: Origin token address (address as 5 u32 felts)
 #! - destinationNetwork: Destination network identifier (uint32)
-#! - destinationAddress: Destination address (address as 5 u32 felts)
+#! - destinationAddress: 20-byte Ethereum address decodable into a Miden AccountId (5 u32 felts)
 #! - amount: Amount of tokens (uint256 as 8 u32 felts)
 #! - metadata: ABI encoded metadata (fixed size)
-#! - padding (3 felts)
-#! - output_p2id_serial_num: P2ID note serial number (Word)
-#! - target_faucet_account_id: Target agglayer faucet account ID (prefix and suffix). Only this specific
-#!   account can consume the note - any other account will cause a panic.
-#! - output_note_tag: P2ID output note tag
-#! - padding (1 felt)
+#! - miden_claim_amount: Scaled-down Miden token amount (Felt). This is the Y value computed from
+#!   scaling down the Ethereum amount (X) by the scale exponent: Y = floor(X / 10^scale_exp)
 #!
 #! Panics if:
 #! - account does not expose claim procedure.
-#! - target faucet account ID does not match the consuming account ID.
+#! - note attachment target account does not match the consuming account.
 begin
     dropw
+    # => [pad(16)]
+
+    # Ensure note attachment targets the consuming faucet account.
+    exec.network_account_target::active_account_matches_target_account
+    assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
     # => [pad(16)]
 
     # Load CLAIM note storage into memory, starting at address 0
     push.0 exec.active_note::get_storage drop drop
     # => [pad(16)]
 
-    # Check consuming account == aggfaucet
-    exec.assert_aggfaucet_is_consumer
-    # => [pad(16)]
-
     exec.write_claim_data_into_advice_map_by_key
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, OUTPUT_NOTE_DATA_KEY, pad(4)]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
 
-    # Call the Aggfaucet Claim procedure
+    mem_load.FAUCET_MINT_AMOUNT
+    # => [faucet_mint_amount, PROOF_DATA_KEY, LEAF_DATA_KEY, pad(16)]
+
+    movdn.8
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
+
+    # call the Aggfaucet Claim procedure
     call.agg_faucet::claim
-    # => [pad(16), pad(12)]
+    # => [pad(16), pad(9)]
 
-    dropw dropw dropw
+    # a call invocation consumes and returns 16 elements, but we had trailing padding
+    dropw dropw drop
     # => [pad(16)]
 end

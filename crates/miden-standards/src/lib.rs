@@ -6,8 +6,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod auth_scheme;
-pub use auth_scheme::AuthScheme;
+mod auth_method;
+pub use auth_method::AuthMethod;
 
 pub mod account;
 pub mod code_builder;

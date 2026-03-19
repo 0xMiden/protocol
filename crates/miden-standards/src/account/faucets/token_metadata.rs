@@ -1,7 +1,7 @@
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
 use super::FungibleFaucetError;
 
@@ -26,7 +26,7 @@ static METADATA_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///
 /// The metadata is stored in a single storage slot as:
 /// `[token_supply, max_supply, decimals, symbol]`
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TokenMetadata {
     token_supply: Felt,
     max_supply: Felt,
@@ -78,17 +78,17 @@ impl TokenMetadata {
             });
         }
 
-        if max_supply.as_int() > FungibleAsset::MAX_AMOUNT {
+        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
             return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_int(),
+                actual: max_supply.as_canonical_u64(),
                 max: FungibleAsset::MAX_AMOUNT,
             });
         }
 
-        if token_supply.as_int() > max_supply.as_int() {
+        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_int(),
-                max_supply: max_supply.as_int(),
+                token_supply: token_supply.as_canonical_u64(),
+                max_supply: max_supply.as_canonical_u64(),
             });
         }
 
@@ -124,8 +124,8 @@ impl TokenMetadata {
     }
 
     /// Returns the token symbol.
-    pub fn symbol(&self) -> TokenSymbol {
-        self.symbol
+    pub fn symbol(&self) -> &TokenSymbol {
+        &self.symbol
     }
 
     // MUTATORS
@@ -138,10 +138,10 @@ impl TokenMetadata {
     /// Returns an error if:
     /// - the token supply exceeds the max supply.
     pub fn with_token_supply(mut self, token_supply: Felt) -> Result<Self, FungibleFaucetError> {
-        if token_supply.as_int() > self.max_supply.as_int() {
+        if token_supply.as_canonical_u64() > self.max_supply.as_canonical_u64() {
             return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_int(),
-                max_supply: self.max_supply.as_int(),
+                token_supply: token_supply.as_canonical_u64(),
+                max_supply: self.max_supply.as_canonical_u64(),
             });
         }
 
@@ -166,11 +166,12 @@ impl TryFrom<Word> for TokenMetadata {
         let symbol =
             TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
 
-        let decimals =
-            decimals.as_int().try_into().map_err(|_| FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_int(),
+        let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
+            FungibleFaucetError::TooManyDecimals {
+                actual: decimals.as_canonical_u64(),
                 max: Self::MAX_DECIMALS,
-            })?;
+            }
+        })?;
 
         Self::with_supply(symbol, decimals, max_supply, token_supply)
     }
@@ -183,7 +184,7 @@ impl From<TokenMetadata> for Word {
             metadata.token_supply,
             metadata.max_supply,
             Felt::from(metadata.decimals),
-            metadata.symbol.into(),
+            metadata.symbol.as_element(),
         ])
     }
 }
@@ -236,7 +237,7 @@ impl TryFrom<&AccountStorage> for TokenMetadata {
 #[cfg(test)]
 mod tests {
     use miden_protocol::asset::TokenSymbol;
-    use miden_protocol::{Felt, FieldElement, Word};
+    use miden_protocol::{Felt, Word};
 
     use super::*;
 
@@ -246,9 +247,9 @@ mod tests {
         let decimals = 8u8;
         let max_supply = Felt::new(1_000_000);
 
-        let metadata = TokenMetadata::new(symbol, decimals, max_supply).unwrap();
+        let metadata = TokenMetadata::new(symbol.clone(), decimals, max_supply).unwrap();
 
-        assert_eq!(metadata.symbol(), symbol);
+        assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
         assert_eq!(metadata.max_supply(), max_supply);
         assert_eq!(metadata.token_supply(), Felt::ZERO);
@@ -262,9 +263,9 @@ mod tests {
         let token_supply = Felt::new(500_000);
 
         let metadata =
-            TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply).unwrap();
+            TokenMetadata::with_supply(symbol.clone(), decimals, max_supply, token_supply).unwrap();
 
-        assert_eq!(metadata.symbol(), symbol);
+        assert_eq!(metadata.symbol(), &symbol);
         assert_eq!(metadata.decimals(), decimals);
         assert_eq!(metadata.max_supply(), max_supply);
         assert_eq!(metadata.token_supply(), token_supply);
@@ -296,6 +297,7 @@ mod tests {
     #[test]
     fn token_metadata_to_word() {
         let symbol = TokenSymbol::new("POL").unwrap();
+        let symbol_felt = symbol.as_element();
         let decimals = 2u8;
         let max_supply = Felt::new(123);
 
@@ -306,7 +308,7 @@ mod tests {
         assert_eq!(word[0], Felt::ZERO); // token_supply
         assert_eq!(word[1], max_supply);
         assert_eq!(word[2], Felt::from(decimals));
-        assert_eq!(word[3], symbol.into());
+        assert_eq!(word[3], symbol_felt);
     }
 
     #[test]
@@ -315,12 +317,12 @@ mod tests {
         let decimals = 2u8;
         let max_supply = Felt::new(123);
 
-        let original = TokenMetadata::new(symbol, decimals, max_supply).unwrap();
+        let original = TokenMetadata::new(symbol.clone(), decimals, max_supply).unwrap();
         let slot: StorageSlot = original.into();
 
         let restored = TokenMetadata::try_from(&slot).unwrap();
 
-        assert_eq!(restored.symbol(), symbol);
+        assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
         assert_eq!(restored.max_supply(), max_supply);
         assert_eq!(restored.token_supply(), Felt::ZERO);
@@ -334,11 +336,11 @@ mod tests {
         let token_supply = Felt::new(500);
 
         let original =
-            TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply).unwrap();
+            TokenMetadata::with_supply(symbol.clone(), decimals, max_supply, token_supply).unwrap();
         let word: Word = original.into();
         let restored = TokenMetadata::try_from(word).unwrap();
 
-        assert_eq!(restored.symbol(), symbol);
+        assert_eq!(restored.symbol(), &symbol);
         assert_eq!(restored.decimals(), decimals);
         assert_eq!(restored.max_supply(), max_supply);
         assert_eq!(restored.token_supply(), token_supply);

@@ -1,6 +1,6 @@
-use miden_processor::AdviceInputs;
-use miden_processor::crypto::RpoRandomCoin;
-use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -14,15 +14,18 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
-use miden_standards::account::auth::AuthFalcon512RpoMultisig;
-use miden_standards::account::components::falcon_512_rpo_multisig_library;
+use miden_standards::account::auth::AuthMultisig;
+use miden_standards::account::components::multisig_library;
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
-use miden_standards::errors::standards::ERR_TX_ALREADY_EXECUTED;
+use miden_standards::errors::standards::{
+    ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS,
+    ERR_TX_ALREADY_EXECUTED,
+};
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
@@ -31,30 +34,41 @@ use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use rstest::rstest;
 
 // ================================================================================================
 // HELPER FUNCTIONS
 // ================================================================================================
 
-type MultisigTestSetup = (Vec<AuthSecretKey>, Vec<PublicKey>, Vec<BasicAuthenticator>);
+type MultisigTestSetup =
+    (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
 
-/// Sets up secret keys, public keys, and authenticators for multisig testing
-fn setup_keys_and_authenticators(
+/// Sets up secret keys, public keys, and authenticators for multisig testing for the given scheme.
+fn setup_keys_and_authenticators_with_scheme(
     num_approvers: usize,
     threshold: usize,
+    auth_scheme: AuthScheme,
 ) -> anyhow::Result<MultisigTestSetup> {
     let seed: [u8; 32] = rand::random();
     let mut rng = ChaCha20Rng::from_seed(seed);
 
     let mut secret_keys = Vec::new();
+    let mut auth_schemes = Vec::new();
     let mut public_keys = Vec::new();
     let mut authenticators = Vec::new();
 
     for _ in 0..num_approvers {
-        let sec_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
+        let sec_key = match auth_scheme {
+            AuthScheme::EcdsaK256Keccak => AuthSecretKey::new_ecdsa_k256_keccak_with_rng(&mut rng),
+            AuthScheme::Falcon512Poseidon2 => {
+                AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng)
+            },
+            _ => anyhow::bail!("unsupported auth scheme for this test: {auth_scheme:?}"),
+        };
         let pub_key = sec_key.public_key();
 
         secret_keys.push(sec_key);
+        auth_schemes.push(auth_scheme);
         public_keys.push(pub_key);
     }
 
@@ -64,17 +78,20 @@ fn setup_keys_and_authenticators(
         authenticators.push(authenticator);
     }
 
-    Ok((secret_keys, public_keys, authenticators))
+    Ok((secret_keys, auth_schemes, public_keys, authenticators))
 }
 
 /// Creates a multisig account with the specified configuration
 fn create_multisig_account(
     threshold: u32,
-    public_keys: &[PublicKey],
+    approvers: &[(PublicKey, AuthScheme)],
     asset_amount: u64,
     proc_threshold_map: Vec<(Word, u32)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> = public_keys.iter().map(|pk| pk.to_commitment().into()).collect();
+    let approvers = approvers
+        .iter()
+        .map(|(pub_key, auth_scheme)| (pub_key.to_commitment(), *auth_scheme))
+        .collect();
 
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(Auth::Multisig { threshold, approvers, proc_threshold_map })
@@ -100,15 +117,27 @@ fn create_multisig_account(
 /// **Roles:**
 /// - 2 Approvers (multisig signers)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
+async fn test_multisig_2_of_2_with_note_creation(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let mut multisig_account =
-        create_multisig_account(2, &public_keys, multisig_starting_balance, vec![])?;
+        create_multisig_account(2, &approvers, multisig_starting_balance, vec![])?;
 
     let output_note_asset = FungibleAsset::mock(0);
 
@@ -133,13 +162,13 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     // Execute transaction without signatures - should fail
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt)
         .build()?;
 
     let tx_summary = match tx_context_init.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-        error => panic!("expected abort with tx effects: {error:?}"),
+        error => anyhow::bail!("expected abort with tx effects: {error}"),
     };
 
     // Get signatures from both approvers
@@ -156,7 +185,7 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
     // Execute transaction with signatures - should succeed
     let tx_context_execute = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)
@@ -187,13 +216,25 @@ async fn test_multisig_2_of_2_with_note_creation() -> anyhow::Result<()> {
 /// implementation correctly validates signatures from any valid subset.
 ///
 /// **Tested combinations:** (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
+async fn test_multisig_2_of_4_all_signer_combinations(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators (4 approvers, all 4 can sign)
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(4, 4)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account with 4 approvers but threshold of 2
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -221,7 +262,7 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
 
         let tx_summary = match tx_context_init.execute().await.unwrap_err() {
             TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
-            error => panic!("expected abort with tx effects: {error:?}"),
+            error => anyhow::bail!("expected abort with tx effects: {error}"),
         };
 
         // Get signatures from the specific combination of signers
@@ -265,13 +306,23 @@ async fn test_multisig_2_of_4_all_signer_combinations() -> anyhow::Result<()> {
 /// **Roles:**
 /// - 3 Approvers (2 signers required)
 /// - 1 Multisig Contract
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_replay_protection() -> anyhow::Result<()> {
+async fn test_multisig_replay_protection(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
     // Setup keys and authenticators (3 approvers, but only 2 signers)
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(3, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create 2/3 multisig account
-    let multisig_account = create_multisig_account(2, &public_keys, 20, vec![])?;
+    let multisig_account = create_multisig_account(2, &approvers, 20, vec![])?;
 
     let mut mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -308,12 +359,12 @@ async fn test_multisig_replay_protection() -> anyhow::Result<()> {
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
         .auth_args(salt)
-        .build()?;
-
-    let executed_tx = tx_context_execute.execute().await.expect("First transaction should succeed");
+        .build()?
+        .execute()
+        .await?;
 
     // Apply the transaction to the mock chain
-    mock_chain.add_pending_executed_transaction(&executed_tx)?;
+    mock_chain.add_pending_executed_transaction(&tx_context_execute)?;
     mock_chain.prove_next_block()?;
 
     // Attempt to execute the same transaction again - should fail due to replay protection
@@ -343,11 +394,21 @@ async fn test_multisig_replay_protection() -> anyhow::Result<()> {
 /// - 4 New Approvers (updated multisig signers)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_update_signers() -> anyhow::Result<()> {
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+async fn test_multisig_update_signers(#[case] auth_scheme: AuthScheme) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
 
     // SECTION 1: Execute a transaction script to update signers and threshold
     // ================================================================================
@@ -371,8 +432,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 
     // Setup new signers
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, new_public_keys, _new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, _new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
@@ -390,6 +451,13 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     for public_key in new_public_keys.iter().rev() {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(auth_scheme as u64),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
     }
 
     // Hash the vector to create config hash
@@ -401,12 +469,12 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::falcon_512_rpo_multisig::update_signers_and_threshold
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(falcon_512_rpo_multisig_library())?
+        .with_dynamically_linked_library(multisig_library())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -453,8 +521,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
-        .await
-        .unwrap();
+        .await?;
 
     // Verify the transaction executed successfully
     assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));
@@ -471,7 +538,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let storage_item = updated_multisig_account
             .storage()
-            .get_map_item(AuthFalcon512RpoMultisig::approver_public_keys_slot(), storage_key)
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
             .unwrap();
 
         let expected_word: Word = expected_key.to_commitment().into();
@@ -482,7 +549,8 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Verify the threshold was updated by checking the config storage slot
     let threshold_config_storage = updated_multisig_account
         .storage()
-        .get_item(AuthFalcon512RpoMultisig::threshold_config_slot())?;
+        .get_item(AuthMultisig::threshold_config_slot())
+        .unwrap();
 
     assert_eq!(
         threshold_config_storage[0],
@@ -539,7 +607,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
         vec![output_note_asset],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::empty()),
+        &mut RandomCoin::new(Word::empty()),
     )?;
 
     // Create a new spawn note for the second transaction
@@ -550,13 +618,13 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Build the new mock chain with the updated account and notes
     let mut new_mock_chain_builder =
         MockChainBuilder::with_accounts([updated_multisig_account.clone()]).unwrap();
-    new_mock_chain_builder.add_output_note(OutputNote::Full(input_note_new.clone()));
+    new_mock_chain_builder.add_output_note(RawOutputNote::Full(input_note_new.clone()));
     let new_mock_chain = new_mock_chain_builder.build().unwrap();
 
     // Execute transaction without signatures first to get tx summary
     let tx_context_init_new = new_mock_chain
         .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt_new)
         .build()?;
 
@@ -585,7 +653,7 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
     // Execute transaction with new signatures - should succeed
     let tx_context_execute_new = new_mock_chain
         .build_tx_context(updated_multisig_account.id(), &[input_note_new.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note_new)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_new)])
         .add_signature(new_public_keys[0].to_commitment(), msg_new, sig_1_new)
         .add_signature(new_public_keys[1].to_commitment(), msg_new, sig_2_new)
         .add_signature(new_public_keys[2].to_commitment(), msg_new, sig_3_new)
@@ -612,11 +680,24 @@ async fn test_multisig_update_signers() -> anyhow::Result<()> {
 /// - 2 Updated Approvers (after removing 3 owners)
 /// - 1 Multisig Contract
 /// - 1 Transaction Script calling multisig procedures
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
+async fn test_multisig_update_signers_remove_owner(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup 5 original owners with threshold 4
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(5, 5)?;
-    let multisig_account = create_multisig_account(4, &public_keys, 10, vec![])?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(4, &approvers, 10, vec![])?;
 
     // Build mock chain
     let mock_chain_builder = MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
@@ -631,10 +712,17 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     let mut config_and_pubkeys_vector =
         vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
 
-    // Add public keys in reverse order
+    // Add each public key to the vector
     for public_key in new_public_keys.iter().rev() {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(auth_scheme as u64),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
     }
 
     // Create config hash and advice map
@@ -644,10 +732,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 
     // Create transaction script
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(falcon_512_rpo_multisig_library())?
-        .compile_tx_script(
-            "begin\n    call.::falcon_512_rpo_multisig::update_signers_and_threshold\nend",
-        )?;
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
 
     let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
 
@@ -697,8 +783,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         .extend_advice_inputs(advice_inputs)
         .build()?
         .execute()
-        .await
-        .unwrap();
+        .await?;
 
     // Verify transaction success
     assert_eq!(update_approvers_tx.account_delta().nonce_delta(), Felt::new(1));
@@ -715,7 +800,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let storage_item = updated_multisig_account
             .storage()
-            .get_map_item(AuthFalcon512RpoMultisig::approver_public_keys_slot(), storage_key)?;
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
+            .unwrap();
         let expected_word: Word = expected_key.to_commitment().into();
         assert_eq!(storage_item, expected_word, "Public key {} doesn't match", i);
     }
@@ -723,7 +809,8 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     // Verify threshold and num_approvers
     let threshold_config = updated_multisig_account
         .storage()
-        .get_item(AuthFalcon512RpoMultisig::threshold_config_slot())?;
+        .get_item(AuthMultisig::threshold_config_slot())
+        .unwrap();
     assert_eq!(threshold_config[0], Felt::new(threshold), "Threshold not updated");
     assert_eq!(threshold_config[1], Felt::new(num_of_approvers), "Num approvers not updated");
 
@@ -745,7 +832,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
             [Felt::new(removed_idx), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let removed_owner_slot = updated_multisig_account
             .storage()
-            .get_map_item(AuthFalcon512RpoMultisig::approver_public_keys_slot(), removed_owner_key)
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), removed_owner_key)
             .unwrap();
         assert_eq!(
             removed_owner_slot,
@@ -761,7 +848,7 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
         let storage_key = [Felt::new(i as u64), Felt::new(0), Felt::new(0), Felt::new(0)].into();
         let storage_item = updated_multisig_account
             .storage()
-            .get_map_item(AuthFalcon512RpoMultisig::approver_public_keys_slot(), storage_key)
+            .get_map_item(AuthMultisig::approver_public_keys_slot(), storage_key)
             .unwrap();
 
         if storage_item != Word::empty() {
@@ -780,6 +867,78 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Tests that signer updates are rejected when stored procedure threshold overrides would become
+/// unreachable for the new signer set.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_update_signers_rejects_unreachable_proc_thresholds(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    // Configure a procedure override that is valid for the initial signer set (3-of-3),
+    // but invalid after updating to 2 signers.
+    let multisig_account =
+        create_multisig_account(2, &approvers, 10, vec![(BasicWallet::receive_asset_digest(), 3)])?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let new_public_keys = &public_keys[0..2];
+    let threshold = 2u64;
+    let num_of_approvers = 2u64;
+
+    let mut config_and_pubkeys_vector =
+        vec![Felt::new(threshold), Felt::new(num_of_approvers), Felt::new(0), Felt::new(0)];
+
+    for public_key in new_public_keys.iter().rev() {
+        let key_word: Word = public_key.to_commitment().into();
+        config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(auth_scheme as u64),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
+    }
+
+    let multisig_config_hash = Hasher::hash_elements(&config_and_pubkeys_vector);
+    let mut advice_map = AdviceMap::default();
+    advice_map.insert(multisig_config_hash, config_and_pubkeys_vector);
+
+    let tx_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script("begin\n    call.::miden::standards::components::auth::multisig::update_signers_and_threshold\nend")?;
+
+    let advice_inputs = AdviceInputs { map: advice_map, ..Default::default() };
+    let salt = Word::from([Felt::new(8); 4]);
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(tx_script)
+        .tx_script_args(multisig_config_hash)
+        .extend_advice_inputs(advice_inputs)
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
+
+    Ok(())
+}
+
 /// Tests that newly added approvers cannot sign transactions before the signer update is executed.
 ///
 /// This is a regression test to ensure that unauthorized parties cannot add their own public keys
@@ -791,14 +950,26 @@ async fn test_multisig_update_signers_remove_owner() -> anyhow::Result<()> {
 /// 2. Prepare a signer update transaction with new approvers
 /// 3. Try to sign the transaction with the NEW approvers (should fail)
 /// 4. Verify that only the CURRENT approvers can sign the update transaction
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Result<()> {
+async fn test_multisig_new_approvers_cannot_sign_before_update(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // SECTION 1: Create a multisig account with 2 original approvers
     // ================================================================================
 
-    let (_secret_keys, public_keys, _authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let multisig_account = create_multisig_account(2, &public_keys, 10, vec![])?;
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
 
     let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
         .unwrap()
@@ -814,8 +985,8 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 
     // Setup new signers (these should NOT be able to sign the update transaction)
     let mut advice_map = AdviceMap::default();
-    let (_new_secret_keys, new_public_keys, new_authenticators) =
-        setup_keys_and_authenticators(4, 4)?;
+    let (_new_secret_keys, _new_auth_schemes, new_public_keys, new_authenticators) =
+        setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
 
     let threshold = 3u64;
     let num_of_approvers = 4u64;
@@ -833,6 +1004,13 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     for public_key in new_public_keys.iter().rev() {
         let key_word: Word = public_key.to_commitment().into();
         config_and_pubkeys_vector.extend_from_slice(key_word.as_elements());
+
+        config_and_pubkeys_vector.extend_from_slice(&[
+            Felt::new(auth_scheme as u64),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]);
     }
 
     // Hash the vector to create config hash
@@ -844,12 +1022,12 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
     // Create a transaction script that calls the update_signers procedure
     let tx_script_code = "
         begin
-            call.::falcon_512_rpo_multisig::update_signers_and_threshold
+            call.::miden::standards::components::auth::multisig::update_signers_and_threshold
         end
     ";
 
     let tx_script = CodeBuilder::default()
-        .with_dynamically_linked_library(falcon_512_rpo_multisig_library())?
+        .with_dynamically_linked_library(multisig_library())?
         .compile_tx_script(tx_script_code)?;
 
     let advice_inputs = AdviceInputs {
@@ -920,17 +1098,29 @@ async fn test_multisig_new_approvers_cannot_sign_before_update() -> anyhow::Resu
 /// threshold of 1 for note consumption, can:
 /// 1. Consume a note when only one approver signs the transaction
 /// 2. Send a note only when both approvers sign the transaction (default threshold)
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
 #[tokio::test]
-async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
+async fn test_multisig_proc_threshold_overrides(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
     // Setup keys and authenticators
-    let (_secret_keys, public_keys, authenticators) = setup_keys_and_authenticators(2, 2)?;
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let proc_threshold_map = vec![(BasicWallet::receive_asset_digest(), 1)];
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
     let mut multisig_account =
-        create_multisig_account(2, &public_keys, multisig_starting_balance, proc_threshold_map)?;
+        create_multisig_account(2, &approvers, multisig_starting_balance, proc_threshold_map)?;
 
     // SECTION 1: Test note consumption with 1 signature
     // ================================================================================
@@ -995,7 +1185,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
         vec![FungibleAsset::mock(5)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([Felt::new(42); 4])),
+        &mut RandomCoin::new(Word::from([Felt::new(42); 4])),
     )?;
     let multisig_account_interface = AccountInterface::from_account(&multisig_account);
     let send_note_transaction_script =
@@ -1004,7 +1194,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Execute transaction without signatures to get tx summary
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .tx_script(send_note_transaction_script.clone())
         .auth_args(salt2)
         .build()?;
@@ -1024,7 +1214,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Try to execute with only 1 signature - should FAIL
     let tx_context_one_sig = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .tx_script(send_note_transaction_script.clone())
         .auth_args(salt2)
@@ -1051,7 +1241,7 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     // Execute with 2 signatures - should SUCCEED
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg2, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg2, sig_2)
         .auth_args(salt2)
@@ -1068,6 +1258,254 @@ async fn test_multisig_proc_threshold_overrides() -> anyhow::Result<()> {
     mock_chain.prove_next_block()?;
 
     assert_eq!(multisig_account.vault().get_balance(FungibleAsset::mock_issuer())?, 6);
+
+    Ok(())
+}
+
+/// Tests setting a per-procedure threshold override and clearing it via `proc_threshold == 0`.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let mut multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+    let one_sig_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let clear_check_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        multisig_account.id(),
+        &[FungibleAsset::mock(1)],
+        NoteType::Public,
+    )?;
+    let mut mock_chain = mock_chain_builder.build().unwrap();
+    let proc_root = BasicWallet::receive_asset_digest();
+
+    let set_script_code = format!(
+        r#"
+        begin
+            push.{proc_root}
+            push.1
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let set_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(set_script_code)?;
+
+    // 1) Set override to 1 (requires default 2 signatures).
+    let set_salt = Word::from([Felt::new(50); 4]);
+
+    let set_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(set_script.clone())
+        .auth_args(set_salt)
+        .build()?;
+    let set_summary = match set_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let set_msg = set_summary.as_ref().to_commitment();
+    let set_summary = SigningInputs::TransactionSummary(set_summary);
+    let set_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &set_summary)
+        .await?;
+    let set_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &set_summary)
+        .await?;
+
+    let set_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(set_script)
+        .add_signature(public_keys[0].to_commitment(), set_msg, set_sig_1)
+        .add_signature(public_keys[1].to_commitment(), set_msg, set_sig_2)
+        .auth_args(set_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(set_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&set_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // 2) Verify receive_asset can now execute with one signature.
+    let one_sig_salt = Word::from([Felt::new(51); 4]);
+
+    let one_sig_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[one_sig_note.id()], &[])?
+        .auth_args(one_sig_salt)
+        .build()?;
+    let one_sig_summary = match one_sig_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let one_sig_msg = one_sig_summary.as_ref().to_commitment();
+    let one_sig_summary = SigningInputs::TransactionSummary(one_sig_summary);
+    let one_sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &one_sig_summary)
+        .await?;
+
+    let one_sig_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[one_sig_note.id()], &[])?
+        .add_signature(public_keys[0].to_commitment(), one_sig_msg, one_sig)
+        .auth_args(one_sig_salt)
+        .build()?
+        .execute()
+        .await
+        .expect("override=1 should allow receive_asset with one signature");
+    multisig_account.apply_delta(one_sig_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&one_sig_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // 3) Clear override by setting threshold to zero.
+    let clear_script_code = format!(
+        r#"
+        begin
+            push.{proc_root}
+            push.0
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
+            dropw
+            drop
+        end
+        "#
+    );
+    let clear_script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(clear_script_code)?;
+    let clear_salt = Word::from([Felt::new(52); 4]);
+
+    let clear_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(clear_script.clone())
+        .auth_args(clear_salt)
+        .build()?;
+    let clear_summary = match clear_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let clear_msg = clear_summary.as_ref().to_commitment();
+    let clear_summary = SigningInputs::TransactionSummary(clear_summary);
+    let clear_sig_1 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &clear_summary)
+        .await?;
+    let clear_sig_2 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &clear_summary)
+        .await?;
+
+    let clear_tx = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(clear_script)
+        .add_signature(public_keys[0].to_commitment(), clear_msg, clear_sig_1)
+        .add_signature(public_keys[1].to_commitment(), clear_msg, clear_sig_2)
+        .auth_args(clear_salt)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(clear_tx.account_delta())?;
+    mock_chain.add_pending_executed_transaction(&clear_tx)?;
+    mock_chain.prove_next_block()?;
+
+    // 4) After clear, one signature should no longer be sufficient for receive_asset.
+    let clear_check_salt = Word::from([Felt::new(53); 4]);
+
+    let clear_check_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[clear_check_note.id()], &[])?
+        .auth_args(clear_check_salt)
+        .build()?;
+    let clear_check_summary = match clear_check_init.execute().await.unwrap_err() {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+    let clear_check_msg = clear_check_summary.as_ref().to_commitment();
+    let clear_check_summary = SigningInputs::TransactionSummary(clear_check_summary);
+    let clear_check_sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &clear_check_summary)
+        .await?;
+
+    let clear_check_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[clear_check_note.id()], &[])?
+        .add_signature(public_keys[0].to_commitment(), clear_check_msg, clear_check_sig)
+        .auth_args(clear_check_salt)
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        matches!(clear_check_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "override cleared via threshold=0 should restore default threshold requirements"
+    );
+
+    Ok(())
+}
+
+/// Tests setting an override threshold above num_approvers is rejected.
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_set_procedure_threshold_rejects_exceeding_approvers(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let (_secret_keys, auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let approvers = public_keys
+        .iter()
+        .zip(auth_schemes.iter())
+        .map(|(pk, scheme)| (pk.clone(), *scheme))
+        .collect::<Vec<_>>();
+
+    let multisig_account = create_multisig_account(2, &approvers, 10, vec![])?;
+    let proc_root = BasicWallet::receive_asset_digest();
+
+    let script_code = format!(
+        r#"
+        begin
+            push.{proc_root}
+            push.3
+            call.::miden::standards::components::auth::multisig::set_procedure_threshold
+        end
+        "#
+    );
+    let script = CodeBuilder::default()
+        .with_dynamically_linked_library(multisig_library())?
+        .compile_tx_script(script_code)?;
+
+    let mock_chain = MockChainBuilder::with_accounts([multisig_account.clone()])
+        .unwrap()
+        .build()
+        .unwrap();
+    let salt = Word::from([Felt::new(54); 4]);
+
+    let tx_context_init = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .tx_script(script.clone())
+        .auth_args(salt)
+        .build()?;
+
+    let result = tx_context_init.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS);
 
     Ok(())
 }

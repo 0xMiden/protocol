@@ -71,6 +71,10 @@ impl Serializable for NoteId {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
     }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
+    }
 }
 
 impl Deserializable for NoteId {

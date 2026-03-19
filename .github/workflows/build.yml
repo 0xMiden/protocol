@@ -12,6 +12,7 @@ on:
         branches: [main, next]
     pull_request:
         types: [opened, reopened, synchronize]
+    merge_group:
 
 permissions:
     contents: read
@@ -66,4 +67,4 @@ jobs:
             # cache hits and cache evictions (github has a 10GB cache limit).
             save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
         - name: build benches
-          run: cargo bench --no-run
+          run: cargo build --benches

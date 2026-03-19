@@ -9,19 +9,15 @@ use miden_protocol::transaction::TransactionKernel;
 // CONSTANTS
 // ================================================================================================
 
-/// Defines whether the build script should generate files in `/src`.
-/// The docs.rs build pipeline has a read-only filesystem, so we have to avoid writing to `src`,
-/// otherwise the docs will fail to build there. Note that writing to `OUT_DIR` is fine.
-const BUILD_GENERATED_FILES_IN_SRC: bool = option_env!("BUILD_GENERATED_FILES_IN_SRC").is_some();
-
 const ASSETS_DIR: &str = "assets";
 const ASM_DIR: &str = "asm";
 const ASM_STANDARDS_DIR: &str = "standards";
 const ASM_ACCOUNT_COMPONENTS_DIR: &str = "account_components";
 
 const STANDARDS_LIB_NAMESPACE: &str = "miden::standards";
+const ACCOUNT_COMPONENTS_LIB_NAMESPACE: &str = "miden::standards::components";
 
-const STANDARDS_ERRORS_FILE: &str = "src/errors/standards.rs";
+const STANDARDS_ERRORS_RS_FILE: &str = "standards_errors.rs";
 const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 
 // PRE-PROCESSING
@@ -34,7 +30,6 @@ const STANDARDS_ERRORS_ARRAY_NAME: &str = "STANDARDS_ERRORS";
 fn main() -> Result<()> {
     // re-build when the MASM code changes
     println!("cargo::rerun-if-changed={ASM_DIR}/");
-    println!("cargo::rerun-if-env-changed=BUILD_GENERATED_FILES_IN_SRC");
 
     // Copies the MASM code to the build directory
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -49,11 +44,10 @@ fn main() -> Result<()> {
     // set target directory to {OUT_DIR}/assets
     let target_dir = Path::new(&build_dir).join(ASSETS_DIR);
 
+    let mut assembler = TransactionKernel::assembler().with_warnings_as_errors(true);
     // compile standards library (includes note scripts)
-    let standards_lib =
-        compile_standards_lib(&source_dir, &target_dir, TransactionKernel::assembler())?;
+    let standards_lib = compile_standards_lib(&source_dir, &target_dir, assembler.clone())?;
 
-    let mut assembler = TransactionKernel::assembler();
     assembler.link_static_library(standards_lib)?;
 
     // compile account components
@@ -63,7 +57,7 @@ fn main() -> Result<()> {
         assembler,
     )?;
 
-    generate_error_constants(&source_dir)?;
+    generate_error_constants(&source_dir, &build_dir)?;
 
     Ok(())
 }
@@ -114,7 +108,19 @@ fn compile_account_components(
         let component_source_code = fs::read_to_string(&masm_file_path)
             .expect("reading the component's MASM source code should succeed");
 
-        let named_source = NamedSource::new(component_name.clone(), component_source_code);
+        // Build full library path from directory structure:
+        // e.g. faucets/basic_fungible_faucet.masm ->
+        // miden::standards::components::faucets::basic_fungible_faucet
+        let relative_path = masm_file_path
+            .strip_prefix(source_dir)
+            .expect("masm file should be inside source dir");
+        let mut library_path = ACCOUNT_COMPONENTS_LIB_NAMESPACE.to_owned();
+        for component in relative_path.with_extension("").components() {
+            let part = component.as_os_str().to_str().expect("valid UTF-8");
+            library_path.push_str("::");
+            library_path.push_str(part);
+        }
+        let named_source = NamedSource::new(library_path, component_source_code);
 
         let component_library = assembler
             .clone()
@@ -165,14 +171,9 @@ fn compile_account_components(
 /// The function ensures that a constant is not defined twice, except if their error message is the
 /// same. This can happen across multiple files.
 ///
-/// Because the error files will be written to ./src/errors, this should be a no-op if ./src is
-/// read-only. To enable writing to ./src, set the `BUILD_GENERATED_FILES_IN_SRC` environment
-/// variable.
-fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
-    if !BUILD_GENERATED_FILES_IN_SRC {
-        return Ok(());
-    }
-
+/// The generated file is written to `build_dir` (i.e. `OUT_DIR`) and included via `include!`
+/// in the source.
+fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
     // Miden standards errors
     // ------------------------------------------
 
@@ -180,7 +181,7 @@ fn generate_error_constants(asm_source_dir: &Path) -> Result<()> {
         .context("failed to extract all masm errors")?;
     shared::generate_error_file(
         shared::ErrorModule {
-            file_name: STANDARDS_ERRORS_FILE,
+            file_path: Path::new(build_dir).join(STANDARDS_ERRORS_RS_FILE),
             array_name: STANDARDS_ERRORS_ARRAY_NAME,
             is_crate_local: false,
         },
@@ -380,7 +381,7 @@ mod shared {
     }
 
     /// Generates the content of an error file for the given category and the set of errors and
-    /// writes it to the category's file.
+    /// writes it to the file at the path specified in the module.
     pub fn generate_error_file(module: ErrorModule, errors: Vec<NamedError>) -> Result<()> {
         let mut output = String::new();
 
@@ -427,7 +428,7 @@ mod shared {
             .into_diagnostic()?;
         }
 
-        std::fs::write(module.file_name, output).into_diagnostic()?;
+        fs::write(module.file_path, output).into_diagnostic()?;
 
         Ok(())
     }
@@ -445,9 +446,9 @@ mod shared {
         pub message: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone)]
     pub struct ErrorModule {
-        pub file_name: &'static str,
+        pub file_path: PathBuf,
         pub array_name: &'static str,
         pub is_crate_local: bool,
     }

@@ -1,7 +1,7 @@
-mod rpo_falcon_acl;
+mod singlesig_acl;
 
 mod multisig;
 
-mod ecdsa_acl;
+mod hybrid_multisig;
 
-mod ecdsa_multisig;
+mod multisig_psm;

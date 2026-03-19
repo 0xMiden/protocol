@@ -8,7 +8,7 @@ use super::{
     InputNote,
     InputNotes,
     NoteId,
-    OutputNotes,
+    RawOutputNotes,
     TransactionArgs,
     TransactionId,
     TransactionOutputs,
@@ -68,9 +68,10 @@ impl ExecutedTransaction {
         // `id` value after construction `Self {..}` without moving
         let id = TransactionId::new(
             tx_inputs.account().initial_commitment(),
-            tx_outputs.account.commitment(),
+            tx_outputs.account.to_commitment(),
             tx_inputs.input_notes().commitment(),
             tx_outputs.output_notes.commitment(),
+            tx_outputs.fee,
         );
 
         Self {
@@ -111,7 +112,7 @@ impl ExecutedTransaction {
     }
 
     /// Returns the notes created in this transaction.
-    pub fn output_notes(&self) -> &OutputNotes {
+    pub fn output_notes(&self) -> &RawOutputNotes {
         &self.tx_outputs.output_notes
     }
 

@@ -1,13 +1,13 @@
 use anyhow::Context;
 use assert_matches::assert_matches;
-use miden_protocol::account::{AccountId, StorageMap, StorageSlot, StorageSlotName};
+use miden_crypto::rand::test_utils::rand_value;
+use miden_protocol::account::{AccountId, StorageMap, StorageMapKey, StorageSlot, StorageSlotName};
 use miden_protocol::asset::{Asset, FungibleAsset, NonFungibleAsset};
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{self, Felt, Word};
 use miden_tx::TransactionExecutorError;
-use winter_rand_utils::rand_value;
 
 use crate::utils::create_public_p2any_note;
 use crate::{Auth, MockChain};
@@ -99,7 +99,7 @@ async fn num_tx_cycles_after_compute_fee_are_less_than_estimated(
     // These constants should always be updated together with the equivalent constants in
     // epilogue.masm.
     const SMT_SET_ADDITIONAL_CYCLES: usize = 250;
-    const NUM_POST_COMPUTE_FEE_CYCLES: usize = 500;
+    const NUM_POST_COMPUTE_FEE_CYCLES: usize = 608;
 
     assert!(
         tx.measurements().after_tx_cycles_obtained
@@ -135,7 +135,7 @@ async fn mutate_account_with_storage() -> anyhow::Result<ExecutedTransaction> {
             StorageSlot::with_value(StorageSlotName::mock(0), rand_value()),
             StorageSlot::with_map(
                 StorageSlotName::mock(1),
-                StorageMap::with_entries([(rand_value(), rand_value())])?,
+                StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?,
             ),
         ],
         [Asset::from(native_asset), NonFungibleAsset::mock(&[1, 2, 3, 4])],
@@ -166,7 +166,7 @@ async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
         [
             StorageSlot::with_map(
                 StorageSlotName::mock(0),
-                StorageMap::with_entries([(rand_value(), rand_value())])?,
+                StorageMap::with_entries([(StorageMapKey::from_raw(rand_value()), rand_value())])?,
             ),
             StorageSlot::with_value(StorageSlotName::mock(1), rand_value()),
         ],
@@ -178,7 +178,7 @@ async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
     // This creates a note that adds the given assets to the account vault.
     let asset_note =
         create_public_p2any_note(account.id(), [Asset::from(note_asset0.add(note_asset1)?)]);
-    builder.add_output_note(OutputNote::Full(asset_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(asset_note.clone()));
 
     let output_note0 = create_public_p2any_note(account.id(), [note_asset0.into()]);
     let output_note1 = create_public_p2any_note(account.id(), [note_asset1.into()]);
@@ -188,8 +188,8 @@ async fn create_output_notes() -> anyhow::Result<ExecutedTransaction> {
         .build()?
         .build_tx_context(account, &[asset_note.id(), spawn_note.id()], &[])?
         .extend_expected_output_notes(vec![
-            OutputNote::Full(output_note0),
-            OutputNote::Full(output_note1),
+            RawOutputNote::Full(output_note0),
+            RawOutputNote::Full(output_note1),
         ])
         .build()?
         .execute()

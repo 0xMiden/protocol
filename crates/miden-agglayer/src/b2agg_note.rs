@@ -6,8 +6,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::program::Program;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -32,7 +33,7 @@ use crate::EthAddressFormat;
 // Initialize the B2AGG note script only once
 static B2AGG_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/assets/note_scripts/B2AGG.masb"));
-    let program = Program::read_from_bytes(bytes).expect("Shipped B2AGG script is well-formed");
+    let program = Program::read_from_bytes(bytes).expect("shipped B2AGG script is well-formed");
     NoteScript::new(program)
 });
 
@@ -123,7 +124,8 @@ fn build_note_storage(
 ) -> Result<NoteStorage, NoteError> {
     let mut elements = Vec::with_capacity(6);
 
-    elements.push(Felt::new(destination_network as u64));
+    let destination_network = u32::from_le_bytes(destination_network.to_be_bytes());
+    elements.push(Felt::from(destination_network));
     elements.extend(destination_address.to_elements());
 
     NoteStorage::new(elements)

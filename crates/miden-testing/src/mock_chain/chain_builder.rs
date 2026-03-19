@@ -13,11 +13,12 @@ const DEFAULT_FAUCET_DECIMALS: u8 = 10;
 // ================================================================================================
 
 use itertools::Itertools;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
     AccountDelta,
     AccountId,
     AccountStorageMode,
@@ -39,17 +40,22 @@ use miden_protocol::block::{
     OutputNoteBatch,
     ProvenBlock,
 };
-use miden_protocol::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_protocol::crypto::merkle::smt::Smt;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAttachment, NoteDetails, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
-use miden_protocol::testing::random_signer::RandomBlockSigner;
-use miden_protocol::transaction::{OrderedTransactionHeaders, OutputNote, TransactionKernel};
+use miden_protocol::testing::random_secret_key::random_secret_key;
+use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::mint_policies::{
+    AuthControlled,
+    OwnerControlled,
+    OwnerControlledInitConfig,
+};
 use miden_standards::account::wallets::BasicWallet;
-use miden_standards::note::{P2idNote, P2ideNote, SwapNote};
+use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
 use miden_standards::testing::account_component::MockAccountComponent;
 use rand::Rng;
 
@@ -104,8 +110,8 @@ use crate::{AccountState, Auth, MockChain};
 pub struct MockChainBuilder {
     accounts: BTreeMap<AccountId, Account>,
     account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
-    notes: Vec<OutputNote>,
-    rng: RpoRandomCoin,
+    notes: Vec<RawOutputNote>,
+    rng: RandomCoin,
     // Fee parameters.
     native_asset_id: AccountId,
     verification_base_fee: u32,
@@ -129,7 +135,7 @@ impl MockChainBuilder {
             accounts: BTreeMap::new(),
             account_authenticators: BTreeMap::new(),
             notes: Vec::new(),
-            rng: RpoRandomCoin::new(Default::default()),
+            rng: RandomCoin::new(Default::default()),
             native_asset_id,
             verification_base_fee: 0,
         }
@@ -181,7 +187,7 @@ impl MockChainBuilder {
             .into_values()
             .map(|account| {
                 let account_id = account.id();
-                let account_commitment = account.commitment();
+                let account_commitment = account.to_commitment();
                 let account_delta = AccountDelta::try_from(account)
                     .expect("chain builder should only store existing accounts without seeds");
                 let update_details = AccountUpdateDetails::Delta(account_delta);
@@ -197,7 +203,22 @@ impl MockChainBuilder {
         )
         .context("failed to create genesis account tree")?;
 
-        let note_chunks = self.notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
+        // Extract full notes before shrinking for later use in MockChain
+        let full_notes: Vec<Note> = self
+            .notes
+            .iter()
+            .filter_map(|note| match note {
+                RawOutputNote::Full(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let proven_notes: Vec<_> = self
+            .notes
+            .into_iter()
+            .map(|note| note.to_output_note().expect("genesis note should be valid"))
+            .collect();
+        let note_chunks = proven_notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
         let output_note_batches: Vec<OutputNoteBatch> = note_chunks
             .into_iter()
             .map(|batch_notes| batch_notes.into_iter().enumerate().collect::<Vec<_>>())
@@ -221,7 +242,7 @@ impl MockChainBuilder {
         let timestamp = MockChain::TIMESTAMP_START_SECS;
         let fee_parameters = FeeParameters::new(self.native_asset_id, self.verification_base_fee)
             .context("failed to construct fee parameters")?;
-        let validator_secret_key = SecretKey::random();
+        let validator_secret_key = random_secret_key();
         let validator_public_key = validator_secret_key.public_key();
 
         let header = BlockHeader::new(
@@ -255,6 +276,7 @@ impl MockChainBuilder {
             account_tree,
             self.account_authenticators,
             validator_secret_key,
+            full_notes,
         )
     }
 
@@ -308,9 +330,7 @@ impl MockChainBuilder {
     ) -> anyhow::Result<Account> {
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let max_supply_felt = max_supply.try_into().map_err(|_| {
-            anyhow::anyhow!("max supply value cannot be converted to Felt: {max_supply}")
-        })?;
+        let max_supply_felt = Felt::try_from(max_supply)?;
         let basic_faucet =
             BasicFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply_felt)
                 .context("failed to create BasicFungibleFaucet")?;
@@ -318,7 +338,8 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
-            .with_component(basic_faucet);
+            .with_component(basic_faucet)
+            .with_component(AuthControlled::allow_all());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -334,10 +355,8 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)
-            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
-            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let max_supply = Felt::try_from(max_supply)?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -349,6 +368,7 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
+            .with_component(AuthControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -363,26 +383,23 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
+        mint_policy: OwnerControlledInitConfig,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)
-            .map_err(|err| anyhow::anyhow!("failed to convert max_supply to felt: {err}"))?;
-        let token_supply = Felt::try_from(token_supply.unwrap_or(0))
-            .map_err(|err| anyhow::anyhow!("failed to convert token_supply to felt: {err}"))?;
+        let max_supply = Felt::try_from(max_supply)?;
+        let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
-        let network_faucet = NetworkFungibleFaucet::new(
-            token_symbol,
-            DEFAULT_FAUCET_DECIMALS,
-            max_supply,
-            owner_account_id,
-        )
-        .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
-        .context("failed to create network fungible faucet")?;
+        let network_faucet =
+            NetworkFungibleFaucet::new(token_symbol, DEFAULT_FAUCET_DECIMALS, max_supply)
+                .and_then(|fungible_faucet| fungible_faucet.with_token_supply(token_supply))
+                .context("failed to create network fungible faucet")?;
 
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
+            .with_component(Ownable2Step::new(owner_account_id))
+            .with_component(OwnerControlled::new(mint_policy))
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)
@@ -477,6 +494,20 @@ impl MockChainBuilder {
 
         Ok(account)
     }
+    pub fn add_existing_account_from_components(
+        &mut self,
+        auth: Auth,
+        components: impl IntoIterator<Item = AccountComponent>,
+    ) -> anyhow::Result<Account> {
+        let mut account_builder =
+            Account::builder(rand::rng().random()).storage_mode(AccountStorageMode::Public);
+
+        for component in components {
+            account_builder = account_builder.with_component(component);
+        }
+
+        self.add_account_from_builder(auth, account_builder, AccountState::Exists)
+    }
 
     /// Adds the provided account to the list of genesis accounts.
     ///
@@ -498,7 +529,7 @@ impl MockChainBuilder {
     // ----------------------------------------------------------------------------------------
 
     /// Adds the provided note to the initial chain state.
-    pub fn add_output_note(&mut self, note: impl Into<OutputNote>) {
+    pub fn add_output_note(&mut self, note: impl Into<RawOutputNote>) {
         self.notes.push(note.into());
     }
 
@@ -513,7 +544,7 @@ impl MockChainBuilder {
         assets: impl IntoIterator<Item = Asset>,
     ) -> anyhow::Result<Note> {
         let note = create_p2any_note(sender_account_id, note_type, assets, &mut self.rng);
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
@@ -538,12 +569,12 @@ impl MockChainBuilder {
             NoteAttachment::default(),
             &mut self.rng,
         )?;
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
 
-    /// Adds a P2IDE [`OutputNote`] (pay‑to‑ID‑extended) to the list of genesis notes.
+    /// Adds a P2IDE note (pay‑to‑ID‑extended) to the list of genesis notes.
     ///
     /// A P2IDE note can include an optional `timelock_height` and/or an optional
     /// `reclaim_height` after which the `sender_account_id` may reclaim the
@@ -557,23 +588,23 @@ impl MockChainBuilder {
         reclaim_height: Option<BlockNumber>,
         timelock_height: Option<BlockNumber>,
     ) -> Result<Note, NoteError> {
+        let storage = P2ideNoteStorage::new(target_account_id, reclaim_height, timelock_height);
+
         let note = P2ideNote::create(
             sender_account_id,
-            target_account_id,
+            storage,
             asset.to_vec(),
-            reclaim_height,
-            timelock_height,
             note_type,
             Default::default(),
             &mut self.rng,
         )?;
 
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
 
-    /// Adds a public SWAP [`OutputNote`] to the list of genesis notes.
+    /// Adds a public SWAP note to the list of genesis notes.
     pub fn add_swap_note(
         &mut self,
         sender: AccountId,
@@ -592,7 +623,7 @@ impl MockChainBuilder {
             &mut self.rng,
         )?;
 
-        self.add_output_note(OutputNote::Full(swap_note.clone()));
+        self.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
         Ok((swap_note, payback_note))
     }
@@ -615,7 +646,7 @@ impl MockChainBuilder {
         I: ExactSizeIterator<Item = &'note Note>,
     {
         let note = create_spawn_note(output_notes)?;
-        self.add_output_note(OutputNote::Full(note.clone()));
+        self.add_output_note(RawOutputNote::Full(note.clone()));
 
         Ok(note)
     }
@@ -648,7 +679,7 @@ impl MockChainBuilder {
     /// Returns a mutable reference to the builder's RNG.
     ///
     /// This can be used when creating accounts or notes and randomness is required.
-    pub fn rng_mut(&mut self) -> &mut RpoRandomCoin {
+    pub fn rng_mut(&mut self) -> &mut RandomCoin {
         &mut self.rng
     }
 

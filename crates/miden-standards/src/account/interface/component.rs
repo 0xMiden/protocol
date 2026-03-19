@@ -1,20 +1,13 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use miden_protocol::account::auth::PublicKeyCommitment;
+use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::{AccountId, AccountProcedureRoot, AccountStorage, StorageSlotName};
 use miden_protocol::note::PartialNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::{Felt, Word};
 
-use crate::AuthScheme;
-use crate::account::auth::{
-    AuthEcdsaK256Keccak,
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakMultisig,
-    AuthFalcon512Rpo,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoMultisig,
-};
+use crate::AuthMethod;
+use crate::account::auth::{AuthMultisig, AuthMultisigPsm, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -32,23 +25,17 @@ pub enum AccountComponentInterface {
     /// [`NetworkFungibleFaucet`][crate::account::faucets::NetworkFungibleFaucet] module.
     NetworkFungibleFaucet,
     /// Exposes procedures from the
-    /// [`AuthEcdsaK256Keccak`][crate::account::auth::AuthEcdsaK256Keccak] module.
-    AuthEcdsaK256Keccak,
+    /// [`AuthSingleSig`][crate::account::auth::AuthSingleSig] module.
+    AuthSingleSig,
     /// Exposes procedures from the
-    /// [`AuthEcdsaK256KeccakAcl`][crate::account::auth::AuthEcdsaK256KeccakAcl] module.
-    AuthEcdsaK256KeccakAcl,
+    /// [`AuthSingleSigAcl`][crate::account::auth::AuthSingleSigAcl] module.
+    AuthSingleSigAcl,
     /// Exposes procedures from the
-    /// [`AuthEcdsaK256KeccakMultisig`][crate::account::auth::AuthEcdsaK256KeccakMultisig] module.
-    AuthEcdsaK256KeccakMultisig,
+    /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
+    AuthMultisig,
     /// Exposes procedures from the
-    /// [`AuthFalcon512Rpo`][crate::account::auth::AuthFalcon512Rpo] module.
-    AuthFalcon512Rpo,
-    /// Exposes procedures from the
-    /// [`AuthFalcon512RpoAcl`][crate::account::auth::AuthFalcon512RpoAcl] module.
-    AuthFalcon512RpoAcl,
-    /// Exposes procedures from the
-    /// [`AuthFalcon512RpoMultisig`][crate::account::auth::AuthFalcon512RpoMultisig] module.
-    AuthFalcon512RpoMultisig,
+    /// [`AuthMultisigPsm`][crate::account::auth::AuthMultisigPsm] module.
+    AuthMultisigPsm,
     /// Exposes procedures from the [`NoAuth`][crate::account::auth::NoAuth] module.
     ///
     /// This authentication scheme provides no cryptographic authentication and only increments
@@ -74,19 +61,10 @@ impl AccountComponentInterface {
             AccountComponentInterface::NetworkFungibleFaucet => {
                 "Network Fungible Faucet".to_string()
             },
-            AccountComponentInterface::AuthEcdsaK256Keccak => "ECDSA K256 Keccak".to_string(),
-            AccountComponentInterface::AuthEcdsaK256KeccakAcl => {
-                "ECDSA K256 Keccak ACL".to_string()
-            },
-            AccountComponentInterface::AuthEcdsaK256KeccakMultisig => {
-                "ECDSA K256 Keccak Multisig".to_string()
-            },
-            AccountComponentInterface::AuthFalcon512Rpo => "Falcon512 RPO".to_string(),
-            AccountComponentInterface::AuthFalcon512RpoAcl => "Falcon512 RPO ACL".to_string(),
-            AccountComponentInterface::AuthFalcon512RpoMultisig => {
-                "Falcon512 RPO Multisig".to_string()
-            },
-
+            AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
+            AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
+            AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
+            AccountComponentInterface::AuthMultisigPsm => "Multisig PSM".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
@@ -105,70 +83,44 @@ impl AccountComponentInterface {
     pub fn is_auth_component(&self) -> bool {
         matches!(
             self,
-            AccountComponentInterface::AuthEcdsaK256Keccak
-                | AccountComponentInterface::AuthEcdsaK256KeccakAcl
-                | AccountComponentInterface::AuthEcdsaK256KeccakMultisig
-                | AccountComponentInterface::AuthFalcon512Rpo
-                | AccountComponentInterface::AuthFalcon512RpoAcl
-                | AccountComponentInterface::AuthFalcon512RpoMultisig
+            AccountComponentInterface::AuthSingleSig
+                | AccountComponentInterface::AuthSingleSigAcl
+                | AccountComponentInterface::AuthMultisig
+                | AccountComponentInterface::AuthMultisigPsm
                 | AccountComponentInterface::AuthNoAuth
         )
     }
 
     /// Returns the authentication schemes associated with this component interface.
-    pub fn get_auth_schemes(&self, storage: &AccountStorage) -> Vec<AuthScheme> {
+    pub fn get_auth_methods(&self, storage: &AccountStorage) -> Vec<AuthMethod> {
         match self {
-            AccountComponentInterface::AuthEcdsaK256Keccak => {
-                vec![AuthScheme::EcdsaK256Keccak {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthEcdsaK256Keccak::public_key_slot())
-                            .expect("invalid storage index of the public key"),
-                    ),
-                }]
-            },
-            AccountComponentInterface::AuthEcdsaK256KeccakAcl => {
-                vec![AuthScheme::EcdsaK256Keccak {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthEcdsaK256KeccakAcl::public_key_slot())
-                            .expect("invalid storage index of the public key"),
-                    ),
-                }]
-            },
-            AccountComponentInterface::AuthEcdsaK256KeccakMultisig => {
-                vec![extract_multisig_auth_scheme(
+            AccountComponentInterface::AuthSingleSig => vec![extract_singlesig_auth_method(
+                storage,
+                AuthSingleSig::public_key_slot(),
+                AuthSingleSig::scheme_id_slot(),
+            )],
+            AccountComponentInterface::AuthSingleSigAcl => vec![extract_singlesig_auth_method(
+                storage,
+                AuthSingleSigAcl::public_key_slot(),
+                AuthSingleSigAcl::scheme_id_slot(),
+            )],
+            AccountComponentInterface::AuthMultisig => {
+                vec![extract_multisig_auth_method(
                     storage,
-                    AuthEcdsaK256KeccakMultisig::threshold_config_slot(),
-                    AuthEcdsaK256KeccakMultisig::approver_public_keys_slot(),
+                    AuthMultisig::threshold_config_slot(),
+                    AuthMultisig::approver_public_keys_slot(),
+                    AuthMultisig::approver_scheme_ids_slot(),
                 )]
             },
-            AccountComponentInterface::AuthFalcon512Rpo => {
-                vec![AuthScheme::Falcon512Rpo {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthFalcon512Rpo::public_key_slot())
-                            .expect("invalid slot name of the AuthFalcon512Rpo public key"),
-                    ),
-                }]
-            },
-            AccountComponentInterface::AuthFalcon512RpoAcl => {
-                vec![AuthScheme::Falcon512Rpo {
-                    pub_key: PublicKeyCommitment::from(
-                        storage
-                            .get_item(AuthFalcon512RpoAcl::public_key_slot())
-                            .expect("invalid slot name of the AuthFalcon512RpoAcl public key"),
-                    ),
-                }]
-            },
-            AccountComponentInterface::AuthFalcon512RpoMultisig => {
-                vec![extract_multisig_auth_scheme(
+            AccountComponentInterface::AuthMultisigPsm => {
+                vec![extract_multisig_auth_method(
                     storage,
-                    AuthFalcon512RpoMultisig::threshold_config_slot(),
-                    AuthFalcon512RpoMultisig::approver_public_keys_slot(),
+                    AuthMultisigPsm::threshold_config_slot(),
+                    AuthMultisigPsm::approver_public_keys_slot(),
+                    AuthMultisigPsm::approver_scheme_ids_slot(),
                 )]
             },
-            AccountComponentInterface::AuthNoAuth => vec![AuthScheme::NoAuth],
+            AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
             _ => vec![], // Non-auth components return empty vector
         }
     }
@@ -202,7 +154,7 @@ impl AccountComponentInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::distribute dropw dropw drop
+    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -210,7 +162,7 @@ impl AccountComponentInterface {
     /// - the interface does not support the generation of the standard `send_note` procedure.
     /// - the sender of the note isn't the account for which the script is being built.
     /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to distribute an asset with a different faucet ID.
+    /// - a faucet tries to mint an asset with a different faucet ID.
     pub(crate) fn send_note_body(
         &self,
         sender_account_id: AccountId,
@@ -247,16 +199,16 @@ impl AccountComponentInterface {
                     let asset =
                         partial_note.assets().iter().next().expect("note should contain an asset");
 
-                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                    if asset.faucet_id() != sender_account_id {
                         return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id_prefix(),
+                            asset.faucet_id(),
                         ));
                     }
 
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::distribute
+                        call.::miden::standards::faucets::basic_fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n
@@ -275,13 +227,22 @@ impl AccountComponentInterface {
                     for asset in partial_note.assets().iter() {
                         body.push_str(&format!(
                             "
-                            push.{asset}
-                            # => [ASSET, note_idx, pad(16)]
+                            # duplicate note index
+                            padw push.0 push.0 push.0 dup.7
+                            # => [note_idx, pad(7), note_idx, pad(16)]
+
+                            push.{ASSET_VALUE}
+                            push.{ASSET_KEY}
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            dropw
+                            # => [pad(16), note_idx, pad(16)]
+
+                            dropw dropw dropw dropw
                             # => [note_idx, pad(16)]\n
                             ",
-                            asset = Word::from(*asset)
+                            ASSET_KEY = asset.to_key_word(),
+                            ASSET_VALUE = asset.to_value_word(),
                         ));
                     }
                 },
@@ -316,43 +277,78 @@ impl AccountComponentInterface {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Extracts authentication scheme from a multisig component.
-fn extract_multisig_auth_scheme(
+/// Extracts authentication method from a single-signature component.
+fn extract_singlesig_auth_method(
+    storage: &AccountStorage,
+    public_key_slot: &StorageSlotName,
+    scheme_id_slot: &StorageSlotName,
+) -> AuthMethod {
+    let pub_key = PublicKeyCommitment::from(
+        storage
+            .get_item(public_key_slot)
+            .expect("invalid storage index of the public key"),
+    );
+
+    let scheme_id = storage
+        .get_item(scheme_id_slot)
+        .expect("invalid storage index of the scheme id")[0]
+        .as_canonical_u64() as u8;
+
+    let auth_scheme =
+        AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
+
+    AuthMethod::SingleSig { approver: (pub_key, auth_scheme) }
+}
+
+/// Extracts authentication method from a multisig component.
+fn extract_multisig_auth_method(
     storage: &AccountStorage,
     config_slot: &StorageSlotName,
     approver_public_keys_slot: &StorageSlotName,
-) -> AuthScheme {
+    approver_scheme_ids_slot: &StorageSlotName,
+) -> AuthMethod {
     // Read the multisig configuration from the config slot
     // Format: [threshold, num_approvers, 0, 0]
     let config = storage
         .get_item(config_slot)
         .expect("invalid slot name of the multisig configuration");
 
-    let threshold = config[0].as_int() as u32;
-    let num_approvers = config[1].as_int() as u8;
+    let threshold = config[0].as_canonical_u64() as u32;
+    let num_approvers = config[1].as_canonical_u64() as u8;
 
-    let mut pub_keys = Vec::new();
+    let mut approvers = Vec::new();
 
     // Read each public key from the map
     for key_index in 0..num_approvers {
-        // The multisig component stores keys using pattern [index, 0, 0, 0]
-        let map_key = [Felt::new(key_index as u64), Felt::ZERO, Felt::ZERO, Felt::ZERO];
+        // The multisig component stores keys and scheme IDs using pattern [index, 0, 0, 0]
+        let map_key = Word::from([key_index as u32, 0, 0, 0]);
 
-        match storage.get_map_item(approver_public_keys_slot, map_key.into()) {
-            Ok(pub_key) => {
-                pub_keys.push(PublicKeyCommitment::from(pub_key));
-            },
-            Err(_) => {
-                // If we can't read a public key, panic with a clear error message
+        let pub_key_word =
+            storage.get_map_item(approver_public_keys_slot, map_key).unwrap_or_else(|_| {
                 panic!(
                     "Failed to read public key {} from multisig configuration at storage slot {}. \
-                        Expected key pattern [index, 0, 0, 0]. \
-                        This indicates corrupted multisig storage or incorrect storage layout.",
+                     Expected key pattern [index, 0, 0, 0].",
                     key_index, approver_public_keys_slot
-                );
-            },
-        }
+                )
+            });
+
+        let pub_key = PublicKeyCommitment::from(pub_key_word);
+
+        let scheme_word = storage
+            .get_map_item(approver_scheme_ids_slot, map_key)
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to read scheme id for approver {} from multisig configuration at storage slot {}. \
+                     Expected key pattern [index, 0, 0, 0].",
+                    key_index, approver_scheme_ids_slot
+                )
+            });
+
+        let scheme_id = scheme_word[0].as_canonical_u64() as u8;
+        let auth_scheme =
+            AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
+        approvers.push((pub_key, auth_scheme));
     }
 
-    AuthScheme::Falcon512RpoMultisig { threshold, pub_keys }
+    AuthMethod::Multisig { threshold, approvers }
 }

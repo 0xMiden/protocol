@@ -12,6 +12,7 @@ ignore = [
   "RUSTSEC-2024-0436", # paste is unmaintained but no alternative available
   "RUSTSEC-2025-0055", # tracing-subscriber vulnerability - will be fixed by upgrade
   "RUSTSEC-2025-0056", # adler is unmaintained but used by miniz_oxide
+  "RUSTSEC-2025-0141", # bincode is unmaintained, replace with wincode (https://github.com/0xMiden/miden-vm/issues/2550)
 ]
 yanked = "warn"
 
@@ -22,7 +23,7 @@ allow = [
   "Apache-2.0",
   "BSD-2-Clause",
   "BSD-3-Clause",
-  "ISC",
+  "CC0-1.0",
   "MIT",
   "Unicode-3.0",
   "Zlib",
@@ -44,6 +45,9 @@ highlight = "all"
 multiple-versions = "deny"
 skip = [
   #{ name = "ansi_term", version = "=0.11.0" },
+  # Allow duplicate rand versions - miden-field uses 0.10, miden-vm uses 0.9
+  { name = "rand" },
+  { name = "rand_core" },
 ]
 skip-tree = [
   # Allow getrandom v0.2.x - legacy version used by nanorand
@@ -54,14 +58,11 @@ skip-tree = [
   { name = "rustc_version", version = "=0.2.*" },
   # Allow unicode-width v0.1.x - used by miden-formatting vs textwrap conflict
   { name = "unicode-width", version = "=0.1.*" },
-  # Allow windows-targets v0.48.x - older Windows target version
-  { name = "windows-targets", version = "=0.48.*" },
-  # Allow windows-sys v0.48.x/v0.59.x - multiple Windows system libraries
-  { name = "windows-sys", version = "=0.48.*" },
-  { name = "windows-sys", version = "=0.59.*" },
   # Allow syn v1.x and v2.x - our derive macros need v1.x while ecosystem uses v2.x
   { name = "syn", version = "=1.0.109" },
-  { name = "syn", version = "=2.0.111" },
+  { name = "syn", version = "=2.0.117" },
+  # Allow spin v0.9.x - legacy version used by some dependencies
+  { name = "spin", version = "=0.9.*" },
 ]
 wildcards = "allow"
 

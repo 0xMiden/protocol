@@ -1,0 +1,223 @@
+use miden::core::crypto::hashes::poseidon2
+use miden::protocol::account_id
+use miden::protocol::active_account
+use miden::protocol::active_note
+use miden::protocol::native_account
+
+# ERRORS
+# =================================================================================================
+
+const ERR_GER_NOT_FOUND = "GER not found in storage"
+const ERR_FAUCET_NOT_REGISTERED="faucet is not registered in the bridge's faucet registry"
+const ERR_SENDER_NOT_BRIDGE_ADMIN="note sender is not the bridge admin"
+const ERR_SENDER_NOT_GER_MANAGER="note sender is not the global exit root manager"
+
+# CONSTANTS
+# =================================================================================================
+
+# Storage slots
+const BRIDGE_ADMIN_SLOT=word("miden::agglayer::bridge::admin")
+const GER_MANAGER_SLOT=word("miden::agglayer::bridge::ger_manager")
+const GER_STORAGE_SLOT=word("miden::agglayer::bridge::ger")
+const FAUCET_REGISTRY_SLOT=word("miden::agglayer::bridge::faucet_registry")
+
+# Flags
+const GER_KNOWN_FLAG=1
+const IS_FAUCET_REGISTERED_FLAG=1
+
+# PUBLIC INTERFACE
+# =================================================================================================
+
+#! Updates the Global Exit Root (GER) in the bridge account storage.
+#!
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and stores it in a map
+#! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
+#!
+#! Panics if the note sender is not the global exit root manager.
+#!
+#! Inputs: [GER_LOWER[4], GER_UPPER[4], pad(8)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc update_ger
+    # assert the note sender is the global exit root manager.
+    exec.assert_sender_is_ger_manager
+    # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
+
+    # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
+    exec.poseidon2::merge
+    # => [GER_HASH, pad(12)]
+
+    # prepare VALUE = [GER_KNOWN_FLAG, 0, 0, 0]
+    push.0.0.0.GER_KNOWN_FLAG
+    # => [GER_KNOWN_FLAG, 0, 0, 0, GER_HASH, pad(12)]
+
+    swapw
+    # => [GER_HASH, VALUE, pad(12)]
+
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH, VALUE, pad(12)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(12)]
+    dropw
+    # => [pad(16)]
+end
+
+#! Asserts that the provided GER is valid (exists in storage).
+#!
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and looks up the hash in
+#! the GER storage map. Panics if the GER has never been stored.
+#!
+#! Inputs: [GER_ROOT[8]]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the GER is not found in storage.
+#!
+#! Invocation: exec
+pub proc assert_valid_ger
+    # compute hash(GER)
+    exec.poseidon2::merge
+    # => [GER_HASH]
+
+    push.GER_STORAGE_SLOT[0..2]
+    # => [slot_id_prefix, slot_id_suffix, GER_HASH]
+
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    # assert the GER is known in storage (VALUE = [GER_KNOWN_FLAG, 0, 0, 0])
+    push.0.0.0.GER_KNOWN_FLAG
+    # => [GER_KNOWN_FLAG, 0, 0, 0, VALUE]
+
+    assert_eqw.err=ERR_GER_NOT_FOUND
+    # => []
+end
+
+#! Registers a faucet in the bridge's faucet registry.
+#!
+#! Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
+#! `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
+#!
+#! The sentinel value `[1, 0, 0, 0]` distinguishes registered faucets from
+#! non-existent entries (SMTs return EMPTY_WORD for missing keys).
+#!
+#! Panics if the note sender is not the bridge admin.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, pad(14)]
+#! Outputs: [pad(16)]
+#!
+#! Invocation: call
+pub proc register_faucet
+    # assert the note sender is the bridge admin.
+    exec.assert_sender_is_bridge_admin
+    # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
+
+    # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
+    # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
+    push.0.0.0.IS_FAUCET_REGISTERED_FLAG
+    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, suffix, prefix, pad(14)]
+
+    movup.5 movup.5
+    # => [suffix, prefix, IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, pad(14)]
+
+    push.0.0
+    # => [[0, 0, suffix, prefix], [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0], pad(14)]
+
+    # Place slot ID on top
+    push.FAUCET_REGISTRY_SLOT[0..2]
+    # => [slot0, slot1, KEY, VALUE, pad(14)]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE, pad(14)]
+
+    dropw
+    # => [pad(16)]
+end
+
+#! Asserts that a faucet is registered in the bridge's faucet registry.
+#!
+#! Looks up the faucet ID in the faucet registry map and asserts the registration
+#! flag is set.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the faucet is not registered in the faucet registry.
+#!
+#! Invocation: exec
+pub proc assert_faucet_registered
+    # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
+
+    push.FAUCET_REGISTRY_SLOT[0..2]
+    exec.active_account::get_map_item
+    # => [VALUE]
+
+    # the stored word must be [1, 0, 0, 0] for registered faucets
+    assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
+    # => []
+end
+
+#! Asserts that the note sender matches the bridge admin stored in account storage.
+#!
+#! Reads the bridge admin account ID from BRIDGE_ADMIN_SLOT and compares it against
+#! the sender of the currently executing note. Panics if they do not match.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not match the bridge admin account ID.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_bridge_admin
+    # => [pad(16)]
+
+    push.BRIDGE_ADMIN_SLOT[0..2]
+    exec.active_account::get_item
+    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
+
+    drop drop
+    # => [admin_suffix, admin_prefix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, admin_suffix, admin_prefix, pad(16)]
+
+    exec.account_id::is_equal
+    assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
+    # => [pad(16)]
+end
+
+#! Asserts that the note sender matches the global exit root manager stored in account storage.
+#!
+#! Reads the GER manager account ID from GER_MANAGER_SLOT and compares it against
+#! the sender of the currently executing note. Panics if they do not match.
+#!
+#! Inputs:  [pad(16)]
+#! Outputs: [pad(16)]
+#!
+#! Panics if:
+#! - the note sender does not match the GER manager account ID.
+#!
+#! Invocation: exec
+pub proc assert_sender_is_ger_manager
+    # => [pad(16)]
+
+    push.GER_MANAGER_SLOT[0..2]
+    exec.active_account::get_item
+    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
+
+    drop drop
+    # => [mgr_suffix, mgr_prefix, pad(16)]
+
+    exec.active_note::get_sender
+    # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
+
+    exec.account_id::is_equal
+    assert.err=ERR_SENDER_NOT_GER_MANAGER
+    # => [pad(16)]
+end

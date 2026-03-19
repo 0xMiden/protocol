@@ -1,11 +1,11 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
-use miden_processor::MastNodeExt;
+use miden_processor::mast::MastNodeExt;
 use miden_protocol::Word;
 use miden_protocol::account::AccountProcedureRoot;
 use miden_protocol::assembly::{Library, LibraryExport};
-use miden_protocol::utils::Deserializable;
+use miden_protocol::utils::serde::Deserializable;
 use miden_protocol::utils::sync::LazyLock;
 
 use crate::account::interface::AccountComponentInterface;
@@ -22,62 +22,51 @@ static BASIC_WALLET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Basic Wallet library is well-formed")
 });
 
+// ACCESS LIBRARIES
+// ================================================================================================
+
+// Initialize the Ownable2Step library only once.
+static OWNABLE2STEP_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/access/ownable2step.masl"
+    ));
+    Library::read_from_bytes(bytes).expect("Shipped Ownable2Step library is well-formed")
+});
+
 // AUTH LIBRARIES
 // ================================================================================================
 
 /// Initialize the ECDSA K256 Keccak library only once.
-static ECDSA_K256_KECCAK_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/ecdsa_k256_keccak.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Ecdsa K256 Keccak library is well-formed")
+static SINGLESIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/singlesig.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped Singlesig library is well-formed")
 });
 
 // Initialize the ECDSA K256 Keccak ACL library only once.
-static ECDSA_K256_KECCAK_ACL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+static SINGLESIG_ACL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/auth/ecdsa_k256_keccak_acl.masl"
+        "/assets/account_components/auth/singlesig_acl.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Ecdsa K256 Keccak ACL library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Singlesig ACL library is well-formed")
 });
 
-/// Initialize the ECDSA K256 Keccak Multisig library only once.
-static ECDSA_K256_KECCAK_MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/ecdsa_k256_keccak_multisig.masl"
-    ));
-    Library::read_from_bytes(bytes)
-        .expect("Shipped Multisig Ecdsa K256 Keccak library is well-formed")
+/// Initialize the Multisig library only once.
+static MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes =
+        include_bytes!(concat!(env!("OUT_DIR"), "/assets/account_components/auth/multisig.masl"));
+    Library::read_from_bytes(bytes).expect("Shipped Multisig library is well-formed")
 });
 
-// Initialize the Falcon 512 RPO library only once.
-static FALCON_512_RPO_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+/// Initialize the Multisig PSM library only once.
+static MULTISIG_PSM_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/auth/falcon_512_rpo.masl"
+        "/assets/account_components/auth/multisig_psm.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Falcon 512 RPO library is well-formed")
-});
-
-// Initialize the Falcon 512 RPO ACL library only once.
-static FALCON_512_RPO_ACL_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/falcon_512_rpo_acl.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Falcon 512 RPO ACL library is well-formed")
-});
-
-// Initialize the Multisig Falcon 512 RPO library only once.
-static FALCON_512_RPO_MULTISIG_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
-    let bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "/assets/account_components/auth/falcon_512_rpo_multisig.masl"
-    ));
-    Library::read_from_bytes(bytes).expect("Shipped Multisig Falcon 512 RPO library is well-formed")
+    Library::read_from_bytes(bytes).expect("Shipped Multisig PSM library is well-formed")
 });
 
 // Initialize the NoAuth library only once.
@@ -108,21 +97,37 @@ static NETWORK_FUNGIBLE_FAUCET_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     Library::read_from_bytes(bytes).expect("Shipped Network Fungible Faucet library is well-formed")
 });
 
-// METADATA LIBRARIES
-// ================================================================================================
-
-// Initialize the Storage Schema library only once.
-static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+// Initialize the Mint Policy Owner Controlled library only once.
+static MINT_POLICY_OWNER_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     let bytes = include_bytes!(concat!(
         env!("OUT_DIR"),
-        "/assets/account_components/metadata/schema_commitment.masl"
+        "/assets/account_components/mint_policies/owner_controlled.masl"
     ));
-    Library::read_from_bytes(bytes).expect("Shipped Storage Schema library is well-formed")
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Owner Controlled library is well-formed")
 });
+
+// Initialize the Mint Policy Auth Controlled library only once.
+static MINT_POLICY_AUTH_CONTROLLED_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "/assets/account_components/mint_policies/auth_controlled.masl"
+    ));
+    Library::read_from_bytes(bytes)
+        .expect("Shipped Mint Policy Auth Controlled library is well-formed")
+});
+
+// METADATA LIBRARIES
+// ================================================================================================
 
 /// Returns the Basic Wallet Library.
 pub fn basic_wallet_library() -> Library {
     BASIC_WALLET_LIBRARY.clone()
+}
+
+/// Returns the Ownable2Step Library.
+pub fn ownable2step_library() -> Library {
+    OWNABLE2STEP_LIBRARY.clone()
 }
 
 /// Returns the Basic Fungible Faucet Library.
@@ -135,44 +140,39 @@ pub fn network_fungible_faucet_library() -> Library {
     NETWORK_FUNGIBLE_FAUCET_LIBRARY.clone()
 }
 
-/// Returns the Storage Schema Library.
-pub fn storage_schema_library() -> Library {
-    STORAGE_SCHEMA_LIBRARY.clone()
+/// Returns the Mint Policy Owner Controlled Library.
+pub fn owner_controlled_library() -> Library {
+    MINT_POLICY_OWNER_CONTROLLED_LIBRARY.clone()
 }
 
-/// Returns the ECDSA K256 Keccak Library.
-pub fn ecdsa_k256_keccak_library() -> Library {
-    ECDSA_K256_KECCAK_LIBRARY.clone()
+/// Returns the Mint Policy Auth Controlled Library.
+pub fn auth_controlled_library() -> Library {
+    MINT_POLICY_AUTH_CONTROLLED_LIBRARY.clone()
 }
 
-/// Returns the ECDSA K256 Keccak ACL Library.
-pub fn ecdsa_k256_keccak_acl_library() -> Library {
-    ECDSA_K256_KECCAK_ACL_LIBRARY.clone()
+/// Returns the Singlesig Library.
+pub fn singlesig_library() -> Library {
+    SINGLESIG_LIBRARY.clone()
 }
 
-/// Returns the ECDSA K256 Keccak Multisig Library.
-pub fn ecdsa_k256_keccak_multisig_library() -> Library {
-    ECDSA_K256_KECCAK_MULTISIG_LIBRARY.clone()
+/// Returns the Singlesig ACL Library.
+pub fn singlesig_acl_library() -> Library {
+    SINGLESIG_ACL_LIBRARY.clone()
 }
 
-/// Returns the Falcon 512 RPO Library.
-pub fn falcon_512_rpo_library() -> Library {
-    FALCON_512_RPO_LIBRARY.clone()
+/// Returns the Multisig Library.
+pub fn multisig_library() -> Library {
+    MULTISIG_LIBRARY.clone()
 }
 
-/// Returns the Falcon 512 RPO ACL Library.
-pub fn falcon_512_rpo_acl_library() -> Library {
-    FALCON_512_RPO_ACL_LIBRARY.clone()
+/// Returns the Multisig PSM Library.
+pub fn multisig_psm_library() -> Library {
+    MULTISIG_PSM_LIBRARY.clone()
 }
 
 /// Returns the NoAuth Library.
 pub fn no_auth_library() -> Library {
     NO_AUTH_LIBRARY.clone()
-}
-
-/// Returns the Falcon 512 RPO Multisig Library.
-pub fn falcon_512_rpo_multisig_library() -> Library {
-    FALCON_512_RPO_MULTISIG_LIBRARY.clone()
 }
 
 // STANDARD ACCOUNT COMPONENTS
@@ -184,12 +184,10 @@ pub enum StandardAccountComponent {
     BasicWallet,
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
-    AuthEcdsaK256Keccak,
-    AuthEcdsaK256KeccakAcl,
-    AuthEcdsaK256KeccakMultisig,
-    AuthFalcon512Rpo,
-    AuthFalcon512RpoAcl,
-    AuthFalcon512RpoMultisig,
+    AuthSingleSig,
+    AuthSingleSigAcl,
+    AuthMultisig,
+    AuthMultisigPsm,
     AuthNoAuth,
 }
 
@@ -200,12 +198,10 @@ impl StandardAccountComponent {
             Self::BasicWallet => BASIC_WALLET_LIBRARY.as_ref(),
             Self::BasicFungibleFaucet => BASIC_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
             Self::NetworkFungibleFaucet => NETWORK_FUNGIBLE_FAUCET_LIBRARY.as_ref(),
-            Self::AuthEcdsaK256Keccak => ECDSA_K256_KECCAK_LIBRARY.as_ref(),
-            Self::AuthEcdsaK256KeccakAcl => ECDSA_K256_KECCAK_ACL_LIBRARY.as_ref(),
-            Self::AuthEcdsaK256KeccakMultisig => ECDSA_K256_KECCAK_MULTISIG_LIBRARY.as_ref(),
-            Self::AuthFalcon512Rpo => FALCON_512_RPO_LIBRARY.as_ref(),
-            Self::AuthFalcon512RpoAcl => FALCON_512_RPO_ACL_LIBRARY.as_ref(),
-            Self::AuthFalcon512RpoMultisig => FALCON_512_RPO_MULTISIG_LIBRARY.as_ref(),
+            Self::AuthSingleSig => SINGLESIG_LIBRARY.as_ref(),
+            Self::AuthSingleSigAcl => SINGLESIG_ACL_LIBRARY.as_ref(),
+            Self::AuthMultisig => MULTISIG_LIBRARY.as_ref(),
+            Self::AuthMultisigPsm => MULTISIG_PSM_LIBRARY.as_ref(),
             Self::AuthNoAuth => NO_AUTH_LIBRARY.as_ref(),
         };
 
@@ -249,22 +245,18 @@ impl StandardAccountComponent {
                 Self::NetworkFungibleFaucet => {
                     component_interface_vec.push(AccountComponentInterface::NetworkFungibleFaucet)
                 },
-                Self::AuthEcdsaK256Keccak => {
-                    component_interface_vec.push(AccountComponentInterface::AuthEcdsaK256Keccak)
+                Self::AuthSingleSig => {
+                    component_interface_vec.push(AccountComponentInterface::AuthSingleSig)
                 },
-                Self::AuthEcdsaK256KeccakAcl => {
-                    component_interface_vec.push(AccountComponentInterface::AuthEcdsaK256KeccakAcl)
+                Self::AuthSingleSigAcl => {
+                    component_interface_vec.push(AccountComponentInterface::AuthSingleSigAcl)
                 },
-                Self::AuthEcdsaK256KeccakMultisig => component_interface_vec
-                    .push(AccountComponentInterface::AuthEcdsaK256KeccakMultisig),
-                Self::AuthFalcon512Rpo => {
-                    component_interface_vec.push(AccountComponentInterface::AuthFalcon512Rpo)
+                Self::AuthMultisig => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisig)
                 },
-                Self::AuthFalcon512RpoAcl => {
-                    component_interface_vec.push(AccountComponentInterface::AuthFalcon512RpoAcl)
+                Self::AuthMultisigPsm => {
+                    component_interface_vec.push(AccountComponentInterface::AuthMultisigPsm)
                 },
-                Self::AuthFalcon512RpoMultisig => component_interface_vec
-                    .push(AccountComponentInterface::AuthFalcon512RpoMultisig),
                 Self::AuthNoAuth => {
                     component_interface_vec.push(AccountComponentInterface::AuthNoAuth)
                 },
@@ -281,13 +273,10 @@ impl StandardAccountComponent {
         Self::BasicWallet.extract_component(procedures_set, component_interface_vec);
         Self::BasicFungibleFaucet.extract_component(procedures_set, component_interface_vec);
         Self::NetworkFungibleFaucet.extract_component(procedures_set, component_interface_vec);
-        Self::AuthEcdsaK256Keccak.extract_component(procedures_set, component_interface_vec);
-        Self::AuthEcdsaK256KeccakAcl.extract_component(procedures_set, component_interface_vec);
-        Self::AuthEcdsaK256KeccakMultisig
-            .extract_component(procedures_set, component_interface_vec);
-        Self::AuthFalcon512Rpo.extract_component(procedures_set, component_interface_vec);
-        Self::AuthFalcon512RpoAcl.extract_component(procedures_set, component_interface_vec);
-        Self::AuthFalcon512RpoMultisig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthSingleSig.extract_component(procedures_set, component_interface_vec);
+        Self::AuthSingleSigAcl.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisigPsm.extract_component(procedures_set, component_interface_vec);
+        Self::AuthMultisig.extract_component(procedures_set, component_interface_vec);
         Self::AuthNoAuth.extract_component(procedures_set, component_interface_vec);
     }
 }

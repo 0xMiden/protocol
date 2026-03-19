@@ -1,0 +1,327 @@
+use miden::core::crypto::dsa::falcon512_poseidon2
+use miden::core::crypto::hashes::poseidon2
+use miden::core::crypto::dsa::ecdsa_k256_keccak
+use miden::protocol::active_account
+use miden::protocol::auth::AUTH_REQUEST_EVENT
+use miden::protocol::native_account
+use miden::protocol::tx
+use miden::standards::auth
+
+# CONSTANTS
+# =================================================================================================
+
+# Auth Scheme ID Structure
+const ECDSA_K256_KECCAK_SCHEME_ID=1
+const FALCON_512_POSEIDON2_SCHEME_ID=2
+
+# Local Memory Addresses for multisig operations
+const NUM_OF_APPROVERS_LOC=0
+const SIGNER_INDEX_LOC=1
+const APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC=4
+const APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC=5
+const CURRENT_PK_LOC=8
+const SUCCESSFUL_VERIFICATIONS_LOC=12
+const APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC=16
+const APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC=17
+
+# ERRORS
+# =================================================================================================
+const ERR_INVALID_SCHEME_ID = "invalid signature scheme id: expected 2 for falcon512_poseidon2, 1 for ecdsa_k256_keccak"
+const ERR_INVALID_SCHEME_ID_WORD = "invalid scheme ID word format expected three zero values followed by the scheme ID"
+
+#! Authenticate a transaction using the signature scheme specified by scheme_id.
+#!
+#! Supported schemes:
+#! - 1 => ecdsa_k256_keccak
+#! - 2 => falcon512_poseidon2
+#!
+#! It first increments the nonce of the account, independent of whether the account's state has
+#! changed or not. Then it computes and signs the following message (in memory order):
+#! [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT,
+#!  OUTPUT_NOTES_COMMITMENT, [0, 0, ref_block_num, final_nonce]]
+#!
+#! Including the final_nonce is necessary for replay protection. The reference block number is
+#! included to commit to the transaction creator's intended reference block of the transaction
+#! which determines the fee parameters and therefore the fee amount that is deducted.
+#!
+#! Inputs:  [PUB_KEY, scheme_id]
+#! Outputs: []
+#!
+#! Invocation: exec
+pub proc authenticate_transaction
+    # Increment the account's nonce.
+    # ---------------------------------------------------------------------------------------------
+    # This has to happen before computing the delta commitment, otherwise that procedure will abort
+    exec.native_account::incr_nonce
+    exec.tx::get_block_number
+    push.0.0
+    # => [[0, 0, ref_block_num, final_nonce], PUB_KEY, scheme_id]
+
+    # Compute the message that is signed.
+    # ---------------------------------------------------------------------------------------------
+    exec.auth::create_tx_summary
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
+
+    # insert tx summary into advice provider for extraction by the host
+    adv.insert_hqword
+    # => [ACCOUNT_DELTA_COMMITMENT, INPUT_NOTES_COMMITMENT, OUTPUT_NOTES_COMMITMENT, SALT, PUB_KEY, scheme_id]
+
+    # The commitment to the tx summary is the message that is signed
+    exec.auth::hash_tx_summary
+    # OS => [MESSAGE, PUB_KEY, scheme_id]
+    # AS => []
+
+    # Fetch signature from advice provider and verify.
+    # ---------------------------------------------------------------------------------------------
+    # Emit the authentication request event that pushes a signature for the message to the advice stack
+    emit.AUTH_REQUEST_EVENT
+    swapw
+    # OS => [PUB_KEY, MESSAGE, scheme_id]
+    # AS => [SIGNATURE]
+
+    movup.8
+    # OS => [scheme_id, PUB_KEY, MESSAGE]
+    # AS => [SIGNATURE]
+
+    dup.0 exec.assert_supported_scheme
+    # OS => [scheme_id, PUB_KEY, MESSAGE]
+    # AS => [SIGNATURE]
+
+    # Verify the signature against the public key and the message. The procedure gets as inputs the
+    # hash of the public key and the message via the operand stack. The signature is provided via
+    # the advice stack. The signature is valid if and only if the procedure returns.
+    exec.verify_signature_by_scheme
+    # OS => []
+    # AS => []
+end
+
+# Verify signature using scheme_id:
+#   1 => ECDSA (ecdsa_k256_keccak)
+#   2 => Falcon (falcon512_poseidon2)
+#
+# Inputs:  [scheme_id, PUB_KEY, MSG]
+# Outputs: []
+proc verify_signature_by_scheme
+    dup eq.ECDSA_K256_KECCAK_SCHEME_ID
+    # => [is_one, scheme_id PUB_KEY, MESSAGE]
+
+    if.true
+        drop
+        # OS => [PUB_KEY, MESSAGE]
+
+        exec.ecdsa_k256_keccak::verify
+        # OS => []
+        # AS => []
+    else
+        dup eq.FALCON_512_POSEIDON2_SCHEME_ID
+        # => [is_2, scheme_id, PUB_KEY, MESSAGE]
+
+        if.true
+            drop
+            # OS => [PUB_KEY, MESSAGE]
+
+            exec.falcon512_poseidon2::verify
+            # OS => []
+            # AS => []
+        else
+            # ------ Invalid Scheme ID ------
+            push.0 assert.err=ERR_INVALID_SCHEME_ID
+        end
+    end
+end
+
+#! Returns 1 if scheme_id is supported, else 0.
+#! Inputs:  [scheme_id]
+#! Outputs: [is_supported]
+pub proc is_supported_scheme
+    dup eq.ECDSA_K256_KECCAK_SCHEME_ID
+    # => [is_1, scheme_id]
+
+    swap eq.FALCON_512_POSEIDON2_SCHEME_ID
+    # => [is_2, is_1]
+
+    or
+    # => [is_supported]
+end
+
+#! Reverts if scheme_id is not supported.
+#! Inputs:  [scheme_id]
+#! Outputs: []
+pub proc assert_supported_scheme
+    exec.is_supported_scheme
+    # => [is_supported]
+
+    assert.err=ERR_INVALID_SCHEME_ID
+    # => []
+end
+
+
+#! Validates scheme id word shape: [scheme_id, 0, 0, 0]
+#! Inputs:  [SCHEME_ID_WORD]
+#! Outputs: [SCHEME_ID_WORD]
+pub proc assert_supported_scheme_word
+    dupw exec.assert_supported_scheme
+    # => [0, 0, 0, SCHEME_ID_WORD]
+
+    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    neq.0 assertz.err=ERR_INVALID_SCHEME_ID_WORD
+    # => [SCHEME_ID_WORD]
+end
+
+
+#! Verify signatures for all required signers in a loop.
+#!
+#! This procedure iterates through the required number of signers, fetches their public keys from
+#! the provided account storage map slot, verifies their signatures against the transaction message,
+#! and returns the number of successfully verified signatures.
+#!
+#! Note: Calls `active_account::get_initial_map_item` to access the transaction's initial storage
+#! state rather than the current state. This is crucial when validating transactions that update
+#! the owner public key mapping - the previous signers must authorize the change to the new signers,
+#! not the new signers authorizing themselves.
+#!
+#! Inputs:  [approver_scheme_id_slot_id_suffix, approver_scheme_id_slot_id_prefix,
+#!           approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix,
+#!           num_of_approvers, MSG]
+#! Outputs: [num_verified_signatures, MSG]
+@locals(18)
+pub proc verify_signatures
+    loc_store.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+    loc_store.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC
+    # => [approver_pub_key_slot_id_suffix, approver_pub_key_slot_id_prefix, num_of_approvers, MSG]
+
+    loc_store.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
+    loc_store.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
+    # => [num_of_approvers, MSG]
+
+    # Initializing SUCCESSFUL_VERIFICATIONS local memory address to 0
+    push.0 loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+    # => [num_of_approvers, MSG]
+
+    # Counter `i` starts at `num_of_approvers` and counts down to 0
+    # => [i, MSG]
+
+    # Loop through required signers and verify signatures.
+    # ---------------------------------------------------------------------------------------------
+
+    dup neq.0
+    while.true
+        # => [i, MSG]
+
+        # Fetch public key from storage map.
+        # -----------------------------------------------------------------------------------------
+
+        sub.1 dup dup loc_store.SIGNER_INDEX_LOC
+        # => [i-1, i-1, MSG]
+
+        exec.create_approver_map_key
+        # => [APPROVER_MAP_KEY, i-1, MSG]
+
+        # Get public key from initial storage state
+        loc_load.APPROVER_PUB_KEY_SLOT_ID_PREFIX_LOC
+        loc_load.APPROVER_PUB_KEY_SLOT_ID_SUFFIX_LOC
+        exec.active_account::get_initial_map_item
+        # => [OWNER_PUB_KEY, i-1, MSG]
+
+        loc_storew_le.CURRENT_PK_LOC
+        # => [OWNER_PUB_KEY, i-1, MSG]
+
+        # Check if signature exists for this signer.
+        # -----------------------------------------------------------------------------------------
+
+        movup.4 movdn.8
+        # => [OWNER_PUB_KEY, MSG, i-1]
+
+        dupw.1 swapw
+        # => [OWNER_PUB_KEY, MSG, MSG, i-1]
+
+        exec.poseidon2::merge
+        # => [SIG_KEY, MSG, i-1]
+
+        adv.has_mapkey
+        # => [SIG_KEY, MSG, i-1]
+
+        adv_push.1
+        # => [has_signature, SIG_KEY, MSG, i-1]
+
+        # if SIG_KEY => SIGNATURE exists in AdviceMap check the signature
+        if.true
+            # => [SIG_KEY, MSG, i-1]
+
+            dupw.1
+            # => [MSG, SIG_KEY, MSG, i-1]
+
+            swapw
+            # => [SIG_KEY, MSG, MSG, i-1]
+
+            # Verify the signature against the public key and message.
+            # -----------------------------------------------------------------------------------------
+
+            loc_loadw_le.CURRENT_PK_LOC
+            # => [PK, MSG, MSG, i-1]
+
+            swapw
+            # => [MSG, PK, MSG, i-1]
+
+            # Emit the authentication request event that pushes a signature for the message to the advice stack.
+            emit.AUTH_REQUEST_EVENT
+
+            swapw
+            # => [PUB_KEY, MSG, MSG, i-1]
+
+            # Build map key from the current signer index.
+            loc_load.SIGNER_INDEX_LOC exec.create_approver_map_key
+            # => [APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
+
+            loc_load.APPROVER_SCHEME_ID_SLOT_ID_PREFIX_LOC loc_load.APPROVER_SCHEME_ID_SLOT_ID_SUFFIX_LOC
+            # => [scheme_slot_id_suffix, scheme_slot_id_prefix, APPROVER_MAP_KEY, PUB_KEY, MSG, MSG, i-1]
+            
+            # Get scheme_id for signer index i-1 from initial storage state.
+            exec.active_account::get_initial_map_item
+            # => [[scheme_id, 0, 0, 0], PUB_KEY, MSG, MSG, i-1]
+
+            movdn.3 drop drop drop
+            # OS => [scheme_id, PUB_KEY, MSG, MSG, i-1]
+            # AS => [SIGNATURE]
+
+            exec.verify_signature_by_scheme
+            # => [MSG, i-1]
+
+            loc_load.SUCCESSFUL_VERIFICATIONS_LOC
+            add.1
+            loc_store.SUCCESSFUL_VERIFICATIONS_LOC
+            # => [MSG, i-1]
+        else
+            dropw
+            # => [MSG, i-1]
+        end
+        # => [MSG, i-1]
+
+        movup.4
+        # => [i-1, MSG]
+
+        dup neq.0
+        # => [should_continue, i-1, MSG]
+    end
+    # => [i-1, MSG]
+
+    # Return successful signature verifications along with MSG
+    # -----------------------------------------------------------------------------------------
+
+    drop
+    # => [MSG]
+
+    loc_load.SUCCESSFUL_VERIFICATIONS_LOC
+    # => [num_verified_signatures, MSG]
+end
+
+#! Builds the storage map key for a signer index.
+#!
+#! Inputs: [key_index]
+#! Outputs: [APPROVER_MAP_KEY]
+proc create_approver_map_key
+    push.0.0.0 movup.3
+    # => [[key_index, 0, 0, 0]]
+    # => [APPROVER_MAP_KEY]
+end

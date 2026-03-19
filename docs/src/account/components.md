@@ -7,7 +7,7 @@ title: "Components"
 
 Account components are reusable units of functionality that define a part of an account's code and storage. Multiple account components can be merged together to form an account's final [code](./code) and [storage](./storage).
 
-As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with an `Falcon512Rpo` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
+As an example, consider a typical wallet account, capable of holding a user's assets and requiring authentication whenever assets are added or removed. Such an account can be created by merging a `BasicWallet` component with a `Falcon512Poseidon2` authentication component. The basic wallet does not need any storage, but contains the code to move assets in and out of the account vault. The authentication component holds a user's public key in storage and additionally contains the code to verify a signature against that public key. Together, these components form a fully functional wallet account.
 
 ## Account Component schemas
 
@@ -55,7 +55,7 @@ type = [
 [[storage.slots]]
 name = "demo::owner_public_key"
 description = "This is a typed value supplied at instantiation and interpreted as a Falcon public key"
-type = "miden::standards::auth::falcon512_rpo::pub_key"
+type = "miden::standards::auth::pub_key"
 
 [[storage.slots]]
 name = "demo::protocol_version"
@@ -98,7 +98,7 @@ In TOML, these are declared using dotted array keys:
 
 **Value-slot** entries describe their schema via `WordSchema`. A value type can be either:
 
-- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaTypeId` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[0, 0, 0, <felt>]`.
+- **Simple**: defined through the `type = "<identifier>"` field, indicating the expected `SchemaType` for the entire word. The value is supplied at instantiation time via `InitStorageData`. Felt types are stored as full words in the following layout: `[0, 0, 0, <felt>]`.
 - **Composite**: provided through `type = [ ... ]`, which contains exactly four `FeltSchema` descriptors. Each element is either a named typed field (optionally with `default-value`) or a `void` element for reserved/padding zeros.
 
 Composite schema entries reuse the existing TOML structure for four-element words, while simple schemas rely on `type`. In our example, the `token_metadata` slot uses a composite schema (`type = [...]`) mixing typed fields (`max_supply`, `decimals`) with defaults (`symbol`) and a reserved/padding `void` element.
@@ -113,7 +113,7 @@ shape of the `type` field.
 
 ##### Word types
 
-Simple schemas accept `word` (default) and word-shaped types such as `miden::standards::auth::falcon512_rpo::pub_key` or `miden::standards::auth::ecdsa_k256_keccak::pub_key` (parsed from hexadecimal strings).
+Simple schemas accept `word` (default) and word-shaped types such as `miden::standards::auth::pub_key` (parsed from hexadecimal strings).
 
 Simple schemas can also use any felt type (e.g. `u8`, `u16`, `u32`, `felt`, `miden::standards::fungible_faucets::metadata::token_symbol`, `void`). The value is parsed as a felt and stored as a word with the parsed felt in the last element and the remaining elements set to `0`.
 
@@ -138,7 +138,7 @@ Valid field element types are `void`, `u8`, `u16`, `u32`, `felt` (default) and `
 - `void` is a special type which always evaluates to `0` and does not produce an init requirement; it is intended for reserved or padding elements.
 - `u8`, `u16` and `u32` values can be parsed as decimal numbers and represent 8-bit, 16-bit and 32-bit unsigned integers.
 - `felt` values represent a field element, and can be parsed as decimal or hexadecimal numbers.
-- `miden::standards::fungible_faucets::metadata::token_symbol` values represent basic fungible token symbols, parsed as 1–6 uppercase ASCII characters.
+- `miden::standards::fungible_faucets::metadata::token_symbol` values represent basic fungible token symbols, parsed as 1–12 uppercase ASCII characters.
 
 ##### Value slots
 
@@ -149,7 +149,7 @@ Single-slot entries are represented by `ValueSlotSchema` and occupy one slot (on
   - an array of 4 felt schema descriptors (composite slot schema).
 - `default-value` (optional): An overridable default for simple slots. If omitted, the slot is required at instantiation (unless `type = "void"`).
 
-In our TOML example, the first entry defines a composite schema, while the second is an init-supplied value typed as `miden::standards::auth::falcon512_rpo::pub_key`.
+In our TOML example, the first entry defines a composite schema, while the second is an init-supplied value typed as `miden::standards::auth::pub_key`.
 
 ##### Storage map slots
 
@@ -173,10 +173,10 @@ You can type maps at the slot level via `type.key` and `type.value` (each a `Wor
 ```toml
 [[storage.slots]]
 name = "demo::typed_map"
-type = { key = "word", value = "miden::standards::auth::falcon512_rpo::pub_key" }
+type = { key = "word", value = "miden::standards::auth::pub_key" }
 ```
 
-This declares that all keys are `word` and all values are `miden::standards::auth::falcon512_rpo::pub_key`, regardless of whether the map contents come from `default-values = [...]` (static) or are supplied at instantiation via `InitStorageData`.
+This declares that all keys are `word` and all values are `miden::standards::auth::pub_key`, regardless of whether the map contents come from `default-values = [...]` (static) or are supplied at instantiation via `InitStorageData`.
 
 `type.key` / `type.value` are validated when building map entries from `InitStorageData` (and when validating `default-values`).
 

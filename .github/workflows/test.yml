@@ -11,7 +11,8 @@ on:
   push:
     branches: [main, next]
   pull_request:
-    types: [opened, reopened, synchronize] 
+    types: [opened, reopened, synchronize]
+  merge_group:
 
 permissions:
   contents: read
@@ -31,9 +32,9 @@ jobs:
       - name: Install rust
         run: rustup update --no-self-update 
       - name: Build tests
-        run: make test-build
+        run: make test-release-build
       - name: test
-        run: make test
+        run: make test-release # runs without debug mode
 
   doc-tests:
     name: doc-tests

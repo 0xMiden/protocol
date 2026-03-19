@@ -4,14 +4,14 @@ use std::vec::Vec;
 
 use anyhow::Context;
 use assert_matches::assert_matches;
+use miden_protocol::Felt;
 use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::account::{Account, AccountId, AccountStorageMode};
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::{BlockInputs, ProposedBlock};
 use miden_protocol::note::{Note, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionHeader};
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote, TransactionHeader};
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::note::NoteBuilder;
 use miden_tx::LocalTransactionProver;
@@ -171,7 +171,7 @@ async fn proposed_block_aggregates_account_state_transition() -> anyhow::Result<
 
     assert_matches!(account_update.details(), AccountUpdateDetails::Delta(delta) => {
         assert_eq!(delta.vault().fungible().num_assets(), 1);
-        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().faucet_id()).unwrap(), 300);
+        assert_eq!(delta.vault().fungible().amount(&asset.unwrap_fungible().vault_key()).unwrap(), 300);
     });
 
     Ok(())
@@ -279,8 +279,8 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
     let noop_note1 =
         NoteBuilder::new(ACCOUNT_ID_SENDER.try_into().unwrap(), &mut rand::rng()).build()?;
-    builder.add_output_note(OutputNote::Full(noop_note0.clone()));
-    builder.add_output_note(OutputNote::Full(noop_note1.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note0.clone()));
+    builder.add_output_note(RawOutputNote::Full(noop_note1.clone()));
     let mut chain = builder.build()?;
 
     let noop_tx = generate_conditional_tx(&mut chain, account0.id(), noop_note0, false).await;
@@ -289,12 +289,15 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
         generate_conditional_tx(&mut chain, account0.clone(), noop_note1, true).await;
 
     // sanity check: NOOP transaction's init and final commitment should be the same.
-    assert_eq!(noop_tx.initial_account().commitment(), noop_tx.final_account().commitment());
+    assert_eq!(
+        noop_tx.initial_account().to_commitment(),
+        noop_tx.final_account().to_commitment()
+    );
     // sanity check: State-updating transaction's init and final commitment should *not* be the
     // same.
     assert_ne!(
-        state_updating_tx.initial_account().commitment(),
-        state_updating_tx.final_account().commitment()
+        state_updating_tx.initial_account().to_commitment(),
+        state_updating_tx.final_account().to_commitment()
     );
 
     let tx0 = LocalTransactionProver::default().prove_dummy(noop_tx)?;
@@ -309,7 +312,7 @@ async fn noop_tx_and_state_updating_tx_against_same_account_in_same_block() -> a
     let block = ProposedBlock::new(block_inputs, batches.clone())?;
 
     let (_, update) = block.updated_accounts().iter().next().unwrap();
-    assert_eq!(update.initial_state_commitment(), account0.commitment());
+    assert_eq!(update.initial_state_commitment(), account0.to_commitment());
     assert_eq!(update.final_state_commitment(), tx1.account_update().final_state_commitment());
 
     Ok(())
@@ -330,11 +333,11 @@ async fn generate_conditional_tx(
     modify_storage: bool,
 ) -> ExecutedTransaction {
     let auth_args = [
+        Felt::new(97),
+        Felt::new(98),
+        Felt::new(99),
         // increment nonce if modify_storage is true
         if modify_storage { Felt::ONE } else { Felt::ZERO },
-        Felt::new(99),
-        Felt::new(98),
-        Felt::new(97),
     ];
 
     let tx_context = chain
