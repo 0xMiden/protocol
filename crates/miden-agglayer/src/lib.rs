@@ -33,10 +33,10 @@ pub use bridge::{AggLayerBridge, AgglayerBridgeError};
 pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
 pub use config_note::ConfigAggBridgeNote;
 pub use eth_types::{
-    EthAccountIdFormat,
-    EthAddressFormat,
+    EthAddress,
     EthAmount,
     EthAmountError,
+    EthEmbeddedAccountId,
     GlobalIndex,
     GlobalIndexError,
     MetadataHash,
@@ -124,7 +124,7 @@ fn create_agglayer_faucet_component(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> AccountComponent {
@@ -195,7 +195,7 @@ fn create_agglayer_faucet_builder(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> AccountBuilder {
@@ -225,7 +225,7 @@ pub fn create_agglayer_faucet(
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> Account {
@@ -257,7 +257,7 @@ pub fn create_existing_agglayer_faucet(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> Account {

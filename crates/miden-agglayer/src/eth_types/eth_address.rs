@@ -8,7 +8,7 @@ use miden_protocol::Felt;
 use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 
 // ================================================================================================
-// ETHEREUM ADDRESS FORMAT
+// ETHEREUM ADDRESS
 // ================================================================================================
 
 /// Represents a plain Ethereum address (20 bytes).
@@ -30,18 +30,18 @@ use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 ///   - `address[3]` = bytes[12..16]
 ///   - `address[4]` = bytes[16..20] (least-significant 4 bytes)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EthAddressFormat([u8; 20]);
+pub struct EthAddress([u8; 20]);
 
-impl EthAddressFormat {
+impl EthAddress {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`EthAddressFormat`] from a 20-byte array.
+    /// Creates a new [`EthAddress`] from a 20-byte array.
     pub const fn new(bytes: [u8; 20]) -> Self {
         Self(bytes)
     }
 
-    /// Creates an [`EthAddressFormat`] from a hex string (with or without "0x" prefix).
+    /// Creates an [`EthAddress`] from a hex string (with or without "0x" prefix).
     ///
     /// # Errors
     ///
@@ -95,20 +95,20 @@ impl EthAddressFormat {
     }
 }
 
-impl fmt::Display for EthAddressFormat {
+impl fmt::Display for EthAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_hex())
     }
 }
 
-impl From<[u8; 20]> for EthAddressFormat {
+impl From<[u8; 20]> for EthAddress {
     fn from(bytes: [u8; 20]) -> Self {
         Self(bytes)
     }
 }
 
-impl From<EthAddressFormat> for [u8; 20] {
-    fn from(addr: EthAddressFormat) -> Self {
+impl From<EthAddress> for [u8; 20] {
+    fn from(addr: EthAddress) -> Self {
         addr.0
     }
 }

@@ -25,10 +25,10 @@ pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    EthAccountIdFormat,
-    EthAddressFormat,
+    EthAddress,
     EthAmount,
     EthAmountError,
+    EthEmbeddedAccountId,
     ExitRoot,
     GlobalIndex,
     GlobalIndexError,
@@ -82,7 +82,7 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
     bridge_account_id: AccountId,
-    origin_token_address: EthAddressFormat,
+    origin_token_address: EthAddress,
     origin_network: u32,
     scale: u8,
 }
@@ -104,7 +104,7 @@ impl AggLayerFaucet {
         max_supply: Felt,
         token_supply: Felt,
         bridge_account_id: AccountId,
-        origin_token_address: EthAddressFormat,
+        origin_token_address: EthAddress,
         origin_network: u32,
         scale: u8,
     ) -> Result<Self, FungibleFaucetError> {
@@ -194,7 +194,7 @@ impl AggLayerFaucet {
     /// - the provided account is not an [`AggLayerFaucet`] account.
     pub fn origin_token_address(
         faucet_account: &Account,
-    ) -> Result<EthAddressFormat, AgglayerFaucetError> {
+    ) -> Result<EthAddress, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
@@ -214,7 +214,7 @@ impl AggLayerFaucet {
             .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
             .collect::<Vec<u8>>();
 
-        Ok(EthAddressFormat::new(
+        Ok(EthAddress::new(
             addr_bytes_vec
                 .try_into()
                 .expect("origin token addr vector should consist of exactly 20 bytes"),
@@ -407,7 +407,7 @@ pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
 /// # Returns
 /// A tuple of two `Word` values representing the two storage slot contents.
 fn agglayer_faucet_conversion_slots(
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> (Word, Word) {

@@ -5,7 +5,7 @@ use miden_agglayer::{
     AggLayerBridge,
     B2AggNote,
     ConfigAggBridgeNote,
-    EthAddressFormat,
+    EthAddress,
     ExitRoot,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
@@ -82,7 +82,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
     // --------------------------------------------------------------------------------------------
-    let origin_token_address = EthAddressFormat::from_hex(&vectors.origin_token_address)
+    let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
@@ -114,7 +114,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
     let mut notes = Vec::with_capacity(note_count);
     for (i, &amount) in expected_amounts.iter().enumerate().take(note_count) {
         let destination_network = vectors.destination_networks[i];
-        let eth_address = EthAddressFormat::from_hex(&vectors.destination_addresses[i])
+        let eth_address = EthAddress::from_hex(&vectors.destination_addresses[i])
             .expect("valid destination address");
 
         let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount).unwrap().into();
@@ -284,7 +284,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
 
     // CREATE AGGLAYER FAUCET ACCOUNT (NOT registered in the bridge)
     // --------------------------------------------------------------------------------------------
-    let origin_token_address = EthAddressFormat::new([0u8; 20]);
+    let origin_token_address = EthAddress::new([0u8; 20]);
     let faucet = create_existing_agglayer_faucet(
         builder.rng_mut().draw_word(),
         "AGG",
@@ -304,8 +304,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), amount.into()).unwrap().into();
 
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let b2agg_note = B2AggNote::create(
         1u32, // destination_network
         eth_address,
@@ -389,8 +388,7 @@ async fn b2agg_note_reclaim_scenario() -> anyhow::Result<()> {
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note with the USER ACCOUNT as the sender.
@@ -507,8 +505,7 @@ async fn b2agg_note_non_target_account_cannot_consume() -> anyhow::Result<()> {
 
     let destination_network = 1u32;
     let destination_address = "0x1234567890abcdef1122334455667788990011aa";
-    let eth_address =
-        EthAddressFormat::from_hex(destination_address).expect("valid Ethereum address");
+    let eth_address = EthAddress::from_hex(destination_address).expect("valid Ethereum address");
     let assets = NoteAssets::new(vec![bridge_asset])?;
 
     // Create the B2AGG note targeting the real bridge account

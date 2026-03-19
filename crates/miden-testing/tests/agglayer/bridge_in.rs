@@ -8,7 +8,7 @@ use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    EthAccountIdFormat,
+    EthEmbeddedAccountId,
     ExitRoot,
     SmtNode,
     UpdateGerNote,
@@ -171,9 +171,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // Get the destination account ID from the leaf data.
     // This requires the destination_address to be in the embedded Miden AccountId format
     // (first 4 bytes must be zero).
-    let destination_account_id = EthAccountIdFormat::from(leaf_data.destination_address)
-        .to_account_id()
-        .expect("destination address is not an embedded Miden AccountId");
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .to_account_id();
 
     // For the simulated/rollup case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(
