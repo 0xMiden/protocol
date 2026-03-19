@@ -34,8 +34,8 @@ const TWO_POW_32=4294967296
 #!   suffix = (bswap(limb3) << 32) | bswap(limb4)   # bytes[12..20]
 #!
 #! These 8-byte words are represented as field elements by packing two u32 limbs into a felt.
-#! The packing is done via build_felt, which validates limbs are u32 and checks the packed value
-#! did not reduce mod p (i.e. the word fits in the field).
+#! The packing is done via build_felt, which validates limbs are u32 and asserts the high limb
+#! is not 0xFFFFFFFF to prevent mod-p reduction.
 #!
 #! Inputs:  [limb0, limb1, limb2, limb3, limb4]
 #! Outputs: [prefix, suffix]
@@ -66,15 +66,19 @@ end
 
 #! Builds a single felt from two u32 limbs (little-endian limb order, little-endian bytes).
 #! Conceptually, this is packing a 64-bit word (lo + (hi << 32)) into a field element.
-#! This proc additionally verifies that the packed value did *not* reduce mod p by round-tripping
-#! through u32split and comparing the limbs.
+#!
+#! Mod-p reduction (p = 2^64 − 2^32 + 1) can only occur when hi == 0xFFFFFFFF,
+#! so we assert hi != U32_MAX before packing. This is slightly stricter than necessary
+#! (it also rejects felt = p−1 when hi == 0xFFFFFFFF and lo == 0), but that value
+#! cannot appear in a valid AccountId (suffix MSB is zero; prefix hash would need
+#! 56 specific bits).
 #!
 #! Inputs:  [lo, hi]
 #! Outputs: [felt]
 proc build_felt
     # --- validate u32 limbs ---
     u32assert2.err=ERR_NOT_U32
-    # => [lo_be, hi_be]
+    # => [lo_le, hi_le]
 
     # limbs are little-endian bytes; swap to big-endian for building account ID
     exec.utils::swap_u32_bytes
@@ -83,24 +87,13 @@ proc build_felt
     swap
     # => [lo, hi]
 
-    # keep copies for the overflow check
-    dup.1 dup.1
-    # => [lo_be, hi_be, lo_be, hi_be]
+    # assert hi != U32_MAX to prevent mod-p reduction
+    dup.1 push.U32_MAX eq not assert.err=ERR_FELT_OUT_OF_FIELD
+    # => [lo, hi]
 
     # felt = (hi * 2^32) + lo
     swap
     push.TWO_POW_32 mul
     add
-    # => [felt, lo_be, hi_be]
-
-    # ensure no reduction mod p happened:
-    # split felt back into (hi, lo) and compare to inputs
-    dup u32split
-    # => [hi2, lo2, felt, lo_be, hi_be]
-
-    movup.4 assert_eq.err=ERR_FELT_OUT_OF_FIELD
-    # => [lo2, felt, lo]
-
-    movup.2 assert_eq.err=ERR_FELT_OUT_OF_FIELD
     # => [felt]
 end
