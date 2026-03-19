@@ -22,9 +22,9 @@ use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
 use miden_tx::utils::hex_to_bytes;
 
-use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
+use super::test_utils::SOLIDITY_MTF_VECTORS;
 
-/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MMR roots.
+/// Tests that 32 sequential B2AGG note consumptions match all 32 Solidity MTF roots.
 ///
 /// This test exercises the complete bridge-out lifecycle:
 /// 1. Creates a bridge account (empty faucet registry) and an agglayer faucet with conversion
@@ -35,13 +35,13 @@ use super::test_utils::SOLIDITY_MMR_FRONTIER_VECTORS;
 ///    - Validates the faucet is registered via `convert_asset`
 ///    - Calls the faucet's `asset_to_origin_asset` via FPI to get the scaled amount, origin token
 ///      address, and origin network
-///    - Writes the leaf data and computes the Keccak hash for the MMR
+///    - Writes the leaf data and computes the Keccak hash for the Merkle Tree Faucet
 ///    - Creates a BURN note addressed to the faucet
 /// 5. Verifies the BURN note was created with the correct asset, tag, and script
 /// 6. Consumes the BURN note with the faucet to burn the tokens
 #[tokio::test]
 async fn bridge_out_consecutive() -> anyhow::Result<()> {
-    let vectors = &*SOLIDITY_MMR_FRONTIER_VECTORS;
+    let vectors = &*SOLIDITY_MTF_VECTORS;
     let note_count = 32usize;
     assert_eq!(vectors.amounts.len(), note_count, "amount vectors should contain 32 entries");
     assert_eq!(vectors.roots.len(), note_count, "root vectors should contain 32 entries");
