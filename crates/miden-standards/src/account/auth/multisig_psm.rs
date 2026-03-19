@@ -18,7 +18,7 @@ use miden_protocol::account::{
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 
-use super::multisig::{AuthMultisig, AuthMultisigConfig};
+use super::multisig::{AuthMultisig, AuthMultisigConfig, ProcedurePolicy};
 use crate::account::components::multisig_psm_library;
 
 // CONSTANTS
@@ -155,6 +155,14 @@ impl AuthMultisigPsmConfig {
         Ok(self)
     }
 
+    pub fn with_proc_policies(
+        mut self,
+        procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    ) -> Result<Self, AccountError> {
+        self.multisig = self.multisig.with_proc_policies(procedure_policies)?;
+        Ok(self)
+    }
+
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
         self.multisig.approvers()
     }
@@ -163,8 +171,8 @@ impl AuthMultisigPsmConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_thresholds(&self) -> &[(Word, u32)] {
-        self.multisig.proc_thresholds()
+    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+        self.multisig.procedure_policies()
     }
 
     pub fn psm_config(&self) -> PsmConfig {

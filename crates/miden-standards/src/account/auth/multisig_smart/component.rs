@@ -116,7 +116,6 @@ static PENDING_EXECUTE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigSmartConfig {
     multisig: AuthMultisigConfig,
-    procedure_policies: Vec<(Word, ProcedurePolicy)>,
     spending_policy: SpendingPolicyConfig,
     timelock_controller: TimelockControllerConfig,
     oracle_reader: OracleReaderConfig,
@@ -132,7 +131,6 @@ impl AuthMultisigSmartConfig {
     ) -> Result<Self, AccountError> {
         Ok(Self {
             multisig: AuthMultisigConfig::new(approvers, default_threshold)?,
-            procedure_policies: Vec::new(),
             spending_policy: SpendingPolicyConfig::default(),
             timelock_controller: TimelockControllerConfig::default(),
             oracle_reader: OracleReaderConfig::default(),
@@ -144,11 +142,7 @@ impl AuthMultisigSmartConfig {
         mut self,
         proc_policies: Vec<(Word, ProcedurePolicy)>,
     ) -> Result<Self, AccountError> {
-        let num_approvers = self.multisig.approvers().len() as u32;
-        for (_, policy) in &proc_policies {
-            policy.assert_valid_for_num_approvers(num_approvers)?;
-        }
-        self.procedure_policies = proc_policies;
+        self.multisig = self.multisig.with_proc_policies(proc_policies)?;
         Ok(self)
     }
 
@@ -232,8 +226,8 @@ impl AuthMultisigSmartConfig {
         self.multisig.default_threshold()
     }
 
-    pub fn proc_policies(&self) -> &[(Word, ProcedurePolicy)] {
-        &self.procedure_policies
+    pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
+        self.multisig.procedure_policies()
     }
 
     pub fn spending_policy(&self) -> SpendingPolicyConfig {
@@ -341,7 +335,7 @@ impl AuthMultisigSmart {
             config.approvers().len() as u32,
             config.spending_policy().tier_thresholds(),
         )?;
-        validate_proc_policies(config.approvers().len() as u32, config.proc_policies())?;
+        validate_proc_policies(config.approvers().len() as u32, config.procedure_policies())?;
         Ok(Self { config })
     }
 
@@ -637,7 +631,7 @@ impl From<AuthMultisigSmart> for AccountComponent {
 
         // Procedure policies slot (map)
         let procedure_policies =
-            StorageMap::with_entries(multisig.config.proc_policies().iter().map(
+            StorageMap::with_entries(multisig.config.procedure_policies().iter().map(
                 |(proc_root, policy)| (StorageMapKey::from_raw(*proc_root), policy.to_word()),
             ))
             .unwrap();
