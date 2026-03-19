@@ -125,7 +125,7 @@ mod tests {
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::AuthMultisigSmartPresets;
-    use crate::account::auth::{
+    use crate::account::auth::multisig_smart::{
         AmountLimits,
         AuthMultisigSmart,
         AuthMultisigSmartConfig,

@@ -236,10 +236,10 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
         exec.active_account::get_map_item
         # => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes, proc_index, num_approvers]
 
-        loc_store.0
-        loc_store.1
-        loc_store.2
         loc_store.3
+        loc_store.2
+        loc_store.1
+        loc_store.0
         # => [proc_index, num_approvers]
 
         dup.1

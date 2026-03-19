@@ -1,3 +1,4 @@
+pub mod procedure_policies;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -20,6 +21,12 @@ use miden_protocol::account::{
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
+pub use procedure_policies::{
+    ProcedurePolicy,
+    ProcedurePolicyConstraints,
+    ProcedurePolicyMode,
+    ProcedurePolicyThresholds,
+};
 
 use crate::account::components::multisig_library;
 

@@ -1,13 +1,17 @@
 use miden_protocol::Word;
 use miden_protocol::errors::AccountError;
 
+/// Describes which signature thresholds are available for a procedure policy.
+///
+/// `immediate_threshold` applies to the direct execution lane, while `delay_threshold` applies
+/// to the delayed execute lane. A missing threshold means that lane is not available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicyThresholds {
     pub immediate_threshold: Option<u32>,
     pub delay_threshold: Option<u32>,
 }
 
-/// Selects how a procedure may be executed and which threshold each execution lane requires.
+/// Selects how a protected procedure may be executed and which threshold each lane requires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedurePolicyMode {
     ImmediateOnly {
@@ -22,7 +26,10 @@ pub enum ProcedurePolicyMode {
     },
 }
 
-/// Additional constraints that may be imposed on transactions calling a protected procedure.
+/// Additional transaction-shape constraints that may be imposed on a protected procedure call.
+///
+/// These flags are encoded into the shared multisig procedure-policy map and are interpreted by
+/// smart multisig runtime checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProcedurePolicyConstraints {
     pub isolated_tx: bool,
@@ -59,7 +66,10 @@ impl ProcedurePolicyConstraints {
     }
 }
 
-/// Per-procedure smart-policy configuration.
+/// Shared per-procedure policy configuration used by multisig account variants.
+///
+/// The policy is encoded into the canonical procedure-policy storage word as:
+/// `[immediate_threshold, delayed_threshold, isolated_tx, no_input_output_notes]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicy {
     mode: ProcedurePolicyMode,
@@ -219,7 +229,6 @@ mod tests {
 
     #[test]
     fn procedure_policy_validation_rejects_invalid_combinations() {
-        // Reject a policy whose immediate path advertises zero signatures.
         let policy_with_zero_immediate_threshold = ProcedurePolicy::with_immediate_threshold(0);
         assert!(
             policy_with_zero_immediate_threshold
@@ -229,7 +238,6 @@ mod tests {
                 .contains("procedure policy immediate threshold must be at least 1")
         );
 
-        // Reject a mixed policy whose delay path threshold is unset.
         let policy_with_zero_delay_threshold =
             ProcedurePolicy::with_immediate_and_delay_thresholds(1, 0);
         assert!(
@@ -240,7 +248,6 @@ mod tests {
                 .contains("immediate and delayed thresholds must both be at least 1")
         );
 
-        // Reject a mixed policy whose delay threshold is stricter than the immediate threshold.
         let policy_with_delay_above_immediate_threshold =
             ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2);
         assert!(
@@ -252,7 +259,6 @@ mod tests {
         );
 
         let num_approvers_under_test = 2;
-        // Reject a policy whose configured threshold exceeds the account's approver count.
         let policy_exceeding_num_approvers = ProcedurePolicy::with_delay_threshold(3);
         assert!(
             policy_exceeding_num_approvers

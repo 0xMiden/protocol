@@ -2,6 +2,10 @@ use miden_protocol::Word;
 
 use super::types::{AmountLimits, OracleId, TierThresholds};
 
+/// Configures the spending-based approval escalation rules used by smart multisig accounts.
+///
+/// This bundles the tracked spending window, the amount breakpoints used to derive a spending
+/// tier, and the approval threshold required for each tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SpendingPolicyConfig {
     spending_window: u32,
@@ -35,6 +39,11 @@ impl SpendingPolicyConfig {
     }
 }
 
+/// Configures the proposal delay rules used by smart multisig timelock flows.
+///
+/// `min_delay` defines how long a proposal must wait before execution, while
+/// `propose_expiration_delta` controls the transaction expiration delta applied to proposal
+/// transactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TimelockControllerConfig {
     min_delay: u32,
@@ -55,6 +64,10 @@ impl TimelockControllerConfig {
     }
 }
 
+/// Configures the oracle reader used to normalize asset values during spending-policy checks.
+///
+/// `oracle_id` selects the logical oracle feed, and `get_price_proc_root` identifies the foreign
+/// procedure that should be invoked to fetch a price for a tracked asset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OracleReaderConfig {
     oracle_id: OracleId,

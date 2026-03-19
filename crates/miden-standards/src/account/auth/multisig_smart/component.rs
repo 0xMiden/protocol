@@ -20,8 +20,8 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
 
+use super::ProcedurePolicy;
 use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
-use super::policy::ProcedurePolicy;
 use super::types::{AmountLimits, OracleId, TierThresholds};
 use crate::account::auth::multisig::AuthMultisigConfig;
 use crate::account::components::multisig_smart_library;
@@ -752,11 +752,11 @@ mod tests {
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
-    use crate::account::auth::{
+    use crate::account::auth::ProcedurePolicyConstraints;
+    use crate::account::auth::multisig_smart::{
         AmountLimits,
         OracleId,
         OracleReaderConfig,
-        ProcedurePolicyConstraints,
         SpendingPolicyConfig,
         TierThresholds,
         TimelockControllerConfig,
