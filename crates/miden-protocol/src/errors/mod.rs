@@ -40,7 +40,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
-use crate::transaction::{TransactionEventId, TransactionId};
+use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -818,11 +818,7 @@ pub enum OutputNoteError {
 #[derive(Debug, Error)]
 pub enum TransactionEventError {
     #[error("event id {0} is not a valid transaction event")]
-    InvalidTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} is not a transaction kernel event")]
-    NotTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} can only be emitted from the root context")]
-    NotRootContext(TransactionEventId),
+    InvalidTransactionEvent(EventId),
 }
 
 // TRANSACTION TRACE PARSING ERROR
