@@ -242,19 +242,19 @@ proc convert_asset
     swapw
     exec.asset::fungible_value_into_amount
     movdn.4
-    # => [ASSET_KEY, amount, pad(8)]
+    # => [ASSET_KEY, amount, pad(16)]
 
     exec.asset::key_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(8)]
+    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     dup.1 dup.1
     exec.bridge_config::assert_faucet_registered
-    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(8)]
+    # => [faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     # --- Step 2: FPI to faucet's asset_to_origin_asset ---
 
     procref.agglayer_faucet::asset_to_origin_asset
-    # => [PROC_MAST_ROOT, faucet_id_suffix, faucet_id_prefix, amount, pad(8)]
+    # => [PROC_MAST_ROOT, faucet_id_suffix, faucet_id_prefix, amount, pad(16)]
 
     # Move faucet_id above PROC_MAST_ROOT
     movup.5 movup.5
