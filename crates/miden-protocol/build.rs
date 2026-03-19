@@ -515,34 +515,13 @@ fn generate_event_file_content(
     for (event_path, event_name) in events {
         let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
         debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {}: u64 = {};", event_name, value)?;
-    }
-
-    {
-        writeln!(&mut output)?;
-
-        writeln!(&mut output)?;
-
+        writeln!(&mut output, "const {}_ID: u64 = {};", event_name, value)?;
         writeln!(
             &mut output,
-            r###"
-use alloc::collections::BTreeMap;
-
-pub(crate) static EVENT_NAME_LUT: ::miden_utils_sync::LazyLock<BTreeMap<u64, &'static str>> =
-    ::miden_utils_sync::LazyLock::new(|| {{
-    BTreeMap::from_iter([
-"###
+            "static {}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{}\");",
+            event_name, event_path
         )?;
-
-        for (event_path, const_name) in events {
-            writeln!(&mut output, "        ({}, \"{}\"),", const_name, event_path)?;
-        }
-
-        writeln!(
-            &mut output,
-            r###"    ])
-}});"###
-        )?;
+        writeln!(&mut output)?;
     }
 
     Ok(output)

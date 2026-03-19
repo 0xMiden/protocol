@@ -10,6 +10,7 @@ use miden_protocol::account::{AccountDelta, PartialAccount};
 use miden_protocol::assembly::debuginfo::Location;
 use miden_protocol::assembly::{SourceFile, SourceSpan};
 use miden_protocol::transaction::{InputNote, InputNotes, RawOutputNote};
+use miden_protocol::vm::{EventId, EventName};
 
 use crate::host::{RecipientData, ScriptMastForestStore, TransactionBaseHost, TransactionEvent};
 use crate::{AccountProcedureIndexMap, TransactionKernelError};
@@ -87,6 +88,10 @@ where
     ) -> impl FutureMaybeSend<Result<Vec<AdviceMutation>, EventError>> {
         let result = self.on_event_sync(process);
         async move { result }
+    }
+
+    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        self.base_host.resolve_event(event_id)
     }
 }
 
