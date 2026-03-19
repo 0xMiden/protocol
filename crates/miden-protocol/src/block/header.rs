@@ -349,14 +349,14 @@ impl FeeParameters {
     /// Returns an error if:
     /// - the provided native asset ID is not a fungible faucet account ID.
     pub fn new(fee_faucet_id: AccountId, verification_base_fee: u32) -> Result<Self, FeeError> {
-    if !matches!(fee_faucet_id.account_type(), AccountType::FungibleFaucet) {
-        return Err(FeeError::NativeAssetIdNotFungible {
-            account_type: fee_faucet_id.account_type(),
-        });
-    }
+        if !matches!(fee_faucet_id.account_type(), AccountType::FungibleFaucet) {
+            return Err(FeeError::NativeAssetIdNotFungible {
+                account_type: fee_faucet_id.account_type(),
+            });
+        }
 
-    Ok(Self { fee_faucet_id, verification_base_fee })
-}
+        Ok(Self { fee_faucet_id, verification_base_fee })
+    }
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -364,8 +364,8 @@ impl FeeParameters {
     /// Returns the [`AccountId`] of the faucet whose assets are accepted for fee payments in the
     /// transaction kernel, or in other words, the native asset of the blockchain.
     pub fn fee_faucet_id(&self) -> AccountId {
-    self.fee_faucet_id
-} 
+        self.fee_faucet_id
+    }
 
     /// Returns the base fee capturing the cost for the verification of a transaction.
     pub fn verification_base_fee(&self) -> u32 {

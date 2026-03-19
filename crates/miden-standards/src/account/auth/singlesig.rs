@@ -51,7 +51,14 @@ impl AuthSingleSig {
     pub fn new(pub_key: PublicKeyCommitment, auth_scheme: AuthScheme) -> Self {
         Self { pub_key, auth_scheme }
     }
-
+    /// Creates a new [`AuthSingleSig`] using the Falcon512 Poseidon2 scheme.
+    pub fn falcon_512(pub_key: PublicKeyCommitment) -> Self {
+        Self::new(pub_key, AuthScheme::Falcon512Poseidon2)
+    }
+    /// Creates a new [`AuthSingleSig`] using the ECDSA K256 Keccak scheme.
+    pub fn ecdsa_k256(pub_key: PublicKeyCommitment) -> Self {
+        Self::new(pub_key, AuthScheme::EcdsaK256Keccak)
+    }
     /// Returns the [`StorageSlotName`] where the public key is stored.
     pub fn public_key_slot() -> &'static StorageSlotName {
         &PUBKEY_SLOT_NAME
