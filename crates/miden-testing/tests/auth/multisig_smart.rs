@@ -20,8 +20,15 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::transaction::{ExecutedTransaction, OutputNote, TransactionScript};
 use miden_protocol::vm::AdviceMap;
 use miden_protocol::{Felt, Hasher, Word};
+use miden_standards::account::auth::multisig_smart::{
+    AmountLimits,
+    SpendingPolicyConfig,
+    TierThresholds,
+    TimelockControllerConfig,
+};
 use miden_standards::account::auth::{
     AuthMultisigSmart,
+    AuthMultisigSmartConfig,
     AuthMultisigSmartPresets,
     ProcedurePolicy,
     ProcedurePolicyConstraints,
@@ -44,7 +51,7 @@ use miden_standards::errors::standards::{
 use miden_standards::note::P2idNote;
 use miden_standards::testing::account_interface::get_public_keys_from_account;
 use miden_testing::utils::create_spawn_note;
-use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -57,57 +64,6 @@ use rstest::rstest;
 
 type MultisigTestSetupWithSchemes =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
-
-const TEST_ORACLE_ID_PREFIX: u64 = 15_240_030_242_886_579_968;
-const TEST_ORACLE_ID_SUFFIX: u64 = 5_177_303_881_306_160_384;
-const TEST_GET_PRICE_PROC_ROOT: [u64; 4] = [
-    3_591_109_198_379_466_182,
-    17_592_333_261_592_472_774,
-    12_676_231_063_682_133_280,
-    10_255_402_666_496_948_124,
-];
-const TEST_SPENDING_WINDOW: u32 = 100;
-const TEST_MIN_DELAY: u32 = 30;
-const TEST_PROPOSE_EXPIRATION_DELTA: u16 = 2;
-
-fn test_oracle_id() -> [Felt; 2] {
-    [Felt::new(TEST_ORACLE_ID_PREFIX), Felt::new(TEST_ORACLE_ID_SUFFIX)]
-}
-
-fn test_get_price_proc_root() -> Word {
-    Word::from([
-        Felt::new(TEST_GET_PRICE_PROC_ROOT[0]),
-        Felt::new(TEST_GET_PRICE_PROC_ROOT[1]),
-        Felt::new(TEST_GET_PRICE_PROC_ROOT[2]),
-        Felt::new(TEST_GET_PRICE_PROC_ROOT[3]),
-    ])
-}
-
-fn immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
-    ProcedurePolicy::with_immediate_threshold(required_signatures)
-}
-
-fn delayed_only_policy(required_signatures: u32) -> ProcedurePolicy {
-    ProcedurePolicy::with_delay_threshold(required_signatures)
-}
-
-fn isolated_immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
-    ProcedurePolicy::with_immediate_threshold(required_signatures)
-        .with_constraints(ProcedurePolicyConstraints::isolated_tx())
-}
-
-fn no_notes_immediate_only_policy(required_signatures: u32) -> ProcedurePolicy {
-    ProcedurePolicy::with_immediate_threshold(required_signatures)
-        .with_constraints(ProcedurePolicyConstraints::no_input_output_notes())
-}
-
-fn assert_program_execution_failed(result: Result<ExecutedTransaction, TransactionExecutorError>) {
-    match result {
-        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
-        Err(err) => panic!("expected transaction program failure, got: {err}"),
-        Ok(_) => panic!("execution was unexpectedly successful"),
-    }
-}
 
 /// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
 fn setup_keys_and_authenticators_with_scheme(
@@ -175,32 +131,33 @@ fn create_multisig_smart_account_with_assets(
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     assets: Vec<FungibleAsset>,
-    spending_window: u32,
-    min_delay: u32,
-    propose_expiration_delta: u16,
     amount_limits: [u64; 4],
     tier_thresholds: [u32; 4],
-    oracle_id: [Felt; 2],
-    get_price_proc_root: Word,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
+    let config = AuthMultisigSmartConfig::new(approvers, threshold)?
+        .with_proc_policies(proc_policy_map)?
+        .with_spending(SpendingPolicyConfig::new(
+            100,
+            AmountLimits::new(
+                amount_limits[0],
+                amount_limits[1],
+                amount_limits[2],
+                amount_limits[3],
+            ),
+            TierThresholds::new(
+                tier_thresholds[0],
+                tier_thresholds[1],
+                tier_thresholds[2],
+                tier_thresholds[3],
+            ),
+        ))
+        .with_timelock_controller_config(TimelockControllerConfig::new(30, 2));
 
-    // Create the multisig spending limits account
     let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::MultisigSmart {
-            threshold,
-            approvers,
-            proc_policy_map,
-            spending_window,
-            min_delay,
-            propose_expiration_delta,
-            amount_limits,
-            tier_thresholds,
-            oracle_id,
-            get_price_proc_root,
-        })
+        .with_auth_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
@@ -216,45 +173,24 @@ fn create_multisig_smart_with_fixed_test_configuration(
     auth_scheme: AuthScheme,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    let approvers: Vec<_> =
-        public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-
     let multisig_starting_assets = vec![
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 10000u64),
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_2)?, 20000u64),
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3)?, 30000u64),
     ];
 
-    let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
-    let tier_thresholds = [1u32, 2u32, 3u32, 4u32];
-    let oracle_id = test_oracle_id();
-    let get_price_proc_root = test_get_price_proc_root();
-
-    // Create the multisig spending limits account
-    let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::MultisigSmart {
-            threshold,
-            approvers,
-            proc_policy_map,
-            spending_window: TEST_SPENDING_WINDOW,
-            min_delay: TEST_MIN_DELAY,
-            propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
-            amount_limits,
-            tier_thresholds,
-            oracle_id,
-            get_price_proc_root,
-        })
-        .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_assets(
-            multisig_starting_assets
-                .into_iter()
-                .map(|(account_id, amount)| FungibleAsset::new(account_id, amount).unwrap().into()),
-        )
-        .build_existing()?;
-
-    Ok(multisig_account)
+    create_multisig_smart_account_with_assets(
+        threshold,
+        public_keys,
+        auth_scheme,
+        multisig_starting_assets
+            .into_iter()
+            .map(|(account_id, amount)| FungibleAsset::new(account_id, amount).unwrap())
+            .collect(),
+        [500, 1000, 2000, 1500],
+        [1, 2, 3, 4],
+        proc_policy_map,
+    )
 }
 
 fn create_assets_for_output_notes(
@@ -301,40 +237,25 @@ fn create_multisig_account_with_schemes(
     starting_balance: u64,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
 ) -> anyhow::Result<Account> {
-    let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
     let num_approvers = approvers.len() as u32;
-    let tier_thresholds = [1u32, 2u32.min(num_approvers), 3u32.min(num_approvers), num_approvers];
-    let oracle_id = test_oracle_id();
-    let get_price_proc_root = test_get_price_proc_root();
-    let approvers: Vec<_> =
-        approvers.iter().map(|(pk, scheme)| (pk.to_commitment(), *scheme)).collect();
+    let public_keys = approvers.iter().map(|(pk, _)| pk.clone()).collect::<Vec<_>>();
+    let auth_scheme = approvers
+        .first()
+        .map(|(_, scheme)| *scheme)
+        .expect("smart multisig tests require at least one approver");
 
-    let multisig_account = AccountBuilder::new([0; 32])
-        .with_auth_component(Auth::MultisigSmart {
-            threshold,
-            approvers,
-            proc_policy_map,
-            spending_window: TEST_SPENDING_WINDOW,
-            min_delay: TEST_MIN_DELAY,
-            propose_expiration_delta: TEST_PROPOSE_EXPIRATION_DELTA,
-            amount_limits,
-            tier_thresholds,
-            oracle_id,
-            get_price_proc_root,
-        })
-        .with_component(BasicWallet)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_assets(vec![
-            FungibleAsset::new(
-                AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
-                starting_balance,
-            )?
-            .into(),
-        ])
-        .build_existing()?;
-
-    Ok(multisig_account)
+    create_multisig_smart_account_with_assets(
+        threshold,
+        &public_keys,
+        auth_scheme,
+        vec![FungibleAsset::new(
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+            starting_balance,
+        )?],
+        [500, 1000, 2000, 1500],
+        [1, 2u32.min(num_approvers), 3u32.min(num_approvers), num_approvers],
+        proc_policy_map,
+    )
 }
 
 fn compile_multisig_smart_tx_script(script: impl AsRef<str>) -> anyhow::Result<TransactionScript> {
@@ -595,11 +516,6 @@ async fn test_multisig_smart_send_3_different_assets(
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3)?, 30000u64),
     ];
 
-    let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
-    let tier_thresholds = [1u32, 2u32, 3u32, 4u32];
-    let oracle_id = test_oracle_id();
-    let get_price_proc_root = test_get_price_proc_root();
-
     let mut multisig_account = create_multisig_smart_account_with_assets(
         3,
         &public_keys,
@@ -608,13 +524,8 @@ async fn test_multisig_smart_send_3_different_assets(
             .iter()
             .map(|(account_id, amount)| FungibleAsset::new(*account_id, *amount).unwrap())
             .collect(),
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
-        amount_limits,
-        tier_thresholds,
-        oracle_id,
-        get_price_proc_root,
+        [500, 1000, 2000, 1500],
+        [1, 2, 3, 4],
         vec![],
     )?;
 
@@ -1086,13 +997,8 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 3, 5],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         vec![],
     )?;
 
@@ -1203,13 +1109,8 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [2, 3, 4, 5],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         vec![],
     )?;
 
@@ -2158,16 +2059,13 @@ async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_si
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
-    let proc_policy_map = vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(1))];
+    let proc_policy_map = vec![(
+        BasicWallet::receive_asset_digest(),
+        ProcedurePolicy::with_immediate_threshold(1),
+    )];
 
     // Create multisig account
     let multisig_starting_balance = 10u64;
-    let amount_limits = [500u64, 1000u64, 2000u64, 1500u64];
-    // Keep all spending tiers at the default so this test isolates proc-threshold behavior.
-    let tier_thresholds = [2u32, 2u32, 2u32, 2u32];
-    let oracle_id = test_oracle_id();
-    let get_price_proc_root = test_get_price_proc_root();
-
     let assets = vec![FungibleAsset::new(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
         multisig_starting_balance,
@@ -2178,13 +2076,8 @@ async fn test_multisig_smart_receive_asset_proc_threshold_override_allows_one_si
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
-        amount_limits,
-        tier_thresholds,
-        oracle_id,
-        get_price_proc_root,
+        [500, 1000, 2000, 1500],
+        [2, 2, 2, 2],
         proc_policy_map,
     )?;
 
@@ -2266,13 +2159,8 @@ async fn test_multisig_smart_receive_asset_policy_overrides_default_three_of_thr
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [3, 3, 3, 3],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         proc_policy_map,
     )?;
 
@@ -2339,7 +2227,10 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
         &public_keys,
         auth_scheme,
         100,
-        vec![(AuthMultisigSmartPresets::update_timelock_controller(), delayed_only_policy(1))],
+        vec![(
+            AuthMultisigSmartPresets::update_timelock_controller(),
+            ProcedurePolicy::with_delay_threshold(1),
+        )],
     )?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
@@ -2375,7 +2266,11 @@ async fn test_multisig_smart_delayed_only_proc_rejects_signed_direct_path(
         .execute()
         .await;
 
-    assert_program_execution_failed(result);
+    match result {
+        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
+        Err(err) => panic!("expected transaction program failure, got: {err}"),
+        Ok(_) => panic!("execution was unexpectedly successful"),
+    }
 
     Ok(())
 }
@@ -2394,7 +2289,10 @@ async fn test_multisig_smart_delayed_only_execute_lane_still_returns_tx_summary_
         &public_keys,
         auth_scheme,
         100,
-        vec![(AuthMultisigSmartPresets::update_timelock_controller(), delayed_only_policy(1))],
+        vec![(
+            AuthMultisigSmartPresets::update_timelock_controller(),
+            ProcedurePolicy::with_delay_threshold(1),
+        )],
     )?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
@@ -2440,7 +2338,11 @@ async fn test_multisig_smart_proc_policy_no_notes_constraint_is_enforced(
         &public_keys,
         auth_scheme,
         100,
-        vec![(BasicWallet::receive_asset_digest(), no_notes_immediate_only_policy(1))],
+        vec![(
+            BasicWallet::receive_asset_digest(),
+            ProcedurePolicy::with_immediate_threshold(1)
+                .with_constraints(ProcedurePolicyConstraints::no_input_output_notes()),
+        )],
     )?;
 
     let mut mock_chain_builder =
@@ -2484,7 +2386,8 @@ async fn test_multisig_smart_proc_policy_isolated_constraint_is_enforced(
         100,
         vec![(
             AuthMultisigSmartPresets::update_timelock_controller(),
-            isolated_immediate_only_policy(1),
+            ProcedurePolicy::with_immediate_threshold(1)
+                .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
         )],
     )?;
     let account_id = multisig_account.id();
@@ -2513,7 +2416,11 @@ async fn test_multisig_smart_proc_policy_isolated_constraint_is_enforced(
         .execute()
         .await;
 
-    assert_program_execution_failed(result);
+    match result {
+        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
+        Err(err) => panic!("expected transaction program failure, got: {err}"),
+        Ok(_) => panic!("execution was unexpectedly successful"),
+    }
 
     Ok(())
 }
@@ -2535,13 +2442,8 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 2, 2],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         vec![],
     )?;
 
@@ -2911,13 +2813,8 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 2, 3],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         vec![],
     )?;
     let mut mock_chain =
@@ -2986,12 +2883,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         .get_map_item(AuthMultisigSmart::tx_proposals_slot(), execute_tx_hash)?;
     assert_eq!(
         proposal_entry,
-        Word::from([
-            proposal_reference_timestamp + TEST_MIN_DELAY,
-            proposal_reference_timestamp,
-            2u32,
-            1u32,
-        ]),
+        Word::from([proposal_reference_timestamp + 30, proposal_reference_timestamp, 2u32, 1u32,]),
         "proposal entry should store [unlock_timestamp, proposal_timestamp, min_cancel_sigs, is_set]"
     );
 
@@ -3010,7 +2902,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
     .await?;
     assert_transaction_executor_error!(early_execute_err, ERR_TX_STILL_TIMELOCKED);
 
-    let unlock_offset_blocks = TEST_MIN_DELAY / MockChain::TIMESTAMP_STEP_SECS;
+    let unlock_offset_blocks = 30 / MockChain::TIMESTAMP_STEP_SECS;
     let ready_block = proposal_reference_block + unlock_offset_blocks;
     while mock_chain.latest_block_header().block_num().as_u32() < ready_block {
         mock_chain.prove_next_block()?;
@@ -3474,7 +3366,10 @@ async fn test_multisig_smart_update_signers_uses_current_num_approvers_for_polic
         &public_keys,
         auth_scheme,
         100,
-        vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(2))],
+        vec![(
+            BasicWallet::receive_asset_digest(),
+            ProcedurePolicy::with_immediate_threshold(2),
+        )],
     )?;
     let account_id = multisig_account.id();
     let mock_chain = MockChainBuilder::with_accounts([multisig_account]).unwrap().build()?;
@@ -3514,7 +3409,11 @@ async fn test_multisig_smart_update_signers_uses_current_num_approvers_for_polic
         .execute()
         .await;
 
-    assert_program_execution_failed(result);
+    match result {
+        Err(TransactionExecutorError::TransactionProgramExecutionFailed(_)) => {},
+        Err(err) => panic!("expected transaction program failure, got: {err}"),
+        Ok(_) => panic!("execution was unexpectedly successful"),
+    }
 
     Ok(())
 }
@@ -3528,7 +3427,10 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
 ) -> anyhow::Result<()> {
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(4, 4, auth_scheme)?;
-    let proc_policy_map = vec![(BasicWallet::receive_asset_digest(), immediate_only_policy(4))];
+    let proc_policy_map = vec![(
+        BasicWallet::receive_asset_digest(),
+        ProcedurePolicy::with_immediate_threshold(4),
+    )];
 
     let assets =
         vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
@@ -3538,13 +3440,8 @@ async fn test_multisig_smart_proc_threshold_override_dominates_spending_tier(
         &public_keys,
         auth_scheme,
         assets,
-        TEST_SPENDING_WINDOW,
-        TEST_MIN_DELAY,
-        TEST_PROPOSE_EXPIRATION_DELTA,
         [500, 1000, 2000, 1500],
         [1, 2, 3, 4],
-        test_oracle_id(),
-        test_get_price_proc_root(),
         proc_policy_map,
     )?;
 
