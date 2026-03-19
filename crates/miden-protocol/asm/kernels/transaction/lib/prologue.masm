@@ -170,7 +170,7 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix],
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix],
 #!     [0, 0, 0, 0],
 #!     NOTE_ROOT,
 #!   ]
@@ -189,7 +189,7 @@ end
 #! - block_num is the reference block number.
 #! - version is the current protocol version.
 #! - timestamp is the current timestamp.
-#! - native_asset_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
+#! - fee_faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet ID that defines
 #!   the native asset.
 #! - verification_base_fee is the base fee capturing the cost for the verification of a
 #!   transaction.
@@ -1089,7 +1089,7 @@ end
 #!     TX_KERNEL_COMMITMENT
 #!     VALIDATOR_KEY_COMMITMENT,
 #!     [block_num, version, timestamp, 0],
-#!     [0, verification_base_fee, native_asset_id_suffix, native_asset_id_prefix]
+#!     [0, verification_base_fee, fee_faucet_id_suffix, fee_faucet_id_prefix]
 #!     [0, 0, 0, 0]
 #!     NOTE_ROOT,
 #!     kernel_version
