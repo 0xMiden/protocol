@@ -95,7 +95,7 @@ const BURN_NOTE_NUM_STORAGE_ITEMS=0
 #! 1. Validates the asset's faucet is registered in the bridge's faucet registry
 #! 2. Queries the faucet for origin asset conversion data via FPI
 #! 3. Builds the leaf data (origin token, destination, amount, metadata)
-#! 4. Computes Keccak hash and adds it to the Merkle Tree Frontier
+#! 4. Computes Keccak hash of the leaf data and appends it to the Local Exit Tree
 #! 5. Creates a BURN note with the bridged out asset
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, dest_network_id, dest_address(5), pad(2)]
@@ -211,7 +211,7 @@ pub proc bridge_out
     mem_store
     # => [pad(16)]
 
-    # --- 4. Compute leaf value and add to Merkle Tree Frontier ---
+    # --- 4. Compute leaf value and add to Local Exit Tree ---
     push.LEAF_DATA_START_PTR
     exec.add_leaf_bridge
     # => [pad(16)]
@@ -284,7 +284,7 @@ proc convert_asset
     # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
 end
 
-#! Computes the leaf value from the leaf data in memory and adds it to the Merkle Tree Frontier.
+#! Computes the leaf value from the leaf data in memory and adds it to the Local Exit Tree.
 #!
 #! Inputs:  [leaf_data_start_ptr]
 #! Outputs: []

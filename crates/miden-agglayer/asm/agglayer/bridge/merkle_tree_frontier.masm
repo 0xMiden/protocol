@@ -3,14 +3,14 @@ use ::agglayer::bridge::canonical_zeros::load_zeros_to_memory
 use ::agglayer::common::utils::mem_store_double_word
 use ::agglayer::common::utils::mem_load_double_word
 
-# An Merkle Tree Frontier (MTF) is a data structure based on an Merkle Mountain Range (MMR), which
+# A Merkle Tree Frontier (MTF) is a data structure based on an Merkle Mountain Range (MMR), which
 # combines some features of an MMR and an SMT.
 #
 # # Basics & Terminology
 #
 # The main entity in this structure is a _frontier_: it could be described either as a set of roots
-# of all individual trees in the MMR, or as a Merkle Path to the last added leaf to the push-only,
-# fixed-depth, canonical-zero initialized Merkle Tree (which are in fact the same values). 
+# of all individual trees in the MMR, or as a Merkle Path to the last added leaf to the append-only,
+# fixed-depth, canonical-zero initialized Merkle Tree. 
 # In the AggLayer code this value is called "branch" (see here: <https://github.com/agglayer/agglayer-contracts/blob/918f9609c56faa8263e58202980f3d9ec5a2c33b/contracts/v2/lib/DepositContractBase.sol#L25>)
 # Let's consider the MMR below as an example.
 #
@@ -55,16 +55,19 @@ use ::agglayer::common::utils::mem_load_double_word
 # two words on the stack, while being only a 256 bit value.
 #
 # Each state of the MTF is represented by the root. This root corresponds to (is equal to) a root of
-# the fixed-depth, canonical-zero initialized Merkle Tree. For this implementation this maximum
-# height is set to 32. "Canonical-zero initialized" here means that every value of height `h` in
-# this Tree is initialized with `value_{h} = Keccak256::hash(value_{h-1}, value_{h-1})`, where 
-# `value_0` (a leaf value) is a plain 0.
+# the fixed-depth, canonical-zero initialized Merkle Tree. For this implementation this depth is set
+# to 32. "Canonical-zero initialized" here means that every value of height `h` in this Tree is 
+# initialized with `value_{h} = Keccak256::hash(value_{h-1}, value_{h-1})`, where `value_0` (a leaf 
+# value) is a plain 0.
 #
 # # Layout
 #
 # The memory layout of the MTF looks like so:
 # 
-# [num_leaves, 0, 0, 0, [FRONTIER_VALUE_DW]]
+# [num_leaves, x, x, x, [FRONTIER_VALUE_DW]]
+#
+# Notice that the three values after `num_leaves` are never accessed and are only needed to 
+# word-align the frontier array. Therefore, these three values can be any field element.
 # 
 # Where: 
 # - num_leaves is the number of leaves in the MTF before adding the new leaf.
