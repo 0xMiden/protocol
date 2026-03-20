@@ -1,8 +1,10 @@
+use alloc::sync::Arc;
+
 use assert_matches::assert_matches;
 
 use super::{PublicOutputNote, RawOutputNote, RawOutputNotes};
 use crate::account::AccountId;
-use crate::assembly::Assembler;
+use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor};
 use crate::asset::FungibleAsset;
 use crate::constants::NOTE_MAX_SIZE;
 use crate::errors::{OutputNoteError, TransactionOutputError};
@@ -75,26 +77,28 @@ fn output_note_size_hint_matches_serialized_length() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by building
+// a MastForest with many external nodes. External nodes carry no debug info, so
+// `minify_script()` (called inside `PublicOutputNote::new()`) cannot shrink them.
 #[test]
 fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
-    // Construct a public note whose serialized size exceeds NOTE_MAX_SIZE by creating
-    // a very large note script so that the script's serialized MAST alone is larger
-    // than the configured limit.
-
     let sender_id = ACCOUNT_ID_SENDER.try_into().unwrap();
 
-    // Build a large MASM program with many `nop` instructions.
-    let mut src = alloc::string::String::from("begin\n");
-    // The exact threshold is not critical as long as we clearly exceed NOTE_MAX_SIZE.
-    // After strip_decorators(), the size is reduced, so we need more nops.
-    for _ in 0..50000 {
-        src.push_str("    nop\n");
+    // Build a large MastForest by adding many external nodes. Each node stores a
+    // 32-byte digest; 7000 nodes comfortably exceed the 256 KiB limit.
+    let mut mast = MastForest::new();
+    let mut root_id = None;
+    for i in 0..7_000_u16 {
+        let digest = Word::new([Felt::from(i + 1), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+        let id = ExternalNodeBuilder::new(digest)
+            .add_to_forest(&mut mast)
+            .expect("adding external node should not fail");
+        root_id = Some(id);
     }
-    src.push_str("end\n");
+    let root_id = root_id.unwrap();
+    mast.make_root(root_id);
 
-    let assembler = Assembler::default();
-    let program = assembler.assemble_program(&src).unwrap();
-    let script = NoteScript::new(program);
+    let script = NoteScript::from_parts(Arc::new(mast), root_id);
 
     let serial_num = Word::empty();
     let storage = NoteStorage::new(alloc::vec::Vec::new())?;
@@ -113,7 +117,10 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
     // Sanity-check that our constructed note is indeed larger than the configured
     // maximum.
     let computed_note_size = oversized_note.get_size_hint();
-    assert!(computed_note_size > NOTE_MAX_SIZE as usize);
+    assert!(
+        computed_note_size > NOTE_MAX_SIZE as usize,
+        "Expected note size ({computed_note_size}) to exceed NOTE_MAX_SIZE ({NOTE_MAX_SIZE})"
+    );
 
     // Creating a PublicOutputNote should fail with size limit error
     let result = PublicOutputNote::new(oversized_note.clone());
