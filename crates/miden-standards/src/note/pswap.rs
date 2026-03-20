@@ -33,18 +33,20 @@ static PSWAP_SCRIPT: LazyLock<NoteScript> = LazyLock::new(|| {
 // PSWAP NOTE STORAGE
 // ================================================================================================
 
-/// Typed storage representation for a PSWAP note.
+/// Canonical storage representation for a PSWAP note.
 ///
-/// Encapsulates the 18-item storage layout used by the PSWAP MASM contract:
-/// - [0-3]:   ASSET_KEY  (requested asset key from asset.to_key_word())
-/// - [4-7]:   ASSET_VALUE (requested asset value from asset.to_value_word())
-/// - [8]:     PSWAP tag
-/// - [9]:     P2ID routing tag
-/// - [10-11]: Reserved (zero)
-/// - [12]:    Swap count
-/// - [13-15]: Reserved (zero)
-/// - [16]:    Creator account ID prefix
-/// - [17]:    Creator account ID suffix
+/// Maps to the 18-element [`NoteStorage`] layout consumed by the on-chain MASM script:
+///
+/// | Slot | Field |
+/// |---------|-------|
+/// | `[0-3]` | Requested asset key (`asset.to_key_word()`) |
+/// | `[4-7]` | Requested asset value (`asset.to_value_word()`) |
+/// | `[8]` | PSWAP note tag |
+/// | `[9]` | P2ID routing tag (targets the creator) |
+/// | `[10-11]` | Reserved (zero) |
+/// | `[12]` | Swap count (incremented on each partial fill) |
+/// | `[13-15]` | Reserved (zero) |
+/// | `[16-17]` | Creator account ID (prefix, suffix) |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PswapNoteStorage {
     requested_key: Word,
@@ -65,10 +67,10 @@ impl PswapNoteStorage {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates storage for a new PSWAP note from the requested asset and creator.
+    /// Creates storage for a new PSWAP note.
     ///
-    /// The `pswap_tag` is defaulted and will be computed when converting to a [`Note`].
-    /// The `swap_count` starts at 0.
+    /// The PSWAP tag is set to a placeholder and will be computed when the note is
+    /// converted into a [`Note`] via [`From<PswapNote>`]. Swap count starts at 0.
     pub fn new(requested_asset: Asset, creator_account_id: AccountId) -> Self {
         let p2id_tag = NoteTag::with_account_target(creator_account_id);
         Self {
@@ -82,8 +84,6 @@ impl PswapNoteStorage {
     }
 
     /// Creates storage with all fields specified explicitly.
-    ///
-    /// Used for remainder notes where all fields (including swap count and tags) are known.
     pub fn from_parts(
         requested_key: Word,
         requested_value: Word,
@@ -107,7 +107,8 @@ impl PswapNoteStorage {
         NoteRecipient::new(serial_num, PswapNote::script(), NoteStorage::from(self))
     }
 
-    /// Sets the pswap_tag on this storage, returning the modified storage.
+    /// Overwrites the PSWAP tag. Called during [`Note`] conversion once the tag can be derived
+    /// from the offered/requested asset pair.
     pub(crate) fn with_pswap_tag(mut self, tag: NoteTag) -> Self {
         self.pswap_tag = tag;
         self
@@ -116,37 +117,36 @@ impl PswapNoteStorage {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the requested asset key word.
     pub fn requested_key(&self) -> Word {
         self.requested_key
     }
 
-    /// Returns the requested asset value word.
     pub fn requested_value(&self) -> Word {
         self.requested_value
     }
 
-    /// Returns the PSWAP note tag.
     pub fn pswap_tag(&self) -> NoteTag {
         self.pswap_tag
     }
 
-    /// Returns the P2ID routing tag.
     pub fn p2id_tag(&self) -> NoteTag {
         self.p2id_tag
     }
 
-    /// Returns the current swap count.
+    /// Number of times this note has been partially filled and re-created.
     pub fn swap_count(&self) -> u64 {
         self.swap_count
     }
 
-    /// Returns the creator account ID.
     pub fn creator_account_id(&self) -> AccountId {
         self.creator_account_id
     }
 
-    /// Reconstructs the requested asset from the key and value words.
+    /// Reconstructs the requested [`Asset`] from the stored key and value words.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the faucet ID or amount stored in the key/value words is invalid.
     pub fn requested_asset(&self) -> Result<Asset, NoteError> {
         let faucet_id = self.requested_faucet_id()?;
         let amount = self.requested_amount();
@@ -155,21 +155,20 @@ impl PswapNoteStorage {
         })?))
     }
 
-    /// Extracts the faucet ID from the requested key word.
+    /// Extracts the faucet ID of the requested asset from the key word.
     pub fn requested_faucet_id(&self) -> Result<AccountId, NoteError> {
-        // Key layout: [key[0], key[1], faucet_suffix, faucet_prefix]
         AccountId::try_from_elements(self.requested_key[2], self.requested_key[3]).map_err(|e| {
             NoteError::other_with_source("failed to parse faucet ID from key", e)
         })
     }
 
-    /// Extracts the requested amount from the value word.
+    /// Extracts the requested token amount from the value word.
     pub fn requested_amount(&self) -> u64 {
-        // ASSET_VALUE[0] = amount (from asset::fungible_to_amount)
         self.requested_value[0].as_canonical_u64()
     }
 }
 
+/// Serializes [`PswapNoteStorage`] into an 18-element [`NoteStorage`].
 impl From<PswapNoteStorage> for NoteStorage {
     fn from(storage: PswapNoteStorage) -> Self {
         let inputs = vec![
@@ -203,6 +202,7 @@ impl From<PswapNoteStorage> for NoteStorage {
     }
 }
 
+/// Deserializes [`PswapNoteStorage`] from a slice of exactly 18 [`Felt`]s.
 impl TryFrom<&[Felt]> for PswapNoteStorage {
     type Error = NoteError;
 
@@ -239,13 +239,12 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
 // PSWAP NOTE
 // ================================================================================================
 
-/// Partial swap (pswap) note for decentralized asset exchange.
+/// A partially-fillable swap note for decentralized asset exchange.
 ///
-/// This note implements a partially-fillable swap mechanism where:
-/// - Creator offers an asset and requests another asset
-/// - Note can be partially or fully filled by consumers
-/// - Unfilled portions create remainder notes
-/// - Creator receives requested assets via P2ID notes
+/// A PSWAP note allows a creator to offer one fungible asset in exchange for another.
+/// Unlike a regular SWAP note, consumers may fill it partially — the unfilled portion
+/// is re-created as a remainder note with an incremented swap count, while the creator
+/// receives the filled portion via a P2ID payback note.
 #[derive(Debug, Clone, bon::Builder)]
 #[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
@@ -273,42 +272,36 @@ impl PswapNote {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the script of the PSWAP note.
+    /// Returns the compiled PSWAP note script.
     pub fn script() -> NoteScript {
         PSWAP_SCRIPT.clone()
     }
 
-    /// Returns the PSWAP note script root.
+    /// Returns the root hash of the PSWAP note script.
     pub fn script_root() -> Word {
         PSWAP_SCRIPT.root()
     }
 
-    /// Returns the sender account ID.
     pub fn sender(&self) -> AccountId {
         self.sender
     }
 
-    /// Returns a reference to the note storage.
     pub fn storage(&self) -> &PswapNoteStorage {
         &self.storage
     }
 
-    /// Returns the serial number.
     pub fn serial_number(&self) -> Word {
         self.serial_number
     }
 
-    /// Returns the note type.
     pub fn note_type(&self) -> NoteType {
         self.note_type
     }
 
-    /// Returns a reference to the note assets.
     pub fn assets(&self) -> &NoteAssets {
         &self.assets
     }
 
-    /// Returns a reference to the note attachment.
     pub fn attachment(&self) -> &NoteAttachment {
         &self.attachment
     }
@@ -316,14 +309,11 @@ impl PswapNote {
     // BUILDERS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a PSWAP note offering one asset in exchange for another.
-    ///
-    /// This is a convenience method that constructs a [`PswapNote`] and converts it to a
-    /// protocol [`Note`].
+    /// Creates a PSWAP note offering `offered_asset` in exchange for `requested_asset`.
     ///
     /// # Errors
     ///
-    /// Returns an error if assets are invalid or have the same faucet ID.
+    /// Returns an error if the two assets share the same faucet or if asset construction fails.
     pub fn create<R: FeltRng>(
         creator_account_id: AccountId,
         offered_asset: Asset,
@@ -354,21 +344,13 @@ impl PswapNote {
     // INSTANCE METHODS
     // --------------------------------------------------------------------------------------------
 
-    /// Executes the swap by creating output notes for a fill.
+    /// Executes the swap, producing the output notes for a given fill.
     ///
-    /// Handles both full and partial fills:
-    /// - **Full fill**: Returns P2ID note with full requested amount, no remainder
-    /// - **Partial fill**: Returns P2ID note with partial amount + remainder PswapNote
+    /// `input_amount` is debited from the consumer's vault; `inflight_amount` arrives
+    /// from another note in the same transaction (cross-swap). Their sum is the total fill.
     ///
-    /// # Arguments
-    ///
-    /// * `consumer_account_id` - The account consuming the swap note
-    /// * `input_amount` - Amount debited from consumer's vault
-    /// * `inflight_amount` - Amount added directly (no vault debit, for cross-swaps)
-    ///
-    /// # Returns
-    ///
-    /// Returns a tuple of `(p2id_note, Option<remainder_pswap_note>)`
+    /// Returns `(p2id_payback_note, Option<remainder_pswap_note>)`. The remainder is
+    /// `None` when the fill equals the total requested amount (full fill).
     pub fn execute(
         &self,
         consumer_account_id: AccountId,
@@ -454,9 +436,8 @@ impl PswapNote {
         Ok((p2id_note, remainder))
     }
 
-    /// Calculates how many offered tokens a consumer receives for a given requested input.
-    ///
-    /// This is the Rust equivalent of `calculate_tokens_offered_for_requested` in pswap.masm.
+    /// Returns how many offered tokens a consumer receives for `input_amount` of the
+    /// requested asset, based on this note's current offered/requested ratio.
     pub fn calculate_offered_for_requested(
         &self,
         input_amount: u64,
@@ -479,12 +460,13 @@ impl PswapNote {
     // ASSOCIATED FUNCTIONS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns a note tag for a pswap note with the specified parameters.
+    /// Builds the 32-bit [`NoteTag`] for a PSWAP note.
     ///
-    /// Layout:
     /// ```text
-    /// [ note_type (2 bits) | script_root (14 bits)
-    ///   | offered_asset_faucet_id (8 bits) | requested_asset_faucet_id (8 bits) ]
+    /// [31..30] note_type          (2 bits)
+    /// [29..16] script_root MSBs   (14 bits)
+    /// [15..8]  offered faucet ID  (8 bits, top byte of prefix)
+    /// [7..0]   requested faucet ID (8 bits, top byte of prefix)
     /// ```
     pub fn build_tag(
         note_type: NoteType,
@@ -514,8 +496,9 @@ impl PswapNote {
         NoteTag::new(tag)
     }
 
-    /// Calculates the output amount for a fill using u64 integer arithmetic
-    /// with a precision factor of 1e5 (matching the MASM on-chain calculation).
+    /// Computes `offered_total * input_amount / requested_total` using fixed-point
+    /// u64 arithmetic with a precision factor of 10^5, matching the on-chain MASM
+    /// calculation. Returns the full `offered_total` when `input_amount == requested_total`.
     pub fn calculate_output_amount(
         offered_total: u64,
         requested_total: u64,
@@ -536,10 +519,10 @@ impl PswapNote {
         }
     }
 
-    /// Builds a P2ID (Pay-to-ID) payback note for the swap creator.
+    /// Builds a P2ID payback note that delivers the filled assets to the swap creator.
     ///
-    /// The P2ID note inherits the note type from this PSWAP note.
-    /// Derives a unique serial number matching the MASM: `hmerge(swap_count_word, serial_num)`.
+    /// The note inherits its type (public/private) from this PSWAP note and derives a
+    /// deterministic serial number via `hmerge(swap_count + 1, serial_num)`.
     pub fn build_p2id_payback_note(
         &self,
         consumer_account_id: AccountId,
@@ -568,10 +551,10 @@ impl PswapNote {
         Ok(Note::new(p2id_assets, p2id_metadata, recipient))
     }
 
-    /// Builds a remainder note for partial fills.
+    /// Builds a remainder PSWAP note carrying the unfilled portion of the swap.
     ///
-    /// Builds updated note storage with the remaining requested amount and incremented
-    /// swap count, returning a [`PswapNote`] that can be converted to a protocol [`Note`].
+    /// The remainder inherits the original creator, tags, and note type, but has an
+    /// incremented swap count and an updated serial number (`serial[0] + 1`).
     pub fn build_remainder_pswap_note(
         &self,
         consumer_account_id: AccountId,
@@ -625,6 +608,7 @@ impl PswapNote {
 // CONVERSIONS
 // ================================================================================================
 
+/// Converts a [`PswapNote`] into a protocol [`Note`], computing the final PSWAP tag.
 impl From<PswapNote> for Note {
     fn from(pswap: PswapNote) -> Self {
         let offered_asset = pswap
@@ -655,6 +639,7 @@ impl From<&PswapNote> for Note {
     }
 }
 
+/// Parses a protocol [`Note`] back into a [`PswapNote`] by deserializing its storage.
 impl TryFrom<&Note> for PswapNote {
     type Error = NoteError;
 
