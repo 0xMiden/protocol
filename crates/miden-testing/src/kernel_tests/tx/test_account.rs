@@ -54,11 +54,8 @@ use miden_protocol::testing::account_id::{
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0, MOCK_VALUE_SLOT1};
 use miden_protocol::transaction::{RawOutputNote, TransactionKernel};
 use miden_protocol::utils::sync::LazyLock;
-use miden_standards::account::faucets::{
-    BasicFungibleFaucet,
-    FungibleTokenMetadataBuilder,
-    TokenName,
-};
+use miden_standards::account::faucets::BasicFungibleFaucet;
+use miden_standards::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_standards::testing::mock_account::MockAccountExt;

@@ -29,11 +29,8 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::{
-    BasicFungibleFaucet,
-    FungibleTokenMetadata,
-    NetworkFungibleFaucet,
-};
+use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::metadata::FungibleTokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
