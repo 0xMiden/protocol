@@ -247,6 +247,7 @@ impl TryFrom<&[Felt]> for PswapNoteStorage {
 /// - Unfilled portions create remainder notes
 /// - Creator receives requested assets via P2ID notes
 #[derive(Debug, Clone, bon::Builder)]
+#[builder(finish_fn(vis = "", name = build_internal))]
 pub struct PswapNote {
     sender: AccountId,
     storage: PswapNoteStorage,
@@ -345,7 +346,7 @@ impl PswapNote {
             .note_type(note_type)
             .assets(NoteAssets::new(vec![offered_asset])?)
             .attachment(note_attachment)
-            .build();
+            .build_internal();
 
         Ok(Note::from(pswap))
     }
@@ -787,7 +788,7 @@ mod tests {
             .serial_number(rng.draw_word())
             .note_type(NoteType::Public)
             .assets(NoteAssets::new(vec![offered_asset]).unwrap())
-            .build();
+            .build_internal();
 
         assert_eq!(pswap.sender(), creator_id);
         assert_eq!(pswap.note_type(), NoteType::Public);
