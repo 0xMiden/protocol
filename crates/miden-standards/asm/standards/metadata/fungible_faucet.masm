@@ -1,4 +1,4 @@
-# miden::standards::metadata::fungible
+# miden::standards::metadata::fungible_faucet
 #
 # Metadata for fungible-style accounts: slots, getters (name, description, logo_uri,
 # external_link, token_metadata), and owner-gated setters.
@@ -13,34 +13,34 @@ use miden::standards::access::ownable2step
 # CONSTANTS — slot names
 # =================================================================================================
 
-const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_token_metadata")
-const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::name_0")
-const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::name_1")
-const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::mutability_config")
+const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_faucet::token_metadata")
+const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_0")
+const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_1")
+const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::fungible_faucet::mutability_config")
 
-const DESCRIPTION_0_SLOT = word("miden::standards::metadata::description_0")
-const DESCRIPTION_1_SLOT = word("miden::standards::metadata::description_1")
-const DESCRIPTION_2_SLOT = word("miden::standards::metadata::description_2")
-const DESCRIPTION_3_SLOT = word("miden::standards::metadata::description_3")
-const DESCRIPTION_4_SLOT = word("miden::standards::metadata::description_4")
-const DESCRIPTION_5_SLOT = word("miden::standards::metadata::description_5")
-const DESCRIPTION_6_SLOT = word("miden::standards::metadata::description_6")
+const DESCRIPTION_0_SLOT = word("miden::standards::metadata::fungible_faucet::description_0")
+const DESCRIPTION_1_SLOT = word("miden::standards::metadata::fungible_faucet::description_1")
+const DESCRIPTION_2_SLOT = word("miden::standards::metadata::fungible_faucet::description_2")
+const DESCRIPTION_3_SLOT = word("miden::standards::metadata::fungible_faucet::description_3")
+const DESCRIPTION_4_SLOT = word("miden::standards::metadata::fungible_faucet::description_4")
+const DESCRIPTION_5_SLOT = word("miden::standards::metadata::fungible_faucet::description_5")
+const DESCRIPTION_6_SLOT = word("miden::standards::metadata::fungible_faucet::description_6")
 
-const LOGO_URI_0_SLOT = word("miden::standards::metadata::logo_uri_0")
-const LOGO_URI_1_SLOT = word("miden::standards::metadata::logo_uri_1")
-const LOGO_URI_2_SLOT = word("miden::standards::metadata::logo_uri_2")
-const LOGO_URI_3_SLOT = word("miden::standards::metadata::logo_uri_3")
-const LOGO_URI_4_SLOT = word("miden::standards::metadata::logo_uri_4")
-const LOGO_URI_5_SLOT = word("miden::standards::metadata::logo_uri_5")
-const LOGO_URI_6_SLOT = word("miden::standards::metadata::logo_uri_6")
+const LOGO_URI_0_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_0")
+const LOGO_URI_1_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_1")
+const LOGO_URI_2_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_2")
+const LOGO_URI_3_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_3")
+const LOGO_URI_4_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_4")
+const LOGO_URI_5_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_5")
+const LOGO_URI_6_SLOT = word("miden::standards::metadata::fungible_faucet::logo_uri_6")
 
-const EXTERNAL_LINK_0_SLOT = word("miden::standards::metadata::external_link_0")
-const EXTERNAL_LINK_1_SLOT = word("miden::standards::metadata::external_link_1")
-const EXTERNAL_LINK_2_SLOT = word("miden::standards::metadata::external_link_2")
-const EXTERNAL_LINK_3_SLOT = word("miden::standards::metadata::external_link_3")
-const EXTERNAL_LINK_4_SLOT = word("miden::standards::metadata::external_link_4")
-const EXTERNAL_LINK_5_SLOT = word("miden::standards::metadata::external_link_5")
-const EXTERNAL_LINK_6_SLOT = word("miden::standards::metadata::external_link_6")
+const EXTERNAL_LINK_0_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_0")
+const EXTERNAL_LINK_1_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_1")
+const EXTERNAL_LINK_2_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_2")
+const EXTERNAL_LINK_3_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_3")
+const EXTERNAL_LINK_4_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_4")
+const EXTERNAL_LINK_5_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_5")
+const EXTERNAL_LINK_6_SLOT = word("miden::standards::metadata::fungible_faucet::external_link_6")
 
 const FIELD_0_LOC = 0
 const FIELD_1_LOC = 4
@@ -61,27 +61,52 @@ const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than curre
 # =================================================================================================
 
 #! Loads token metadata word from storage.
-#! Output: [token_supply, max_supply, decimals, token_symbol] (word[0] on top, little-endian).
-proc get_token_metadata_word
+#!
+#! Inputs:  []
+#! Outputs: [token_supply, max_supply, decimals, token_symbol]
+#!
+#! Where:
+#! - token_supply, max_supply, decimals, token_symbol are the fields of the metadata word
+#!   (word[0] on top, little-endian).
+#!
+#! Invocation: exec
+proc get_token_metadata_internal
     push.TOKEN_METADATA_SLOT[0..2]
     exec.active_account::get_item
 end
 
-#! Loads name chunk 0 (1 Word). Output: [NAME_CHUNK_0].
+#! Loads name chunk 0 (1 Word).
+#!
+#! Inputs:  []
+#! Outputs: [NAME_CHUNK_0]
+#!
+#! Invocation: exec
 proc get_name_chunk_0
     push.NAME_CHUNK_0_SLOT[0..2]
     exec.active_account::get_item
 end
 
-#! Loads name chunk 1 (1 Word). Output: [NAME_CHUNK_1].
+#! Loads name chunk 1 (1 Word).
+#!
+#! Inputs:  []
+#! Outputs: [NAME_CHUNK_1]
+#!
+#! Invocation: exec
 proc get_name_chunk_1
     push.NAME_CHUNK_1_SLOT[0..2]
     exec.active_account::get_item
 end
 
 #! Loads the mutability config word.
-#! Output: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(16)].
-#! (word[0] on top after get_item, little-endian)
+#!
+#! Inputs:  []
+#! Outputs: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+#!
+#! Where:
+#! - is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable are boolean flags
+#!   (word[0] on top after get_item, little-endian).
+#!
+#! Invocation: exec
 proc get_mutability_config_word
     push.MUTABILITY_CONFIG_SLOT[0..2]
     exec.active_account::get_item
@@ -93,13 +118,18 @@ end
 #!
 #! Inputs:  [write_ptr, COMMITMENT]
 #! Outputs: []
+#!
+#! Invocation: exec
 proc pipe_to_memory
     push.7
-    # => [7, write_ptr, COMMITMENT, ...]
     exec.mem::pipe_preimage_to_memory
-    # => [write_ptr', ...]
+    # => [write_ptr']
     drop
 end
+
+# =================================================================================================
+# PUBLIC API — TOKEN METADATA
+# =================================================================================================
 
 #! Returns the token metadata (token_supply, max_supply, decimals, token_symbol).
 #!
@@ -108,7 +138,7 @@ end
 #!
 #! Invocation: call
 pub proc get_token_metadata
-    exec.get_token_metadata_word
+    exec.get_token_metadata_internal
     swapw dropw
     # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
 end
@@ -120,8 +150,8 @@ end
 #!
 #! Invocation: call
 pub proc get_max_supply
-    call.get_token_metadata
-    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    exec.get_token_metadata_internal
+    # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     drop movdn.2 drop drop
     # => [max_supply, pad(15)]
 end
@@ -133,8 +163,8 @@ end
 #!
 #! Invocation: call
 pub proc get_decimals
-    call.get_token_metadata
-    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    exec.get_token_metadata_internal
+    # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     drop drop swap drop
     # => [decimals, pad(15)]
 end
@@ -146,8 +176,8 @@ end
 #!
 #! Invocation: call
 pub proc get_token_symbol
-    call.get_token_metadata
-    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    exec.get_token_metadata_internal
+    # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     drop drop drop
     # => [token_symbol, pad(15)]
 end
@@ -159,8 +189,8 @@ end
 #!
 #! Invocation: call
 pub proc get_token_supply
-    call.get_token_metadata
-    # => [token_supply, max_supply, decimals, token_symbol, pad(12)]
+    exec.get_token_metadata_internal
+    # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
     movdn.3 drop drop drop
     # => [token_supply, pad(15)]
 end
@@ -172,7 +202,7 @@ end
 #! Returns the name (2 Words) padded to 16 elements: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)].
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]  (16 felts; chunk_0 on top)
+#! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
 #!
 #! Invocation: call
 pub proc get_name
@@ -195,8 +225,6 @@ end
 pub proc get_mutability_config
     exec.get_mutability_config_word
     # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(16)]
-
-    # truncate the stack
     swapw dropw
     # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(12)]
 end
@@ -208,32 +236,56 @@ end
 # Private helpers — load the mutability config word and extract a single flag.
 # Used by both the public is_* procedures and the set_* procedures.
 
+#! Extracts the is_desc_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_desc_mutable]
+#!
+#! Invocation: exec
 proc is_description_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
     movdn.3 drop drop drop
-    # => [is_desc_mutable, ...]
+    # => [is_desc_mutable]
 end
 
+#! Extracts the is_logo_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_logo_mutable]
+#!
+#! Invocation: exec
 proc is_logo_uri_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
     drop movdn.2 drop drop
-    # => [is_logo_mutable, ...]
+    # => [is_logo_mutable]
 end
 
+#! Extracts the is_extlink_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_extlink_mutable]
+#!
+#! Invocation: exec
 proc is_external_link_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
     drop drop swap drop
-    # => [is_extlink_mutable, ...]
+    # => [is_extlink_mutable]
 end
 
+#! Extracts the is_max_supply_mutable flag from the mutability config word.
+#!
+#! Inputs:  []
+#! Outputs: [is_max_supply_mutable]
+#!
+#! Invocation: exec
 proc is_max_supply_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, ...]
+    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
     drop drop drop
-    # => [is_max_supply_mutable, ...]
+    # => [is_max_supply_mutable]
 end
 
 #! Returns 1 if description is mutable, and 0 otherwise.
@@ -300,12 +352,15 @@ end
 #! the preimage during loading.
 #!
 #! Inputs:
-#!    Stack: [DESCRIPTION_HASH, pad(12)]
-#!    Advice map: {
-#!        [DESCRIPTION_HASH] |-> [description_elements]  (28 felts)
-#!    }
+#!   Operand stack: [DESCRIPTION_HASH, pad(12)]
+#!   Advice map: {
+#!     DESCRIPTION_HASH: [description_elements],
+#!   }
 #! Outputs:
-#!    Stack: [pad(16)]
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - description_elements are 28 felts (7 Words) encoding the description.
 #!
 #! Panics if:
 #! - the description mutability flag is not 1.
@@ -313,54 +368,51 @@ end
 #! - the preimage does not match DESCRIPTION_HASH.
 #!
 #! Invocation: call
-@locals(32)
+@locals(28)
 pub proc set_description
-    # Save DESCRIPTION_HASH to local word 0; check mutability; verify owner.
-    loc_storew_le.0 dropw
-    # => [pad(12)]
+    # Check mutability; verify owner.
+    # => [DESCRIPTION_HASH, pad(12)]
 
     exec.is_description_mutable_inner
-    # => [is_desc_mutable, pad(12)]
+    # => [is_desc_mutable, DESCRIPTION_HASH, pad(12)]
     assert.err=ERR_DESCRIPTION_NOT_MUTABLE
-    # => [pad(16)]
+    # => [DESCRIPTION_HASH, pad(12)]
 
     exec.ownable2step::assert_sender_is_owner
-    # => [pad(16)]
-
-    # Restore hash; pipe 7 words from advice map into local words 1–7, validating the hash.
-    loc_loadw_le.0
     # => [DESCRIPTION_HASH, pad(12)]
+
+    # Pipe 7 words from advice map into local words 0–6, validating the hash.
     adv.push_mapval
-    locaddr.4
-    # => [locaddr.4, DESCRIPTION_HASH, pad(12)]
+    locaddr.0
+    # => [locaddr.0, DESCRIPTION_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.4 mem_loadw_le
+    loc_loadw_le.0
     push.DESCRIPTION_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.8 mem_loadw_le
+    loc_loadw_le.4
     push.DESCRIPTION_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.12 mem_loadw_le
+    loc_loadw_le.8
     push.DESCRIPTION_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.16 mem_loadw_le
+    loc_loadw_le.12
     push.DESCRIPTION_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.20 mem_loadw_le
+    loc_loadw_le.16
     push.DESCRIPTION_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.24 mem_loadw_le
+    loc_loadw_le.20
     push.DESCRIPTION_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.28 mem_loadw_le
+    loc_loadw_le.24
     push.DESCRIPTION_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -377,12 +429,15 @@ end
 #! the preimage during loading.
 #!
 #! Inputs:
-#!    Stack: [LOGO_URI_HASH, pad(12)]
-#!    Advice map: {
-#!        [LOGO_URI_HASH] |-> [logo_uri_elements]  (28 felts)
-#!    }
+#!   Operand stack: [LOGO_URI_HASH, pad(12)]
+#!   Advice map: {
+#!     LOGO_URI_HASH: [logo_uri_elements],
+#!   }
 #! Outputs:
-#!    Stack: [pad(16)]
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - logo_uri_elements are 28 felts (7 Words) encoding the logo URI.
 #!
 #! Panics if:
 #! - the logo URI mutability flag is not 1.
@@ -390,52 +445,50 @@ end
 #! - the preimage does not match LOGO_URI_HASH.
 #!
 #! Invocation: call
-@locals(32)
+@locals(28)
 pub proc set_logo_uri
-    loc_storew_le.0 dropw
-    # => [pad(12)]
+    # Check mutability; verify owner.
+    # => [LOGO_URI_HASH, pad(12)]
 
     exec.is_logo_uri_mutable_inner
-    # => [is_logo_mutable, pad(12)]
+    # => [is_logo_mutable, LOGO_URI_HASH, pad(12)]
     assert.err=ERR_LOGO_URI_NOT_MUTABLE
-    # => [pad(16)]
+    # => [LOGO_URI_HASH, pad(12)]
 
     exec.ownable2step::assert_sender_is_owner
-    # => [pad(16)]
-
-    loc_loadw_le.0
     # => [LOGO_URI_HASH, pad(12)]
+
     adv.push_mapval
-    locaddr.4
-    # => [locaddr.4, LOGO_URI_HASH, pad(12)]
+    locaddr.0
+    # => [locaddr.0, LOGO_URI_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.4 mem_loadw_le
+    loc_loadw_le.0
     push.LOGO_URI_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.8 mem_loadw_le
+    loc_loadw_le.4
     push.LOGO_URI_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.12 mem_loadw_le
+    loc_loadw_le.8
     push.LOGO_URI_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.16 mem_loadw_le
+    loc_loadw_le.12
     push.LOGO_URI_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.20 mem_loadw_le
+    loc_loadw_le.16
     push.LOGO_URI_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.24 mem_loadw_le
+    loc_loadw_le.20
     push.LOGO_URI_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.28 mem_loadw_le
+    loc_loadw_le.24
     push.LOGO_URI_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -452,12 +505,15 @@ end
 #! the preimage during loading.
 #!
 #! Inputs:
-#!    Stack: [EXTERNAL_LINK_HASH, pad(12)]
-#!    Advice map: {
-#!        [EXTERNAL_LINK_HASH] |-> [external_link_elements]  (28 felts)
-#!    }
+#!   Operand stack: [EXTERNAL_LINK_HASH, pad(12)]
+#!   Advice map: {
+#!     EXTERNAL_LINK_HASH: [external_link_elements],
+#!   }
 #! Outputs:
-#!    Stack: [pad(16)]
+#!   Operand stack: [pad(16)]
+#!
+#! Where:
+#! - external_link_elements are 28 felts (7 Words) encoding the external link.
 #!
 #! Panics if:
 #! - the external link mutability flag is not 1.
@@ -465,52 +521,50 @@ end
 #! - the preimage does not match EXTERNAL_LINK_HASH.
 #!
 #! Invocation: call
-@locals(32)
+@locals(28)
 pub proc set_external_link
-    loc_storew_le.0 dropw
-    # => [pad(12)]
+    # Check mutability; verify owner.
+    # => [EXTERNAL_LINK_HASH, pad(12)]
 
     exec.is_external_link_mutable_inner
-    # => [is_extlink_mutable, pad(12)]
+    # => [is_extlink_mutable, EXTERNAL_LINK_HASH, pad(12)]
     assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
-    # => [pad(16)]
+    # => [EXTERNAL_LINK_HASH, pad(12)]
 
     exec.ownable2step::assert_sender_is_owner
-    # => [pad(16)]
-
-    loc_loadw_le.0
     # => [EXTERNAL_LINK_HASH, pad(12)]
+
     adv.push_mapval
-    locaddr.4
-    # => [locaddr.4, EXTERNAL_LINK_HASH, pad(12)]
+    locaddr.0
+    # => [locaddr.0, EXTERNAL_LINK_HASH, pad(12)]
     exec.pipe_to_memory
     # => [pad(12)]
 
-    locaddr.4 mem_loadw_le
+    loc_loadw_le.0
     push.EXTERNAL_LINK_0_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.8 mem_loadw_le
+    loc_loadw_le.4
     push.EXTERNAL_LINK_1_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.12 mem_loadw_le
+    loc_loadw_le.8
     push.EXTERNAL_LINK_2_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.16 mem_loadw_le
+    loc_loadw_le.12
     push.EXTERNAL_LINK_3_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.20 mem_loadw_le
+    loc_loadw_le.16
     push.EXTERNAL_LINK_4_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.24 mem_loadw_le
+    loc_loadw_le.20
     push.EXTERNAL_LINK_5_SLOT[0..2]
     exec.native_account::set_item dropw
 
-    locaddr.28 mem_loadw_le
+    loc_loadw_le.24
     push.EXTERNAL_LINK_6_SLOT[0..2]
     exec.native_account::set_item dropw
 end
@@ -536,36 +590,27 @@ pub proc set_max_supply
     exec.is_max_supply_mutable_inner
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
     assert.err=ERR_MAX_SUPPLY_IMMUTABLE
-    # => [new_max_supply, pad(15)]
 
     # 2. Verify note sender is the owner
     exec.ownable2step::assert_sender_is_owner
     # => [new_max_supply, pad(15)]
 
     # 3. Read current metadata word
-    exec.get_token_metadata_word
+    exec.get_token_metadata_internal
     # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
-    # 4. Validate: new_max_supply >= token_supply (i.e. token_supply <= new_max_supply)
-    dup         # copy token_supply (index 0) to top
-    dup.5       # copy new_max_supply to top
-    # => [new_max_supply, token_supply, token_supply, max_supply, decimals, token_symbol, new_max_supply, ...]
-    lte         # token_supply <= new_max_supply
-    assert.err=ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY
+    # 4. Validate: token_supply <= new_max_supply
+    dup dup.5
+    lte assert.err=ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY
     # => [token_supply, max_supply, decimals, token_symbol, new_max_supply, pad(15)]
 
-    # 5. Replace max_supply (word[1]) with new_max_supply in the metadata word
-    movup.4     # bring new_max_supply to top
-    # => [new_max_supply, token_supply, max_supply, decimals, token_symbol, pad(15)]
-    swap        # => [token_supply, new_max_supply, max_supply, decimals, token_symbol, pad(15)]
-    movup.2     # => [max_supply, token_supply, new_max_supply, decimals, token_symbol, pad(15)]
-    drop        # discard old max_supply
+    # 5. Replace max_supply (word[1]) with new_max_supply
+    movup.4 swap movup.2 drop
     # => [token_supply, new_max_supply, decimals, token_symbol, pad(15)]
 
     # 6. Write updated metadata word back to storage
     push.TOKEN_METADATA_SLOT[0..2]
     exec.native_account::set_item
-    # => [OLD_VALUE, pad(15)]
     dropw
     # => [pad(16)]
 end

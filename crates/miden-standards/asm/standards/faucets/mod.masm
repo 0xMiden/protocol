@@ -34,7 +34,8 @@ const METADATA_SLOT_LOCAL=0
 
 # The standard slot where fungible faucet metadata is stored (canonical with metadata module).
 # Layout: [token_supply, max_supply, decimals, token_symbol]
-const METADATA_SLOT=word("miden::standards::metadata::fungible_token_metadata")
+# Note: this slot name should match TOKEN_METADATA_SLOT in metadata/fungible_faucet.masm.
+const METADATA_SLOT=word("miden::standards::metadata::fungible_faucet::token_metadata")
 
 #! Mints fungible assets to the provided recipient by creating a note.
 #!
@@ -69,6 +70,7 @@ pub proc mint_and_send
     swap movup.2 drop movup.2 drop
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
+    # Assert that minting does not violate any supply constraints.
     # To make sure we cannot mint more than intended, we need to check:
     # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
     # 2) amount + token_supply does not exceed max_supply
