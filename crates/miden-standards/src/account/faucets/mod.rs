@@ -12,17 +12,6 @@ mod network_fungible;
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
 
-pub use crate::account::metadata::token_metadata::TokenName;
-pub use crate::account::metadata::token_metadata::fungible_token::{
-    Description,
-    ExternalLink,
-    FieldBytesError,
-    FungibleTokenMetadata,
-    FungibleTokenMetadataBuilder,
-    LogoURI,
-};
-pub use crate::utils::string::{FixedWidthString, FixedWidthStringError};
-
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================
 
@@ -65,6 +54,4 @@ pub enum FungibleFaucetError {
     NotAFungibleFaucetAccount,
     #[error("failed to read ownership data from storage")]
     OwnershipError(#[source] Ownable2StepError),
-    #[error("network faucet ownership has been renounced (no owner)")]
-    OwnershipRenounced,
 }
