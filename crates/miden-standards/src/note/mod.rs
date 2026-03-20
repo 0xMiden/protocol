@@ -110,7 +110,7 @@ impl StandardNote {
             Self::P2ID => P2idNote::NUM_STORAGE_ITEMS,
             Self::P2IDE => P2ideNote::NUM_STORAGE_ITEMS,
             Self::SWAP => SwapNote::NUM_STORAGE_ITEMS,
-            Self::PSWAP => PswapNoteStorage::NUM_ITEMS,
+            Self::PSWAP => PswapNoteStorage::NUM_STORAGE_ITEMS,
             Self::MINT => MintNote::NUM_STORAGE_ITEMS_PRIVATE,
             Self::BURN => BurnNote::NUM_STORAGE_ITEMS,
         }
