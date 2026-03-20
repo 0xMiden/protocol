@@ -361,7 +361,7 @@ end
 # REMAINDER NOTE CREATION PROCEDURE
 # =================================================================================================
 
-#! Creates a SWAPp remainder output note for partial fills.
+#! Creates a PSWAP remainder output note for partial fills.
 #!
 #! Updates the requested amount in note storage, builds a new remainder recipient
 #! (using the active note's script root and a serial derived by incrementing the
@@ -376,7 +376,7 @@ proc create_remainder_note
     mem_store.REQUESTED_ASSET_VALUE_INPUT
     # => []
 
-    # Build SWAPp remainder recipient using the same script as the active note
+    # Build PSWAP remainder recipient using the same script as the active note
     exec.active_note::get_script_root
     # => [SCRIPT_ROOT]
 
