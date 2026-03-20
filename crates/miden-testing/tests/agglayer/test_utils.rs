@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
 use miden_agglayer::{
-    EthAddressFormat,
+    EthAddress,
     EthAmount,
     ExitRoot,
     GlobalIndex,
@@ -125,10 +125,10 @@ impl LeafValueVector {
     pub fn to_leaf_data(&self) -> LeafData {
         LeafData {
             origin_network: self.origin_network,
-            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
+            origin_token_address: EthAddress::from_hex(&self.origin_token_address)
                 .expect("valid origin token address hex"),
             destination_network: self.destination_network,
-            destination_address: EthAddressFormat::from_hex(&self.destination_address)
+            destination_address: EthAddress::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
             amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
             metadata_hash: MetadataHash::new(
