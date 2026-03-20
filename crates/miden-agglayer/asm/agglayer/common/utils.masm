@@ -3,8 +3,8 @@
 # TYPE ALIASES
 # =================================================================================================
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
+type Word = struct { a: felt, b: felt, c: felt, d: felt }
+type DoubleWord = struct { word_lo: Word, word_hi: Word }
 type MemoryAddress = u32
 
 # BYTE MANIPULATION

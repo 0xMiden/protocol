@@ -22,7 +22,7 @@ use miden::agglayer::bridge::mmr_frontier32_keccak
 # TYPE ALIASES
 # =================================================================================================
 
-type EthereumAddressFormat = struct @bigendian { a: felt, b: felt, c: felt, d: felt, e: felt }
+type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
 type MemoryAddress = u32
 
 # CONSTANTS

@@ -8,8 +8,8 @@ use miden::core::word
 # TYPE ALIASES
 # =================================================================================================
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
+type Word = struct { a: felt, b: felt, c: felt, d: felt }
+type DoubleWord = struct { word_lo: Word, word_hi: Word }
 type MemoryAddress = u32
 
 # ERRORS
@@ -212,7 +212,7 @@ end
 #! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
-pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
+pub proc get_leaf_value(leaf_data_key: Word) -> DoubleWord
     adv.push_mapval
     # => [LEAF_DATA_KEY]
 
