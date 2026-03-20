@@ -1,9 +1,6 @@
 # ERRORS
 # =================================================================================================
 
-pub type AccountID = struct { prefix: felt, suffix: felt }
-
-
 const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
 
 const ERR_ACCOUNT_ID_SUFFIX_MOST_SIGNIFICANT_BIT_MUST_BE_ZERO="most significant bit of the account ID suffix must be zero"
