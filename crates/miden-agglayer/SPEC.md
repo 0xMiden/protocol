@@ -697,7 +697,7 @@ recovers the original.
 The AggLayer bridge connects multiple chains, each with its own native token ecosystem.
 When tokens move between chains, they need a representation on the destination chain.
 This section describes how tokens are registered for bridging and the role of the
-faucet registry.
+faucet and token registries.
 
 Terminology:
 
@@ -708,11 +708,18 @@ Terminology:
   AggLayer faucet. On EVM chains, each non-native Miden token would be represented by a
   deployed wrapped ERC20 contract.
 
-A faucet must be registered in the bridge's faucet registry before it can participate in
-bridging. The registry is a map in the bridge account's storage
-(`miden::agglayer::bridge::faucet_registry`) that records which faucet account IDs are
-authorized for bridge-out operations. Without registration, `bridge_out::bridge_out`
-rejects the asset (see `bridge_config::assert_faucet_registered`).
+A faucet must be registered in the bridge before it can participate in bridging. The
+bridge maintains two registry maps:
+
+- **Faucet registry** (`agglayer::bridge::faucet_registry_map`): maps faucet account IDs
+  to a registration flag. Used during bridge-out to verify an asset's faucet is authorized
+  (see `bridge_config::assert_faucet_registered`).
+- **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
+  origin token addresses to faucet account IDs. Used during bridge-in to look up the
+  correct faucet for a given origin token (see
+  `bridge_config::lookup_faucet_by_token_address`).
+
+Both registries are populated atomically by `bridge_config::register_faucet`.
 
 ### 6.1 Bridging-in: Registering non-native faucets on Miden
 
@@ -720,29 +727,46 @@ When a new ERC20 token is bridged to Miden for the first time, a corresponding A
 faucet account must be created and registered. The faucet serves as the mint/burn
 authority for the wrapped token on Miden.
 
-The `AggLayerFaucet` struct (Rust, `src/lib.rs`) captures the full faucet configuration:
+The `AggLayerFaucet` struct (Rust, `src/faucet.rs`) captures the faucet-specific
+configuration:
 
-- Token metadata: symbol, decimals, max_supply (stored in the standard
-  `NetworkFungibleFaucet` metadata slot)
-- Bridge account ID: the bridge this faucet is paired with
-  (`miden::agglayer::faucet`)
+- Token metadata: symbol, decimals, max_supply, token_supply (stored in the standard
+  `TokenMetadata` slot)
 - Origin token address: the ERC20 contract address on the origin chain
-  (`miden::agglayer::faucet::conversion_info_1`, `conversion_info_2`)
+  (`agglayer::faucet::conversion_info_1`, `conversion_info_2`)
 - Origin network: the chain ID of the origin chain (stored in `conversion_info_2`)
 - Scale factor: the exponent used to convert between EVM U256 amounts and Miden felt
   amounts (stored in `conversion_info_2`)
 - Metadata hash: `keccak256(abi.encode(name, symbol, decimals))`, stored across two
-  value slots (`miden::agglayer::faucet::metadata_hash_lo`,
-  `miden::agglayer::faucet::metadata_hash_hi`)
+  value slots (`agglayer::faucet::metadata_hash_lo`,
+  `agglayer::faucet::metadata_hash_hi`)
+
+The faucet account also requires two companion components:
+
+- `Ownable2Step`: stores the bridge account ID as the faucet's owner, used for
+  authorization of mint operations.
+- `OwnerControlled`: provides mint policy management (active policy proc root, allowed
+  policy proc roots, policy authority).
 
 Registration is performed via `CONFIG_AGG_BRIDGE` notes (see Section 3.3). The bridge
-operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID and sends
-it to the bridge account. On consumption, the note script calls
-`bridge_config::register_faucet`, which:
+operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID and the
+origin token address, then sends it to the bridge account. On consumption, the note
+script calls `bridge_config::register_faucet`, which performs a two-step registration:
 
 1. Asserts the note sender matches the bridge admin stored in
-   `miden::agglayer::bridge::admin`.
-2. Writes the faucet ID into the `faucet_registry` map with value `[1, 0, 0, 0]`.
+   `agglayer::bridge::admin_account_id`.
+2. Writes the faucet ID into the `faucet_registry_map`:
+   key `[0, 0, faucet_id_suffix, faucet_id_prefix]`, value `[1, 0, 0, 0]`.
+3. Hashes the origin token address (5 felts) using `Poseidon2::hash_elements` and writes
+   the mapping into the `token_registry_map`:
+   key `hash(origin_token_addr)`, value `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+
+The token registry enables the bridge to resolve which faucet corresponds to a given
+origin token address during CLAIM note processing. When the bridge's `claim` procedure
+processes a CLAIM note, it reads the origin token address from the leaf data and calls
+`bridge_config::lookup_faucet_by_token_address` to find the registered faucet. This
+lookup hashes the address with Poseidon2 and retrieves the faucet ID from the token
+registry map. If the token address is not registered, the lookup panics.
 
 The bridge admin is a trusted role. There is currently no on-chain verification that the
 faucet's stored metadata (origin address, scale, metadata hash) is correct. The bridge
@@ -751,14 +775,16 @@ operator is trusted to deploy faucets with accurate configuration.
 Implementation status:
 
 - Implemented: Faucet creation with metadata hash, faucet storage layout, FPI retrieval
-  of metadata hash via `agglayer_faucet::get_metadata_hash`, registration via
-  `CONFIG_AGG_BRIDGE` notes, faucet registry lookup in `bridge_config::assert_faucet_registered`.
+  of metadata hash via `agglayer_faucet::get_metadata_hash`, two-step registration via
+  `CONFIG_AGG_BRIDGE` notes (faucet registry + token registry), faucet registry lookup in
+  `bridge_config::assert_faucet_registered`, token registry lookup in
+  `bridge_config::lookup_faucet_by_token_address`.
 - Not yet implemented: On-chain verification of the metadata hash during registration
   ([#2586](https://github.com/0xMiden/protocol/issues/2586)).
   This would require the token name to be available in faucet storage and
   `abi.encode(string, string, uint8)` to be implemented in MASM, so the bridge could
   recompute `keccak256(abi.encode(name, symbol, decimals))` and compare it against the
-  stored hash. See the TODO in `bridge_config::register_faucet`.
+  stored hash.
 - Not yet implemented: Token name storage in the faucet
   ([#2585](https://github.com/0xMiden/protocol/issues/2585),
   related: [PR #2439](https://github.com/0xMiden/protocol/pull/2439)).
