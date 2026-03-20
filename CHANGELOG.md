@@ -44,6 +44,8 @@
 - [BREAKING] Changed `native_account::remove_asset` to return the asset value remaining in the vault instead of the removed value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
 - Implement `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
+- Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
+
 
 ### Changes
 
@@ -107,6 +109,10 @@
 - Fixed overlap in initial and active account storage slot memory region ([#2557](https://github.com/0xMiden/protocol/pull/2557)).
 - Fixed link map entry pointer validation bypass ([#2556](https://github.com/0xMiden/protocol/pull/2556)).
 - Added foreign account ID assertion in `account::load_foreign_account` ([#2560](https://github.com/0xMiden/protocol/pull/2560)).
+
+### Fixes
+
+- Fixed `PartialAccountTree::track_account` rejecting provably-empty leaves in sparse trees by handling `SmtLeaf::Empty` correctly ([#2598](https://github.com/0xMiden/protocol/pull/2598)).
 
 ## 0.13.3 (2026-01-27)
 

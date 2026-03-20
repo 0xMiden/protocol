@@ -439,10 +439,10 @@ async fn block_building_fails_on_creating_account_with_duplicate_account_id_pref
 
     let err = block.into_header_and_body().unwrap_err();
 
-    // This should fail when we try to _track_ the same two prefixes in the partial tree.
+    // This should fail when we try to _insert_ the same two prefixes in the partial tree.
     assert_matches!(
         err,
-        ProposedBlockError::AccountWitnessTracking {
+        ProposedBlockError::AccountIdPrefixDuplicate {
             source: AccountTreeError::DuplicateIdPrefix { duplicate_prefix }
         } if duplicate_prefix == id0.prefix()
     );

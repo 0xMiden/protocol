@@ -1,4 +1,4 @@
-use miden::agglayer::faucet -> agg_faucet
+use agglayer::bridge::bridge_in -> bridge
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::core::crypto::hashes::keccak256
@@ -22,9 +22,9 @@ const FAUCET_MINT_AMOUNT = 568
 
 const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account does not match consuming account"
 
-#! Reads claim data from memory and inserts it into the advice map under three separate keys.
+#! Reads claim data from memory and inserts it into the advice map under two separate keys.
 #!
-#! This procedure organizes the claim note data into three logical groups and inserts them
+#! This procedure organizes the claim note data into two logical groups and inserts them
 #! into the advice map under separate keys for easier access.
 #!
 #! Inputs: []
@@ -84,13 +84,15 @@ proc write_claim_data_into_advice_map_by_key
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 end
 
-#! Agglayer Faucet CLAIM script: claims assets by calling the agglayer faucet's claim function.
+#! Agglayer Bridge CLAIM script: claims assets by calling the bridge's claim function.
 #!
-#! This note can only be consumed by the specific agglayer faucet account whose ID is provided
-#! in the note attachment (NetworkAccountTarget). Upon consumption, it will create a P2ID note.
+#! This note is consumed by the agglayer bridge account whose ID is provided
+#! in the note attachment (NetworkAccountTarget). Upon consumption, the bridge validates
+#! the Merkle proof, looks up the faucet from the token registry, and creates a MINT note
+#! targeting the aggfaucet.
 #!
 #! Requires that the account exposes:
-#! - agglayer::agglayer_faucet::claim procedure.
+#! - agglayer::bridge::bridge_in::claim procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -138,7 +140,7 @@ begin
     dropw
     # => [pad(16)]
 
-    # Ensure note attachment targets the consuming faucet account.
+    # Ensure note attachment targets the consuming bridge account.
     exec.network_account_target::active_account_matches_target_account
     assert.err=ERR_CLAIM_TARGET_ACCT_MISMATCH
     # => [pad(16)]
@@ -156,11 +158,12 @@ begin
     movdn.8
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(16)]
 
-    # call the Aggfaucet Claim procedure
-    call.agg_faucet::claim
+    # call the Bridge Claim procedure
+    call.bridge::claim
     # => [pad(16), pad(9)]
 
     # a call invocation consumes and returns 16 elements, but we had trailing padding
-    dropw dropw drop
+    dropw dropw drop 
+
     # => [pad(16)]
 end

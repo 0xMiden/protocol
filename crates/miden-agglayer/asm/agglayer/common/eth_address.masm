@@ -1,4 +1,4 @@
-use miden::agglayer::common::utils
+use agglayer::common::utils
 use miden::core::crypto::hashes::keccak256
 use miden::core::word
 
@@ -67,7 +67,7 @@ end
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Builds a single felt from two u32 limbs (little-endian limb order).
+#! Builds a single felt from two u32 limbs (little-endian limb order, little-endian bytes).
 #! Conceptually, this is packing a 64-bit word (lo + (hi << 32)) into a field element.
 #! This proc additionally verifies that the packed value did *not* reduce mod p by round-tripping
 #! through u32split and comparing the limbs.
