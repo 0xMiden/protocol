@@ -23,7 +23,7 @@ use miden_protocol::account::{
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::note::{NoteAssets, NoteScript, NoteType};
 use miden_protocol::transaction::RawOutputNote;
-use miden_standards::account::faucets::FungibleTokenMetadata;
+use miden_standards::account::metadata::FungibleTokenMetadata;
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, assert_transaction_executor_error};
@@ -137,7 +137,7 @@ async fn bridge_out_consecutive() -> anyhow::Result<()> {
         builder.rng_mut().draw_word(),
         "AGG",
         8,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
+        FungibleAsset::MAX_AMOUNT,
         Felt::new(total_burned),
         bridge_account.id(),
         &origin_token_address,
@@ -337,7 +337,7 @@ async fn test_bridge_out_fails_with_unregistered_faucet() -> anyhow::Result<()> 
         builder.rng_mut().draw_word(),
         "AGG",
         8,
-        Felt::new(FungibleAsset::MAX_AMOUNT),
+        FungibleAsset::MAX_AMOUNT,
         Felt::new(100),
         bridge_account.id(),
         &origin_token_address,

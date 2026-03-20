@@ -48,10 +48,10 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::faucets::{
-    BasicFungibleFaucet,
+use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::metadata::{
+    FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
-    NetworkFungibleFaucet,
     TokenName,
 };
 use miden_standards::account::mint_policies::{
@@ -333,15 +333,14 @@ impl MockChainBuilder {
         token_symbol: &str,
         max_supply: u64,
     ) -> anyhow::Result<Account> {
-        let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
+        let name = TokenName::new(token_symbol)?;
         let token_symbol = TokenSymbol::new(token_symbol)
             .with_context(|| format!("invalid token symbol: {token_symbol}"))?;
-        let max_supply_felt = Felt::try_from(max_supply)?;
         let metadata = FungibleTokenMetadataBuilder::new(
             name,
             token_symbol,
             DEFAULT_FAUCET_DECIMALS,
-            max_supply_felt,
+            max_supply,
         )
         .build()
         .context("failed to create FungibleTokenMetadata")?;
@@ -367,9 +366,8 @@ impl MockChainBuilder {
         max_supply: u64,
         token_supply: Option<u64>,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
-        let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
+        let name = TokenName::new(token_symbol)?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
         let metadata = FungibleTokenMetadataBuilder::new(
@@ -403,9 +401,8 @@ impl MockChainBuilder {
         token_supply: Option<u64>,
         mint_policy: OwnerControlledInitConfig,
     ) -> anyhow::Result<Account> {
-        let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
-        let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
+        let name = TokenName::new(token_symbol)?;
         let token_symbol =
             TokenSymbol::new(token_symbol).context("failed to create token symbol")?;
 
@@ -434,16 +431,17 @@ impl MockChainBuilder {
     /// Adds an existing network fungible faucet account with the given metadata component
     /// (for testing metadata::fungible procedures: owner can update description / logo_uri /
     /// external_link / max supply when mutable).
-    pub fn add_existing_network_faucet_with_metadata_info(
+    pub fn add_existing_network_faucet_with_metadata(
         &mut self,
         owner_account_id: AccountId,
-        metadata: miden_standards::account::faucets::FungibleTokenMetadata,
+        metadata: FungibleTokenMetadata,
     ) -> anyhow::Result<Account> {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Network)
             .with_component(metadata)
             .with_component(NetworkFungibleFaucet)
             .with_component(Ownable2Step::new(owner_account_id))
+            .with_component(OwnerControlled::new(OwnerControlledInitConfig::OwnerOnly))
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(Auth::IncrNonce, account_builder, AccountState::Exists)

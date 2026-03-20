@@ -21,17 +21,16 @@ use miden_protocol::note::{NoteTag, NoteType};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::faucets::{
-    BasicFungibleFaucet,
+use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
+use miden_standards::account::metadata::{
     Description,
     ExternalLink,
     FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
     LogoURI,
-    NetworkFungibleFaucet,
+    TokenMetadata,
     TokenName,
 };
-use miden_standards::account::metadata::TokenMetadata;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
@@ -58,7 +57,6 @@ fn network_faucet_metadata(
     logo_uri: Option<([Word; 7], bool)>,
     external_link: Option<([Word; 7], bool)>,
 ) -> anyhow::Result<FungibleTokenMetadata> {
-    let max_supply = Felt::try_from(max_supply)?;
     let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
     let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
     let token_symbol = TokenSymbol::new(token_symbol)?;
@@ -133,7 +131,7 @@ fn build_faucet_metadata() -> FungibleTokenMetadata {
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
-        Felt::new(1_000),
+        1_000u64,
     )
     .build()
     .unwrap()
@@ -145,7 +143,7 @@ fn build_pol_faucet_metadata() -> FungibleTokenMetadata {
         TokenName::new("POL").unwrap(),
         TokenSymbol::new("POL").unwrap(),
         8,
-        Felt::new(1_000_000),
+        1_000_000u64,
     )
     .build()
     .unwrap()
@@ -203,14 +201,10 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("test name").unwrap();
     let name = token_name.to_words();
 
-    let metadata = FungibleTokenMetadataBuilder::new(
-        token_name,
-        "TST".try_into().unwrap(),
-        2,
-        Felt::new(1_000),
-    )
-    .build()
-    .unwrap();
+    let metadata =
+        FungibleTokenMetadataBuilder::new(token_name, "TST".try_into().unwrap(), 2, 1_000u64)
+            .build()
+            .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -245,7 +239,7 @@ async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
         TokenName::default(),
         "TST".try_into().unwrap(),
         2,
-        Felt::new(1_000),
+        1_000u64,
     )
     .build()
     .unwrap();
@@ -404,7 +398,7 @@ async fn get_mutability_config() -> anyhow::Result<()> {
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
-        Felt::new(1_000),
+        1_000u64,
     )
     .description(Description::new("test").unwrap())
     .is_description_mutable(true)
@@ -453,7 +447,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .description(desc.clone())
             .is_description_mutable(true)
@@ -467,7 +461,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .description(desc)
             .build()
@@ -480,7 +474,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .logo_uri(logo.clone())
             .is_logo_uri_mutable(true)
@@ -494,7 +488,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .logo_uri(logo)
             .build()
@@ -507,7 +501,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .external_link(link.clone())
             .is_external_link_mutable(true)
@@ -521,7 +515,7 @@ async fn is_field_mutable_checks() -> anyhow::Result<()> {
                 TokenName::new("T").unwrap(),
                 "TST".try_into().unwrap(),
                 2,
-                Felt::new(1_000),
+                1_000u64,
             )
             .external_link(link)
             .build()
@@ -566,15 +560,11 @@ fn faucet_with_metadata_storage_layout() {
     let description = Description::new(desc_text).unwrap();
     let desc_words = description.to_words();
 
-    let metadata = FungibleTokenMetadataBuilder::new(
-        token_name,
-        "TST".try_into().unwrap(),
-        8,
-        Felt::new(1_000_000),
-    )
-    .description(description)
-    .build()
-    .unwrap();
+    let metadata =
+        FungibleTokenMetadataBuilder::new(token_name, "TST".try_into().unwrap(), 8, 1_000_000u64)
+            .description(description)
+            .build()
+            .unwrap();
 
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -603,14 +593,10 @@ fn faucet_with_metadata_storage_layout() {
 fn name_32_bytes_accepted() {
     let max_name = "a".repeat(TokenName::MAX_BYTES);
     let token_name = TokenName::new(&max_name).unwrap();
-    let metadata = FungibleTokenMetadataBuilder::new(
-        token_name,
-        "TST".try_into().unwrap(),
-        2,
-        Felt::new(1_000),
-    )
-    .build()
-    .unwrap();
+    let metadata =
+        FungibleTokenMetadataBuilder::new(token_name, "TST".try_into().unwrap(), 2, 1_000u64)
+            .build()
+            .unwrap();
     let account = AccountBuilder::new([1u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .with_auth_component(NoAuth)
@@ -627,10 +613,7 @@ fn name_32_bytes_accepted() {
 #[test]
 fn name_33_bytes_rejected() {
     let result = TokenName::new(&"a".repeat(33));
-    assert!(matches!(
-        result,
-        Err(miden_standards::account::metadata::NameUtf8Error::TooLong(33))
-    ));
+    assert!(matches!(result, Err(miden_standards::errors::NameUtf8Error::TooLong(33))));
 }
 
 #[test]
@@ -642,7 +625,7 @@ fn description_7_words_full_capacity() {
         TokenName::new("T").unwrap(),
         "TST".try_into().unwrap(),
         2,
-        Felt::new(1_000),
+        1_000u64,
     )
     .description(description)
     .build()
@@ -680,7 +663,7 @@ fn verify_faucet_with_max_name_and_description(
         TokenName::new(&max_name).unwrap(),
         symbol.try_into().unwrap(),
         6,
-        Felt::new(max_supply),
+        max_supply,
     )
     .description(description)
     .build()
@@ -743,15 +726,11 @@ async fn basic_faucet_name_readable_from_masm() -> anyhow::Result<()> {
     let token_name = TokenName::new("readable name").unwrap();
     let name = token_name.to_words();
 
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        token_name,
-        "MAS".try_into().unwrap(),
-        10,
-        Felt::new(999_999),
-    )
-    .description(Description::new("readable description").unwrap())
-    .build()
-    .unwrap();
+    let faucet_metadata =
+        FungibleTokenMetadataBuilder::new(token_name, "MAS".try_into().unwrap(), 10, 999_999u64)
+            .description(Description::new("readable description").unwrap())
+            .build()
+            .unwrap();
 
     let account = AccountBuilder::new([3u8; 32])
         .account_type(AccountType::FungibleFaucet)
@@ -789,7 +768,7 @@ async fn network_faucet_name_readable_from_masm() -> anyhow::Result<()> {
         TokenName::new(&max_name).unwrap(),
         "MAS".try_into().unwrap(),
         6,
-        Felt::new(1_000_000),
+        1_000_000u64,
     )
     .description(Description::new("network faucet description").unwrap())
     .build()
@@ -874,7 +853,7 @@ async fn test_field_setter_immutable_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = format!(
@@ -919,7 +898,7 @@ async fn test_field_setter_owner_succeeds(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
@@ -991,7 +970,7 @@ async fn test_field_setter_non_owner_fails(
         args.logo_uri,
         args.external_link,
     )?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let hash = compute_field_hash(&new_data);
@@ -1137,7 +1116,7 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
     let owner = owner_account_id();
 
     let metadata = network_faucet_metadata("MSM", 1000, Some(0), false, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let tx_script_code = r#"
@@ -1170,7 +1149,7 @@ async fn set_max_supply_mutable_owner_succeeds() -> anyhow::Result<()> {
     let new_max_supply: u64 = 2000;
 
     let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let note_script_code = format!(
@@ -1220,7 +1199,7 @@ async fn set_max_supply_mutable_non_owner_fails() -> anyhow::Result<()> {
     let new_max_supply: u64 = 2000;
 
     let metadata = network_faucet_metadata("MSM", 1000, Some(0), true, None, None, None)?;
-    let faucet = builder.add_existing_network_faucet_with_metadata_info(owner, metadata)?;
+    let faucet = builder.add_existing_network_faucet_with_metadata(owner, metadata)?;
     let mock_chain = builder.build()?;
 
     let note_script_code = format!(
