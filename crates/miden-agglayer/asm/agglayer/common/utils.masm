@@ -1,7 +1,7 @@
 # Utility module containing helper procedures for double word handling and byte manipulation.
 
-use miden::protocol::type_aliases::DoubleWord
-use miden::protocol::type_aliases::MemoryAddress
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
 
 # BYTE MANIPULATION
 # =================================================================================================

@@ -18,8 +18,8 @@ use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
-use miden::protocol::type_aliases::DoubleWord
-use miden::protocol::type_aliases::MemoryAddress
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
 
 # ERRORS
 # =================================================================================================
