@@ -14,13 +14,12 @@ use crate::account::faucets::FungibleFaucetError;
 ///
 /// ```
 /// # use miden_protocol::asset::TokenSymbol;
-/// # use miden_protocol::Felt;
-/// # use miden_standards::account::faucets::{
+/// # use miden_standards::account::metadata::{
 /// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
 /// # };
 /// let name = TokenName::new("My Token").unwrap();
 /// let symbol = TokenSymbol::new("MTK").unwrap();
-/// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, Felt::new(1_000_000))
+/// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, 1_000_000)
 ///     .token_supply(Felt::new(100))
 ///     .description(Description::new("A test token").unwrap())
 ///     .logo_uri(LogoURI::new("https://example.com/logo.png").unwrap())
@@ -32,7 +31,7 @@ pub struct FungibleTokenMetadataBuilder {
     name: TokenName,
     symbol: TokenSymbol,
     decimals: u8,
-    max_supply: Felt,
+    max_supply: u64,
     token_supply: Felt,
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
@@ -45,7 +44,16 @@ pub struct FungibleTokenMetadataBuilder {
 
 impl FungibleTokenMetadataBuilder {
     /// Creates a new builder with required fields. Token supply defaults to zero.
-    pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: Felt) -> Self {
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: display name (at most 32 UTF-8 bytes).
+    /// - `symbol`: token symbol.
+    /// - `decimals`: decimal precision; must be in the range `0..=12`.
+    /// - `max_supply`: maximum number of tokens that can ever be minted; must be in the range
+    ///   `0..=FungibleAsset::MAX_AMOUNT` (≤ 2^63 − 1). Expressed as a `u64` rather than a [`Felt`]
+    ///   to avoid accidental out-of-range values.
+    pub fn new(name: TokenName, symbol: TokenSymbol, decimals: u8, max_supply: u64) -> Self {
         Self {
             name,
             symbol,
@@ -112,10 +120,11 @@ impl FungibleTokenMetadataBuilder {
 
     /// Builds [`FungibleTokenMetadata`].
     pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
-        let mut meta = FungibleTokenMetadata::with_supply(
+        let max_supply = Felt::new(self.max_supply);
+        let mut meta = FungibleTokenMetadata::new_validated(
             self.symbol,
             self.decimals,
-            self.max_supply,
+            max_supply,
             self.token_supply,
             self.name,
             self.description,

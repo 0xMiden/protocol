@@ -6,6 +6,8 @@ pub mod standards {
 
 mod code_builder_errors;
 mod name_utf8_error;
+pub mod string_field_error;
 
 pub use code_builder_errors::CodeBuilderError;
 pub use name_utf8_error::NameUtf8Error;
+pub use string_field_error::StringFieldError;
