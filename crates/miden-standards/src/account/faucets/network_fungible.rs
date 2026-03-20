@@ -4,15 +4,17 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
 
-use super::{FungibleFaucetError, FungibleTokenMetadata};
+use super::FungibleFaucetError;
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::metadata::FungibleTokenMetadata;
 use crate::account::mint_policies::OwnerControlled;
 use crate::procedure_digest;
 
@@ -84,7 +86,7 @@ impl NetworkFungibleFaucet {
     /// Checks that the account contains the network fungible faucet interface.
     fn try_from_interface(
         interface: AccountInterface,
-        _storage: &miden_protocol::account::AccountStorage,
+        _storage: &AccountStorage,
     ) -> Result<Self, FungibleFaucetError> {
         if !interface
             .components()
@@ -189,13 +191,12 @@ pub fn create_network_fungible_faucet(
 
 #[cfg(test)]
 mod tests {
-    use miden_protocol::Felt;
     use miden_protocol::account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType};
     use miden_protocol::asset::TokenSymbol;
 
     use super::*;
     use crate::account::access::Ownable2Step;
-    use crate::account::faucets::{FungibleTokenMetadataBuilder, TokenName};
+    use crate::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 
     #[test]
     fn test_create_network_fungible_faucet() {
@@ -212,7 +213,7 @@ mod tests {
             TokenName::new("NET").expect("valid name"),
             TokenSymbol::new("NET").expect("valid symbol"),
             8u8,
-            Felt::new(1_000),
+            1_000u64,
         )
         .build()
         .expect("valid metadata");

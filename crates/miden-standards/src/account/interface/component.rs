@@ -19,7 +19,7 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
-    /// [`FungibleTokenMetadata`][crate::account::faucets::FungibleTokenMetadata] module.
+    /// [`FungibleTokenMetadata`][crate::account::metadata::FungibleTokenMetadata] module.
     FungibleTokenMetadata,
     /// Exposes procedures from the
     /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.

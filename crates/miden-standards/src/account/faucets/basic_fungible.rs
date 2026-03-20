@@ -4,15 +4,17 @@ use miden_protocol::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountStorage,
     AccountStorageMode,
     AccountType,
 };
 
-use super::{FungibleFaucetError, FungibleTokenMetadata};
+use super::FungibleFaucetError;
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 use crate::account::components::basic_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
+use crate::account::metadata::FungibleTokenMetadata;
 use crate::account::mint_policies::AuthControlled;
 use crate::procedure_digest;
 
@@ -89,7 +91,7 @@ impl BasicFungibleFaucet {
     /// Checks that the account contains the basic fungible faucet interface.
     fn try_from_interface(
         interface: AccountInterface,
-        _storage: &miden_protocol::account::AccountStorage,
+        _storage: &AccountStorage,
     ) -> Result<Self, FungibleFaucetError> {
         if !interface.components().contains(&AccountComponentInterface::BasicFungibleFaucet) {
             return Err(FungibleFaucetError::MissingBasicFungibleFaucetInterface);
@@ -214,8 +216,12 @@ mod tests {
         create_basic_fungible_faucet,
     };
     use crate::account::auth::{AuthSingleSig, AuthSingleSigAcl};
-    use crate::account::faucets::{Description, FungibleTokenMetadataBuilder, TokenName};
-    use crate::account::metadata::TokenMetadata;
+    use crate::account::metadata::{
+        Description,
+        FungibleTokenMetadataBuilder,
+        TokenMetadata,
+        TokenName,
+    };
     use crate::account::wallets::BasicWallet;
 
     #[test]
@@ -231,7 +237,7 @@ mod tests {
             183, 204, 149, 90, 166, 68, 100, 73, 106, 168, 125, 237, 138, 16,
         ];
 
-        let max_supply = Felt::new(123);
+        let max_supply = 123u64;
         let token_symbol_string = "POL";
         let token_symbol =
             miden_protocol::asset::TokenSymbol::try_from(token_symbol_string).unwrap();
@@ -327,7 +333,7 @@ mod tests {
             TokenName::new("POL").unwrap(),
             token_symbol,
             10,
-            Felt::new(100),
+            100u64,
         )
         .build()
         .expect("failed to create token metadata");
