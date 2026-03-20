@@ -1,6 +1,7 @@
 use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
+use miden_core::WORD_SIZE;
 use miden_crypto::WordError;
 use miden_protocol_macros::WordWrapper;
 
@@ -13,7 +14,6 @@ use super::{
     Hasher,
     NoteDetails,
     Serializable,
-    WORD_SIZE,
     Word,
     ZERO,
 };
@@ -65,7 +65,7 @@ impl Nullifier {
     ///
     /// Nullifier prefix is defined as the 16 most significant bits of the nullifier value.
     pub fn prefix(&self) -> u16 {
-        (self.as_word()[3].as_int() >> NULLIFIER_PREFIX_SHIFT) as u16
+        (self.as_word()[3].as_canonical_u64() >> NULLIFIER_PREFIX_SHIFT) as u16
     }
 
     /// Creates a Nullifier from a hex string. Assumes that the string starts with "0x" and
@@ -78,8 +78,6 @@ impl Nullifier {
 
     #[cfg(any(feature = "testing", test))]
     pub fn dummy(n: u64) -> Self {
-        use miden_core::FieldElement;
-
         Self(Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]))
     }
 }
@@ -116,6 +114,10 @@ impl From<&NoteDetails> for Nullifier {
 impl Serializable for Nullifier {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write_bytes(&self.0.to_bytes());
+    }
+
+    fn get_size_hint(&self) -> usize {
+        Word::SERIALIZED_SIZE
     }
 }
 

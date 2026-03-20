@@ -4,7 +4,7 @@ use std::path::Path;
 
 use fs_err as fs;
 use miden_assembly::diagnostics::{IntoDiagnostic, NamedSource, Result, WrapErr};
-use miden_assembly::utils::Serializable;
+use miden_assembly::serde::Serializable;
 use miden_assembly::{Assembler, Library, Report};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::account::{
@@ -15,6 +15,7 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
+use miden_standards::account::mint_policies::OwnerControlled;
 
 // CONSTANTS
 // ================================================================================================
@@ -241,19 +242,33 @@ fn generate_agglayer_constants(
 
     // Create a dummy metadata to be able to create components. We only interested in the resulting
     // code commitment, so it doesn't matter what does this metadata holds.
-    let dummy_metadata = AccountComponentMetadata::new("dummy").with_supports_all_types();
+    let dummy_metadata = AccountComponentMetadata::new("dummy", AccountType::all());
 
     // iterate over the AggLayer Bridge and AggLayer Faucet libraries
     for (lib_name, content_library) in component_libraries {
         let agglayer_component =
             AccountComponent::new(content_library, vec![], dummy_metadata.clone()).unwrap();
 
+        // The faucet account includes Ownable2Step and OwnerControlled components
+        // alongside the agglayer faucet component, since network_fungible::mint_and_send
+        // requires these for access control.
+        let mut components: Vec<AccountComponent> =
+            vec![AccountComponent::from(NoAuth), agglayer_component];
+        if lib_name == "faucet" {
+            // Use a dummy owner for commitment computation - the actual owner is set at runtime
+            let dummy_owner = miden_protocol::account::AccountId::try_from(
+                miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_NETWORK_ACCOUNT_IMMUTABLE_CODE,
+            )
+            .unwrap();
+            components.push(AccountComponent::from(
+                miden_standards::account::access::Ownable2Step::new(dummy_owner),
+            ));
+            components.push(AccountComponent::from(OwnerControlled::owner_only()));
+        }
+
         // use `AccountCode` to merge codes of agglayer and authentication components
-        let account_code = AccountCode::from_components(
-            &[AccountComponent::from(NoAuth), agglayer_component],
-            AccountType::FungibleFaucet,
-        )
-        .expect("account code creation failed");
+        let account_code = AccountCode::from_components(&components, AccountType::FungibleFaucet)
+            .expect("account code creation failed");
 
         let code_commitment = account_code.commitment();
 
@@ -368,7 +383,6 @@ fn generate_canonical_zeros(target_dir: &Path) -> Result<()> {
         let zero_as_u32_vec = zero
             .chunks(4)
             .map(|chunk_u32| u32::from_le_bytes(chunk_u32.try_into().unwrap()).to_string())
-            .rev()
             .collect::<Vec<String>>();
 
         zero_constants.push_str(&format!(
@@ -390,7 +404,7 @@ pub proc load_zeros_to_memory\n",
     );
 
     for zero_index in 0..32 {
-        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_L.ZERO_{zero_index}_R exec.mem_store_double_word dropw dropw add.8\n"));
+        zero_constants.push_str(&format!("\tpush.ZERO_{zero_index}_R.ZERO_{zero_index}_L exec.mem_store_double_word dropw dropw add.8\n"));
     }
 
     zero_constants.push_str("\tdrop\nend\n");

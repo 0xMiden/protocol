@@ -5,7 +5,7 @@ use agglayer::common::asset_conversion
 use agglayer::common::eth_address
 use agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
@@ -141,7 +141,8 @@ const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
 const MINT_NOTE_STORAGE_ATTACHMENT = 804
 const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT = 816
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -205,7 +206,7 @@ pub proc claim
     # => [pad(16)]
 
     exec.get_destination_account_id_data
-    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
+    loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [pad(16)]
 
     # Validate CLAIM data
@@ -223,18 +224,18 @@ pub proc claim
     # => [origin_token_addr(5), pad(16)]
 
     exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     # Verify faucet_mint_amount matches the leaf data amount
     exec.verify_claim_amount
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
     
     # Build MINT output note targeting the aggfaucet
-    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
-    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
+    loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     exec.build_mint_output_note
     # => [pad(16)]
@@ -431,7 +432,7 @@ end
 #! 3. Calls `verify_u256_to_native_amount_conversion` to assert that:
 #!        faucet_mint_amount == floor(raw_amount / 10^scale)
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
@@ -445,14 +446,14 @@ proc verify_claim_amount
     movup.9 movup.9
     padw padw
     movup.9 movup.9
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     # Step 2: FPI call to faucet's get_scale procedure
     procref.agglayer_faucet::get_scale
-    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [PROC_MAST_ROOT(4), faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT(4), pad(16)]
 
     exec.tx::execute_foreign_procedure
     # => [scale, pad(15)]
@@ -670,10 +671,9 @@ proc set_and_check_claimed
     mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
     # => []
 
-    # Hash the two elements using RPO to produce the nullifier
-    # TODO: Replace rpo256::hash_elements with poseidon2::hash_elements when VM is updated
+    # Hash the two elements using Poseidon2 to produce the nullifier
     push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [NULLIFIER]
 
     exec.assert_claim_not_spent
@@ -706,10 +706,8 @@ proc assert_claim_not_spent(nullifier: BeWord)
     exec.native_account::set_map_item
     # => [OLD_VALUE]
 
-    drop drop drop
-    # => [old_is_claimed]
-
-    assertz.err=ERR_CLAIM_ALREADY_SPENT
+    # OLD_VALUE[0] is the claimed flag: 0 if unclaimed, 1 if already claimed
+    assertz.err=ERR_CLAIM_ALREADY_SPENT drop drop drop
     # => []
 end
 
@@ -736,10 +734,10 @@ end
 #! Extracts the destination account ID as address[5] from memory.
 #!
 #! This procedure reads the destination address from the leaf data and converts it from
-#! Ethereum address format to AccountId format (prefix, suffix).
+#! Ethereum address format to AccountId format (suffix, prefix).
 #!
 #! Inputs:  []
-#! Outputs: [prefix, suffix]
+#! Outputs: [suffix, prefix]
 #!
 #! Invocation: exec
 proc get_destination_account_id_data
@@ -751,7 +749,7 @@ proc get_destination_account_id_data
     # => [address[5]]
 
     exec.eth_address::to_account_id
-    # => [prefix, suffix]
+    # => [suffix, prefix]
 end
 
 # Inputs: []
@@ -790,7 +788,7 @@ end
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Create the output note, and set the attachment.
 #!
-#! Inputs:  [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -821,21 +819,21 @@ end
 #! - [16]: account_id_suffix (destination account suffix)
 #! - [17]: account_id_prefix (destination account prefix)
 #!
-#! Inputs:  [destination_id_prefix, destination_id_suffix]
+#! Inputs:  [destination_id_suffix, destination_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
     # Write P2ID storage items first (before prefix is consumed): [16..17]
     # Write destination_id_suffix [16]
-    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT
-    # => [destination_id_prefix, destination_id_suffix]
+    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
+    # => [destination_id_suffix, destination_id_prefix]
 
     # Write destination_id_prefix [17]
-    dup push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
-    # => [destination_id_prefix, destination_id_suffix]
+    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # => [destination_id_suffix, destination_id_prefix]
 
-    swap drop
+    drop
     # => [destination_id_prefix]
 
     # Get the native amount from the pre-computed miden_claim_amount
@@ -867,21 +865,21 @@ proc write_mint_note_storage
     # => []
 
     # ATTACHMENT = empty word [4..7]
-    padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
+    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
     # => []
 
     # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => []
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
     # => []
 end
 

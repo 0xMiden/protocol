@@ -1,3 +1,4 @@
+use miden_protocol::Felt;
 use miden_protocol::account::{
     AccountCode,
     AccountDelta,
@@ -5,7 +6,6 @@ use miden_protocol::account::{
     AccountVaultDelta,
     PartialAccount,
 };
-use miden_protocol::{Felt, FieldElement, ZERO};
 
 use crate::host::storage_delta_tracker::StorageDeltaTracker;
 
@@ -44,7 +44,7 @@ impl AccountDeltaTracker {
             storage: StorageDeltaTracker::new(account),
             vault: AccountVaultDelta::default(),
             code,
-            nonce_delta: ZERO,
+            nonce_delta: Felt::ZERO,
         }
     }
 

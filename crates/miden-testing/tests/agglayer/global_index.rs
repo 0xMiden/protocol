@@ -63,7 +63,7 @@ async fn test_process_global_index_mainnet_returns_leaf_index() -> anyhow::Resul
 
     let exec_output = execute_program_with_default_host(program, None).await?;
 
-    assert_eq!(exec_output.stack[0].as_int(), 2);
+    assert_eq!(exec_output.stack[0].as_canonical_u64(), 2);
     Ok(())
 }
 
@@ -130,8 +130,8 @@ async fn test_process_global_index_rollup_returns_leaf_and_rollup_index() -> any
 
     // process_global_index_rollup returns [leaf_index, rollup_index]
     // stack[0] = leaf_index (top), stack[1] = rollup_index
-    assert_eq!(exec_output.stack[0].as_int(), 42, "leaf_index should be 42");
-    assert_eq!(exec_output.stack[1].as_int(), 5, "rollup_index should be 5");
+    assert_eq!(exec_output.stack[0].as_canonical_u64(), 42, "leaf_index should be 42");
+    assert_eq!(exec_output.stack[1].as_canonical_u64(), 5, "rollup_index should be 5");
     Ok(())
 }
 

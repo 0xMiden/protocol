@@ -7,8 +7,7 @@ use miden_agglayer::errors::{
     ERR_X_TOO_LARGE,
 };
 use miden_agglayer::eth_types::amount::EthAmount;
-use miden_agglayer::utils;
-use miden_crypto::FieldElement;
+use miden_processor::utils::packed_u32_elements_to_bytes;
 use miden_protocol::Felt;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::errors::MasmError;
@@ -52,7 +51,7 @@ async fn test_scale_up_helper(
         .to_elements()
         .into_iter()
         .rev()
-        .map(|f| Felt::new((f.as_int() as u32).swap_bytes() as u64))
+        .map(|f| Felt::new((f.as_canonical_u64() as u32).swap_bytes() as u64))
         .collect();
 
     assert_eq!(actual_felts, expected_felts);
@@ -135,20 +134,20 @@ fn build_scale_down_script(x: EthAmount, scale_exp: u32, y: u64) -> String {
         "#,
         y,
         scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
+        x_felts[7].as_canonical_u64(),
+        x_felts[6].as_canonical_u64(),
+        x_felts[5].as_canonical_u64(),
+        x_felts[4].as_canonical_u64(),
+        x_felts[3].as_canonical_u64(),
+        x_felts[2].as_canonical_u64(),
+        x_felts[1].as_canonical_u64(),
+        x_felts[0].as_canonical_u64(),
     )
 }
 
 /// Assert that scaling down succeeds with the correct result
 async fn assert_scale_down_ok(x: EthAmount, scale: u32) -> anyhow::Result<u64> {
-    let y = x.scale_to_token_amount(scale).unwrap().as_int();
+    let y = x.scale_to_token_amount(scale).unwrap().as_canonical_u64();
     let script = build_scale_down_script(x, scale, y);
     let output = execute_masm_script(&script).await?;
     assert_eq!(output.stack.as_slice(), &[Felt::ZERO; 16], "expected empty stack");
@@ -287,7 +286,7 @@ async fn test_scale_down_remainder_exactly_scale_fails() {
     let x = EthAmount::from_u256(U256::from(6u64 * scale));
 
     // Calculate the correct y using scale_to_token_amount
-    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
+    let correct_y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
     assert_eq!(correct_y, 6);
 
     // Providing wrong_y = correct_y - 1 should fail with ERR_REMAINDER_TOO_LARGE
@@ -307,7 +306,7 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
     // y = x / 1e10 = 10000000000 (100 * 1e8)
     let x = EthAmount::from_uint_str("100000000000000000000").unwrap();
     let scale_exp = 10u32;
-    let y = x.scale_to_token_amount(scale_exp).unwrap().as_int();
+    let y = x.scale_to_token_amount(scale_exp).unwrap().as_canonical_u64();
 
     let x_felts = x.to_elements();
 
@@ -336,20 +335,43 @@ async fn test_verify_scale_down_inline() -> anyhow::Result<()> {
         "#,
         y,
         scale_exp,
-        x_felts[7].as_int(),
-        x_felts[6].as_int(),
-        x_felts[5].as_int(),
-        x_felts[4].as_int(),
-        x_felts[3].as_int(),
-        x_felts[2].as_int(),
-        x_felts[1].as_int(),
-        x_felts[0].as_int(),
+        x_felts[7].as_canonical_u64(),
+        x_felts[6].as_canonical_u64(),
+        x_felts[5].as_canonical_u64(),
+        x_felts[4].as_canonical_u64(),
+        x_felts[3].as_canonical_u64(),
+        x_felts[2].as_canonical_u64(),
+        x_felts[1].as_canonical_u64(),
+        x_felts[0].as_canonical_u64(),
     );
 
     // Execute the script - verify_u256_to_native_amount_conversion panics on invalid
     // conversions, so successful execution is sufficient validation
     execute_masm_script(&script_code).await?;
 
+    Ok(())
+}
+
+/// Exercises u128_sub_no_underflow when x > 2^64, so x has distinct high limbs (x2 != x3).
+///
+/// The u128 subtraction splits each 128-bit operand into two 64-bit halves. This test
+/// ensures the high-half subtraction and borrow propagation work correctly when x_high
+/// is non-zero.
+#[tokio::test]
+async fn test_scale_down_high_limb_subtraction() -> anyhow::Result<()> {
+    let x_val = U256::from_dec_str("18999999999999999999").unwrap();
+
+    // Verify the u32 limb structure that makes this test meaningful:
+    //   x = x0 + x1*2^32 + x2*2^64 + x3*2^96
+    // x2 and x3 must differ - otherwise the high subtraction is trivially correct
+    // regardless of limb ordering.
+    let x2 = ((x_val >> 64) & U256::from(u32::MAX)).as_u32();
+    let x3 = ((x_val >> 96) & U256::from(u32::MAX)).as_u32();
+    assert_eq!(x2, 1, "x2 must be non-zero for the high subtraction to be non-trivial");
+    assert_eq!(x3, 0, "x3 must differ from x2");
+
+    let x = EthAmount::from_u256(x_val);
+    assert_scale_down_ok(x, 18).await?;
     Ok(())
 }
 
@@ -365,7 +387,7 @@ fn test_felts_to_u256_bytes_sequential_values() {
         Felt::new(7),
         Felt::new(8),
     ];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
 
     // Verify the byte layout: limbs are processed in little-endian order, each as little-endian u32
@@ -380,13 +402,13 @@ fn test_felts_to_u256_bytes_sequential_values() {
 fn test_felts_to_u256_bytes_edge_cases() {
     // Test case 1: All zeros (minimum)
     let limbs = [Felt::new(0); 8];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 0));
 
     // Test case 2: All max u32 values (maximum)
     let limbs = [Felt::new(u32::MAX as u64); 8];
-    let result = utils::felts_to_bytes(&limbs);
+    let result = packed_u32_elements_to_bytes(&limbs);
     assert_eq!(result.len(), 32);
     assert!(result.iter().all(|&b| b == 255));
 }

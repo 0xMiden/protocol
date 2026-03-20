@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, Word};
+use miden_core::{Felt, Word};
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
@@ -15,7 +15,9 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::errors::AccountIdError;
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::faucets::{FungibleFaucetError, TokenMetadata};
+use miden_standards::account::mint_policies::OwnerControlled;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -57,18 +59,13 @@ static CONVERSION_INFO_2_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(||
         .expect("conversion info 2 storage slot name should be valid")
 });
 static METADATA_HASH_LO_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::metadata_hash_lo")
+    StorageSlotName::new("agglayer::faucet::metadata_hash_lo")
         .expect("metadata hash lo storage slot name should be valid")
 });
 static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::agglayer::faucet::metadata_hash_hi")
+    StorageSlotName::new("agglayer::faucet::metadata_hash_hi")
         .expect("metadata hash hi storage slot name should be valid")
 });
-static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::access::ownable::owner_config")
-        .expect("owner config storage slot name should be valid")
-});
-
 /// An [`AccountComponent`] implementing the AggLayer Faucet.
 ///
 /// It reexports the procedures from `agglayer::faucet`. When linking against this
@@ -87,11 +84,17 @@ static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 ///   origin network + scale.
 /// - [`Self::metadata_hash_lo_slot`]: Stores the first 4 u32 felts of the metadata hash.
 /// - [`Self::metadata_hash_hi_slot`]: Stores the last 4 u32 felts of the metadata hash.
-/// - [`Self::owner_config_slot`]: Stores the owner account ID (bridge) for MINT note authorization.
+///
+/// ## Required Companion Components
+///
+/// This component re-exports `network_fungible::mint_and_send`, which requires:
+/// - [`Ownable2Step`]: Provides ownership data (bridge account ID as owner).
+/// - [`miden_standards::account::mint_policies::OwnerControlled`]: Provides mint policy management.
+///
+/// These must be added as separate components when building the faucet account.
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
-    bridge_account_id: AccountId,
     origin_token_address: EthAddress,
     origin_network: u32,
     scale: u8,
@@ -115,7 +118,6 @@ impl AggLayerFaucet {
         decimals: u8,
         max_supply: Felt,
         token_supply: Felt,
-        bridge_account_id: AccountId,
         origin_token_address: EthAddress,
         origin_network: u32,
         scale: u8,
@@ -124,7 +126,6 @@ impl AggLayerFaucet {
         let metadata = TokenMetadata::with_supply(symbol, decimals, max_supply, token_supply)?;
         Ok(Self {
             metadata,
-            bridge_account_id,
             origin_token_address,
             origin_network,
             scale,
@@ -168,10 +169,10 @@ impl AggLayerFaucet {
     pub fn metadata_hash_hi_slot() -> &'static StorageSlotName {
         &METADATA_HASH_HI_SLOT_NAME
     }
-
-    /// Storage slot name for the owner account ID (bridge) used by `ownable::verify_owner`.
+    /// Storage slot name for the owner account ID (bridge), provided by the
+    /// [`Ownable2Step`] companion component.
     pub fn owner_config_slot() -> &'static StorageSlotName {
-        &OWNER_CONFIG_SLOT_NAME
+        Ownable2Step::slot_name()
     }
 
     /// Extracts the token metadata from the corresponding storage slot of the provided account.
@@ -191,22 +192,20 @@ impl AggLayerFaucet {
         TokenMetadata::try_from(metadata_word).map_err(AgglayerFaucetError::FungibleFaucetError)
     }
 
-    /// Extracts the bridge account ID from the owner config storage slot of the provided account.
+    /// Extracts the bridge account ID from the [`Ownable2Step`] owner config storage slot
+    /// of the provided account.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerFaucet`] account.
-    pub fn bridge_account_id(faucet_account: &Account) -> Result<AccountId, AgglayerFaucetError> {
+    pub fn owner_account_id(faucet_account: &Account) -> Result<AccountId, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
-        let owner_word = faucet_account
-            .storage()
-            .get_item(&OWNER_CONFIG_SLOT_NAME)
-            .expect("should be able to read owner config slot");
-        AccountId::try_from([owner_word[3], owner_word[2]])
-            .map_err(AgglayerFaucetError::AccountIdError)
+        let ownership = Ownable2Step::try_from_storage(faucet_account.storage())
+            .map_err(AgglayerFaucetError::Ownable2StepError)?;
+        ownership.owner().ok_or(AgglayerFaucetError::OwnershipRenounced)
     }
 
     /// Extracts the origin token address from the corresponding storage slot of the provided
@@ -235,7 +234,11 @@ impl AggLayerFaucet {
         let addr_bytes_vec = conversion_info_1
             .iter()
             .chain([&conversion_info_2[0]])
-            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .flat_map(|felt| {
+                u32::try_from(felt.as_canonical_u64())
+                    .expect("Felt value does not fit into u32")
+                    .to_le_bytes()
+            })
             .collect::<Vec<u8>>();
 
         Ok(EthAddress::new(
@@ -261,7 +264,10 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[1].try_into().expect("origin network ID should fit into u32"))
+        Ok(conversion_info_2[1]
+            .as_canonical_u64()
+            .try_into()
+            .expect("origin network ID should fit into u32"))
     }
 
     /// Extracts the scaling factor in form of the u8 from the corresponding storage slot of the
@@ -280,7 +286,10 @@ impl AggLayerFaucet {
             .get_item(&CONVERSION_INFO_2_SLOT_NAME)
             .expect("should be able to read the second conversion info slot");
 
-        Ok(conversion_info_2[2].try_into().expect("scaling factor should fit into u8"))
+        Ok(conversion_info_2[2]
+            .as_canonical_u64()
+            .try_into()
+            .expect("scaling factor should fit into u8"))
     }
 
     // HELPER FUNCTIONS
@@ -352,7 +361,11 @@ impl AggLayerFaucet {
             &*CONVERSION_INFO_2_SLOT_NAME,
             &*METADATA_HASH_LO_SLOT_NAME,
             &*METADATA_HASH_HI_SLOT_NAME,
-            &*OWNER_CONFIG_SLOT_NAME,
+            TokenMetadata::metadata_slot(),
+            Ownable2Step::slot_name(),
+            OwnerControlled::active_policy_proc_root_slot(),
+            OwnerControlled::allowed_policy_proc_roots_slot(),
+            OwnerControlled::policy_authority_slot(),
         ]
     }
 }
@@ -381,22 +394,12 @@ impl From<AggLayerFaucet> for AccountComponent {
             Word::new([hash_elements[4], hash_elements[5], hash_elements[6], hash_elements[7]]),
         );
 
-        // Owner config slot: bridge account ID as the owner for MINT note authorization
-        let owner_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            faucet.bridge_account_id.suffix(),
-            faucet.bridge_account_id.prefix().as_felt(),
-        ]);
-        let owner_slot = StorageSlot::with_value(OWNER_CONFIG_SLOT_NAME.clone(), owner_word);
-
         let agglayer_storage_slots = vec![
             metadata_slot,
             conversion_slot1,
             conversion_slot2,
             metadata_hash_lo,
             metadata_hash_hi,
-            owner_slot,
         ];
         agglayer_faucet_component(agglayer_storage_slots)
     }
@@ -418,16 +421,10 @@ pub enum AgglayerFaucetError {
     FungibleFaucetError(#[source] FungibleFaucetError),
     #[error("account ID error")]
     AccountIdError(#[source] AccountIdError),
-}
-
-// FAUCET REGISTRY HELPERS
-// ================================================================================================
-
-/// Creates a faucet registry map key from a faucet account ID.
-///
-/// The key format is `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
-pub fn faucet_registry_key(faucet_id: AccountId) -> Word {
-    Word::new([Felt::ZERO, Felt::ZERO, faucet_id.suffix(), faucet_id.prefix().as_felt()])
+    #[error("ownable2step error")]
+    Ownable2StepError(#[source] miden_standards::account::access::Ownable2StepError),
+    #[error("faucet ownership has been renounced")]
+    OwnershipRenounced,
 }
 
 // FAUCET CONVERSION STORAGE HELPERS
@@ -473,9 +470,8 @@ fn agglayer_faucet_conversion_slots(
 /// validates CLAIM notes against a bridge MMR account before minting assets.
 fn agglayer_faucet_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_faucet_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::faucet")
-        .with_description("AggLayer faucet component with bridge validation")
-        .with_supported_type(AccountType::FungibleFaucet);
+    let metadata = AccountComponentMetadata::new("agglayer::faucet", [AccountType::FungibleFaucet])
+        .with_description("AggLayer faucet component with bridge validation");
 
     AccountComponent::new(library, storage_slots, metadata).expect(
         "agglayer_faucet component should satisfy the requirements of a valid account component",

@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 
-use miden_processor::AdviceMutation;
+use miden_processor::advice::AdviceMutation;
 
-use crate::account::{AccountHeader, AccountId, PartialAccount};
-use crate::block::account_tree::{AccountWitness, account_id_to_smt_key};
+use crate::account::{AccountHeader, PartialAccount};
+use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::crypto::SequentialCommit;
 use crate::crypto::merkle::InnerNodeInfo;
 use crate::note::NoteAttachmentContent;
@@ -15,7 +15,7 @@ use crate::transaction::{
     TransactionKernel,
 };
 use crate::vm::AdviceInputs;
-use crate::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
+use crate::{EMPTY_WORD, Felt, Word, ZERO};
 
 // TRANSACTION ADVICE INPUTS
 // ================================================================================================
@@ -56,8 +56,8 @@ impl TransactionAdviceInputs {
         // If a seed was provided, extend the map appropriately.
         if let Some(seed) = tx_inputs.account().seed() {
             // ACCOUNT_ID |-> ACCOUNT_SEED
-            let account_id_key = Self::account_id_map_key(partial_native_acc.id());
-            inputs.add_map_entry(account_id_key, seed.to_vec());
+            let account_id_key = AccountIdKey::from(partial_native_acc.id());
+            inputs.add_map_entry(account_id_key.as_word(), seed.to_vec());
         }
 
         // if the account is new, insert the storage map entries into the advice provider.
@@ -104,14 +104,6 @@ impl TransactionAdviceInputs {
     // PUBLIC UTILITIES
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the advice map key where:
-    /// - the seed for native accounts is stored.
-    /// - the account header for foreign accounts is stored.
-    pub fn account_id_map_key(id: AccountId) -> Word {
-        // The format is equivalent to the SMT key format, so we avoid defining it twice.
-        account_id_to_smt_key(id)
-    }
-
     // MUTATORS
     // --------------------------------------------------------------------------------------------
 
@@ -131,11 +123,11 @@ impl TransactionAdviceInputs {
 
             // for foreign accounts, we need to insert the id to state mapping
             // NOTE: keep this in sync with the account::load_from_advice procedure
-            let account_id_key = Self::account_id_map_key(foreign_acc.id());
+            let account_id_key = AccountIdKey::from(foreign_acc.id());
             let header = AccountHeader::from(foreign_acc.account());
 
             // ACCOUNT_ID |-> [ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
-            self.add_map_entry(account_id_key, header.to_elements());
+            self.add_map_entry(account_id_key.as_word(), header.to_elements());
         }
     }
 
@@ -178,13 +170,13 @@ impl TransactionAdviceInputs {
         self.extend_stack(header.validator_key().to_commitment());
         self.extend_stack([
             header.block_num().into(),
-            header.version().into(),
-            header.timestamp().into(),
+            Felt::from(header.version()),
+            Felt::from(header.timestamp()),
             ZERO,
         ]);
         self.extend_stack([
             ZERO,
-            header.fee_parameters().verification_base_fee().into(),
+            Felt::from(header.fee_parameters().verification_base_fee()),
             header.fee_parameters().native_asset_id().suffix(),
             header.fee_parameters().native_asset_id().prefix().as_felt(),
         ]);
@@ -282,13 +274,20 @@ impl TransactionAdviceInputs {
 
         // populate Merkle store and advice map with nodes info needed to access storage map entries
         self.extend_merkle_store(account.storage().inner_nodes());
-        self.extend_map(account.storage().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account
+                .storage()
+                .leaves()
+                .map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
 
         // --- account vault ------------------------------------------------------
 
         // populate Merkle store and advice map with nodes info needed to access vault assets
         self.extend_merkle_store(account.vault().inner_nodes());
-        self.extend_map(account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements())));
+        self.extend_map(
+            account.vault().leaves().map(|leaf| (leaf.hash(), leaf.to_elements().collect())),
+        );
     }
 
     /// Adds an account witness to the advice inputs.
@@ -298,7 +297,7 @@ impl TransactionAdviceInputs {
     fn add_account_witness(&mut self, witness: &AccountWitness) {
         // populate advice map with the account's leaf
         let leaf = witness.leaf();
-        self.add_map_entry(leaf.hash(), leaf.to_elements());
+        self.add_map_entry(leaf.hash(), leaf.to_elements().collect());
 
         // extend the merkle store and map with account witnesses merkle path
         self.extend_merkle_store(witness.authenticated_nodes());
@@ -312,13 +311,12 @@ impl TransactionAdviceInputs {
     /// The advice provider is populated with:
     ///
     /// - For each note:
-    ///     - The note's details (serial number, script root, and its input / assets commitment).
+    ///     - The note's details (serial number, script root, and its storage / assets commitment).
     ///     - The note's private arguments.
-    ///     - The note's public metadata.
-    ///     - The note's public inputs data. Prefixed by its length and padded to an even word
-    ///       length.
-    ///     - The note's asset padded. Prefixed by its length and padded to an even word length.
-    ///     - The note's script MAST forest's advice map inputs
+    ///     - The note's public metadata (sender account ID, note type, note tag, attachment kind /
+    ///       scheme and the attachment content).
+    ///     - The note's storage (unpadded).
+    ///     - The note's assets (key and value words).
     ///     - For authenticated notes (determined by the `is_authenticated` flag):
     ///         - The note's authentication path against its block's note tree.
     ///         - The block number, sub commitment, note root.
@@ -340,7 +338,7 @@ impl TransactionAdviceInputs {
             // recipient storage
             self.add_map_entry(recipient.storage().commitment(), recipient.storage().to_elements());
             // assets commitments
-            self.add_map_entry(assets.commitment(), assets.to_padded_assets());
+            self.add_map_entry(assets.commitment(), assets.to_elements());
             // array attachments
             if let NoteAttachmentContent::Array(array_attachment) =
                 note.metadata().attachment().content()
@@ -357,11 +355,11 @@ impl TransactionAdviceInputs {
             note_data.extend(*recipient.storage().commitment());
             note_data.extend(*assets.commitment());
             note_data.extend(*note_arg);
-            note_data.extend(note.metadata().to_header_word());
             note_data.extend(note.metadata().to_attachment_word());
-            note_data.push(recipient.storage().num_items().into());
-            note_data.push((assets.num_assets() as u32).into());
-            note_data.extend(assets.to_padded_assets());
+            note_data.extend(note.metadata().to_header_word());
+            note_data.push(Felt::from(recipient.storage().num_items()));
+            note_data.push(Felt::from(assets.num_assets() as u32));
+            note_data.extend(assets.to_elements());
 
             // authentication vs unauthenticated
             match input_note {
@@ -385,7 +383,7 @@ impl TransactionAdviceInputs {
                     note_data.push(block_num.into());
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
-                    note_data.push(proof.location().node_index_in_block().into());
+                    note_data.push(Felt::from(proof.location().node_index_in_block()));
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag

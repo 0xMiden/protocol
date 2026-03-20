@@ -4,7 +4,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::utils::felts_to_bytes;
 use miden_agglayer::{
     AggLayerBridge,
     ExitRoot,
@@ -14,12 +13,12 @@ use miden_agglayer::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
 use miden_crypto::Felt;
+use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_testing::{Auth, MockChain};
 use miden_tx::utils::hex_to_bytes;
@@ -55,13 +54,15 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (note sender)
     // --------------------------------------------------------------------------------------------
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -82,7 +83,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
 
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
 
     // EXECUTE UPDATE_GER NOTE AGAINST BRIDGE ACCOUNT
@@ -144,7 +145,7 @@ async fn compute_ger() -> anyhow::Result<()> {
             .iter()
             .chain(rollup_felts.iter())
             .enumerate()
-            .map(|(idx, f)| format!("push.{} mem_store.{}", f.as_int(), idx))
+            .map(|(idx, f)| format!("push.{} mem_store.{}", f.as_canonical_u64(), idx))
             .collect();
         let mem_init_code = mem_init.join("\n");
 
@@ -212,22 +213,22 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
     let expected_ger_felts: [Felt; 8] = expected_ger_preimage.digest().as_ref().try_into().unwrap();
 
-    let ger_bytes: [u8; 32] = felts_to_bytes(&expected_ger_felts).try_into().unwrap();
+    let ger_bytes: [u8; 32] = packed_u32_elements_to_bytes(&expected_ger_felts).try_into().unwrap();
 
     let ger = ExitRoot::from(ger_bytes);
     // sanity check
     assert_eq!(ger.to_elements(), expected_ger_felts);
 
     // Convert exit roots to packed u32 felts for memory initialization
-    let mainnet_felts = bytes_to_packed_u32_felts(&mainnet_exit_root);
-    let rollup_felts = bytes_to_packed_u32_felts(&rollup_exit_root);
+    let mainnet_felts = bytes_to_packed_u32_elements(&mainnet_exit_root);
+    let rollup_felts = bytes_to_packed_u32_elements(&rollup_exit_root);
 
     // Build memory initialization: mainnet at ptr 0, rollup at ptr 8
     let mem_init: Vec<String> = mainnet_felts
         .iter()
         .chain(rollup_felts.iter())
         .enumerate()
-        .map(|(i, f)| format!("push.{} mem_store.{}", f.as_int(), i))
+        .map(|(i, f)| format!("push.{} mem_store.{}", f.as_canonical_u64(), i))
         .collect();
     let mem_init_code = mem_init.join("\n");
 

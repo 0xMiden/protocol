@@ -107,8 +107,8 @@ The encryption key routing parameter enables secure note payload encryption by a
 The supported **encryption schemes** are:
 - `X25519_XChaCha20Poly1305`: Curve25519-based key exchange with XChaCha20-Poly1305 authenticated encryption
 - `K256_XChaCha20Poly1305`: secp256k1-based key exchange with XChaCha20-Poly1305 authenticated encryption
-- `X25519_AeadRpo`: Curve25519-based key exchange with RPO-based authenticated encryption
-- `K256_AeadRpo`: secp256k1-based key exchange with RPO-based authenticated encryption
+- `X25519_AeadPoseidon2`: Curve25519-based key exchange with Poseidon2-based authenticated encryption
+- `K256_AeadPoseidon2`: secp256k1-based key exchange with Poseidon2-based authenticated encryption
 
 The encryption key is optional in an address. If not provided, senders may use alternative encryption mechanisms or send unencrypted notes.
 

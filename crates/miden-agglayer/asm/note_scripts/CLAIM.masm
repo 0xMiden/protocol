@@ -2,7 +2,7 @@ use agglayer::bridge::bridge_in -> bridge
 use miden::protocol::active_note
 use miden::protocol::note
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::standards::attachments::network_account_target
 
@@ -54,7 +54,7 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 proc write_claim_data_into_advice_map_by_key
     # 1) Get LEAF_DATA_KEY
     push.LEAF_DATA_SIZE push.LEAF_DATA_START_PTR
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [LEAF_DATA_KEY]
 
     push.LEAF_DATA_SIZE add.LEAF_DATA_START_PTR push.LEAF_DATA_START_PTR
@@ -69,7 +69,7 @@ proc write_claim_data_into_advice_map_by_key
 
     # 2) Get PROOF_DATA_KEY
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
     push.PROOF_DATA_SIZE push.PROOF_DATA_START_PTR

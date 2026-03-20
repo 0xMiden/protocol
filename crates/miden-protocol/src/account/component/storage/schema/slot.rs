@@ -1,14 +1,18 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 
-use miden_core::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
-
 use super::super::type_registry::{SchemaRequirement, SchemaType};
 use super::super::{InitStorageData, StorageValueName};
 use super::{MapSlotSchema, ValueSlotSchema, WordSchema};
 use crate::account::{StorageSlot, StorageSlotName};
 use crate::errors::ComponentMetadataError;
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // STORAGE SLOT SCHEMA
 // ================================================================================================

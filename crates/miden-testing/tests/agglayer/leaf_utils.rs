@@ -5,11 +5,11 @@ use alloc::vec::Vec;
 
 use miden_agglayer::agglayer_library;
 use miden_agglayer::claim_note::Keccak256Output;
-use miden_agglayer::utils::felts_to_bytes;
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
+use miden_processor::utils::packed_u32_elements_to_bytes;
 use miden_protocol::{Felt, Word};
 use miden_tx::utils::hex_to_bytes;
 
@@ -25,7 +25,7 @@ use super::test_utils::{
 fn felts_to_le_bytes(limbs: &[Felt]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(limbs.len() * 4);
     for limb in limbs.iter() {
-        let u32_value = limb.as_int() as u32;
+        let u32_value = limb.as_canonical_u64() as u32;
         bytes.extend_from_slice(&u32_value.to_le_bytes());
     }
     bytes
@@ -56,7 +56,7 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
 
     let agglayer_lib = agglayer_library();
     let leaf_data_elements = leaf_data.to_elements();
-    let leaf_data_bytes: Vec<u8> = felts_to_bytes(&leaf_data_elements);
+    let leaf_data_bytes: Vec<u8> = packed_u32_elements_to_bytes(&leaf_data_elements);
     assert_eq!(
         leaf_data_bytes.len(),
         128,
@@ -132,13 +132,12 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
 
     // Read packed elements from memory at addresses 0..29
     let ctx = miden_processor::ContextId::root();
-    let err_ctx = ();
 
     let packed_elements: Vec<Felt> = (0..29u32)
         .map(|addr| {
             exec_output
                 .memory
-                .read_element(ctx, Felt::from(addr), &err_ctx)
+                .read_element(ctx, Felt::from(addr))
                 .expect("address should be valid")
         })
         .collect();

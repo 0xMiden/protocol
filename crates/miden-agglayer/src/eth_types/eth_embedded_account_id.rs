@@ -92,7 +92,7 @@ impl EthEmbeddedAccountId {
         let suffix_felt =
             Felt::try_from(suffix).map_err(|_| AddressConversionError::FeltOutOfField)?;
 
-        let account_id = AccountId::try_from([prefix_felt, suffix_felt])
+        let account_id = AccountId::try_from_elements(suffix_felt, prefix_felt)
             .map_err(|_| AddressConversionError::InvalidAccountId)?;
 
         Ok(Self(account_id))
@@ -118,7 +118,7 @@ impl EthEmbeddedAccountId {
     pub fn to_eth_address(&self) -> EthAddress {
         let mut out = [0u8; 20];
         out[4..12].copy_from_slice(&self.0.prefix().as_u64().to_be_bytes());
-        out[12..20].copy_from_slice(&self.0.suffix().as_int().to_be_bytes());
+        out[12..20].copy_from_slice(&self.0.suffix().as_canonical_u64().to_be_bytes());
 
         EthAddress::new(out)
     }

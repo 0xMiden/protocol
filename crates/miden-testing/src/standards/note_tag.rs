@@ -34,7 +34,7 @@ async fn test_note_tag_account_target(#[case] tag_len: u8) -> anyhow::Result<()>
     );
 
     let exec_output = CodeExecutor::with_default_host().run(&code).await?;
-    let actual_tag = exec_output.stack[0].as_int();
+    let actual_tag = exec_output.stack[0].as_canonical_u64();
 
     assert_eq!(
         actual_tag,

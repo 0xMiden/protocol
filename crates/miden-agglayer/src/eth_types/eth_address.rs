@@ -3,7 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
 use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
 
@@ -91,7 +91,7 @@ impl EthAddress {
     ///
     /// Each limb is interpreted as a little-endian `u32` and stored in a [`Felt`].
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 }
 

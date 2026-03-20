@@ -1,0 +1,92 @@
+use $kernel::account_id
+use $kernel::asset
+
+# ERRORS
+# =================================================================================================
+
+const ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE = "non-fungible asset vault key's account ID must be of type non-fungible faucet"
+
+const ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN="the origin of the non-fungible asset is not this faucet"
+
+const ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0="the asset ID suffix in a non-fungible asset's vault key must match hash0 of the asset value"
+
+const ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1="the asset ID prefix in a non-fungible asset's vault key must match hash1 of the asset value"
+
+# PROCEDURES
+# =================================================================================================
+
+#! Validates that a non fungible asset is well formed.
+#!
+#! The value itself is not validated since any value is valid.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#! - ASSET_VALUE is the value of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's faucet ID is not a non-fungible one.
+#! - the asset ID suffix of the key does not match hash0 of the value.
+#! - the asset ID prefix of the key does not match hash1 of the value.
+pub proc validate
+    exec.validate_key
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix, hash0, hash1, hash2, hash3]
+
+    # assert that hash0 matches asset_id_suffix and hash1 matches asset_id_prefix
+    dup.4 dup.1 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_ID_SUFFIX_MUST_MATCH_HASH0
+    dup.5 dup.2 assert_eq.err=ERR_NON_FUNGIBLE_ASSET_ID_PREFIX_MUST_MATCH_HASH1
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+end
+
+#! Validates that a non fungible asset's key is well formed.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key of the asset to validate.
+#!
+#! Panics if:
+#! - the asset key's account ID is not valid.
+#! - the asset key's metadata is not valid.
+#! - the asset key's faucet ID is not a non-fungible one.
+pub proc validate_key
+    exec.asset::validate_issuer
+    # => [ASSET_KEY]
+
+    exec.asset::is_non_fungible_asset_key
+    assert.err=ERR_NON_FUNGIBLE_ASSET_KEY_ACCOUNT_ID_MUST_BE_NON_FUNGIBLE
+    # => [ASSET_KEY]
+end
+
+#! Validates that a non-fungible asset is associated with the provided faucet_id.
+#!
+#! The value itself is not validated since any value is valid.
+#!
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - faucet_id_{suffix,prefix} are the suffix and prefix of the faucet's account ID.
+#! - ASSET_KEY is the vault key of the asset to validate.
+pub proc validate_origin
+    movdn.9 movdn.9
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the non-fungible asset key is valid
+    exec.validate
+    # => [ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    # assert the origin of the asset is the faucet_id provided via the stack
+    exec.asset::key_to_faucet_id
+    # => [key_faucet_id_suffix, key_faucet_id_prefix, ASSET_KEY, ASSET_VALUE, faucet_id_suffix, faucet_id_prefix]
+
+    movup.11 movup.11
+    # => [faucet_id_suffix, faucet_id_prefix, key_faucet_id_suffix, key_faucet_id_prefix, ASSET_KEY, ASSET_VALUE]
+
+    exec.account_id::is_equal assert.err=ERR_NON_FUNGIBLE_ASSET_FAUCET_IS_NOT_ORIGIN
+    # => [ASSET_KEY, ASSET_VALUE]
+end

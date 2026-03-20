@@ -96,7 +96,7 @@ impl StorageMapWitness {
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         self.proof
             .path()
-            .authenticated_nodes(self.proof.leaf().index().value(), self.proof.leaf().hash())
+            .authenticated_nodes(self.proof.leaf().index().position(), self.proof.leaf().hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
 }
