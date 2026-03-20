@@ -138,7 +138,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // --------------------------------------------------------------------------------------------
     let token_symbol = "AGG";
     let decimals = 8u8;
-    let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
+    let max_supply = FungibleAsset::MAX_AMOUNT;
     let agglayer_faucet_seed = builder.rng_mut().draw_word();
 
     let origin_token_address = leaf_data.origin_token_address;

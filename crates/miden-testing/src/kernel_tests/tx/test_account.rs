@@ -1708,13 +1708,9 @@ async fn test_faucet_has_callbacks(
     #[case] callback_slots: Vec<StorageSlot>,
     #[case] expected_has_callbacks: bool,
 ) -> anyhow::Result<()> {
-    let faucet_metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::default(),
-        "CBK".try_into()?,
-        8,
-        Felt::new(1_000_000),
-    )
-    .build()?;
+    let faucet_metadata =
+        FungibleTokenMetadataBuilder::new(TokenName::default(), "CBK".try_into()?, 8, 1_000_000u64)
+            .build()?;
 
     let account = AccountBuilder::new([1u8; 32])
         .storage_mode(AccountStorageMode::Public)
