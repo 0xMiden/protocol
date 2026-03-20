@@ -255,7 +255,6 @@ pub struct PswapNote {
     #[builder(default = NoteType::Private)]
     note_type: NoteType,
 
-    #[builder(default)]
     assets: NoteAssets,
 
     #[builder(default)]
