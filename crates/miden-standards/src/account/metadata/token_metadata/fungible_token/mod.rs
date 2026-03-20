@@ -12,8 +12,9 @@
 //! | `metadata::fungible_faucet::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
 //! | `metadata::fungible_faucet::external_link_0..=6` | external link (7 Words, max 195 bytes) |
 //!
-//! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible_faucet.masm`.
-//! Any change to slot names must be applied in both Rust and MASM.
+//! Layout sync: the same layout is defined in MASM at
+//! `asm/standards/metadata/fungible_faucet.masm`. Any change to slot names must be applied in both
+//! Rust and MASM.
 //!
 //! ## Config Word
 //!

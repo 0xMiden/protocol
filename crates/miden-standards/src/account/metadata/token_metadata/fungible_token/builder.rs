@@ -13,6 +13,7 @@ use crate::account::faucets::FungibleFaucetError;
 /// # Example
 ///
 /// ```
+/// # use miden_protocol::Felt;
 /// # use miden_protocol::asset::TokenSymbol;
 /// # use miden_standards::account::metadata::{
 /// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
