@@ -7,7 +7,7 @@ use miden_protocol::note::PartialNote;
 use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
-use crate::account::auth::{AuthMultisig, AuthSingleSig, AuthSingleSigAcl};
+use crate::account::auth::{AuthMultisig, AuthMultisigPsm, AuthSingleSig, AuthSingleSigAcl};
 use crate::account::interface::AccountInterfaceError;
 
 // ACCOUNT COMPONENT INTERFACE
@@ -33,6 +33,9 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the
     /// [`AuthMultisig`][crate::account::auth::AuthMultisig] module.
     AuthMultisig,
+    /// Exposes procedures from the
+    /// [`AuthMultisigPsm`][crate::account::auth::AuthMultisigPsm] module.
+    AuthMultisigPsm,
     /// Exposes procedures from the [`NoAuth`][crate::account::auth::NoAuth] module.
     ///
     /// This authentication scheme provides no cryptographic authentication and only increments
@@ -61,6 +64,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthSingleSig => "SingleSig".to_string(),
             AccountComponentInterface::AuthSingleSigAcl => "SingleSig ACL".to_string(),
             AccountComponentInterface::AuthMultisig => "Multisig".to_string(),
+            AccountComponentInterface::AuthMultisigPsm => "Multisig PSM".to_string(),
             AccountComponentInterface::AuthNoAuth => "No Auth".to_string(),
             AccountComponentInterface::Custom(proc_root_vec) => {
                 let result = proc_root_vec
@@ -82,6 +86,7 @@ impl AccountComponentInterface {
             AccountComponentInterface::AuthSingleSig
                 | AccountComponentInterface::AuthSingleSigAcl
                 | AccountComponentInterface::AuthMultisig
+                | AccountComponentInterface::AuthMultisigPsm
                 | AccountComponentInterface::AuthNoAuth
         )
     }
@@ -105,6 +110,14 @@ impl AccountComponentInterface {
                     AuthMultisig::threshold_config_slot(),
                     AuthMultisig::approver_public_keys_slot(),
                     AuthMultisig::approver_scheme_ids_slot(),
+                )]
+            },
+            AccountComponentInterface::AuthMultisigPsm => {
+                vec![extract_multisig_auth_method(
+                    storage,
+                    AuthMultisigPsm::threshold_config_slot(),
+                    AuthMultisigPsm::approver_public_keys_slot(),
+                    AuthMultisigPsm::approver_scheme_ids_slot(),
                 )]
             },
             AccountComponentInterface::AuthNoAuth => vec![AuthMethod::NoAuth],
@@ -141,7 +154,7 @@ impl AccountComponentInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::distribute dropw dropw drop
+    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
     /// ```
     ///
     /// # Errors:
@@ -149,7 +162,7 @@ impl AccountComponentInterface {
     /// - the interface does not support the generation of the standard `send_note` procedure.
     /// - the sender of the note isn't the account for which the script is being built.
     /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to distribute an asset with a different faucet ID.
+    /// - a faucet tries to mint an asset with a different faucet ID.
     pub(crate) fn send_note_body(
         &self,
         sender_account_id: AccountId,
@@ -186,16 +199,16 @@ impl AccountComponentInterface {
                     let asset =
                         partial_note.assets().iter().next().expect("note should contain an asset");
 
-                    if asset.faucet_id_prefix() != sender_account_id.prefix() {
+                    if asset.faucet_id() != sender_account_id {
                         return Err(AccountInterfaceError::IssuanceFaucetMismatch(
-                            asset.faucet_id_prefix(),
+                            asset.faucet_id(),
                         ));
                     }
 
                     body.push_str(&format!(
                         "
                         push.{amount}
-                        call.::miden::standards::faucets::basic_fungible::distribute
+                        call.::miden::standards::faucets::basic_fungible::mint_and_send
                         # => [note_idx, pad(25)]
                         swapdw dropw dropw swap drop
                         # => [note_idx, pad(16)]\n
@@ -214,13 +227,22 @@ impl AccountComponentInterface {
                     for asset in partial_note.assets().iter() {
                         body.push_str(&format!(
                             "
-                            push.{asset}
-                            # => [ASSET, note_idx, pad(16)]
+                            # duplicate note index
+                            padw push.0 push.0 push.0 dup.7
+                            # => [note_idx, pad(7), note_idx, pad(16)]
+
+                            push.{ASSET_VALUE}
+                            push.{ASSET_KEY}
+                            # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7), note_idx, pad(16)]
+
                             call.::miden::standards::wallets::basic::move_asset_to_note
-                            dropw
+                            # => [pad(16), note_idx, pad(16)]
+
+                            dropw dropw dropw dropw
                             # => [note_idx, pad(16)]\n
                             ",
-                            asset = Word::from(*asset)
+                            ASSET_KEY = asset.to_key_word(),
+                            ASSET_VALUE = asset.to_value_word(),
                         ));
                     }
                 },
@@ -270,7 +292,7 @@ fn extract_singlesig_auth_method(
     let scheme_id = storage
         .get_item(scheme_id_slot)
         .expect("invalid storage index of the scheme id")[0]
-        .as_int() as u8;
+        .as_canonical_u64() as u8;
 
     let auth_scheme =
         AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
@@ -291,8 +313,8 @@ fn extract_multisig_auth_method(
         .get_item(config_slot)
         .expect("invalid slot name of the multisig configuration");
 
-    let threshold = config[0].as_int() as u32;
-    let num_approvers = config[1].as_int() as u8;
+    let threshold = config[0].as_canonical_u64() as u32;
+    let num_approvers = config[1].as_canonical_u64() as u8;
 
     let mut approvers = Vec::new();
 
@@ -322,7 +344,7 @@ fn extract_multisig_auth_method(
                 )
             });
 
-        let scheme_id = scheme_word[0].as_int() as u8;
+        let scheme_id = scheme_word[0].as_canonical_u64() as u8;
         let auth_scheme =
             AuthScheme::try_from(scheme_id).expect("invalid auth scheme id in the scheme id slot");
         approvers.push((pub_key, auth_scheme));

@@ -1,16 +1,18 @@
-use miden::agglayer::bridge::bridge_config
-use miden::agglayer::bridge::leaf_utils
-use miden::agglayer::common::utils
-use miden::agglayer::common::asset_conversion
-use miden::agglayer::common::eth_address
-use miden::agglayer::faucet -> agglayer_faucet
+use agglayer::bridge::bridge_config
+use agglayer::bridge::leaf_utils
+use agglayer::common::utils
+use agglayer::common::asset_conversion
+use agglayer::common::eth_address
+use agglayer::faucet -> agglayer_faucet
 use miden::core::crypto::hashes::keccak256
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
+use miden::protocol::active_account
+use miden::protocol::native_account
 use miden::protocol::tx
 use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
@@ -33,9 +35,26 @@ const ERR_LEADING_BITS_NON_ZERO = "leading bits of global index must be zero"
 const ERR_MAINNET_FLAG_INVALID = "mainnet flag must be 0 or 1"
 const ERR_ROLLUP_INDEX_NON_ZERO = "rollup index must be zero for a mainnet deposit"
 const ERR_SMT_ROOT_VERIFICATION_FAILED = "merkle proof verification failed: provided SMT root does not match the computed root"
+const ERR_CLAIM_ALREADY_SPENT = "claim note has already been spent"
+const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW = "source bridge network overflowed u32"
 
 # CONSTANTS
 # =================================================================================================
+
+# Claim Nullifier Flag
+const IS_CLAIMED_FLAG = [1, 0, 0, 0]
+
+# Storage slots
+# -------------------------------------------------------------------------------------------------
+
+# The slot in this component's storage layout where claim nullifiers are stored.
+# Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
+
+# Storage slot constants for the CGI (claimed global index) chain hash. 
+# It is stored in two separate value slots.
+const CGI_CHAIN_HASH_LO_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_lo")
+const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 
 # Data sizes
 # -------------------------------------------------------------------------------------------------
@@ -88,6 +107,11 @@ const CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT = 568
 const CLAIM_PROOF_DATA_KEY_MEM_ADDR = 700
 const CLAIM_LEAF_DATA_KEY_MEM_ADDR = 704
 
+# Memory addresses used to temporarily store leaf_index and source_bridge_network
+# across proof verification, and later as input to the claim nullifier hash.
+const CLAIM_LEAF_INDEX_MEM_ADDR = 900
+const CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR = 901
+
 # Memory addresses for leaf data fields (derived from leaf data layout at CLAIM_LEAF_DATA_START_PTR=536)
 const ORIGIN_TOKEN_ADDRESS_0 = 538
 const ORIGIN_TOKEN_ADDRESS_1 = 539
@@ -117,7 +141,8 @@ const MINT_NOTE_STORAGE_ATTACHMENT_SCHEME = 803
 const MINT_NOTE_STORAGE_ATTACHMENT = 804
 const MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT = 808
 const MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM = 812
-const MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT = 816
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX = 816
+const MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX = 817
 
 # Local memory offsets
 # -------------------------------------------------------------------------------------------------
@@ -133,6 +158,92 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 # PUBLIC INTERFACE
 # =================================================================================================
 
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
+#!
+#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
+#! looks up the faucet account ID from the token registry using the origin token address from
+#! the leaf data, and creates a MINT note targeting the aggfaucet.
+#!
+#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
+#! See `write_mint_note_storage` for the full storage layout.
+#!
+#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
+#! Outputs: [pad(16)]
+#!
+#! Advice map: {
+#!   PROOF_DATA_KEY => [
+#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
+#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
+#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
+#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
+#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
+#!   ],
+#!   LEAF_DATA_KEY => [
+#!     leafType[1],                     // Leaf type (1 felt, uint32)
+#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
+#!     originTokenAddress[5],           // Origin token address (5 felts)
+#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
+#!     destinationAddress[5],           // Destination address (5 felts)
+#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
+#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
+#!     padding[3],                      // padding (3 felts)
+#!   ],
+#! }
+#!
+#! Panics if:
+#! - the Merkle proof validation fails.
+#! - the origin token address is not registered in the bridge's token registry.
+#!
+#! Invocation: call
+@locals(2) # 0: dest_prefix, 1: dest_suffix
+pub proc claim
+    # Write output note faucet amount to memory
+    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
+
+    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
+    exec.claim_batch_pipe_double_words
+    # => [pad(16)]
+
+    exec.get_destination_account_id_data
+    loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
+    # => [pad(16)]
+
+    # Validate CLAIM data
+    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
+    # => [PROOF_DATA_KEY, pad(12)]
+
+    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
+    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+
+    exec.verify_leaf_bridge
+    # => [pad(16)]
+
+    # Look up the faucet account ID from the origin token address
+    exec.get_origin_token_address
+    # => [origin_token_addr(5), pad(16)]
+
+    exec.bridge_config::lookup_faucet_by_token_address
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    dup.1 dup.1
+    # => [faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    # Verify faucet_mint_amount matches the leaf data amount
+    exec.verify_claim_amount
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
+    
+    # Build MINT output note targeting the aggfaucet
+    loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
+    # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
+
+    exec.build_mint_output_note
+    # => [pad(16)]
+end
+
+# HELPER PROCEDURES
+# =================================================================================================
+
 #! Computes the leaf value and verifies it against the AggLayer bridge state.
 #!
 #! Verification is delegated to `verify_leaf` to mimic the AggLayer Solidity contracts.
@@ -143,7 +254,7 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #! 4. Verify the Merkle proof for the provided leaf-index tuple against the computed GER.
 #!
 #! Inputs:
-#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
+#!   Operand stack: [LEAF_DATA_KEY, PROOF_DATA_KEY]
 #!   Advice map: {
 #!     PROOF_DATA_KEY => [
 #!       smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts, bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
@@ -164,25 +275,30 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 #!     ],
 #!   }
 #!
-#! Outputs: [pad(16)]
+#! Outputs: []
 #!
 #! Panics if:
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
 #!
-#! Invocation: call
-pub proc verify_leaf_bridge
+#! Invocation: exec
+proc verify_leaf_bridge
     # get the leaf value. We have all the necessary leaf data in the advice map
     exec.get_leaf_value
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(8)]
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY]
 
-    movupw.3 dropw
-    # => [LEAF_VALUE[8], PROOF_DATA_KEY, pad(4)]
+    # duplicate the leaf value to use it later during the CGI chain hash computation
+    movupw.2 dupw.2 dupw.2
+    # => [LEAF_VALUE[8], PROOF_DATA_KEY, LEAF_VALUE[8]]
 
     # delegate proof verification
     exec.verify_leaf
-    # => [pad(16)]
+    # => [LEAF_VALUE[8]]
+
+    # update the CGI chain hash
+    exec.update_cgi_chain_hash
+    # => []
 end
 
 #! Assert the global index is valid for a mainnet deposit.
@@ -201,7 +317,9 @@ end
 #! Invocation: exec
 pub proc process_global_index_mainnet
     # the top 191 bits of the global index are zero
-    repeat.5 assertz.err=ERR_LEADING_BITS_NON_ZERO end
+    repeat.5 
+        assertz.err=ERR_LEADING_BITS_NON_ZERO
+    end
 
     # the next element is the mainnet flag (LE-packed u32)
     # byte-swap to get the BE value, then assert it is exactly 1
@@ -305,93 +423,6 @@ pub proc verify_merkle_proof(
     movdn.8 exec.word::eq and
     # => [verification_flag]
 end
-
-#! Validates a claim against the AggLayer bridge and creates a MINT note for the aggfaucet.
-#!
-#! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
-#! looks up the faucet account ID from the token registry using the origin token address from
-#! the leaf data, and creates a MINT note targeting the aggfaucet.
-#!
-#! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
-#! See `write_mint_note_storage` for the full storage layout.
-#!
-#! Inputs:  [PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]
-#! Outputs: [pad(16)]
-#!
-#! Advice map: {
-#!   PROOF_DATA_KEY => [
-#!     smtProofLocalExitRoot[256],      // SMT proof for local exit root (256 felts)
-#!     smtProofRollupExitRoot[256],     // SMT proof for rollup exit root (256 felts)
-#!     globalIndex[8],                  // Global index (8 felts, uint256 as 8 u32 felts)
-#!     mainnetExitRoot[8],              // Mainnet exit root hash (8 felts)
-#!     rollupExitRoot[8],               // Rollup exit root hash (8 felts)
-#!   ],
-#!   LEAF_DATA_KEY => [
-#!     leafType[1],                     // Leaf type (1 felt, uint32)
-#!     originNetwork[1],                // Origin network identifier (1 felt, uint32)
-#!     originTokenAddress[5],           // Origin token address (5 felts)
-#!     destinationNetwork[1],           // Destination network identifier (1 felt, uint32)
-#!     destinationAddress[5],           // Destination address (5 felts)
-#!     amount[8],                       // Amount of tokens (8 felts, uint256 as 8 u32 felts)
-#!     metadata[8],                     // ABI encoded metadata (8 felts, fixed size)
-#!     padding[3],                      // padding (3 felts)
-#!   ],
-#! }
-#!
-#! Panics if:
-#! - the Merkle proof validation fails.
-#! - the origin token address is not registered in the bridge's token registry.
-#!
-#! Invocation: call
-@locals(2) # 0: dest_prefix, 1: dest_suffix
-pub proc claim
-    # Write output note faucet amount to memory
-    movup.8 mem_store.CLAIM_OUTPUT_NOTE_FAUCET_AMOUNT
-    # => [PROOF_DATA_KEY, LEAF_DATA_KEY, pad(8)]
-
-    # Check AdviceMap values hash to keys & write CLAIM inputs & DATA_KEYs to global memory
-    exec.claim_batch_pipe_double_words
-    # => [pad(16)]
-
-    exec.get_destination_account_id_data
-    loc_store.CLAIM_DEST_ID_PREFIX_LOCAL loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL
-    # => [pad(16)]
-
-    # Validate CLAIM data
-    mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
-    # => [PROOF_DATA_KEY, pad(12)]
-
-    swapw mem_loadw_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
-    # => [LEAF_DATA_KEY, PROOF_DATA_KEY, pad(8)]
-
-    exec.verify_leaf_bridge
-    # => [pad(16)]
-
-    # Look up the faucet account ID from the origin token address
-    exec.get_origin_token_address
-    # => [origin_token_addr(5), pad(16)]
-
-    exec.bridge_config::lookup_faucet_by_token_address
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    dup.1 dup.1
-    # => [faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    # Verify faucet_mint_amount matches the leaf data amount
-    exec.verify_claim_amount
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
-    
-    # Build MINT output note targeting the aggfaucet
-    loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL loc_load.CLAIM_DEST_ID_PREFIX_LOCAL
-    # => [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix, pad(16)]
-
-    exec.build_mint_output_note
-    # => [pad(16)]
-end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
 #! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
 #! scaled down by the faucet's scale factor.
 #!
@@ -401,7 +432,7 @@ end
 #! 3. Calls `verify_u256_to_native_amount_conversion` to assert that:
 #!        faucet_mint_amount == floor(raw_amount / 10^scale)
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
@@ -415,14 +446,14 @@ proc verify_claim_amount
     movup.9 movup.9
     padw padw
     movup.9 movup.9
-    # => [faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     # Step 2: FPI call to faucet's get_scale procedure
     procref.agglayer_faucet::get_scale
-    # => [PROC_MAST_ROOT(4), faucet_id_prefix, faucet_id_suffix, pad(16)]
+    # => [PROC_MAST_ROOT(4), faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, PROC_MAST_ROOT(4), pad(16)]
+    # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT(4), pad(16)]
 
     exec.tx::execute_foreign_procedure
     # => [scale, pad(15)]
@@ -481,17 +512,16 @@ pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
     # => [LEAF_VALUE[8]]
 end
 
-#! Verify leaf and checks that it has not been claimed.
+#! Verify leaf, check that it has not been claimed, and mark it as claimed.
 #!
-#! Inputs:
-#!   Operand stack: [LEAF_VALUE[8], PROOF_DATA_KEY]
-#!
+#! Inputs:  [LEAF_VALUE[8], PROOF_DATA_KEY]
 #! Outputs: []
 #!
 #! Panics if:
 #! - the computed GER is invalid (never injected).
 #! - the global index is invalid.
 #! - the Merkle proof for the provided leaf-index tuple against the computed GER is invalid.
+#! - the claim has already been spent.
 #!
 #! Invocation: exec
 proc verify_leaf
@@ -514,8 +544,7 @@ proc verify_leaf
     # => [LEAF_VALUE[8]]
 
     # 3. load global index from memory
-    padw mem_loadw_le.GLOBAL_INDEX_PTR
-    padw push.GLOBAL_INDEX_PTR add.4 mem_loadw_le swapw
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
     # => [GLOBAL_INDEX[8], LEAF_VALUE[8]]
 
     # Determine if we're dealing with a deposit from mainnet or from a rollup.
@@ -536,6 +565,10 @@ proc verify_leaf
         exec.process_global_index_mainnet
         # => [leaf_index, LEAF_VALUE[8]]
 
+        # Save leaf_index to memory for set_and_check_claimed after proof verification
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, LEAF_VALUE[8]]
+
         # verify single Merkle proof: leaf against mainnetExitRoot
         push.MAINNET_EXIT_ROOT_PTR swap
         push.SMT_PROOF_LOCAL_EXIT_ROOT_PTR
@@ -549,11 +582,25 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For mainnet deposits, source_bridge_network = 0
+        # globalIndex = uint256(leafIndex), so source_bridge_network is always 0
+        push.0 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
     else
         # ==================== ROLLUP DEPOSIT ====================
         # mainnet_flag = 0; extract rollup_index and leaf_index via helper,
         # then do two-level verification
         exec.process_global_index_rollup
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+
+        # Save leaf_index and rollup_index to memory for set_and_check_claimed
+        # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+        # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = rollup_index (temporarily, updated below)
+        dup mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+        # => [leaf_index, rollup_index, LEAF_VALUE[8]]
+        
+        dup.1 mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
         # => [leaf_index, rollup_index, LEAF_VALUE[8]]
 
         # Step 1: calculate_root(leafValue, smtProofLocalExitRoot, leafIndex) -> localExitRoot
@@ -581,7 +628,87 @@ proc verify_leaf
 
         assert.err=ERR_SMT_ROOT_VERIFICATION_FAILED
         # => []
+
+        # For rollup deposits, source_bridge_network = rollup_index + 1
+        # Compute source_bridge_network and store it to memory
+        mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR u32overflowing_add.1 assertz.err=ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW
+        # => [source_bridge_network]
+
+        mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+        # => []
     end
+
+    # 4. Check the claim has not been spent and mark it as spent.
+    # Load leaf_index and source_bridge_network from memory.
+    mem_load.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    mem_load.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [leaf_index, source_bridge_network]
+
+    exec.set_and_check_claimed
+    # => []
+end
+
+#! Computes the claim nullifier as RPO(leaf_index, source_bridge_network), then checks
+#! that the claim has not been spent and marks it as spent.
+#!
+#! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
+#! See: https://github.com/agglayer/agglayer-contracts/blob/60d06fc3224792ce55dc2690d66b6719a73398e7/contracts/v2/PolygonZkEVMBridgeV2.sol#L987
+#!
+#! Inputs:  [leaf_index, source_bridge_network]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc set_and_check_claimed
+    # Write both values to memory for hashing
+    # mem[CLAIM_LEAF_INDEX_MEM_ADDR] = leaf_index
+    # mem[CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR] = source_bridge_network
+    mem_store.CLAIM_LEAF_INDEX_MEM_ADDR
+    # => [source_bridge_network]
+
+    mem_store.CLAIM_SOURCE_BRIDGE_NETWORK_MEM_ADDR
+    # => []
+
+    # Hash the two elements using Poseidon2 to produce the nullifier
+    push.2 push.CLAIM_LEAF_INDEX_MEM_ADDR
+    exec.poseidon2::hash_elements
+    # => [NULLIFIER]
+
+    exec.assert_claim_not_spent
+    # => []
+end
+
+#! Checks that the CLAIM note has not already been spent, and marks it as spent
+#! by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
+#!
+#! The nullifier is computed as RPO(leaf_index, source_bridge_network), which uniquely
+#! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
+#!
+#! Inputs:  [NULLIFIER]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
+#!
+#! Invocation: exec
+proc assert_claim_not_spent(nullifier: BeWord)
+    push.IS_CLAIMED_FLAG
+    # => [IS_CLAIMED_FLAG, NULLIFIER]
+
+    swapw
+    # => [NULLIFIER, IS_CLAIMED_FLAG]
+
+    push.CLAIM_NULLIFIERS_SLOT[0..2]
+    # => [slot_prefix, slot_suffix, NULLIFIER, IS_CLAIMED_FLAG]
+
+    exec.native_account::set_map_item
+    # => [OLD_VALUE]
+
+    # OLD_VALUE[0] is the claimed flag: 0 if unclaimed, 1 if already claimed
+    assertz.err=ERR_CLAIM_ALREADY_SPENT drop drop drop
+    # => []
 end
 
 # Inputs: [PROOF_DATA_KEY, LEAF_DATA_KEY]
@@ -609,10 +736,10 @@ end
 #! Extracts the destination account ID as address[5] from memory.
 #!
 #! This procedure reads the destination address from the leaf data and converts it from
-#! Ethereum address format to AccountId format (prefix, suffix).
+#! Ethereum address format to AccountId format (suffix, prefix).
 #!
 #! Inputs:  []
-#! Outputs: [prefix, suffix]
+#! Outputs: [suffix, prefix]
 #!
 #! Invocation: exec
 proc get_destination_account_id_data
@@ -624,7 +751,7 @@ proc get_destination_account_id_data
     # => [address[5]]
 
     exec.eth_address::to_account_id
-    # => [prefix, suffix]
+    # => [suffix, prefix]
 end
 
 # Inputs: []
@@ -663,7 +790,7 @@ end
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Create the output note, and set the attachment.
 #!
-#! Inputs:  [destination_id_prefix, destination_id_suffix, faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
@@ -694,21 +821,21 @@ end
 #! - [16]: account_id_suffix (destination account suffix)
 #! - [17]: account_id_prefix (destination account prefix)
 #!
-#! Inputs:  [destination_id_prefix, destination_id_suffix]
+#! Inputs:  [destination_id_suffix, destination_id_prefix]
 #! Outputs: []
 #!
 #! Invocation: exec
 proc write_mint_note_storage
     # Write P2ID storage items first (before prefix is consumed): [16..17]
     # Write destination_id_suffix [16]
-    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT
-    # => [destination_id_prefix, destination_id_suffix]
+    dup mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_SUFFIX
+    # => [destination_id_suffix, destination_id_prefix]
 
     # Write destination_id_prefix [17]
-    dup push.MINT_NOTE_STORAGE_OUTPUT_NOTE_INPUT add.1 mem_store
-    # => [destination_id_prefix, destination_id_suffix]
+    dup.1 mem_store.MINT_NOTE_STORAGE_OUTPUT_NOTE_PREFIX
+    # => [destination_id_suffix, destination_id_prefix]
 
-    swap drop
+    drop
     # => [destination_id_prefix]
 
     # Get the native amount from the pre-computed miden_claim_amount
@@ -740,21 +867,21 @@ proc write_mint_note_storage
     # => []
 
     # ATTACHMENT = empty word [4..7]
-    padw mem_storew_be.MINT_NOTE_STORAGE_ATTACHMENT dropw
+    padw mem_storew_le.MINT_NOTE_STORAGE_ATTACHMENT dropw
     # => []
 
     # Write P2ID_SCRIPT_ROOT to MINT note storage [8..11]
     procref.::miden::standards::notes::p2id::main
     # => [P2ID_SCRIPT_ROOT]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SCRIPT_ROOT dropw
     # => []
 
     # Write SERIAL_NUM (PROOF_DATA_KEY) to MINT note storage [12..15]
     mem_loadw_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     # => [SERIAL_NUM]
 
-    mem_storew_be.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
+    mem_storew_le.MINT_NOTE_STORAGE_OUTPUT_SERIAL_NUM dropw
     # => []
 end
 
@@ -786,6 +913,8 @@ proc build_mint_recipient
     exec.note::build_recipient
     # => [MINT_RECIPIENT]
 end
+
+
 
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
@@ -905,3 +1034,73 @@ proc calculate_root(
     padw loc_loadw_le.CUR_HASH_HI_LOCAL padw loc_loadw_le.CUR_HASH_LO_LOCAL
     # => [ROOT_LO, ROOT_HI]
 end
+
+#! Updates the claimed global index (CGI) chain hash by recomputing it and storing into the
+#! corresponding storage slot.
+#!
+#! The resulting hash is computed as a sequential hash of leaf value, global index, and previous 
+#! value of the CGI chain hash:
+#! NEW_CGI_CHAIN_HASH[8] = Keccak256(OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX[8], LEAF_VALUE[8]))
+#!
+#! Inputs:  [LEAF_VALUE[8]]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc update_cgi_chain_hash
+    # load the required CGI chain data values onto the stack
+    exec.load_cgi_chain_hash_data
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # compute the new CGI chain hash
+    exec.keccak256::merge swapdw
+    # => [OLD_CGI_CHAIN_HASH[8], Keccak256(GLOBAL_INDEX, LEAF_VALUE)]
+
+    exec.keccak256::merge
+    # => [NEW_CGI_CHAIN_HASH[8]]
+
+    # store the new CGI chain hash
+    exec.store_cgi_chain_hash
+    # => []
+end
+
+#! Loads the old CGI chain hash, the leaf value, and the global index onto the stack as a
+#! preparation for the new CGI chain hash computation.
+#!
+#! Inputs: [LEAF_VALUE[8]]
+#! Outputs: [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+#!
+#! Invocation: exec
+proc load_cgi_chain_hash_data
+    # load the old CGI chain hash onto the stack
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH_HI, LEAF_VALUE[8]]
+
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.active_account::get_item
+    # => [OLD_CGI_CHAIN_HASH[8], LEAF_VALUE[8]]
+
+    # move the leaf value to the top of the stack
+    swapdw
+    # => [LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+
+    # load the global index onto the stack
+    push.GLOBAL_INDEX_PTR exec.utils::mem_load_double_word
+    # => [GLOBAL_INDEX[8], LEAF_VALUE[8], OLD_CGI_CHAIN_HASH[8]]
+end
+
+#! Stores the computed global index (CGI) chain hash into the corresponding storage slots.
+#!
+#! Inputs: [NEW_CGI_CHAIN_HASH_LO, NEW_CGI_CHAIN_HASH_HI]
+#! Outputs: []
+#!
+#! Invocation: exec
+proc store_cgi_chain_hash
+    push.CGI_CHAIN_HASH_LO_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => [NEW_CGI_CHAIN_HASH_HI]
+
+    push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
+    exec.native_account::set_item dropw
+    # => []
+end 

@@ -52,7 +52,6 @@ which is a thin wrapper that re-exports procedures from the `agglayer` library m
 
 - `bridge_config::register_faucet`
 - `bridge_config::update_ger`
-- `bridge_in::verify_leaf_bridge`
 - `bridge_out::bridge_out`
 
 The underlying library code lives in `asm/agglayer/bridge/` with supporting modules in
@@ -87,9 +86,9 @@ Bridges an asset out of Miden into the AggLayer:
 | **Panics** | Note sender is not the bridge admin |
 
 Asserts the note sender matches the bridge admin stored in
-`miden::agglayer::bridge::admin`, then writes
+`agglayer::bridge::admin_account_id`, then writes
 `[0, 0, faucet_id_suffix, faucet_id_prefix] -> [1, 0, 0, 0]` into the
-`faucet_registry` map slot.
+`faucet_registry_map` map slot.
 
 #### `bridge_config::update_ger`
 
@@ -102,11 +101,12 @@ Asserts the note sender matches the bridge admin stored in
 | **Panics** | Note sender is not the GER manager |
 
 Asserts the note sender matches the GER manager stored in
-`miden::agglayer::bridge::ger_manager`, then computes
+`agglayer::bridge::ger_manager_account_id`, then computes
 `KEY = rpo256::merge(GER_UPPER, GER_LOWER)` and stores
-`KEY -> [1, 0, 0, 0]` in the `ger` map slot. This marks the GER as "known".
+`KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
 
 #### `bridge_in::verify_leaf_bridge`
+TODO ([#2624](https://github.com/0xMiden/protocol/issues/2624)): document new CLAIM note flow.
 
 | | |
 |-|-|
@@ -129,17 +129,17 @@ Verifies a bridge-in claim:
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
-| `miden::agglayer::bridge::ger` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
-| `miden::agglayer::let` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
-| `miden::agglayer::let::root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
-| `miden::agglayer::let::root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
-| `miden::agglayer::let::num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
-| `miden::agglayer::bridge::faucet_registry` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
-| `miden::agglayer::bridge::admin` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
-| `miden::agglayer::bridge::ger_manager` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
+| `agglayer::bridge::ger_map` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
+| `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
+| `agglayer::bridge::let_root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
+| `agglayer::bridge::let_root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
+| `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
+| `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
+| `agglayer::bridge::admin_account_id` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
+| `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
 
-Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except `admin` and
-`ger_manager` which are set at account creation time.
+Initial state: all map slots empty, all value slots `[0, 0, 0, 0]` except
+`admin_account_id` and `ger_manager_account_id` which are set at account creation time.
 
 ### 2.2 Faucet Account Component
 
@@ -204,9 +204,8 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | Slot name | Slot type | Value encoding | Purpose |
 |-----------|-----------|----------------|---------|
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
-| `miden::agglayer::faucet` (TODO (Future): rename for clarity [#2356](https://github.com/0xMiden/protocol/issues/2356)) | Value | `[0, 0, bridge_suffix, bridge_prefix]` | Bridge account ID this faucet is paired with |
-| `miden::agglayer::faucet::conversion_info_1` | Value | `[addr_0, addr_1, addr_2, addr_3]` | Origin token address, first 4 u32 limbs |
-| `miden::agglayer::faucet::conversion_info_2` | Value | `[addr_4, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
+| `agglayer::faucet::conversion_info_1` | Value | `[addr_0, addr_1, addr_2, addr_3]` | Origin token address, first 4 u32 limbs |
+| `agglayer::faucet::conversion_info_2` | Value | `[addr_4, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
 
 ---
 
@@ -615,7 +614,7 @@ extract the recipient's `AccountId` from the embedded Ethereum address and e.g. 
 
 #### 5.4.3 Ethereum Address → `AccountId` (MASM)
 
-`eth_address::to_account_id` — Module: `miden::agglayer::common::eth_address`
+`eth_address::to_account_id` — Module: `agglayer::common::eth_address`
 
 This is the in-VM counterpart of the Rust `to_account_id`, invoked during CLAIM note
 consumption to decode the recipient's address from the leaf data, and eventually for building the P2ID note for the recipient.

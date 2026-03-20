@@ -1,4 +1,5 @@
-use ::miden::protocol::account_id
+use miden::protocol::account_id
+use miden::protocol::asset
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_ID_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_NONCE_OFFSET
 use ::miden::protocol::kernel_proc_offsets::ACCOUNT_GET_INITIAL_COMMITMENT_OFFSET
@@ -35,10 +36,10 @@ const ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE
 #! Returns the ID of the active account.
 #!
 #! Inputs:  []
-#! Outputs: [account_id_prefix, account_id_suffix]
+#! Outputs: [account_id_suffix, account_id_prefix]
 #!
 #! Where:
-#! - account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the active account.
+#! - account_id_{suffix,prefix} are the suffix and prefix felts of the ID of the active account.
 #!
 #! Invocation: exec
 pub proc get_id
@@ -54,11 +55,11 @@ pub proc get_id
     # => [offset, is_native = 0, pad(14)]
 
     syscall.exec_kernel_proc
-    # => [account_id_prefix, account_id_suffix, pad(14)]
+    # => [account_id_suffix, account_id_prefix, pad(14)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw movdn.3 movdn.3 drop drop
-    # => [account_id_prefix, account_id_suffix]
+    # => [account_id_suffix, account_id_prefix]
 end
 
 #! Returns the nonce of the active account.
@@ -300,11 +301,11 @@ end
 
 #! Gets an item from the active account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix]
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - VALUE is the value of the item.
 #!
@@ -314,14 +315,14 @@ end
 #! Invocation: exec
 pub proc get_item
     push.0 movdn.2
-    # => [slot_id_prefix, slot_id_suffix, 0]
+    # => [slot_id_suffix, slot_id_prefix, 0]
 
     push.ACCOUNT_GET_ITEM_OFFSET
-    # => [offset, slot_id_prefix, slot_id_suffix, 0]
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, slot_id_prefix, slot_id_suffix, pad(13)]
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
 
     syscall.exec_kernel_proc
     # => [VALUE, pad(12)]
@@ -334,11 +335,11 @@ end
 #! Gets the initial item from the active account storage slot as it was at the beginning of the
 #! transaction.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix]
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
 #! Outputs: [INIT_VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
 #!
@@ -348,14 +349,14 @@ end
 #! Invocation: exec
 pub proc get_initial_item
     push.0 movdn.2
-    # => [slot_id_prefix, slot_id_suffix, 0]
+    # => [slot_id_suffix, slot_id_prefix, 0]
 
     push.ACCOUNT_GET_INITIAL_ITEM_OFFSET
-    # => [offset, slot_id_prefix, slot_id_suffix, 0]
+    # => [offset, slot_id_suffix, slot_id_prefix, 0]
 
     # pad the stack
     padw swapw padw padw swapdw
-    # => [offset, slot_id_prefix, slot_id_suffix, pad(13)]
+    # => [offset, slot_id_suffix, slot_id_prefix, pad(13)]
 
     syscall.exec_kernel_proc
     # => [INIT_VALUE, pad(12)]
@@ -367,11 +368,11 @@ end
 
 #! Gets a map item from the active account storage.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #!    - the slot must point to the root of the storage map.
 #! - KEY is the key of the item to get.
@@ -384,11 +385,11 @@ end
 #! Invocation: exec
 pub proc get_map_item
     push.ACCOUNT_GET_MAP_ITEM_OFFSET
-    # => [offset, slot_id_prefix, slot_id_suffix, KEY]
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY]
 
     # pad the stack
     push.0 movdn.7 padw padw swapdw
-    # => [0, offset, slot_id_prefix, slot_id_suffix, KEY, pad(9)]
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY, pad(9)]
 
     syscall.exec_kernel_proc
     # => [VALUE, pad(12)]
@@ -401,11 +402,11 @@ end
 #! Gets the initial VALUE from the active account storage map as it was at the beginning of the
 #! transaction.
 #!
-#! Inputs:  [slot_id_prefix, slot_id_suffix, KEY]
+#! Inputs:  [slot_id_suffix, slot_id_prefix, KEY]
 #! Outputs: [INIT_VALUE]
 #!
 #! Where:
-#! - slot_id_{prefix, suffix} are the prefix and suffix felts of the slot identifier, which are
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
 #!   the first two felts of the hashed slot name.
 #! - KEY is the key of the item to get.
 #! - INIT_VALUE is the initial value of the item at the beginning of the transaction.
@@ -417,10 +418,10 @@ end
 #! Invocation: exec
 pub proc get_initial_map_item
     push.ACCOUNT_GET_INITIAL_MAP_ITEM_OFFSET
-    # => [offset, slot_id_prefix, slot_id_suffix, KEY]
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY]
 
     push.0 movdn.7 padw padw swapdw
-    # => [0, offset, slot_id_prefix, slot_id_suffix, KEY, pad(9)]
+    # => [offset, slot_id_suffix, slot_id_prefix, KEY, pad(9)]
 
     syscall.exec_kernel_proc
     # => [INIT_VALUE, pad(12)]
@@ -433,14 +434,15 @@ end
 # VAULT
 # -------------------------------------------------------------------------------------------------
 
-#! Returns the asset associated with the provided faucet_id in the active account's vault.
+#! Returns the asset associated with the provided asset vault key in the active account's vault.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset from the vault, which can be the EMPTY_WORD if it isn't present.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_asset
@@ -453,22 +455,23 @@ pub proc get_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
-#! Returns the asset issued by the provided faucet_id in the active account's vault at the
-#! beginning of the transaction.
+#! Returns the asset associated with the provided asset vault key in the active account's vault at
+#! the beginning of the transaction.
 #!
 #! Inputs:  [ASSET_KEY]
-#! Outputs: [ASSET]
+#! Outputs: [ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to fetch.
-#! - ASSET is the asset at the beginning of the transaction.
+#! - ASSET_VALUE is the value of the asset from the vault, which can be the EMPTY_WORD if it isn't
+#!   present.
 #!
 #! Invocation: exec
 pub proc get_initial_asset
@@ -481,21 +484,21 @@ pub proc get_initial_asset
     # => [offset, ASSET_KEY, pad(11)]
 
     syscall.exec_kernel_proc
-    # => [ASSET, pad(12)]
+    # => [ASSET_VALUE, pad(12)]
 
     # clean the stack
     swapdw dropw dropw swapw dropw
-    # => [ASSET]
+    # => [ASSET_VALUE]
 end
 
 #! Returns the balance of the fungible asset associated with the provided faucet_id in the active
 #! account's vault.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [balance]
 #!
 #! Where:
-#! - faucet_id_{prefix,suffix} are the prefix and suffix felts of the faucet ID of the fungible
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet ID of the fungible
 #!   asset of interest.
 #! - balance is the vault balance of the fungible asset.
 #!
@@ -505,29 +508,33 @@ end
 #! Invocation: exec
 pub proc get_balance
     # assert that the faucet id is a fungible faucet
-    dup exec.account_id::is_fungible_faucet
+    dup.1 exec.account_id::is_fungible_faucet
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_suffix, faucet_id_prefix]
 
-    push.0 movdn.2 push.0 movdn.2
+    # TODO(callbacks): This should take ASSET_KEY as input to avoid hardcoding the callbacks flag.
+    push.0
+    # => [enable_callbacks = 0, faucet_id_suffix, faucet_id_prefix]
+
+    exec.asset::create_fungible_key
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
+    exec.::miden::protocol::util::asset::fungible_value_into_amount
     # => [balance]
 end
 
 #! Returns the balance of the fungible asset associated with the provided faucet_id in the active
 #! account's vault at the beginning of the transaction.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: [init_balance]
 #!
 #! Where:
-#! - faucet_id_{prefix, suffix} are the prefix and suffix felts of the faucet id of the fungible
+#! - faucet_id_{suffix, prefix} are the suffix and prefix felts of the faucet id of the fungible
 #!   asset of interest.
 #! - init_balance is the vault balance of the fungible asset at the beginning of the transaction.
 #!
@@ -537,48 +544,49 @@ end
 #! Invocation: exec
 pub proc get_initial_balance
     # assert that the faucet id is a fungible faucet
-    dup exec.account_id::is_fungible_faucet
+    dup.1 exec.account_id::is_fungible_faucet
     assert.err=ERR_VAULT_GET_BALANCE_CAN_ONLY_BE_CALLED_ON_FUNGIBLE_ASSET
-    # => [faucet_id_prefix, faucet_id_suffix]
+    # => [faucet_id_suffix, faucet_id_prefix]
 
-    push.0 movdn.2 push.0 movdn.2
+    # TODO(callbacks): This should take ASSET_KEY as input to avoid hardcoding the callbacks flag.
+    push.0
+    # => [enable_callbacks = 0, faucet_id_suffix, faucet_id_prefix]
+
+    exec.asset::create_fungible_key
     # => [ASSET_KEY]
 
     exec.get_initial_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # extract the asset's balance
-    exec.::miden::protocol::util::asset::get_balance_from_fungible_asset
+    exec.::miden::protocol::util::asset::fungible_value_into_amount
     # => [balance]
 end
 
-#! Returns a boolean indicating whether the non-fungible asset is present in the active account's
-#! vault.
+#! Returns a boolean indicating whether the active account stores an asset with the provided
+#! non-fungible asset vault key in its vault.
 #!
-#! Inputs:  [ASSET]
+#! Inputs:  [ASSET_KEY]
 #! Outputs: [has_asset]
 #!
 #! Where:
-#! - ASSET is the non-fungible asset of interest
-#! - has_asset is a boolean indicating whether the account vault has the asset of interest
+#! - ASSET_KEY is the key of the fungible asset to check.
+#! - has_asset is a boolean indicating whether the account vault has the asset.
 #!
 #! Panics if:
-#! - the ASSET is a fungible asset.
+#! - the ASSET_VALUE is a fungible asset.
 #!
 #! Invocation: exec
 pub proc has_non_fungible_asset
-    # check if the asset is a non-fungible asset
-    # hack: assert second element is zero to ensure it is a non-fungible asset
-    # TODO(expand_assets): This procedure may go away. If not, check more reliably.
-    dup.2 neq.0
-    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
-    # => [ASSET]
+    # => [faucet_id_prefix, faucet_id_suffix, asset_id_prefix, asset_id_suffix]
 
-    exec.build_non_fungible_asset_vault_key
+    # assert that the faucet id is a non-fungible faucet
+    dup.3 exec.account_id::is_non_fungible_faucet
+    assert.err=ERR_VAULT_HAS_NON_FUNGIBLE_ASSET_PROC_CAN_BE_CALLED_ONLY_WITH_NON_FUNGIBLE_ASSET
     # => [ASSET_KEY]
 
     exec.get_asset
-    # => [ASSET]
+    # => [ASSET_VALUE]
 
     # compare with EMPTY_WORD to assess if the asset exists in the vault
     exec.word::eqz not
@@ -672,38 +680,3 @@ pub proc has_procedure
     # => [is_procedure_available]
 end
 
-# TODO(expand_assets):
-# Exact copy of $kernel::asset_vault::build_non_fungible_asset_vault_key
-# This should only be temporarily needed and if not, deduplicate.
-
-# The bitmask that when applied will set the fungible bit to zero.
-const INVERSE_FUNGIBLE_BITMASK_U32=0xffffffdf # last byte: 0b1101_1111
-
-#!
-#! Builds the vault key of a non fungible asset. The asset is NOT validated and therefore must
-#! be a valid non-fungible asset.
-#!
-#! Inputs:  [ASSET]
-#! Outputs: [ASSET_KEY]
-#!
-#! Where:
-#! - ASSET is the non-fungible asset for which the vault key is built.
-#! - ASSET_KEY is the vault key of the non-fungible asset.
-proc build_non_fungible_asset_vault_key
-    # create the asset key from the non-fungible asset by swapping hash0 with the faucet id
-    # => [faucet_id_prefix, hash2, hash1, hash0]
-    swap.3
-    # => [hash0, hash2, hash1 faucet_id_prefix]
-
-    # disassemble hash0 into u32 limbs
-    u32split swap
-    # => [hash0_lo, hash0_hi, hash2, hash1 faucet_id_prefix]
-
-    # set the fungible bit to 0
-    u32and.INVERSE_FUNGIBLE_BITMASK_U32
-    # => [hash0_lo', hash0_hi, hash2, hash1 faucet_id_prefix]
-
-    # reassemble hash0 felt by multiplying the high part with 2^32 and adding the lo part
-    swap mul.0x0100000000 add
-    # => [ASSET_KEY]
-end

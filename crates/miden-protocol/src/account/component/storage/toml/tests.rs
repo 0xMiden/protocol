@@ -1,7 +1,6 @@
 use alloc::string::ToString;
 use core::error::Error;
 
-use miden_air::FieldElement;
 use miden_core::{Felt, Word};
 
 use crate::account::component::toml::init_storage_data::InitStorageDataError;

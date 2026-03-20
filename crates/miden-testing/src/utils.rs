@@ -1,14 +1,13 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_crypto::Word;
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
+use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteTag, NoteType};
-use miden_protocol::testing::storage::prepare_assets;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNoteStorage;
 use miden_standards::testing::note::NoteBuilder;
@@ -22,7 +21,7 @@ use rand::rngs::SmallRng;
 macro_rules! assert_execution_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
-            Err($crate::ExecError(miden_processor::ExecutionError::FailedAssertion { label: _, source_file: _, clk: _, err_code, err_msg, err: _ })) => {
+            Err($crate::ExecError(miden_processor::ExecutionError::OperationError { label: _, source_file: _, err: miden_processor::operation::OperationError::FailedAssertion { err_code, err_msg } })) => {
                 if let Some(ref msg) = err_msg {
                   assert_eq!(msg.as_ref(), $expected_err.message(), "error messages did not match");
                 }
@@ -44,13 +43,13 @@ macro_rules! assert_transaction_executor_error {
     ($execution_result:expr, $expected_err:expr) => {
         match $execution_result {
             Err(miden_tx::TransactionExecutorError::TransactionProgramExecutionFailed(
-                miden_processor::ExecutionError::FailedAssertion {
+                miden_processor::ExecutionError::OperationError {
                     label: _,
                     source_file: _,
-                    clk: _,
-                    err_code,
-                    err_msg,
-                    err: _,
+                    err: miden_processor::operation::OperationError::FailedAssertion {
+                        err_code,
+                        err_msg,
+                    },
                 },
             )) => {
                 if let Some(ref msg) = err_msg {
@@ -81,7 +80,7 @@ pub fn create_public_p2any_note(
     sender: AccountId,
     assets: impl IntoIterator<Item = Asset>,
 ) -> Note {
-    let mut rng = RpoRandomCoin::new(Default::default());
+    let mut rng = RandomCoin::new(Default::default());
     create_p2any_note(sender, NoteType::Public, assets, &mut rng)
 }
 
@@ -95,37 +94,36 @@ pub fn create_p2any_note(
     sender: AccountId,
     note_type: NoteType,
     assets: impl IntoIterator<Item = Asset>,
-    rng: &mut RpoRandomCoin,
+    rng: &mut RandomCoin,
 ) -> Note {
     let serial_number = rng.draw_word();
     let assets: Vec<_> = assets.into_iter().collect();
     let mut code_body = String::new();
-    for i in 0..assets.len() {
-        if i == 0 {
-            // first asset (dest_ptr is already on stack)
-            code_body.push_str(
-                "
-                # add first asset
+    for asset_idx in 0..assets.len() {
+        code_body.push_str(&format!(
+            "
+                # => [dest_ptr]
 
-                padw dup.4 mem_loadw_be
-                padw swapw padw padw swapdw
+                # current_asset_ptr = dest_ptr + ASSET_SIZE * asset_idx
+                dup push.ASSET_SIZE mul.{asset_idx}
+                # => [current_asset_ptr, dest_ptr]
+
+                padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+                # => [ASSET_VALUE, current_asset_ptr, dest_ptr]
+
+                padw movup.8 mem_loadw_le
+                # => [ASSET_KEY, ASSET_VALUE, current_asset_ptr, dest_ptr]
+
+                padw padw swapdw
+                # => [ASSET_KEY, ASSET_VALUE, pad(12), dest_ptr]
+
                 call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]
+                # => [pad(16), dest_ptr]
+
+                dropw dropw dropw dropw
+                # => [dest_ptr]
                 ",
-            );
-        } else {
-            code_body.push_str(
-                "
-                # add next asset
-
-                add.4 dup movdn.13
-                padw movup.4 mem_loadw_be
-                call.wallet::receive_asset
-                dropw movup.12
-                # => [dest_ptr, pad(12)]",
-            );
-        }
+        ));
     }
     code_body.push_str("dropw dropw dropw dropw");
 
@@ -133,6 +131,8 @@ pub fn create_p2any_note(
         r#"
         use mock::account
         use miden::protocol::active_note
+        use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
+        use ::miden::protocol::asset::ASSET_SIZE
         use miden::standards::wallets::basic->wallet
 
         begin
@@ -212,10 +212,10 @@ fn note_script_that_creates_notes<'note>(
         // Make sure that the transaction's native account matches the note sender.
         out.push_str(&format!(
             r#"exec.::miden::protocol::native_account::get_id
-             # => [native_account_id_prefix, native_account_id_suffix]
-             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
-             # => [native_account_id_suffix]
+             # => [native_account_id_suffix, native_account_id_prefix]
              push.{sender_suffix} assert_eq.err="sender ID suffix does not match native account ID's suffix"
+             # => [native_account_id_prefix]
+             push.{sender_prefix} assert_eq.err="sender ID prefix does not match native account ID's prefix"
              # => []
         "#,
           sender_prefix = sender_id.prefix().as_felt(),
@@ -253,11 +253,17 @@ fn note_script_that_creates_notes<'note>(
             attachment_kind = note.metadata().attachment().content().attachment_kind().as_u8(),
         ));
 
-        let assets_str = prepare_assets(note.assets());
-        for asset in assets_str {
+        for asset in note.assets().iter() {
             out.push_str(&format!(
-                " push.{asset}
-                  call.::miden::standards::wallets::basic::move_asset_to_note\n",
+                " dup
+                  push.{ASSET_VALUE}
+                  push.{ASSET_KEY}
+                  # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
+                  call.::miden::standards::wallets::basic::move_asset_to_note
+                  # => [note_idx]
+                ",
+                ASSET_KEY = asset.to_key_word(),
+                ASSET_VALUE = asset.to_value_word(),
             ));
         }
     }

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use anyhow::Context;
 use miden_block_prover::LocalBlockProver;
-use miden_processor::DeserializationError;
+use miden_processor::serde::DeserializationError;
 use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::account::auth::{AuthSecretKey, PublicKey};
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -32,9 +32,8 @@ use miden_protocol::transaction::{
 };
 use miden_tx::LocalTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
-use miden_tx::utils::{ByteReader, Deserializable, Serializable};
+use miden_tx::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
 use miden_tx_batch_prover::LocalBatchProver;
-use winterfell::ByteWriter;
 
 use super::note::MockChainNote;
 use crate::{MockChainBuilder, TransactionContextBuilder};
@@ -78,9 +77,10 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// // Add a recipient wallet with basic authentication.
-/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Rpo (scheme_id: 2) auth scheme.
-/// let receiver =
-///     builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// // Use either ECDSA K256 Keccak (scheme_id: 1) or Falcon512Poseidon2 (scheme_id: 2) auth scheme.
+/// let receiver = builder.add_existing_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// // Add a wallet with assets.
 /// let sender = builder.add_existing_wallet(Auth::IncrNonce)?;
@@ -143,16 +143,20 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 /// let mut builder = MockChain::builder();
 ///
 /// let faucet = builder.create_new_faucet(
-///     Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+///     Auth::BasicAuth {
+///         auth_scheme: AuthScheme::Falcon512Poseidon2,
+///     },
 ///     "USDT",
 ///     100_000,
 /// )?;
 /// let asset = Asset::from(FungibleAsset::new(faucet.id(), 10)?);
 ///
-/// let sender =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-/// let target =
-///     builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+/// let sender = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
+/// let target = builder.create_new_wallet(Auth::BasicAuth {
+///     auth_scheme: AuthScheme::Falcon512Poseidon2,
+/// })?;
 ///
 /// let note = builder.add_p2id_note(faucet.id(), target.id(), &[asset], NoteType::Public)?;
 ///
@@ -182,6 +186,9 @@ pub struct MockChain {
     /// Transactions that have been submitted to the chain but have not yet been included in a
     /// block.
     pending_transactions: Vec<ProvenTransaction>,
+
+    /// Batches that have been submitted to the chain but have not yet been included in a block.
+    pending_batches: Vec<ProvenBatch>,
 
     /// NoteID |-> MockChainNote mapping to simplify note retrieval.
     committed_notes: BTreeMap<NoteId, MockChainNote>,
@@ -232,6 +239,7 @@ impl MockChain {
         account_tree: AccountTree,
         account_authenticators: BTreeMap<AccountId, AccountAuthenticator>,
         secret_key: SecretKey,
+        genesis_notes: Vec<Note>,
     ) -> anyhow::Result<Self> {
         let mut chain = MockChain {
             chain: Blockchain::default(),
@@ -239,6 +247,7 @@ impl MockChain {
             nullifier_tree: NullifierTree::default(),
             account_tree,
             pending_transactions: Vec::new(),
+            pending_batches: Vec::new(),
             committed_notes: BTreeMap::new(),
             committed_accounts: BTreeMap::new(),
             account_authenticators,
@@ -250,6 +259,20 @@ impl MockChain {
         chain
             .apply_block(genesis_block)
             .context("failed to build account from builder")?;
+
+        // Update committed_notes with full note details for genesis notes.
+        // This is needed because apply_block only stores headers for private notes,
+        // but tests need full note details to create input notes.
+        for note in genesis_notes {
+            if let Some(MockChainNote::Private(_, _, inclusion_proof)) =
+                chain.committed_notes.get(&note.id())
+            {
+                chain.committed_notes.insert(
+                    note.id(),
+                    MockChainNote::Public(note.clone(), inclusion_proof.clone()),
+                );
+            }
+        }
 
         debug_assert_eq!(chain.blocks.len(), 1);
         debug_assert_eq!(chain.committed_accounts.len(), chain.account_tree.num_accounts());
@@ -851,6 +874,14 @@ impl MockChain {
         self.pending_transactions.push(transaction);
     }
 
+    /// Adds the given [`ProvenBatch`] to the list of pending batches.
+    ///
+    /// A block has to be created to apply the batch effects to the chain state, e.g. using
+    /// [`MockChain::prove_next_block`].
+    pub fn add_pending_batch(&mut self, batch: ProvenBatch) {
+        self.pending_batches.push(batch);
+    }
+
     // PRIVATE HELPERS
     // ----------------------------------------------------------------------------------------
 
@@ -913,9 +944,11 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let OutputNote::Full(note) = created_note {
-                self.committed_notes
-                    .insert(note.id(), MockChainNote::Public(note.clone(), note_inclusion_proof));
+            if let OutputNote::Public(public_note) = created_note {
+                self.committed_notes.insert(
+                    public_note.id(),
+                    MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
+                );
             } else {
                 self.committed_notes.insert(
                     created_note.id(),
@@ -975,7 +1008,8 @@ impl MockChain {
         // Create batches from pending transactions.
         // ----------------------------------------------------------------------------------------
 
-        let batches = self.pending_transactions_to_batches()?;
+        let mut batches = self.pending_transactions_to_batches()?;
+        batches.extend(core::mem::take(&mut self.pending_batches));
 
         // Create block.
         // ----------------------------------------------------------------------------------------
@@ -1052,6 +1086,7 @@ impl Deserializable for MockChain {
             nullifier_tree,
             account_tree,
             pending_transactions,
+            pending_batches: Vec::new(),
             committed_notes,
             committed_accounts,
             account_authenticators,
@@ -1207,7 +1242,7 @@ mod tests {
         )?;
 
         let account_id = account.id();
-        assert_eq!(account.nonce().as_int(), 0);
+        assert_eq!(account.nonce().as_canonical_u64(), 0);
 
         let note_1 = builder.add_p2id_note(
             ACCOUNT_ID_SENDER.try_into().unwrap(),
@@ -1228,7 +1263,7 @@ mod tests {
         mock_chain.add_pending_executed_transaction(&tx)?;
         mock_chain.prove_next_block()?;
 
-        assert!(tx.final_account().nonce().as_int() > 0);
+        assert!(tx.final_account().nonce().as_canonical_u64() > 0);
         assert_eq!(
             tx.final_account().to_commitment(),
             mock_chain.account_tree.open(account_id).state_commitment()
@@ -1245,7 +1280,9 @@ mod tests {
         for i in 0..10 {
             let account = builder
                 .add_account_from_builder(
-                    Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+                    Auth::BasicAuth {
+                        auth_scheme: AuthScheme::Falcon512Poseidon2,
+                    },
                     AccountBuilder::new([i; 32]).with_component(BasicWallet),
                     AccountState::New,
                 )
@@ -1323,6 +1360,28 @@ mod tests {
 
         // Public keys should be carried through from the genesis header to the next.
         assert_eq!(next_block.header().validator_key(), next_block.header().validator_key());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_pending_batch() -> anyhow::Result<()> {
+        let mut builder = MockChain::builder();
+        let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
+        let mut chain = builder.build()?;
+
+        // Execute a noop transaction and create a batch from it.
+        let tx = chain.build_tx_context(account.id(), &[], &[])?.build()?.execute().await?;
+        let proven_tx = LocalTransactionProver::default().prove_dummy(tx)?;
+        let proposed_batch = chain.propose_transaction_batch(vec![proven_tx])?;
+        let proven_batch = chain.prove_transaction_batch(proposed_batch)?;
+
+        // Submit the batch directly and prove the block.
+        let num_blocks_before = chain.proven_blocks().len();
+        chain.add_pending_batch(proven_batch);
+        chain.prove_next_block()?;
+
+        assert_eq!(chain.proven_blocks().len(), num_blocks_before + 1);
 
         Ok(())
     }

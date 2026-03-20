@@ -99,8 +99,8 @@ impl Deserializable for BlockNumber {
 }
 
 impl From<BlockNumber> for Felt {
-    fn from(value: BlockNumber) -> Self {
-        Felt::from(value.as_u32())
+    fn from(block_num: BlockNumber) -> Self {
+        Felt::from(block_num.as_u32())
     }
 }
 

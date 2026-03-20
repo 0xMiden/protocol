@@ -1,5 +1,5 @@
 use miden_assembly::Library;
-use miden_processor::MastForest;
+use miden_processor::mast::MastForest;
 
 use crate::vm::AdviceMap;
 

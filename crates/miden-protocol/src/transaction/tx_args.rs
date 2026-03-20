@@ -2,8 +2,8 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use miden_core::mast::MastNodeExt;
 use miden_crypto::merkle::InnerNodeInfo;
-use miden_processor::MastNodeExt;
 
 use super::{Felt, Hasher, Word};
 use crate::account::auth::{PublicKeyCommitment, Signature};
@@ -361,10 +361,10 @@ impl Deserializable for TransactionScript {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::AdviceMap;
-    use miden_core::utils::{Deserializable, Serializable};
+    use miden_core::advice::AdviceMap;
 
     use crate::transaction::TransactionArgs;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_tx_args_serialization() {

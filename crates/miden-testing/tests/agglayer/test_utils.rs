@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
@@ -17,8 +16,15 @@ use miden_agglayer::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
+};
 use miden_protocol::transaction::TransactionKernel;
 use miden_protocol::utils::sync::LazyLock;
 use miden_tx::utils::hex_to_bytes;
@@ -144,6 +150,7 @@ pub struct ProofValueVector {
     /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
     #[allow(dead_code)]
     pub global_exit_root: String,
+    pub claimed_global_index_hash_chain: String,
 }
 
 impl ProofValueVector {
@@ -210,9 +217,10 @@ pub struct CanonicalZerosFile {
 /// Deserialized MMR frontier vectors from Solidity DepositContractV2.
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
-/// (leafType=0, originNetwork=64, metadataHash=0), parametrised by
-/// a shared `origin_token_address`, `amounts[i]`, and per-index
-/// `destination_networks[i]` / `destination_addresses[i]`.
+/// (leafType=0, originNetwork=64), parametrised by
+/// a shared `origin_token_address`, `amounts[i]`, per-index
+/// `destination_networks[i]` / `destination_addresses[i]`, and
+/// `metadataHash = keccak256(abi.encode(token_name, token_symbol, token_decimals))`.
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
@@ -225,6 +233,10 @@ pub struct MmrFrontierVectorsFile {
     pub origin_token_address: String,
     pub destination_networks: Vec<u32>,
     pub destination_addresses: Vec<String>,
+    #[allow(dead_code)]
+    pub token_name: String,
+    pub token_symbol: String,
+    pub token_decimals: u8,
 }
 
 // LAZY-PARSED TEST VECTORS
@@ -282,7 +294,7 @@ pub enum ClaimDataSource {
 
 impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
-    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
         let vector = match self {
             ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
@@ -291,7 +303,12 @@ impl ClaimDataSource {
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
-        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+        let cgi_chain_hash = Keccak256Output::new(
+            hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
+                .expect("invalid CGI chain hash"),
+        );
+
+        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger, cgi_chain_hash)
     }
 }
 
@@ -315,10 +332,11 @@ pub async fn execute_program_with_default_host(
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();
 
-    let stack_inputs = StackInputs::new(vec![]).unwrap();
+    let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = advice_inputs.unwrap_or_default();
 
-    let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+    let processor =
+        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 

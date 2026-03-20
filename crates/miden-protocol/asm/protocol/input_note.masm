@@ -166,11 +166,11 @@ end
 #! Returns the sender of the input note with the specified index.
 #!
 #! Inputs:  [note_index]
-#! Outputs: [sender_id_prefix, sender_id_suffix]
+#! Outputs: [sender_id_suffix, sender_id_prefix]
 #!
 #! Where:
 #! - note_index is the index of the input note whose sender should be returned.
-#! - sender_{prefix,suffix} are the prefix and suffix felts of the specified note.
+#! - sender_{suffix,prefix} are the suffix and prefix felts of the specified note.
 #!
 #! Panics if:
 #! - the note index is greater or equal to the total number of input notes.
@@ -183,7 +183,7 @@ pub proc get_sender
 
     # extract the sender ID from the metadata header
     exec.note::extract_sender_from_metadata
-    # => [sender_id_prefix, sender_id_suffix]
+    # => [sender_id_suffix, sender_id_prefix]
 end
 
 #! Returns the inputs commitment and length of the input note with the specified index.

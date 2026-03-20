@@ -1,10 +1,11 @@
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetError, Felt, Word, ZERO, is_not_a_non_fungible_asset};
-use crate::account::{AccountId, AccountIdPrefix};
+use super::{AccountType, Asset, AssetCallbackFlag, AssetError, Word};
+use crate::Felt;
+use crate::account::AccountId;
+use crate::asset::AssetId;
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -19,10 +20,14 @@ use crate::utils::serde::{
 ///
 /// A fungible asset consists of a faucet ID of the faucet which issued the asset as well as the
 /// asset amount. Asset amount is guaranteed to be 2^63 - 1 or smaller.
+///
+/// The fungible asset can have callbacks to the faucet enabled or disabled, depending on
+/// [`AssetCallbackFlag`]. See [`AssetCallbacks`](crate::asset::AssetCallbacks) for more details.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FungibleAsset {
     faucet_id: AccountId,
     amount: u64,
+    callbacks: AssetCallbackFlag,
 }
 
 impl FungibleAsset {
@@ -36,28 +41,80 @@ impl FungibleAsset {
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
-    /// Currently an account ID (15 bytes) plus an amount (u64).
-    pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE + core::mem::size_of::<u64>();
+    /// An account ID (15 bytes) plus an amount (u64) plus a callbacks flag (u8).
+    pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE
+        + core::mem::size_of::<u64>()
+        + AssetCallbackFlag::SERIALIZED_SIZE;
 
     // CONSTRUCTOR
     // --------------------------------------------------------------------------------------------
+
     /// Returns a fungible asset instantiated with the provided faucet ID and amount.
     ///
     /// # Errors
+    ///
     /// Returns an error if:
-    /// - The faucet_id is not a valid fungible faucet ID.
-    /// - The provided amount is greater than 2^63 - 1.
-    pub const fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
-        let asset = Self { faucet_id, amount };
-        asset.validate()
+    /// - The faucet ID is not a valid fungible faucet ID.
+    /// - The provided amount is greater than [`FungibleAsset::MAX_AMOUNT`].
+    pub fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
+        if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
+            return Err(AssetError::FungibleFaucetIdTypeMismatch(faucet_id));
+        }
+
+        if amount > Self::MAX_AMOUNT {
+            return Err(AssetError::FungibleAssetAmountTooBig(amount));
+        }
+
+        Ok(Self {
+            faucet_id,
+            amount,
+            callbacks: AssetCallbackFlag::default(),
+        })
     }
 
-    /// Creates a new [FungibleAsset] without checking its validity.
-    pub(crate) fn new_unchecked(value: Word) -> FungibleAsset {
-        FungibleAsset {
-            faucet_id: AccountId::new_unchecked([value[3], value[2]]),
-            amount: value[0].as_int(),
+    /// Creates a fungible asset from the provided key and value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The provided key does not contain a valid faucet ID.
+    /// - The provided key's asset ID limbs are not zero.
+    /// - The faucet ID is not a fungible faucet ID.
+    /// - The provided value's amount is greater than [`FungibleAsset::MAX_AMOUNT`] or its three
+    ///   most significant elements are not zero.
+    pub fn from_key_value(key: AssetVaultKey, value: Word) -> Result<Self, AssetError> {
+        if !key.asset_id().is_empty() {
+            return Err(AssetError::FungibleAssetIdMustBeZero(key.asset_id()));
         }
+
+        if value[1] != Felt::ZERO || value[2] != Felt::ZERO || value[3] != Felt::ZERO {
+            return Err(AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(value));
+        }
+
+        let mut asset = Self::new(key.faucet_id(), value[0].as_canonical_u64())?;
+        asset.callbacks = key.callback_flag();
+
+        Ok(asset)
+    }
+
+    /// Creates a fungible asset from the provided key and value.
+    ///
+    /// Prefer [`Self::from_key_value`] for more type safety.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The provided key does not contain a valid faucet ID.
+    /// - [`Self::from_key_value`] fails.
+    pub fn from_key_value_words(key: Word, value: Word) -> Result<Self, AssetError> {
+        let vault_key = AssetVaultKey::try_from(key)?;
+        Self::from_key_value(vault_key, value)
+    }
+
+    /// Returns a copy of this asset with the given [`AssetCallbackFlag`].
+    pub fn with_callbacks(mut self, callbacks: AssetCallbackFlag) -> Self {
+        self.callbacks = callbacks;
+        self
     }
 
     // PUBLIC ACCESSORS
@@ -68,25 +125,41 @@ impl FungibleAsset {
         self.faucet_id
     }
 
-    /// Return ID prefix of the faucet which issued this asset.
-    pub fn faucet_id_prefix(&self) -> AccountIdPrefix {
-        self.faucet_id.prefix()
-    }
-
     /// Returns the amount of this asset.
     pub fn amount(&self) -> u64 {
         self.amount
     }
 
-    /// Returns true if this and the other assets were issued from the same faucet.
-    pub fn is_from_same_faucet(&self, other: &Self) -> bool {
-        self.faucet_id == other.faucet_id
+    /// Returns true if this and the other asset were issued from the same faucet.
+    pub fn is_same(&self, other: &Self) -> bool {
+        self.vault_key() == other.vault_key()
+    }
+
+    /// Returns the [`AssetCallbackFlag`] of this asset.
+    pub fn callbacks(&self) -> AssetCallbackFlag {
+        self.callbacks
     }
 
     /// Returns the key which is used to store this asset in the account vault.
     pub fn vault_key(&self) -> AssetVaultKey {
-        AssetVaultKey::from_account_id(self.faucet_id)
+        AssetVaultKey::new(AssetId::default(), self.faucet_id, self.callbacks)
             .expect("faucet ID should be of type fungible")
+    }
+
+    /// Returns the asset's key encoded to a [`Word`].
+    pub fn to_key_word(&self) -> Word {
+        self.vault_key().to_word()
+    }
+
+    /// Returns the asset's value encoded to a [`Word`].
+    pub fn to_value_word(&self) -> Word {
+        Word::new([
+            Felt::try_from(self.amount)
+                .expect("fungible asset should only allow amounts that fit into a felt"),
+            Felt::ZERO,
+            Felt::ZERO,
+            Felt::ZERO,
+        ])
     }
 
     // OPERATIONS
@@ -96,14 +169,14 @@ impl FungibleAsset {
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets were not issued by the same faucet.
+    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
     /// - The total value of assets is greater than or equal to 2^63.
     #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Result<Self, AssetError> {
-        if self.faucet_id != other.faucet_id {
-            return Err(AssetError::FungibleAssetInconsistentFaucetIds {
-                original_issuer: self.faucet_id,
-                other_issuer: other.faucet_id,
+        if !self.is_same(&other) {
+            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
+                original_key: self.vault_key(),
+                other_key: other.vault_key(),
             });
         }
 
@@ -115,21 +188,25 @@ impl FungibleAsset {
             return Err(AssetError::FungibleAssetAmountTooBig(amount));
         }
 
-        Ok(Self { faucet_id: self.faucet_id, amount })
+        Ok(Self {
+            faucet_id: self.faucet_id,
+            amount,
+            callbacks: self.callbacks,
+        })
     }
 
     /// Subtracts a fungible asset from another and returns the result.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - The assets were not issued by the same faucet.
+    /// - The assets do not have the same vault key (i.e. different faucet or callback flags).
     /// - The final amount would be negative.
     #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Result<Self, AssetError> {
-        if self.faucet_id != other.faucet_id {
-            return Err(AssetError::FungibleAssetInconsistentFaucetIds {
-                original_issuer: self.faucet_id,
-                other_issuer: other.faucet_id,
+        if !self.is_same(&other) {
+            return Err(AssetError::FungibleAssetInconsistentVaultKeys {
+                original_key: self.vault_key(),
+                other_key: other.vault_key(),
             });
         }
 
@@ -140,39 +217,11 @@ impl FungibleAsset {
             },
         )?;
 
-        Ok(FungibleAsset { faucet_id: self.faucet_id, amount })
-    }
-
-    // HELPER FUNCTIONS
-    // --------------------------------------------------------------------------------------------
-
-    /// Validates this fungible asset.
-    /// # Errors
-    /// Returns an error if:
-    /// - The faucet_id is not a valid fungible faucet ID.
-    /// - The provided amount is greater than 2^63 - 1.
-    const fn validate(self) -> Result<Self, AssetError> {
-        let account_type = self.faucet_id.account_type();
-        if !matches!(account_type, AccountType::FungibleFaucet) {
-            return Err(AssetError::FungibleFaucetIdTypeMismatch(self.faucet_id));
-        }
-
-        if self.amount > Self::MAX_AMOUNT {
-            return Err(AssetError::FungibleAssetAmountTooBig(self.amount));
-        }
-
-        Ok(self)
-    }
-}
-
-impl From<FungibleAsset> for Word {
-    fn from(asset: FungibleAsset) -> Self {
-        let mut result = Word::empty();
-        result[0] = Felt::new(asset.amount);
-        result[2] = asset.faucet_id.suffix();
-        result[3] = asset.faucet_id.prefix().as_felt();
-        debug_assert!(is_not_a_non_fungible_asset(result));
-        result
+        Ok(FungibleAsset {
+            faucet_id: self.faucet_id,
+            amount,
+            callbacks: self.callbacks,
+        })
     }
 }
 
@@ -182,22 +231,9 @@ impl From<FungibleAsset> for Asset {
     }
 }
 
-impl TryFrom<Word> for FungibleAsset {
-    type Error = AssetError;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        if value[1] != ZERO {
-            return Err(AssetError::FungibleAssetExpectedZero(value));
-        }
-        let faucet_id = AccountId::try_from([value[3], value[2]])
-            .map_err(|err| AssetError::InvalidFaucetAccountId(Box::new(err)))?;
-        let amount = value[0].as_int();
-        Self::new(faucet_id, amount)
-    }
-}
-
 impl fmt::Display for FungibleAsset {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: Replace with hex representation?
         write!(f, "{self:?}")
     }
 }
@@ -211,42 +247,38 @@ impl Serializable for FungibleAsset {
         // distinguishable during deserialization.
         target.write(self.faucet_id);
         target.write(self.amount);
+        target.write(self.callbacks);
     }
 
     fn get_size_hint(&self) -> usize {
-        self.faucet_id.get_size_hint() + self.amount.get_size_hint()
+        self.faucet_id.get_size_hint()
+            + self.amount.get_size_hint()
+            + self.callbacks.get_size_hint()
     }
 }
 
 impl Deserializable for FungibleAsset {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
-        let faucet_id_prefix: AccountIdPrefix = source.read()?;
-        FungibleAsset::deserialize_with_faucet_id_prefix(faucet_id_prefix, source)
+        let faucet_id: AccountId = source.read()?;
+        FungibleAsset::deserialize_with_faucet_id(faucet_id, source)
     }
 }
 
 impl FungibleAsset {
-    /// Deserializes a [`FungibleAsset`] from an [`AccountIdPrefix`] and the remaining data from the
-    /// given `source`.
-    pub(super) fn deserialize_with_faucet_id_prefix<R: ByteReader>(
-        faucet_id_prefix: AccountIdPrefix,
+    /// Deserializes a [`FungibleAsset`] from an [`AccountId`] and the remaining data from the given
+    /// `source`.
+    pub(super) fn deserialize_with_faucet_id<R: ByteReader>(
+        faucet_id: AccountId,
         source: &mut R,
     ) -> Result<Self, DeserializationError> {
-        // The 8 bytes of the prefix have already been read, so we only need to read the remaining 7
-        // bytes of the account ID's 15 total bytes.
-        let suffix_bytes: [u8; 7] = source.read()?;
-        // Convert prefix back to bytes so we can call the TryFrom<[u8; 15]> impl.
-        let prefix_bytes: [u8; 8] = faucet_id_prefix.into();
-        let mut id_bytes: [u8; 15] = [0; 15];
-        id_bytes[..8].copy_from_slice(&prefix_bytes);
-        id_bytes[8..].copy_from_slice(&suffix_bytes);
-
-        let faucet_id = AccountId::try_from(id_bytes)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?;
-
         let amount: u64 = source.read()?;
-        FungibleAsset::new(faucet_id, amount)
-            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
+        let callbacks = source.read()?;
+
+        let asset = FungibleAsset::new(faucet_id, amount)
+            .map_err(|err| DeserializationError::InvalidValue(err.to_string()))?
+            .with_callbacks(callbacks);
+
+        Ok(asset)
     }
 }
 
@@ -255,6 +287,8 @@ impl FungibleAsset {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
+
     use super::*;
     use crate::account::AccountId;
     use crate::testing::account_id::{
@@ -267,7 +301,39 @@ mod tests {
     };
 
     #[test]
-    fn test_fungible_asset_serde() {
+    fn fungible_asset_from_key_value_words_fails_on_invalid_asset_id() -> anyhow::Result<()> {
+        let faucet_id: AccountId = ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET.try_into()?;
+        let invalid_key = Word::from([
+            Felt::from(1u32),
+            Felt::from(2u32),
+            faucet_id.suffix(),
+            faucet_id.prefix().as_felt(),
+        ]);
+
+        let err = FungibleAsset::from_key_value_words(
+            invalid_key,
+            FungibleAsset::mock(5).to_value_word(),
+        )
+        .unwrap_err();
+        assert_matches!(err, AssetError::FungibleAssetIdMustBeZero(_));
+
+        Ok(())
+    }
+
+    #[test]
+    fn fungible_asset_from_key_value_fails_on_invalid_value() -> anyhow::Result<()> {
+        let asset = FungibleAsset::mock(42);
+        let mut invalid_value = asset.to_value_word();
+        invalid_value[2] = Felt::from(5u32);
+
+        let err = FungibleAsset::from_key_value(asset.vault_key(), invalid_value).unwrap_err();
+        assert_matches!(err, AssetError::FungibleAssetValueMostSignificantElementsMustBeZero(_));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fungible_asset_serde() -> anyhow::Result<()> {
         for fungible_account_id in [
             ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
             ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -281,6 +347,15 @@ mod tests {
                 fungible_asset,
                 FungibleAsset::read_from_bytes(&fungible_asset.to_bytes()).unwrap()
             );
+            assert_eq!(fungible_asset.to_bytes().len(), fungible_asset.get_size_hint());
+
+            assert_eq!(
+                fungible_asset,
+                FungibleAsset::from_key_value_words(
+                    fungible_asset.to_key_word(),
+                    fungible_asset.to_value_word()
+                )?
+            )
         }
 
         let account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3).unwrap();
@@ -296,5 +371,16 @@ mod tests {
         asset_bytes[0..15].copy_from_slice(&non_fungible_faucet_id.to_bytes());
         let err = FungibleAsset::read_from_bytes(&asset_bytes).unwrap_err();
         assert!(matches!(err, DeserializationError::InvalidValue(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_vault_key_for_fungible_asset() {
+        let asset = FungibleAsset::mock(34);
+
+        assert_eq!(asset.vault_key().faucet_id(), FungibleAsset::mock_issuer());
+        assert_eq!(asset.vault_key().asset_id().prefix().as_canonical_u64(), 0);
+        assert_eq!(asset.vault_key().asset_id().suffix().as_canonical_u64(), 0);
     }
 }

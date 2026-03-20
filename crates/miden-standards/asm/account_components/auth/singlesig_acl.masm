@@ -8,8 +8,6 @@ use miden::protocol::tx
 use miden::standards::auth::signature
 use miden::core::word
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-
 # CONSTANTS
 # ================================================================================================
 
@@ -25,12 +23,15 @@ const AUTH_CONFIG_SLOT = word("miden::standards::auth::singlesig_acl::config")
 # The slot where the map of auth trigger procedure roots is stored.
 const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::singlesig_acl::trigger_procedure_roots")
 
+const ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC = 0
+const ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC = 1
+
 #! Authenticate a transaction using the signature scheme specified by scheme_id 
 #! based on procedure calls and note usage.
 #!
 #! Supported schemes:
 #! - 1 => ecdsa_k256_keccak
-#! - 2 => falcon512_rpo
+#! - 2 => falcon512_poseidon2
 #!
 #! This authentication procedure checks:
 #! 1. If any of the trigger procedures were called during the transaction
@@ -46,18 +47,19 @@ const AUTH_TRIGGER_PROCS_MAP_SLOT = word("miden::standards::auth::singlesig_acl:
 #! Invocation: call
 @auth_script
 @locals(2)
-pub proc auth_tx_acl(auth_args: BeWord)
+pub proc auth_tx_acl(auth_args: word)
     dropw
     # => [pad(16)]
 
     # Get the authentication configuration
     push.AUTH_CONFIG_SLOT[0..2] exec.active_account::get_item
-    # => [0, allow_unauthorized_input_notes, allow_unauthorized_output_notes, num_auth_trigger_procs, pad(16)]
+    # => [num_auth_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, 0, pad(16)]
 
-    drop
-    # => [allow_unauthorized_input_notes, allow_unauthorized_output_notes, num_auth_trigger_procs, pad(16)]
+    movup.3 drop
+    # => [num_auth_trigger_procs, allow_unauthorized_output_notes, allow_unauthorized_input_notes, pad(16)]
 
-    loc_store.1 loc_store.0
+    swap loc_store.ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC
+    swap loc_store.ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC
     # => [num_auth_trigger_procs, pad(16)]
 
     # ------ Check if any trigger procedure was called ------
@@ -73,8 +75,8 @@ pub proc auth_tx_acl(auth_args: BeWord)
         # => [require_acl_auth, i, pad(16)]
 
         # Get the procedure root from storage
-        dup.1 sub.1 push.0.0.0 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
-        # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [0, 0, 0, i-1], require_acl_auth, i, pad(16)]
+        push.0.0.0 dup.4 sub.1 push.AUTH_TRIGGER_PROCS_MAP_SLOT[0..2]
+        # => [trigger_proc_slot_prefix, trigger_proc_slot_suffix, [i-1, 0, 0, 0], require_acl_auth, i, pad(16)]
 
         exec.active_account::get_map_item
         # => [AUTH_TRIGGER_PROC_ROOT, require_acl_auth, i, pad(16)]
@@ -106,7 +108,7 @@ pub proc auth_tx_acl(auth_args: BeWord)
     neq.0
     # => [were_output_notes_created, require_acl_auth, pad(16)]
 
-    loc_load.0 not
+    loc_load.ALLOW_UNAUTHORIZED_OUTPUT_NOTES_LOC not
     # => [!allow_unauthorized_output_notes, were_output_notes_created, require_acl_auth, pad(16)]
 
     and
@@ -123,7 +125,7 @@ pub proc auth_tx_acl(auth_args: BeWord)
     neq.0
     # => [were_input_notes_consumed, auth_required, pad(16)]
 
-    loc_load.1 not
+    loc_load.ALLOW_UNAUTHORIZED_INPUT_NOTES_LOC not
     # => [!allow_unauthorized_input_notes, were_input_notes_consumed, auth_required, pad(16)]
 
     and
@@ -140,9 +142,9 @@ pub proc auth_tx_acl(auth_args: BeWord)
 
         # Fetch scheme_id from storage
         push.SCHEME_ID_SLOT[0..2] exec.active_account::get_item
-        # => [0, 0, 0, scheme_id, PUB_KEY, pad(16)]
+        # => [[scheme_id, 0, 0, 0], PUB_KEY, pad(16)]
 
-        drop drop drop movdn.4
+        movdn.7 drop drop drop
         # => [PUB_KEY, scheme_id, pad(16)]
 
         exec.signature::authenticate_transaction

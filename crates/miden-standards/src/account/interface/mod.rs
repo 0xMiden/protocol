@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_protocol::account::{AccountId, AccountIdPrefix, AccountType};
+use miden_protocol::account::{AccountId, AccountType};
 use miden_protocol::note::{NoteAttachmentContent, PartialNote};
 use miden_protocol::transaction::TransactionScript;
 use thiserror::Error;
@@ -134,7 +134,7 @@ impl AccountInterface {
     ///     push.{note information}
     ///
     ///     push.{asset amount}
-    ///     call.::miden::standards::faucets::basic_fungible::distribute dropw dropw drop
+    ///     call.::miden::standards::faucets::basic_fungible::mint_and_send dropw dropw drop
     /// end
     /// ```
     ///
@@ -144,7 +144,7 @@ impl AccountInterface {
     ///   procedure.
     /// - the sender of the note isn't the account for which the script is being built.
     /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to distribute an asset with a different faucet ID.
+    /// - a faucet tries to mint an asset with a different faucet ID.
     ///
     /// [wallet]: crate::account::interface::AccountComponentInterface::BasicWallet
     /// [faucet]: crate::account::interface::AccountComponentInterface::BasicFungibleFaucet
@@ -189,7 +189,7 @@ impl AccountInterface {
     ///   procedure.
     /// - the sender of the note isn't the account for which the script is being built.
     /// - the note created by the faucet doesn't contain exactly one asset.
-    /// - a faucet tries to distribute an asset with a different faucet ID.
+    /// - a faucet tries to mint an asset with a different faucet ID.
     fn build_create_notes_section(
         &self,
         output_notes: &[PartialNote],
@@ -249,8 +249,8 @@ pub enum NoteAccountCompatibility {
 /// Account interface related errors.
 #[derive(Debug, Error)]
 pub enum AccountInterfaceError {
-    #[error("note asset is not issued by this faucet: {0}")]
-    IssuanceFaucetMismatch(AccountIdPrefix),
+    #[error("note asset is not issued by faucet {0}")]
+    IssuanceFaucetMismatch(AccountId),
     #[error("note created by the basic fungible faucet doesn't contain exactly one asset")]
     FaucetNoteWithoutAsset,
     #[error("invalid transaction script")]

@@ -9,8 +9,8 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;
@@ -24,6 +24,7 @@ use miden_protocol::note::{
     NoteStorage,
     NoteType,
 };
+use miden_protocol::vm::Program;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
@@ -55,7 +56,7 @@ impl ConfigAggBridgeNote {
     // --------------------------------------------------------------------------------------------
 
     /// Expected number of storage items for a CONFIG_AGG_BRIDGE note.
-    /// Layout: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix]
+    /// Layout: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix]
     pub const NUM_STORAGE_ITEMS: usize = 7;
 
     // PUBLIC ACCESSORS
@@ -78,8 +79,8 @@ impl ConfigAggBridgeNote {
     ///
     /// The note storage contains 7 felts:
     /// - `origin_token_addr[0..5]`: The 5 u32 felts of the origin EVM token address
-    /// - `faucet_id_prefix`: The prefix of the faucet account ID
     /// - `faucet_id_suffix`: The suffix of the faucet account ID
+    /// - `faucet_id_prefix`: The prefix of the faucet account ID
     ///
     /// # Parameters
     /// - `faucet_account_id`: The account ID of the faucet to register
@@ -97,12 +98,12 @@ impl ConfigAggBridgeNote {
         target_account_id: AccountId,
         rng: &mut R,
     ) -> Result<Note, NoteError> {
-        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_prefix,
-        // faucet_id_suffix]
+        // Create note storage with 7 felts: [origin_token_addr(5), faucet_id_suffix,
+        // faucet_id_prefix]
         let addr_elements = origin_token_address.to_elements();
         let mut storage_values: Vec<Felt> = addr_elements;
-        storage_values.push(faucet_account_id.prefix().as_felt());
         storage_values.push(faucet_account_id.suffix());
+        storage_values.push(faucet_account_id.prefix().as_felt());
 
         let note_storage = NoteStorage::new(storage_values)?;
 

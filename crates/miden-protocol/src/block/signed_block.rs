@@ -2,7 +2,13 @@ use miden_core::Word;
 use miden_crypto::dsa::ecdsa_k256_keccak::Signature;
 
 use crate::block::{BlockBody, BlockHeader, BlockNumber};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // SIGNED BLOCK ERROR
 // ================================================================================================
