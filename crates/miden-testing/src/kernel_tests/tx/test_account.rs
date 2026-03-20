@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::collections::BTreeMap;
@@ -1865,6 +1866,86 @@ async fn test_get_initial_map_item() -> anyhow::Result<()> {
     );
 
     tx_context.execute_code(&code).await.unwrap();
+
+    Ok(())
+}
+
+/// Tests that `get_initial_item` returns the original slot values and `get_item` returns updated
+/// values after modification, for all possible storage slot indices.
+#[tokio::test]
+async fn test_get_item_and_get_initial_item_for_all_slots() -> anyhow::Result<()> {
+    // Build storage slots for all valid indices.
+    let slots: Vec<StorageSlot> = (0..AccountStorage::MAX_NUM_STORAGE_SLOTS as u32)
+        .map(|index| {
+            StorageSlot::with_value(
+                StorageSlotName::mock(index as usize),
+                Word::from([0, 0, 0, index]),
+            )
+        })
+        .collect();
+
+    let account = AccountBuilder::new(ChaCha20Rng::from_os_rng().random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(MockAccountComponent::with_slots(slots.clone()))
+        .build_existing()
+        .unwrap();
+
+    let tx_context = TransactionContextBuilder::new(account).build().unwrap();
+
+    // Build MASM code that, for each slot:
+    // 1. Sets a new value [index, 0, 0, 0]
+    // 2. Asserts get_initial_item returns the original value [0, 0, 0, index]
+    // 3. Asserts get_item returns the new value [index, 0, 0, 0]
+    let mut slot_constants = String::new();
+    let mut slot_operations = String::new();
+
+    for (index, slot) in slots.iter().enumerate() {
+        let slot_name = slot.name();
+        let initial_value = slot.value();
+        // Use a different format than the initial value (index at word position 0).
+        let new_value = Word::from([index as u32, 0, 0, 0]);
+        let const_name = format!("SLOT_{index}");
+
+        slot_constants.push_str(&format!("const {const_name} = word(\"{slot_name}\")\n"));
+
+        slot_operations.push_str(&format!(
+            r#"
+                # slot {index}: set new value
+                push.{new_value}
+                push.{const_name}[0..2]
+                call.mock_account::set_item dropw drop drop
+
+                # slot {index}: assert get_initial_item returns original value
+                push.{const_name}[0..2]
+                exec.account::get_initial_item
+                push.{initial_value}
+                assert_eqw.err="slot {index}: initial value mismatch"
+
+                # slot {index}: assert get_item returns the new value
+                push.{const_name}[0..2]
+                exec.account::get_item
+                push.{new_value}
+                assert_eqw.err="slot {index}: current value mismatch"
+            "#,
+        ));
+    }
+
+    let code = format!(
+        r#"
+        use $kernel::account
+        use $kernel::prologue
+        use mock::account->mock_account
+
+        {slot_constants}
+
+        begin
+            exec.prologue::prepare_transaction
+            {slot_operations}
+        end
+        "#,
+    );
+
+    tx_context.execute_code(&code).await?;
 
     Ok(())
 }

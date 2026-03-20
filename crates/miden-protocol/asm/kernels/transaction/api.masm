@@ -583,14 +583,15 @@ pub proc account_add_asset
     # => [ASSET_VALUE', pad(12)]
 end
 
-#! Removes the specified asset from the vault.
+#! Removes the specified asset from the vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -610,7 +611,7 @@ pub proc account_remove_asset
 
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
-    # => [ASSET_VALUE, pad(12)]
+    # => [REMAINING_ASSET_VALUE, pad(12)]
 end
 
 #! Returns the asset associated with the provided asset vault key in the active account's vault.
@@ -780,11 +781,11 @@ end
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to burn.
-#! - ASSET_VALUE is the value of the asset that was burned.
+#! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -810,7 +811,7 @@ pub proc faucet_burn_asset
 
     # burn the asset
     exec.faucet::burn
-    # => [ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns whether the active account defines callbacks.
