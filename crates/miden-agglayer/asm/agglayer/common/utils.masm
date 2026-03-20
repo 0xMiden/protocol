@@ -1,11 +1,7 @@
 # Utility module containing helper procedures for double word handling and byte manipulation.
 
-# TYPE ALIASES
-# =================================================================================================
-
-type Word = struct { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: Word, word_hi: Word }
-type MemoryAddress = u32
+use miden::standards::type_aliases::DoubleWord
+use miden::standards::type_aliases::MemoryAddress
 
 # BYTE MANIPULATION
 # =================================================================================================

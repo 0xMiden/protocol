@@ -12,6 +12,10 @@ use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
 use miden::core::word
+# use miden::standards::type_aliases::AccountID
+
+pub type AccountID = struct { prefix: felt, suffix: felt }
+
 
 # NOTE
 # =================================================================================================
@@ -21,11 +25,6 @@ use miden::core::word
 # All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
 # the memory.                                                                                     #
 # =================================================================================================
-
-# TYPE ALIASES
-# =================================================================================================
-
-type AccountID = struct { prefix: felt, suffix: felt }
 
 # ERRORS
 # =================================================================================================

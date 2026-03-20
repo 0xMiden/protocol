@@ -1,0 +1,7 @@
+# TYPE ALIASES
+# =================================================================================================
+
+pub type AccountID = struct { prefix: felt, suffix: felt }
+pub type DoubleWord = struct { word_lo: word, word_hi: word }
+pub type MemoryAddress = u32
+pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
