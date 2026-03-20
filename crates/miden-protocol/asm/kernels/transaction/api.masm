@@ -7,15 +7,14 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
+# use $kernel::type_aliases::AccountID
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
 use miden::core::word
-# use miden::standards::type_aliases::AccountID
 
 pub type AccountID = struct { prefix: felt, suffix: felt }
-
 
 # NOTE
 # =================================================================================================

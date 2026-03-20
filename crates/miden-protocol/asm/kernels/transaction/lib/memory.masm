@@ -1,8 +1,8 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
+# use $kernel::type_aliases::AccountID
 use miden::core::mem
-# use miden::standards::type_aliases::AccountID
 
 pub type AccountID = struct { prefix: felt, suffix: felt }
 
