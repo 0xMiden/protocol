@@ -6,8 +6,6 @@ use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::standards::faucets
 use miden::standards::faucets::network_fungible
-use miden::standards::access::ownable
-use miden::core::word
 
 # CONSTANTS
 # =================================================================================================
@@ -20,8 +18,8 @@ const CONVERSION_INFO_2_SLOT = word("agglayer::faucet::conversion_info_2")
 
 # Storage slots for the pre-computed metadata hash (keccak256 of ABI-encoded token metadata).
 # The 32-byte hash is split across two value slots, each holding 4 u32 felts.
-const METADATA_HASH_LO_SLOT = word("miden::agglayer::faucet::metadata_hash_lo")
-const METADATA_HASH_HI_SLOT = word("miden::agglayer::faucet::metadata_hash_hi")
+const METADATA_HASH_LO_SLOT = word("agglayer::faucet::metadata_hash_lo")
+const METADATA_HASH_HI_SLOT = word("agglayer::faucet::metadata_hash_hi")
 
 # PUBLIC INTERFACE
 # =================================================================================================
@@ -36,21 +34,18 @@ const METADATA_HASH_HI_SLOT = word("miden::agglayer::faucet::metadata_hash_hi")
 #!
 #! Invocation: exec
 pub proc get_origin_token_address
+    # TODO(migration): this procedure name is the same as the one in the bridge account, but they have different functions.
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
-    # => [addr3, addr2, addr1, addr0]
-
-    exec.word::reverse
     # => [addr0, addr1, addr2, addr3]
 
-    # Read slot 2: [0, scale, origin_network, addr4]
+    # Read slot 2: [addr4, origin_network, scale, 0]
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4, addr0, addr1, addr2, addr3]
+    # => [addr4, origin_network, scale, 0, addr0, addr1, addr2, addr3]
 
-    # Keep only addr4 from slot 2 and append it after slot 1 limbs
-    drop drop drop
-    movdn.4
+    # Keep only addr4, drop origin_network, scale, 0
+    movdn.7 drop drop drop
     # => [addr0, addr1, addr2, addr3, addr4]
 end
 
@@ -63,9 +58,9 @@ end
 pub proc get_origin_network
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4]
+    # => [addr4, origin_network, scale, 0]
 
-    drop drop swap drop
+    drop movdn.2 drop drop
     # => [origin_network]
 end
 
@@ -78,9 +73,9 @@ end
 proc get_scale_inner
     push.CONVERSION_INFO_2_SLOT[0..2]
     exec.active_account::get_item
-    # => [0, scale, origin_network, addr4]
+    # => [addr4, origin_network, scale, 0]
 
-    drop movdn.2 drop drop
+    drop drop swap drop
     # => [scale]
 end
 
@@ -96,16 +91,10 @@ end
 pub proc get_metadata_hash
     push.METADATA_HASH_LO_SLOT[0..2]
     exec.active_account::get_item
-    # => [lo3, lo2, lo1, lo0, pad(16)]
-
-    exec.word::reverse
     # => [lo0, lo1, lo2, lo3, pad(16)]
 
     push.METADATA_HASH_HI_SLOT[0..2]
     exec.active_account::get_item
-    # => [hi3, hi2, hi1, hi0, lo0, lo1, lo2, lo3, pad(16)]
-
-    exec.word::reverse
     # => [hi0, hi1, hi2, hi3, lo0, lo1, lo2, lo3, pad(16)]
 
     # Rearrange: move hi below lo
@@ -162,24 +151,24 @@ pub proc asset_to_origin_asset
     # Step 2: Scale amount to U256
     exec.asset_conversion::scale_native_amount_to_u256
     exec.asset_conversion::reverse_limbs_and_change_byte_endianness
-    # => [U256_LO(4), U256_HI(4), pad(15)]
+    # => [U256_LO, U256_HI, pad(15)]
 
     # Step 3: Get origin token address
     exec.get_origin_token_address
-    # => [addr0, addr1, addr2, addr3, addr4, U256_LO(4), U256_HI(4), pad(15)]
+    # => [addr0, addr1, addr2, addr3, addr4, U256_LO, U256_HI, pad(15)]
 
     # Move address below the U256 amount
     repeat.5 movdn.12 end
-    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, pad(15)]
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, pad(15)]
 
     # Step 4: Get origin network
     exec.get_origin_network
     exec.utils::swap_u32_bytes
-    # => [origin_network, U256_LO(4), U256_HI(4), addr0..addr4, pad(15)]
+    # => [origin_network, U256_LO, U256_HI, addr0..addr4, pad(15)]
 
     # Move origin_network after the address fields
     movdn.13
-    # => [U256_LO(4), U256_HI(4), addr0, addr1, addr2, addr3, addr4, origin_network, pad(15)]
+    # => [U256_LO, U256_HI, addr0, addr1, addr2, addr3, addr4, origin_network, pad(15)]
 
     exec.sys::truncate_stack
 end
@@ -202,14 +191,12 @@ end
 #! Invocation: call
 pub use ::miden::standards::faucets::basic_fungible::burn
 
-#! Re-export the network fungible faucet's distribute procedure.
+#! Re-export the network fungible faucet's mint_and_send procedure.
 #!
-#! This procedure first checks if the note sender is the owner of the faucet, and then
-#! mints the asset and creates an output note with that asset for the recipient.
-#! Used by the standard MINT note to mint assets on the aggfaucet.
+#! See `miden::standards::faucets::network_fungible::mint_and_send` for more details.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
 #! Outputs: [note_idx, pad(15)]
 #!
 #! Invocation: call
-pub use ::miden::standards::faucets::network_fungible::distribute
+pub use ::miden::standards::faucets::network_fungible::mint_and_send

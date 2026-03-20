@@ -1,10 +1,15 @@
 use miden_crypto::Word;
-use miden_crypto::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
-use miden_processor::DeserializationError;
 
 use crate::account::AccountId;
 use crate::errors::NoteError;
-use crate::{Felt, Hasher, WORD_SIZE, ZERO};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
+use crate::{Felt, Hasher, ZERO};
 
 mod assets;
 pub use assets::NoteAssets;
@@ -19,7 +24,7 @@ mod storage;
 pub use storage::NoteStorage;
 
 mod metadata;
-pub use metadata::NoteMetadata;
+pub use metadata::{NoteMetadata, NoteMetadataHeader};
 
 mod attachment;
 pub use attachment::{
@@ -163,6 +168,21 @@ impl Note {
     pub fn commitment(&self) -> Word {
         self.header.commitment()
     }
+
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Reduces the size of the note script by stripping all debug info from it.
+    pub fn minify_script(&mut self) {
+        self.details.minify_script();
+    }
+
+    /// Consumes self and returns the underlying parts of the [`Note`].
+    pub fn into_parts(self) -> (NoteAssets, NoteMetadata, NoteRecipient) {
+        let (assets, recipient) = self.details.into_parts();
+        let metadata = self.header.into_metadata();
+        (assets, metadata, recipient)
+    }
 }
 
 // AS REF
@@ -218,6 +238,10 @@ impl Serializable for Note {
         // only metadata is serialized as note ID can be computed from note details
         header.metadata().write_into(target);
         details.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.header.metadata().get_size_hint() + self.details.get_size_hint()
     }
 }
 

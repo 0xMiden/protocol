@@ -1,3 +1,5 @@
+use ::miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
+use ::miden::protocol::asset::ASSET_SIZE
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::active_note
@@ -8,11 +10,12 @@ const PUBLIC_NOTE=1
 
 #! Adds the provided asset to the active account.
 #!
-#! Inputs:  [ASSET, pad(12)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
 #! Outputs: [pad(16)]
 #!
 #! Where:
-#! - ASSET is the asset to be received, can be fungible or non-fungible
+#! - ASSET_KEY is the vault key of the received asset.
+#! - ASSET_VALUE is the value of the received asset.
 #!
 #! Panics if:
 #! - the same non-fungible asset already exists in the account.
@@ -22,7 +25,7 @@ const PUBLIC_NOTE=1
 #! Invocation: call
 pub proc receive_asset
     exec.native_account::add_asset
-    # => [ASSET', pad(12)]
+    # => [ASSET_VALUE', pad(12)]
 
     # drop the final asset
     dropw
@@ -36,12 +39,13 @@ end
 #! the contents of the `PAD` elements shown below. It is the caller's responsibility to make sure
 #! these elements do not contain any meaningful data.
 #!
-#! Inputs:  [ASSET, note_idx, pad(11)]
-#! Outputs: [ASSET, note_idx, pad(11)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - note_idx is the index of the output note.
-#! - ASSET is the fungible or non-fungible asset of interest.
+#! - ASSET_KEY is the vault key of the asset to move to the note.
+#! - ASSET_VALUE is the value of the asset to move to the note.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -50,71 +54,80 @@ end
 #!
 #! Invocation: call
 pub proc move_asset_to_note
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+
     # remove the asset from the account
     exec.native_account::remove_asset
-    # => [ASSET, note_idx, pad(11)]
-
-    dupw dup.8 movdn.4
-    # => [ASSET, note_idx, ASSET, note_idx, pad(11)]
+    dropw
+    # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
     exec.output_note::add_asset
-    # => [ASSET, note_idx, pad(11)]
+    # => [pad(16)]
 end
 
 #! Adds all assets from the active note to the native account's vault.
 #!
 #! Inputs:  []
 #! Outputs: []
-@locals(1024)
+@locals(2048)
 pub proc add_assets_to_account
     # write assets to local memory starting at offset 0
-    # we have allocated 4 * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
+    # we have allocated ASSET_SIZE * MAX_ASSETS_PER_NOTE number of locals so all assets should fit
     # since the asset memory will be overwritten, we don't have to initialize the locals to zero
     locaddr.0 exec.active_note::get_assets
     # => [num_of_assets, ptr = 0]
 
     # compute the pointer at which we should stop iterating
-    mul.4 dup.1 add
+    mul.ASSET_SIZE dup.1 add
     # => [end_ptr, ptr]
 
     # pad the stack and move the pointer to the top
-    padw movup.5
-    # => [ptr, EMPTY_WORD, end_ptr]
+    padw padw movup.9
+    # => [ptr, pad(8), end_ptr]
 
     # loop if the amount of assets is non-zero
-    dup dup.6 neq
-    # => [should_loop, ptr, EMPTY_WORD, end_ptr]
+    dup dup.10 neq
+    # => [should_loop, ptr, pad(8), end_ptr]
 
     while.true
-        # => [ptr, EMPTY_WORD, end_ptr]
+        # => [ptr, pad(8), end_ptr]
 
         # save the pointer so that we can use it later
-        dup movdn.5
-        # => [ptr, EMPTY_WORD, ptr, end_ptr]
+        dup movdn.9
+        # => [ptr, pad(8), ptr, end_ptr]
 
-        # load the asset
-        mem_loadw_be
-        # => [ASSET, ptr, end_ptr]
+        # load the asset value
+        add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le swapw
+        # => [EMPTY_WORD, ASSET_VALUE, ptr, end_ptr]
+
+        # load the asset key
+        dup.8 mem_loadw_le
+        # => [ASSET_KEY, ASSET_VALUE, ptr, end_ptr]
 
         # pad the stack before call
-        padw swapw padw padw swapdw
-        # => [ASSET, pad(12), ptr, end_ptr]
+        padw padw swapdw
+        # => [ASSET_KEY, ASSET_VALUE, pad(8), ptr, end_ptr]
 
         # add asset to the account
         call.receive_asset
         # => [pad(16), ptr, end_ptr]
 
         # clean the stack after call
-        dropw dropw dropw
-        # => [EMPTY_WORD, ptr, end_ptr]
+        dropw dropw
+        # => [pad(8), ptr, end_ptr]
 
-        # increment the pointer and continue looping if ptr != end_ptr
-        movup.4 add.4 dup dup.6 neq
-        # => [should_loop, ptr+4, EMPTY_WORD, end_ptr]
+        # increment the pointer
+        movup.8 add.ASSET_SIZE dup
+        # => [ptr+ASSET_SIZE, ptr+ASSET_SIZE, pad(8), end_ptr]
+
+        # continue looping if ptr != end_ptr
+        dup.10 neq
+        # => [should_loop, ptr+ASSET_SIZE, pad(8), end_ptr]
     end
-    # => [ptr', EMPTY_WORD, end_ptr]
+    # => [ptr', pad(8), end_ptr]
 
     # clear the stack
-    drop dropw drop
+    drop dropw dropw drop
     # => []
 end

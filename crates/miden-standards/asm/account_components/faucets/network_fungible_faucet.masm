@@ -2,7 +2,5 @@
 #
 # See the `NetworkFungibleFaucet` Rust type's documentation for more details.
 
-pub use ::miden::standards::faucets::network_fungible::distribute
+pub use ::miden::standards::faucets::network_fungible::mint_and_send
 pub use ::miden::standards::faucets::network_fungible::burn
-pub use ::miden::standards::faucets::network_fungible::transfer_ownership
-pub use ::miden::standards::faucets::network_fungible::renounce_ownership

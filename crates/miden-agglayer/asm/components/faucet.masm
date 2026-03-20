@@ -2,13 +2,13 @@
 #
 # This is a thin wrapper that re-exports faucet-related procedures from the
 # agglayer library. The faucet exposes:
-# - `distribute` from the network fungible faucet (for MINT note consumption, with owner verification)
+# - `mint_and_send` from the network fungible faucet (for MINT note consumption, with owner verification)
 # - `asset_to_origin_asset` for bridge-out FPI
 # - `get_metadata_hash` for bridge-out FPI (metadata hash retrieval)
 # - `get_scale` for bridge-in FPI (amount verification)
 # - `burn` for bridge-out
 
-pub use ::agglayer::faucet::distribute
+pub use ::agglayer::faucet::mint_and_send
 pub use ::agglayer::faucet::asset_to_origin_asset
 pub use ::agglayer::faucet::get_metadata_hash
 pub use ::agglayer::faucet::get_scale

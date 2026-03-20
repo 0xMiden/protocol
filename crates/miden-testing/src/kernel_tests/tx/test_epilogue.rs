@@ -1,10 +1,8 @@
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use std::borrow::ToOwned;
 
-use miden_processor::crypto::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_processor::{Felt, ONE};
-use miden_protocol::Word;
 use miden_protocol::account::{Account, AccountDelta, AccountStorageDelta, AccountVaultDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::tx_kernel::{
@@ -26,12 +24,12 @@ use miden_protocol::transaction::memory::{
     OUTPUT_NOTE_ASSET_COMMITMENT_OFFSET,
     OUTPUT_NOTE_SECTION_OFFSET,
 };
-use miden_protocol::transaction::{OutputNote, OutputNotes, TransactionOutputs};
+use miden_protocol::transaction::{RawOutputNote, RawOutputNotes, TransactionOutputs};
+use miden_protocol::{Hasher, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::mock_account::MockAccountExt;
 use miden_standards::testing::note::NoteBuilder;
 
-use super::ZERO;
 use crate::kernel_tests::tx::ExecutionOutputExt;
 use crate::utils::{create_p2any_note, create_public_p2any_note};
 use crate::{
@@ -55,7 +53,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(account.clone())
         .extend_input_notes(vec![input_note_1])
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note_1.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note_1.clone())])
         .build()?;
 
     let code = format!(
@@ -74,7 +72,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
             exec.output_note::create
             # => [note_idx]
 
-            push.{asset}
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             exec.output_note::add_asset
             # => []
 
@@ -87,7 +86,8 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         recipient = output_note_1.recipient().digest(),
         note_type = Felt::from(output_note_1.metadata().note_type()),
         tag = Felt::from(output_note_1.metadata().tag()),
-        asset = Word::from(asset)
+        ASSET_KEY = asset.to_key_word(),
+        ASSET_VALUE = asset.to_value_word(),
     );
 
     let exec_output = tx_context.execute_code(&code).await?;
@@ -96,12 +96,12 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     let mut final_account = account.clone();
     final_account.increment_nonce(ONE)?;
 
-    let output_notes = OutputNotes::new(
+    let output_notes = RawOutputNotes::new(
         tx_context
             .expected_output_notes()
             .iter()
             .cloned()
-            .map(OutputNote::Full)
+            .map(RawOutputNote::Full)
             .collect(),
     )?;
 
@@ -114,30 +114,41 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
     .to_commitment();
 
     let account_update_commitment =
-        miden_protocol::Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
-
-    let mut expected_stack = Vec::with_capacity(16);
-    expected_stack.extend(output_notes.commitment().as_elements().iter().rev());
-    expected_stack.extend(account_update_commitment.as_elements().iter().rev());
-    expected_stack.extend(
-        Word::from(
-            FungibleAsset::new(
-                tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
-                0,
-            )
-            .unwrap(),
-        )
-        .iter()
-        .rev(),
-    );
-    expected_stack.push(Felt::from(u32::MAX)); // Value for tx expiration block number
-    expected_stack.extend((13..16).map(|_| ZERO));
+        Hasher::merge(&[final_account.to_commitment(), account_delta_commitment]);
+    let fee_asset = FungibleAsset::new(
+        tx_context.tx_inputs().block_header().fee_parameters().native_asset_id(),
+        0,
+    )?;
 
     assert_eq!(
-        exec_output.stack.as_slice(),
-        expected_stack.as_slice(),
-        "Stack state after finalize_transaction does not contain the expected values"
+        exec_output.get_stack_word(TransactionOutputs::OUTPUT_NOTES_COMMITMENT_WORD_IDX),
+        output_notes.commitment()
     );
+    assert_eq!(
+        exec_output.get_stack_word(TransactionOutputs::ACCOUNT_UPDATE_COMMITMENT_WORD_IDX),
+        account_update_commitment,
+    );
+    assert_eq!(
+        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_SUFFIX_ELEMENT_IDX),
+        fee_asset.faucet_id().suffix(),
+    );
+    assert_eq!(
+        exec_output.get_stack_element(TransactionOutputs::NATIVE_ASSET_ID_PREFIX_ELEMENT_IDX),
+        fee_asset.faucet_id().prefix().as_felt()
+    );
+    assert_eq!(
+        exec_output
+            .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
+            .as_canonical_u64(),
+        fee_asset.amount()
+    );
+    assert_eq!(
+        exec_output
+            .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
+            .as_canonical_u64(),
+        u64::from(u32::MAX)
+    );
+    assert_eq!(exec_output.get_stack_word(12), Word::empty());
 
     assert_eq!(
         exec_output.stack.len(),
@@ -150,7 +161,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
 /// Tests that the output note memory section is correctly populated during finalize_transaction.
 #[tokio::test]
 async fn test_compute_output_note_id() -> anyhow::Result<()> {
-    let mut rng = RpoRandomCoin::new(Word::from([3, 4, 5, 6u32]));
+    let mut rng = RandomCoin::new(Word::from([3, 4, 5, 6u32]));
     let account = Account::mock(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE, Auth::IncrNonce);
     let mut assets = account.vault().assets();
     let asset0 = assets.next().unwrap();
@@ -161,8 +172,8 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
 
     let tx_context = TransactionContextBuilder::new(account.clone())
         .extend_expected_output_notes(vec![
-            OutputNote::Full(output_note0.clone()),
-            OutputNote::Full(output_note1.clone()),
+            RawOutputNote::Full(output_note0.clone()),
+            RawOutputNote::Full(output_note1.clone()),
         ])
         .build()?;
 
@@ -187,14 +198,16 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
         exec.output_note::create
         # => [note_idx]
 
-        push.{asset}
+        push.{ASSET_VALUE}
+        push.{ASSET_KEY}
         call.::miden::standards::wallets::basic::move_asset_to_note
         # => []
         ",
             recipient = note.recipient().digest(),
             note_type = Felt::from(note.metadata().note_type()),
             tag = Felt::from(note.metadata().tag()),
-            asset = Word::from(asset)
+            ASSET_KEY = asset.to_key_word(),
+            ASSET_VALUE = asset.to_value_word(),
         ));
     }
 
@@ -231,13 +244,21 @@ async fn test_compute_output_note_id() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that a transaction fails due to the asset preservation rules when the input note has an
-/// asset with amount 100 and the output note has the same asset with amount 200.
+/// Tests that a transaction fails when assets aren't preserved, i.e.
+/// - when the input note has asset amount 100 and the output note has asset amount 200.
+/// - when the input note has asset amount 200 and the output note has asset amount 100.
+#[rstest::rstest]
+#[case::outputs_exceed_inputs(100, 200)]
+#[case::inputs_exceed_outputs(200, 100)]
 #[tokio::test]
-async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyhow::Result<()> {
-    // Create an input asset with amount 100 and an output asset with amount 200.
-    let input_asset = FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, 100)?;
-    let output_asset = input_asset.add(input_asset)?;
+async fn epilogue_fails_when_assets_arent_preserved(
+    #[case] input_amount: u64,
+    #[case] output_amount: u64,
+) -> anyhow::Result<()> {
+    let input_asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, input_amount)?;
+    let output_asset =
+        FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, output_amount)?;
 
     let mut builder = MockChain::builder();
     let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
@@ -247,7 +268,7 @@ async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyh
     let input_note = NoteBuilder::new(account.id(), *builder.rng_mut())
         .add_assets([Asset::from(input_asset)])
         .build()?;
-    builder.add_output_note(OutputNote::Full(input_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(input_note.clone()));
     let mock_chain = builder.build()?;
 
     let code = format!(
@@ -257,65 +278,14 @@ async fn epilogue_fails_when_num_output_assets_exceed_num_input_assets() -> anyh
 
       begin
           # create a note with the output asset
-          push.{OUTPUT_ASSET}
+          push.{OUTPUT_ASSET_VALUE}
+          push.{OUTPUT_ASSET_KEY}
           exec.util::create_default_note_with_asset
           # => []
       end
       ",
-        OUTPUT_ASSET = Word::from(output_asset),
-    );
-
-    let builder = CodeBuilder::with_mock_libraries();
-    let source_manager = builder.source_manager();
-    let tx_script = builder.compile_tx_script(code)?;
-
-    let tx_context = mock_chain
-        .build_tx_context(TxContextInput::AccountId(account.id()), &[], &[input_note])?
-        .tx_script(tx_script)
-        .with_source_manager(source_manager)
-        .build()?;
-
-    let exec_output = tx_context.execute().await;
-    assert_transaction_executor_error!(
-        exec_output,
-        ERR_EPILOGUE_TOTAL_NUMBER_OF_ASSETS_MUST_STAY_THE_SAME
-    );
-
-    Ok(())
-}
-
-/// Tests that a transaction fails due to the asset preservation rules when the input note has an
-/// asset with amount 200 and the output note has the same asset with amount 100.
-#[tokio::test]
-async fn epilogue_fails_when_num_input_assets_exceed_num_output_assets() -> anyhow::Result<()> {
-    // Create an input asset with amount 200 and an output asset with amount 100.
-    let output_asset = FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1.try_into()?, 100)?;
-    let input_asset = output_asset.add(output_asset)?;
-
-    let mut builder = MockChain::builder();
-    let account = builder.add_existing_mock_account(Auth::IncrNonce)?;
-    // Add an input note that (automatically) adds its assets to the transaction's input vault, but
-    // _does not_ add the asset to the account. This is just to keep the test conceptually simple -
-    // there is no account involved.
-    let input_note = NoteBuilder::new(account.id(), *builder.rng_mut())
-        .add_assets([Asset::from(output_asset)])
-        .build()?;
-    builder.add_output_note(OutputNote::Full(input_note.clone()));
-    let mock_chain = builder.build()?;
-
-    let code = format!(
-        "
-      use mock::account
-      use mock::util
-
-      begin
-          # create a note with the output asset
-          push.{OUTPUT_ASSET}
-          exec.util::create_default_note_with_asset
-          # => []
-      end
-      ",
-        OUTPUT_ASSET = Word::from(input_asset),
+        OUTPUT_ASSET_KEY = output_asset.to_key_word(),
+        OUTPUT_ASSET_VALUE = output_asset.to_value_word(),
     );
 
     let builder = CodeBuilder::with_mock_libraries();
@@ -379,7 +349,7 @@ async fn test_block_expiration_height_monotonically_decreases() -> anyhow::Resul
         assert_eq!(
             exec_output
                 .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-                .as_int(),
+                .as_canonical_u64(),
             expected_expiry
         );
     }
@@ -439,7 +409,7 @@ async fn test_no_expiration_delta_set() -> anyhow::Result<()> {
     assert_eq!(
         exec_output
             .get_stack_element(TransactionOutputs::EXPIRATION_BLOCK_ELEMENT_IDX)
-            .as_int() as u32,
+            .as_canonical_u64() as u32,
         u32::MAX
     );
 
@@ -498,7 +468,7 @@ async fn epilogue_fails_on_account_state_change_without_nonce_increment() -> any
             push.91.92.93.94
             push.MOCK_VALUE_SLOT0[0..2]
             repeat.5 movup.5 drop end
-            # => [slot_id_prefix, slot_id_suffix, VALUE]
+            # => [slot_id_suffix, slot_id_prefix, VALUE]
             call.account::set_item
             # => [PREV_VALUE]
             dropw

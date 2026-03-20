@@ -74,9 +74,7 @@ impl<const TREE_HEIGHT: usize> MerkleTreeFrontier32<TREE_HEIGHT> {
 async fn test_append_and_update_frontier() -> anyhow::Result<()> {
     let mut mtf = MerkleTreeFrontier32::<32>::new();
 
-    let mut source = "use agglayer::bridge::merkle_tree_frontier \
-             use miden::core::word begin"
-        .to_string();
+    let mut source = "use agglayer::bridge::merkle_tree_frontier begin".to_string();
 
     for round in 0..32 {
         // construct the leaf from the hex representation of the round number
@@ -112,9 +110,7 @@ async fn test_check_empty_mtf_root() -> anyhow::Result<()> {
     let zero_31 = *CANONICAL_ZEROS_32.get(31).expect("zeros should have 32 values total");
     let empty_mtf_root = Keccak256::merge(&[zero_31, zero_31]);
 
-    let mut source = "use agglayer::bridge::merkle_tree_frontier \
-             use miden::core::word begin"
-        .to_string();
+    let mut source = "use agglayer::bridge::merkle_tree_frontier begin".to_string();
 
     for round in 1..=32 {
         // check that pushing the zero leaves into the MTF doesn't change its root
@@ -206,12 +202,9 @@ fn leaf_assertion_code(leaf: SmtNode, expected_root: ExitRoot, num_leaves: u32) 
 
     format!(
         r#"
-            # load the provided leaf onto the stack and reverse (the leaf value would have been
-            # reversed by the keccak hash call in a real get_leaf_value)
+            # load the provided leaf onto the stack
             push.{leaf_hi}
-            exec.word::reverse
             push.{leaf_lo}
-            exec.word::reverse
 
             # add this leaf to the MTF
             exec.merkle_tree_frontier::append_and_update_frontier
@@ -219,9 +212,7 @@ fn leaf_assertion_code(leaf: SmtNode, expected_root: ExitRoot, num_leaves: u32) 
 
             # assert the root correctness after the first leaf was added
             push.{root_lo}
-            exec.word::reverse
             push.{root_hi}
-            exec.word::reverse
             movdnw.3
             # => [EXPECTED_ROOT_LO, NEW_ROOT_LO, NEW_ROOT_HI, EXPECTED_ROOT_HI, new_leaf_count]
 

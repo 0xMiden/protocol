@@ -24,11 +24,12 @@ const OUTPUT_PUBLIC_NOTE_STORAGE_ADDR=16
 
 const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 12 storage items for private or 16+ storage items for public output notes"
 
-#! Network Faucet MINT script: mints assets by calling the network faucet's distribute function.
+#! Network Faucet MINT script: mints assets by calling the network faucet's mint_and_send
+#! function.
 #! This note is intended to be executed against a network fungible faucet account.
 #!
 #! Requires that the account exposes:
-#! - miden::standards::faucets::network_fungible::distribute procedure.
+#! - miden::standards::faucets::network_fungible::mint_and_send procedure.
 #!
 #! Inputs:  [ARGS, pad(12)]
 #! Outputs: [pad(16)]
@@ -56,7 +57,7 @@ const ERR_MINT_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS="MINT script expects exactly 1
 #!              The number of output note storage items = num_mint_note_storage_items - 16
 #!
 #! Panics if:
-#! - account does not expose distribute procedure.
+#! - account does not expose mint_and_send procedure.
 #! - the number of storage items is not exactly 12 for private or less than 16 for public output notes.
 @note_script
 pub proc main
@@ -80,10 +81,10 @@ pub proc main
         movdn.9 drop
         # => [EMPTY_WORD, EMPTY_WORD, num_storage_items, pad(8)]
 
-        mem_loadw_be.8
+        mem_loadw_le.8
         # => [SCRIPT_ROOT, EMPTY_WORD, num_storage_items, pad(8)]
 
-        swapw mem_loadw_be.12
+        swapw mem_loadw_le.12
         # => [SERIAL_NUM, SCRIPT_ROOT, num_storage_items, pad(8)]
 
         # compute variable length note storage for the output note
@@ -109,7 +110,7 @@ pub proc main
         drop
         # => [pad(16)]
 
-        mem_loadw_be.8
+        mem_loadw_le.8
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
@@ -119,12 +120,12 @@ pub proc main
     end
     # => [amount, tag, note_type, RECIPIENT, pad(12)]
 
-    # distribute expects 9 pad elements, returns 15 and 12 are provided here.
+    # mint_and_send expects 9 pad elements, returns 15 and 12 are provided here.
     # so the total number of pads after calling is 12 + (15-9) = 18
-    call.network_faucet::distribute
+    call.network_faucet::mint_and_send
     # => [note_idx, pad(18))]
 
-    padw mem_loadw_be.ATTACHMENT_ADDRESS
+    padw mem_loadw_le.ATTACHMENT_ADDRESS
     # => [ATTACHMENT, note_idx, pad(18))]
 
     mem_load.ATTACHMENT_KIND_ADDRESS

@@ -28,15 +28,15 @@ Miden is currently on release v0.13. This is an early version of the protocol an
 ### Feature highlights
 
 - **Private accounts**. The Miden Operator tracks only commitments to account data in the public database. The users are responsible for keeping track of the state of their accounts.
-- **Public accounts**. With public accounts users are be able to store the entire state of their accounts on-chain, thus, eliminating the need to keep track of account states locally (albeit by sacrificing privacy and at a higher cost).
+- **Public accounts**. With public accounts, users are able to store the entire state of their accounts on-chain, thus, eliminating the need to keep track of account states locally (albeit by sacrificing privacy and at a higher cost).
 - **Private notes**. Like with private accounts, the Miden Operator tracks only commitments to notes in the public database. Users need to communicate note details to each other via side channels.
-- **Public notes**. With public notes, the users are be able to store all note details on-chain, thus, eliminating the need to communicate note details via side-channels.
+- **Public notes**. With public notes, users are able to store all note details on-chain, thus, eliminating the need to communicate note details via side-channels.
 - **Local transactions**. Users can execute and prove transactions locally on their devices. The Miden Operator verifies the proofs and if the proofs are valid, updates the state of the rollup accordingly.
 - **Standard account**. Users can create accounts using a small number of standard account interfaces (e.g., basic wallet). In the future, the set of standard smart contracts will be expanded.
-- **Standard notes**. Can create notes using standardized note scripts such as Pay-to-ID (`P2ID`) and atomic swap (`SWAP`). In the future, the set of standardized notes will be expanded.
-- **Delegated note inclusion proofs**. By delegating note inclusion proofs, users can create chains of dependent notes which are included into a block as a single batch.
+- **Standard notes**. Users can create notes using standardized note scripts such as Pay-to-ID (`P2ID`) and atomic swap (`SWAP`). In the future, the set of standardized notes will be expanded.
+- **Delegated note inclusion proofs**. By delegating note inclusion proofs, users can create chains of dependent transactions which are included into a block as a single batch.
 - **Transaction recency conditions**. Users are able to specify how close to the chain tip their transactions are to be executed. This enables things like rate limiting and oracles.
-- **Network transactions**. Users will be able to create notes intended for network execution. Such notes will be included into transactions executed and proven by the Miden operator.
+- **Network transactions**. Users are able to create notes intended for network execution. Such notes are included into transactions executed and proven by the Miden operator.
 
 ### Planned features
 
@@ -44,12 +44,12 @@ Miden is currently on release v0.13. This is an early version of the protocol an
 
 ## Project structure
 
-| Crate                           | Description                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| [miden-protocol](crates/miden-protocol) | Contains core components defining the Miden protocol, including the transaction kernel.                    |
-| [miden-standards](crates/miden-standards)   | Contains the code of Miden's standardized smart contracts. |
-| [miden-tx](crates/miden-tx)     | Contains tool for creating, executing, and proving Miden rollup transaction.    |
-| [bench-tx](bin/bench-tx)        | Contains transaction execution and proving benchmarks.                          |
+| Crate                                     | Description                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| [miden-protocol](crates/miden-protocol)   | Contains core components defining the Miden protocol, including the transaction kernel. |
+| [miden-standards](crates/miden-standards) | Contains the code of Miden's standardized smart contracts.                              |
+| [miden-tx](crates/miden-tx)               | Contains tools for creating, executing, and proving Miden rollup transactions.          |
+| [bench-tx](bin/bench-tx)                  | Contains transaction execution and proving benchmarks.                                  |
 
 ## Make commands
 

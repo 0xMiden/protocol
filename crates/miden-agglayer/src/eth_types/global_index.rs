@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
 use miden_protocol::utils::{HexParseError, hex_to_bytes};
 
@@ -100,7 +100,7 @@ impl GlobalIndex {
 
     /// Converts to field elements for note storage / MASM processing.
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 
     /// Returns the raw 32-byte array (big-endian).
@@ -111,8 +111,6 @@ impl GlobalIndex {
 
 #[cfg(test)]
 mod tests {
-    use miden_core::FieldElement;
-
     use super::*;
 
     #[test]

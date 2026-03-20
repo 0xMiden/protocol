@@ -2,8 +2,10 @@ use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Display;
+use core::num::TryFromIntError;
 
-use miden_processor::MastNodeExt;
+use miden_core::mast::MastNodeExt;
+use miden_mast_package::{MastArtifact, Package};
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -138,6 +140,35 @@ impl NoteScript {
         Ok(Self { mast: Arc::new(mast), entrypoint })
     }
 
+    /// Creates an [`NoteScript`] from a [`Package`].
+    ///
+    /// # Arguments
+    ///
+    /// * `package` - The package containing the
+    ///   [`Executable`](miden_mast_package::MastArtifact::Executable) or
+    ///   [`Library`](miden_mast_package::MastArtifact::Library).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The package contains a library which does not contain a procedure with the `@note_script`
+    ///   attribute.
+    /// - The package contains a library which contains multiple procedures with the `@note_script`
+    ///   attribute.
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
+        match &package.mast {
+            // `NoteScript`s are compiled as executables by the miden compiler's
+            // cargo extension. Source, the "midenc_flags_from_target" function:
+            // https://github.com/0xMiden/compiler/blob/d3cd8cd4a2c1dfeae8a61643aa42734a35e3e840/tools/cargo-miden/src/commands/build.rs#L334
+            MastArtifact::Executable(executable) => {
+                let program = executable.as_ref().clone();
+
+                Ok(NoteScript::new(program))
+            },
+            MastArtifact::Library(library) => Ok(NoteScript::from_library(library))?,
+        }
+    }
+
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
@@ -154,6 +185,16 @@ impl NoteScript {
     /// Returns an entrypoint node ID of the current script.
     pub fn entrypoint(&self) -> MastNodeId {
         self.entrypoint
+    }
+
+    /// Clears all debug info from this script's [`MastForest`]: decorators, error codes, and
+    /// procedure names.
+    ///
+    /// See [`MastForest::clear_debug_info`] for more details.
+    pub fn clear_debug_info(&mut self) {
+        let mut mast = self.mast.clone();
+        Arc::make_mut(&mut mast).clear_debug_info();
+        self.mast = mast;
     }
 
     /// Returns a new [NoteScript] with the provided advice map entries merged into the
@@ -232,16 +273,23 @@ impl TryFrom<&[Felt]> for NoteScript {
             return Err(DeserializationError::UnexpectedEOF);
         }
 
-        let entrypoint: u32 = elements[0].try_into().map_err(DeserializationError::InvalidValue)?;
-        let len = elements[1].as_int();
+        let entrypoint: u32 = elements[0]
+            .as_canonical_u64()
+            .try_into()
+            .map_err(|err: TryFromIntError| DeserializationError::InvalidValue(err.to_string()))?;
+        let len = elements[1].as_canonical_u64();
         let mut data = Vec::with_capacity(elements.len() * 4);
 
         for &felt in &elements[2..] {
-            let v: u32 = felt.try_into().map_err(DeserializationError::InvalidValue)?;
-            data.extend(v.to_le_bytes())
+            let element: u32 =
+                felt.as_canonical_u64().try_into().map_err(|err: TryFromIntError| {
+                    DeserializationError::InvalidValue(err.to_string())
+                })?;
+            data.extend(element.to_le_bytes())
         }
         data.shrink_to(len as usize);
 
+        // TODO: Use UntrustedMastForest and check where else we deserialize mast forests.
         let mast = MastForest::read_from_bytes(&data)?;
         let entrypoint = MastNodeId::from_u32_safe(entrypoint, &mast)?;
         Ok(NoteScript::from_parts(Arc::new(mast), entrypoint))
@@ -263,6 +311,16 @@ impl Serializable for NoteScript {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.mast.write_into(target);
         target.write_u32(u32::from(self.entrypoint));
+    }
+
+    fn get_size_hint(&self) -> usize {
+        // TODO: this is a temporary workaround. Replace mast.to_bytes().len() with
+        // MastForest::get_size_hint() (or a similar size-hint API) once it becomes
+        // available.
+        let mast_size = self.mast.to_bytes().len();
+        let u32_size = 0u32.get_size_hint();
+
+        mast_size + u32_size
     }
 }
 
@@ -322,8 +380,8 @@ mod tests {
     #[test]
     fn test_note_script_to_from_felt() {
         let assembler = Assembler::default();
-        let tx_script_src = DEFAULT_NOTE_CODE;
-        let program = assembler.assemble_program(tx_script_src).unwrap();
+        let script_src = DEFAULT_NOTE_CODE;
+        let program = assembler.assemble_program(script_src).unwrap();
         let note_script = NoteScript::new(program);
 
         let encoded: Vec<Felt> = (&note_script).into();
@@ -334,7 +392,9 @@ mod tests {
 
     #[test]
     fn test_note_script_with_advice_map() {
-        use miden_core::{AdviceMap, Word};
+        use miden_core::advice::AdviceMap;
+
+        use crate::Word;
 
         let assembler = Assembler::default();
         let program = assembler.assemble_program("begin nop end").unwrap();

@@ -5,7 +5,6 @@ mod auth;
 mod scripts;
 mod wallet;
 
-use miden_processor::utils::Deserializable;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::FungibleAsset;
@@ -13,6 +12,7 @@ use miden_protocol::crypto::utils::Serializable;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_protocol::utils::serde::Deserializable;
 use miden_standards::code_builder::CodeBuilder;
 use miden_tx::{
     LocalTransactionProver,
@@ -25,7 +25,7 @@ use miden_tx::{
 // ================================================================================================
 
 #[cfg(test)]
-pub fn prove_and_verify_transaction(
+pub async fn prove_and_verify_transaction(
     executed_transaction: ExecutedTransaction,
 ) -> Result<(), TransactionVerifierError> {
     use miden_protocol::transaction::TransactionHeader;
@@ -36,7 +36,7 @@ pub fn prove_and_verify_transaction(
 
     let proof_options = ProvingOptions::default();
     let prover = LocalTransactionProver::new(proof_options);
-    let proven_transaction = prover.prove(executed_transaction).unwrap();
+    let proven_transaction = prover.prove(executed_transaction).await.unwrap();
     let proven_tx_header = TransactionHeader::from(&proven_transaction);
 
     assert_eq!(proven_transaction.id(), executed_transaction_id);

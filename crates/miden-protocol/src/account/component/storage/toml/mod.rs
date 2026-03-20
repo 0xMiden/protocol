@@ -69,10 +69,9 @@ impl AccountComponentMetadata {
         }
 
         let storage_schema = StorageSchema::new(fields)?;
-        Ok(Self::new(raw.name)
+        Ok(Self::new(raw.name, raw.supported_types)
             .with_description(raw.description)
             .with_version(raw.version)
-            .with_supported_types(raw.supported_types)
             .with_storage_schema(storage_schema))
     }
 

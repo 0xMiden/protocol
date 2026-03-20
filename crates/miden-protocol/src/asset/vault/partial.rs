@@ -7,7 +7,13 @@ use super::{AssetVault, AssetVaultKey};
 use crate::Word;
 use crate::asset::{Asset, AssetWitness};
 use crate::errors::PartialAssetVaultError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A partial representation of an [`AssetVault`], containing only proofs for a subset of assets.
 ///
@@ -98,13 +104,16 @@ impl PartialVault {
     /// Returns an error if:
     /// - the key is not tracked by this partial SMT.
     pub fn get(&self, vault_key: AssetVaultKey) -> Result<Option<Asset>, MerkleError> {
-        self.partial_smt.get_value(&vault_key.into()).map(|word| {
-            if word.is_empty() {
+        self.partial_smt.get_value(&vault_key.into()).map(|asset_value| {
+            if asset_value.is_empty() {
                 None
             } else {
                 // SAFETY: If this returned a non-empty word, then it should be a valid asset,
                 // because the vault should only track valid ones.
-                Some(Asset::try_from(word).expect("partial vault should only track valid assets"))
+                Some(
+                    Asset::from_key_value(vault_key, asset_value)
+                        .expect("partial vault should only track valid assets"),
+                )
             }
         })
     }
@@ -136,17 +145,11 @@ impl PartialVault {
     fn validate_entries<'a>(
         entries: impl IntoIterator<Item = &'a (Word, Word)>,
     ) -> Result<(), PartialAssetVaultError> {
-        for (vault_key, asset) in entries {
-            let asset = Asset::try_from(asset).map_err(|source| {
-                PartialAssetVaultError::InvalidAssetInSmt { entry: *asset, source }
+        for (vault_key, asset_value) in entries {
+            // This ensures that vault key and value are consistent.
+            Asset::from_key_value_words(*vault_key, *asset_value).map_err(|source| {
+                PartialAssetVaultError::InvalidAssetInSmt { entry: *asset_value, source }
             })?;
-
-            if *vault_key != asset.vault_key().into() {
-                return Err(PartialAssetVaultError::AssetVaultKeyMismatch {
-                    expected: asset.vault_key(),
-                    actual: *vault_key,
-                });
-            }
         }
 
         Ok(())
@@ -216,15 +219,12 @@ mod tests {
     fn partial_vault_ensures_asset_vault_key_matches() -> anyhow::Result<()> {
         let asset = FungibleAsset::mock(500);
         let invalid_vault_key = Word::from([0, 1, 2, 3u32]);
-        let smt = Smt::with_entries([(invalid_vault_key, asset.into())])?;
+        let smt = Smt::with_entries([(invalid_vault_key, asset.to_value_word())])?;
         let proof = smt.open(&invalid_vault_key);
         let partial_smt = PartialSmt::from_proofs([proof.clone()])?;
 
         let err = PartialVault::try_from(partial_smt).unwrap_err();
-        assert_matches!(err, PartialAssetVaultError::AssetVaultKeyMismatch { expected, actual } => {
-            assert_eq!(actual, invalid_vault_key);
-            assert_eq!(expected, asset.vault_key());
-        });
+        assert_matches!(err, PartialAssetVaultError::InvalidAssetInSmt { .. });
 
         Ok(())
     }

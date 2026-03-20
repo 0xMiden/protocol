@@ -3,10 +3,18 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, ONE, Word, ZERO};
+use miden_core::{Felt, ONE, Word, ZERO};
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::account::{Account, AccountComponent, AccountId, StorageSlot, StorageSlotName};
-use miden_protocol::crypto::hash::rpo::Rpo256;
+use miden_protocol::account::{
+    Account,
+    AccountComponent,
+    AccountId,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
+use miden_protocol::block::account_tree::AccountIdKey;
+use miden_protocol::crypto::hash::poseidon2::Poseidon2;
 use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
@@ -230,18 +238,10 @@ impl AggLayerBridge {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(&bridge_account)?;
 
-        // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
-        let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
-        let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
-        // Elements are reversed: rpo256::merge treats stack as if loaded BE from memory
-        // The following will produce matching hashes:
-        // Rust
-        // Hasher::merge(&[a, b, c, d], &[e, f, g, h])
-        // MASM
-        // rpo256::merge(h, g, f, e, d, c, b, a)
-        ger_lower.reverse();
-        ger_upper.reverse();
-        let ger_hash = Rpo256::merge(&[ger_upper.into(), ger_lower.into()]);
+        // Compute the expected GER hash: poseidon2::merge(GER_LOWER, GER_UPPER)
+        let ger_lower: Word = ger.to_elements()[0..4].try_into().unwrap();
+        let ger_upper: Word = ger.to_elements()[4..8].try_into().unwrap();
+        let ger_hash = Poseidon2::merge(&[ger_lower, ger_upper]);
 
         // Get the value stored by the GER hash. If this GER was registered, the value would be
         // equal to [1, 0, 0, 0]
@@ -263,10 +263,8 @@ impl AggLayerBridge {
     /// - [`AggLayerBridge::let_root_lo_slot_name`] — low word of the root
     /// - [`AggLayerBridge::let_root_hi_slot_name`] — high word of the root
     ///
-    /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo` (in
-    /// reverse of their storage order), followed by the 4 elements of `root_hi` (also in
-    /// reverse of their storage order). For an empty/uninitialized tree, all elements are
-    /// zeros.
+    /// Returns the 256-bit root as 8 `Felt`s: first the 4 elements of `root_lo`, followed by the 4
+    /// elements of `root_hi`. For an empty/uninitialized tree, all elements are zeros.
     ///
     /// # Errors
     ///
@@ -289,8 +287,8 @@ impl AggLayerBridge {
             .expect("should be able to read LET root hi");
 
         let mut root = Vec::with_capacity(8);
-        root.extend(root_lo.to_vec().into_iter().rev());
-        root.extend(root_hi.to_vec().into_iter().rev());
+        root.extend(root_lo.to_vec());
+        root.extend(root_hi.to_vec());
 
         Ok(root)
     }
@@ -302,7 +300,7 @@ impl AggLayerBridge {
             .storage()
             .get_item(num_leaves_slot)
             .expect("should be able to read LET num leaves");
-        value.to_vec()[0].as_int()
+        value.to_vec()[0].as_canonical_u64()
     }
 
     /// Returns the claimed global index (CGI) chain hash from the corresponding storage slot.
@@ -328,9 +326,11 @@ impl AggLayerBridge {
 
         let cgi_chain_hash_bytes = cgi_chain_hash_lo
             .iter()
-            .rev()
-            .chain(cgi_chain_hash_hi.iter().rev())
-            .flat_map(|felt| (felt.as_int() as u32).to_le_bytes())
+            .chain(cgi_chain_hash_hi.iter())
+            .flat_map(|felt| {
+                (u32::try_from(felt.as_canonical_u64()).expect("Felt value does not fit into u32"))
+                    .to_le_bytes()
+            })
             .collect::<Vec<u8>>();
 
         Ok(Keccak256Output::new(
@@ -424,18 +424,8 @@ impl AggLayerBridge {
 
 impl From<AggLayerBridge> for AccountComponent {
     fn from(bridge: AggLayerBridge) -> Self {
-        let bridge_admin_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            bridge.bridge_admin_id.suffix(),
-            bridge.bridge_admin_id.prefix().as_felt(),
-        ]);
-        let ger_manager_word = Word::new([
-            Felt::ZERO,
-            Felt::ZERO,
-            bridge.ger_manager_id.suffix(),
-            bridge.ger_manager_id.prefix().as_felt(),
-        ]);
+        let bridge_admin_word = AccountIdKey::new(bridge.bridge_admin_id).as_word();
+        let ger_manager_word = AccountIdKey::new(bridge.ger_manager_id).as_word();
 
         let bridge_storage_slots = vec![
             StorageSlot::with_empty_map(GER_MAP_SLOT_NAME.clone()),
@@ -477,9 +467,8 @@ pub enum AgglayerBridgeError {
 /// Creates an AggLayer Bridge component with the specified storage slots.
 fn bridge_component(storage_slots: Vec<StorageSlot>) -> AccountComponent {
     let library = agglayer_bridge_component_library();
-    let metadata = AccountComponentMetadata::new("agglayer::bridge")
-        .with_description("Bridge component for AggLayer")
-        .with_supports_all_types();
+    let metadata = AccountComponentMetadata::new("agglayer::bridge", AccountType::all())
+        .with_description("Bridge component for AggLayer");
 
     AccountComponent::new(library, storage_slots, metadata)
         .expect("bridge component should satisfy the requirements of a valid account component")

@@ -23,6 +23,7 @@ use crate::procedure_digest;
 // Initialize the digest of the `receive_asset` procedure of the Basic Wallet only once.
 procedure_digest!(
     BASIC_WALLET_RECEIVE_ASSET,
+    BasicWallet::NAME,
     BasicWallet::RECEIVE_ASSET_PROC_NAME,
     basic_wallet_library
 );
@@ -30,6 +31,7 @@ procedure_digest!(
 // Initialize the digest of the `move_asset_to_note` procedure of the Basic Wallet only once.
 procedure_digest!(
     BASIC_WALLET_MOVE_ASSET_TO_NOTE,
+    BasicWallet::NAME,
     BasicWallet::MOVE_ASSET_TO_NOTE_PROC_NAME,
     basic_wallet_library
 );
@@ -57,10 +59,10 @@ impl BasicWallet {
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::basic_wallet";
+    pub const NAME: &'static str = "miden::standards::components::wallets::basic_wallet";
 
-    const RECEIVE_ASSET_PROC_NAME: &str = "basic_wallet::receive_asset";
-    const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "basic_wallet::move_asset_to_note";
+    const RECEIVE_ASSET_PROC_NAME: &str = "receive_asset";
+    const MOVE_ASSET_TO_NOTE_PROC_NAME: &str = "move_asset_to_note";
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
@@ -74,13 +76,17 @@ impl BasicWallet {
     pub fn move_asset_to_note_digest() -> Word {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Basic wallet component for receiving and sending assets")
+    }
 }
 
 impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
-        let metadata = AccountComponentMetadata::new(BasicWallet::NAME)
-            .with_description("Basic wallet component for receiving and sending assets")
-            .with_supports_all_types();
+        let metadata = BasicWallet::component_metadata();
 
         AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
             "basic wallet component should satisfy the requirements of a valid account component",
@@ -162,8 +168,8 @@ pub fn create_basic_wallet(
 
 #[cfg(test)]
 mod tests {
-    use miden_processor::utils::{Deserializable, Serializable};
     use miden_protocol::account::auth::{self, PublicKeyCommitment};
+    use miden_protocol::utils::serde::{Deserializable, Serializable};
     use miden_protocol::{ONE, Word};
 
     use super::{Account, AccountStorageMode, AccountType, AuthMethod, create_basic_wallet};
@@ -172,7 +178,7 @@ mod tests {
     #[test]
     fn test_create_basic_wallet() {
         let pub_key = PublicKeyCommitment::from(Word::from([ONE; 4]));
-        let auth_scheme = auth::AuthScheme::Falcon512Rpo;
+        let auth_scheme = auth::AuthScheme::Falcon512Poseidon2;
         let wallet = create_basic_wallet(
             [1; 32],
             AuthMethod::SingleSig { approver: (pub_key, auth_scheme) },

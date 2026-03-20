@@ -3,8 +3,8 @@
 extern crate alloc;
 
 use miden_assembly::Library;
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, FieldElement, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::{Felt, Word};
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -15,7 +15,10 @@ use miden_protocol::account::{
 };
 use miden_protocol::asset::TokenSymbol;
 use miden_protocol::note::NoteScript;
+use miden_protocol::vm::Program;
+use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
+use miden_standards::account::mint_policies::OwnerControlled;
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;
@@ -26,7 +29,6 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 pub mod update_ger_note;
-pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
@@ -40,7 +42,7 @@ pub use eth_types::{
     GlobalIndexError,
     MetadataHash,
 };
-pub use faucet::{AggLayerFaucet, AgglayerFaucetError, faucet_registry_key};
+pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use update_ger_note::UpdateGerNote;
 
 // AGGLAYER NOTE SCRIPTS
@@ -123,7 +125,6 @@ fn create_agglayer_faucet_component(
     decimals: u8,
     max_supply: Felt,
     token_supply: Felt,
-    bridge_account_id: AccountId,
     origin_token_address: &EthAddressFormat,
     origin_network: u32,
     scale: u8,
@@ -135,7 +136,6 @@ fn create_agglayer_faucet_component(
         decimals,
         max_supply,
         token_supply,
-        bridge_account_id,
         *origin_token_address,
         origin_network,
         scale,
@@ -189,6 +189,12 @@ pub fn create_existing_bridge_account(
 }
 
 /// Creates a complete agglayer faucet account builder with the specified configuration.
+///
+/// The builder includes:
+/// - The `AggLayerFaucet` component (conversion metadata + token metadata).
+/// - The `Ownable2Step` component (bridge account ID as owner for mint authorization).
+/// - The `OwnerControlled` component (mint policy management required by
+///   `network_fungible::mint_and_send`).
 #[allow(clippy::too_many_arguments)]
 fn create_agglayer_faucet_builder(
     seed: Word,
@@ -207,7 +213,6 @@ fn create_agglayer_faucet_builder(
         decimals,
         max_supply,
         token_supply,
-        bridge_account_id,
         origin_token_address,
         origin_network,
         scale,
@@ -218,6 +223,8 @@ fn create_agglayer_faucet_builder(
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Network)
         .with_component(agglayer_component)
+        .with_component(Ownable2Step::new(bridge_account_id))
+        .with_component(OwnerControlled::owner_only())
 }
 
 /// Creates a new agglayer faucet account with the specified configuration.

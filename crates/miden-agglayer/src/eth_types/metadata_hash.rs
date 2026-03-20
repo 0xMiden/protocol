@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use alloy_sol_types::{SolValue, sol};
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_crypto::hash::keccak::Keccak256;
 use miden_protocol::Felt;
 
@@ -51,7 +51,7 @@ impl MetadataHash {
     ///
     /// Each 4-byte chunk is converted to a u32 using little-endian byte order.
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 }
 

@@ -200,9 +200,10 @@ impl AccountStorageDelta {
                         elements.extend_from_slice(value.as_elements());
                     }
 
-                    let num_changed_entries = Felt::try_from(map_delta.num_entries()).expect(
-                        "number of changed entries should not exceed max representable felt",
-                    );
+                    let num_changed_entries = Felt::try_from(map_delta.num_entries() as u64)
+                        .expect(
+                            "number of changed entries should not exceed max representable felt",
+                        );
 
                     elements.extend_from_slice(&[
                         DOMAIN_MAP,
@@ -294,12 +295,10 @@ impl Deserializable for AccountStorageDelta {
         }
 
         let num_maps = source.read_u8()? as usize;
-        deltas.extend(
-            source
-                .read_many::<(StorageSlotName, StorageMapDelta)>(num_maps)?
-                .into_iter()
-                .map(|(slot_name, map_delta)| (slot_name, StorageSlotDelta::Map(map_delta))),
-        );
+        for read_result in source.read_many_iter::<(StorageSlotName, StorageMapDelta)>(num_maps)? {
+            let (slot_name, map_delta) = read_result?;
+            deltas.insert(slot_name, StorageSlotDelta::Map(map_delta));
+        }
 
         Ok(Self::from_raw(deltas))
     }

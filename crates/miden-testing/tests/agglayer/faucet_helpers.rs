@@ -17,10 +17,12 @@ use miden_testing::{Auth, MockChain};
 fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     let bridge_account = create_existing_bridge_account(
         builder.rng_mut().draw_word(),
@@ -55,7 +57,7 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
         metadata_hash,
     );
 
-    assert_eq!(AggLayerFaucet::bridge_account_id(&faucet)?, bridge_account.id());
+    assert_eq!(AggLayerFaucet::owner_account_id(&faucet)?, bridge_account.id());
     assert_eq!(AggLayerFaucet::origin_token_address(&faucet)?, origin_token_address);
     assert_eq!(AggLayerFaucet::origin_network(&faucet)?, origin_network);
     assert_eq!(AggLayerFaucet::scale(&faucet)?, scale);

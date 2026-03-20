@@ -3,15 +3,17 @@ use alloc::vec::Vec;
 use anyhow::Context;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
+use miden_protocol::account::delta::AccountUpdateDetails;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::crypto::merkle::SparseMerklePath;
 use miden_protocol::note::{Note, NoteInclusionProof, Nullifier};
 use miden_protocol::transaction::{
     InputNote,
+    InputNoteCommitment,
     OutputNote,
     ProvenTransaction,
-    ProvenTransactionBuilder,
+    TxAccountUpdate,
 };
 use miden_protocol::vm::ExecutionProof;
 
@@ -102,21 +104,36 @@ impl MockProvenTxBuilder {
 
     /// Builds the [`ProvenTransaction`] and returns potential errors.
     pub fn build(self) -> anyhow::Result<ProvenTransaction> {
-        ProvenTransactionBuilder::new(
+        let mut input_note_commitments: Vec<InputNoteCommitment> = self
+            .input_notes
+            .unwrap_or_default()
+            .into_iter()
+            .map(InputNoteCommitment::from)
+            .collect();
+
+        // Add nullifiers as input note commitments
+        input_note_commitments
+            .extend(self.nullifiers.unwrap_or_default().into_iter().map(InputNoteCommitment::from));
+
+        let account_update = TxAccountUpdate::new(
             self.account_id,
             self.initial_account_commitment,
             self.final_account_commitment,
             Word::empty(),
+            AccountUpdateDetails::Private,
+        )
+        .context("failed to build account update")?;
+
+        ProvenTransaction::new(
+            account_update,
+            input_note_commitments,
+            self.output_notes.unwrap_or_default(),
             BlockNumber::from(0),
             self.ref_block_commitment.unwrap_or_default(),
             self.fee,
             self.expiration_block_num,
             ExecutionProof::new_dummy(),
         )
-        .add_input_notes(self.input_notes.unwrap_or_default())
-        .add_input_notes(self.nullifiers.unwrap_or_default())
-        .add_output_notes(self.output_notes.unwrap_or_default())
-        .build()
         .context("failed to build proven transaction")
     }
 }

@@ -8,7 +8,13 @@ use crate::block::BlockNumber;
 use crate::errors::ProvenBatchError;
 use crate::note::Nullifier;
 use crate::transaction::{InputNoteCommitment, InputNotes, OrderedTransactionHeaders, OutputNote};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{MIN_PROOF_SECURITY_LEVEL, Word};
 
 /// A transaction batch with an execution proof.
