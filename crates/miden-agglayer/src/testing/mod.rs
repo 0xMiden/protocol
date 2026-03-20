@@ -269,21 +269,21 @@ pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = Laz
 /// Identifies the source of claim data used in bridge-in tests and benchmarks.
 #[derive(Debug, Clone, Copy)]
 pub enum ClaimDataSource {
-    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json.
-    Real,
+    /// Real on-chain claimAsset data from claim_asset_vectors_real_tx.json (L1 to Miden).
+    RealL1ToMiden,
     /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json (L1 to Miden).
-    L1ToMiden,
+    SimulatedL1ToMiden,
     /// Rollup deposit data from claim_asset_vectors_rollup_tx.json (L2 to Miden).
-    L2ToMiden,
+    SimulatedL2ToMiden,
 }
 
 impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot, Keccak256Output)` tuple for this data source.
     pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
         let vector = match self {
-            ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
-            ClaimDataSource::L1ToMiden => &*CLAIM_ASSET_VECTOR_LOCAL,
-            ClaimDataSource::L2ToMiden => &*CLAIM_ASSET_VECTOR_ROLLUP,
+            ClaimDataSource::RealL1ToMiden => &*CLAIM_ASSET_VECTOR,
+            ClaimDataSource::SimulatedL1ToMiden => &*CLAIM_ASSET_VECTOR_LOCAL,
+            ClaimDataSource::SimulatedL2ToMiden => &*CLAIM_ASSET_VECTOR_ROLLUP,
         };
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),

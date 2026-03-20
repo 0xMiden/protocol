@@ -160,9 +160,9 @@ pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
 /// Sets up and returns the transaction context for executing a CLAIM note against the bridge
 /// account.
 ///
-/// This requires executing prerequisite transactions (CONFIG_AGG_BRIDGE and UPDATE_GER) before
-/// the CLAIM transaction context can be built. The returned context is ready to execute the
-/// CLAIM note consumption.
+/// This requires executing prerequisite transactions (CONFIG_AGG_BRIDGE and UPDATE_GER) during
+/// setup to prepare the bridge account state. Only the returned CLAIM transaction context is
+/// benchmarked — the prerequisite transactions are not included in cycle/time measurements.
 ///
 /// The `data_source` parameter selects between L1-to-Miden and L2-to-Miden test vectors.
 pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<TransactionContext> {
@@ -295,9 +295,9 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
 /// Sets up and returns the transaction context for executing a B2AGG (bridge-out) note against
 /// the bridge account.
 ///
-/// This requires executing a prerequisite CONFIG_AGG_BRIDGE transaction to register the faucet
-/// in the bridge before the B2AGG note can be consumed. The returned context is ready to execute
-/// the B2AGG note consumption.
+/// This requires executing a prerequisite CONFIG_AGG_BRIDGE transaction during setup to register
+/// the faucet in the bridge. Only the returned B2AGG transaction context is benchmarked — the
+/// prerequisite CONFIG_AGG_BRIDGE transaction is not included in cycle/time measurements.
 ///
 /// The setup uses the first entry from the MMR frontier test vectors for destination data.
 pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {

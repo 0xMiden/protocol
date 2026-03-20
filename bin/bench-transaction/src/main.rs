@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeClaimNoteL1ToMiden,
-            tx_consume_claim_note(ClaimDataSource::L1ToMiden)
+            tx_consume_claim_note(ClaimDataSource::SimulatedL1ToMiden)
                 .await?
                 .execute()
                 .await
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
         ),
         (
             ExecutionBenchmark::ConsumeClaimNoteL2ToMiden,
-            tx_consume_claim_note(ClaimDataSource::L2ToMiden)
+            tx_consume_claim_note(ClaimDataSource::SimulatedL2ToMiden)
                 .await?
                 .execute()
                 .await

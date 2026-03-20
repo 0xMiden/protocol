@@ -19,7 +19,9 @@ in the bridge via CONFIG_AGG_BRIDGE, then benchmarks the B2AGG note consumption 
 the faucet, performs FPI to get origin asset data, computes the Keccak leaf hash for the MMR,
 and creates a BURN note.
 
-Benchmarks consist of two groups:
+### Benchmark Groups
+
+Each of the above transactions is measured in two groups:
 - Benchmarking the transaction execution.
 
   For each transaction, data is collected on the number of cycles required to complete:
