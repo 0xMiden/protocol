@@ -4,19 +4,20 @@ use miden_agglayer::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    EthAddressFormat,
+    EthAddress,
+    MetadataHash,
     UpdateGerNote,
     create_claim_note,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
+use miden_protocol::Felt;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::{NoteAssets, NoteType};
 use miden_protocol::testing::account_id::ACCOUNT_ID_SENDER;
-use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement, Word};
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::StandardNote;
 use miden_testing::{Auth, MockChain, TransactionContext};
@@ -31,7 +32,9 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
     let fungible_asset = FungibleAsset::mock(150);
     let account = builder.add_existing_wallet_with_assets(
-        Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo },
+        Auth::BasicAuth {
+            auth_scheme: AuthScheme::Falcon512Poseidon2,
+        },
         [fungible_asset],
     )?;
 
@@ -58,9 +61,10 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
             # => [note_idx]
 
             # move the asset to the note
-            push.{asset}
+            dup
+            push.{ASSET_VALUE}
+            push.{ASSET_KEY}
             call.::miden::standards::wallets::basic::move_asset_to_note
-            dropw
             # => [note_idx]
 
             # truncate the stack
@@ -70,7 +74,8 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
         RECIPIENT = output_note.recipient().digest(),
         note_type = NoteType::Public as u8,
         tag = output_note.metadata().tag(),
-        asset = Word::from(fungible_asset),
+        ASSET_KEY = fungible_asset.to_key_word(),
+        ASSET_VALUE = fungible_asset.to_value_word(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(tx_note_creation_script)?;
@@ -78,7 +83,7 @@ pub fn tx_create_single_p2id_note() -> Result<TransactionContext> {
     // construct the transaction context
     mock_chain
         .build_tx_context(account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .tx_script(tx_script)
         .disable_debug_mode()
         .build()
@@ -93,8 +98,9 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
     // Create target account
-    let target_account =
-        builder.create_new_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let target_account = builder.create_new_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // Create the note
     let note = builder
@@ -120,8 +126,9 @@ pub fn tx_consume_single_p2id_note() -> Result<TransactionContext> {
 pub fn tx_consume_two_p2id_notes() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
-    let account =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let account = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
     let fungible_asset_1: Asset = FungibleAsset::mock(100);
     let fungible_asset_2: Asset = FungibleAsset::mock(23);
 
@@ -162,12 +169,14 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
@@ -198,6 +207,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         &origin_token_address,
         origin_network,
         scale,
+        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -230,7 +240,7 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         builder.rng_mut(),
     )?;
 
-    builder.add_output_note(OutputNote::Full(claim_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
@@ -240,12 +250,12 @@ pub async fn tx_consume_claim_note(data_source: ClaimDataSource) -> Result<Trans
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN
     let mut mock_chain = builder.build()?;
@@ -296,12 +306,14 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (not used in bridge-out, but required for bridge creation)
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     let bridge_account = create_existing_bridge_account(
@@ -312,7 +324,7 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
     builder.add_account(bridge_account.clone())?;
 
     // CREATE AGGLAYER FAUCET ACCOUNT (with conversion metadata for FPI)
-    let origin_token_address = EthAddressFormat::from_hex(&vectors.origin_token_address)
+    let origin_token_address = EthAddress::from_hex(&vectors.origin_token_address)
         .expect("valid shared origin token address");
     let origin_network = 64u32;
     let scale = 0u8;
@@ -328,6 +340,7 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         &origin_token_address,
         origin_network,
         scale,
+        MetadataHash::from_token_info("AGG", "AGG", 8),
     );
     builder.add_account(faucet.clone())?;
 
@@ -339,12 +352,12 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE B2AGG NOTE
     let destination_network = vectors.destination_networks[0];
-    let destination_address = EthAddressFormat::from_hex(&vectors.destination_addresses[0])
-        .expect("valid destination address");
+    let destination_address =
+        EthAddress::from_hex(&vectors.destination_addresses[0]).expect("valid destination address");
     let bridge_asset: Asset = FungibleAsset::new(faucet.id(), bridge_amount)?.into();
     let b2agg_note = B2AggNote::create(
         destination_network,
@@ -354,7 +367,7 @@ pub async fn tx_consume_b2agg_note() -> Result<TransactionContext> {
         faucet.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(b2agg_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(b2agg_note.clone()));
 
     // BUILD MOCK CHAIN
     let mut mock_chain = builder.build()?;

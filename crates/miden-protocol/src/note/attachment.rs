@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 
 use crate::crypto::SequentialCommit;
 use crate::errors::NoteError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Hasher, Word};
 
 // NOTE ATTACHMENT
@@ -110,6 +116,10 @@ impl Serializable for NoteAttachment {
         self.attachment_scheme().write_into(target);
         self.content().write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        self.attachment_scheme().get_size_hint() + self.content().get_size_hint()
+    }
 }
 
 impl Deserializable for NoteAttachment {
@@ -211,6 +221,19 @@ impl Serializable for NoteAttachmentContent {
             },
         }
     }
+
+    fn get_size_hint(&self) -> usize {
+        let kind_size = self.attachment_kind().get_size_hint();
+        match self {
+            NoteAttachmentContent::None => kind_size,
+            NoteAttachmentContent::Word(word) => kind_size + word.get_size_hint(),
+            NoteAttachmentContent::Array(attachment_commitment) => {
+                kind_size
+                    + attachment_commitment.num_elements().get_size_hint()
+                    + attachment_commitment.elements.len() * crate::ZERO.get_size_hint()
+            },
+        }
+    }
 }
 
 impl Deserializable for NoteAttachmentContent {
@@ -225,7 +248,8 @@ impl Deserializable for NoteAttachmentContent {
             },
             NoteAttachmentKind::Array => {
                 let num_elements = u16::read_from(source)?;
-                let elements = source.read_many(num_elements as usize)?;
+                let elements =
+                    source.read_many_iter(num_elements as usize)?.collect::<Result<_, _>>()?;
                 Self::new_array(elements)
                     .map_err(|err| DeserializationError::InvalidValue(err.to_string()))
             },
@@ -374,6 +398,10 @@ impl Serializable for NoteAttachmentScheme {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.as_u32().write_into(target);
     }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u32>()
+    }
 }
 
 impl Deserializable for NoteAttachmentScheme {
@@ -463,6 +491,10 @@ impl core::fmt::Display for NoteAttachmentKind {
 impl Serializable for NoteAttachmentKind {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.as_u8().write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        core::mem::size_of::<u8>()
     }
 }
 

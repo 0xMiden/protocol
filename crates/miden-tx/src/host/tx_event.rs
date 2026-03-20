@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
 
-use miden_processor::{AdviceMutation, AdviceProvider, ProcessState, RowIndex};
+use miden_processor::ProcessorState;
+use miden_processor::advice::{AdviceMutation, AdviceProvider};
+use miden_processor::trace::RowIndex;
 use miden_protocol::account::{
     AccountId,
     StorageMap,
@@ -173,7 +175,7 @@ impl TransactionEvent {
     /// handled, `None` otherwise.
     pub fn extract<'store, STORE>(
         base_host: &TransactionBaseHost<'store, STORE>,
-        process: &ProcessState,
+        process: &ProcessorState,
     ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
         let event_id = EventId::from_felt(process.get_stack_item(0));
         let tx_event_id = TransactionEventId::try_from(event_id).map_err(|err| {
@@ -185,9 +187,10 @@ impl TransactionEvent {
 
         let tx_event = match tx_event_id {
             TransactionEventId::AccountBeforeForeignLoad => {
-                // Expected stack state: [event, account_id_prefix, account_id_suffix]
-                let account_id_word = process.get_stack_word_be(1);
-                let account_id = AccountId::try_from([account_id_word[3], account_id_word[2]])
+                // Expected stack state: [event, account_id_suffix, account_id_prefix]
+                let account_id_suffix = process.get_stack_item(1);
+                let account_id_prefix = process.get_stack_item(2);
+                let account_id = AccountId::try_from_elements(account_id_suffix, account_id_prefix)
                     .map_err(|err| {
                         TransactionKernelError::other_with_source(
                             "failed to convert account ID word into account ID",
@@ -199,55 +202,68 @@ impl TransactionEvent {
             },
             TransactionEventId::AccountVaultBeforeAddAsset
             | TransactionEventId::AccountVaultBeforeRemoveAsset => {
-                // Expected stack state: [event, ASSET, account_vault_root_ptr]
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "on_account_vault_before_add_or_remove_asset",
-                        source,
-                    }
-                })?;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, account_vault_root_ptr]
+                let asset_vault_key = process.get_stack_word(1);
+                let vault_root_ptr = process.get_stack_item(9);
 
-                let vault_root_ptr = process.get_stack_item(5);
+                let asset_vault_key =
+                    AssetVaultKey::try_from(asset_vault_key).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "AccountVaultBefore{Add,Remove}Asset",
+                            source,
+                        }
+                    })?;
                 let current_vault_root = process.get_vault_root(vault_root_ptr)?;
 
                 on_account_vault_asset_accessed(
                     base_host,
                     process,
-                    asset.vault_key(),
+                    asset_vault_key,
                     current_vault_root,
                 )?
             },
             TransactionEventId::AccountVaultAfterRemoveAsset => {
-                // Expected stack state: [event, ASSET]
-                let asset: Asset = process.get_stack_word_be(1).try_into().map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "on_account_vault_after_remove_asset",
-                        source,
-                    }
-                })?;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+                let asset_key = process.get_stack_word(1);
+                let asset_value = process.get_stack_word(5);
+
+                let asset =
+                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "AccountVaultAfterRemoveAsset",
+                            source,
+                        }
+                    })?;
 
                 Some(TransactionEvent::AccountVaultAfterRemoveAsset { asset })
             },
             TransactionEventId::AccountVaultAfterAddAsset => {
-                // Expected stack state: [event, ASSET]
-                let asset: Asset = process.get_stack_word_be(1).try_into().map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "on_account_vault_after_add_asset",
-                        source,
-                    }
-                })?;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE]
+                let asset_key = process.get_stack_word(1);
+                let asset_value = process.get_stack_word(5);
+
+                let asset =
+                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "AccountVaultAfterAddAsset",
+                            source,
+                        }
+                    })?;
 
                 Some(TransactionEvent::AccountVaultAfterAddAsset { asset })
             },
             TransactionEventId::AccountVaultBeforeGetAsset => {
                 // Expected stack state:
                 // [event, ASSET_KEY, vault_root_ptr]
-                let asset_key = process.get_stack_word_be(1);
+                let asset_key = process.get_stack_word(1);
                 let vault_root_ptr = process.get_stack_item(5);
 
-                // TODO(expand_assets): Consider whether validation is necessary.
-                let asset_key = AssetVaultKey::new_unchecked(asset_key);
+                let asset_key = AssetVaultKey::try_from(asset_key).map_err(|source| {
+                    TransactionKernelError::MalformedAssetInEventHandler {
+                        handler: "AccountVaultBeforeGetAsset",
+                        source,
+                    }
+                })?;
                 let vault_root = process.get_vault_root(vault_root_ptr)?;
 
                 on_account_vault_asset_accessed(base_host, process, asset_key, vault_root)?
@@ -258,7 +274,7 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageAfterSetItem => {
                 // Expected stack state: [event, slot_ptr, VALUE]
                 let slot_ptr = process.get_stack_item(1);
-                let new_value = process.get_stack_word_be(2);
+                let new_value = process.get_stack_word(2);
 
                 let (slot_id, slot_type, _old_value) = process.get_storage_slot(slot_ptr)?;
 
@@ -277,7 +293,7 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageBeforeGetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
-                let map_key = process.get_stack_word_be(2);
+                let map_key = process.get_stack_word(2);
                 let map_key = StorageMapKey::from_raw(map_key);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
@@ -286,7 +302,7 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageBeforeSetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY]
                 let slot_ptr = process.get_stack_item(1);
-                let map_key = process.get_stack_word_be(2);
+                let map_key = process.get_stack_word(2);
                 let map_key = StorageMapKey::from_raw(map_key);
 
                 on_account_storage_map_item_accessed(base_host, process, slot_ptr, map_key)?
@@ -295,9 +311,9 @@ impl TransactionEvent {
             TransactionEventId::AccountStorageAfterSetMapItem => {
                 // Expected stack state: [event, slot_ptr, KEY, OLD_VALUE, NEW_VALUE]
                 let slot_ptr = process.get_stack_item(1);
-                let key = process.get_stack_word_be(2);
-                let old_value = process.get_stack_word_be(6);
-                let new_value = process.get_stack_word_be(10);
+                let key = process.get_stack_word(2);
+                let old_value = process.get_stack_word(6);
+                let new_value = process.get_stack_word(10);
 
                 let key = StorageMapKey::from_raw(key);
                 // Resolve slot ID to slot name.
@@ -321,7 +337,7 @@ impl TransactionEvent {
 
             TransactionEventId::AccountPushProcedureIndex => {
                 // Expected stack state: [event, PROC_ROOT]
-                let procedure_root = process.get_stack_word_be(1);
+                let procedure_root = process.get_stack_word(1);
                 let code_commitment = process.get_active_account_code_commitment()?;
 
                 Some(TransactionEvent::AccountPushProcedureIndex {
@@ -334,7 +350,7 @@ impl TransactionEvent {
                 // Expected stack state:  [event, tag, note_type, RECIPIENT]
                 let tag = process.get_stack_item(1);
                 let note_type = process.get_stack_item(2);
-                let recipient_digest = process.get_stack_word_be(3);
+                let recipient_digest = process.get_stack_word(3);
 
                 let sender = base_host.native_account_id();
                 let metadata = build_note_metadata(sender, note_type, tag)?;
@@ -390,16 +406,19 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET, note_ptr, num_of_assets, note_idx]
-                let note_idx = process.get_stack_item(7).as_int() as usize;
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_idx]
+                let asset_key = process.get_stack_word(1);
+                let asset_value = process.get_stack_word(5);
+                let note_idx = process.get_stack_item(9);
 
-                let asset_word = process.get_stack_word_be(1);
-                let asset = Asset::try_from(asset_word).map_err(|source| {
-                    TransactionKernelError::MalformedAssetInEventHandler {
-                        handler: "on_note_before_add_asset",
-                        source,
-                    }
-                })?;
+                let asset =
+                    Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
+                        TransactionKernelError::MalformedAssetInEventHandler {
+                            handler: "NoteBeforeAddAsset",
+                            source,
+                        }
+                    })?;
+                let note_idx = note_idx.as_canonical_u64() as usize;
 
                 Some(TransactionEvent::NoteBeforeAddAsset { note_idx, asset })
             },
@@ -415,7 +434,7 @@ impl TransactionEvent {
                 let attachment_scheme = process.get_stack_item(1);
                 let attachment_kind = process.get_stack_item(2);
                 let note_ptr = process.get_stack_item(3);
-                let attachment = process.get_stack_word_be(5);
+                let attachment = process.get_stack_word(5);
 
                 let (note_idx, attachment) = extract_note_attachment(
                     attachment_scheme,
@@ -430,8 +449,8 @@ impl TransactionEvent {
 
             TransactionEventId::AuthRequest => {
                 // Expected stack state: [event, MESSAGE, PUB_KEY]
-                let message = process.get_stack_word_be(1);
-                let pub_key_hash = process.get_stack_word_be(5);
+                let message = process.get_stack_word(1);
+                let pub_key_hash = process.get_stack_word(5);
                 let signature_key = Hasher::merge(&[pub_key_hash, message]);
 
                 let signature = process
@@ -446,16 +465,18 @@ impl TransactionEvent {
 
             TransactionEventId::Unauthorized => {
                 // Expected stack state: [event, MESSAGE]
-                let message = process.get_stack_word_be(1);
+                let message = process.get_stack_word(1);
                 let tx_summary = extract_tx_summary(base_host, process, message)?;
 
                 Some(TransactionEvent::Unauthorized { tx_summary })
             },
 
             TransactionEventId::EpilogueBeforeTxFeeRemovedFromAccount => {
-                // Expected stack state: [event, FEE_ASSET]
-                let fee_asset = process.get_stack_word_be(1);
-                let fee_asset = FungibleAsset::try_from(fee_asset)
+                // Expected stack state: [event, FEE_ASSET_KEY, FEE_ASSET_VALUE]
+                let fee_asset_key = process.get_stack_word(1);
+                let fee_asset_value = process.get_stack_word(5);
+
+                let fee_asset = FungibleAsset::from_key_value_words(fee_asset_key, fee_asset_value)
                     .map_err(TransactionKernelError::FailedToConvertFeeAsset)?;
 
                 Some(TransactionEvent::EpilogueBeforeTxFeeRemovedFromAccount { fee_asset })
@@ -469,17 +490,17 @@ impl TransactionEvent {
             }),
 
             TransactionEventId::PrologueStart => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::PrologueStart(process.clk()),
+                TransactionProgressEvent::PrologueStart(process.clock()),
             )),
             TransactionEventId::PrologueEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::PrologueEnd(process.clk()),
+                TransactionProgressEvent::PrologueEnd(process.clock()),
             )),
 
             TransactionEventId::NotesProcessingStart => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::NotesProcessingStart(process.clk()),
+                TransactionProgressEvent::NotesProcessingStart(process.clock()),
             )),
             TransactionEventId::NotesProcessingEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::NotesProcessingEnd(process.clk()),
+                TransactionProgressEvent::NotesProcessingEnd(process.clock()),
             )),
 
             TransactionEventId::NoteExecutionStart => {
@@ -489,36 +510,36 @@ impl TransactionEvent {
 
                 Some(TransactionEvent::Progress(TransactionProgressEvent::NoteExecutionStart {
                     note_id,
-                    clk: process.clk(),
+                    clk: process.clock(),
                 }))
             },
             TransactionEventId::NoteExecutionEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::NoteExecutionEnd(process.clk()),
+                TransactionProgressEvent::NoteExecutionEnd(process.clock()),
             )),
 
             TransactionEventId::TxScriptProcessingStart => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::TxScriptProcessingStart(process.clk()),
+                TransactionProgressEvent::TxScriptProcessingStart(process.clock()),
             )),
             TransactionEventId::TxScriptProcessingEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::TxScriptProcessingEnd(process.clk()),
+                TransactionProgressEvent::TxScriptProcessingEnd(process.clock()),
             )),
 
             TransactionEventId::EpilogueStart => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueStart(process.clk()),
+                TransactionProgressEvent::EpilogueStart(process.clock()),
             )),
             TransactionEventId::EpilogueEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueEnd(process.clk()),
+                TransactionProgressEvent::EpilogueEnd(process.clock()),
             )),
 
             TransactionEventId::EpilogueAuthProcStart => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAuthProcStart(process.clk()),
+                TransactionProgressEvent::EpilogueAuthProcStart(process.clock()),
             )),
             TransactionEventId::EpilogueAuthProcEnd => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAuthProcEnd(process.clk()),
+                TransactionProgressEvent::EpilogueAuthProcEnd(process.clock()),
             )),
 
             TransactionEventId::EpilogueAfterTxCyclesObtained => Some(TransactionEvent::Progress(
-                TransactionProgressEvent::EpilogueAfterTxCyclesObtained(process.clk()),
+                TransactionProgressEvent::EpilogueAfterTxCyclesObtained(process.clock()),
             )),
         };
 
@@ -551,11 +572,12 @@ pub(crate) enum RecipientData {
 /// - If not, returns `Some` with all necessary data for requesting it.
 fn on_account_vault_asset_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
-    process: &ProcessState,
+    process: &ProcessorState,
     vault_key: AssetVaultKey,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index = Felt::new(vault_key.to_leaf_index().value());
+    let leaf_index = Felt::try_from(vault_key.to_leaf_index().position())
+        .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 
     // For the native account we need to explicitly request the initial vault root, while for
@@ -588,7 +610,7 @@ fn on_account_vault_asset_accessed<'store, STORE>(
 /// - If not, returns `Some` with all necessary data for requesting it.
 fn on_account_storage_map_item_accessed<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
-    process: &ProcessState,
+    process: &ProcessorState,
     slot_ptr: Felt,
     map_key: StorageMapKey,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
@@ -604,7 +626,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     let leaf_index: Felt = map_key
         .hash()
         .to_leaf_index()
-        .value()
+        .position()
         .try_into()
         .expect("expected key index to be a felt");
 
@@ -650,7 +672,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
 /// ```
 fn extract_tx_summary<'store, STORE>(
     base_host: &TransactionBaseHost<'store, STORE>,
-    process: &ProcessState,
+    process: &ProcessorState,
     message: Word,
 ) -> Result<TransactionSummary, TransactionKernelError> {
     let Some(commitments) = process.advice_provider().get_mapped_values(&message) else {
@@ -665,16 +687,16 @@ fn extract_tx_summary<'store, STORE>(
         ));
     }
 
-    let salt = extract_word(commitments, 0);
-    let output_notes_commitment = extract_word(commitments, 4);
-    let input_notes_commitment = extract_word(commitments, 8);
-    let account_delta_commitment = extract_word(commitments, 12);
+    let account_delta_commitment = extract_word(commitments, 0);
+    let input_notes_commitment = extract_word(commitments, 4);
+    let output_notes_commitment = extract_word(commitments, 8);
+    let salt = extract_word(commitments, 12);
 
     let tx_summary = base_host.build_tx_summary(
-        salt,
-        output_notes_commitment,
-        input_notes_commitment,
         account_delta_commitment,
+        input_notes_commitment,
+        output_notes_commitment,
+        salt,
     )?;
 
     if tx_summary.to_commitment() != message {
@@ -695,7 +717,7 @@ fn build_note_metadata(
     note_type: Felt,
     tag: Felt,
 ) -> Result<NoteMetadata, TransactionKernelError> {
-    let note_type = u8::try_from(note_type)
+    let note_type = u8::try_from(note_type.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to decode note_type into u8"))
         .and_then(|note_type_byte| {
             NoteType::try_from(note_type_byte).map_err(|source| {
@@ -706,7 +728,7 @@ fn build_note_metadata(
             })
         })?;
 
-    let tag = u32::try_from(tag)
+    let tag = u32::try_from(tag.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to decode note tag into u32"))
         .map(NoteTag::new)?;
 
@@ -722,7 +744,7 @@ fn extract_note_attachment(
 ) -> Result<(usize, NoteAttachment), TransactionKernelError> {
     let note_idx = note_ptr_to_idx(note_ptr)?;
 
-    let attachment_kind = u8::try_from(attachment_kind)
+    let attachment_kind = u8::try_from(attachment_kind.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to convert attachment kind to u8"))
         .and_then(|attachment_kind| {
             NoteAttachmentKind::try_from(attachment_kind).map_err(|source| {
@@ -733,7 +755,7 @@ fn extract_note_attachment(
             })
         })?;
 
-    let attachment_scheme = u32::try_from(attachment_scheme)
+    let attachment_scheme = u32::try_from(attachment_scheme.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to convert attachment scheme to u32"))
         .map(NoteAttachmentScheme::new)?;
 
@@ -792,7 +814,7 @@ fn extract_word(commitments: &[Felt], start: usize) -> Word {
 
 /// Converts the provided note ptr into the corresponding note index.
 fn note_ptr_to_idx(note_ptr: Felt) -> Result<u32, TransactionKernelError> {
-    u32::try_from(note_ptr)
+    u32::try_from(note_ptr.as_canonical_u64())
         .map_err(|_| TransactionKernelError::other("failed to convert note_ptr to u32"))
         .and_then(|note_ptr| {
             note_ptr

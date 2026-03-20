@@ -19,13 +19,18 @@ use core::fmt;
 use bech32::primitives::decode::ByteIter;
 pub use id_version::AccountIdVersion;
 use miden_core::Felt;
-use miden_core::utils::{ByteReader, Deserializable, Serializable};
 use miden_crypto::utils::hex_to_bytes;
-use miden_processor::DeserializationError;
 
 use crate::Word;
 use crate::address::NetworkId;
 use crate::errors::{AccountError, AccountIdError};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// The identifier of an [`Account`](crate::account::Account).
 ///
@@ -142,10 +147,26 @@ impl AccountId {
     pub fn new_unchecked(elements: [Felt; 2]) -> Self {
         // The prefix contains the metadata.
         // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(elements[0].as_int())
+        match v0::extract_version(elements[0].as_canonical_u64())
             .expect("prefix should contain a valid account ID version")
         {
             AccountIdVersion::Version0 => Self::V0(AccountIdV0::new_unchecked(elements)),
+        }
+    }
+
+    /// Decodes an [`AccountId`] from the provided suffix and prefix felts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the ID constraints are not met. See the [constraints
+    /// documentation](AccountId#constraints) for details.
+    pub fn try_from_elements(suffix: Felt, prefix: Felt) -> Result<Self, AccountIdError> {
+        // The prefix contains the metadata.
+        // If we add more versions in the future, we may need to generalize this.
+        match v0::extract_version(prefix.as_canonical_u64())? {
+            AccountIdVersion::Version0 => {
+                AccountIdV0::try_from_elements(suffix, prefix).map(Self::V0)
+            },
         }
     }
 
@@ -207,7 +228,7 @@ impl AccountId {
     // --------------------------------------------------------------------------------------------
 
     /// Returns the type of this account ID.
-    pub const fn account_type(&self) -> AccountType {
+    pub fn account_type(&self) -> AccountType {
         match self {
             AccountId::V0(account_id) => account_id.account_type(),
         }
@@ -398,25 +419,6 @@ impl From<AccountIdV0> for AccountId {
     }
 }
 
-impl TryFrom<[Felt; 2]> for AccountId {
-    type Error = AccountIdError;
-
-    /// Returns an [`AccountId`] instantiated with the provided field elements where `elements[0]`
-    /// is taken as the prefix and `elements[1]` is taken as the suffix.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the ID constraints are not met. See the [constraints
-    /// documentation](AccountId#constraints) for details.
-    fn try_from(elements: [Felt; 2]) -> Result<Self, Self::Error> {
-        // The prefix contains the metadata.
-        // If we add more versions in the future, we may need to generalize this.
-        match v0::extract_version(elements[0].as_int())? {
-            AccountIdVersion::Version0 => AccountIdV0::try_from(elements).map(Self::V0),
-        }
-    }
-}
-
 impl TryFrom<[u8; 15]> for AccountId {
     type Error = AccountIdError;
 
@@ -481,7 +483,7 @@ impl fmt::Display for AccountId {
 // ================================================================================================
 
 impl Serializable for AccountId {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         match self {
             AccountId::V0(account_id) => {
                 account_id.write_into(target);

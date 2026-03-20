@@ -1,4 +1,5 @@
 use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use miden_crypto::merkle::SparseMerklePath;
 
@@ -6,7 +7,13 @@ use crate::batch::BatchNoteTree;
 use crate::crypto::merkle::MerkleError;
 use crate::crypto::merkle::smt::{LeafIndex, SimpleSmt};
 use crate::note::{NoteId, NoteMetadata, compute_note_commitment};
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{
     BLOCK_NOTE_TREE_DEPTH,
     MAX_BATCHES_PER_BLOCK,
@@ -148,7 +155,7 @@ impl BlockNoteIndex {
         );
 
         self.leaf_index()
-            .value()
+            .position()
             .try_into()
             .expect("Unreachable: Input values must be valid at this point")
     }
@@ -167,7 +174,7 @@ impl Serializable for BlockNoteTree {
 impl Deserializable for BlockNoteTree {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let count = source.read_u32()?;
-        let leaves = source.read_many(count as usize)?;
+        let leaves = source.read_many_iter(count as usize)?.collect::<Result<Vec<_>, _>>()?;
 
         SimpleSmt::with_leaves(leaves)
             .map(Self)

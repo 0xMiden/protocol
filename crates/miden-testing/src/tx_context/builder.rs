@@ -6,7 +6,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anyhow::Context;
-use miden_processor::{AdviceInputs, Felt, Word};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{Felt, Word};
 use miden_protocol::EMPTY_WORD;
 use miden_protocol::account::auth::{PublicKeyCommitment, Signature};
 use miden_protocol::account::{Account, AccountHeader, AccountId};
@@ -17,7 +18,7 @@ use miden_protocol::note::{Note, NoteId, NoteScript};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
-    OutputNote,
+    RawOutputNote,
     TransactionArgs,
     TransactionInputs,
     TransactionScript,
@@ -43,7 +44,7 @@ use crate::{MockChain, MockChainNote};
 /// ```
 /// # use anyhow::Result;
 /// # use miden_testing::TransactionContextBuilder;
-/// # use miden_protocol::{account::AccountBuilder,Felt, FieldElement};
+/// # use miden_protocol::{account::AccountBuilder, Felt};
 /// # use miden_protocol::transaction::TransactionKernel;
 /// #
 /// # #[tokio::main(flavor = "current_thread")]
@@ -62,7 +63,7 @@ use crate::{MockChain, MockChainNote};
 /// ";
 ///
 /// let exec_output = tx_context.execute_code(code).await?;
-/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::new(5));
+/// assert_eq!(exec_output.stack.get(0).unwrap(), &Felt::from(5u32));
 /// # Ok(())
 /// # }
 /// ```
@@ -235,11 +236,10 @@ impl TransactionContextBuilder {
     }
 
     /// Extend the expected output notes.
-    pub fn extend_expected_output_notes(mut self, output_notes: Vec<OutputNote>) -> Self {
+    pub fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         let output_notes = output_notes.into_iter().filter_map(|n| match n {
-            OutputNote::Full(note) => Some(note),
-            OutputNote::Partial(_) => None,
-            OutputNote::Header(_) => None,
+            RawOutputNote::Full(note) => Some(note),
+            RawOutputNote::Partial(_) => None,
         });
 
         self.expected_output_notes.extend(output_notes);
@@ -285,7 +285,7 @@ impl TransactionContextBuilder {
 
                 let mut builder = MockChain::builder();
                 for i in self.input_notes {
-                    builder.add_output_note(OutputNote::Full(i));
+                    builder.add_output_note(RawOutputNote::Full(i));
                 }
                 let mut mock_chain = builder.build()?;
 

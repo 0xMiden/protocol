@@ -10,8 +10,8 @@ use miden::standards::attachments::network_account_target
 const STORAGE_START_PTR = 0
 const CONFIG_AGG_BRIDGE_NUM_STORAGE_ITEMS = 7
 
-const FAUCET_ID_SUFFIX = 6
-const FAUCET_ID_PREFIX = 5
+const FAUCET_ID_SUFFIX = 5
+const FAUCET_ID_PREFIX = 6
 const ORIGIN_TOKEN_ADDR_4 = 4
 
 # ERRORS
@@ -38,8 +38,13 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! - origin_token_addr_2 [2]: 1 felt
 #! - origin_token_addr_3 [3]: 1 felt
 #! - origin_token_addr_4 [4]: 1 felt
-#! - faucet_id_prefix    [5]: 1 felt
-#! - faucet_id_suffix    [6]: 1 felt
+#! - faucet_id_suffix    [5]: 1 felt
+#! - faucet_id_prefix    [6]: 1 felt
+
+#!
+#! Where:
+#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
+#! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
@@ -62,18 +67,20 @@ begin
     # => [pad(16)]
 
     # Load origin_token_addr(5) and faucet_id from memory
-    # register_faucet expects: [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # register_faucet expects: [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     # Load all 7 values individually in the correct order
-    mem_load.FAUCET_ID_SUFFIX mem_load.FAUCET_ID_PREFIX mem_load.ORIGIN_TOKEN_ADDR_4
-    # => [addr4, faucet_id_prefix, faucet_id_suffix, pad(12)]
+    mem_load.FAUCET_ID_PREFIX mem_load.FAUCET_ID_SUFFIX mem_load.ORIGIN_TOKEN_ADDR_4
+    # => [addr4, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     padw mem_loadw_le.STORAGE_START_PTR
-    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_prefix, faucet_id_suffix, pad(12)]
+    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
     # Register the faucet in the bridge
+    # => [addr4, addr3, addr2, addr1, addr0, faucet_id_suffix, faucet_id_prefix, pad(9), pad(7)]
     call.bridge_config::register_faucet
-    # => [pad(16)]
+    # => [pad(16), pad(7)]
 
-    dropw dropw
+    dropw drop drop drop
+    # => [pad(16)]
 end

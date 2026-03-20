@@ -281,7 +281,6 @@ impl Default for PartialBlockchain {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use miden_core::utils::{Deserializable, Serializable};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -293,6 +292,7 @@ mod tests {
     use crate::crypto::merkle::mmr::{Mmr, PartialMmr};
     use crate::errors::PartialBlockchainError;
     use crate::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+    use crate::utils::serde::{Deserializable, Serializable};
 
     #[test]
     fn test_partial_blockchain_add() {
@@ -353,7 +353,7 @@ mod tests {
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         for i in 0..3 {
             partial_mmr
-                .track(i, mmr.get(i).unwrap(), &mmr.open(i).unwrap().merkle_path)
+                .track(i, mmr.get(i).unwrap(), mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
 
@@ -403,7 +403,7 @@ mod tests {
 
         let mut partial_mmr = PartialMmr::from_peaks(mmr.peaks());
         partial_mmr
-            .track(1, block_header1.commitment(), &mmr.open(1).unwrap().merkle_path)
+            .track(1, block_header1.commitment(), mmr.open(1).unwrap().merkle_path())
             .unwrap();
 
         let error =
@@ -470,7 +470,7 @@ mod tests {
         for i in 0..total_blocks {
             let i: usize = i as usize;
             partial_mmr
-                .track(i, full_mmr.get(i).unwrap(), &full_mmr.open(i).unwrap().merkle_path)
+                .track(i, full_mmr.get(i).unwrap(), full_mmr.open(i).unwrap().merkle_path())
                 .unwrap();
         }
         let mut chain = PartialBlockchain::new(partial_mmr, headers).unwrap();

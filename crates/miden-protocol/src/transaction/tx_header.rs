@@ -1,7 +1,5 @@
 use alloc::vec::Vec;
 
-use miden_processor::DeserializationError;
-
 use crate::Word;
 use crate::asset::FungibleAsset;
 use crate::note::NoteHeader;
@@ -10,20 +8,26 @@ use crate::transaction::{
     ExecutedTransaction,
     InputNoteCommitment,
     InputNotes,
-    OutputNote,
-    OutputNotes,
     ProvenTransaction,
+    RawOutputNotes,
     TransactionId,
 };
-use crate::utils::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 /// A transaction header derived from a
 /// [`ProvenTransaction`](crate::transaction::ProvenTransaction).
 ///
-/// The header is essentially a direct copy of the transaction's commitments, in particular the
-/// initial and final account state commitment as well as all nullifiers of consumed notes and all
-/// note IDs of created notes. While account updates may be aggregated and notes may be erased as
-/// part of batch and block building, the header retains the original transaction's data.
+/// The header is essentially a direct copy of the transaction's public commitments, in particular
+/// the initial and final account state commitment as well as all nullifiers of consumed notes and
+/// all note IDs of created notes together with the fee asset. While account updates may be
+/// aggregated and notes may be erased as part of batch and block building, the header retains the
+/// original transaction's data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionHeader {
     id: TransactionId,
@@ -41,7 +45,8 @@ impl TransactionHeader {
 
     /// Constructs a new [`TransactionHeader`] from the provided parameters.
     ///
-    /// The [`TransactionId`] is computed from the provided parameters.
+    /// The [`TransactionId`] is computed from the provided parameters, committing to the initial
+    /// and final account commitments, input and output note commitments, and the fee asset.
     ///
     /// The input notes and output notes must be in the same order as they appeared in the
     /// transaction that this header represents, otherwise an incorrect ID will be computed.
@@ -57,13 +62,14 @@ impl TransactionHeader {
         fee: FungibleAsset,
     ) -> Self {
         let input_notes_commitment = input_notes.commitment();
-        let output_notes_commitment = OutputNotes::compute_commitment(output_notes.iter());
+        let output_notes_commitment = RawOutputNotes::compute_commitment(output_notes.iter());
 
         let id = TransactionId::new(
             initial_state_commitment,
             final_state_commitment,
             input_notes_commitment,
             output_notes_commitment,
+            fee,
         );
 
         Self {
@@ -167,7 +173,7 @@ impl From<&ProvenTransaction> for TransactionHeader {
             tx.account_update().initial_state_commitment(),
             tx.account_update().final_state_commitment(),
             tx.input_notes().clone(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(<&NoteHeader>::from).cloned().collect(),
             tx.fee(),
         )
     }
@@ -182,7 +188,7 @@ impl From<&ExecutedTransaction> for TransactionHeader {
             tx.initial_account().initial_commitment(),
             tx.final_account().to_commitment(),
             tx.input_notes().to_commitments(),
-            tx.output_notes().iter().map(OutputNote::header).cloned().collect(),
+            tx.output_notes().iter().map(|n| n.header().clone()).collect(),
             tx.fee(),
         )
     }

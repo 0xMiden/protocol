@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
 use miden_protocol::asset::FungibleAsset;
 use primitive_types::U256;
@@ -75,7 +75,7 @@ impl EthAmount {
     ///
     /// Each u32 value in the amount array is converted to a [`Felt`].
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 
     /// Returns the raw 32-byte array.

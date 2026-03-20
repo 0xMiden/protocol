@@ -1,4 +1,4 @@
-use miden::core::crypto::hashes::rpo256
+use miden::core::crypto::hashes::poseidon2
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -35,7 +35,7 @@ const TOKEN_ADDR_HASH_PTR=0
 
 #! Updates the Global Exit Root (GER) in the bridge account storage.
 #!
-#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and stores it in a map
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and stores it in a map
 #! with value [GER_KNOWN_FLAG, 0, 0, 0] to indicate the GER is known.
 #!
 #! Panics if the note sender is not the global exit root manager.
@@ -49,14 +49,13 @@ pub proc update_ger
     exec.assert_sender_is_ger_manager
     # => [GER_LOWER[4], GER_UPPER[4], pad(8)]
 
-    # compute hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER)
-    # inputs: [B, A] => output: hash(A || B)
-    exec.rpo256::merge
+    # compute hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER)
+    exec.poseidon2::merge
     # => [GER_HASH, pad(12)]
 
-    # prepare VALUE = [0, 0, 0, GER_KNOWN_FLAG]
-    push.GER_KNOWN_FLAG.0.0.0
-    # => [0, 0, 0, GER_KNOWN_FLAG, GER_HASH, pad(12)]
+    # prepare VALUE = [GER_KNOWN_FLAG, 0, 0, 0]
+    push.0.0.0.GER_KNOWN_FLAG
+    # => [GER_KNOWN_FLAG, 0, 0, 0, GER_HASH, pad(12)]
 
     swapw
     # => [GER_HASH, VALUE, pad(12)]
@@ -72,7 +71,7 @@ end
 
 #! Asserts that the provided GER is valid (exists in storage).
 #!
-#! Computes hash(GER) = rpo256::merge(GER_UPPER, GER_LOWER) and looks up the hash in
+#! Computes hash(GER) = poseidon2::merge(GER_LOWER, GER_UPPER) and looks up the hash in
 #! the GER storage map. Panics if the GER has never been stored.
 #!
 #! Inputs: [GER_ROOT[8]]
@@ -84,7 +83,7 @@ end
 #! Invocation: exec
 pub proc assert_valid_ger
     # compute hash(GER)
-    exec.rpo256::merge
+    exec.poseidon2::merge
     # => [GER_HASH]
 
     push.GER_MAP_STORAGE_SLOT[0..2]
@@ -93,9 +92,9 @@ pub proc assert_valid_ger
     exec.active_account::get_map_item
     # => [VALUE]
 
-    # assert the GER is known in storage (VALUE = [0, 0, 0, GER_KNOWN_FLAG])
-    push.GER_KNOWN_FLAG.0.0.0
-    # => [0, 0, 0, GER_KNOWN_FLAG, VALUE]
+    # assert the GER is known in storage (VALUE = [GER_KNOWN_FLAG, 0, 0, 0])
+    push.0.0.0.GER_KNOWN_FLAG
+    # => [GER_KNOWN_FLAG, 0, 0, 0, VALUE]
 
     assert_eqw.err=ERR_GER_NOT_FOUND
     # => []
@@ -104,59 +103,59 @@ end
 #! Registers a faucet in the bridge's faucet registry and token registry.
 #!
 #! 1. Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
-#!    `KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]`.
-#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_prefix, faucet_id_suffix, 0, 0]`
+#!    `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
+#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]`
 #!    into the `token_registry` map.
 #!
 #! Panics if the note sender is not the bridge admin.
 #!
-#! Inputs:  [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+#! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 #! Outputs: [pad(16)]
 #!
 #! Invocation: call
 pub proc register_faucet
     # assert the note sender is the bridge admin.
     exec.assert_sender_is_bridge_admin
-    # => [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     # Save faucet ID for later use in token_registry
     dup.6 dup.6
-    # => [faucet_id_prefix, faucet_id_suffix, origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [faucet_id_suffix, faucet_id_prefix, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     # --- 1. Register faucet in faucet_registry ---
-    # set_map_item expects [slot_id(2), KEY(4), VALUE(4)] and returns [OLD_VALUE(4)].
+    # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
+    # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
+    push.0.0.0.IS_FAUCET_REGISTERED_FLAG
+    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, faucet_id_suffix, faucet_id_prefix, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
-    push.0.0 movdn.3 movdn.2
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    movup.5 movup.5
+    # => [faucet_id_suffix, faucet_id_prefix, IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
-    push.IS_FAUCET_REGISTERED_FLAG.0.0.0
-    # => [[0, 0, 0, 1], [faucet_id_prefix, faucet_id_suffix, 0, 0], origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
-
-    swapw
-    # => [[faucet_id_prefix, faucet_id_suffix, 0, 0], [0, 0, 0, 1], origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    push.0.0
+    # => [[0, 0, faucet_id_suffix, faucet_id_prefix], [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0], origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
-    # => [OLD_VALUE, origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [OLD_VALUE, origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     dropw
-    # => [origin_token_addr(5), faucet_id_prefix, faucet_id_suffix, pad(9)]
+    # => [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     # --- 2. Register token address → faucet ID in token_registry ---
 
     # Hash the token address
     exec.hash_token_address
-    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, pad(10)]
+    # => [TOKEN_ADDR_HASH, faucet_id_suffix, faucet_id_prefix, pad(10)]
 
-    # Build VALUE = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # Build VALUE = [0, 0, faucet_id_suffix, faucet_id_prefix]
     movup.5 movup.5
-    # => [faucet_id_prefix, faucet_id_suffix, TOKEN_ADDR_HASH, pad(10)]
+    # => [faucet_id_suffix, faucet_id_prefix, TOKEN_ADDR_HASH, pad(10)]
 
-    push.0.0 movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0, TOKEN_ADDR_HASH, pad(10)]
+    push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, TOKEN_ADDR_HASH, pad(10)]
 
     swapw
-    # => [TOKEN_ADDR_HASH, faucet_id_prefix, faucet_id_suffix, 0, 0, pad(10)]
+    # => [TOKEN_ADDR_HASH, 0, 0, faucet_id_suffix, faucet_id_prefix, pad(10)]
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.native_account::set_map_item
@@ -171,7 +170,7 @@ end
 #! Looks up the faucet ID in the faucet registry map and asserts the registration
 #! flag is set.
 #!
-#! Inputs:  [faucet_id_prefix, faucet_id_suffix]
+#! Inputs:  [faucet_id_suffix, faucet_id_prefix]
 #! Outputs: []
 #!
 #! Panics if:
@@ -179,28 +178,25 @@ end
 #!
 #! Invocation: exec
 pub proc assert_faucet_registered
-    # Build KEY = [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
     push.0.0
-    movup.3 movup.3
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     push.FAUCET_REGISTRY_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [VALUE(4)]
+    # => [VALUE]
 
-    # the stored word must be [0, 0, 0, 1] for registered faucets
-    drop drop drop
-    assert.err=ERR_FAUCET_NOT_REGISTERED
+    # the stored word must be [1, 0, 0, 0] for registered faucets
+    assert.err=ERR_FAUCET_NOT_REGISTERED drop drop drop
     # => []
 end
 
 #! Looks up the faucet account ID for a given origin token address.
 #!
-#! Hashes the origin token address (5 felts) using RPO256 and looks up the result
-#! in the token_registry map. Returns the faucet account ID.
+#! Hashes the origin token address (5 felts) and looks up the result in the token_registry map.
 #!
 #! Inputs:  [origin_token_addr(5)]
-#! Outputs: [faucet_id_prefix, faucet_id_suffix]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix]
 #!
 #! Panics if:
 #! - the token address is not registered in the token registry.
@@ -213,26 +209,27 @@ pub proc lookup_faucet_by_token_address
 
     push.TOKEN_REGISTRY_MAP_SLOT[0..2]
     exec.active_account::get_map_item
-    # => [faucet_id_prefix, faucet_id_suffix, 0, 0]
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
-    dup.1 dup.1 push.0.0
-    # => [0, 0, faucet_id_prefix, faucet_id_suffix, faucet_id_prefix, faucet_id_suffix] 
+    dup.3 dup.3 push.0.0
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix] 
 
     exec.account_id::is_equal
-    # => [is_id_zero, faucet_id_prefix, faucet_id_suffix]
+    # => [is_id_zero, 0, 0, faucet_id_suffix, faucet_id_prefix]
 
     # If AccountId returned from map is zero, it means the token is not registered.
     assertz.err=ERR_TOKEN_NOT_REGISTERED
-    # => [faucet_id_prefix, faucet_id_suffix]
+    drop drop
+    # => [faucet_id_suffix, faucet_id_prefix]
 end
 
 # HELPER PROCEDURES
 # =================================================================================================
 
-#! Hashes a 5-felt origin token address using RPO256.
+#! Hashes a 5-felt origin token address using Poseidon2.
 #!
-#! Writes the 5 felts to memory and computes the RPO hash.
+#! Writes the 5 felts to memory and computes the Poseidon2 hash.
 #!
 #! Inputs:  [origin_token_addr(5)]
 #! Outputs: [TOKEN_ADDR_HASH]
@@ -245,9 +242,9 @@ proc hash_token_address
     locaddr.TOKEN_ADDR_HASH_PTR add.4 mem_store
     # => []
 
-    # Hash the token address: rpo256::hash_elements(num_elements=5, start_ptr)
+    # Hash the token address: poseidon2::hash_elements(num_elements=5, start_ptr)
     push.5 locaddr.TOKEN_ADDR_HASH_PTR
-    exec.rpo256::hash_elements
+    exec.poseidon2::hash_elements
     # => [TOKEN_ADDR_HASH]
 end
 
@@ -268,16 +265,16 @@ pub proc assert_sender_is_bridge_admin
 
     push.BRIDGE_ADMIN_SLOT[0..2]
     exec.active_account::get_item
-    # => [admin_prefix, admin_suffix, 0, 0, pad(16)]
+    # => [0, 0, admin_suffix, admin_prefix, pad(16)]
+
+    drop drop
+    # => [admin_suffix, admin_prefix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, admin_prefix, admin_suffix, pad(18)]
+    # => [sender_suffix, sender_prefix, admin_suffix, admin_prefix, pad(16)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_BRIDGE_ADMIN
-    # => [pad(18)]
-
-    drop drop
     # => [pad(16)]
 end
 
@@ -298,15 +295,15 @@ pub proc assert_sender_is_ger_manager
 
     push.GER_MANAGER_SLOT[0..2]
     exec.active_account::get_item
-    # => [mgr_prefix, mgr_suffix, 0, 0, pad(16)]
+    # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
+
+    drop drop
+    # => [mgr_suffix, mgr_prefix, pad(16)]
 
     exec.active_note::get_sender
-    # => [sender_prefix, sender_suffix, mgr_prefix, mgr_suffix, pad(18)]
+    # => [sender_suffix, sender_prefix, mgr_suffix, mgr_prefix, pad(16)]
 
     exec.account_id::is_equal
     assert.err=ERR_SENDER_NOT_GER_MANAGER
-    # => [pad(18)]
-
-    drop drop
     # => [pad(16)]
 end

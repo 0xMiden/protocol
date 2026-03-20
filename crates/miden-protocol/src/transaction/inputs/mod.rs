@@ -1,9 +1,9 @@
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use miden_core::utils::{Deserializable, Serializable};
-use miden_crypto::merkle::smt::{LeafIndex, SmtLeaf, SmtProof};
+use miden_crypto::merkle::smt::{SmtLeaf, SmtProof};
 use miden_crypto::merkle::{MerkleError, NodeIndex};
 
 use super::PartialBlockchain;
@@ -20,12 +20,19 @@ use crate::account::{
     StorageSlotName,
 };
 use crate::asset::{Asset, AssetVaultKey, AssetWitness, PartialVault};
-use crate::block::account_tree::{AccountWitness, account_id_to_smt_index};
+use crate::block::account_tree::{AccountIdKey, AccountWitness};
 use crate::block::{BlockHeader, BlockNumber};
 use crate::crypto::merkle::SparseMerklePath;
 use crate::errors::{TransactionInputError, TransactionInputsExtractionError};
 use crate::note::{Note, NoteInclusionProof};
-use crate::transaction::{TransactionAdviceInputs, TransactionArgs, TransactionScript};
+use crate::transaction::{TransactionArgs, TransactionScript};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 use crate::{Felt, Word};
 
 #[cfg(test)]
@@ -35,8 +42,9 @@ mod account;
 pub use account::AccountInputs;
 
 mod notes;
-use miden_processor::{AdviceInputs, SMT_DEPTH};
 pub use notes::{InputNote, InputNotes, ToInputNoteCommitments};
+
+use crate::vm::AdviceInputs;
 
 // TRANSACTION INPUTS
 // ================================================================================================
@@ -117,9 +125,10 @@ impl TransactionInputs {
         for witness in witnesses {
             self.advice_inputs.store.extend(witness.authenticated_nodes());
             let smt_proof = SmtProof::from(witness);
-            self.advice_inputs
-                .map
-                .extend([(smt_proof.leaf().hash(), smt_proof.leaf().to_elements())]);
+            self.advice_inputs.map.extend([(
+                smt_proof.leaf().hash(),
+                smt_proof.leaf().to_elements().collect::<Arc<[Felt]>>(),
+            )]);
         }
 
         self
@@ -252,7 +261,7 @@ impl TransactionInputs {
             .map
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, leaf_index)?;
+        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, leaf_index)?;
 
         // Construct SMT proof and witness.
         let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
@@ -287,7 +296,7 @@ impl TransactionInputs {
                 .map
                 .get(&merkle_node)
                 .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-            let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, smt_index)?;
+            let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
             // Construct SMT proof and witness.
             let smt_proof = SmtProof::new(sparse_path, smt_leaf)?;
@@ -342,25 +351,25 @@ impl TransactionInputs {
             .map
             .get(&merkle_node)
             .ok_or(TransactionInputsExtractionError::MissingVaultRoot)?;
-        let smt_leaf = smt_leaf_from_elements(smt_leaf_elements, smt_index)?;
+        let smt_leaf = SmtLeaf::try_from_elements(smt_leaf_elements, smt_index)?;
 
         // Find the asset in the SMT leaf
         let asset = smt_leaf
             .entries()
             .iter()
-            .find(|(key, _value)| key == asset_key.as_word())
-            .map(|(_key, value)| Asset::try_from(value))
+            .find(|(key, _value)| key == &asset_key.to_word())
+            .map(|(_key, value)| Asset::from_key_value(asset_key, *value))
             .transpose()?;
 
         Ok(asset)
     }
 
-    /// Reads AccountInputs for a foreign account from the advice inputs.
+    /// Reads `AccountInputs` for a foreign account from the advice inputs.
     ///
-    /// This function reverses the process of [`TransactionAdviceInputs::add_foreign_accounts`] by:
+    /// This function reverses the process of `TransactionAdviceInputs::add_foreign_accounts` by:
     /// 1. Reading the account header from the advice map using the account_id_key.
-    /// 2. Building a PartialAccount from the header and foreign account code.
-    /// 3. Creating an AccountWitness.
+    /// 2. Building a `PartialAccount` from the header and foreign account code.
+    /// 3. Creating an `AccountWitness`.
     pub fn read_foreign_account_inputs(
         &self,
         account_id: AccountId,
@@ -370,11 +379,11 @@ impl TransactionInputs {
         }
 
         // Read the account header elements from the advice map.
-        let account_id_key = TransactionAdviceInputs::account_id_map_key(account_id);
+        let account_id_key = AccountIdKey::from(account_id);
         let header_elements = self
             .advice_inputs
             .map
-            .get(&account_id_key)
+            .get(&account_id_key.as_word())
             .ok_or(TransactionInputsExtractionError::ForeignAccountNotFound(account_id))?;
 
         // Parse the header from elements.
@@ -440,7 +449,7 @@ impl TransactionInputs {
     ) -> Result<AccountWitness, TransactionInputsExtractionError> {
         // Get the account tree root from the block header.
         let account_tree_root = self.block_header.account_root();
-        let leaf_index: NodeIndex = account_id_to_smt_index(header.id()).into();
+        let leaf_index = AccountIdKey::from(header.id()).to_leaf_index().into();
 
         // Get the Merkle path from the merkle store.
         let merkle_path = self.advice_inputs.store.get_path(account_tree_root, leaf_index)?;
@@ -487,7 +496,7 @@ impl TransactionInputs {
 // ================================================================================================
 
 impl Serializable for TransactionInputs {
-    fn write_into<W: miden_core::utils::ByteWriter>(&self, target: &mut W) {
+    fn write_into<W: ByteWriter>(&self, target: &mut W) {
         self.account.write_into(target);
         self.block_header.write_into(target);
         self.blockchain.write_into(target);
@@ -500,9 +509,7 @@ impl Serializable for TransactionInputs {
 }
 
 impl Deserializable for TransactionInputs {
-    fn read_from<R: miden_core::utils::ByteReader>(
-        source: &mut R,
-    ) -> Result<Self, miden_core::utils::DeserializationError> {
+    fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let account = PartialAccount::read_from(source)?;
         let block_header = BlockHeader::read_from(source)?;
         let blockchain = PartialBlockchain::read_from(source)?;
@@ -528,58 +535,6 @@ impl Deserializable for TransactionInputs {
 
 // HELPER FUNCTIONS
 // ================================================================================================
-
-// TODO(sergerad): Move this fn to crypto SmtLeaf::try_from_elements.
-pub fn smt_leaf_from_elements(
-    elements: &[Felt],
-    leaf_index: LeafIndex<SMT_DEPTH>,
-) -> Result<SmtLeaf, TransactionInputsExtractionError> {
-    use miden_crypto::merkle::smt::SmtLeaf;
-
-    // Based on the miden-crypto SMT leaf serialization format.
-
-    if elements.is_empty() {
-        return Ok(SmtLeaf::new_empty(leaf_index));
-    }
-
-    // Elements should be organized into a contiguous array of K/V Words (4 Felts each).
-    if !elements.len().is_multiple_of(8) {
-        return Err(TransactionInputsExtractionError::LeafConversionError(
-            "invalid SMT leaf format: elements length must be divisible by 8".into(),
-        ));
-    }
-
-    let num_entries = elements.len() / 8;
-
-    if num_entries == 1 {
-        // Single entry.
-        let key = Word::new([elements[0], elements[1], elements[2], elements[3]]);
-        let value = Word::new([elements[4], elements[5], elements[6], elements[7]]);
-        Ok(SmtLeaf::new_single(key, value))
-    } else {
-        // Multiple entries.
-        let mut entries = Vec::with_capacity(num_entries);
-        // Read k/v pairs from each entry.
-        for i in 0..num_entries {
-            let base_idx = i * 8;
-            let key = Word::new([
-                elements[base_idx],
-                elements[base_idx + 1],
-                elements[base_idx + 2],
-                elements[base_idx + 3],
-            ]);
-            let value = Word::new([
-                elements[base_idx + 4],
-                elements[base_idx + 5],
-                elements[base_idx + 6],
-                elements[base_idx + 7],
-            ]);
-            entries.push((key, value));
-        }
-        let leaf = SmtLeaf::new_multiple(entries)?;
-        Ok(leaf)
-    }
-}
 
 /// Validates whether the provided note belongs to the note tree of the specified block.
 fn validate_is_in_block(

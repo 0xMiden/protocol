@@ -1,8 +1,12 @@
-use miden_processor::DeserializationError;
-
 use super::{NoteAssets, NoteId, NoteRecipient, NoteScript, NoteStorage, Nullifier};
 use crate::Word;
-use crate::utils::serde::{ByteReader, ByteWriter, Deserializable, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // NOTE DETAILS
 // ================================================================================================
@@ -67,6 +71,14 @@ impl NoteDetails {
         Nullifier::from(self)
     }
 
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Reduces the size of the note script by stripping all debug info from it.
+    pub fn minify_script(&mut self) {
+        self.recipient.minify_script();
+    }
+
     /// Decomposes note details into underlying assets and recipient.
     pub fn into_parts(self) -> (NoteAssets, NoteRecipient) {
         (self.assets, self.recipient)
@@ -91,6 +103,10 @@ impl Serializable for NoteDetails {
 
         assets.write_into(target);
         recipient.write_into(target);
+    }
+
+    fn get_size_hint(&self) -> usize {
+        self.assets.get_size_hint() + self.recipient.get_size_hint()
     }
 }
 

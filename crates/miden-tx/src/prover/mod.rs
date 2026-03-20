@@ -8,12 +8,11 @@ use miden_protocol::block::BlockNumber;
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    OutputNote,
     ProvenTransaction,
-    ProvenTransactionBuilder,
     TransactionInputs,
     TransactionKernel,
     TransactionOutputs,
+    TxAccountUpdate,
 };
 pub use miden_prover::ProvingOptions;
 use miden_prover::{ExecutionProof, Word, prove};
@@ -56,25 +55,16 @@ impl LocalTransactionProver {
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         // erase private note information (convert private full notes to just headers)
-        let output_notes: Vec<_> = tx_outputs.output_notes.iter().map(OutputNote::shrink).collect();
+        let output_notes: Vec<_> = tx_outputs
+            .output_notes
+            .iter()
+            .map(|note| note.to_output_note())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 
         // Compute the commitment of the pre-fee delta, which goes into the proven transaction,
         // since it is the output of the transaction and so is needed for proof verification.
         let pre_fee_delta_commitment: Word = pre_fee_account_delta.to_commitment();
-
-        let builder = ProvenTransactionBuilder::new(
-            account.id(),
-            account.initial_commitment(),
-            tx_outputs.account.to_commitment(),
-            pre_fee_delta_commitment,
-            ref_block_num,
-            ref_block_commitment,
-            tx_outputs.fee,
-            tx_outputs.expiration_block_num,
-            proof,
-        )
-        .add_input_notes(input_notes)
-        .add_output_notes(output_notes);
 
         // The full transaction delta is the pre fee delta with the fee asset removed.
         let mut post_fee_account_delta = pre_fee_account_delta;
@@ -83,18 +73,35 @@ impl LocalTransactionProver {
             .remove_asset(Asset::from(tx_outputs.fee))
             .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
 
-        let builder = match account.has_public_state() {
-            true => {
-                let account_update_details = AccountUpdateDetails::Delta(post_fee_account_delta);
-                builder.account_update_details(account_update_details)
-            },
-            false => builder,
+        let account_update_details = if account.has_public_state() {
+            AccountUpdateDetails::Delta(post_fee_account_delta)
+        } else {
+            AccountUpdateDetails::Private
         };
 
-        builder.build().map_err(TransactionProverError::ProvenTransactionBuildFailed)
+        let account_update = TxAccountUpdate::new(
+            account.id(),
+            account.initial_commitment(),
+            tx_outputs.account.to_commitment(),
+            pre_fee_delta_commitment,
+            account_update_details,
+        )
+        .map_err(TransactionProverError::ProvenTransactionBuildFailed)?;
+
+        ProvenTransaction::new(
+            account_update,
+            input_notes.iter(),
+            output_notes,
+            ref_block_num,
+            ref_block_commitment,
+            tx_outputs.fee,
+            tx_outputs.expiration_block_num,
+            proof,
+        )
+        .map_err(TransactionProverError::ProvenTransactionBuildFailed)
     }
 
-    pub fn prove(
+    pub async fn prove(
         &self,
         tx_inputs: impl Into<TransactionInputs>,
     ) -> Result<ProvenTransaction, TransactionProverError> {
@@ -133,6 +140,7 @@ impl LocalTransactionProver {
             &mut host,
             self.proof_options.clone(),
         )
+        .await
         .map_err(TransactionProverError::TransactionProgramExecutionFailed)?;
 
         // Extract transaction outputs and process transaction data.

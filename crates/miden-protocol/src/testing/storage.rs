@@ -1,4 +1,3 @@
-use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use miden_core::{Felt, Word};
@@ -13,7 +12,6 @@ use crate::account::{
     StorageSlotDelta,
     StorageSlotName,
 };
-use crate::note::NoteAssets;
 use crate::utils::sync::LazyLock;
 
 // ACCOUNT STORAGE DELTA
@@ -138,17 +136,4 @@ impl AccountStorage {
         )
         .unwrap()
     }
-}
-
-// UTILITIES
-// --------------------------------------------------------------------------------------------
-
-/// Returns a list of strings, one for each note asset.
-pub fn prepare_assets(note_assets: &NoteAssets) -> Vec<String> {
-    let mut assets = Vec::new();
-    for &asset in note_assets.iter() {
-        let asset_word = Word::from(asset);
-        assets.push(asset_word.to_string());
-    }
-    assets
 }

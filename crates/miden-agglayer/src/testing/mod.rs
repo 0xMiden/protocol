@@ -17,7 +17,7 @@ use miden_protocol::utils::sync::LazyLock;
 use serde::Deserialize;
 
 use crate::claim_note::{Keccak256Output, ProofData, SmtNode};
-use crate::{EthAddressFormat, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
+use crate::{EthAddress, EthAmount, ExitRoot, GlobalIndex, LeafData, MetadataHash};
 
 // EMBEDDED TEST VECTOR JSON FILES
 // ================================================================================================
@@ -112,10 +112,10 @@ impl LeafValueVector {
     pub fn to_leaf_data(&self) -> LeafData {
         LeafData {
             origin_network: self.origin_network,
-            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
+            origin_token_address: EthAddress::from_hex(&self.origin_token_address)
                 .expect("valid origin token address hex"),
             destination_network: self.destination_network,
-            destination_address: EthAddressFormat::from_hex(&self.destination_address)
+            destination_address: EthAddress::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
             amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
             metadata_hash: MetadataHash::new(
@@ -219,6 +219,9 @@ pub struct MmrFrontierVectorsFile {
     pub origin_token_address: String,
     pub destination_networks: Vec<u32>,
     pub destination_addresses: Vec<String>,
+    pub token_name: String,
+    pub token_symbol: String,
+    pub token_decimals: u8,
 }
 
 // LAZY-PARSED TEST VECTORS

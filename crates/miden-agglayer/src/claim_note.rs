@@ -2,8 +2,8 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::{Felt, FieldElement, Word};
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
@@ -11,7 +11,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
 // CLAIM NOTE STRUCTURES
 // ================================================================================================
@@ -34,7 +34,7 @@ impl Keccak256Output {
     /// Converts the Keccak256 output to 8 Felt elements (32-byte value as 8 u32 values in
     /// little-endian)
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 
     /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.
@@ -112,11 +112,11 @@ pub struct LeafData {
     /// Origin network identifier (uint32)
     pub origin_network: u32,
     /// Origin token address
-    pub origin_token_address: EthAddressFormat,
+    pub origin_token_address: EthAddress,
     /// Destination network identifier (uint32)
     pub destination_network: u32,
     /// Destination address
-    pub destination_address: EthAddressFormat,
+    pub destination_address: EthAddress,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
     /// Metadata hash (32 bytes)

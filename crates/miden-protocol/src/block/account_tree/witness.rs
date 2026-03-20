@@ -1,13 +1,19 @@
 use alloc::string::ToString;
 
-use miden_crypto::merkle::smt::{LeafIndex, SMT_DEPTH, SmtLeaf, SmtProof, SmtProofError};
+use miden_crypto::merkle::smt::{SMT_DEPTH, SmtLeaf, SmtProof, SmtProofError};
 use miden_crypto::merkle::{InnerNodeInfo, SparseMerklePath};
 
 use crate::Word;
 use crate::account::AccountId;
-use crate::block::account_tree::{account_id_to_smt_key, smt_key_to_account_id};
+use crate::block::account_tree::AccountIdKey;
 use crate::errors::AccountTreeError;
-use crate::utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable};
+use crate::utils::serde::{
+    ByteReader,
+    ByteWriter,
+    Deserializable,
+    DeserializationError,
+    Serializable,
+};
 
 // ACCOUNT WITNESS
 // ================================================================================================
@@ -68,6 +74,7 @@ impl AccountWitness {
     /// # Panics
     ///
     /// Panics if:
+    /// - the proof contains an entry whose key contains an invalid account ID.
     /// - the merkle path in the proof does not have depth equal to [`SMT_DEPTH`].
     /// - the proof contains an SmtLeaf::Multiple.
     pub(super) fn from_smt_proof(requested_account_id: AccountId, proof: SmtProof) -> Self {
@@ -83,7 +90,8 @@ impl AccountWitness {
             SmtLeaf::Empty(_) => requested_account_id,
             SmtLeaf::Single((key_in_leaf, _)) => {
                 // SAFETY: By construction, the tree only contains valid IDs.
-                smt_key_to_account_id(*key_in_leaf)
+                AccountIdKey::try_from_word(*key_in_leaf)
+                    .expect("account tree should only contain valid IDs")
             },
             SmtLeaf::Multiple(_) => {
                 unreachable!("account tree should only contain zero or one entry per ID prefix")
@@ -91,7 +99,7 @@ impl AccountWitness {
         };
 
         let commitment = proof
-            .get(&account_id_to_smt_key(witness_id))
+            .get(&AccountIdKey::from(witness_id).as_word())
             .expect("we should have received a proof for the witness key");
 
         // SAFETY: The proof is guaranteed to have depth SMT_DEPTH if it comes from one of
@@ -132,10 +140,10 @@ impl AccountWitness {
     /// Returns the [`SmtLeaf`] of the account witness.
     pub fn leaf(&self) -> SmtLeaf {
         if self.commitment == Word::empty() {
-            let leaf_idx = LeafIndex::from(account_id_to_smt_key(self.id));
+            let leaf_idx = AccountIdKey::from(self.id).to_leaf_index();
             SmtLeaf::new_empty(leaf_idx)
         } else {
-            let key = account_id_to_smt_key(self.id);
+            let key = AccountIdKey::from(self.id).as_word();
             SmtLeaf::new_single(key, self.commitment)
         }
     }
@@ -152,7 +160,7 @@ impl AccountWitness {
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         let leaf = self.leaf();
         self.path()
-            .authenticated_nodes(leaf.index().value(), leaf.hash())
+            .authenticated_nodes(leaf.index().position(), leaf.hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
 }

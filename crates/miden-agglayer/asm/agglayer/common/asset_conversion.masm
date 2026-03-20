@@ -93,18 +93,15 @@ pub proc scale_native_amount_to_u256
     # => [scale, amount]
 
     u32split
-    # => [scale_hi, scale_lo, amount]
+    # => [scale_lo, scale_hi, amount]
 
     movup.2 u32split
-    # => [amount_hi, amount_lo, scale_hi, scale_lo]
+    # => [amount_lo, amount_hi, scale_lo, scale_hi]
 
     # Perform U64 multiplication: amount * scale
     # This is safe because both the scaling factor and amount are guaranteed to be smaller
     # than 2^64, so we will never overflow a 256-bit value.
-    exec.u64::overflowing_mul
-    # => [res_hi, res_mid_hi, res_mid_lo, res_lo]
-
-    exec.word::reverse
+    exec.u64::widening_mul
     # => [res_lo, res_mid_lo, res_mid_hi, res_hi]
 
     # convert to U256 & little endian
@@ -136,6 +133,14 @@ end
 #! with the constraint:
 #!     y <= x
 #!
+#! Each 128-bit value is stored as 4 u32 limbs in little-endian order:
+#!     value = limb0 + limb1·2^32 + limb2·2^64 + limb3·2^96
+#!
+#! The subtraction is performed in three steps using u64::overflowing_sub:
+#!     1. (z0, z1)  = (x0, x1) - (y0, y1)       -> borrow_lo
+#!     2. (t0, t1)  = (x2, x3) - (y2, y3)       -> underflow_hi_raw
+#!     3. (z2, z3)  = (t0, t1) - borrow_lo      -> underflow_hi_borrow
+#!
 #! Inputs:  [y0, y1, y2, y3, x0, x1, x2, x3]
 #! Outputs: [z0, z1, z2, z3]
 #!
@@ -146,55 +151,53 @@ proc u128_sub_no_underflow
     swapw
     # => [x0, x1, x2, x3, y0, y1, y2, y3]
 
-    # ---------------------------------------------------------------------------------------------
-    # Low 64 bits: (x1,x0) - (y1,y0)
-    # Arrange args for u64::overflowing_sub as:
-    #   [y1, y0, x1, x0]
-    # ---------------------------------------------------------------------------------------------
-    swap
-    # => [x1, x0, x2, x3, y0, y1, y2, y3]
-
+    # =============================================================================================
+    # Step 1: (z0, z1) = (x0, x1) - (y0, y1)
+    #   u64::overflowing_sub expects [b_lo, b_hi, a_lo, a_hi], computes a - b
+    # =============================================================================================
     movup.5
     movup.5
-    swap
-    # => [y1, y0, x1, x0, x2, x3, y2, y3]
+    # => [y0, y1, x0, x1, x2, x3, y2, y3]
 
     exec.u64::overflowing_sub
-    # => [borrow_low, z1, z0, x2, x3, y2, y3]
+    # => [borrow_lo, z0, z1, x2, x3, y2, y3]
 
-    # ---------------------------------------------------------------------------------------------
-    # High 64 bits (raw): (x3,x2) - (y3,y2)
-    # Arrange args as:
-    #   [y3, y2, x3, x2]
-    # ---------------------------------------------------------------------------------------------
-    movup.3
+    # =============================================================================================
+    # Step 2: (t0, t1) = (x2, x3) - (y2, y3)   [raw, without borrow]
+    #   Arrange as [y2, y3, x2, x3]
+    # =============================================================================================
+
     movup.4
-    # => [x3, x2, borrow_low, z1, z0, y2, y3]
+    movup.4
+    # => [x2, x3, borrow_lo, z0, z1, y2, y3]
 
     movup.6
     movup.6
-    swap
-    # => [y3, y2, x3, x2, borrow_low, z1, z0]
+    # => [y2, y3, x2, x3, borrow_lo, z0, z1]
 
     exec.u64::overflowing_sub
-    # => [underflow_high_raw, t_hi, t_lo, borrow_low, z1, z0]
+    # => [underflow_hi_raw, t0, t1, borrow_lo, z0, z1]
 
-    # ---------------------------------------------------------------------------------------------
-    # Apply propagated borrow from low 64-bit subtraction:
-    #   (t_hi,t_lo) - borrow_low
-    # ---------------------------------------------------------------------------------------------
+    # =============================================================================================
+    # Step 3: (z2, z3) = (t0, t1) - borrow_lo
+    #   Arrange as [borrow_lo, 0, t0, t1]
+    # =============================================================================================
     swap.3
-    push.0
+    # => [borrow_lo, t0, t1, underflow_hi_raw, z0, z1]
+
+    push.0 swap
+    # => [borrow_lo, 0, t0, t1, underflow_hi_raw, z0, z1]
+
     exec.u64::overflowing_sub
-    # => [underflow_high_borrow, z3, z2, underflow_high_raw, z1, z0]
+    # => [underflow_hi_borrow, z2, z3, underflow_hi_raw, z0, z1]
 
     # Underflow iff either high-half step underflowed.
     movup.3 or
     assertz.err=ERR_UNDERFLOW
-    # => [z3, z2, z1, z0]
+    # => [z2, z3, z0, z1]
 
-    # Return little-endian limbs.
-    exec.word::reverse
+    # Rearrange to little-endian order.
+    movup.3 movup.3
     # => [z0, z1, z2, z3]
 end
 
@@ -307,19 +310,20 @@ pub proc verify_u128_to_native_amount_conversion
     # This is justified because scale_exp <= 18, so 10^scale_exp <= 10^18 < 2^60.
     # Therefore any valid remainder z < 10^scale_exp must be < 2^60 and thus must have z2 == z3 == 0.
     # =============================================================================================
-    exec.word::reverse
-    # => [z3, z2, z1, z0, scale_exp]
-
+    # u128_sub_no_underflow returns [z0, z1, z2, z3] in LE order.
+    # Assert z2 == z3 == 0 (remainder fits in 64 bits).
+    movup.3
     assertz.err=ERR_REMAINDER_TOO_LARGE   # z3 == 0
+    movup.2
     assertz.err=ERR_REMAINDER_TOO_LARGE   # z2 == 0
-    # => [z1, z0, scale_exp]
+    # => [z0, z1, scale_exp]
 
     movup.2
     exec.pow10
-    # => [scale, z1, z0]
+    # => [scale, z0, z1]
 
     u32split
-    # => [scale_hi, scale_lo, z1, z0]
+    # => [scale_lo, scale_hi, z0, z1]
 
     exec.u64::lt
     # => [is_lt]

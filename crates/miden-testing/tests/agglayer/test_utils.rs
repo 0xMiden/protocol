@@ -1,10 +1,8 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use alloc::vec;
 
 use miden_agglayer::agglayer_library;
-// Re-export shared test vector types and constants from miden_agglayer::testing.
 pub use miden_agglayer::testing::{
     ClaimDataSource,
     LEAF_VALUE_VECTORS_JSON,
@@ -16,8 +14,15 @@ pub use miden_agglayer::testing::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_processor::fast::{ExecutionOutput, FastProcessor};
-use miden_processor::{AdviceInputs, DefaultHost, ExecutionError, Program, StackInputs};
+use miden_processor::advice::AdviceInputs;
+use miden_processor::{
+    DefaultHost,
+    ExecutionError,
+    ExecutionOutput,
+    FastProcessor,
+    Program,
+    StackInputs,
+};
 use miden_protocol::transaction::TransactionKernel;
 
 // HELPER FUNCTIONS
@@ -43,10 +48,11 @@ pub async fn execute_program_with_default_host(
     let agglayer_lib = agglayer_library();
     host.load_library(agglayer_lib.mast_forest()).unwrap();
 
-    let stack_inputs = StackInputs::new(vec![]).unwrap();
+    let stack_inputs = StackInputs::new(&[]).unwrap();
     let advice_inputs = advice_inputs.unwrap_or_default();
 
-    let processor = FastProcessor::new_debug(stack_inputs.as_slice(), advice_inputs);
+    let processor =
+        FastProcessor::new(stack_inputs).with_advice(advice_inputs).with_debugging(true);
     processor.execute(&program, &mut host).await
 }
 

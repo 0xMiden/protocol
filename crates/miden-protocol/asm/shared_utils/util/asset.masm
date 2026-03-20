@@ -1,3 +1,8 @@
+# ERRORS
+# =================================================================================================
+
+const ERR_VAULT_INVALID_ENABLE_CALLBACKS = "enable_callbacks must be 0 or 1"
+
 # CONSTANTS
 # =================================================================================================
 
@@ -6,20 +11,350 @@
 # This is 2^63 - 2^31. See account_delta.masm for more details.
 pub const FUNGIBLE_ASSET_MAX_AMOUNT=0x7fffffff80000000
 
+# The number of elements in an asset, i.e. vault key and value.
+pub const ASSET_SIZE = 8
+
+# The offset of the asset value in an asset stored in memory.
+pub const ASSET_VALUE_MEMORY_OFFSET = 4
+
+# The flag representing disabled callbacks.
+pub const CALLBACKS_DISABLED = 0
+
+# The flag representing enabled callbacks.
+pub const CALLBACKS_ENABLED = 1
+
 # PROCEDURES
 # =================================================================================================
 
-#! Returns the balance of the given fungible asset.
+#! Stores an asset key and value into memory at the given pointer.
 #!
-#! Note: Assumes that the given asset is fungible and does NOT validate it.
+#! The memory range pointer..pointer+8 will be overwritten.
 #!
-#! Inputs:  [ASSET]
+#! Inputs: [ptr, ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
+#!
+#! Where:
+#! - ptr is the memory address where the asset will be stored.
+#! - ASSET_KEY is the 4-element word representing the asset key.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc store
+    # store asset key
+    movdn.4 dup.4
+    # => [ptr, ASSET_KEY, ptr, ASSET_VALUE]
+
+    mem_storew_le dropw
+    # => [ptr, ASSET_VALUE]
+
+    # store asset value
+    add.ASSET_VALUE_MEMORY_OFFSET mem_storew_le dropw
+    # => []
+end
+
+#! Loads an asset key and value from memory given a pointer to the asset.
+#!
+#! Inputs: [ptr]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ptr is the memory address of the asset.
+#! - ASSET_KEY is the 4-element word representing the asset key.
+#! - ASSET_VALUE is the 4-element word representing the asset value.
+pub proc load
+    # load asset value
+    padw dup.4 add.ASSET_VALUE_MEMORY_OFFSET mem_loadw_le
+    # => [ASSET_VALUE, ptr]
+
+    # load asset key
+    padw movup.8 mem_loadw_le
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Returns the balance of the given fungible asset and consumes it.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_VALUE]
 #! Outputs: [balance]
 #!
 #! Where:
-#! - ASSET is the fungible asset from which to extract the balance.
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
 #! - balance is the amount of the fungible asset.
-pub proc get_balance_from_fungible_asset
-    drop drop drop
+pub proc fungible_value_into_amount
+    movdn.3 drop drop drop
     # => [balance]
+end
+
+#! Returns the balance of the given fungible asset.
+#!
+#! WARNING: Assumes that the given asset value is fungible and does NOT validate it.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: [amount, ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - ASSET_VALUE is the fungible asset from which to extract the balance.
+#! - amount is the amount of the fungible asset.
+pub proc fungible_to_amount
+    # => [ASSET_KEY, [amount, 0, 0, 0]]
+    dup.4
+    # => [amount, ASSET_KEY, ASSET_VALUE]
+end
+
+#! Returns the faucet ID from an asset vault key.
+#!
+#! WARNING: The faucet ID is not validated.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+#!
+#! Where:
+#! - faucet_id is the account ID in the vault key.
+#! - ASSET_KEY is the vault key from which to extract the faucet ID.
+pub proc key_to_faucet_id
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    dup.3 dup.3
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, ASSET_KEY]
+
+    exec.split_suffix_and_metadata drop
+    # => [faucet_id_suffix, faucet_id_prefix, ASSET_KEY]
+end
+
+#! Returns the faucet ID from an asset vault key and consumes it.
+#!
+#! WARNING: The faucet ID is not validated.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [faucet_id_suffix, faucet_id_prefix]
+#!
+#! Where:
+#! - faucet_id is the account ID in the vault key.
+#! - ASSET_KEY is the vault key from which to extract the faucet ID.
+pub proc key_into_faucet_id
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    drop drop
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    exec.split_suffix_and_metadata drop
+    # => [faucet_id_suffix, faucet_id_prefix]
+end
+
+#! Returns the asset ID from an asset vault key.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [asset_id_suffix, asset_id_prefix, ASSET_KEY]
+#!
+#! Where:
+#! - asset_id is the asset ID in the vault key.
+#! - ASSET_KEY is the vault key from which to extract the asset ID.
+pub proc key_to_asset_id
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
+    dup.1 dup.1
+    # => [asset_id_suffix, asset_id_prefix, ASSET_KEY]
+end
+
+#! Returns the asset ID from an asset vault key and consumes it.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [asset_id_suffix, asset_id_prefix]
+#!
+#! Where:
+#! - asset_id is the asset ID in the vault key.
+#! - ASSET_KEY is the vault key from which to extract the asset ID.
+pub proc key_into_asset_id
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix, faucet_id_prefix]
+
+    movup.2 drop movup.2 drop
+    # => [asset_id_suffix, asset_id_prefix]
+end
+
+#! Returns the asset callbacks flag from an asset vault key.
+#!
+#! Inputs:  [ASSET_KEY]
+#! Outputs: [callbacks_enabled, ASSET_KEY]
+#!
+#! Where:
+#! - ASSET_KEY is the vault key from which to extract the metadata.
+#! - callbacks_enabled is 1 if callbacks are enabled and 0 if disabled.
+pub proc key_to_callbacks_enabled
+    # => [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    dup.2
+    # => [faucet_id_suffix_and_metadata, ASSET_KEY]
+
+    exec.split_suffix_and_metadata swap drop
+    # => [asset_metadata, ASSET_KEY]
+
+    exec.metadata_into_callbacks_enabled
+    # => [callbacks_enabled, ASSET_KEY]
+end
+
+#! Creates a fungible asset vault key for the specified faucet.
+#!
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix]
+#! Outputs: [ASSET_KEY]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the fungible faucet.
+#! - ASSET_KEY is the vault key for the fungible asset.
+#!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+#!
+#! Invocation: exec
+pub proc create_fungible_key
+    exec.create_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix]
+
+    # merge the asset metadata into the lower 8 bits of the suffix
+    # this is safe since create_metadata builds only valid metadata
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix]
+
+    push.0.0
+    # => [0, 0, faucet_id_suffix_and_metadata, faucet_id_prefix]
+    # => [ASSET_KEY]
+end
+
+#! Creates a fungible asset for the specified fungible faucet and amount.
+#!
+#! WARNING: Does not validate the faucet ID or amount.
+#!
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
+#!   for.
+#! - amount is the amount of the asset to create.
+#! - ASSET_KEY is the vault key of the created fungible asset
+#! - ASSET_VALUE is the value of the created fungible asset.
+#!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+#!
+#! Invocation: exec
+pub proc create_fungible_asset_unchecked
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]
+
+    # pad amount into ASSET_VALUE
+    repeat.3 push.0 movdn.4 end
+    # => [enable_callbacks, faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
+
+    exec.create_fungible_key
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Creates a non fungible asset for the specified non-fungible faucet.
+#!
+#! WARNING: Does not validate its inputs.
+#!
+#! Inputs:  [enable_callbacks, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
+#! Outputs: [ASSET_KEY, ASSET_VALUE]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether asset callbacks are enabled.
+#! - faucet_id_{suffix,prefix} are the suffix and prefix felts of the faucet to create the asset
+#!   for.
+#! - DATA_HASH is the data hash of the non-fungible asset to create.
+#! - ASSET_KEY is the vault key of the created non-fungible asset.
+#! - ASSET_VALUE is the value of the created non-fungible asset, which is identical to DATA_HASH.
+#!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+#!
+#! Invocation: exec
+pub proc create_non_fungible_asset_unchecked
+    exec.create_metadata
+    # => [asset_metadata, faucet_id_suffix, faucet_id_prefix, DATA_HASH]
+
+    # merge the asset metadata into the lower 8 bits of the suffix
+    add
+    # => [faucet_id_suffix_and_metadata, faucet_id_prefix, DATA_HASH]
+
+    # copy hashes at indices 0 and 1 in the data hash word to the corresponding index in the key
+    # word
+    dup.3 dup.3
+    # => [hash0, hash1, faucet_id_suffix_and_metadata, faucet_id_prefix, DATA_HASH]
+    # => [ASSET_KEY, ASSET_VALUE]
+end
+
+#! Splits the merged faucet ID suffix and the asset metadata.
+#!
+#! Inputs:  [faucet_id_suffix_and_metadata]
+#! Outputs: [asset_metadata, faucet_id_suffix]
+#!
+#! Where:
+#! - faucet_id_suffix_and_metadata is the faucet ID suffix merged with the asset metadata.
+#! - faucet_id_suffix is the suffix of the account ID.
+#! - asset_metadata is the asset metadata.
+pub proc split_suffix_and_metadata
+    u32split
+    # => [suffix_metadata_lo, suffix_metadata_hi]
+
+    dup movdn.2
+    # => [suffix_metadata_lo, suffix_metadata_hi, suffix_metadata_lo]
+
+    # clear lower 8 bits of the lo part to get the actual ID suffix
+    u32and.0xffffff00 swap
+    # => [suffix_metadata_hi, suffix_metadata_lo', suffix_metadata_lo]
+
+    # reassemble the ID suffix by multiplying the hi part with 2^32 and adding the lo part
+    mul.0x0100000000 add
+    # => [faucet_id_suffix, suffix_metadata_lo]
+
+    # extract lower 8 bits of the lo part to get the metadata
+    swap u32and.0xff
+    # => [asset_metadata, faucet_id_suffix]
+end
+
+#! Validates that asset metadata is well formed and consumes it.
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: []
+#!
+#! Panics if:
+#! - asset_metadata is not a valid u32 or exceeds CALLBACKS_ENABLED.
+pub proc validate_metadata
+    u32assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    u32lte.CALLBACKS_ENABLED
+    assert.err=ERR_VAULT_INVALID_ENABLE_CALLBACKS
+    # => []
+end
+
+#! Creates asset metadata from the provided inputs.
+#!
+#! Inputs:  [enable_callbacks]
+#! Outputs: [asset_metadata]
+#!
+#! Where:
+#! - enable_callbacks is a flag (0 or 1) indicating whether the asset callbacks flag should be set.
+#! - asset_metadata is the asset metadata.
+#!
+#! Panics if:
+#! - enable_callbacks is not 0 or 1.
+proc create_metadata
+    # for now, enable_callbacks is identical to asset_metadata
+    dup exec.validate_metadata
+    # => [asset_metadata]
+end
+
+#! Extracts the asset callback flag from asset metadata.
+#!
+#! WARNING: asset_metadata is assumed to be a byte (in particular a valid u32)
+#!
+#! Inputs:  [asset_metadata]
+#! Outputs: [callbacks_enabled]
+#!
+#! Where:
+#! - asset_metadata is the asset metadata.
+#! - callbacks_enabled is 1 if callbacks are enabled and 0 if disabled.
+proc metadata_into_callbacks_enabled
+    # extract the least significant bit of the metadata
+    u32and.1
+    # => [callbacks_enabled]
 end

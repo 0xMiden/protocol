@@ -9,6 +9,7 @@ use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    EthEmbeddedAccountId,
     ExitRoot,
     SmtNode,
     UpdateGerNote,
@@ -17,6 +18,7 @@ use miden_agglayer::{
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
 };
+use miden_protocol::Felt;
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -24,8 +26,7 @@ use miden_protocol::crypto::SequentialCommit;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::note::NoteType;
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE;
-use miden_protocol::transaction::OutputNote;
-use miden_protocol::{Felt, FieldElement};
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::note::P2idNote;
@@ -63,8 +64,8 @@ fn merkle_proof_verification_code(
         let [node_lo, node_hi] = smt_node.to_words();
         store_path_source.push_str(&format!(
             "
-            \tpush.{node_lo} mem_storew_be.{} dropw
-            \tpush.{node_hi} mem_storew_be.{} dropw
+            \tpush.{node_lo} mem_storew_le.{} dropw
+            \tpush.{node_hi} mem_storew_le.{} dropw
     ",
             height * 8,
             height * 8 + 4
@@ -80,21 +81,18 @@ fn merkle_proof_verification_code(
     format!(
         r#"
         use agglayer::bridge::bridge_in
-        use miden::core::word
 
         begin
             {store_path_source}
 
-            push.{root_lo} mem_storew_be.256 dropw
-            push.{root_hi} mem_storew_be.260 dropw
+            push.{root_lo} mem_storew_le.256 dropw
+            push.{root_hi} mem_storew_le.260 dropw
 
             push.256
             push.{index}
             push.0
             push.{leaf_hi}
-            exec.word::reverse
             push.{leaf_lo}
-            exec.word::reverse
 
             exec.bridge_in::verify_merkle_proof
             assert.err="verification failed"
@@ -131,13 +129,15 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // CREATE BRIDGE ADMIN ACCOUNT (sends CONFIG_AGG_BRIDGE notes)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (sends the UPDATE_GER note)
     // --------------------------------------------------------------------------------------------
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -172,16 +172,16 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         &origin_token_address,
         origin_network,
         scale,
+        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
     // Get the destination account ID from the leaf data.
     // This requires the destination_address to be in the embedded Miden AccountId format
     // (first 4 bytes must be zero).
-    let destination_account_id = leaf_data
-        .destination_address
-        .to_account_id()
-        .expect("destination address is not an embedded Miden AccountId");
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
 
     // For the simulated/rollup case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(
@@ -239,7 +239,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     )?;
 
     // Add the claim note to the builder before building the mock chain
-    builder.add_output_note(OutputNote::Full(claim_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(claim_note.clone()));
 
     // CREATE CONFIG_AGG_BRIDGE NOTE (registers faucet + token address in bridge)
     // --------------------------------------------------------------------------------------------
@@ -250,13 +250,13 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE UPDATE_GER NOTE WITH GLOBAL EXIT ROOT
     // --------------------------------------------------------------------------------------------
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN WITH ALL ACCOUNTS
     // --------------------------------------------------------------------------------------------
@@ -290,7 +290,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .foreign_accounts(vec![faucet_foreign_inputs])
         .build()?;
 
-    let claim_executed = claim_tx_context.execute().await?;
+    let claim_executed = claim_tx_context
+        .execute()
+        .await
+        .context("TX2: CLAIM note execution against bridge failed")?;
 
     // VERIFY CGI CHAIN HASH WAS SUCCESSFULLY UPDATED
     // --------------------------------------------------------------------------------------------
@@ -328,7 +331,10 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         .add_note_script(P2idNote::script())
         .build()?;
 
-    let mint_executed = mint_tx_context.execute().await?;
+    let mint_executed = mint_tx_context
+        .execute()
+        .await
+        .context("TX3: MINT note execution against faucet failed")?;
 
     // VERIFY P2ID NOTE WAS CREATED BY THE FAUCET
     // --------------------------------------------------------------------------------------------
@@ -342,7 +348,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     assert_eq!(output_note.metadata().note_type(), NoteType::Public);
 
     // Extract and verify P2ID asset contents
-    let mut assets_iter = output_note.assets().unwrap().iter_fungible();
+    let mut assets_iter = output_note.assets().iter_fungible();
     let p2id_asset = assets_iter.next().unwrap();
 
     // Verify minted amount matches expected scaled value
@@ -363,7 +369,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify full note ID construction
     let expected_asset: Asset =
-        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_int())
+        FungibleAsset::new(agglayer_faucet.id(), miden_claim_amount.as_canonical_u64())
             .unwrap()
             .into();
     let expected_output_p2id_note = create_p2id_note_exact(
@@ -375,7 +381,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     )
     .unwrap();
 
-    assert_eq!(OutputNote::Full(expected_output_p2id_note.clone()), *output_note);
+    assert_eq!(RawOutputNote::Full(expected_output_p2id_note.clone()), *output_note);
 
     // TX4: CONSUME THE P2ID NOTE WITH THE DESTINATION ACCOUNT (simulated case only)
     // --------------------------------------------------------------------------------------------
@@ -404,7 +410,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
         let balance = destination_account.vault().get_balance(agglayer_faucet.id())?;
         assert_eq!(
             balance,
-            miden_claim_amount.as_int(),
+            miden_claim_amount.as_canonical_u64(),
             "destination account balance does not match"
         );
     }
@@ -425,12 +431,14 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
 
     // CREATE BRIDGE ADMIN ACCOUNT
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Rpo })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     let bridge_seed = builder.rng_mut().draw_word();
@@ -461,6 +469,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         &origin_token_address,
         origin_network,
         scale,
+        leaf_data.metadata_hash,
     );
     builder.add_account(agglayer_faucet.clone())?;
 
@@ -483,7 +492,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         bridge_admin.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(claim_note_1.clone()));
+    builder.add_output_note(RawOutputNote::Full(claim_note_1.clone()));
 
     // CREATE SECOND CLAIM NOTE (same proof data = same PROOF_DATA_KEY)
     let claim_inputs_2 = ClaimNoteStorage {
@@ -498,7 +507,7 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         bridge_admin.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(claim_note_2.clone()));
+    builder.add_output_note(RawOutputNote::Full(claim_note_2.clone()));
 
     // CREATE CONFIG_AGG_BRIDGE NOTE
     let config_note = ConfigAggBridgeNote::create(
@@ -508,12 +517,12 @@ async fn test_duplicate_claim_note_rejected() -> anyhow::Result<()> {
         bridge_account.id(),
         builder.rng_mut(),
     )?;
-    builder.add_output_note(OutputNote::Full(config_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(config_note.clone()));
 
     // CREATE UPDATE_GER NOTE
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
 
     // BUILD MOCK CHAIN
     let mut mock_chain = builder.clone().build()?;
