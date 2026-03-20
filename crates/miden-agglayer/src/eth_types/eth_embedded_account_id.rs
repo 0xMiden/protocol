@@ -114,7 +114,7 @@ impl EthEmbeddedAccountId {
     /// Converts the embedded account ID to an [`EthAddress`].
     ///
     /// The resulting 20-byte address has the format:
-    /// `0x00000000 || prefix(8) || suffix(8)` (big-endian words).
+    /// `0x00000000 || prefix(8) || suffix(8)` (big-endian byte ordering).
     pub fn to_eth_address(&self) -> EthAddress {
         let mut out = [0u8; 20];
         out[4..12].copy_from_slice(&self.0.prefix().as_u64().to_be_bytes());
