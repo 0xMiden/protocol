@@ -42,7 +42,7 @@ static STORAGE_SCHEMA_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
 });
 
 /// Schema commitment slot name.
-pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::metadata::storage_schema::commitment")
         .expect("storage slot name should be valid")
 });
@@ -53,8 +53,8 @@ pub static SCHEMA_COMMITMENT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::ne
 /// An [`AccountComponent`] exposing the account storage schema commitment.
 ///
 /// The [`AccountSchemaCommitment`] component can be constructed from a list of [`StorageSchema`],
-/// from which a commitment is computed and then inserted into the [`SCHEMA_COMMITMENT_SLOT_NAME`]
-/// slot.
+/// from which a commitment is computed and then inserted into the slot returned by
+/// [`AccountSchemaCommitment::schema_commitment_slot()`].
 ///
 /// It reexports the `get_schema_commitment` procedure from
 /// `miden::standards::metadata::storage_schema`.

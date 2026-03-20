@@ -9,99 +9,27 @@
 
 use alloc::vec::Vec;
 
-use miden_protocol::Word;
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
-use miden_protocol::utils::sync::LazyLock;
+use miden_protocol::{Felt, Word};
 
 use crate::errors::NameUtf8Error;
 use crate::utils::string::FixedWidthString;
 
-// SLOT NAMES — canonical layout (sync with asm/standards/metadata/fungible.masm)
-// ================================================================================================
+pub mod fungible_token;
 
-/// Fungible token metadata word: `[token_supply, max_supply, decimals, token_symbol]`.
-pub(crate) static FUNGIBLE_TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::fungible_token_metadata")
-        .expect("storage slot name should be valid")
-});
-
-/// Token name (2 Words = 8 felts), split across 2 slots.
-pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
-    [
-        StorageSlotName::new("miden::standards::metadata::name_0").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::name_1").expect("valid slot name"),
-    ]
-});
+use fungible_token::{
+    DESCRIPTION_SLOTS,
+    Description,
+    EXTERNAL_LINK_SLOTS,
+    ExternalLink,
+    LOGO_URI_SLOTS,
+    LogoURI,
+    NAME_SLOTS,
+    mutability_config_slot,
+};
 
 /// Maximum length of a name in bytes when using the UTF-8 encoding (capped at 32).
 pub(crate) const NAME_UTF8_MAX_BYTES: usize = 32;
-
-/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
-/// is_max_supply_mutable]`.
-pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::metadata::mutability_config")
-        .expect("storage slot name should be valid")
-});
-
-/// Description (7 Words), split across 7 slots.
-pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
-    [
-        StorageSlotName::new("miden::standards::metadata::description_0").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_1").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_2").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_3").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_4").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_5").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::description_6").expect("valid slot name"),
-    ]
-});
-
-/// Logo URI (7 Words), split across 7 slots.
-pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
-    [
-        StorageSlotName::new("miden::standards::metadata::logo_uri_0").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_1").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_2").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_3").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_4").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_5").expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::logo_uri_6").expect("valid slot name"),
-    ]
-});
-
-/// External link (7 Words), split across 7 slots.
-pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
-    [
-        StorageSlotName::new("miden::standards::metadata::external_link_0")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_1")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_2")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_3")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_4")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_5")
-            .expect("valid slot name"),
-        StorageSlotName::new("miden::standards::metadata::external_link_6")
-            .expect("valid slot name"),
-    ]
-});
-
-/// Returns the [`StorageSlotName`] for the fungible token metadata word (slot 0).
-pub(crate) fn fungible_token_metadata_slot() -> &'static StorageSlotName {
-    &FUNGIBLE_TOKEN_METADATA_SLOT
-}
-
-/// Returns the [`StorageSlotName`] for the mutability config Word.
-pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
-    &MUTABILITY_CONFIG_SLOT
-}
-
-pub mod fungible_token;
-
-use fungible_token::{Description, ExternalLink, LogoURI};
 
 // TOKEN NAME
 // ================================================================================================
@@ -152,7 +80,7 @@ impl TokenName {
 /// A helper that stores name, mutability config, and optional fields in fixed value slots.
 ///
 /// Designed to be embedded in [`FungibleTokenMetadata`] to avoid duplication. Slot names are
-/// shared via the static accessors (e.g. [`name_chunk_0_slot`]).
+/// defined in the `fungible_token` module and referenced via [`TokenMetadata::name_chunk_0_slot`].
 ///
 /// ## Storage Layout
 ///
@@ -273,17 +201,17 @@ impl TokenMetadata {
         &NAME_SLOTS[1]
     }
 
-    /// Returns the [`StorageSlotName`] for a description chunk by index (0..7).
+    /// Returns the [`StorageSlotName`] for a description chunk by index (0..=6).
     pub fn description_slot(index: usize) -> &'static StorageSlotName {
         &DESCRIPTION_SLOTS[index]
     }
 
-    /// Returns the [`StorageSlotName`] for a logo URI chunk by index (0..7).
+    /// Returns the [`StorageSlotName`] for a logo URI chunk by index (0..=6).
     pub fn logo_uri_slot(index: usize) -> &'static StorageSlotName {
         &LOGO_URI_SLOTS[index]
     }
 
-    /// Returns the [`StorageSlotName`] for an external link chunk by index (0..7).
+    /// Returns the [`StorageSlotName`] for an external link chunk by index (0..=6).
     pub fn external_link_slot(index: usize) -> &'static StorageSlotName {
         &EXTERNAL_LINK_SLOTS[index]
     }
@@ -291,13 +219,35 @@ impl TokenMetadata {
     // STORAGE
     // --------------------------------------------------------------------------------------------
 
-    /// Reads the name and optional metadata fields from account storage.
+    /// Decodes the mutability config [`Word`] into its four boolean flags.
     ///
-    /// Returns `(name, description, logo_uri, external_link)` where each is `Some` only if
-    /// at least one word is non-zero. Decoding errors cause the field to be returned as `None`.
-    pub fn read_metadata_from_storage(
-        storage: &AccountStorage,
-    ) -> (Option<TokenName>, Option<Description>, Option<LogoURI>, Option<ExternalLink>) {
+    /// The word layout is `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+    /// is_max_supply_mutable]`. A non-zero value is treated as `true`.
+    pub fn mutability_flags_from_word(word: Word) -> (bool, bool, bool, bool) {
+        (
+            word[0] != Felt::ZERO,
+            word[1] != Felt::ZERO,
+            word[2] != Felt::ZERO,
+            word[3] != Felt::ZERO,
+        )
+    }
+
+    /// Returns the mutability config word for this metadata.
+    pub fn mutability_config_word(&self) -> Word {
+        Word::from([
+            Felt::from(self.is_description_mutable as u32),
+            Felt::from(self.is_logo_uri_mutable as u32),
+            Felt::from(self.is_external_link_mutable as u32),
+            Felt::from(self.is_max_supply_mutable as u32),
+        ])
+    }
+
+    /// Constructs a [`TokenMetadata`] by reading all relevant name, optional-field, and
+    /// mutability config slots from account storage.
+    ///
+    /// Decoding errors cause the affected field to be returned as `None`. Missing slots default
+    /// to zero (absent / immutable).
+    pub fn try_from_storage(storage: &AccountStorage) -> Self {
         let name = if let (Ok(chunk_0), Ok(chunk_1)) = (
             storage.get_item(TokenMetadata::name_chunk_0_slot()),
             storage.get_item(TokenMetadata::name_chunk_1_slot()),
@@ -332,7 +282,31 @@ impl TokenMetadata {
         let external_link =
             read_field(&EXTERNAL_LINK_SLOTS).and_then(|w| ExternalLink::try_from_words(&w).ok());
 
-        (name, description, logo_uri, external_link)
+        let mutability_word =
+            storage.get_item(mutability_config_slot()).unwrap_or_else(|_| Word::default());
+
+        let (is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable) =
+            TokenMetadata::mutability_flags_from_word(mutability_word);
+
+        let mut meta = TokenMetadata::new();
+        if let Some(n) = name {
+            meta = meta.with_name(n);
+        }
+        if let Some(d) = description {
+            meta = meta.with_description(d, is_desc_mutable);
+        }
+        meta = meta.with_description_mutable(is_desc_mutable);
+        if let Some(l) = logo_uri {
+            meta = meta.with_logo_uri(l, is_logo_mutable);
+        }
+        meta = meta.with_logo_uri_mutable(is_logo_mutable);
+        if let Some(e) = external_link {
+            meta = meta.with_external_link(e, is_extlink_mutable);
+        }
+        meta = meta.with_external_link_mutable(is_extlink_mutable);
+        meta = meta.with_max_supply_mutable(is_max_supply_mutable);
+
+        meta
     }
 
     /// Returns the storage slots for this metadata (name, mutability config, and all fields).
@@ -353,15 +327,9 @@ impl TokenMetadata {
             name_words[1],
         ));
 
-        let mutability_config_word = Word::from([
-            miden_protocol::Felt::from(self.is_description_mutable as u32),
-            miden_protocol::Felt::from(self.is_logo_uri_mutable as u32),
-            miden_protocol::Felt::from(self.is_external_link_mutable as u32),
-            miden_protocol::Felt::from(self.is_max_supply_mutable as u32),
-        ]);
         slots.push(StorageSlot::with_value(
             mutability_config_slot().clone(),
-            mutability_config_word,
+            self.mutability_config_word(),
         ));
 
         let desc_words: Vec<Word> = self

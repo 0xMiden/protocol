@@ -4,13 +4,13 @@
 //!
 //! | Slot name | Contents |
 //! |-----------|----------|
-//! | `metadata::fungible_token_metadata` | `[token_supply, max_supply, decimals, token_symbol]` |
-//! | `metadata::name_0` | first 4 felts of name |
-//! | `metadata::name_1` | last 4 felts of name |
-//! | `metadata::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
-//! | `metadata::description_0..6` | description (7 Words, max 195 bytes) |
-//! | `metadata::logo_uri_0..6` | logo URI (7 Words, max 195 bytes) |
-//! | `metadata::external_link_0..6` | external link (7 Words, max 195 bytes) |
+//! | `metadata::fungible_faucet::token_metadata` | `[token_supply, max_supply, decimals, token_symbol]` |
+//! | `metadata::fungible_faucet::name_chunk_0` | first 4 felts of name |
+//! | `metadata::fungible_faucet::name_chunk_1` | last 4 felts of name |
+//! | `metadata::fungible_faucet::mutability_config` | `[is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]` |
+//! | `metadata::fungible_faucet::description_0..=6` | description (7 Words, max 195 bytes) |
+//! | `metadata::fungible_faucet::logo_uri_0..=6` | logo URI (7 Words, max 195 bytes) |
+//! | `metadata::fungible_faucet::external_link_0..=6` | external link (7 Words, max 195 bytes) |
 //!
 //! Layout sync: the same layout is defined in MASM at `asm/standards/metadata/fungible.masm`.
 //! Any change to slot names must be applied in both Rust and MASM.
@@ -32,6 +32,7 @@
 //!
 //! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32).
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -49,141 +50,121 @@ use miden_protocol::account::{
     StorageSlotName,
 };
 use miden_protocol::asset::{FungibleAsset, TokenSymbol};
+use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
-use thiserror::Error;
 
 use super::{TokenMetadata, TokenName};
 use crate::account::components::fungible_token_metadata_library;
 use crate::account::faucets::FungibleFaucetError;
+use crate::errors::StringFieldError;
 use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 pub mod builder;
 
 pub use builder::FungibleTokenMetadataBuilder;
 
+#[cfg(test)]
+mod tests;
+
+// SLOT NAMES — canonical layout (sync with asm/standards/metadata/fungible.masm)
+// ================================================================================================
+
+/// Fungible token metadata word: `[token_supply, max_supply, decimals, token_symbol]`.
+pub(crate) static FUNGIBLE_TOKEN_METADATA_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::fungible_faucet::token_metadata")
+        .expect("storage slot name should be valid")
+});
+
+/// Token name (2 Words = 8 felts), split across 2 slots.
+pub(crate) static NAME_SLOTS: LazyLock<[StorageSlotName; 2]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::name_chunk_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::name_chunk_1")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Mutability config slot: `[is_desc_mutable, is_logo_mutable, is_extlink_mutable,
+/// is_max_supply_mutable]`.
+pub(crate) static MUTABILITY_CONFIG_SLOT: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::metadata::fungible_faucet::mutability_config")
+        .expect("storage slot name should be valid")
+});
+
+/// Description (7 Words), split across 7 slots.
+pub(crate) static DESCRIPTION_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::description_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Logo URI (7 Words), split across 7 slots.
+pub(crate) static LOGO_URI_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::logo_uri_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// External link (7 Words), split across 7 slots.
+pub(crate) static EXTERNAL_LINK_SLOTS: LazyLock<[StorageSlotName; 7]> = LazyLock::new(|| {
+    [
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_0")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_1")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_2")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_3")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_4")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_5")
+            .expect("valid slot name"),
+        StorageSlotName::new("miden::standards::metadata::fungible_faucet::external_link_6")
+            .expect("valid slot name"),
+    ]
+});
+
+/// Returns the [`StorageSlotName`] for the fungible token metadata word (slot 0).
+pub(crate) fn fungible_token_metadata_slot() -> &'static StorageSlotName {
+    &FUNGIBLE_TOKEN_METADATA_SLOT
+}
+
+/// Returns the [`StorageSlotName`] for the mutability config Word.
+pub(crate) fn mutability_config_slot() -> &'static StorageSlotName {
+    &MUTABILITY_CONFIG_SLOT
+}
+
 /// Schema type string for the token symbol field in fungible token metadata storage.
 pub(super) const TOKEN_SYMBOL_TYPE: &str =
     "miden::standards::fungible_faucets::metadata::token_symbol";
-
-// FIELD TYPES
-// ================================================================================================
-
-/// Maximum length of a metadata field (description, logo_uri, external_link) in bytes.
-/// 7 Words = 28 felts × 7 bytes = 196 byte buffer − 1 length byte = 195 bytes.
-pub(crate) const FIELD_MAX_BYTES: usize = 195;
-
-/// Errors when encoding or decoding metadata fields.
-#[derive(Debug, Clone, Error)]
-pub enum FieldBytesError {
-    /// Field exceeds the maximum of 195 bytes.
-    #[error("field must be at most 195 bytes, got {0}")]
-    TooLong(usize),
-    /// Decoded bytes are not valid UTF-8.
-    #[error("field is not valid UTF-8")]
-    InvalidUtf8,
-}
-
-/// Token description (max 195 bytes UTF-8), stored in 7 Words.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Description(FixedWidthString<7>);
-
-impl Description {
-    /// Maximum byte length for a description (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
-
-    /// Creates a description from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
-            _ => FieldBytesError::InvalidUtf8,
-        })
-    }
-
-    /// Returns the description as a string slice.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    /// Encodes the description into 7 Words for storage.
-    pub fn to_words(&self) -> Vec<Word> {
-        self.0.to_words()
-    }
-
-    /// Decodes a description from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|_| FieldBytesError::InvalidUtf8)
-    }
-}
-
-/// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogoURI(FixedWidthString<7>);
-
-impl LogoURI {
-    /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
-
-    /// Creates a logo URI from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
-            _ => FieldBytesError::InvalidUtf8,
-        })
-    }
-
-    /// Returns the logo URI as a string slice.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    /// Encodes the logo URI into 7 Words for storage.
-    pub fn to_words(&self) -> Vec<Word> {
-        self.0.to_words()
-    }
-
-    /// Decodes a logo URI from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|_| FieldBytesError::InvalidUtf8)
-    }
-}
-
-/// Token external link (max 195 bytes UTF-8), stored in 7 Words.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalLink(FixedWidthString<7>);
-
-impl ExternalLink {
-    /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
-    pub const MAX_BYTES: usize = FIELD_MAX_BYTES;
-
-    /// Creates an external link from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, .. } => FieldBytesError::TooLong(actual),
-            _ => FieldBytesError::InvalidUtf8,
-        })
-    }
-
-    /// Returns the external link as a string slice.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    /// Encodes the external link into 7 Words for storage.
-    pub fn to_words(&self) -> Vec<Word> {
-        self.0.to_words()
-    }
-
-    /// Decodes an external link from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, FieldBytesError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|_| FieldBytesError::InvalidUtf8)
-    }
-}
 
 // FUNGIBLE TOKEN METADATA
 // ================================================================================================
@@ -212,19 +193,28 @@ impl FungibleTokenMetadata {
     ///
     /// This is the main entry point for constructing metadata; optional fields and token supply
     /// can be set via the builder before calling [`FungibleTokenMetadataBuilder::build`].
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: display name (at most 32 UTF-8 bytes).
+    /// - `symbol`: token symbol.
+    /// - `decimals`: decimal precision (0–12).
+    /// - `max_supply`: maximum token supply (0–[`FungibleAsset::MAX_AMOUNT`], expressed as a
+    ///   `u64`).
     pub fn builder(
         name: TokenName,
         symbol: TokenSymbol,
         decimals: u8,
-        max_supply: Felt,
+        max_supply: u64,
     ) -> FungibleTokenMetadataBuilder {
         FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply)
     }
 
-    /// Creates a new [`FungibleTokenMetadata`] with the specified metadata and token supply.
-    /// Used internally by the builder.
-    #[doc(hidden)]
-    pub(super) fn with_supply(
+    /// Validates all fields and constructs a [`FungibleTokenMetadata`].
+    ///
+    /// This is the single point where `Self { ... }` is constructed. All other constructors
+    /// delegate here.
+    pub(crate) fn new_validated(
         symbol: TokenSymbol,
         decimals: u8,
         max_supply: Felt,
@@ -281,7 +271,7 @@ impl FungibleTokenMetadata {
     /// Returns the [`StorageSlotName`] where the token metadata is stored (canonical slot shared
     /// with the metadata module).
     pub fn metadata_slot() -> &'static StorageSlotName {
-        super::fungible_token_metadata_slot()
+        fungible_token_metadata_slot()
     }
 
     /// Returns the current token supply (amount issued).
@@ -484,584 +474,122 @@ impl TryFrom<&AccountStorage> for FungibleTokenMetadata {
             }
         })?;
 
-        let (name, description, logo_uri, external_link) =
-            TokenMetadata::read_metadata_from_storage(storage);
-
-        let mutability_word = storage
-            .get_item(super::mutability_config_slot())
-            .unwrap_or_else(|_| Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO]));
-
-        let name = name.unwrap_or_default();
-        let mut token_metadata = TokenMetadata::new().with_name(name);
-        if let Some(d) = description {
-            token_metadata = token_metadata.with_description(d, mutability_word[0] != Felt::ZERO);
-        }
-        if let Some(l) = logo_uri {
-            token_metadata = token_metadata.with_logo_uri(l, mutability_word[1] != Felt::ZERO);
-        }
-        if let Some(e) = external_link {
-            token_metadata = token_metadata.with_external_link(e, mutability_word[2] != Felt::ZERO);
-        }
-        token_metadata = token_metadata
-            .with_description_mutable(mutability_word[0] != Felt::ZERO)
-            .with_logo_uri_mutable(mutability_word[1] != Felt::ZERO)
-            .with_external_link_mutable(mutability_word[2] != Felt::ZERO)
-            .with_max_supply_mutable(mutability_word[3] != Felt::ZERO);
+        let token_metadata = TokenMetadata::try_from_storage(storage);
 
         Self::from_metadata_word_and_token_metadata(metadata_word, token_metadata)
     }
 }
 
-// TESTS
+// FIELD TYPES
 // ================================================================================================
 
-#[cfg(test)]
-mod tests {
-    use miden_protocol::asset::TokenSymbol;
-    use miden_protocol::{Felt, Word};
+/// Token description (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Description(FixedWidthString<7>);
 
-    use super::super::mutability_config_slot;
-    use super::*;
-    use crate::account::metadata::{Description, ExternalLink, LogoURI};
+impl Description {
+    /// Maximum byte length for a description (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
-    #[test]
-    fn token_metadata_new() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        let max_supply = Felt::new(1_000_000);
-        let name = TokenName::new("TEST").unwrap();
-
-        let metadata =
-            FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), decimals, max_supply)
-                .build()
-                .unwrap();
-
-        assert_eq!(metadata.symbol(), &symbol);
-        assert_eq!(metadata.decimals(), decimals);
-        assert_eq!(metadata.max_supply(), max_supply);
-        assert_eq!(metadata.token_supply(), Felt::ZERO);
-        assert_eq!(metadata.name(), &name);
-        assert!(metadata.description().is_none());
-        assert!(metadata.logo_uri().is_none());
-        assert!(metadata.external_link().is_none());
+    /// Creates a description from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, max } => {
+                StringFieldError::TooLong(max, actual)
+            },
+            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
+            _ => StringFieldError::InvalidUtf8(e.to_string()),
+        })
     }
 
-    #[test]
-    fn token_metadata_with_supply() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        let max_supply = Felt::new(1_000_000);
-        let token_supply = Felt::new(500_000);
-        let name = TokenName::new("TEST").unwrap();
-
-        let metadata =
-            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
-                .token_supply(token_supply)
-                .build()
-                .unwrap();
-
-        assert_eq!(metadata.symbol(), &symbol);
-        assert_eq!(metadata.decimals(), decimals);
-        assert_eq!(metadata.max_supply(), max_supply);
-        assert_eq!(metadata.token_supply(), token_supply);
+    /// Returns the description as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
-    #[test]
-    fn token_metadata_builder_with_optionals() {
-        let symbol = TokenSymbol::new("MTK").unwrap();
-        let name = TokenName::new("My Token").unwrap();
-        let description = Description::new("A test token").unwrap();
-        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
-        let external_link = ExternalLink::new("https://example.com").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(
-            name.clone(),
-            symbol.clone(),
-            8,
-            Felt::new(1_000_000),
-        )
-        .token_supply(Felt::new(100))
-        .description(description.clone())
-        .logo_uri(logo_uri.clone())
-        .external_link(external_link.clone())
-        .is_description_mutable(true)
-        .is_max_supply_mutable(true)
-        .build()
-        .unwrap();
-
-        assert_eq!(metadata.token_supply(), Felt::new(100));
-        assert_eq!(metadata.description(), Some(&description));
-        assert_eq!(metadata.logo_uri(), Some(&logo_uri));
-        assert_eq!(metadata.external_link(), Some(&external_link));
-        let slots = metadata.storage_slots();
-        let config_word = slots[3].value();
-        assert_eq!(config_word[0], Felt::from(1u32), "is_desc_mutable");
-        assert_eq!(config_word[3], Felt::from(1u32), "is_max_supply_mutable");
+    /// Encodes the description into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    #[test]
-    fn token_metadata_with_name_and_description() {
-        use miden_protocol::account::{AccountBuilder, AccountType};
+    /// Decodes a description from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
+    }
+}
 
-        use crate::account::auth::NoAuth;
-        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+/// Token logo URI (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogoURI(FixedWidthString<7>);
 
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let decimals = 2u8;
-        let max_supply = Felt::new(123);
-        let name = TokenName::new("polygon").unwrap();
-        let description = Description::new("A polygon token").unwrap();
+impl LogoURI {
+    /// Maximum byte length for a logo URI (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
-        let metadata =
-            FungibleTokenMetadataBuilder::new(name.clone(), symbol.clone(), decimals, max_supply)
-                .description(description.clone())
-                .build()
-                .unwrap();
-
-        assert_eq!(metadata.symbol(), &symbol);
-        assert_eq!(metadata.name(), &name);
-        assert_eq!(metadata.description(), Some(&description));
-
-        let account = AccountBuilder::new([2u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(metadata.clone())
-            .with_component(BasicFungibleFaucet)
-            .build()
-            .expect("account build should succeed");
-
-        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.name(), &name);
-        assert_eq!(restored.description(), Some(&description));
+    /// Creates a logo URI from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, max } => {
+                StringFieldError::TooLong(max, actual)
+            },
+            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
+            _ => StringFieldError::InvalidUtf8(e.to_string()),
+        })
     }
 
-    #[test]
-    fn token_name_roundtrip() {
-        let name = TokenName::new("polygon").unwrap();
-        let words = name.to_words();
-        let decoded = TokenName::try_from_words(&words).unwrap();
-        assert_eq!(decoded.as_str(), "polygon");
+    /// Returns the logo URI as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
-    #[test]
-    fn token_name_as_str() {
-        let name = TokenName::new("my_token").unwrap();
-        assert_eq!(name.as_str(), "my_token");
+    /// Encodes the logo URI into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    #[test]
-    fn token_name_too_long() {
-        let s = "a".repeat(33);
-        assert!(TokenName::new(&s).is_err());
+    /// Decodes a logo URI from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
+    }
+}
+
+/// Token external link (max 195 bytes UTF-8), stored in 7 Words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalLink(FixedWidthString<7>);
+
+impl ExternalLink {
+    /// Maximum byte length for an external link (7 Words × 4 felts × 7 bytes − 1 length byte).
+    pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
+
+    /// Creates an external link from a UTF-8 string.
+    pub fn new(s: &str) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
+            FixedWidthStringError::TooLong { actual, max } => {
+                StringFieldError::TooLong(max, actual)
+            },
+            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
+            _ => StringFieldError::InvalidUtf8(e.to_string()),
+        })
     }
 
-    #[test]
-    fn description_roundtrip() {
-        let text = "A short description";
-        let desc = Description::new(text).unwrap();
-        let words = desc.to_words();
-        let decoded = Description::try_from_words(&words).unwrap();
-        assert_eq!(decoded.as_str(), text);
+    /// Returns the external link as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 
-    #[test]
-    fn description_too_long() {
-        let s = "a".repeat(Description::MAX_BYTES + 1);
-        assert!(Description::new(&s).is_err());
+    /// Encodes the external link into 7 Words for storage.
+    pub fn to_words(&self) -> Vec<Word> {
+        self.0.to_words()
     }
 
-    #[test]
-    fn logo_uri_roundtrip() {
-        let url = "https://example.com/logo.png";
-        let uri = LogoURI::new(url).unwrap();
-        let words = uri.to_words();
-        let decoded = LogoURI::try_from_words(&words).unwrap();
-        assert_eq!(decoded.as_str(), url);
-    }
-
-    #[test]
-    fn external_link_roundtrip() {
-        let url = "https://example.com";
-        let link = ExternalLink::new(url).unwrap();
-        let words = link.to_words();
-        let decoded = ExternalLink::try_from_words(&words).unwrap();
-        assert_eq!(decoded.as_str(), url);
-    }
-
-    #[test]
-    fn token_metadata_too_many_decimals() {
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 13u8;
-        let max_supply = Felt::new(1_000_000);
-        let name = TokenName::new("TEST").unwrap();
-
-        let result = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply).build();
-        assert!(matches!(result, Err(FungibleFaucetError::TooManyDecimals { .. })));
-    }
-
-    #[test]
-    fn token_metadata_max_supply_too_large() {
-        use miden_protocol::asset::FungibleAsset;
-
-        let symbol = TokenSymbol::new("TEST").unwrap();
-        let decimals = 8u8;
-        let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT + 1);
-        let name = TokenName::new("TEST").unwrap();
-
-        let result = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply).build();
-        assert!(matches!(result, Err(FungibleFaucetError::MaxSupplyTooLarge { .. })));
-    }
-
-    #[test]
-    fn token_metadata_to_word() {
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let symbol_felt = symbol.as_element();
-        let decimals = 2u8;
-        let max_supply = Felt::new(123);
-        let name = TokenName::new("POL").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, decimals, max_supply)
-            .build()
-            .unwrap();
-        let word = metadata.metadata_word_slot().value();
-
-        assert_eq!(word[0], Felt::ZERO);
-        assert_eq!(word[1], max_supply);
-        assert_eq!(word[2], Felt::from(decimals));
-        assert_eq!(word[3], symbol_felt);
-    }
-
-    #[test]
-    fn token_metadata_from_account_storage() {
-        use miden_protocol::account::{AccountBuilder, AccountType};
-
-        use crate::account::auth::NoAuth;
-        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
-
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let decimals = 2u8;
-        let max_supply = Felt::new(123);
-        let name = TokenName::new("POL").unwrap();
-
-        let original =
-            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
-                .build()
-                .unwrap();
-
-        let account = AccountBuilder::new([3u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(original)
-            .with_component(BasicFungibleFaucet)
-            .build()
-            .expect("account build should succeed");
-
-        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
-
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.decimals(), decimals);
-        assert_eq!(restored.max_supply(), max_supply);
-        assert_eq!(restored.token_supply(), Felt::ZERO);
-    }
-
-    #[test]
-    fn token_metadata_roundtrip_with_supply() {
-        use miden_protocol::account::{AccountBuilder, AccountType};
-
-        use crate::account::auth::NoAuth;
-        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
-
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let decimals = 2u8;
-        let max_supply = Felt::new(1000);
-        let token_supply = Felt::new(500);
-        let name = TokenName::new("POL").unwrap();
-
-        let original =
-            FungibleTokenMetadataBuilder::new(name, symbol.clone(), decimals, max_supply)
-                .token_supply(token_supply)
-                .build()
-                .unwrap();
-
-        let account = AccountBuilder::new([4u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(original)
-            .with_component(BasicFungibleFaucet)
-            .build()
-            .expect("account build should succeed");
-
-        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
-
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.decimals(), decimals);
-        assert_eq!(restored.max_supply(), max_supply);
-        assert_eq!(restored.token_supply(), token_supply);
-    }
-
-    #[test]
-    fn mutability_builders() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(1_000))
-            .is_description_mutable(true)
-            .is_logo_uri_mutable(true)
-            .is_external_link_mutable(false)
-            .is_max_supply_mutable(true)
-            .build()
-            .unwrap();
-
-        let slots = metadata.storage_slots();
-
-        // Slot layout (no owner slot): [0]=metadata, [1]=name_0, [2]=name_1, [3]=mutability_config
-        let config_slot = &slots[3];
-        let config_word = config_slot.value();
-        assert_eq!(config_word[0], Felt::from(1u32), "is_desc_mutable");
-        assert_eq!(config_word[1], Felt::from(1u32), "is_logo_mutable");
-        assert_eq!(config_word[2], Felt::from(0u32), "is_extlink_mutable");
-        assert_eq!(config_word[3], Felt::from(1u32), "is_max_supply_mutable");
-    }
-
-    #[test]
-    fn mutability_defaults_to_false() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(1_000))
-            .build()
-            .unwrap();
-
-        let slots = metadata.storage_slots();
-        let config_word = slots[3].value();
-        assert_eq!(config_word[0], Felt::ZERO, "is_desc_mutable default");
-        assert_eq!(config_word[1], Felt::ZERO, "is_logo_mutable default");
-        assert_eq!(config_word[2], Felt::ZERO, "is_extlink_mutable default");
-        assert_eq!(config_word[3], Felt::ZERO, "is_max_supply_mutable default");
-    }
-
-    #[test]
-    fn storage_slots_includes_metadata_word() {
-        let symbol = TokenSymbol::new("POL").unwrap();
-        let name = TokenName::new("polygon").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol.clone(), 2, Felt::new(123))
-            .build()
-            .unwrap();
-        let slots = metadata.storage_slots();
-
-        // First slot is the metadata word [token_supply, max_supply, decimals, symbol]
-        let metadata_word = slots[0].value();
-        assert_eq!(metadata_word[0], Felt::ZERO); // token_supply
-        assert_eq!(metadata_word[1], Felt::new(123)); // max_supply
-        assert_eq!(metadata_word[2], Felt::from(2u32)); // decimals
-        assert_eq!(metadata_word[3], Felt::from(symbol)); // symbol
-    }
-
-    #[test]
-    fn storage_slots_includes_name() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("my token").unwrap();
-        let expected_words = name.to_words();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
-            .build()
-            .unwrap();
-        let slots = metadata.storage_slots();
-
-        // Slot layout: [0]=metadata, [1]=name_0, [2]=name_1
-        assert_eq!(slots[1].value(), expected_words[0]);
-        assert_eq!(slots[2].value(), expected_words[1]);
-    }
-
-    #[test]
-    fn storage_slots_includes_description() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-        let description = Description::new("A cool token").unwrap();
-        let expected_words = description.to_words();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
-            .description(description)
-            .build()
-            .unwrap();
-        let slots = metadata.storage_slots();
-
-        // Slots 4..11 are description (7 words): after metadata(1) + name(2) + config(1)
-        for (i, expected) in expected_words.iter().enumerate() {
-            assert_eq!(slots[4 + i].value(), *expected, "description word {i}");
-        }
-    }
-
-    #[test]
-    fn storage_slots_total_count() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
-            .build()
-            .unwrap();
-        let slots = metadata.storage_slots();
-
-        // 1 metadata + 2 name + 1 config + 7 description + 7 logo + 7 external_link = 25
-        assert_eq!(slots.len(), 25);
-    }
-
-    #[test]
-    fn into_account_component() {
-        use miden_protocol::account::{AccountBuilder, AccountType};
-
-        use crate::account::auth::NoAuth;
-        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
-
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("test token").unwrap();
-        let description = Description::new("A test").unwrap();
-
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 4, Felt::new(10_000))
-            .description(description)
-            .is_max_supply_mutable(true)
-            .build()
-            .unwrap();
-
-        // Should build an account successfully with FungibleTokenMetadata as a component
-        let account = AccountBuilder::new([1u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(metadata)
-            .with_component(BasicFungibleFaucet)
-            .build()
-            .expect("account build should succeed");
-
-        // Verify metadata slot is accessible
-        let md_word = account.storage().get_item(FungibleTokenMetadata::metadata_slot()).unwrap();
-        assert_eq!(md_word[1], Felt::new(10_000)); // max_supply
-        assert_eq!(md_word[2], Felt::from(4u32)); // decimals
-
-        // Verify mutability config
-        let config = account.storage().get_item(mutability_config_slot()).unwrap();
-        assert_eq!(config[3], Felt::from(1u32), "is_max_supply_mutable");
-    }
-
-    #[test]
-    fn roundtrip_via_storage_matches_original() {
-        use miden_protocol::account::{AccountBuilder, AccountType};
-
-        use crate::account::auth::NoAuth;
-        use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
-
-        let symbol = TokenSymbol::new("RND").unwrap();
-        let name = TokenName::new("Roundtrip Token").unwrap();
-        let description = Description::new("Description").unwrap();
-        let logo_uri = LogoURI::new("https://example.com/logo.png").unwrap();
-        let external_link = ExternalLink::new("https://example.com").unwrap();
-
-        let original = FungibleTokenMetadataBuilder::new(
-            name.clone(),
-            symbol.clone(),
-            6,
-            Felt::new(2_000_000),
-        )
-        .token_supply(Felt::new(100_000))
-        .description(description.clone())
-        .logo_uri(logo_uri.clone())
-        .external_link(external_link.clone())
-        .is_description_mutable(true)
-        .is_logo_uri_mutable(false)
-        .is_external_link_mutable(true)
-        .is_max_supply_mutable(false)
-        .build()
-        .unwrap();
-
-        let account = AccountBuilder::new([5u8; 32])
-            .account_type(AccountType::FungibleFaucet)
-            .with_auth_component(NoAuth)
-            .with_component(original)
-            .with_component(BasicFungibleFaucet)
-            .build()
-            .expect("account build should succeed");
-
-        let restored = FungibleTokenMetadata::try_from(account.storage()).unwrap();
-
-        assert_eq!(restored.symbol(), &symbol);
-        assert_eq!(restored.name(), &name);
-        assert_eq!(restored.decimals(), 6);
-        assert_eq!(restored.max_supply(), Felt::new(2_000_000));
-        assert_eq!(restored.token_supply(), Felt::new(100_000));
-        assert_eq!(restored.description(), Some(&description));
-        assert_eq!(restored.logo_uri(), Some(&logo_uri));
-        assert_eq!(restored.external_link(), Some(&external_link));
-        let slots = restored.storage_slots();
-        let config = slots[3].value();
-        assert_eq!(config[0], Felt::from(1u32), "is_desc_mutable");
-        assert_eq!(config[1], Felt::ZERO, "is_logo_mutable");
-        assert_eq!(config[2], Felt::from(1u32), "is_extlink_mutable");
-        assert_eq!(config[3], Felt::ZERO, "is_max_supply_mutable");
-    }
-
-    #[test]
-    fn logo_uri_too_long() {
-        let s = "a".repeat(LogoURI::MAX_BYTES + 1);
-        assert!(LogoURI::new(&s).is_err());
-    }
-
-    #[test]
-    fn external_link_too_long() {
-        let s = "a".repeat(ExternalLink::MAX_BYTES + 1);
-        assert!(ExternalLink::new(&s).is_err());
-    }
-
-    #[test]
-    fn name_max_32_bytes_accepted() {
-        let s = "a".repeat(TokenName::MAX_BYTES);
-        assert_eq!(s.len(), 32);
-        let name = TokenName::new(&s).unwrap();
-        let words = name.to_words();
-        let decoded = TokenName::try_from_words(&words).unwrap();
-        assert_eq!(decoded.as_str(), s);
-    }
-
-    #[test]
-    fn description_max_bytes_accepted() {
-        let s = "a".repeat(Description::MAX_BYTES);
-        let desc = Description::new(&s).unwrap();
-        assert_eq!(desc.to_words().len(), 7);
-    }
-
-    #[test]
-    fn token_supply_exceeds_max_supply() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-        let max_supply = Felt::new(100);
-        let token_supply = Felt::new(101);
-
-        let result = FungibleTokenMetadataBuilder::new(name, symbol, 2, max_supply)
-            .token_supply(token_supply)
-            .build();
-        assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
-    }
-
-    #[test]
-    fn with_token_supply_exceeds_max_supply() {
-        let symbol = TokenSymbol::new("TST").unwrap();
-        let name = TokenName::new("T").unwrap();
-        let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, Felt::new(100))
-            .build()
-            .unwrap();
-
-        let result = metadata.with_token_supply(Felt::new(101));
-        assert!(matches!(result, Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply { .. })));
-    }
-
-    #[test]
-    fn invalid_token_symbol_in_metadata_word() {
-        // TokenSymbol::try_from(Felt) fails when the value exceeds MAX_ENCODED_VALUE.
-        let bad_symbol = Felt::new(TokenSymbol::MAX_ENCODED_VALUE + 1);
-        let bad_word = Word::from([Felt::ZERO, Felt::new(100), Felt::new(2), bad_symbol]);
-        let token_metadata = TokenMetadata::new().with_name(TokenName::default());
-        let result =
-            FungibleTokenMetadata::from_metadata_word_and_token_metadata(bad_word, token_metadata);
-        assert!(matches!(result, Err(FungibleFaucetError::InvalidTokenSymbol(_))));
+    /// Decodes an external link from a 7-Word slice.
+    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
+        FixedWidthString::<7>::try_from_words(words)
+            .map(Self)
+            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
     }
 }
