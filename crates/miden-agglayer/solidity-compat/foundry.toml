@@ -3,13 +3,15 @@ libs           = ["lib"]
 optimizer      = true
 optimizer_runs = 200
 out            = "out"
-solc           = "0.8.20"
+solc           = "0.8.28"
 src            = "src"
 via_ir         = true
 
 remappings = [
   "@agglayer/=lib/agglayer-contracts/contracts/",
   "@openzeppelin/contracts-upgradeable4/=lib/openzeppelin-contracts-upgradeable/contracts/",
+  "@openzeppelin/contracts-upgradeable5/=lib/openzeppelin-contracts-upgradeable5/contracts/",
+  "@openzeppelin/contracts5/=lib/openzeppelin-contracts/contracts/",
 ]
 
 # Emit extra output for test vector generation

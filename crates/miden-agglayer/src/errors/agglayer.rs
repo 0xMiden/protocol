@@ -16,16 +16,20 @@ pub const ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS: MasmError = MasmError::f
 /// Error Message: "B2AGG script requires exactly 1 note asset"
 pub const ERR_B2AGG_WRONG_NUMBER_OF_ASSETS: MasmError = MasmError::from_static_str("B2AGG script requires exactly 1 note asset");
 
-/// Error Message: "bridge not mainnet"
-pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("bridge not mainnet");
+/// Error Message: "mainnet flag must be 1 for a mainnet deposit"
+pub const ERR_BRIDGE_NOT_MAINNET: MasmError = MasmError::from_static_str("mainnet flag must be 1 for a mainnet deposit");
+/// Error Message: "mainnet flag must be 0 for a rollup deposit"
+pub const ERR_BRIDGE_NOT_ROLLUP: MasmError = MasmError::from_static_str("mainnet flag must be 0 for a rollup deposit");
 
+/// Error Message: "claim note has already been spent"
+pub const ERR_CLAIM_ALREADY_SPENT: MasmError = MasmError::from_static_str("claim note has already been spent");
 /// Error Message: "CLAIM note attachment target account does not match consuming account"
 pub const ERR_CLAIM_TARGET_ACCT_MISMATCH: MasmError = MasmError::from_static_str("CLAIM note attachment target account does not match consuming account");
 
 /// Error Message: "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 pub const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE note attachment target account does not match consuming account");
-/// Error Message: "CONFIG_AGG_BRIDGE expects exactly 2 note storage items"
-pub const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE expects exactly 2 note storage items");
+/// Error Message: "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
+pub const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS: MasmError = MasmError::from_static_str("CONFIG_AGG_BRIDGE expects exactly 7 note storage items");
 
 /// Error Message: "faucet is not registered in the bridge's faucet registry"
 pub const ERR_FAUCET_NOT_REGISTERED: MasmError = MasmError::from_static_str("faucet is not registered in the bridge's faucet registry");
@@ -36,11 +40,11 @@ pub const ERR_FELT_OUT_OF_FIELD: MasmError = MasmError::from_static_str("combine
 /// Error Message: "GER not found in storage"
 pub const ERR_GER_NOT_FOUND: MasmError = MasmError::from_static_str("GER not found in storage");
 
-/// Error Message: "invalid claim proof"
-pub const ERR_INVALID_CLAIM_PROOF: MasmError = MasmError::from_static_str("invalid claim proof");
-
 /// Error Message: "leading bits of global index must be zero"
 pub const ERR_LEADING_BITS_NON_ZERO: MasmError = MasmError::from_static_str("leading bits of global index must be zero");
+
+/// Error Message: "mainnet flag must be 0 or 1"
+pub const ERR_MAINNET_FLAG_INVALID: MasmError = MasmError::from_static_str("mainnet flag must be 0 or 1");
 
 /// Error Message: "number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)"
 pub const ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT: MasmError = MasmError::from_static_str("number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)");
@@ -67,6 +71,12 @@ pub const ERR_SENDER_NOT_GER_MANAGER: MasmError = MasmError::from_static_str("no
 
 /// Error Message: "merkle proof verification failed: provided SMT root does not match the computed root"
 pub const ERR_SMT_ROOT_VERIFICATION_FAILED: MasmError = MasmError::from_static_str("merkle proof verification failed: provided SMT root does not match the computed root");
+
+/// Error Message: "source bridge network overflowed u32"
+pub const ERR_SOURCE_BRIDGE_NETWORK_OVERFLOW: MasmError = MasmError::from_static_str("source bridge network overflowed u32");
+
+/// Error Message: "token address is not registered in the bridge's token registry"
+pub const ERR_TOKEN_NOT_REGISTERED: MasmError = MasmError::from_static_str("token address is not registered in the bridge's token registry");
 
 /// Error Message: "x < y*10^s (underflow detected)"
 pub const ERR_UNDERFLOW: MasmError = MasmError::from_static_str("x < y*10^s (underflow detected)");

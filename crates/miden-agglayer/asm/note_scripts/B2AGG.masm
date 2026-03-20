@@ -1,4 +1,4 @@
-use miden::agglayer::bridge::bridge_out
+use agglayer::bridge::bridge_out
 use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
@@ -96,7 +96,7 @@ begin
         # => [dest_network, dest_address(5), pad(10)]
 
         # Load asset onto the stack from ASSET_PTR
-        push.ASSET_PTR exec.asset::mem_load
+        push.ASSET_PTR exec.asset::load
         # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out
