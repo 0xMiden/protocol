@@ -1,19 +1,14 @@
 mod schema_commitment;
-pub mod token_metadata;
+mod token_metadata;
 
-pub use schema_commitment::{
-    AccountBuilderSchemaCommitmentExt,
-    AccountSchemaCommitment,
-    SCHEMA_COMMITMENT_SLOT_NAME,
-};
+pub use schema_commitment::{AccountBuilderSchemaCommitmentExt, AccountSchemaCommitment};
 pub use token_metadata::fungible_token::{
     Description,
     ExternalLink,
-    FieldBytesError,
     FungibleTokenMetadata,
     FungibleTokenMetadataBuilder,
     LogoURI,
 };
 pub use token_metadata::{TokenMetadata, TokenName};
 
-pub use crate::errors::NameUtf8Error;
+pub use crate::errors::StringFieldError;

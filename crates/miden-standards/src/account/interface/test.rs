@@ -23,13 +23,14 @@ use miden_protocol::{Felt, Word};
 
 use crate::AuthMethod;
 use crate::account::auth::{AuthMultisig, AuthMultisigConfig, AuthSingleSig, NoAuth};
-use crate::account::faucets::{BasicFungibleFaucet, FungibleTokenMetadataBuilder, TokenName};
+use crate::account::faucets::BasicFungibleFaucet;
 use crate::account::interface::{
     AccountComponentInterface,
     AccountInterface,
     AccountInterfaceExt,
     NoteAccountCompatibility,
 };
+use crate::account::metadata::{FungibleTokenMetadataBuilder, TokenName};
 use crate::account::wallets::BasicWallet;
 use crate::code_builder::CodeBuilder;
 use crate::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -59,7 +60,7 @@ fn test_basic_wallet_default_notes() {
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                100u64,
             )
             .build()
             .expect("failed to create token metadata"),
@@ -328,7 +329,7 @@ fn test_basic_fungible_faucet_custom_notes() {
                 TokenName::new("POL").unwrap(),
                 TokenSymbol::new("POL").expect("invalid token symbol"),
                 10,
-                Felt::new(100),
+                100u64,
             )
             .build()
             .expect("failed to create token metadata"),
