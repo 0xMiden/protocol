@@ -699,8 +699,8 @@ mod tests {
         let requested_asset =
             Asset::Fungible(FungibleAsset::new(requested_faucet_id, 500).unwrap());
 
-        use miden_protocol::crypto::rand::RpoRandomCoin;
-        let mut rng = RpoRandomCoin::new(Word::default());
+        use miden_protocol::crypto::rand::RandomCoin;
+        let mut rng = RandomCoin::new(Word::default());
 
         let script = PswapNote::script();
         assert!(script.root() != Word::default(), "Script root should not be zero");
@@ -762,8 +762,8 @@ mod tests {
         let requested_asset =
             Asset::Fungible(FungibleAsset::new(requested_faucet_id, 500).unwrap());
 
-        use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
-        let mut rng = RpoRandomCoin::new(Word::default());
+        use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
+        let mut rng = RandomCoin::new(Word::default());
 
         let storage = PswapNoteStorage::new(requested_asset, creator_id);
         let pswap = PswapNote::builder()

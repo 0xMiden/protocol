@@ -20,7 +20,7 @@ const MAX_U32=0x0000000100000000
 # Memory Address Layout:
 # - PSWAP Note Storage: addresses 0x0000 - 0x0011 (loaded from note storage)
 # - Price Calculation: addresses 0x0028 - 0x0036
-# - TokenId: addresses 0x002D - 0x0030
+# - Asset Keys: addresses 0x0038 - 0x003F (word-aligned)
 # - Full Word (word-aligned): addresses 0x0018+
 
 # PSWAP Note Storage (18 items loaded at address 0)
@@ -46,11 +46,10 @@ const AMT_REQUESTED_INFLIGHT = 0x0033
 const AMT_OFFERED_OUT_INPUT = 0x0034
 const AMT_OFFERED_OUT_INFLIGHT = 0x0036
 
-# TokenId Memory Addresses
-const TOKEN_OFFERED_ID_PREFIX = 0x002D
-const TOKEN_OFFERED_ID_SUFFIX = 0x002E
-const TOKEN_REQUESTED_ID_PREFIX = 0x002F
-const TOKEN_REQUESTED_ID_SUFFIX = 0x0030
+# Asset Key Memory Addresses (word-aligned, 4 cells each)
+# ASSET_KEY = [asset_id_suffix, asset_id_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix]
+const OFFERED_ASSET_KEY = 0x0038
+const REQUESTED_ASSET_KEY = 0x003C
 
 # Full Word Memory Addresses
 # Asset storage (8 cells each, word-aligned)
@@ -255,7 +254,7 @@ end
 #!
 proc create_p2id_note
     # 1. Load P2ID script root (miden-standards v0.14.0-beta.2, P2idNote::script_root())
-    push.17577144666381623537.251255385102954082.10949974299239761467.7391338276508122752
+    push.3672480923625915098.9159872301314598941.4201800931930002347.17479343943140556328
     # => [P2ID_SCRIPT_ROOT]
 
     # 2. Increment swap count (ensures unique serial per P2ID note in chained fills)
@@ -317,13 +316,12 @@ proc create_p2id_note
         mem_load.P2ID_NOTE_IDX
         # => [note_idx, pad(7)]
 
-        # Create fungible asset: expects [suffix, prefix, amount] with suffix on top
-        mem_load.AMT_REQUESTED_IN
-        mem_load.TOKEN_REQUESTED_ID_PREFIX
-        mem_load.TOKEN_REQUESTED_ID_SUFFIX
-        # => [suffix, prefix, amount, note_idx, pad(7)]
+        # Build ASSET_VALUE = [amount, 0, 0, 0] (amount on top)
+        push.0.0.0 mem_load.AMT_REQUESTED_IN
+        # => [amount, 0, 0, 0, note_idx, pad(7)]
 
-        exec.asset::create_fungible_asset
+        # Load stored ASSET_KEY
+        padw mem_loadw_le.REQUESTED_ASSET_KEY
         # => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
 
         call.wallet::move_asset_to_note
@@ -343,12 +341,12 @@ proc create_p2id_note
         mem_load.P2ID_NOTE_IDX
         # => [note_idx]
 
-        mem_load.AMT_REQUESTED_INFLIGHT
-        mem_load.TOKEN_REQUESTED_ID_PREFIX
-        mem_load.TOKEN_REQUESTED_ID_SUFFIX
-        # => [suffix, prefix, amount, note_idx]
+        # Build ASSET_VALUE = [amount, 0, 0, 0] (amount on top)
+        push.0.0.0 mem_load.AMT_REQUESTED_INFLIGHT
+        # => [amount, 0, 0, 0, note_idx]
 
-        exec.asset::create_fungible_asset
+        # Load stored ASSET_KEY
+        padw mem_loadw_le.REQUESTED_ASSET_KEY
         # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
         exec.output_note::add_asset
@@ -415,14 +413,13 @@ proc create_remainder_note
     mem_load.SWAPP_NOTE_IDX
     # => [note_idx]
 
+    # Build ASSET_VALUE = [amount, 0, 0, 0] (amount on top)
+    push.0.0.0
     mem_load.AMT_OFFERED mem_load.AMT_OFFERED_OUT sub
-    # => [remainder_amount, note_idx]
+    # => [remainder_amount, 0, 0, 0, note_idx]
 
-    mem_load.TOKEN_OFFERED_ID_PREFIX
-    mem_load.TOKEN_OFFERED_ID_SUFFIX
-    # => [suffix, prefix, remainder_amount, note_idx]
-
-    exec.asset::create_fungible_asset
+    # Load stored ASSET_KEY
+    padw mem_loadw_le.OFFERED_ASSET_KEY
     # => [ASSET_KEY, ASSET_VALUE, note_idx]
 
     exec.output_note::add_asset
@@ -520,11 +517,8 @@ proc execute_pswap
     mem_store.AMT_OFFERED
     # => [ASSET_KEY, ASSET_VALUE]
 
-    # Extract offered faucet IDs from key
-    exec.asset::key_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-    mem_store.TOKEN_OFFERED_ID_SUFFIX
-    mem_store.TOKEN_OFFERED_ID_PREFIX
+    # Store offered ASSET_KEY (preserves faucet ID + callback metadata)
+    mem_storew_le.OFFERED_ASSET_KEY dropw
     # => [ASSET_VALUE]
     dropw
     # => []
@@ -540,11 +534,8 @@ proc execute_pswap
     mem_store.AMT_REQUESTED
     # => [ASSET_KEY, ASSET_VALUE]
 
-    # Extract requested faucet IDs from key
-    exec.asset::key_into_faucet_id
-    # => [faucet_id_suffix, faucet_id_prefix, ASSET_VALUE]
-    mem_store.TOKEN_REQUESTED_ID_SUFFIX
-    mem_store.TOKEN_REQUESTED_ID_PREFIX
+    # Store requested ASSET_KEY (preserves faucet ID + callback metadata)
+    mem_storew_le.REQUESTED_ASSET_KEY dropw
     # => [ASSET_VALUE]
     dropw
     # => []
