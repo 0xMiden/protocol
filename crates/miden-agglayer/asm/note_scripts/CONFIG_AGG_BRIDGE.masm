@@ -30,12 +30,12 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Outputs: [pad(16)]
 #!
 #! NoteStorage layout (2 felts total):
-#! - faucet_id_suffix [0]: 1 felt
-#! - faucet_id_prefix [1]: 1 felt
+#! - faucet_id_prefix [0]: 1 felt
+#! - faucet_id_suffix [1]: 1 felt
 #!
 #! Where:
-#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
 #! - faucet_id_prefix: Prefix felt of the faucet account ID to register.
+#! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
 #!
 #! Panics if:
 #! - The note attachment target account does not match the consuming bridge account.
@@ -60,7 +60,7 @@ begin
 
     # Load the faucet ID from memory, replacing the top 4 zeros
     mem_loadw_le.STORAGE_START_PTR
-    # => [faucet_id_suffix, faucet_id_prefix, pad(14)]
+    # => [faucet_id_prefix, faucet_id_suffix, pad(14)]
 
     # Register the faucet in the bridge's faucet registry
     call.bridge_config::register_faucet
