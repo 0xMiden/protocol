@@ -40,7 +40,7 @@ implementation are called out inline with `TODO (Future)` markers.
 | CONFIG_AGG_BRIDGE | Bridge admin only -- **enforced** by `bridge_config::register_faucet` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 | UPDATE_GER | GER manager only -- **enforced** by `bridge_config::update_ger` procedure | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
 | CLAIM | Anyone -- not restricted | Bridge account -- **enforced** via `NetworkAccountTarget` attachment |
-| MINT | Bridge account (created by `bridge_in::claim`) -- not restricted | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
+| MINT | Bridge account only -- **enforced** by faucet's `owner_only` mint policy via `Ownable2Step` (asserts note sender is the faucet's owner, i.e. the bridge) | Target faucet only -- **enforced** via `NetworkAccountTarget` attachment |
 
 ---
 
@@ -584,10 +584,19 @@ to mint and distribute assets to the recipient.
 
 **Consumption:**
 
-The faucet's `mint_and_send` procedure (re-exported from
-`network_fungible::mint_and_send`) reads the storage items, mints the specified amount,
-and creates a P2ID output note for the recipient. Owner verification (bridge is the
-faucet's owner) is enforced by the `Ownable2Step` component.
+The standard MINT script loads the 18 storage items from the note and calls the faucet's
+`mint_and_send` procedure (re-exported from `network_fungible::mint_and_send`).
+
+Before minting, `mint_and_send` executes the active mint policy via
+`policy_manager::execute_mint_policy`. For AggLayer faucets, the active policy is
+`owner_controlled::owner_only`, which calls `ownable2step::assert_sender_is_owner`. This
+asserts that the MINT note's sender matches the faucet's owner (the bridge account, set
+via the `Ownable2Step` companion component at account creation time). This ensures only
+the bridge can trigger minting on the faucet.
+
+After the policy check passes, `mint_and_send` mints the specified amount and creates a
+P2ID output note for the recipient using the storage items (script root, serial number,
+destination account ID, tag).
 
 ---
 
