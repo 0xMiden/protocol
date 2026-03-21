@@ -152,7 +152,7 @@ end
 pub proc get_max_supply
     exec.get_token_metadata_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
-    drop movdn.2 drop drop
+    swap movdn.4 dropw
     # => [max_supply, pad(15)]
 end
 
@@ -165,7 +165,7 @@ end
 pub proc get_decimals
     exec.get_token_metadata_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
-    drop drop swap drop
+    movup.2 movdn.4 dropw
     # => [decimals, pad(15)]
 end
 
@@ -178,7 +178,7 @@ end
 pub proc get_token_symbol
     exec.get_token_metadata_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
-    drop drop drop
+    movup.3 movdn.4 dropw
     # => [token_symbol, pad(15)]
 end
 
@@ -191,7 +191,7 @@ end
 pub proc get_token_supply
     exec.get_token_metadata_internal
     # => [token_supply, max_supply, decimals, token_symbol, pad(16)]
-    movdn.3 drop drop drop
+    movdn.4 dropw
     # => [token_supply, pad(15)]
 end
 
