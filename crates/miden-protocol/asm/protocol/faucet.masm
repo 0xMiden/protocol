@@ -101,11 +101,11 @@ end
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: []
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to burn.
-#! - ASSET_VALUE is the value of the asset that was burned.
+#! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -127,11 +127,11 @@ pub proc burn
     # => [offset, ASSET_KEY, ASSET_VALUE, pad(7)]
 
     syscall.exec_kernel_proc
-    # => [ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 
     # clean the stack
-    swapdw dropw dropw swapw dropw
-    # => [ASSET_VALUE]
+    dropw dropw dropw dropw
+    # => []
 end
 
 #! Returns whether the active account defines callbacks.

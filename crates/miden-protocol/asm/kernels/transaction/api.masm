@@ -7,11 +7,14 @@ use $kernel::input_note
 use $kernel::memory
 use $kernel::output_note
 use $kernel::tx
+# use $kernel::types::AccountId
 
 use $kernel::memory::UPCOMING_FOREIGN_PROCEDURE_PTR
 use $kernel::memory::UPCOMING_FOREIGN_PROC_INPUT_VALUE_15_PTR
 
 use miden::core::word
+
+pub type AccountId = struct { prefix: felt, suffix: felt }
 
 # NOTE
 # =================================================================================================
@@ -21,11 +24,6 @@ use miden::core::word
 # All other procedures must be invoked using a `dynexec` instruction by their hashes stored in    #
 # the memory.                                                                                     #
 # =================================================================================================
-
-# TYPE ALIASES
-# =================================================================================================
-
-type AccountID = struct { prefix: felt, suffix: felt }
 
 # ERRORS
 # =================================================================================================
@@ -583,14 +581,15 @@ pub proc account_add_asset
     # => [ASSET_VALUE', pad(12)]
 end
 
-#! Removes the specified asset from the vault.
+#! Removes the specified asset from the vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [REMAINING_ASSET_VALUE, pad(12)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -610,7 +609,7 @@ pub proc account_remove_asset
 
     # remove the specified asset from the account vault, emitting the corresponding events
     exec.account::remove_asset_from_vault
-    # => [ASSET_VALUE, pad(12)]
+    # => [REMAINING_ASSET_VALUE, pad(12)]
 end
 
 #! Returns the asset associated with the provided asset vault key in the active account's vault.
@@ -780,11 +779,11 @@ end
 #! Burn an asset from the faucet the transaction is being executed against.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
-#! Outputs: [ASSET_VALUE, pad(12)]
+#! Outputs: [pad(16)]
 #!
 #! Where:
 #! - ASSET_KEY is the vault key of the asset to burn.
-#! - ASSET_VALUE is the value of the asset that was burned.
+#! - ASSET_VALUE is the value of the asset to burn.
 #!
 #! Panics if:
 #! - the transaction is not being executed against a faucet.
@@ -810,7 +809,7 @@ pub proc faucet_burn_asset
 
     # burn the asset
     exec.faucet::burn
-    # => [ASSET_VALUE, pad(12)]
+    # => [pad(16)]
 end
 
 #! Returns whether the active account defines callbacks.
@@ -1418,7 +1417,7 @@ end
 #! - the provided foreign account ID is invalid.
 #!
 #! Invocation: dynexec
-pub proc tx_prepare_fpi(foreign_account_id: AccountID, foreign_proc_root: word, foreign_procedure_input_15: felt)
+pub proc tx_prepare_fpi(foreign_account_id: AccountId, foreign_proc_root: word, foreign_procedure_input_15: felt)
     # validate the provided foreign account ID
     dup.1 dup.1 exec.account_id::validate
     # => [foreign_account_id_suffix, foreign_account_id_prefix, FOREIGN_PROC_ROOT, foreign_proc_input_value_15, pad(9)]

@@ -18,7 +18,7 @@ static INCR_NONCE_AUTH_LIBRARY: LazyLock<Library> = LazyLock::new(|| {
     CodeBuilder::default()
         .compile_component_code("incr_nonce", INCR_NONCE_AUTH_CODE)
         .expect("incr nonce code should be valid")
-        .into_library()
+        .into()
 });
 
 /// Creates a mock authentication [`AccountComponent`] for testing purposes under the "incr_nonce"
