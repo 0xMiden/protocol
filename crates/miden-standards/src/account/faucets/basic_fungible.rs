@@ -1,5 +1,6 @@
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
+use miden_protocol::asset::TokenSymbol;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -240,7 +241,7 @@ mod tests {
         let max_supply = 123u64;
         let token_symbol_string = "POL";
         let token_symbol =
-            miden_protocol::asset::TokenSymbol::try_from(token_symbol_string).unwrap();
+            TokenSymbol::try_from(token_symbol_string).unwrap();
         let token_name_string = "polygon";
         let description_string = "A polygon token";
         let decimals = 2u8;
@@ -328,7 +329,7 @@ mod tests {
 
         // valid account
         let token_symbol =
-            miden_protocol::asset::TokenSymbol::new("POL").expect("invalid token symbol");
+            TokenSymbol::new("POL").expect("invalid token symbol");
         let metadata = FungibleTokenMetadataBuilder::new(
             TokenName::new("POL").unwrap(),
             token_symbol,

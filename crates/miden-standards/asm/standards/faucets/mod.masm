@@ -71,6 +71,7 @@ pub proc mint_and_send
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
+    #
     # To make sure we cannot mint more than intended, we need to check:
     # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
     # 2) amount + token_supply does not exceed max_supply
