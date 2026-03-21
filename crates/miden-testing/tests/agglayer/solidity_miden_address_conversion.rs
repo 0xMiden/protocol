@@ -141,7 +141,7 @@ async fn test_ethereum_address_to_account_id_in_masm() -> anyhow::Result<()> {
         let script_code = format!(
             r#"
             use miden::core::sys
-            use miden::agglayer::common::eth_address
+            use agglayer::common::eth_address
 
             begin
                 push.{}.{}.{}.{}.{}

@@ -44,6 +44,12 @@ const BRIDGE_ASSET_VECTORS_JSON: &str = include_str!(
     "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_local_tx.json"
 );
 
+/// Rollup deposit test vectors JSON — contains test data for a rollup deposit with two-level
+/// Merkle proofs.
+const ROLLUP_ASSET_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/claim_asset_vectors_rollup_tx.json"
+);
+
 /// Leaf data test vectors JSON from the Foundry-generated file.
 pub const LEAF_VALUE_VECTORS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/leaf_value_vectors.json");
@@ -144,6 +150,7 @@ pub struct ProofValueVector {
     /// Expected global exit root: keccak256(mainnetExitRoot || rollupExitRoot)
     #[allow(dead_code)]
     pub global_exit_root: String,
+    pub claimed_global_index_hash_chain: String,
 }
 
 impl ProofValueVector {
@@ -210,9 +217,10 @@ pub struct CanonicalZerosFile {
 /// Deserialized MMR frontier vectors from Solidity DepositContractV2.
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
-/// (leafType=0, originNetwork=64, metadataHash=0), parametrised by
-/// a shared `origin_token_address`, `amounts[i]`, and per-index
-/// `destination_networks[i]` / `destination_addresses[i]`.
+/// (leafType=0, originNetwork=64), parametrised by
+/// a shared `origin_token_address`, `amounts[i]`, per-index
+/// `destination_networks[i]` / `destination_addresses[i]`, and
+/// `metadataHash = keccak256(abi.encode(token_name, token_symbol, token_decimals))`.
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
@@ -225,6 +233,10 @@ pub struct MmrFrontierVectorsFile {
     pub origin_token_address: String,
     pub destination_networks: Vec<u32>,
     pub destination_addresses: Vec<String>,
+    #[allow(dead_code)]
+    pub token_name: String,
+    pub token_symbol: String,
+    pub token_decimals: u8,
 }
 
 // LAZY-PARSED TEST VECTORS
@@ -240,6 +252,12 @@ pub static CLAIM_ASSET_VECTOR: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
 pub static CLAIM_ASSET_VECTOR_LOCAL: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
     serde_json::from_str(BRIDGE_ASSET_VECTORS_JSON)
         .expect("failed to parse bridge asset vectors JSON")
+});
+
+/// Lazily parsed rollup deposit test vector from the JSON file.
+pub static CLAIM_ASSET_VECTOR_ROLLUP: LazyLock<ClaimAssetVector> = LazyLock::new(|| {
+    serde_json::from_str(ROLLUP_ASSET_VECTORS_JSON)
+        .expect("failed to parse rollup asset vectors JSON")
 });
 
 /// Lazily parsed Merkle proof vectors from the JSON file.
@@ -270,19 +288,27 @@ pub enum ClaimDataSource {
     Real,
     /// Locally simulated bridgeAsset data from claim_asset_vectors_local_tx.json.
     Simulated,
+    /// Rollup deposit data from claim_asset_vectors_rollup_tx.json.
+    Rollup,
 }
 
 impl ClaimDataSource {
     /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
-    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot) {
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
         let vector = match self {
             ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
+            ClaimDataSource::Rollup => &*CLAIM_ASSET_VECTOR_ROLLUP,
         };
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
-        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger)
+        let cgi_chain_hash = Keccak256Output::new(
+            hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
+                .expect("invalid CGI chain hash"),
+        );
+
+        (vector.proof.to_proof_data(), vector.leaf.to_leaf_data(), ger, cgi_chain_hash)
     }
 }
 
