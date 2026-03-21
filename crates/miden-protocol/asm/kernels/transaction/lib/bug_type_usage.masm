@@ -1,0 +1,5 @@
+use $kernel::bug_type_def::TestType
+
+pub proc foo(input: TestType)
+    push.1 drop
+end
