@@ -103,16 +103,16 @@ async fn pack_leaf_data() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::mem
-            use miden::agglayer::bridge::leaf_utils
+            use agglayer::bridge::leaf_utils
 
             const LEAF_DATA_START_PTR = 0
-            const LEAF_DATA_NUM_WORDS = 8
+            const CLAIM_LEAF_DATA_WORD_LEN = 8
 
             begin
                 push.{key}
 
                 adv.push_mapval
-                push.LEAF_DATA_START_PTR push.LEAF_DATA_NUM_WORDS
+                push.LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
                 exec.mem::pipe_preimage_to_memory drop
 
                 exec.leaf_utils::pack_leaf_data
@@ -168,7 +168,7 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::bridge_in
+            use agglayer::bridge::bridge_in
 
             begin
                 push.{key}
