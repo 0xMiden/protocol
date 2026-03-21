@@ -108,7 +108,7 @@ Asserts the note sender matches the bridge admin stored in
 
 Asserts the note sender matches the GER manager stored in
 `agglayer::bridge::ger_manager_account_id`, then computes
-`KEY = poseidon2::merge(GER_UPPER, GER_LOWER)` and stores
+`KEY = poseidon2::merge(GER_LOWER, GER_UPPER)` and stores
 `KEY -> [1, 0, 0, 0]` in the `ger_map` map slot. This marks the GER as "known".
 
 #### `bridge_in::claim`
@@ -116,7 +116,7 @@ Asserts the note sender matches the GER manager stored in
 | | |
 |-|-|
 | **Invocation** | `call` |
-| **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` |
+| **Inputs** | `[PROOF_DATA_KEY, LEAF_DATA_KEY, faucet_mint_amount, pad(7)]` on the operand stack; proof data and leaf data in the advice map keyed by `PROOF_DATA_KEY` and `LEAF_DATA_KEY` respectively |
 | **Outputs** | `[pad(16)]` |
 | **Context** | Consuming a `CLAIM` note on the bridge account |
 | **Panics** | GER not known; global index invalid; Merkle proof verification failed; origin token address not in token registry; claim already spent; amount conversion mismatch |
@@ -143,25 +143,22 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
 7. Verifies the `faucet_mint_amount` against the leaf data's U256 amount and the
    faucet's scale factor (via FPI to `agglayer_faucet::get_scale`), using
    `asset_conversion::verify_u256_to_native_amount_conversion`.
-8. Builds a MINT output note targeting the faucet. The MINT note contains 18 storage
-   items (tag, amount, attachment fields, P2ID script root, serial number derived from
-   PROOF_DATA_KEY, destination account ID) and is attached to the faucet via
-   `NetworkAccountTarget`.
+8. Builds a MINT output note targeting the faucet (see [Section 3.7](#37-mint-generated)).
 
 #### Bridge Account Storage
 
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
-| `agglayer::bridge::ger_map` | Map | `poseidon2::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
-| `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
-| `agglayer::bridge::let_root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
-| `agglayer::bridge::let_root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
+| `agglayer::bridge::ger_map` | Map | `poseidon2::merge(GER_LOWER, GER_UPPER)` | `[1, 0, 0, 0]` if known | Known Global Exit Root set |
+| `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). | Local Exit Tree MMR frontier |
+| `agglayer::bridge::let_root_lo` | Value | -- | Lower word of the LET root | LET root low word (Keccak-256 lower 16 bytes) |
+| `agglayer::bridge::let_root_hi` | Value | -- | Upper word of the LET root | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
-| `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered; `[0, 0, 0, 0]` if absent | Registered faucet lookup |
+| `agglayer::bridge::faucet_registry_map` | Map | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | `[1, 0, 0, 0]` if registered | Registered faucet lookup |
 | `agglayer::bridge::token_registry_map` | Map | `Poseidon2::hash_elements(origin_token_addr[5])` | `[0, 0, faucet_id_suffix, faucet_id_prefix]` | Origin token address to faucet ID lookup |
-| `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed; `[0, 0, 0, 0]` if absent | Prevents double-claiming of bridge-in deposits |
-| `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | `[hash_0, hash_1, hash_2, hash_3]` | CGI chain hash low word (Keccak-256 lower 16 bytes) |
-| `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | `[hash_4, hash_5, hash_6, hash_7]` | CGI chain hash high word (Keccak-256 upper 16 bytes) |
+| `agglayer::bridge::claim_nullifiers` | Map | `Poseidon2::hash_elements(leaf_index, source_bridge_network)` | `[1, 0, 0, 0]` if claimed | Prevents double-claiming of bridge-in deposits |
+| `agglayer::bridge::cgi_chain_hash_lo` | Value | -- | Lower word of the CGI chain hash | CGI chain hash low word (Keccak-256 lower 16 bytes) |
+| `agglayer::bridge::cgi_chain_hash_hi` | Value | -- | Upper word of the CGI chain hash | CGI chain hash high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::admin_account_id` | Value | -- | `[0, 0, admin_suffix, admin_prefix]` | Bridge admin account ID for CONFIG note authorization |
 | `agglayer::bridge::ger_manager_account_id` | Value | -- | `[0, 0, mgr_suffix, mgr_prefix]` | GER manager account ID for UPDATE_GER note authorization |
 
@@ -256,8 +253,8 @@ This is a re-export of `miden::standards::faucets::basic_fungible::burn`. It bur
 | Faucet metadata (standard) | Value | `[token_supply, max_supply, decimals, token_symbol]` | Standard `NetworkFungibleFaucet` metadata |
 | `agglayer::faucet::conversion_info_1` | Value | `[addr_0, addr_1, addr_2, addr_3]` | Origin token address, first 4 u32 limbs |
 | `agglayer::faucet::conversion_info_2` | Value | `[addr_4, origin_network, scale, 0]` | Origin token address 5th limb, origin network ID, scale exponent |
-| `agglayer::faucet::metadata_hash_lo` | Value | `[hash_0, hash_1, hash_2, hash_3]` | Metadata hash low word (4 u32 felts) |
-| `agglayer::faucet::metadata_hash_hi` | Value | `[hash_4, hash_5, hash_6, hash_7]` | Metadata hash high word (4 u32 felts) |
+| `agglayer::faucet::metadata_hash_lo` | Value | Lower word of the metadata hash | Metadata hash low word (4 u32 felts) |
+| `agglayer::faucet::metadata_hash_hi` | Value | Upper word of the metadata hash | Metadata hash high word (4 u32 felts) |
 
 **Companion component storage slots:** The faucet account also includes storage from
 companion components required by `network_fungible::mint_and_send`:
@@ -460,7 +457,7 @@ CLAIM notes can be verified against it.
 
 **Consumption:** Script validates attachment target, loads storage, and calls
 `bridge_config::update_ger` (which asserts sender is GER manager), which computes
-`poseidon2::merge(GER_UPPER, GER_LOWER)` and stores the result in the GER map.
+`poseidon2::merge(GER_LOWER, GER_UPPER)` and stores the result in the GER map.
 
 ### 3.5 BURN (generated)
 
