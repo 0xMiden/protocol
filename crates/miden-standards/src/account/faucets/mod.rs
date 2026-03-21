@@ -8,9 +8,11 @@ use crate::account::access::Ownable2StepError;
 
 pub mod basic_fungible;
 mod network_fungible;
+mod token_metadata;
 
 pub use basic_fungible::{BasicFungibleFaucet, create_basic_fungible_faucet};
 pub use network_fungible::{NetworkFungibleFaucet, create_network_fungible_faucet};
+pub use token_metadata::TokenMetadata;
 
 // FUNGIBLE FAUCET ERROR
 // ================================================================================================

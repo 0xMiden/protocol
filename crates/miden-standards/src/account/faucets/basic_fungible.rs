@@ -8,7 +8,6 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
-use miden_protocol::asset::TokenSymbol;
 
 use super::FungibleFaucetError;
 use crate::account::AuthMethod;
@@ -204,6 +203,7 @@ pub fn create_basic_fungible_faucet(
 mod tests {
     use assert_matches::assert_matches;
     use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
+    use miden_protocol::asset::TokenSymbol;
     use miden_protocol::{Felt, Word};
 
     use super::{
