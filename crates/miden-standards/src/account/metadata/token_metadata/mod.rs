@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::{Felt, Word};
 
-use crate::errors::NameUtf8Error;
+use crate::errors::StringFieldError;
 use crate::utils::string::FixedWidthString;
 
 pub mod fungible_token;
@@ -46,9 +46,9 @@ impl TokenName {
     pub const MAX_BYTES: usize = NAME_UTF8_MAX_BYTES;
 
     /// Creates a token name from a UTF-8 string (at most 32 bytes).
-    pub fn new(s: &str) -> Result<Self, NameUtf8Error> {
+    pub fn new(s: &str) -> Result<Self, StringFieldError> {
         if s.len() > Self::MAX_BYTES {
-            return Err(NameUtf8Error::TooLong(s.len()));
+            return Err(StringFieldError::TooLong(Self::MAX_BYTES, s.len()));
         }
         Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
     }
@@ -64,11 +64,11 @@ impl TokenName {
     }
 
     /// Decodes a token name from a 2-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, NameUtf8Error> {
-        let inner =
-            FixedWidthString::<2>::try_from_words(words).map_err(|_| NameUtf8Error::InvalidUtf8)?;
+    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
+        let inner = FixedWidthString::<2>::try_from_words(words)
+            .map_err(|e| StringFieldError::InvalidUtf8(alloc::format!("{e}")))?;
         if inner.as_str().len() > Self::MAX_BYTES {
-            return Err(NameUtf8Error::TooLong(inner.as_str().len()));
+            return Err(StringFieldError::TooLong(Self::MAX_BYTES, inner.as_str().len()));
         }
         Ok(Self(inner))
     }

@@ -613,7 +613,7 @@ fn name_32_bytes_accepted() {
 #[test]
 fn name_33_bytes_rejected() {
     let result = TokenName::new(&"a".repeat(33));
-    assert!(matches!(result, Err(miden_standards::errors::NameUtf8Error::TooLong(33))));
+    assert!(matches!(result, Err(miden_standards::errors::StringFieldError::TooLong(32, 33))));
 }
 
 #[test]
