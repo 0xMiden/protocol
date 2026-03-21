@@ -1,6 +1,5 @@
 use miden_protocol::Word;
 use miden_protocol::account::component::AccountComponentMetadata;
-use miden_protocol::asset::TokenSymbol;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
@@ -9,6 +8,7 @@ use miden_protocol::account::{
     AccountStorageMode,
     AccountType,
 };
+use miden_protocol::asset::TokenSymbol;
 
 use super::FungibleFaucetError;
 use crate::account::AuthMethod;
@@ -240,8 +240,7 @@ mod tests {
 
         let max_supply = 123u64;
         let token_symbol_string = "POL";
-        let token_symbol =
-            TokenSymbol::try_from(token_symbol_string).unwrap();
+        let token_symbol = TokenSymbol::try_from(token_symbol_string).unwrap();
         let token_name_string = "polygon";
         let description_string = "A polygon token";
         let decimals = 2u8;
@@ -328,8 +327,7 @@ mod tests {
         let mock_seed = mock_word.as_bytes();
 
         // valid account
-        let token_symbol =
-            TokenSymbol::new("POL").expect("invalid token symbol");
+        let token_symbol = TokenSymbol::new("POL").expect("invalid token symbol");
         let metadata = FungibleTokenMetadataBuilder::new(
             TokenName::new("POL").unwrap(),
             token_symbol,
