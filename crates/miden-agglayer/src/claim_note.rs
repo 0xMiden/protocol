@@ -11,7 +11,7 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
 // CLAIM NOTE STRUCTURES
 // ================================================================================================
@@ -112,11 +112,11 @@ pub struct LeafData {
     /// Origin network identifier (uint32)
     pub origin_network: u32,
     /// Origin token address
-    pub origin_token_address: EthAddressFormat,
+    pub origin_token_address: EthAddress,
     /// Destination network identifier (uint32)
     pub destination_network: u32,
     /// Destination address
-    pub destination_address: EthAddressFormat,
+    pub destination_address: EthAddress,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
     /// Metadata hash (32 bytes)
