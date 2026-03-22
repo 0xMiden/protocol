@@ -205,7 +205,7 @@ async fn test_multisig_psm_signature_required(
         multisig_account
             .vault()
             .get_balance(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?)?,
-        10 - output_note_asset.unwrap_fungible().amount()
+        10 - output_note_asset.unwrap_fungible().amount().inner()
     );
 
     Ok(())

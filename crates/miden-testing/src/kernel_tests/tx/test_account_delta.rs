@@ -472,13 +472,17 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
         .account_delta()
         .vault()
         .added_assets()
-        .map(|asset| (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount()))
+        .map(|asset| {
+            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().inner())
+        })
         .collect::<BTreeMap<_, _>>();
     let mut removed_assets = executed_tx
         .account_delta()
         .vault()
         .removed_assets()
-        .map(|asset| (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount()))
+        .map(|asset| {
+            (asset.unwrap_fungible().faucet_id(), asset.unwrap_fungible().amount().inner())
+        })
         .collect::<BTreeMap<_, _>>();
 
     assert_eq!(added_assets.len(), 2);
@@ -486,17 +490,20 @@ async fn fungible_asset_delta() -> anyhow::Result<()> {
 
     assert_eq!(
         added_assets.remove(&original_asset2.faucet_id()).unwrap(),
-        added_asset2.amount() - removed_asset2.amount()
+        added_asset2.amount().inner() - removed_asset2.amount().inner()
     );
-    assert_eq!(added_assets.remove(&added_asset4.faucet_id()).unwrap(), added_asset4.amount());
+    assert_eq!(
+        added_assets.remove(&added_asset4.faucet_id()).unwrap(),
+        added_asset4.amount().inner()
+    );
 
     assert_eq!(
         removed_assets.remove(&original_asset0.faucet_id()).unwrap(),
-        removed_asset0.amount() - added_asset0.amount()
+        removed_asset0.amount().inner() - added_asset0.amount().inner()
     );
     assert_eq!(
         removed_assets.remove(&original_asset3.faucet_id()).unwrap(),
-        removed_asset3.amount()
+        removed_asset3.amount().inner()
     );
 
     Ok(())

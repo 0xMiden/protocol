@@ -120,7 +120,7 @@ use crate::{MockChainBuilder, TransactionContextBuilder};
 ///         .committed_account(receiver.id())?
 ///         .vault()
 ///         .get_balance(fungible_asset.faucet_id())?,
-///     fungible_asset.amount()
+///     fungible_asset.amount().inner()
 /// );
 /// # Ok(())
 /// # }

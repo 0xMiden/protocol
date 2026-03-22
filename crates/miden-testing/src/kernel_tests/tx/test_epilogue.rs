@@ -140,7 +140,7 @@ async fn test_transaction_epilogue() -> anyhow::Result<()> {
         exec_output
             .get_stack_element(TransactionOutputs::FEE_AMOUNT_ELEMENT_IDX)
             .as_canonical_u64(),
-        fee_asset.amount()
+        fee_asset.amount().inner()
     );
     assert_eq!(
         exec_output
