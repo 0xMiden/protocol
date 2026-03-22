@@ -62,9 +62,10 @@ pub const MERKLE_PROOF_VECTORS_JSON: &str =
 pub const CANONICAL_ZEROS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
 
-/// MMR frontier vectors JSON from the Foundry-generated file.
-pub const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
+/// Merkle Tree Frontier (MTF) vectors JSON from the Foundry-generated file.
+pub const MTF_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/merkle_tree_frontier_vectors.json"
+);
 
 // SERDE HELPERS
 // ================================================================================================
@@ -214,7 +215,7 @@ pub struct CanonicalZerosFile {
     pub canonical_zeros: Vec<String>,
 }
 
-/// Deserialized MMR frontier vectors from Solidity DepositContractV2.
+/// Deserialized Merkle Tree Frontier vectors from Solidity DepositContractV2.
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
 /// (leafType=0, originNetwork=64), parametrised by
@@ -224,7 +225,7 @@ pub struct CanonicalZerosFile {
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
-pub struct MmrFrontierVectorsFile {
+pub struct MTFVectorsFile {
     pub leaves: Vec<String>,
     pub roots: Vec<String>,
     pub counts: Vec<u32>,
@@ -272,10 +273,9 @@ pub static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::ne
     serde_json::from_str(CANONICAL_ZEROS_JSON).expect("failed to parse canonical zeros JSON")
 });
 
-/// Lazily parsed MMR frontier vectors from the JSON file.
-pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
-    serde_json::from_str(MMR_FRONTIER_VECTORS_JSON)
-        .expect("failed to parse MMR frontier vectors JSON")
+/// Lazily parsed Merkle Tree frontier (MTF) vectors from the JSON file.
+pub static SOLIDITY_MTF_VECTORS: LazyLock<MTFVectorsFile> = LazyLock::new(|| {
+    serde_json::from_str(MTF_VECTORS_JSON).expect("failed to parse MTF vectors JSON")
 });
 
 // HELPER FUNCTIONS
