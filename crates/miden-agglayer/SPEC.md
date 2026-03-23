@@ -127,11 +127,11 @@ Validates a bridge-in claim and creates a MINT note targeting the faucet:
    integrity.
 2. Extracts the destination account ID from the leaf data's destination address
    (via `eth_address::to_account_id`).
-3. Validates the Merkle proof via `verify_leaf_bridge` (internal): computes the leaf
+3. Validates the Merkle proof via `verify_leaf_bridge`: computes the leaf
    value from leaf data, computes the GER from mainnet + rollup exit roots, asserts
    GER is known, processes global index (mainnet or rollup), verifies Merkle proof.
    For mainnet: single proof against `mainnet_exit_root`. For rollup: two-level proof
-   (leaf against `local_exit_root`, then `local_exit_root` against `rollup_exit_root`).
+   (leaf against `local_exit_root`, then `local_exit_root` against `rollup_exit_root`, though the first check is implicit).
 4. Updates the claimed global index (CGI) chain hash:
    `NEW_CGI = Keccak256(OLD_CGI, Keccak256(GLOBAL_INDEX, LEAF_VALUE))`.
 5. Computes and checks the claim nullifier
@@ -191,8 +191,7 @@ modules in `asm/agglayer/common/`.
 
 Re-export of `miden::standards::faucets::network_fungible::mint_and_send`. Mints the
 specified amount and creates an output note with the given recipient. Requires the
-faucet's owner (the bridge account) to have authorized the operation via the
-`Ownable2Step` ownership model.
+faucet's owner (the bridge account) to be the creator of this note (the bridge is stored in `Ownable2Step` storage slot as the owner; the faucet's `mint_and_send` executes the current access policy via `exec.policy_manager::execute_mint_policy`).
 
 #### `agglayer_faucet::get_metadata_hash`
 
@@ -200,7 +199,7 @@ faucet's owner (the bridge account) to have authorized the operation via the
 |-|-|
 | **Invocation** | `call` |
 | **Inputs** | `[pad(16)]` |
-| **Outputs** | `[METADATA_HASH_LO(4), METADATA_HASH_HI(4), pad(8)]` |
+| **Outputs** | `[METADATA_HASH_LO, METADATA_HASH_HI, pad(8)]` |
 | **Context** | FPI target - called by the bridge during bridge-out |
 
 Reads the pre-computed metadata hash from the two faucet storage slots
@@ -230,8 +229,7 @@ Reads the scale factor from the `conversion_info_2` storage slot and returns it.
 Converts a Miden-native asset amount to the origin chain's U256 representation:
 
 1. Reads the scale from storage, calls `asset_conversion::scale_native_amount_to_u256`.
-2. Reverses the U256 limb order and changes byte endianness to match the Keccak
-   preimage format.
+2. Since `scale_native_amount_to_u256` operates on BE bytes, and Keccak expects LE, the procedure calls `reverse_limbs_and_change_byte_endianness`
 3. Returns the origin token address and origin network from storage.
 
 #### `agglayer_faucet::burn`
@@ -375,7 +373,7 @@ The storage is divided into three logical regions: proof data (felts 0-535), lea
 2. All 569 felts are loaded into memory.
 3. Proof data and leaf data regions are hashed with Poseidon2 and inserted into the
    advice map as two keyed entries (`PROOF_DATA_KEY`, `LEAF_DATA_KEY`).
-4. The `miden_claim_amount` is read from memory index 568.
+4. The `miden_claim_amount` is read from memory.
 5. `bridge_in::claim` is called with `[PROOF_DATA_KEY, LEAF_DATA_KEY, miden_claim_amount]`
    on the stack. The bridge validates the proof, checks the claim nullifier, looks up the
    faucet via the token registry, verifies the amount conversion, then builds a MINT
