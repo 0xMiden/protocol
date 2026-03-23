@@ -290,7 +290,7 @@ impl<ContainerId: Copy> InputOutputNoteTracker<ContainerId> {
             })?
         };
 
-        let note_index = proof.location().node_index_in_block().into();
+        let note_index = proof.location().block_note_tree_index().into();
         let note_commitment = note_header.commitment();
         proof
             .note_path()

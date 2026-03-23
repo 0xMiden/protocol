@@ -383,7 +383,7 @@ impl TransactionAdviceInputs {
                     note_data.push(block_num.into());
                     note_data.extend(block_header.sub_commitment());
                     note_data.extend(block_header.note_root());
-                    note_data.push(Felt::from(proof.location().node_index_in_block()));
+                    note_data.push(Felt::from(proof.location().block_note_tree_index()));
                 },
                 InputNote::Unauthenticated { .. } => {
                     // push the `is_authenticated` flag
