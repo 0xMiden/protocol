@@ -54,7 +54,7 @@ static EXECUTED_TRANSACTIONS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::ne
 });
 
 static PROCEDURE_POLICIES_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::auth::multisig_smart::procedure_policies")
+    StorageSlotName::new("miden::standards::auth::multisig::procedure_policies")
         .expect("storage slot name should be valid")
 });
 

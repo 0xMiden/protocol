@@ -38,8 +38,7 @@ const DEFAULT_THRESHOLD_LOC=0
 #   TRANSACTION_MESSAGE => [is_executed, 0, 0, 0]
 #
 # - PROC_POLICY_ROOTS_SLOT (map):
-#   PROC_ROOT => [immediate_threshold, delayed_threshold,
-#                 requires_isolated_tx, requires_no_input_output_notes]
+#   PROC_ROOT => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
 
 
 # The slot in this component's storage layout where the default signature threshold and
@@ -61,9 +60,8 @@ const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver
 const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
 
 # The slot in this component's storage layout where procedure policies are stored.
-# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold,
-#                            requires_isolated_tx, requires_no_input_output_notes]
-const PROC_POLICY_ROOTS_SLOT = word("miden::standards::auth::multisig_smart::procedure_policies")
+# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
+const PROC_POLICY_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_policies")
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]
