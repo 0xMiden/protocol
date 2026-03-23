@@ -12,7 +12,7 @@ use miden::standards::notes::p2id
 # =================================================================================================
 
 const NOTE_TYPE_MASK=0x03
-const FACTOR=0x000186A0 # 1e5
+const FACTOR=0x000186A0 # 1e5    
 const MAX_U32=0x0000000100000000
 
 # Memory Addresses
@@ -62,8 +62,9 @@ const SWAPP_NOTE_IDX = 0x0080
 const NOTE_TYPE = 0x0084
 
 # P2ID recipient storage (creator account ID written here for build_recipient)
-const P2ID_RECIPIENT_STORAGE = 0x0FA0
-const P2ID_RECIPIENT_STORAGE_1 = 0x0FA1
+# Layout matches P2ID note storage: [suffix, prefix]
+const P2ID_RECIPIENT_SUFFIX = 0x0FA0
+const P2ID_RECIPIENT_PREFIX = 0x0FA1
 
 # ERRORS
 # =================================================================================================
@@ -194,8 +195,14 @@ end
 
 #! Extracts the note_type from the active note's metadata and stores it at NOTE_TYPE.
 #!
-#! Metadata layout: [NOTE_ATTACHMENT(4), METADATA_HEADER(4)]
-#! METADATA_HEADER[0] = sender_suffix_and_note_type (note_type in bits 0-1)
+#! get_metadata returns [NOTE_ATTACHMENT(4), METADATA_HEADER(4)].
+#! METADATA_HEADER word layout (see NoteMetadataHeader in miden-protocol/src/note/metadata.rs):
+#!   word[0] = sender_suffix_and_note_type (note_type in bits 0-1)
+#!   word[1] = sender_id_prefix
+#!   word[2] = tag
+#!   word[3] = attachment_kind_scheme
+#!
+#! After dropw and mem_loadw_le ordering, word[0] is on top of the stack.
 #!
 #! Inputs: []
 #! Outputs: []
@@ -204,12 +211,10 @@ proc extract_note_type
     exec.active_note::get_metadata
     # => [NOTE_ATTACHMENT(4), METADATA_HEADER(4)]
     dropw
-    # => [METADATA_HEADER] = [hdr3, hdr2, hdr1, hdr0]
-    # hdr[3] = sender_id_prefix (top)
-    # hdr[0] = sender_suffix_and_note_type (bottom, contains note_type in bits 0-1)
-    # Keep hdr0 (bottom), drop hdr3/hdr2/hdr1 from top
+    # => [word[0]=sender_suffix_and_note_type, word[1]=prefix, word[2]=tag, word[3]=attachment]
+    # Keep word[0] (top), move it to bottom and drop the rest
     movdn.3 drop drop drop
-    # => [hdr0 = sender_suffix_and_note_type]
+    # => [sender_suffix_and_note_type]
     u32split
     # => [lo32, hi32]  (note_type in bits 0-1 of lo32, lo32 on top)
     push.NOTE_TYPE_MASK u32and
@@ -233,12 +238,12 @@ end
 #!
 proc build_p2id_recipient_hash
     # Store creator [suffix, prefix] for P2ID recipient hashing
-    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_store.P2ID_RECIPIENT_STORAGE
-    mem_load.SWAPP_CREATOR_PREFIX_INPUT mem_store.P2ID_RECIPIENT_STORAGE_1
+    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_store.P2ID_RECIPIENT_SUFFIX
+    mem_load.SWAPP_CREATOR_PREFIX_INPUT mem_store.P2ID_RECIPIENT_PREFIX
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     # note::build_recipient: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT] => [RECIPIENT]
-    push.2.P2ID_RECIPIENT_STORAGE
+    push.2.P2ID_RECIPIENT_SUFFIX
     # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
@@ -298,18 +303,21 @@ proc create_p2id_note
     # => []
 
     # Set attachment: aux = input_amount + inflight_amount (total fill)
+    # attachment_scheme = 0 (NoteAttachmentScheme::none)
+    # See: output_note::set_word_attachment in miden-protocol/asm/protocol/output_note.masm
     mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
     push.0.0.0
     # => [0, 0, 0, aux]
 
     push.0 mem_load.P2ID_NOTE_IDX
-    # => [note_idx, attachment_scheme, ATTACHMENT]
+    # => [note_idx, attachment_scheme=0, ATTACHMENT]
 
     exec.output_note::set_word_attachment
     # => []
 
     # Move input_amount from consumer's vault to P2ID note (if > 0)
     mem_load.AMT_REQUESTED_IN dup push.0 neq
+    # => [amt != 0, amt]
     if.true
         drop
 
@@ -339,6 +347,7 @@ proc create_p2id_note
 
     # Add inflight_amount directly to P2ID note (no vault debit, if > 0)
     mem_load.AMT_REQUESTED_INFLIGHT dup push.0 neq
+    # => [amt != 0, amt]
     if.true
         drop
 
