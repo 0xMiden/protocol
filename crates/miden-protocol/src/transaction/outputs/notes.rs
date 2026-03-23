@@ -596,7 +596,7 @@ impl PrivateNoteHeader {
     /// This value is used primarily for authenticating notes consumed when they are consumed
     /// in a transaction.
     pub fn commitment(&self) -> Word {
-        self.0.commitment()
+        self.0.to_commitment()
     }
 
     /// Returns a reference to the underlying note header.
