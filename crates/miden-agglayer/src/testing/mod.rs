@@ -48,9 +48,9 @@ pub const MERKLE_PROOF_VECTORS_JSON: &str =
 pub const CANONICAL_ZEROS_JSON: &str =
     include_str!("../../solidity-compat/test-vectors/canonical_zeros.json");
 
-/// MMR frontier vectors JSON from the Foundry-generated file.
+/// Merkle tree frontier vectors JSON from the Foundry-generated file.
 pub const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../solidity-compat/test-vectors/mmr_frontier_vectors.json");
+    include_str!("../../solidity-compat/test-vectors/merkle_tree_frontier_vectors.json");
 
 // SERDE HELPERS
 // ================================================================================================
