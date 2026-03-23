@@ -215,12 +215,15 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |tx_context| async move {
                     // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the CLAIM note (L1) consumption tx failed"),
-                    ))
+                    black_box(
+                        prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the CLAIM note (L1) consumption tx failed"),
+                        )
+                        .await,
+                    )
                 },
                 BatchSize::SmallInput,
             );
@@ -239,12 +242,15 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |tx_context| async move {
                     // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the CLAIM note (L2) consumption tx failed"),
-                    ))
+                    black_box(
+                        prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the CLAIM note (L2) consumption tx failed"),
+                        )
+                        .await,
+                    )
                 },
                 BatchSize::SmallInput,
             );
@@ -263,12 +269,15 @@ fn core_benchmarks(c: &mut Criterion) {
                 },
                 |tx_context| async move {
                     // benchmark the transaction execution and proving
-                    black_box(prove_transaction(
-                        tx_context
-                            .execute()
-                            .await
-                            .expect("execution of the B2AGG note consumption tx failed"),
-                    ))
+                    black_box(
+                        prove_transaction(
+                            tx_context
+                                .execute()
+                                .await
+                                .expect("execution of the B2AGG note consumption tx failed"),
+                        )
+                        .await,
+                    )
                 },
                 BatchSize::SmallInput,
             );
