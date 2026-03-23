@@ -185,7 +185,7 @@ impl StorageDeltaTracker {
 
                     if let Some(init_map) = init_map {
                         map_delta.as_map_mut().retain(|key, new_value| {
-                            let initial_value = init_map.get(key.inner()).expect(
+                            let initial_value = init_map.get(key).expect(
                               "the initial value should be present for every value that was updated",
                             );
                             new_value != initial_value
