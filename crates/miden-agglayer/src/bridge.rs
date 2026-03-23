@@ -19,7 +19,7 @@ use miden_utils_sync::LazyLock;
 use thiserror::Error;
 
 use super::agglayer_bridge_component_library;
-use crate::claim_note::Keccak256Output;
+use crate::claim_note::CgiChainHash;
 pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
@@ -310,9 +310,7 @@ impl AggLayerBridge {
     ///
     /// Returns an error if:
     /// - the provided account is not an [`AggLayerBridge`] account.
-    pub fn cgi_chain_hash(
-        bridge_account: &Account,
-    ) -> Result<Keccak256Output, AgglayerBridgeError> {
+    pub fn cgi_chain_hash(bridge_account: &Account) -> Result<CgiChainHash, AgglayerBridgeError> {
         // check that the provided account is a bridge account
         Self::assert_bridge_account(bridge_account)?;
 
@@ -334,7 +332,7 @@ impl AggLayerBridge {
             })
             .collect::<Vec<u8>>();
 
-        Ok(Keccak256Output::new(
+        Ok(CgiChainHash::new(
             cgi_chain_hash_bytes
                 .try_into()
                 .expect("keccak hash should consist of exactly 32 bytes"),

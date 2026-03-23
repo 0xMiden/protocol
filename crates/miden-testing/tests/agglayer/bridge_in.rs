@@ -4,13 +4,13 @@ use alloc::slice;
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
     EthEmbeddedAccountId,
     ExitRoot,
+    LeafValue,
     SmtNode,
     UpdateGerNote,
     agglayer_library,
@@ -68,7 +68,7 @@ fn merkle_proof_verification_code(
     let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
     let [root_lo, root_hi] = root.to_words();
 
-    let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
+    let leaf = LeafValue::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
     let [leaf_lo, leaf_hi] = leaf.to_words();
 
     format!(

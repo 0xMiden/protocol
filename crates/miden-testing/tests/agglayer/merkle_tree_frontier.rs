@@ -1,8 +1,7 @@
 use alloc::format;
 use alloc::string::ToString;
 
-use miden_agglayer::claim_note::SmtNode;
-use miden_agglayer::{ExitRoot, agglayer_library};
+use miden_agglayer::{ExitRoot, SmtNode, agglayer_library};
 use miden_crypto::hash::keccak::{Keccak256, Keccak256Digest};
 use miden_protocol::utils::sync::LazyLock;
 use miden_standards::code_builder::CodeBuilder;
