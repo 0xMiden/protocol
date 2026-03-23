@@ -1,18 +1,18 @@
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_CREATE_OFFSET
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ASSET_OFFSET
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_CREATE_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_ADD_ASSET_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_SET_ATTACHMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_RECIPIENT_OFFSET
+use miden::protocol::kernel_proc_offsets::OUTPUT_NOTE_GET_METADATA_OFFSET
 use miden::protocol::note
 
 # CONSTANTS
 # =================================================================================================
 
 # Re-export constants for note attachment kinds
-pub use ::miden::protocol::util::note::ATTACHMENT_KIND_NONE
-pub use ::miden::protocol::util::note::ATTACHMENT_KIND_WORD
-pub use ::miden::protocol::util::note::ATTACHMENT_KIND_ARRAY
+pub use miden::protocol::util::note::ATTACHMENT_KIND_NONE
+pub use miden::protocol::util::note::ATTACHMENT_KIND_WORD
+pub use miden::protocol::util::note::ATTACHMENT_KIND_ARRAY
 
 # PROCEDURES
 # =================================================================================================

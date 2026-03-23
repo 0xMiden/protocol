@@ -4,7 +4,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
 # =================================================================================================

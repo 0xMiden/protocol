@@ -3,7 +3,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
 # Re-export the max inputs per note constant.
-pub use ::miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
+pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 
 # ERRORS
 # =================================================================================================
