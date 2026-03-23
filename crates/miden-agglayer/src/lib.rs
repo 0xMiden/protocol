@@ -29,11 +29,23 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 pub mod update_ger_note;
+pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
-pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
+pub use claim_note::{
+    CgiChainHash,
+    ClaimNoteStorage,
+    ExitRoot,
+    LeafData,
+    LeafValue,
+    ProofData,
+    SmtNode,
+    create_claim_note,
+};
 pub use config_note::ConfigAggBridgeNote;
+#[cfg(any(test, feature = "testing"))]
+pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
     EthAddress,
     EthAmount,
@@ -45,6 +57,7 @@ pub use eth_types::{
 };
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use update_ger_note::UpdateGerNote;
+pub use utils::Keccak256Output;
 
 // AGGLAYER NOTE SCRIPTS
 // ================================================================================================
