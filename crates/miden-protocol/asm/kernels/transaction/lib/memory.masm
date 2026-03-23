@@ -1,13 +1,10 @@
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::MAX_ASSETS_PER_NOTE
 use $kernel::constants::NOTE_MEM_SIZE
+# use $kernel::types::AccountId
 use miden::core::mem
 
-# TYPE ALIASES
-# =================================================================================================
-
-type AccountID = struct { suffix: felt, prefix: felt }
-type MemoryAddress = u32
+pub type AccountId = struct { prefix: felt, suffix: felt }
 
 # ERRORS
 # =================================================================================================
@@ -427,7 +424,7 @@ end
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-pub proc set_fpi_account_id(foreign_account_id: AccountID)
+pub proc set_fpi_account_id(foreign_account_id: AccountId)
     mem_store.UPCOMING_FOREIGN_ACCOUNT_SUFFIX_PTR
     # => [foreign_account_id_prefix]
 
@@ -445,7 +442,7 @@ end
 #! Where:
 #! - foreign_account_id_{prefix,suffix} are the prefix and suffix felts of the ID of the foreign
 #!   account whose procedure is going to be executed.
-pub proc get_fpi_account_id() -> (AccountID)
+pub proc get_fpi_account_id() -> AccountId
     mem_load.UPCOMING_FOREIGN_ACCOUNT_PREFIX_PTR
     # => [foreign_account_id_prefix]
 

@@ -8,6 +8,7 @@ use miden::standards::data_structures::double_word_array
 use miden::standards::attachments::network_account_target
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::note::execution_hint::ALWAYS
+use miden::protocol::types::MemoryAddress
 use miden::protocol::output_note
 use miden::core::crypto::hashes::keccak256
 use miden::core::crypto::hashes::poseidon2
@@ -17,13 +18,7 @@ use agglayer::faucet -> agglayer_faucet
 use agglayer::bridge::bridge_config
 use agglayer::bridge::leaf_utils
 use agglayer::bridge::merkle_tree_frontier
-
-
-# TYPE ALIASES
-# =================================================================================================
-
-type EthereumAddressFormat = struct @bigendian { a: felt, b: felt, c: felt, d: felt, e: felt }
-type MemoryAddress = u32
+use agglayer::common::utils::EthereumAddressFormat
 
 # CONSTANTS
 # =================================================================================================

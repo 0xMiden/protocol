@@ -1,11 +1,12 @@
 # Utility module containing helper procedures for double word handling and byte manipulation.
 
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
+
 # TYPE ALIASES
 # =================================================================================================
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
-type MemoryAddress = u32
+pub type EthereumAddressFormat = struct { a: felt, b: felt, c: felt, d: felt, e: felt }
 
 # BYTE MANIPULATION
 # =================================================================================================

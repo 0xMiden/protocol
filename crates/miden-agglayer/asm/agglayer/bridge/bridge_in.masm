@@ -18,13 +18,8 @@ use miden::standards::note_tag
 use miden::standards::note_tag::DEFAULT_TAG
 use miden::standards::attachments::network_account_target
 use miden::standards::note::execution_hint::ALWAYS
-
-# TYPE ALIASES
-# =================================================================================================
-
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
-type MemoryAddress = u32
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
 
 # ERRORS
 # =================================================================================================
@@ -499,7 +494,7 @@ end
 #! Outputs: [LEAF_VALUE[8]]
 #!
 #! Invocation: exec
-pub proc get_leaf_value(leaf_data_key: BeWord) -> DoubleWord
+pub proc get_leaf_value(leaf_data_key: word) -> DoubleWord
     adv.push_mapval
     # => [LEAF_DATA_KEY]
 
@@ -694,7 +689,7 @@ end
 #! - the CLAIM note has already been spent (nullifier already exists in the nullifier map).
 #!
 #! Invocation: exec
-proc assert_claim_not_spent(nullifier: BeWord)
+proc assert_claim_not_spent(nullifier: word)
     push.IS_CLAIMED_FLAG
     # => [IS_CLAIMED_FLAG, NULLIFIER]
 
