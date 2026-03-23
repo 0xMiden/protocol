@@ -715,7 +715,7 @@ bridge maintains two registry maps:
   to a registration flag. Used during bridge-out to verify an asset's faucet is authorized
   (see `bridge_config::assert_faucet_registered`).
 - **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
-  origin token addresses to faucet account IDs. Used during bridge-in to look up the
+  native token addresses to faucet account IDs. Used during bridge-in to look up the
   correct faucet for a given origin token (see
   `bridge_config::lookup_faucet_by_token_address`).
 
