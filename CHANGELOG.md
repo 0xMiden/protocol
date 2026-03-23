@@ -49,6 +49,9 @@
 
 ### Changes
 
+- [BREAKING] Renamed `MMR Frontier` to `Merkle Tree Frontier (MTF)`, module was renamed from `mmr_frontier32_keccak` to `merkle_tree_frontier` ([#2642](https://github.com/0xMiden/protocol/pull/2642)).
+- [BREAKING] Separated `EthAddress` (plain 20-byte Ethereum address) and `EthEmbeddedAccountId` (Miden AccountId encoded as Ethereum address) into distinct types, replacing the single `EthAddressFormat` struct. ([#2622](https://github.com/0xMiden/protocol/pull/2622)).
+- [BREAKING] Renamed `AccountComponent::get_procedures()` to `procedures()`, returning `impl Iterator<Item = (AccountProcedureRoot, bool)>` ([#2597](https://github.com/0xMiden/protocol/pull/2597)).
 - [BREAKING] Removed `NoteAssets::add_asset`; `OutputNoteBuilder` now accumulates assets in a `Vec` and computes the commitment only when `build()` is called, avoiding rehashing on every asset addition. ([#2577](https://github.com/0xMiden/protocol/pull/2577))
 - [BREAKING] Made `supported_types` a required parameter of `AccountComponentMetadata::new()`; removed `with_supported_type`, `with_supported_types`, `with_supports_all_types`, and `with_supports_regular_types` builder methods; added `AccountType::all()` and `AccountType::regular()` helpers ([#2554](https://github.com/0xMiden/protocol/pull/2554)).
 - [BREAKING] Migrated to miden-vm 0.21 and miden-crypto 0.22 ([#2508](https://github.com/0xMiden/miden-base/pull/2508)).
@@ -108,6 +111,10 @@
 - Fixed overlap in initial and active account storage slot memory region ([#2557](https://github.com/0xMiden/protocol/pull/2557)).
 - Fixed link map entry pointer validation bypass ([#2556](https://github.com/0xMiden/protocol/pull/2556)).
 - Added foreign account ID assertion in `account::load_foreign_account` ([#2560](https://github.com/0xMiden/protocol/pull/2560)).
+
+### Fixes
+
+- Fixed `PartialAccountTree::track_account` rejecting provably-empty leaves in sparse trees by handling `SmtLeaf::Empty` correctly ([#2598](https://github.com/0xMiden/protocol/pull/2598)).
 
 ## 0.13.3 (2026-01-27)
 

@@ -111,15 +111,20 @@ impl PartialAccountTree {
         let id_prefix = witness.id().prefix();
         let id_key = AccountIdKey::from(witness.id()).as_word();
 
-        // If a leaf with the same prefix is already tracked by this partial tree, consider it an
+        // If there exists a tracked leaf with a non-empty entry whose key differs from the one
+        // we're about to track, then two different account IDs share the same prefix, which is an
         // error.
         //
-        // We return an error even for empty leaves, because tracking the same ID prefix twice
-        // indicates that different IDs are attempted to be tracked. It would technically not
-        // violate the invariant of the tree that it only tracks zero or one entries per leaf, but
-        // since tracking the same ID twice should practically never happen, we return an error, out
-        // of an abundance of caution.
-        if self.smt.get_leaf(&id_key).is_ok() {
+        // Note that if the leaf is empty, that's fine: `PartialSmt::get_leaf` returns
+        // `Ok(SmtLeaf::Empty)` for any leaf position reachable through provably-empty subtrees,
+        // even if no proof was explicitly added for that position. In a sparse tree this covers
+        // most of the leaf space, so treating empty leaves as duplicates would reject nearly every
+        // second witness.
+        //
+        // Also note that the multiple variant cannot occur by construction of the account tree.
+        if let Ok(SmtLeaf::Single((existing_key, _))) = self.smt.get_leaf(&id_key)
+            && id_key != existing_key
+        {
             return Err(AccountTreeError::DuplicateIdPrefix { duplicate_prefix: id_prefix });
         }
 
@@ -271,6 +276,45 @@ mod tests {
         assert_matches!(err, AccountTreeError::UntrackedAccountId { id, .. }
             if id == id2
         );
+
+        Ok(())
+    }
+
+    /// Verifies that tracking multiple witnesses succeeds in a sparse tree, where most leaf
+    /// positions are reachable through provably-empty subtrees, including `SmtLeaf::Empty`
+    /// leaves that are provably empty but not actually occupied.
+    #[test]
+    fn track_succeeds_for_multiple_witnesses_in_sparse_tree() -> anyhow::Result<()> {
+        let id0 = AccountIdBuilder::default().build_with_seed([10; 32]);
+        let id1 = AccountIdBuilder::default().build_with_seed([11; 32]);
+        let id2 = AccountIdBuilder::default().build_with_seed([12; 32]);
+
+        let commitment0 = Word::from([1, 2, 3, 4u32]);
+        let commitment1 = Word::from([5, 6, 7, 8u32]);
+
+        // Create a tree with only one account (very sparse).
+        let account_tree = AccountTree::with_entries([(id0, commitment0)])?;
+
+        // Get witnesses for one existing and two new (empty) accounts.
+        let witness0 = account_tree.open(id0);
+        let witness1 = account_tree.open(id1);
+        let witness2 = account_tree.open(id2);
+
+        // Building a partial tree from all three witnesses should succeed:
+        // id1 and id2 have empty leaves that are provably empty via the sparse tree structure,
+        // but they are NOT duplicates of id0.
+        let mut partial_tree =
+            PartialAccountTree::with_witnesses([witness0, witness1.clone(), witness2])?;
+
+        // Adding the same witness again should also succeed.
+        partial_tree.track_account(witness1)?;
+
+        // Verify the existing account has its commitment.
+        assert_eq!(partial_tree.get(id0)?, commitment0);
+
+        // We should be able to insert new state commitments for the new accounts.
+        partial_tree.upsert_state_commitments([(id1, commitment1)])?;
+        assert_eq!(partial_tree.get(id1)?, commitment1);
 
         Ok(())
     }
