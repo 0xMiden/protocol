@@ -808,22 +808,41 @@ as a parameter to `claimAsset()`. The EVM bridge verifies that
 no wrapped token exists yet, the bridge deploys a new `TokenWrapped` ERC20 using the
 decoded name, symbol, and decimals from the metadata bytes.
 
-Not yet implemented - registration of Miden-native faucets for bridging out:
+#### Miden-native faucets
 
-The current implementation assumes all registered faucets wrap foreign (ERC20) tokens.
-For a Miden-native faucet (one that does not wrap an ERC20) to bridge out to an EVM
-chain, it would need to:
+A Miden-native faucet (one that does not wrap a foreign ERC20) uses the same storage
+layout and registration flow as a wrapped faucet. The key difference is what values are
+stored in the conversion metadata:
 
-- Store a metadata hash computed from its token name, symbol, and decimals.
-- Be registered in the bridge's faucet registry.
-- Provide origin token address and origin network values that make sense for a
-  Miden-native asset.
+- `origin_token_address`: the faucet's own `AccountId` encoded as a 20-byte Ethereum
+  address via `EthAddressFormat::from_account_id(faucet_id)` (see Section 5.2 for the
+  embedded format). This produces `[0x00000000 | prefix (8B) | suffix (8B)]`.
+- `origin_network`: Miden's network ID as assigned by AggLayer (currently unassigned).
+- `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` - same as for wrapped
+  faucets.
 
-The design for how a Miden-native faucet registers itself for outbound bridging has not
-been finalized. An issue should be created to design this registration flow, covering
-questions such as: what origin network ID represents Miden, how the origin token address
-is derived for Miden-native tokens, and whether the bridge admin must approve registration
-or if self-registration is possible.
+On the EVM side, `claimAsset()` sees `originNetwork != networkID` (Miden is not the local
+EVM chain), so it follows the wrapped token path: computes
+`tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, deploys
+a new `TokenWrapped` ERC20 via `CREATE2` on first claim, and mints on it for subsequent
+claims. The wrapper address is deterministic from the `(originNetwork, originTokenAddress)`
+pair.
+
+When bridging back from EVM to Miden, the EVM bridge resolves the wrapped token to its
+original `(originNetwork, originTokenAddress)` via `wrappedTokenToTokenInfo`. These values
+go into the deposit leaf. On the Miden side, `bridge_config::lookup_faucet_by_token_address`
+resolves the origin token address (the embedded faucet AccountId) back to the faucet.
+
+The bridge code does not distinguish between Miden-native and wrapped faucets - both use
+the same registration, bridge-out, and bridge-in paths. The faucet's conversion storage
+determines the leaf contents, and the EVM bridge handles token deployment transparently.
+
+Not yet implemented:
+
+- Miden's network ID has not been assigned by AggLayer.
+- The bridge admin must still approve registration of Miden-native faucets via
+  `CONFIG_AGG_BRIDGE` notes. Whether self-registration should be possible is an open
+  design question.
 
 ### 6.3 Metadata hash
 
