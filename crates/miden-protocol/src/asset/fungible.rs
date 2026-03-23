@@ -2,7 +2,7 @@ use alloc::string::ToString;
 use core::fmt;
 
 use super::vault::AssetVaultKey;
-use super::{AccountType, Asset, AssetCallbackFlag, AssetError, Word};
+use super::{AccountType, Asset, AssetAmount, AssetCallbackFlag, AssetError, Word};
 use crate::Felt;
 use crate::account::AccountId;
 use crate::asset::AssetId;
@@ -26,7 +26,7 @@ use crate::utils::serde::{
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FungibleAsset {
     faucet_id: AccountId,
-    amount: u64,
+    amount: AssetAmount,
     callbacks: AssetCallbackFlag,
 }
 
@@ -35,15 +35,14 @@ impl FungibleAsset {
     // --------------------------------------------------------------------------------------------
     /// Specifies the maximum amount a fungible asset can represent.
     ///
-    /// This number was chosen so that it can be represented as a positive and negative number in a
-    /// field element. See `account_delta.masm` for more details on how this number was chosen.
-    pub const MAX_AMOUNT: u64 = 2u64.pow(63) - 2u64.pow(31);
+    /// Use [`AssetAmount::MAX`] instead for the validated wrapper type.
+    pub const MAX_AMOUNT: u64 = AssetAmount::MAX.inner();
 
     /// The serialized size of a [`FungibleAsset`] in bytes.
     ///
     /// An account ID (15 bytes) plus an amount (u64) plus a callbacks flag (u8).
     pub const SERIALIZED_SIZE: usize = AccountId::SERIALIZED_SIZE
-        + core::mem::size_of::<u64>()
+        + core::mem::size_of::<AssetAmount>()
         + AssetCallbackFlag::SERIALIZED_SIZE;
 
     // CONSTRUCTOR
@@ -55,15 +54,13 @@ impl FungibleAsset {
     ///
     /// Returns an error if:
     /// - The faucet ID is not a valid fungible faucet ID.
-    /// - The provided amount is greater than [`FungibleAsset::MAX_AMOUNT`].
+    /// - The provided amount is greater than [`AssetAmount::MAX`].
     pub fn new(faucet_id: AccountId, amount: u64) -> Result<Self, AssetError> {
         if !matches!(faucet_id.account_type(), AccountType::FungibleFaucet) {
             return Err(AssetError::FungibleFaucetIdTypeMismatch(faucet_id));
         }
 
-        if amount > Self::MAX_AMOUNT {
-            return Err(AssetError::FungibleAssetAmountTooBig(amount));
-        }
+        let amount = AssetAmount::new(amount)?;
 
         Ok(Self {
             faucet_id,
@@ -126,7 +123,7 @@ impl FungibleAsset {
     }
 
     /// Returns the amount of this asset.
-    pub fn amount(&self) -> u64 {
+    pub fn amount(&self) -> AssetAmount {
         self.amount
     }
 
@@ -154,7 +151,7 @@ impl FungibleAsset {
     /// Returns the asset's value encoded to a [`Word`].
     pub fn to_value_word(&self) -> Word {
         Word::new([
-            Felt::try_from(self.amount)
+            Felt::try_from(self.amount.inner())
                 .expect("fungible asset should only allow amounts that fit into a felt"),
             Felt::ZERO,
             Felt::ZERO,
@@ -180,13 +177,12 @@ impl FungibleAsset {
             });
         }
 
-        let amount = self
+        let raw_amount = self
             .amount
-            .checked_add(other.amount)
+            .inner()
+            .checked_add(other.amount.inner())
             .expect("even MAX_AMOUNT + MAX_AMOUNT should not overflow u64");
-        if amount > Self::MAX_AMOUNT {
-            return Err(AssetError::FungibleAssetAmountTooBig(amount));
-        }
+        let amount = AssetAmount::new(raw_amount)?;
 
         Ok(Self {
             faucet_id: self.faucet_id,
@@ -210,12 +206,14 @@ impl FungibleAsset {
             });
         }
 
-        let amount = self.amount.checked_sub(other.amount).ok_or(
+        let raw_amount = self.amount.inner().checked_sub(other.amount.inner()).ok_or(
             AssetError::FungibleAssetAmountNotSufficient {
-                minuend: self.amount,
-                subtrahend: other.amount,
+                minuend: self.amount.inner(),
+                subtrahend: other.amount.inner(),
             },
         )?;
+        // SAFETY: subtraction of two valid amounts always produces a valid amount.
+        let amount = AssetAmount::new_unchecked(raw_amount);
 
         Ok(FungibleAsset {
             faucet_id: self.faucet_id,

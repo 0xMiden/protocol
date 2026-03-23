@@ -216,7 +216,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn add(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().inner().try_into().expect("Amount it too high");
         self.add_delta(asset.vault_key(), amount)
     }
 
@@ -225,7 +225,7 @@ impl FungibleAssetDelta {
     /// # Errors
     /// Returns an error if the delta would overflow.
     pub fn remove(&mut self, asset: FungibleAsset) -> Result<(), AccountDeltaError> {
-        let amount: i64 = asset.amount().try_into().expect("Amount it too high");
+        let amount: i64 = asset.amount().inner().try_into().expect("Amount it too high");
         self.add_delta(asset.vault_key(), -amount)
     }
 

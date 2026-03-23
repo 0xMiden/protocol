@@ -1123,7 +1123,7 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance + fungible_asset_for_note_existing.unwrap_fungible().amount().inner(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_existing_source)?;
@@ -1176,7 +1176,8 @@ async fn test_get_init_balance_addition() -> anyhow::Result<()> {
     "#,
         suffix = faucet_new_asset.suffix(),
         prefix = faucet_new_asset.prefix().as_felt(),
-        final_balance = initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount(),
+        final_balance =
+            initial_balance + fungible_asset_for_note_new.unwrap_fungible().amount().inner(),
     );
 
     let tx_script = CodeBuilder::default().compile_tx_script(add_new_source)?;
@@ -1271,7 +1272,7 @@ async fn test_get_init_balance_subtraction() -> anyhow::Result<()> {
         suffix = faucet_existing_asset.suffix(),
         prefix = faucet_existing_asset.prefix().as_felt(),
         final_balance =
-            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount(),
+            initial_balance - fungible_asset_for_note_existing.unwrap_fungible().amount().inner(),
     );
 
     let tx_script = CodeBuilder::with_mock_libraries().compile_tx_script(remove_existing_source)?;

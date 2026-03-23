@@ -263,8 +263,8 @@ where
         // Return an error if the balance in the account does not cover the fee.
         if current_fee_asset.amount() < fee_asset.amount() {
             return Err(TransactionKernelError::InsufficientFee {
-                account_balance: current_fee_asset.amount(),
-                tx_fee: fee_asset.amount(),
+                account_balance: current_fee_asset.amount().inner(),
+                tx_fee: fee_asset.amount().inner(),
             });
         }
 

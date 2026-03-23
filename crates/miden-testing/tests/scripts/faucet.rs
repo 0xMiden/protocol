@@ -674,7 +674,7 @@ async fn network_faucet_mint() -> anyhow::Result<()> {
 
     // Verify the account's vault now contains the expected fungible asset
     let balance = target_account.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount(),);
+    assert_eq!(balance, expected_asset.amount().inner(),);
 
     Ok(())
 }
@@ -1415,7 +1415,7 @@ async fn test_mint_note_output_note_types(#[case] note_type: NoteType) -> anyhow
 
     let expected_asset = FungibleAsset::new(faucet.id(), amount.as_canonical_u64())?;
     let balance = target_account_mut.vault().get_balance(faucet.id())?;
-    assert_eq!(balance, expected_asset.amount());
+    assert_eq!(balance, expected_asset.amount().inner());
 
     Ok(())
 }

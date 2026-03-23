@@ -340,7 +340,7 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
 
     // Verify minted amount matches expected scaled value
     assert_eq!(
-        Felt::new(p2id_asset.amount()),
+        Felt::new(p2id_asset.amount().inner()),
         miden_claim_amount,
         "asset amount does not match"
     );

@@ -6,6 +6,7 @@ use miden_crypto::merkle::InnerNodeInfo;
 use super::{
     AccountType,
     Asset,
+    AssetAmount,
     ByteReader,
     ByteWriter,
     Deserializable,
@@ -118,7 +119,7 @@ impl AssetVault {
         let asset = FungibleAsset::from_key_value(vault_key, asset_value)
             .expect("asset vault should only store valid assets");
 
-        Ok(asset.amount())
+        Ok(asset.amount().inner())
     }
 
     /// Returns an iterator over the assets stored in the vault.
@@ -312,7 +313,7 @@ impl AssetVault {
                 .expect("asset vault should store valid assets");
 
         // If the asset's amount is 0, we consider it absent from the vault.
-        if current_asset.amount() == 0 {
+        if current_asset.amount() == AssetAmount::ZERO {
             return Err(AssetVaultError::FungibleAssetNotFound(other_asset));
         }
 
@@ -325,7 +326,7 @@ impl AssetVault {
         // leaf.
         #[cfg(debug_assertions)]
         {
-            if new_asset.amount() == 0 {
+            if new_asset.amount() == AssetAmount::ZERO {
                 assert!(new_asset.to_value_word().is_empty())
             }
         }

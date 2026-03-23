@@ -371,7 +371,7 @@ where
                 .read_vault_asset(vault_root, fee_asset_vault_key)
                 .map_err(TransactionExecutorError::FeeAssetRetrievalFailed)?;
             match fee_asset {
-                Some(Asset::Fungible(fee_asset)) => fee_asset.amount(),
+                Some(Asset::Fungible(fee_asset)) => fee_asset.amount().inner(),
                 Some(Asset::NonFungible(_)) => {
                     return Err(TransactionExecutorError::FeeAssetMustBeFungible);
                 },

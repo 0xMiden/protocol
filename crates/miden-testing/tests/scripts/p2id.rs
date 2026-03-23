@@ -178,7 +178,7 @@ async fn prove_consume_multiple_notes() -> anyhow::Result<()> {
     account.apply_delta(executed_transaction.account_delta())?;
     let resulting_asset = account.vault().assets().next().unwrap();
     if let Asset::Fungible(asset) = resulting_asset {
-        assert_eq!(asset.amount(), 123u64);
+        assert_eq!(asset.amount().inner(), 123u64);
     } else {
         panic!("Resulting asset should be fungible");
     }
