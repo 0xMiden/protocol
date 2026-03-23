@@ -45,6 +45,7 @@
 - Implement `TransactionEventId::event_name` and `Host::resolve_event` for better VM diagnostics during even handler failures ([#2628](https://github.com/0xMiden/protocol/pull/2628)).
 - Added `FixedWidthString` for fixed-width UTF-8 string storage in `miden-standards` (`miden::standards::utils::string`). ([#2633](https://github.com/0xMiden/protocol/pull/2633))
 - Added metadata hash storage to AggLayer faucet and FPI retrieval during bridge-out leaf construction ([#2583](https://github.com/0xMiden/protocol/pull/2583)).
+- Added `BurnPolicyConfig` for flexible burning policy execution ([#2664](https://github.com/0xMiden/protocol/pull/2664))
 
 
 ### Changes
