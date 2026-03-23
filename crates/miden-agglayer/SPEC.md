@@ -730,7 +730,7 @@ authority for the wrapped token on Miden.
 The `AggLayerFaucet` struct (Rust, `src/faucet.rs`) captures the faucet-specific
 configuration:
 
-- Token metadata: symbol, decimals, max_supply, token_supply (TODO Missing information about the token name([#2585](https://github.com/0xMiden/protocol/issues/2585)))
+- Token metadata: symbol, decimals, max_supply, token_supply (TODO Missing information about the token name ([#2585](https://github.com/0xMiden/protocol/issues/2585)))
 - Origin token address: the ERC20 contract address on the origin chain
 - Origin network: the chain ID of the origin chain
 - Scale factor: the exponent used to convert between EVM U256 amounts and Field elements on Miden
