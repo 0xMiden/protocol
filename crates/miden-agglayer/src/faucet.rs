@@ -27,9 +27,10 @@ pub use crate::{
     B2AggNote,
     ClaimNoteStorage,
     ConfigAggBridgeNote,
-    EthAddressFormat,
+    EthAddress,
     EthAmount,
     EthAmountError,
+    EthEmbeddedAccountId,
     ExitRoot,
     GlobalIndex,
     GlobalIndexError,
@@ -94,7 +95,7 @@ static METADATA_HASH_HI_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| 
 #[derive(Debug, Clone)]
 pub struct AggLayerFaucet {
     metadata: TokenMetadata,
-    origin_token_address: EthAddressFormat,
+    origin_token_address: EthAddress,
     origin_network: u32,
     scale: u8,
     metadata_hash: MetadataHash,
@@ -117,7 +118,7 @@ impl AggLayerFaucet {
         decimals: u8,
         max_supply: Felt,
         token_supply: Felt,
-        origin_token_address: EthAddressFormat,
+        origin_token_address: EthAddress,
         origin_network: u32,
         scale: u8,
         metadata_hash: MetadataHash,
@@ -216,7 +217,7 @@ impl AggLayerFaucet {
     /// - the provided account is not an [`AggLayerFaucet`] account.
     pub fn origin_token_address(
         faucet_account: &Account,
-    ) -> Result<EthAddressFormat, AgglayerFaucetError> {
+    ) -> Result<EthAddress, AgglayerFaucetError> {
         // check that the provided account is a faucet account
         Self::assert_faucet_account(faucet_account)?;
 
@@ -240,7 +241,7 @@ impl AggLayerFaucet {
             })
             .collect::<Vec<u8>>();
 
-        Ok(EthAddressFormat::new(
+        Ok(EthAddress::new(
             addr_bytes_vec
                 .try_into()
                 .expect("origin token addr vector should consist of exactly 20 bytes"),
@@ -445,7 +446,7 @@ pub enum AgglayerFaucetError {
 /// # Returns
 /// A tuple of two `Word` values representing the two storage slot contents.
 fn agglayer_faucet_conversion_slots(
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
 ) -> (Word, Word) {

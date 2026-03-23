@@ -49,6 +49,8 @@
 
 ### Changes
 
+- [BREAKING] Renamed `MMR Frontier` to `Merkle Tree Frontier (MTF)`, module was renamed from `mmr_frontier32_keccak` to `merkle_tree_frontier` ([#2642](https://github.com/0xMiden/protocol/pull/2642)).
+- [BREAKING] Separated `EthAddress` (plain 20-byte Ethereum address) and `EthEmbeddedAccountId` (Miden AccountId encoded as Ethereum address) into distinct types, replacing the single `EthAddressFormat` struct. ([#2622](https://github.com/0xMiden/protocol/pull/2622)).
 - Migrated to miden-vm v0.22 and miden-crypto v0.23 ([#2644](https://github.com/0xMiden/protocol/pull/2644)).
 - [BREAKING] Renamed `AccountComponent::get_procedures()` to `procedures()`, returning `impl Iterator<Item = (AccountProcedureRoot, bool)>` ([#2597](https://github.com/0xMiden/protocol/pull/2597)).
 - [BREAKING] Removed `NoteAssets::add_asset`; `OutputNoteBuilder` now accumulates assets in a `Vec` and computes the commitment only when `build()` is called, avoiding rehashing on every asset addition. ([#2577](https://github.com/0xMiden/protocol/pull/2577))
