@@ -54,11 +54,14 @@ impl LocalTransactionProver {
         ref_block_commitment: Word,
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
+        let TransactionOutputs {
+            account: account_header, output_notes, ..
+        } = tx_outputs;
+
         // erase private note information (convert private full notes to just headers)
-        let output_notes: Vec<_> = tx_outputs
-            .output_notes
-            .iter()
-            .map(|note| note.to_output_note())
+        let output_notes: Vec<_> = output_notes
+            .into_iter()
+            .map(|note| note.into_output_note())
             .collect::<Result<Vec<_>, _>>()
             .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 
@@ -82,7 +85,7 @@ impl LocalTransactionProver {
         let account_update = TxAccountUpdate::new(
             account.id(),
             account.initial_commitment(),
-            tx_outputs.account.to_commitment(),
+            account_header.to_commitment(),
             pre_fee_delta_commitment,
             account_update_details,
         )

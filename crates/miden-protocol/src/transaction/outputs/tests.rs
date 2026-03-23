@@ -133,7 +133,7 @@ fn oversized_public_note_triggers_size_limit_error() -> anyhow::Result<()> {
 
     // to_output_note() should also fail
     let output_note = RawOutputNote::Full(oversized_note);
-    let result = output_note.to_output_note();
+    let result = output_note.into_output_note();
 
     assert_matches!(
         result,
