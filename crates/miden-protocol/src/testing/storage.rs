@@ -72,7 +72,7 @@ impl AccountStorageDelta {
     ) -> Self {
         items.into_iter().for_each(|(slot_name, map_delta)| {
             for (key, value) in map_delta.entries() {
-                self.set_map_item(slot_name.clone(), *key.inner(), *value).expect("TODO")
+                self.set_map_item(slot_name.clone(), *key, *value).expect("TODO")
             }
         });
 
