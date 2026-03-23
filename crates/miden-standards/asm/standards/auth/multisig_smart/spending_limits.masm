@@ -356,10 +356,6 @@ end
 #! Inputs:  []
 #! Outputs: [amount_in_usd]
 #! 
-#! Temporary pricing path:
-#! - uses oracle::get_price_test for a tracked 1:1 price mapping
-#! - keeps the same stack contract as oracle::get_price so we can swap it in later
-#! 
 #! Assumes get_price-style interface:
 #!   Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #!   Outputs: [is_tracked, amount_in_usd]
@@ -462,7 +458,7 @@ proc compute_spending_amount
                 movdn.2
                 # => [faucet_id_suffix, faucet_id_prefix, amount, remaining, note_index_keep]
 
-                exec.oracle::get_price_test
+                exec.oracle::get_price
                 # => [is_tracked, amount_in_usd, remaining, note_index_keep]
 
                 if.true

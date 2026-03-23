@@ -1,14 +1,17 @@
 use miden_processor::advice::AdviceInputs;
 use miden_processor::crypto::random::RpoRandomCoin;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
+use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::{
     Account,
     AccountBuilder,
+    AccountComponent,
     AccountId,
     AccountStorageMode,
     AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
+use miden_protocol::block::account_tree::AccountWitness;
 use miden_protocol::note::{NoteType, PartialNote};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -49,7 +52,7 @@ use miden_standards::errors::standards::{
     ERR_TX_STILL_TIMELOCKED,
 };
 use miden_standards::note::P2idNote;
-use miden_testing::{MockChain, MockChainBuilder, assert_transaction_executor_error};
+use miden_testing::{Auth, MockChain, MockChainBuilder, assert_transaction_executor_error};
 use miden_tx::TransactionExecutorError;
 use miden_tx::auth::{BasicAuthenticator, SigningInputs, TransactionAuthenticator};
 use rand::SeedableRng;
@@ -62,6 +65,19 @@ use rstest::rstest;
 
 type MultisigTestSetupWithSchemes =
     (Vec<AuthSecretKey>, Vec<AuthScheme>, Vec<PublicKey>, Vec<BasicAuthenticator>);
+
+#[derive(Clone, Copy)]
+enum TestOracleMode {
+    OneToOneTracked,
+    FixedPrice(u64),
+    Untracked,
+}
+
+struct TestOracleFixture {
+    account: Account,
+    oracle_id: [Felt; 2],
+    get_price_proc_root: Word,
+}
 
 /// Sets up secret keys, auth schemes, public keys, and authenticators for a specific scheme.
 fn setup_keys_and_authenticators_with_scheme(
@@ -124,7 +140,74 @@ fn build_update_signers_config_vector(
     config_and_pubkeys_vector
 }
 
-fn create_multisig_smart_account_with_assets(
+fn build_test_oracle_fixture(mode: TestOracleMode) -> anyhow::Result<TestOracleFixture> {
+    let oracle_code_source = match mode {
+        TestOracleMode::OneToOneTracked => "
+            use miden::core::sys
+
+            pub proc get_median
+                drop drop
+                push.1
+                exec.sys::truncate_stack
+            end
+            "
+        .to_string(),
+        TestOracleMode::FixedPrice(fixed_price) => format!(
+            "
+            use miden::core::sys
+
+            pub proc get_median
+                drop drop drop
+                push.{fixed_price}
+                push.1
+                exec.sys::truncate_stack
+            end
+            "
+        ),
+        TestOracleMode::Untracked => "
+            use miden::core::sys
+
+            pub proc get_median
+                drop drop drop
+                push.0
+                push.0
+                exec.sys::truncate_stack
+            end
+            "
+        .to_string(),
+    };
+
+    let oracle_component = AccountComponent::new(
+        CodeBuilder::default().compile_component_code("test::oracle", oracle_code_source)?,
+        vec![],
+        AccountComponentMetadata::mock("test::oracle"),
+    )?;
+    let get_price_proc_root = oracle_component
+        .get_procedure_root_by_path("test::oracle::get_median")
+        .expect("test oracle component should export get_median");
+
+    let account = AccountBuilder::new(rand::random())
+        .with_auth_component(Auth::IncrNonce)
+        .with_component(oracle_component)
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .build_existing()?;
+
+    Ok(TestOracleFixture {
+        oracle_id: [account.id().prefix().as_felt(), account.id().suffix()],
+        get_price_proc_root,
+        account,
+    })
+}
+
+fn test_oracle_foreign_account_inputs(
+    mock_chain: &MockChain,
+    oracle_fixture: &TestOracleFixture,
+) -> anyhow::Result<Vec<(Account, AccountWitness)>> {
+    Ok(vec![mock_chain.get_foreign_account_inputs(oracle_fixture.account.id())?])
+}
+
+fn create_multisig_smart_account_with_assets_and_optional_oracle(
     threshold: u32,
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
@@ -132,10 +215,11 @@ fn create_multisig_smart_account_with_assets(
     amount_limits: [u64; 4],
     tier_thresholds: [u32; 4],
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    oracle_config: Option<([Felt; 2], Word)>,
 ) -> anyhow::Result<Account> {
     let approvers: Vec<_> =
         public_keys.iter().map(|pk| (pk.to_commitment(), auth_scheme)).collect();
-    let config = AuthMultisigSmartConfig::new(approvers, threshold)?
+    let mut config = AuthMultisigSmartConfig::new(approvers, threshold)?
         .with_proc_policies(proc_policy_map)?
         .with_spending(SpendingPolicyConfig::new(
             100,
@@ -154,6 +238,12 @@ fn create_multisig_smart_account_with_assets(
         ))
         .with_timelock_controller_config(TimelockControllerConfig::new(30, 2));
 
+    if let Some((oracle_id, get_price_proc_root)) = oracle_config {
+        config = config
+            .with_oracle_config(oracle_id)
+            .with_get_price_proc_root(get_price_proc_root);
+    }
+
     let multisig_account = AccountBuilder::new([0; 32])
         .with_auth_component(AuthMultisigSmart::new(config)?)
         .with_component(BasicWallet)
@@ -165,11 +255,55 @@ fn create_multisig_smart_account_with_assets(
     Ok(multisig_account)
 }
 
-fn create_multisig_smart_with_fixed_test_configuration(
+fn create_multisig_smart_account_with_assets(
+    threshold: u32,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+    assets: Vec<FungibleAsset>,
+    amount_limits: [u64; 4],
+    tier_thresholds: [u32; 4],
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+) -> anyhow::Result<Account> {
+    create_multisig_smart_account_with_assets_and_optional_oracle(
+        threshold,
+        public_keys,
+        auth_scheme,
+        assets,
+        amount_limits,
+        tier_thresholds,
+        proc_policy_map,
+        None,
+    )
+}
+
+fn create_multisig_smart_account_with_assets_and_oracle(
+    threshold: u32,
+    public_keys: &[PublicKey],
+    auth_scheme: AuthScheme,
+    assets: Vec<FungibleAsset>,
+    amount_limits: [u64; 4],
+    tier_thresholds: [u32; 4],
+    proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    oracle_fixture: &TestOracleFixture,
+) -> anyhow::Result<Account> {
+    create_multisig_smart_account_with_assets_and_optional_oracle(
+        threshold,
+        public_keys,
+        auth_scheme,
+        assets,
+        amount_limits,
+        tier_thresholds,
+        proc_policy_map,
+        Some((oracle_fixture.oracle_id, oracle_fixture.get_price_proc_root)),
+    )
+}
+
+fn create_multisig_smart_with_fixed_test_configuration_and_oracle(
     threshold: u32,
     public_keys: &[PublicKey],
     auth_scheme: AuthScheme,
     proc_policy_map: Vec<(Word, ProcedurePolicy)>,
+    oracle_fixture: &TestOracleFixture,
 ) -> anyhow::Result<Account> {
     let multisig_starting_assets = vec![
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 10000u64),
@@ -177,7 +311,7 @@ fn create_multisig_smart_with_fixed_test_configuration(
         (AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_3)?, 30000u64),
     ];
 
-    create_multisig_smart_account_with_assets(
+    create_multisig_smart_account_with_assets_and_oracle(
         threshold,
         public_keys,
         auth_scheme,
@@ -188,6 +322,7 @@ fn create_multisig_smart_with_fixed_test_configuration(
         [500, 1000, 2000, 1500],
         [1, 2, 3, 4],
         proc_policy_map,
+        oracle_fixture,
     )
 }
 
@@ -321,6 +456,7 @@ async fn execute_script_with_signers(
     authenticators: &[BasicAuthenticator],
     tx_script_args: Option<Word>,
     advice_inputs: Option<AdviceInputs>,
+    foreign_accounts: Option<Vec<(Account, AccountWitness)>>,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let mut tx_context_init_builder = mock_chain
         .build_tx_context(account_id, &[], &[])?
@@ -333,6 +469,10 @@ async fn execute_script_with_signers(
 
     if let Some(advice_inputs) = advice_inputs.clone() {
         tx_context_init_builder = tx_context_init_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    if let Some(foreign_accounts) = foreign_accounts.clone() {
+        tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
     }
 
     let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
@@ -354,6 +494,10 @@ async fn execute_script_with_signers(
 
     if let Some(advice_inputs) = advice_inputs {
         tx_context_signed_builder = tx_context_signed_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    if let Some(foreign_accounts) = foreign_accounts {
+        tx_context_signed_builder = tx_context_signed_builder.foreign_accounts(foreign_accounts);
     }
 
     for signer_idx in signer_indices {
@@ -382,6 +526,7 @@ async fn execute_script_with_signers_at(
     authenticators: &[BasicAuthenticator],
     tx_script_args: Option<Word>,
     advice_inputs: Option<AdviceInputs>,
+    foreign_accounts: Option<Vec<(Account, AccountWitness)>>,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
     let mut tx_context_init_builder = mock_chain
         .build_tx_context_at(reference_block, account_id, &[], &[])?
@@ -394,6 +539,10 @@ async fn execute_script_with_signers_at(
 
     if let Some(advice_inputs) = advice_inputs.clone() {
         tx_context_init_builder = tx_context_init_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    if let Some(foreign_accounts) = foreign_accounts.clone() {
+        tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
     }
 
     let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
@@ -415,6 +564,10 @@ async fn execute_script_with_signers_at(
 
     if let Some(advice_inputs) = advice_inputs {
         tx_context_signed_builder = tx_context_signed_builder.extend_advice_inputs(advice_inputs);
+    }
+
+    if let Some(foreign_accounts) = foreign_accounts {
+        tx_context_signed_builder = tx_context_signed_builder.foreign_accounts(foreign_accounts);
     }
 
     for signer_idx in signer_indices {
@@ -442,17 +595,19 @@ async fn execute_script_with_signers_at_and_outputs(
     signer_indices: &[usize],
     public_keys: &[PublicKey],
     authenticators: &[BasicAuthenticator],
+    foreign_accounts: Option<Vec<(Account, AccountWitness)>>,
 ) -> anyhow::Result<Result<ExecutedTransaction, TransactionExecutorError>> {
-    let tx_summary = match mock_chain
+    let mut tx_context_init_builder = mock_chain
         .build_tx_context_at(reference_block, account_id, &[], &[])?
         .extend_expected_output_notes(expected_output_notes.clone())
         .tx_script(tx_script.clone())
-        .auth_args(salt)
-        .build()?
-        .execute()
-        .await
-        .unwrap_err()
-    {
+        .auth_args(salt);
+
+    if let Some(foreign_accounts) = foreign_accounts.clone() {
+        tx_context_init_builder = tx_context_init_builder.foreign_accounts(foreign_accounts);
+    }
+
+    let tx_summary = match tx_context_init_builder.build()?.execute().await.unwrap_err() {
         TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
         error => panic!("expected abort with tx effects: {error:?}"),
     };
@@ -465,6 +620,10 @@ async fn execute_script_with_signers_at_and_outputs(
         .extend_expected_output_notes(expected_output_notes)
         .tx_script(tx_script)
         .auth_args(salt);
+
+    if let Some(foreign_accounts) = foreign_accounts {
+        tx_context_signed_builder = tx_context_signed_builder.foreign_accounts(foreign_accounts);
+    }
 
     for signer_idx in signer_indices {
         let sig = authenticators[*signer_idx]
@@ -505,6 +664,7 @@ async fn execute_script_with_signers_at_and_outputs(
 async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let cases = [
         ("tier1", [500, 100, 100], 2usize),
         ("tier2", [1000, 100, 100], 3usize),
@@ -516,15 +676,19 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
 
     for (case_name, [amount_asset_1, amount_asset_2, amount_asset_3], required_signatures) in cases
     {
-        let mut multisig_account = create_multisig_smart_with_fixed_test_configuration(
+        let mut multisig_account = create_multisig_smart_with_fixed_test_configuration_and_oracle(
             3,
             &public_keys,
             auth_scheme,
             vec![],
+            &oracle_fixture,
         )?;
 
-        let mut mock_chain_builder =
-            MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+        let mut mock_chain_builder = MockChainBuilder::with_accounts([
+            multisig_account.clone(),
+            oracle_fixture.account.clone(),
+        ])
+        .unwrap();
 
         let (output_note_asset_1, output_note_asset_2, output_note_asset_3) =
             create_assets_for_output_notes(amount_asset_1, amount_asset_2, amount_asset_3);
@@ -548,6 +712,7 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
 
         let tx_summary = match mock_chain
             .build_tx_context(multisig_account.id(), &[], &[])?
+            .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
             .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
             .tx_script(send_note_transaction_script.clone())
             .auth_args(salt)
@@ -565,6 +730,7 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
 
         let mut signed_context = mock_chain
             .build_tx_context(multisig_account.id(), &[], &[])?
+            .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
             .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
             .auth_args(salt)
             .tx_script(send_note_transaction_script);
@@ -595,6 +761,343 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
     Ok(())
 }
 
+#[test]
+fn test_multisig_smart_oracle_config_is_stored_and_used() -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let multisig_account = create_multisig_smart_account_with_assets_and_oracle(
+        2,
+        &public_keys,
+        AuthScheme::EcdsaK256Keccak,
+        vec![FungibleAsset::new(
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
+            100,
+        )?],
+        [500, 1000, 2000, 1500],
+        [1, 2, 2, 2],
+        vec![],
+        &oracle_fixture,
+    )?;
+
+    assert_eq!(
+        multisig_account.storage().get_item(AuthMultisigSmart::oracle_config_slot())?,
+        Word::from([
+            oracle_fixture.oracle_id[0],
+            oracle_fixture.oracle_id[1],
+            Felt::new(0),
+            Felt::new(0),
+        ])
+    );
+    assert_eq!(
+        multisig_account
+            .storage()
+            .get_item(AuthMultisigSmart::get_price_proc_root_slot())?,
+        oracle_fixture.get_price_proc_root
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_oracle_pricing_uses_foreign_value_instead_of_raw_amount(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::FixedPrice(1_200))?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
+
+    let assets = vec![FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+        100,
+    )?];
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
+        1,
+        &public_keys,
+        auth_scheme,
+        assets,
+        [500, 1000, 2000, 1500],
+        [1, 2, 3, 3],
+        vec![],
+        &oracle_fixture,
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 1)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let salt = Word::from([Felt::new(77); 4]);
+
+    let mock_chain = mock_chain_builder.build()?;
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+    let sig_0 = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+    let sig_1 = authenticators[1]
+        .get_signature(public_keys[1].to_commitment(), &tx_summary)
+        .await?;
+
+    let two_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0.clone())
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1.clone())
+        .build()?
+        .execute()
+        .await;
+    assert!(
+        matches!(two_sig_result, Err(TransactionExecutorError::Unauthorized(_))),
+        "oracle fixed-price response should escalate a raw amount of 1 into tier_2"
+    );
+
+    let sig_2 = authenticators[2]
+        .get_signature(public_keys[2].to_commitment(), &tx_summary)
+        .await?;
+    let three_sig_result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(salt)
+        .add_signature(public_keys[0].to_commitment(), msg, sig_0)
+        .add_signature(public_keys[1].to_commitment(), msg, sig_1)
+        .add_signature(public_keys[2].to_commitment(), msg, sig_2)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(three_sig_result.account_delta())?;
+
+    Ok(())
+}
+
+#[rstest]
+#[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
+#[case::falcon(AuthScheme::Falcon512Poseidon2)]
+#[tokio::test]
+async fn test_multisig_smart_oracle_untracked_assets_do_not_raise_spending_tier(
+    #[case] auth_scheme: AuthScheme,
+) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::Untracked)?;
+    let (_secret_keys, _auth_schemes, public_keys, authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
+
+    let assets = vec![FungibleAsset::new(
+        AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+        5_000,
+    )?];
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
+        1,
+        &public_keys,
+        auth_scheme,
+        assets,
+        [500, 1000, 2000, 1500],
+        [2, 2, 2, 2],
+        vec![],
+        &oracle_fixture,
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 2_500)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let salt = Word::from([Felt::new(78); 4]);
+
+    let mock_chain = mock_chain_builder.build()?;
+    let tx_summary = match mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .tx_script(tx_script.clone())
+        .auth_args(salt)
+        .build()?
+        .execute()
+        .await
+        .unwrap_err()
+    {
+        TransactionExecutorError::Unauthorized(tx_effects) => tx_effects,
+        error => panic!("expected abort with tx effects: {error:?}"),
+    };
+
+    let msg = tx_summary.as_ref().to_commitment();
+    let tx_summary = SigningInputs::TransactionSummary(tx_summary);
+    let sig = authenticators[0]
+        .get_signature(public_keys[0].to_commitment(), &tx_summary)
+        .await?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .add_signature(public_keys[0].to_commitment(), msg, sig)
+        .auth_args(salt)
+        .tx_script(tx_script)
+        .build()?
+        .execute()
+        .await?;
+
+    multisig_account.apply_delta(result.account_delta())?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_oracle_pricing_missing_foreign_account_fails() -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let multisig_account = create_multisig_smart_account_with_assets_and_oracle(
+        2,
+        &public_keys,
+        AuthScheme::EcdsaK256Keccak,
+        vec![FungibleAsset::new(
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+            1_000,
+        )?],
+        [500, 1000, 2000, 1500],
+        [1, 2, 2, 2],
+        vec![],
+        &oracle_fixture,
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let mock_chain = mock_chain_builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(Word::from([Felt::new(79); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        matches!(result, Err(TransactionExecutorError::TransactionProgramExecutionFailed(_))),
+        "oracle-priced spending should fail when the configured foreign oracle account is not provided"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_multisig_smart_oracle_pricing_wrong_proc_root_fails() -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
+    let (_secret_keys, _auth_schemes, public_keys, _authenticators) =
+        setup_keys_and_authenticators_with_scheme(2, 2, AuthScheme::EcdsaK256Keccak)?;
+
+    let multisig_account = create_multisig_smart_account_with_assets_and_optional_oracle(
+        2,
+        &public_keys,
+        AuthScheme::EcdsaK256Keccak,
+        vec![FungibleAsset::new(
+            AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
+            1_000,
+        )?],
+        [500, 1000, 2000, 1500],
+        [1, 2, 2, 2],
+        vec![],
+        Some((
+            oracle_fixture.oracle_id,
+            Word::from([Felt::new(999), Felt::new(998), Felt::new(997), Felt::new(996)]),
+        )),
+    )?;
+
+    let mut mock_chain_builder =
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
+    let output_note = mock_chain_builder.add_p2id_note(
+        multisig_account.id(),
+        ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
+        &[
+            FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?, 700)?
+                .into(),
+        ],
+        NoteType::Public,
+    )?;
+
+    let tx_script = AccountInterface::from_account(&multisig_account)
+        .build_send_notes_script(&[output_note.clone().into()], None)?;
+    let mock_chain = mock_chain_builder.build()?;
+
+    let result = mock_chain
+        .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
+        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .tx_script(tx_script)
+        .auth_args(Word::from([Felt::new(80); 4]))
+        .build()?
+        .execute()
+        .await;
+
+    assert!(
+        matches!(result, Err(TransactionExecutorError::TransactionProgramExecutionFailed(_))),
+        "oracle-priced spending should fail when the configured proc root does not exist"
+    );
+
+    Ok(())
+}
+
 #[rstest]
 #[case::ecdsa(AuthScheme::EcdsaK256Keccak)]
 #[case::falcon(AuthScheme::Falcon512Poseidon2)]
@@ -602,6 +1105,7 @@ async fn test_multisig_smart_spending_tiers_require_expected_signature_counts(
 async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
@@ -609,7 +1113,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
         5_000,
     )?];
-    let mut multisig_account = create_multisig_smart_account_with_assets(
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
         2,
         &public_keys,
         auth_scheme,
@@ -617,10 +1121,12 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         [500, 1000, 2000, 1500],
         [1, 2, 3, 5],
         vec![],
+        &oracle_fixture,
     )?;
 
     let mut mock_chain_builder =
-        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
     let output_note = mock_chain_builder.add_p2id_note(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
@@ -638,6 +1144,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
     let mut mock_chain = mock_chain_builder.build()?;
     let tx_summary = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(tx_script.clone())
         .auth_args(salt)
@@ -668,6 +1175,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
 
     let four_sig_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(tx_script.clone())
         .auth_args(salt)
@@ -688,6 +1196,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
         .await?;
     let five_sig_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
         .tx_script(tx_script)
         .auth_args(salt)
@@ -714,6 +1223,7 @@ async fn test_multisig_smart_high_spending_escalates_above_default_threshold(
 async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_default(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
 
@@ -721,7 +1231,7 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1)?,
         1_000,
     )?];
-    let mut multisig_account = create_multisig_smart_account_with_assets(
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
         4,
         &public_keys,
         auth_scheme,
@@ -729,10 +1239,12 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         [500, 1000, 2000, 1500],
         [2, 3, 4, 5],
         vec![],
+        &oracle_fixture,
     )?;
 
     let mut mock_chain_builder =
-        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap();
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap();
     let output_note = mock_chain_builder.add_p2id_note(
         multisig_account.id(),
         ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE.try_into().unwrap(),
@@ -750,6 +1262,7 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
     let mut mock_chain = mock_chain_builder.build()?;
     let tx_summary = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(tx_script.clone())
         .auth_args(salt)
@@ -770,6 +1283,7 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         .await?;
     let one_sig_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(tx_script.clone())
         .auth_args(salt)
@@ -787,6 +1301,7 @@ async fn test_multisig_smart_low_spending_uses_tier_threshold_instead_of_high_de
         .await?;
     let two_sig_result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
         .tx_script(tx_script)
         .auth_args(salt)
@@ -1100,12 +1615,13 @@ async fn test_multisig_smart_proc_policy_isolated_constraint_is_enforced(
 async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_default(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(2, 2, auth_scheme)?;
 
     let assets =
         vec![FungibleAsset::new(AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?, 10)?];
-    let mut multisig_account = create_multisig_smart_account_with_assets(
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
         2,
         &public_keys,
         auth_scheme,
@@ -1113,6 +1629,7 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
         [500, 1000, 2000, 1500],
         [1, 2, 2, 2],
         vec![],
+        &oracle_fixture,
     )?;
 
     let output_note = P2idNote::create(
@@ -1127,11 +1644,14 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
         .build_send_notes_script(&[output_note.clone().into()], None)?;
 
     let mut mock_chain =
-        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap()
+            .build()?;
     let salt = Word::from([Felt::new(2); 4]);
 
     let tx_summary = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(send_note_transaction_script.clone())
         .auth_args(salt)
@@ -1152,6 +1672,7 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
 
     let result = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig)
         .auth_args(salt)
@@ -1181,13 +1702,21 @@ async fn test_multisig_smart_low_spending_send_note_uses_tier_threshold_over_def
 async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(5, 5, auth_scheme)?;
-    let mut multisig_account =
-        create_multisig_smart_with_fixed_test_configuration(3, &public_keys, auth_scheme, vec![])?;
+    let mut multisig_account = create_multisig_smart_with_fixed_test_configuration_and_oracle(
+        3,
+        &public_keys,
+        auth_scheme,
+        vec![],
+        &oracle_fixture,
+    )?;
 
     let mut mock_chain =
-        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap()
+            .build()?;
 
     let output_note_1 = P2idNote::create(
         multisig_account.id(),
@@ -1206,6 +1735,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_summary_1 = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_1.clone())])
         .tx_script(script_1.clone())
         .auth_args(salt_1)
@@ -1228,6 +1758,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_1 = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_1)])
         .tx_script(script_1)
         .auth_args(salt_1)
@@ -1257,6 +1788,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_summary_2 = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_2.clone())])
         .tx_script(script_2.clone())
         .auth_args(salt_2)
@@ -1279,6 +1811,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_2_with_two_sigs = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_2)])
         .tx_script(script_2)
         .auth_args(salt_2)
@@ -1313,6 +1846,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_summary_3 = match mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_3.clone())])
         .tx_script(script_3.clone())
         .auth_args(salt_3)
@@ -1335,6 +1869,7 @@ async fn test_multisig_smart_spending_window_boundary_resets_spending_tracker(
 
     let tx_3 = mock_chain
         .build_tx_context(multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note_3)])
         .tx_script(script_3)
         .auth_args(salt_3)
@@ -1414,6 +1949,7 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
         &authenticators,
         None,
         None,
+        None,
     )
     .await?
     .expect("proposal setup transaction should succeed");
@@ -1469,6 +2005,7 @@ async fn test_multisig_smart_pending_actions_are_mutually_exclusive(
 async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_delay(
     #[case] auth_scheme: AuthScheme,
 ) -> anyhow::Result<()> {
+    let oracle_fixture = build_test_oracle_fixture(TestOracleMode::OneToOneTracked)?;
     let (_secret_keys, _auth_schemes, public_keys, authenticators) =
         setup_keys_and_authenticators_with_scheme(3, 3, auth_scheme)?;
 
@@ -1476,7 +2013,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET)?,
         5_000,
     )?];
-    let mut multisig_account = create_multisig_smart_account_with_assets(
+    let mut multisig_account = create_multisig_smart_account_with_assets_and_oracle(
         2,
         &public_keys,
         auth_scheme,
@@ -1484,9 +2021,12 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         [500, 1000, 2000, 1500],
         [1, 2, 2, 3],
         vec![],
+        &oracle_fixture,
     )?;
     let mut mock_chain =
-        MockChainBuilder::with_accounts([multisig_account.clone()]).unwrap().build()?;
+        MockChainBuilder::with_accounts([multisig_account.clone(), oracle_fixture.account.clone()])
+            .unwrap()
+            .build()?;
 
     let output_note = P2idNote::create(
         multisig_account.id(),
@@ -1506,6 +2046,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
 
     let execute_summary = match mock_chain
         .build_tx_context_at(proposal_reference_block, multisig_account.id(), &[], &[])?
+        .foreign_accounts(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?)
         .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
         .tx_script(execute_script.clone())
         .auth_args(execute_salt)
@@ -1539,6 +2080,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         &authenticators,
         None,
         None,
+        None,
     )
     .await?
     .expect("proposal transaction should succeed");
@@ -1566,6 +2108,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         &[0, 1],
         &public_keys,
         &authenticators,
+        Some(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?),
     )
     .await?;
     assert_transaction_executor_error!(early_execute_err, ERR_TX_STILL_TIMELOCKED);
@@ -1586,6 +2129,7 @@ async fn test_multisig_smart_proposal_stores_unlock_timestamp_and_enforces_min_d
         &[0, 1],
         &public_keys,
         &authenticators,
+        Some(test_oracle_foreign_account_inputs(&mock_chain, &oracle_fixture)?),
     )
     .await?
     .expect("execute transaction should succeed once unlock timestamp is reached");
@@ -1641,6 +2185,7 @@ async fn test_multisig_smart_stale_proposal_reference_expires_before_inclusion(
         &[0, 1],
         &public_keys,
         &authenticators,
+        None,
         None,
         None,
     )
@@ -1713,6 +2258,7 @@ async fn test_multisig_smart_execute_proposal_without_timelock_requirement(
         &authenticators,
         None,
         None,
+        None,
     )
     .await?
     .expect("proposal transaction should succeed");
@@ -1728,6 +2274,7 @@ async fn test_multisig_smart_execute_proposal_without_timelock_requirement(
         &[0, 1],
         &public_keys,
         &authenticators,
+        None,
         None,
         None,
     )
@@ -1785,6 +2332,7 @@ async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundar
         &authenticators,
         None,
         None,
+        None,
     )
     .await?
     .expect("proposal transaction should succeed");
@@ -1812,6 +2360,7 @@ async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundar
         &authenticators,
         None,
         None,
+        None,
     )
     .await?;
     assert_transaction_executor_error!(insufficient_cancel, ERR_CANCEL_INSUFFICIENT_SIGNATURES);
@@ -1824,6 +2373,7 @@ async fn test_multisig_smart_cancel_requires_min_cancel_signatures_exact_boundar
         &[0, 1, 2],
         &public_keys,
         &authenticators,
+        None,
         None,
         None,
     )
@@ -1899,6 +2449,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
         &initial_authenticators,
         Some(shrink_hash),
         Some(shrink_advice_inputs),
+        None,
     )
     .await?
     .expect("shrink update should succeed");
@@ -1976,6 +2527,7 @@ async fn test_multisig_smart_update_signers_shrinks_and_re_expands_with_scheme_m
         &initial_authenticators,
         Some(expand_hash),
         Some(expand_advice_inputs),
+        None,
     )
     .await?
     .expect("expand update should succeed");
@@ -2347,6 +2899,7 @@ async fn test_multisig_smart_equal_tier_config_is_accepted_by_update_threshold_c
         &[0, 1],
         &public_keys,
         &authenticators,
+        None,
         None,
         None,
     )

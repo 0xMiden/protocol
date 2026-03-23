@@ -1,3 +1,4 @@
+use miden::core::sys
 use miden::protocol::active_account
 use miden::protocol::native_account
 use miden::protocol::tx
@@ -8,7 +9,7 @@ use miden::protocol::tx
 # [oracle_id_prefix, oracle_id_suffix, 0, 0]
 const ORACLE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::oracle_config")
 
-# Procedure root for the oracle price reader (e.g. get_median proc root)
+# Procedure root for the configured oracle price reader.
 # [proc_root]
 const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::get_price_proc_root")
 
@@ -16,9 +17,9 @@ const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::g
 #!
 #! Updates the oracle configuration and the procedure root used for price reads.
 #! - Stores the oracle id (prefix/suffix) in ORACLE_CONFIG_SLOT as [oracle_id_prefix, oracle_id_suffix, 0, 0]
-#! - Stores the oracle "get_price" (e.g. get_median) procedure root in GET_PRICE_PROC_ROOT_SLOT as [proc_root]
+#! - Stores the configured foreign price-read procedure root in GET_PRICE_PROC_ROOT_SLOT as [proc_root]
 #!
-#! Inputs:  [oracle_id_prefix, oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+#! Inputs:  [oracle_id_prefix, oracle_id_suffix, GET_PRICE_PROC_ROOT]
 #! Outputs: []
 #!
 #! Side effects:
@@ -90,8 +91,11 @@ pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
     # => []
 end
 
-#! Inputs: []
-#! Outputs: [oracle_id_prefix, oracle_id_suffix]
+#! Reads the configured oracle account id from storage and reorders it into the
+#! suffix/prefix layout expected by `tx::execute_foreign_procedure`.
+#!
+#! Inputs:  []
+#! Outputs: [oracle_id_suffix, oracle_id_prefix]
 proc get_oracle_id
     push.ORACLE_CONFIG_SLOT[0..2]
     # => [slot_prefix, slot_suffix]
@@ -99,11 +103,25 @@ proc get_oracle_id
     exec.active_account::get_item
     # => [oracle_id_prefix, oracle_id_suffix, 0, 0]
 
-    drop drop
+    movdn.3
+    # => [oracle_id_suffix, 0, 0, oracle_id_prefix]
+
+    movdn.3
+    # => [0, 0, oracle_id_prefix, oracle_id_suffix]
+
+    drop
+    # => [0, oracle_id_prefix, oracle_id_suffix]
+
+    drop
     # => [oracle_id_prefix, oracle_id_suffix]
+
+    swap
+    # => [oracle_id_suffix, oracle_id_prefix]
 end
 
-#! Inputs: []
+#! Reads the configured foreign price-read procedure root from storage.
+#!
+#! Inputs:  []
 #! Outputs: [get_price_proc_root]
 proc get_oracle_price_proc_root
     push.GET_PRICE_PROC_ROOT_SLOT[0..2]
@@ -113,22 +131,14 @@ proc get_oracle_price_proc_root
     # => [get_price_proc_root]
 end
 
-#! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
-#! Outputs: [is_tracked, amount_in_usd]
-#! Temporary oracle stub (for development).
+#! Calls the configured foreign oracle price reader.
+#!
+#! The foreign procedure is expected to expose a get price interface:
+#!   Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
+#!   Outputs: [is_tracked, amount_in_usd]
+#! The FPI kernel returns a full 16-element output, and we truncate it
+#! back to the logical result shape expected by the spending limit code.
 #! 
-#! Behaves as if every fungible faucet is tracked and priced 1:1:
-#! - is_tracked = 1
-#! - amount_in_usd = amount
-#! Drops faucet_id and returns the amount unchanged.
-#! 
-#! This mirrors the future get_price I/O so compute_spending_amount can switch from
-#! get_price_test to get_price without changing its stack plumbing.
-pub proc get_price_test
-    drop drop
-    push.1
-end
-
 #! Inputs:  [faucet_id_suffix, faucet_id_prefix, amount]
 #! Outputs: [is_tracked, amount_in_usd]
 pub proc get_price
@@ -136,8 +146,11 @@ pub proc get_price
     # => [get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
 
     exec.get_oracle_id
-    # => [oracle_id_prefix, oracle_id_suffix, get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
+    # => [oracle_id_suffix, oracle_id_prefix, get_price_proc_root, faucet_id_suffix, faucet_id_prefix, amount]
 
     exec.tx::execute_foreign_procedure
+    # => [is_tracked, amount_in_usd, foreign_pad(14)]
+
+    exec.sys::truncate_stack
     # => [is_tracked, amount_in_usd]
 end
