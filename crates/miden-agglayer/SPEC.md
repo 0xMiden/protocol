@@ -708,7 +708,7 @@ Terminology:
   AggLayer faucet. On EVM chains, each non-native Miden token would be represented by a
   deployed wrapped ERC20 contract.
 
-A faucet must be registered in the bridge before it can participate in bridging. The
+A faucet must be registered in the [Bridge Contract](#21-bridge-account-component) before it can participate in bridging. The
 bridge maintains two registry maps:
 
 - **Faucet registry** (`agglayer::bridge::faucet_registry_map`): maps faucet account IDs
@@ -719,7 +719,7 @@ bridge maintains two registry maps:
   correct faucet for a given origin token (see
   `bridge_config::lookup_faucet_by_token_address`).
 
-Both registries are populated atomically by `bridge_config::register_faucet`.
+Both registries are populated atomically by `bridge_config::register_faucet` during the [`CONFIG_AGG_BRIDGE`](#33-config_agg_bridge) note consumption.
 
 ### 6.1 Bridging-in: Registering non-native faucets on Miden
 
@@ -730,77 +730,41 @@ authority for the wrapped token on Miden.
 The `AggLayerFaucet` struct (Rust, `src/faucet.rs`) captures the faucet-specific
 configuration:
 
-- Token metadata: symbol, decimals, max_supply, token_supply (stored in the standard
-  `TokenMetadata` slot)
+- Token metadata: symbol, decimals, max_supply, token_supply (TODO Missing information about the token name([#2585](https://github.com/0xMiden/protocol/issues/2585)))
 - Origin token address: the ERC20 contract address on the origin chain
-  (`agglayer::faucet::conversion_info_1`, `conversion_info_2`)
-- Origin network: the chain ID of the origin chain (stored in `conversion_info_2`)
-- Scale factor: the exponent used to convert between EVM U256 amounts and Miden felt
-  amounts (stored in `conversion_info_2`)
-- Metadata hash: `keccak256(abi.encode(name, symbol, decimals))`, stored across two
-  value slots (`agglayer::faucet::metadata_hash_lo`,
-  `agglayer::faucet::metadata_hash_hi`)
+- Origin network: the chain ID of the origin chain
+- Scale factor: the exponent used to convert between EVM U256 amounts and Field elements on Miden
+- Metadata hash: `keccak256(abi.encode(name, symbol, decimals))`. This is precomputed by the bridge admin at faucet creation time and is currently not verified onchain (TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586)))
 
-The faucet account also requires two companion components:
-
-- `Ownable2Step`: stores the bridge account ID as the faucet's owner, used for
-  authorization of mint operations.
-- `OwnerControlled`: provides mint policy management (active policy proc root, allowed
-  policy proc roots, policy authority).
-
-Registration is performed via `CONFIG_AGG_BRIDGE` notes (see Section 3.3). The bridge
+Registration is performed via [`CONFIG_AGG_BRIDGE`](#33-config_agg_bridge) notes. The bridge
 operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID and the
 origin token address, then sends it to the bridge account. On consumption, the note
 script calls `bridge_config::register_faucet`, which performs a two-step registration:
 
-1. Asserts the note sender matches the bridge admin stored in
-   `agglayer::bridge::admin_account_id`.
-2. Writes the faucet ID into the `faucet_registry_map`:
-   key `[0, 0, faucet_id_suffix, faucet_id_prefix]`, value `[1, 0, 0, 0]`.
-3. Hashes the origin token address (5 felts) using `Poseidon2::hash_elements` and writes
+1. Writes the faucet ID into the `faucet_registry_map`:
+   `[0, 0, faucet_id_suffix, faucet_id_prefix]` -> `[1, 0, 0, 0]`.
+2. Hashes the origin token address using Poseidon2 and writes
    the mapping into the `token_registry_map`:
-   key `hash(origin_token_addr)`, value `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+   `hash(origin_token_addr)` -> `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
 
-The token registry enables the bridge to resolve which faucet corresponds to a given
-origin token address during CLAIM note processing. When the bridge's `claim` procedure
-processes a CLAIM note, it reads the origin token address from the leaf data and calls
+The token registry enables the bridge to resolve which Miden-side faucet corresponds to a given
+origin token address during CLAIM note processing. When the bridge
+processes a [`CLAIM`](#32-claim) note, it reads the origin token address from the leaf data and calls
 `bridge_config::lookup_faucet_by_token_address` to find the registered faucet. This
 lookup hashes the address with Poseidon2 and retrieves the faucet ID from the token
-registry map. If the token address is not registered, the lookup panics.
+registry map. If the token address is not registered, the `CLAIM` note consumption will fail.
 
-The bridge admin is a trusted role. There is currently no on-chain verification that the
-faucet's stored metadata (origin address, scale, metadata hash) is correct. The bridge
-operator is trusted to deploy faucets with accurate configuration.
+This means that the bridge admin must register the faucet on the Miden side before the corresponding tokens can be bridged in.
 
-Implementation status:
-
-- Implemented: Faucet creation with metadata hash, faucet storage layout, FPI retrieval
-  of metadata hash via `agglayer_faucet::get_metadata_hash`, two-step registration via
-  `CONFIG_AGG_BRIDGE` notes (faucet registry + token registry), faucet registry lookup in
-  `bridge_config::assert_faucet_registered`, token registry lookup in
-  `bridge_config::lookup_faucet_by_token_address`.
-- Not yet implemented: On-chain verification of the metadata hash during registration
-  ([#2586](https://github.com/0xMiden/protocol/issues/2586)).
-  This would require the token name to be available in faucet storage and
-  `abi.encode(string, string, uint8)` to be implemented in MASM, so the bridge could
-  recompute `keccak256(abi.encode(name, symbol, decimals))` and compare it against the
-  stored hash.
-- Not yet implemented: Token name storage in the faucet
-  ([#2585](https://github.com/0xMiden/protocol/issues/2585),
-  related: [PR #2439](https://github.com/0xMiden/protocol/pull/2439)).
-  Currently only the symbol is stored in the standard faucet metadata slot; the full
-  name is not persisted on-chain.
+The bridge admin is a trusted role, and is the sole entity that can register faucets on the Miden side (due to the caller restriction on [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
 
 ### 6.2 Bridging-out: How Miden-native tokens are registered on other chains
 
-When an asset is bridged out from Miden, `bridge_out::bridge_out` constructs a leaf for
+When an asset is bridged out from Miden, [`bridge_out::bridge_out`](#bridge_outbridge_out) constructs a leaf for
 the Local Exit Tree. The leaf includes the metadata hash, which the bridge fetches from
-the faucet via FPI (`agglayer_faucet::get_metadata_hash`). The full leaf structure
-contains: leaf type, origin network, origin token address, destination network,
-destination address, amount (U256), and metadata hash (see `bridge_out.masm`,
-`add_leaf_bridge`).
+the faucet via FPI (`agglayer_faucet::get_metadata_hash`), as well as the other leaf data fields, including origin network and origin token address.
 
-On the EVM side, when a user claims the bridged asset via
+On the EVM destination chain, when a user claims the bridged asset via
 `PolygonZkEVMBridgeV2.claimAsset()`, the wrapped token is deployed lazily on first claim.
 The claimer provides the raw metadata bytes (the ABI-encoded name, symbol, and decimals)
 as a parameter to `claimAsset()`. The EVM bridge verifies that
@@ -810,80 +774,16 @@ decoded name, symbol, and decimals from the metadata bytes.
 
 #### Miden-native faucets
 
-A Miden-native faucet (one that does not wrap a foreign ERC20) uses the same storage
+A Miden-native faucet uses the same storage
 layout and registration flow as a wrapped faucet. The key difference is what values are
 stored in the conversion metadata:
 
-- `origin_token_address`: the faucet's own `AccountId` encoded as a 20-byte Ethereum
-  address via `EthAddressFormat::from_account_id(faucet_id)` (see Section 5.2 for the
-  embedded format). This produces `[0x00000000 | prefix (8B) | suffix (8B)]`.
+- `origin_token_address`: the faucet's own `AccountId` as per the [Embedded Format](#52-embedded-format).
 - `origin_network`: Miden's network ID as assigned by AggLayer (currently unassigned).
 - `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` - same as for wrapped
   faucets.
 
-On the EVM side, `claimAsset()` sees `originNetwork != networkID` (Miden is not the local
-EVM chain), so it follows the wrapped token path: computes
+On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset), so it follows the wrapped token path: computes
 `tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, deploys
-a new `TokenWrapped` ERC20 via `CREATE2` on first claim, and mints on it for subsequent
-claims. The wrapper address is deterministic from the `(originNetwork, originTokenAddress)`
+a new `TokenWrapped` ERC20 via `CREATE2` on first claim, with the metadata hash as the salt, and mints. The wrapper address is deterministic from the `(originNetwork, originTokenAddress)`
 pair.
-
-When bridging back from EVM to Miden, the EVM bridge resolves the wrapped token to its
-original `(originNetwork, originTokenAddress)` via `wrappedTokenToTokenInfo`. These values
-go into the deposit leaf. On the Miden side, `bridge_config::lookup_faucet_by_token_address`
-resolves the origin token address (the embedded faucet AccountId) back to the faucet.
-
-The bridge code does not distinguish between Miden-native and wrapped faucets - both use
-the same registration, bridge-out, and bridge-in paths. The faucet's conversion storage
-determines the leaf contents, and the EVM bridge handles token deployment transparently.
-
-Not yet implemented:
-
-- Miden's network ID has not been assigned by AggLayer.
-- The bridge admin must still approve registration of Miden-native faucets via
-  `CONFIG_AGG_BRIDGE` notes. Whether self-registration should be possible is an open
-  design question.
-
-### 6.3 Metadata hash
-
-The metadata hash serves two purposes in the AggLayer bridge:
-
-1. Leaf verification: the metadata hash is included in each Local Exit Tree leaf. When a
-   claim is verified on the destination chain, the leaf's metadata hash must match the
-   keccak256 of the caller-provided metadata bytes. This binds the token identity to the
-   Merkle proof.
-2. Wrapped token deployment: on EVM chains, the raw metadata bytes (name, symbol,
-   decimals) provided during `claimAsset()` are used to deploy the wrapped ERC20 contract.
-   The hash verification ensures the deployed token has the correct name, symbol, and
-   decimals.
-
-The metadata hash is computed as:
-
-```
-keccak256(abi.encode(string name, string symbol, uint8 decimals))
-```
-
-This matches the encoding produced by the Solidity bridge's `getTokenMetadata` function.
-The `abi.encode` format for `(string, string, uint8)` is:
-
-- 3 x 32-byte head slots: offset to name, offset to symbol, decimals value
-- Name: 32-byte length word + data padded to 32-byte boundary
-- Symbol: 32-byte length word + data padded to 32-byte boundary
-
-In the Rust implementation, `MetadataHash::from_token_info(name, symbol, decimals)`
-(defined in `src/eth_types/metadata_hash.rs`) performs this encoding and hashing. The
-helper `encode_token_metadata` produces the raw ABI-encoded bytes, and
-`MetadataHash::from_abi_encoded` computes the keccak256 digest.
-
-The metadata hash is computed off-chain at faucet creation time and stored pre-computed
-in faucet storage across two value slots (`metadata_hash_lo` and `metadata_hash_hi`,
-each holding 4 u32 felts). During bridge-out, the bridge retrieves the hash via FPI
-(`agglayer_faucet::get_metadata_hash`) rather than recomputing it on-chain.
-
-Correctness argument: if a faucet stores an incorrect metadata hash, the EVM-side
-`claimAsset()` call will fail. The claimer must provide metadata bytes whose keccak256
-matches the leaf's metadata hash. Since keccak256 is preimage-resistant, the claimer
-cannot produce valid metadata bytes for an incorrect hash. This means a misconfigured
-faucet would result in unclaimable assets on the destination chain, providing a strong
-incentive for the bridge operator to set the correct metadata hash at faucet creation
-time.
