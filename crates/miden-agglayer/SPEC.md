@@ -783,7 +783,11 @@ stored in the conversion metadata:
 - `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` - same as for wrapped
   faucets.
 
-On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset), so it follows the wrapped token path: computes
-`tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, deploys
-a new `TokenWrapped` ERC20 via `CREATE2` on first claim, with the metadata hash as the salt, and mints. The wrapper address is deterministic from the `(originNetwork, originTokenAddress)`
-pair.
+On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset), so it
+follows the wrapped token path: computes
+`tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, and
+deploys a new `TokenWrapped` ERC20 via `CREATE2` on first claim, minting on subsequent
+claims. The `CREATE2` salt is `tokenInfoHash`, so the wrapper address is deterministic
+from the `(originNetwork, originTokenAddress)` pair. The metadata bytes provided by the
+claimer (which must hash to the leaf's `metadataHash`) are used to initialize the wrapped
+token's name, symbol, and decimals.
