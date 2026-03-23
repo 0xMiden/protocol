@@ -72,7 +72,7 @@ Bridges an asset out of Miden into the AggLayer:
 1. Validates the asset's faucet is registered in the faucet registry.
 2. FPIs to `agglayer_faucet::asset_to_origin_asset` on the faucet account to obtain the scaled U256 amount, origin token address, and origin network.
 3. Builds a leaf-data structure in memory (leaf type, origin network, origin token address, destination network, destination address, amount, metadata hash).
-4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree (MMR frontier).
+4. Computes the Keccak-256 leaf value and appends it to the Local Exit Tree.
 5. Creates a public `BURN` note targeting the faucet via a `NetworkAccountTarget` attachment.
 
 #### `bridge_config::register_faucet`
@@ -130,7 +130,7 @@ Verifies a bridge-in claim:
 | Slot name | Slot type | Key encoding | Value encoding | Purpose |
 |-----------|-----------|-------------|----------------|---------|
 | `agglayer::bridge::ger_map` | Map | `rpo256::merge(GER_UPPER, GER_LOWER)` | `[1, 0, 0, 0]` if known; `[0, 0, 0, 0]` if absent | Known Global Exit Root set |
-| `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree MMR frontier |
+| `agglayer::bridge::let_frontier` | Map | `[h, 0, 0, 0]` and `[h, 1, 0, 0]` (for h = 0..31) | Per index h: two keys yield one double-word (2 words = 8 felts, a Keccak-256 digest). Absent keys return zeros. | Local Exit Tree |
 | `agglayer::bridge::let_root_lo` | Value | -- | `[root_0, root_1, root_2, root_3]` | LET root low word (Keccak-256 lower 16 bytes) |
 | `agglayer::bridge::let_root_hi` | Value | -- | `[root_4, root_5, root_6, root_7]` | LET root high word (Keccak-256 upper 16 bytes) |
 | `agglayer::bridge::let_num_leaves` | Value | -- | `[count, 0, 0, 0]` | Number of leaves appended to the LET |
