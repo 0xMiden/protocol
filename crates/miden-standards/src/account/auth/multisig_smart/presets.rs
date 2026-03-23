@@ -72,7 +72,7 @@ impl AuthMultisigSmartPresets {
         ]
     }
 
-    pub fn treasury_3_of_5() -> Vec<(Word, ProcedurePolicy)> {
+    pub fn multisig_3_of_5() -> Vec<(Word, ProcedurePolicy)> {
         vec![
             (
                 Self::update_signers_and_threshold(),
@@ -168,7 +168,7 @@ mod tests {
 
         let three_of_five = AuthMultisigSmartConfig::new(three_of_five_approvers, 3)
             .expect("config should be valid")
-            .with_proc_policies(AuthMultisigSmartPresets::treasury_3_of_5())
+            .with_proc_policies(AuthMultisigSmartPresets::multisig_3_of_5())
             .expect("preset policies should validate")
             .with_spending(SpendingPolicyConfig::new(
                 100,

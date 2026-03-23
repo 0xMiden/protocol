@@ -110,9 +110,3 @@ impl OracleId {
         [self.prefix, self.suffix]
     }
 }
-
-impl Default for OracleId {
-    fn default() -> Self {
-        Self::new(Felt::new(0), Felt::new(0))
-    }
-}

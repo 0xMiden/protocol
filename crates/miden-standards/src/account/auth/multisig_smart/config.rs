@@ -1,4 +1,4 @@
-use miden_protocol::Word;
+use miden_protocol::{Felt, Word};
 
 use super::types::{AmountLimits, OracleId, TierThresholds};
 
@@ -8,8 +8,11 @@ use super::types::{AmountLimits, OracleId, TierThresholds};
 /// tier, and the approval threshold required for each tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SpendingPolicyConfig {
+    /// Number of blocks over which spending is accumulated before the tracker resets.
     spending_window: u32,
+    /// Spending breakpoints that map accumulated spend into tiers `0..=3`.
     amount_limits: AmountLimits,
+    /// Signature thresholds required for each spending tier.
     tier_thresholds: TierThresholds,
 }
 
@@ -90,6 +93,6 @@ impl OracleReaderConfig {
 
 impl Default for OracleReaderConfig {
     fn default() -> Self {
-        Self::new(OracleId::default(), Word::empty())
+        Self::new(OracleId::new(Felt::new(0), Felt::new(0)), Word::empty())
     }
 }
