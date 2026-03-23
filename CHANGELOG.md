@@ -110,9 +110,11 @@
 - Fixed overlap in initial and active account storage slot memory region ([#2557](https://github.com/0xMiden/protocol/pull/2557)).
 - Fixed link map entry pointer validation bypass ([#2556](https://github.com/0xMiden/protocol/pull/2556)).
 - Added foreign account ID assertion in `account::load_foreign_account` ([#2560](https://github.com/0xMiden/protocol/pull/2560)).
+- Remove unnecessary `LexicographicWord` wrapper from `StorageMapDelta` and `LinkMap` operations since `Word` now implements the same ordering ([#2662](https://github.com/0xMiden/protocol/pull/2662)).
 - [BREAKING] Renamed `NoteLocation::node_index_in_block` to `NoteLocation::block_note_tree_index` ([#2663](https://github.com/0xMiden/protocol/pull/2663)).
 - [BREAKING] Made fields of `TransactionOutputs` private ([#2663](https://github.com/0xMiden/protocol/pull/2663)).
 - [BREAKING] Renamed `NoteHeader::commitment` to `NoteHeader::to_commitment` ([#2663](https://github.com/0xMiden/protocol/pull/2663)).
+
 
 ### Fixes
 
