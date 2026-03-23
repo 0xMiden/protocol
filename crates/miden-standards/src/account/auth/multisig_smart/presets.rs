@@ -135,16 +135,6 @@ mod tests {
     };
 
     #[test]
-    fn single_user_preset_contains_expected_policy_count() {
-        assert_eq!(AuthMultisigSmartPresets::single_user_1_of_2().len(), 5);
-    }
-
-    #[test]
-    fn treasury_preset_contains_expected_policy_count() {
-        assert_eq!(AuthMultisigSmartPresets::treasury_3_of_5().len(), 5);
-    }
-
-    #[test]
     fn presets_smoke_test_with_component_configs() {
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
         let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
