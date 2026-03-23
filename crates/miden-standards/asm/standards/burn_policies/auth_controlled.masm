@@ -1,0 +1,12 @@
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Dummy burn predicate to allow all burns.
+#!
+#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(16)]
+#! Outputs: [ASSET_KEY, ASSET_VALUE, pad(16)]
+#! Invocation: dynexec
+pub proc allow_all
+    # Dummy predicate, no checks yet.
+    push.0 drop
+end

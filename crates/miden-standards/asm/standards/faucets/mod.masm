@@ -4,6 +4,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
+use miden::standards::burn_policies::policy_manager
 use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
@@ -175,6 +176,9 @@ end
 #!
 #! Invocation: call
 pub proc burn
+    exec.policy_manager::execute_burn_policy
+    # => [pad(16)]
+
     # Get the asset from the note.
     # ---------------------------------------------------------------------------------------------
 

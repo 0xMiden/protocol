@@ -20,8 +20,9 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
+use crate::account::burn_policies::AuthControlled as BurnAuthControlled;
 use crate::account::components::basic_fungible_faucet_library;
-use crate::account::mint_policies::AuthControlled;
+use crate::account::mint_policies::AuthControlled as MintAuthControlled;
 
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";
@@ -277,7 +278,8 @@ impl TryFrom<&Account> for BasicFungibleFaucet {
 /// components (see their docs for details):
 /// - [`BasicFungibleFaucet`]
 /// - [`AuthSingleSigAcl`]
-/// - [`AuthControlled`]
+/// - [`MintAuthControlled`]
+/// - [`BurnAuthControlled`]
 pub fn create_basic_fungible_faucet(
     init_seed: [u8; 32],
     symbol: TokenSymbol,
@@ -321,7 +323,8 @@ pub fn create_basic_fungible_faucet(
         .storage_mode(account_storage_mode)
         .with_auth_component(auth_component)
         .with_component(BasicFungibleFaucet::new(symbol, decimals, max_supply)?)
-        .with_component(AuthControlled::allow_all())
+        .with_component(MintAuthControlled::allow_all())
+        .with_component(BurnAuthControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

@@ -1,0 +1,8 @@
+# The MASM code of the Burn Policy Owner Controlled Account Component.
+#
+# See the `OwnerControlled` Rust type's documentation for more details.
+
+pub use ::miden::standards::burn_policies::auth_controlled::allow_all
+pub use ::miden::standards::burn_policies::owner_controlled::owner_only
+pub use ::miden::standards::burn_policies::policy_manager::set_burn_policy
+pub use ::miden::standards::burn_policies::policy_manager::get_burn_policy

@@ -29,6 +29,7 @@ use miden_protocol::testing::account_id::ACCOUNT_ID_PRIVATE_SENDER;
 use miden_protocol::transaction::{ExecutedTransaction, RawOutputNote};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::burn_policies::OwnerControlled as BurnOwnerControlled;
 use miden_standards::account::faucets::{
     BasicFungibleFaucet,
     NetworkFungibleFaucet,
@@ -37,6 +38,7 @@ use miden_standards::account::faucets::{
 use miden_standards::account::mint_policies::OwnerControlledInitConfig;
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::{
+    ERR_BURN_POLICY_ROOT_NOT_ALLOWED,
     ERR_FAUCET_BURN_AMOUNT_EXCEEDS_TOKEN_SUPPLY,
     ERR_FUNGIBLE_ASSET_DISTRIBUTE_AMOUNT_EXCEEDS_MAX_SUPPLY,
     ERR_MINT_POLICY_ROOT_NOT_ALLOWED,
@@ -150,6 +152,21 @@ async fn execute_faucet_note_script(
         .build()?;
 
     Ok(tx_context.execute().await)
+}
+
+fn create_set_burn_policy_note_script(policy_root: Word) -> String {
+    format!(
+        r#"
+        use miden::standards::burn_policies::policy_manager->policy_manager
+
+        begin
+            repeat.12 push.0 end
+            push.{policy_root}
+            call.policy_manager::set_burn_policy
+            dropw dropw dropw dropw
+        end
+        "#
+    )
 }
 
 // TESTS MINT FUNGIBLE ASSET
@@ -786,6 +803,45 @@ async fn test_network_faucet_set_policy_rejects_non_allowed_root() -> anyhow::Re
     Ok(())
 }
 
+/// Tests that set_burn_policy rejects policy roots outside the allowed policy roots map.
+#[tokio::test]
+async fn test_network_faucet_set_burn_policy_rejects_non_allowed_root() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        1000,
+        owner_account_id,
+        Some(0),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+    let mock_chain = builder.build()?;
+
+    // This root exists in account code, but is not in the burn policy allowlist.
+    let invalid_policy_root = NetworkFungibleFaucet::burn_digest();
+    let set_policy_note_script = create_set_burn_policy_note_script(invalid_policy_root);
+
+    let result = execute_faucet_note_script(
+        &mock_chain,
+        faucet.id(),
+        owner_account_id,
+        &set_policy_note_script,
+        401,
+    )
+    .await?;
+
+    assert_transaction_executor_error!(result, ERR_BURN_POLICY_ROOT_NOT_ALLOWED);
+
+    Ok(())
+}
+
 /// Tests that a non-owner cannot mint assets on network faucet.
 #[tokio::test]
 async fn test_network_faucet_non_owner_cannot_mint() -> anyhow::Result<()> {
@@ -1239,6 +1295,35 @@ fn test_faucet_burn_procedures_are_identical() {
     );
 }
 
+/// Tests that the default network faucet burn policy root is exported by the account code.
+#[test]
+fn test_network_faucet_contains_default_burn_policy_root() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        200,
+        owner_account_id,
+        Some(100),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+
+    let stored_root =
+        faucet.storage().get_item(BurnOwnerControlled::active_policy_proc_root_slot())?;
+
+    assert_eq!(stored_root, BurnOwnerControlled::allow_all_policy_root());
+    assert!(faucet.code().has_procedure(stored_root));
+
+    Ok(())
+}
+
 /// Tests burning on network faucet
 #[tokio::test]
 async fn network_faucet_burn() -> anyhow::Result<()> {
@@ -1300,6 +1385,131 @@ async fn network_faucet_burn() -> anyhow::Result<()> {
         final_token_supply,
         Felt::new(initial_token_supply.as_canonical_u64() - burn_amount)
     );
+
+    Ok(())
+}
+
+/// Tests that a non-owner cannot burn assets once burn policy is switched to owner-only.
+#[tokio::test]
+async fn test_network_faucet_non_owner_cannot_burn_when_owner_only_policy_active()
+-> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let non_owner_account_id = AccountId::dummy(
+        [2; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        200,
+        owner_account_id,
+        Some(100),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerControlled::owner_only_policy_root());
+    let mut rng = RandomCoin::new([Felt::from(500u32); 4].into());
+    let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(set_policy_note_script.as_str())
+        .build()?;
+    let burn_amount = 10u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(501u32); 4].into());
+    let burn_note = BurnNote::create(
+        non_owner_account_id,
+        faucet.id(),
+        fungible_asset.into(),
+        NoteAttachment::default(),
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+        .with_source_manager(source_manager.clone())
+        .build()?;
+    let executed_transaction = tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
+    let result = tx_context.execute().await;
+
+    assert_transaction_executor_error!(result, ERR_SENDER_NOT_OWNER);
+
+    Ok(())
+}
+
+/// Tests that the owner can still burn assets once burn policy is switched to owner-only.
+#[tokio::test]
+async fn test_network_faucet_owner_can_burn_when_owner_only_policy_active() -> anyhow::Result<()> {
+    let mut builder = MockChain::builder();
+
+    let owner_account_id = AccountId::dummy(
+        [1; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Private,
+    );
+
+    let faucet = builder.add_existing_network_faucet(
+        "NET",
+        200,
+        owner_account_id,
+        Some(100),
+        OwnerControlledInitConfig::OwnerOnly,
+    )?;
+    let set_policy_note_script =
+        create_set_burn_policy_note_script(BurnOwnerControlled::owner_only_policy_root());
+    let mut rng = RandomCoin::new([Felt::from(510u32); 4].into());
+    let set_policy_note = NoteBuilder::new(owner_account_id, &mut rng)
+        .note_type(NoteType::Private)
+        .code(set_policy_note_script.as_str())
+        .build()?;
+    let burn_amount = 10u64;
+    let fungible_asset = FungibleAsset::new(faucet.id(), burn_amount).unwrap();
+    let mut rng = RandomCoin::new([Felt::from(511u32); 4].into());
+    let burn_note = BurnNote::create(
+        owner_account_id,
+        faucet.id(),
+        fungible_asset.into(),
+        NoteAttachment::default(),
+        &mut rng,
+    )?;
+    builder.add_output_note(RawOutputNote::Full(set_policy_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(burn_note.clone()));
+    let mut mock_chain = builder.build()?;
+    mock_chain.prove_next_block()?;
+
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let tx_context = mock_chain
+        .build_tx_context(faucet.id(), &[set_policy_note.id()], &[])?
+        .with_source_manager(source_manager.clone())
+        .build()?;
+    let executed_transaction = tx_context.execute().await?;
+    mock_chain.add_pending_executed_transaction(&executed_transaction)?;
+    mock_chain.prove_next_block()?;
+
+    let tx_context = mock_chain.build_tx_context(faucet.id(), &[burn_note.id()], &[])?.build()?;
+    let executed_transaction = tx_context.execute().await?;
+
+    assert_eq!(executed_transaction.output_notes().num_notes(), 0);
+    assert_eq!(executed_transaction.account_delta().nonce_delta(), Felt::new(1));
 
     Ok(())
 }
