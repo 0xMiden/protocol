@@ -6,6 +6,7 @@ use miden::core::sys
 use miden::protocol::active_account
 use miden::core::math::u64
 use miden::protocol::asset
+use miden::standards::notes::p2id
 
 # CONSTANTS
 # =================================================================================================
@@ -20,8 +21,8 @@ const MAX_U32=0x0000000100000000
 # Memory Address Layout:
 # - PSWAP Note Storage: addresses 0x0000 - 0x0011 (loaded from note storage)
 # - Price Calculation: addresses 0x0028 - 0x0036
-# - Asset Keys: addresses 0x0038 - 0x003F (word-aligned)
-# - Full Word (word-aligned): addresses 0x0018+
+# - Asset Keys: addresses 0x0038 - 0x003B, 0x003C - 0x003F (word-aligned)
+# - Full Word (word-aligned): addresses 0x0018 - 0x001F
 
 # PSWAP Note Storage (18 items loaded at address 0)
 # REQUESTED_ASSET_WORD_INPUT is the base address of an 8-cell block:
@@ -59,6 +60,10 @@ const OFFERED_ASSET_WORD = 0x0018
 const P2ID_NOTE_IDX = 0x007C
 const SWAPP_NOTE_IDX = 0x0080
 const NOTE_TYPE = 0x0084
+
+# P2ID recipient storage (creator account ID written here for build_recipient)
+const P2ID_RECIPIENT_STORAGE = 0x0FA0
+const P2ID_RECIPIENT_STORAGE_1 = 0x0FA1
 
 # ERRORS
 # =================================================================================================
@@ -227,14 +232,14 @@ end
 #! Outputs: [P2ID_RECIPIENT]
 #!
 proc build_p2id_recipient_hash
-    # Store creator [suffix, prefix] at word-aligned temp address 4000
-    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_store.4000
-    mem_load.SWAPP_CREATOR_PREFIX_INPUT mem_store.4001
+    # Store creator [suffix, prefix] for P2ID recipient hashing
+    mem_load.SWAPP_CREATOR_SUFFIX_INPUT mem_store.P2ID_RECIPIENT_STORAGE
+    mem_load.SWAPP_CREATOR_PREFIX_INPUT mem_store.P2ID_RECIPIENT_STORAGE_1
     # => [SERIAL_NUM, SCRIPT_ROOT]
 
     # note::build_recipient: [storage_ptr, num_storage_items, SERIAL_NUM, SCRIPT_ROOT] => [RECIPIENT]
-    push.2.4000
-    # => [storage_ptr=4000, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT]
+    push.2.P2ID_RECIPIENT_STORAGE
+    # => [storage_ptr, num_storage_items=2, SERIAL_NUM, SCRIPT_ROOT]
 
     exec.note::build_recipient
     # => [P2ID_RECIPIENT]
@@ -253,34 +258,33 @@ end
 #! Outputs: []
 #!
 proc create_p2id_note
-    # 1. Load P2ID script root (miden-standards v0.14.0-beta.2, P2idNote::script_root())
-    push.3672480923625915098.9159872301314598941.4201800931930002347.17479343943140556328
+    # Get P2ID script root at compile time via procref
+    procref.p2id::main
     # => [P2ID_SCRIPT_ROOT]
 
-    # 2. Increment swap count (ensures unique serial per P2ID note in chained fills)
+    # Increment swap count (ensures unique serial per P2ID note in chained fills)
     mem_load.SWAPP_COUNT_INPUT add.1 mem_store.SWAPP_COUNT_INPUT
     # => [P2ID_SCRIPT_ROOT]
 
-    # 3. Load swap count word from memory
-    # mem_loadw_le: Word[0]=mem[addr] on top
+    # Load swap count word from memory
     padw mem_loadw_le.SWAPP_COUNT_INPUT
     # => [SWAP_COUNT_WORD, P2ID_SCRIPT_ROOT]
 
-    # 4. Get serial number from active note
+    # Get serial number from active note
     exec.active_note::get_serial_number
     # => [SERIAL_NUM, SWAP_COUNT_WORD, P2ID_SCRIPT_ROOT]
 
-    # 5. Derive P2ID serial: hmerge(SWAP_COUNT_WORD, SERIAL_NUM)
+    # Derive P2ID serial: hmerge(SWAP_COUNT_WORD, SERIAL_NUM)
     swapw
     # => [SWAP_COUNT_WORD, SERIAL_NUM, P2ID_SCRIPT_ROOT]
     hmerge
     # => [P2ID_SERIAL_NUM, P2ID_SCRIPT_ROOT]
 
-    # 6. Build P2ID recipient
+    # Build P2ID recipient
     exec.build_p2id_recipient_hash
     # => [P2ID_RECIPIENT]
 
-    # 7. Create output note (note_type inherited from active note metadata)
+    # Create output note (note_type inherited from active note metadata)
     mem_load.NOTE_TYPE
     # => [note_type, P2ID_RECIPIENT]
 
@@ -293,7 +297,7 @@ proc create_p2id_note
     mem_store.P2ID_NOTE_IDX
     # => []
 
-    # 8. Set attachment: aux = input_amount + inflight_amount (total fill)
+    # Set attachment: aux = input_amount + inflight_amount (total fill)
     mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add
     push.0.0.0
     # => [0, 0, 0, aux]
@@ -304,7 +308,7 @@ proc create_p2id_note
     exec.output_note::set_word_attachment
     # => []
 
-    # 9. Move input_amount from consumer's vault to P2ID note (if > 0)
+    # Move input_amount from consumer's vault to P2ID note (if > 0)
     mem_load.AMT_REQUESTED_IN dup push.0 neq
     if.true
         drop
@@ -333,7 +337,7 @@ proc create_p2id_note
         drop
     end
 
-    # 10. Add inflight_amount directly to P2ID note (no vault debit, if > 0)
+    # Add inflight_amount directly to P2ID note (no vault debit, if > 0)
     mem_load.AMT_REQUESTED_INFLIGHT dup push.0 neq
     if.true
         drop
@@ -494,7 +498,6 @@ end
 #   Word[2..3] = unused (0)
 #
 
-# => []
 proc execute_pswap
     # Load note assets to OFFERED_ASSET_WORD
     push.OFFERED_ASSET_WORD exec.active_note::get_assets
@@ -539,6 +542,12 @@ proc execute_pswap
     # => [ASSET_VALUE]
     dropw
     # => []
+
+    # If both input and inflight are 0, default to full fill (input = requested)
+    mem_load.AMT_REQUESTED_IN mem_load.AMT_REQUESTED_INFLIGHT add push.0 eq
+    if.true
+        mem_load.AMT_REQUESTED mem_store.AMT_REQUESTED_IN
+    end
 
     # Calculate offered_out for input_amount
     mem_load.AMT_REQUESTED_IN
