@@ -689,3 +689,105 @@ the little-endian bytes within each limb in `NoteStorage` and the big-endian-byt
 The encoding is a bijection over the set of valid `AccountId` values: for every valid
 `AccountId`, `from_account_id` followed by `to_account_id` (or the MASM equivalent)
 recovers the original.
+
+---
+
+## 6. Faucet Registry
+
+The AggLayer bridge connects multiple chains, each with its own native token ecosystem.
+When tokens move between chains, they need a representation on the destination chain.
+This section describes how tokens are registered for bridging and the role of the
+faucet and token registries.
+
+Terminology:
+
+- Native token: a token originally issued on a given chain. For example, USDC on Ethereum
+  is native to Ethereum; a fungible faucet created directly on Miden is native to Miden.
+- Non-native (wrapped) token: a representation of a foreign token, created to track
+  bridged balances. On Miden, each non-native ERC20 is represented by a dedicated
+  AggLayer faucet. On EVM chains, each non-native Miden token would be represented by a
+  deployed wrapped ERC20 contract.
+
+A faucet must be registered in the [Bridge Contract](#21-bridge-account-component) before it can participate in bridging. The
+bridge maintains two registry maps:
+
+- **Faucet registry** (`agglayer::bridge::faucet_registry_map`): maps faucet account IDs
+  to a registration flag. Used during bridge-out to verify an asset's faucet is authorized
+  (see `bridge_config::assert_faucet_registered`).
+- **Token registry** (`agglayer::bridge::token_registry_map`): maps Poseidon2 hashes of
+  native token addresses to faucet account IDs. Used during bridge-in to look up the
+  correct faucet for a given origin token (see
+  `bridge_config::lookup_faucet_by_token_address`).
+
+Both registries are populated atomically by `bridge_config::register_faucet` during the [`CONFIG_AGG_BRIDGE`](#33-config_agg_bridge) note consumption.
+
+### 6.1 Bridging-in: Registering non-native faucets on Miden
+
+When a new ERC20 token is bridged to Miden for the first time, a corresponding AggLayer
+faucet account must be created and registered. The faucet serves as the mint/burn
+authority for the wrapped token on Miden.
+
+The `AggLayerFaucet` struct (Rust, `src/faucet.rs`) captures the faucet-specific
+configuration:
+
+- Token metadata: symbol, decimals, max_supply, token_supply (TODO Missing information about the token name ([#2585](https://github.com/0xMiden/protocol/issues/2585)))
+- Origin token address: the ERC20 contract address on the origin chain
+- Origin network: the chain ID of the origin chain
+- Scale factor: the exponent used to convert between EVM U256 amounts and Field elements on Miden
+- Metadata hash: `keccak256(abi.encode(name, symbol, decimals))`. This is precomputed by the bridge admin at faucet creation time and is currently not verified onchain (TODO Verify metadata hash onchain ([#2586](https://github.com/0xMiden/protocol/issues/2586)))
+
+Registration is performed via [`CONFIG_AGG_BRIDGE`](#33-config_agg_bridge) notes. The bridge
+operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID and the
+origin token address, then sends it to the bridge account. On consumption, the note
+script calls `bridge_config::register_faucet`, which performs a two-step registration:
+
+1. Writes a registration flag under the faucet ID key in the `faucet_registry_map`:
+   `[0, 0, faucet_id_suffix, faucet_id_prefix]` -> `[1, 0, 0, 0]`.
+2. Hashes the origin token address using Poseidon2 and writes
+   the mapping into the `token_registry_map`:
+   `hash(origin_token_addr)` -> `[0, 0, faucet_id_suffix, faucet_id_prefix]`.
+
+The token registry enables the bridge to resolve which Miden-side faucet corresponds to a given
+origin token address during CLAIM note processing. When the bridge
+processes a [`CLAIM`](#32-claim) note, it reads the origin token address from the leaf data and calls
+`bridge_config::lookup_faucet_by_token_address` to find the registered faucet. This
+lookup hashes the address with Poseidon2 and retrieves the faucet ID from the token
+registry map. If the token address is not registered, the `CLAIM` note consumption will fail.
+
+This means that the bridge admin must register the faucet on the Miden side before the corresponding tokens can be bridged in.
+
+The bridge admin is a trusted role, and is the sole entity that can register faucets on the Miden side (due to the caller restriction on [`bridge_config::register_faucet`](#bridge_configregister_faucet)).
+
+### 6.2 Bridging-out: How Miden-native tokens are registered on other chains
+
+When an asset is bridged out from Miden, [`bridge_out::bridge_out`](#bridge_outbridge_out) constructs a leaf for
+the Local Exit Tree. The leaf includes the metadata hash, which the bridge fetches from
+the faucet via FPI (`agglayer_faucet::get_metadata_hash`), as well as the other leaf data fields, including origin network and origin token address.
+
+On the EVM destination chain, when a user claims the bridged asset via
+`PolygonZkEVMBridgeV2.claimAsset()`, the wrapped token is deployed lazily on first claim.
+The claimer provides the raw metadata bytes (the ABI-encoded name, symbol, and decimals)
+as a parameter to `claimAsset()`. The EVM bridge verifies that
+`keccak256(metadata_bytes) == metadataHash` from the Merkle leaf. If the hash matches and
+no wrapped token exists yet, the bridge deploys a new `TokenWrapped` ERC20 using the
+decoded name, symbol, and decimals from the metadata bytes.
+
+#### Miden-native faucets
+
+A Miden-native faucet uses the same storage
+layout and registration flow as a wrapped faucet. The key difference is what values are
+stored in the conversion metadata:
+
+- `origin_token_address`: the faucet's own `AccountId` as per the [Embedded Format](#52-embedded-format).
+- `origin_network`: Miden's network ID as assigned by AggLayer (currently unassigned).
+- `metadata_hash`: `keccak256(abi.encode(name, symbol, decimals))` - same as for wrapped
+  faucets.
+
+On the EVM side, `claimAsset()` sees `originNetwork != networkID` (foreign asset), so it
+follows the wrapped token path: computes
+`tokenInfoHash = keccak256(abi.encodePacked(originNetwork, originTokenAddress))`, and
+deploys a new `TokenWrapped` ERC20 via `CREATE2` on first claim, minting on subsequent
+claims. The `CREATE2` salt is `tokenInfoHash`, so the wrapper address is deterministic
+from the `(originNetwork, originTokenAddress)` pair. The metadata bytes provided by the
+claimer (which must hash to the leaf's `metadataHash`) are used to initialize the wrapped
+token's name, symbol, and decimals.
