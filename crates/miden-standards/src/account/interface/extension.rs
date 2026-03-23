@@ -10,20 +10,12 @@ use miden_protocol::note::{Note, NoteScript};
 
 use crate::AuthMethod;
 use crate::account::components::{
-    StandardAccountComponent,
-    basic_fungible_faucet_library,
-    basic_wallet_library,
-    multisig_library,
-    multisig_psm_library,
-    network_fungible_faucet_library,
-    no_auth_library,
-    singlesig_acl_library,
-    singlesig_library,
+    StandardAccountComponent, basic_fungible_faucet_library, basic_wallet_library,
+    multisig_guardian_library, multisig_library, network_fungible_faucet_library, no_auth_library,
+    singlesig_acl_library, singlesig_library,
 };
 use crate::account::interface::{
-    AccountComponentInterface,
-    AccountInterface,
-    NoteAccountCompatibility,
+    AccountComponentInterface, AccountInterface, NoteAccountCompatibility,
 };
 use crate::note::StandardNote;
 
@@ -113,9 +105,9 @@ impl AccountInterfaceExt for AccountInterface {
                     component_proc_digests
                         .extend(multisig_library().mast_forest().procedure_digests());
                 },
-                AccountComponentInterface::AuthMultisigPsm => {
+                AccountComponentInterface::AuthMultisigGuardian => {
                     component_proc_digests
-                        .extend(multisig_psm_library().mast_forest().procedure_digests());
+                        .extend(multisig_guardian_library().mast_forest().procedure_digests());
                 },
                 AccountComponentInterface::AuthNoAuth => {
                     component_proc_digests

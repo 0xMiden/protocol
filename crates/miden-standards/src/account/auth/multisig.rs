@@ -4,19 +4,10 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata,
-    FeltSchema,
-    SchemaType,
-    StorageSchema,
-    StorageSlotSchema,
+    AccountComponentMetadata, FeltSchema, SchemaType, StorageSchema, StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent,
-    AccountType,
-    StorageMap,
-    StorageMapKey,
-    StorageSlot,
-    StorageSlotName,
+    AccountComponent, AccountType, StorageMap, StorageMapKey, StorageSlot, StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
@@ -130,9 +121,9 @@ impl AuthMultisigConfig {
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides. Non-uniform thresholds (especially a threshold of one)
-/// should be used with caution for private multisig accounts, without Private State Manager (PSM),
-/// a single approver may advance state and withhold updates from other approvers, effectively
-/// locking them out.
+/// should be used with caution for private multisig accounts; without a guardian, a single
+/// approver may advance state and withhold updates from other approvers, effectively locking
+/// them out.
 ///
 /// This component supports all account types.
 #[derive(Debug)]
