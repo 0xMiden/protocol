@@ -181,19 +181,19 @@ impl ProcedurePolicy {
 
         self.assert_valid_shape()?;
 
-        if let Some(immediate_threshold) = thresholds.immediate_threshold {
-            if immediate_threshold > num_approvers {
-                return Err(AccountError::other(
-                    "procedure policy immediate threshold cannot exceed number of approvers",
-                ));
-            }
+        if let Some(immediate_threshold) = thresholds.immediate_threshold
+            && immediate_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy immediate threshold cannot exceed number of approvers",
+            ));
         }
-        if let Some(delay_threshold) = thresholds.delay_threshold {
-            if delay_threshold > num_approvers {
-                return Err(AccountError::other(
-                    "procedure policy delay threshold cannot exceed number of approvers",
-                ));
-            }
+        if let Some(delay_threshold) = thresholds.delay_threshold
+            && delay_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy delay threshold cannot exceed number of approvers",
+            ));
         }
 
         Ok(())
