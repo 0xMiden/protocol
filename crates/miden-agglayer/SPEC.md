@@ -579,7 +579,7 @@ to mint and distribute assets to the recipient.
 
 **Consumption:**
 
-The standard MINT script loads the 18 storage items from the note and calls the faucet's
+The standard MINT script for public note creation loads the 18 storage items from the MINT note note storage and calls the faucet's
 `mint_and_send` procedure (re-exported from `network_fungible::mint_and_send`).
 
 Before minting, `mint_and_send` executes the active mint policy via
