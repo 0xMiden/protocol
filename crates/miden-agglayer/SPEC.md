@@ -741,7 +741,7 @@ operator creates a `CONFIG_AGG_BRIDGE` note containing the faucet's account ID a
 origin token address, then sends it to the bridge account. On consumption, the note
 script calls `bridge_config::register_faucet`, which performs a two-step registration:
 
-1. Writes the faucet ID into the `faucet_registry_map`:
+1. Writes a registration flag under the faucet ID key in the `faucet_registry_map`:
    `[0, 0, faucet_id_suffix, faucet_id_prefix]` -> `[1, 0, 0, 0]`.
 2. Hashes the origin token address using Poseidon2 and writes
    the mapping into the `token_registry_map`:
