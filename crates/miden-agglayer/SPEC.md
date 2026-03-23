@@ -12,12 +12,6 @@ implementation are called out inline with `TODO (Future)` markers.
 
 - *Word* = 4 field elements (felts), each < p (Goldilocks prime 2^64 - 2^32 + 1).
 - *Felt* = a single Goldilocks field element.
-- Word values in this spec use **element-index notation** matching Rust's
-  `Word::new([e0, e1, e2, e3])`. MASM stack operations preserve this order:
-  `get_item` pushes `[e0, e1, e2, e3]` onto the stack with `e0` on top.
-- Procedure input/output signatures use **stack notation** (top-first), matching the
-  MASM doc comments.
-- `TODO (Future)` marks non-implemented design points.
 
 ---
 
