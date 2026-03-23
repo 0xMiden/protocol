@@ -1,7 +1,7 @@
 use miden_protocol::account::Account;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, AssetVault, FungibleAsset};
-use miden_protocol::crypto::rand::RpoRandomCoin;
+use miden_protocol::crypto::rand::RandomCoin;
 use miden_protocol::note::{NoteAttachment, NoteTag, NoteType};
 use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PRIVATE_FUNGIBLE_FAUCET,
@@ -10,7 +10,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::errors::standards::ERR_P2ID_TARGET_ACCT_MISMATCH;
@@ -228,7 +228,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         vec![asset_1],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])),
+        &mut RandomCoin::new(Word::from([1, 2, 3, 4u32])),
     )?;
 
     let output_note_2 = P2idNote::create(
@@ -237,7 +237,7 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
         vec![asset_2],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(Word::from([4, 3, 2, 1u32])),
+        &mut RandomCoin::new(Word::from([4, 3, 2, 1u32])),
     )?;
 
     let tx_script_src = &format!(
@@ -282,8 +282,8 @@ async fn test_create_consume_multiple_notes() -> anyhow::Result<()> {
     let tx_context = mock_chain
         .build_tx_context(account.id(), &[input_note_1.id(), input_note_2.id()], &[])?
         .extend_expected_output_notes(vec![
-            OutputNote::Full(output_note_1),
-            OutputNote::Full(output_note_2),
+            RawOutputNote::Full(output_note_1),
+            RawOutputNote::Full(output_note_2),
         ])
         .tx_script(tx_script)
         .build()?;
@@ -371,12 +371,12 @@ async fn test_p2id_new_constructor() -> anyhow::Result<()> {
         vec![FungibleAsset::mock(50)],
         NoteType::Public,
         NoteAttachment::default(),
-        &mut RpoRandomCoin::new(serial_num),
+        &mut RandomCoin::new(serial_num),
     )?;
 
     let tx_context = mock_chain
         .build_tx_context(sender_account.id(), &[], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(expected_output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(expected_output_note)])
         .tx_script(tx_script)
         .build()?;
 

@@ -11,7 +11,8 @@ pub use account_procedures::AccountProcedureIndexMap;
 
 pub(crate) mod note_builder;
 use miden_protocol::CoreLibrary;
-use miden_protocol::vm::EventId;
+use miden_protocol::transaction::TransactionEventId;
+use miden_protocol::vm::{EventId, EventName};
 use note_builder::OutputNoteBuilder;
 
 mod kernel_process;
@@ -51,8 +52,8 @@ use miden_protocol::note::{NoteAttachment, NoteId, NoteMetadata, NoteRecipient};
 use miden_protocol::transaction::{
     InputNote,
     InputNotes,
-    OutputNote,
-    OutputNotes,
+    RawOutputNote,
+    RawOutputNotes,
     TransactionMeasurements,
     TransactionSummary,
 };
@@ -188,12 +189,12 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
 
     /// Clones the inner [`OutputNoteBuilder`]s and returns the vector of created output notes that
     /// are tracked by this host.
-    pub fn build_output_notes(&self) -> Vec<OutputNote> {
+    pub fn build_output_notes(&self) -> Vec<RawOutputNote> {
         self.output_notes.values().cloned().map(|builder| builder.build()).collect()
     }
 
     /// Consumes `self` and returns the account delta, input and output notes.
-    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<OutputNote>) {
+    pub fn into_parts(self) -> (AccountDelta, InputNotes<InputNote>, Vec<RawOutputNote>) {
         let output_notes = self.output_notes.into_values().map(|builder| builder.build()).collect();
 
         (self.account_delta.into_delta(), self.input_notes, output_notes)
@@ -273,6 +274,20 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Resolves an [`EventId`] to its corresponding [`EventName`], if known.
+    ///
+    /// First checks if the event is a core library event, then checks if it is a transaction
+    /// kernel event.
+    pub fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        if let Some(name) = self.core_lib_handlers.resolve_event(event_id) {
+            return Some(name);
+        }
+
+        TransactionEventId::try_from(event_id)
+            .ok()
+            .map(|event_id| event_id.event_name())
     }
 
     /// Converts the provided signature into an advice mutation that pushes it onto the advice stack
@@ -409,7 +424,7 @@ impl<'store, STORE> TransactionBaseHost<'store, STORE> {
         let account_delta = self.build_account_delta();
         let input_notes = self.input_notes();
         let output_notes_vec = self.build_output_notes();
-        let output_notes = OutputNotes::new(output_notes_vec).map_err(|err| {
+        let output_notes = RawOutputNotes::new(output_notes_vec).map_err(|err| {
             TransactionKernelError::TransactionSummaryConstructionFailed(Box::new(err))
         })?;
 

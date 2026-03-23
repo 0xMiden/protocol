@@ -1,6 +1,9 @@
 use $kernel::account_delta
 use $kernel::account_id
 use $kernel::asset_vault
+use $kernel::callbacks
+use $kernel::callbacks::ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT
+use $kernel::callbacks::ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT
 use $kernel::constants::ACCOUNT_PROCEDURE_DATA_LENGTH
 use $kernel::constants::EMPTY_SMT_ROOT
 use $kernel::constants::STORAGE_SLOT_TYPE_MAP
@@ -60,6 +63,8 @@ const ERR_ACCOUNT_ID_UNKNOWN_VERSION="unknown version in account ID"
 const ERR_ACCOUNT_ID_UNKNOWN_STORAGE_MODE="unknown account storage mode in account ID"
 
 const ERR_ACCOUNT_READING_MAP_VALUE_FROM_NON_MAP_SLOT="failed to read an account map item from a non-map storage slot"
+
+const ERR_FOREIGN_ACCOUNT_ID_MISMATCH="foreign account ID provided with advice map doesn't match the ID provided by the operand stack"
 
 # CONSTANTS
 # =================================================================================================
@@ -425,12 +430,49 @@ pub proc get_item
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr]
 
     # get the item from storage
     exec.get_item_raw
     # => [VALUE]
+end
+
+#! Finds an item in the active account's storage by slot ID, returning whether the slot was found
+#! along with its value.
+#!
+#! Unlike `get_item`, this procedure does not panic if the slot does not exist. Instead, it
+#! returns `is_found = 0` and the empty word.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [is_found, VALUE]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - is_found is 1 if the slot was found, 0 otherwise.
+#! - VALUE is the value of the item, or the empty word if the slot was not found.
+pub proc find_item
+    # get account storage slots section offset
+    exec.memory::get_account_active_storage_slots_section_ptr
+    # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
+
+    exec.find_storage_slot
+    # => [is_found, slot_ptr]
+
+    if.true
+        # slot was found, read its value
+        exec.get_item_raw
+        # => [VALUE]
+
+        push.1
+        # => [is_found = 1, VALUE]
+    else
+        # slot was not found, drop slot_ptr and return empty word
+        drop padw push.0
+        # => [is_found = 0, EMPTY_WORD]
+    end
+    # => [is_found, VALUE]
 end
 
 #! Gets an item and its slot type from the account storage.
@@ -451,7 +493,7 @@ pub proc get_typed_item
     exec.memory::get_account_active_storage_slots_section_ptr
     # => [acct_storage_slots_section_offset, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr]
 
     dup add.ACCOUNT_SLOT_TYPE_OFFSET mem_load
@@ -479,7 +521,7 @@ pub proc get_initial_item
     exec.memory::get_account_initial_storage_slots_ptr
     # => [account_initial_storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr]
 
     # get the item from initial storage
@@ -508,7 +550,7 @@ pub proc set_item
     exec.memory::get_native_account_active_storage_slots_ptr
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, VALUE]
 
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr, VALUE]
 
     # load the slot type
@@ -603,7 +645,7 @@ pub proc set_map_item
     # => [storage_slots_ptr, slot_id_suffix, slot_id_prefix, KEY, NEW_VALUE]
 
     # resolve the slot name to its pointer
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr, KEY, NEW_VALUE]
 
     # load the slot type
@@ -666,41 +708,49 @@ end
 #!   added.
 #! - the vault already contains the same non-fungible asset.
 pub proc add_asset_to_vault
+    swapw dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY]
+
+    exec.callbacks::on_before_asset_added_to_account
+    swapw
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE]
+
     # duplicate the asset for the later event and delta update
     dupw.1 dupw.1
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # push the account vault root ptr
     exec.memory::get_account_vault_root_ptr movdn.8
-    # => [ASSET_KEY, ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # emit event to signal that an asset is going to be added to the account vault
     emit.ACCOUNT_VAULT_BEFORE_ADD_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, ASSET_VALUE]
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, account_vault_root_ptr, ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     # add the asset to the account vault
     exec.asset_vault::add_asset
-    # => [ASSET_VALUE', ASSET_KEY, ASSET_VALUE]
+    # => [PROCESSED_ASSET_VALUE', ASSET_KEY, PROCESSED_ASSET_VALUE]
 
     movdnw.2
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
 
     # emit event to signal that an asset is being added to the account vault
     emit.ACCOUNT_VAULT_AFTER_ADD_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE']
+    # => [ASSET_KEY, PROCESSED_ASSET_VALUE, PROCESSED_ASSET_VALUE']
 
     exec.account_delta::add_asset
-    # => [ASSET_VALUE']
+    # => [PROCESSED_ASSET_VALUE']
 end
 
-#! Removes the specified asset from the account vault.
+#! Removes the specified asset from the account vault and returns the remaining asset value.
 #!
 #! Inputs:  [ASSET_KEY, ASSET_VALUE]
-#! Outputs: [ASSET_VALUE]
+#! Outputs: [REMAINING_ASSET_VALUE]
 #!
 #! Where:
 #! - ASSET_KEY is the asset vault key of the asset to remove from the vault.
 #! - ASSET_VALUE is the value of the asset to remove from the vault.
+#! - REMAINING_ASSET_VALUE is the value of the asset remaining in the vault after removal.
 #!
 #! Panics if:
 #! - the fungible asset is not found in the vault.
@@ -721,17 +771,17 @@ pub proc remove_asset_from_vault
 
     # remove the asset from the account vault
     exec.asset_vault::remove_asset
-    # => [ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE, ASSET_KEY, ASSET_VALUE]
 
-    swapw
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE]
+    movdnw.2
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
 
     # emit event to signal that an asset is being removed from the account vault
     emit.ACCOUNT_VAULT_AFTER_REMOVE_ASSET_EVENT
-    # => [ASSET_KEY, ASSET_VALUE, ASSET_VALUE]
+    # => [ASSET_KEY, ASSET_VALUE, REMAINING_ASSET_VALUE]
 
     exec.account_delta::remove_asset
-    # => [ASSET_VALUE]
+    # => [REMAINING_ASSET_VALUE]
 end
 
 #! Returns the ASSET_VALUE associated with the provided asset vault key in the active account's vault.
@@ -1033,24 +1083,38 @@ end
 #! - the computed account code commitment does not match the provided account code commitment.
 #! - the number of account storage slots exceeded the maximum limit of 255.
 #! - the computed account storage commitment does not match the provided account storage commitment.
+#! - the foreign account ID obtained from the advice map doesn't match the ID provided to the
+#!   procedure.
 pub proc load_foreign_account
     emit.ACCOUNT_BEFORE_FOREIGN_LOAD_EVENT
     # => [account_id_suffix, account_id_prefix]
 
     # construct the advice map key from the account ID to load the core account data
-    exec.create_id_key
-    # OS => [ACCOUNT_ID_KEY]
+    dup.1 dup.1 exec.create_id_key
+    # OS => [ACCOUNT_ID_KEY, account_id_suffix, account_id_prefix]
 
     # move the core account data to the advice stack
     adv.push_mapval
-    # OS => [ACCOUNT_ID_KEY]
+    # OS => [ACCOUNT_ID_KEY, account_id_suffix, account_id_prefix]
     # AS => [ACCOUNT_ID_AND_NONCE, VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
-    # store the id and nonce of the foreign account to memory
+    # load the id and nonce of the foreign account from the advice stack overwriting the ID key
     adv_loadw
+    # OS => [account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix, account_id_suffix, account_id_prefix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    movup.5 movup.5
+    # OS => [account_id_suffix, account_id_prefix, account_nonce, 0, adv_account_id_suffix, adv_account_id_prefix]
+    # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
+
+    # check that the account ID provided by the advice map matches the one provided by the operand
+    # stack
+    dup.5 dup.5
+    exec.account_id::is_equal assert.err=ERR_FOREIGN_ACCOUNT_ID_MISMATCH
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
 
+    # store the id and nonce of the foreign account to memory
     exec.memory::set_account_id_and_nonce
     # OS => [account_nonce, 0, account_id_suffix, account_id_prefix]
     # AS => [VAULT_ROOT, STORAGE_COMMITMENT, CODE_COMMITMENT]
@@ -1581,7 +1645,7 @@ end
 #! - a slot with the provided slot ID does not exist in account storage.
 #! - the requested storage slot type is not map.
 proc get_map_item_raw
-    exec.find_storage_slot
+    exec.get_storage_slot_ptr
     # => [slot_ptr, KEY]
 
     emit.ACCOUNT_STORAGE_BEFORE_GET_MAP_ITEM_EVENT
@@ -1613,8 +1677,36 @@ proc get_map_item_raw
     # => [VALUE]
 end
 
-#! Finds the slot identified by the key [slot_id_prefix, slot_id_suffix, 0, 0] (stack order) and
-#! returns the pointer to that slot.
+#! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns a flag
+#! indicating whether the slot was found and the pointer to that slot.
+#!
+#! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
+#! Outputs: [is_found, slot_ptr]
+#!
+#! Where:
+#! - storage_slots_ptr is the pointer to the storage slots section.
+#! - is_found is 1 if the slot was found, 0 otherwise.
+#! - slot_ptr is the pointer to the resolved storage slot.
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+proc find_storage_slot
+    # construct the start and end pointers of the storage slot section in which we will search
+    dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
+    # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
+
+    swap movup.3 movup.3
+    # => [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
+
+    # if the slot key does not exist, this procedure will validate its absence
+    exec.sorted_array::find_half_key_value
+    # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
+
+    movup.2 drop movup.2 drop
+    # => [is_slot_found, slot_ptr]
+end
+
+#! Finds the slot identified by the key [_, _, slot_id_suffix, slot_id_prefix] and returns the
+#! pointer to that slot.
 #!
 #! Inputs:  [storage_slots_ptr, slot_id_suffix, slot_id_prefix]
 #! Outputs: [slot_ptr]
@@ -1627,23 +1719,11 @@ end
 #!
 #! Panics if:
 #! - a slot with the provided slot ID does not exist in account storage.
-proc find_storage_slot
-    # construct the start and end pointers of the storage slot section in which we will search
-    dup exec.memory::get_num_storage_slots mul.ACCOUNT_STORAGE_SLOT_DATA_LENGTH add
-    # => [storage_slots_end_ptr, storage_slots_start_ptr, slot_id_suffix, slot_id_prefix]
-
-    swap movup.3 movup.3
-    # => [slot_id_suffix, slot_id_prefix, storage_slots_start_ptr, storage_slots_end_ptr]
-
-    # find the slot whose slot key matches [_, _, slot_id_suffix, slot_id_prefix]
-    # if the slot key does not exist, this procedure will validate its absence
-    exec.sorted_array::find_half_key_value
-    # => [is_slot_found, slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
+proc get_storage_slot_ptr
+    exec.find_storage_slot
+    # => [is_found, slot_ptr]
 
     assert.err=ERR_ACCOUNT_UNKNOWN_STORAGE_SLOT_NAME
-    # => [slot_ptr, storage_slots_start_ptr, storage_slots_end_ptr]
-
-    swap.2 drop drop
     # => [slot_ptr]
 end
 
@@ -1986,6 +2066,53 @@ pub proc has_procedure
     # clean the stack
     dropw drop drop
     # => [is_procedure_available']
+end
+
+# CALLBACKS
+# -------------------------------------------------------------------------------------------------
+
+#! Returns whether the active account defines callbacks.
+#!
+#! Inputs:  []
+#! Outputs: [has_callbacks]
+#!
+#! Where:
+#! - has_callbacks is 1 if the account defines callbacks, 0 otherwise.
+pub proc has_callbacks
+    # check if the on_before_asset_added_to_account callback slot exists and is non-empty
+    push.ON_BEFORE_ASSET_ADDED_TO_ACCOUNT_PROC_ROOT_SLOT[0..2]
+    exec.has_non_empty_slot
+    # => [has_account_callback]
+
+    # check if the on_before_asset_added_to_note callback slot exists and is non-empty
+    push.ON_BEFORE_ASSET_ADDED_TO_NOTE_PROC_ROOT_SLOT[0..2]
+    exec.has_non_empty_slot
+    # => [has_note_callback, has_account_callback]
+
+    or
+    # => [has_callbacks]
+end
+
+#! Checks whether a storage slot with the given slot ID exists in the active account's storage
+#! and has a non-empty value.
+#!
+#! Inputs:  [slot_id_suffix, slot_id_prefix]
+#! Outputs: [has_non_empty_value]
+#!
+#! Where:
+#! - slot_id_{suffix, prefix} are the suffix and prefix felts of the slot identifier, which are
+#!   the first two felts of the hashed slot name.
+#! - has_non_empty_value is 1 if the slot exists and its value is non-empty, 0 otherwise.
+proc has_non_empty_slot
+    exec.find_item
+    # => [is_found, VALUE]
+
+    # check if is_found && value is non-empty
+    movdn.4 exec.word::eqz not
+    # => [is_non_empty_value, is_found]
+
+    and
+    # => [has_non_empty_value]
 end
 
 #! Returns the key built from the provided account ID for use in the advice map or the account

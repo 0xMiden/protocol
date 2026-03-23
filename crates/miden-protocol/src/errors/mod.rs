@@ -13,7 +13,7 @@ use miden_crypto::utils::HexParseError;
 use thiserror::Error;
 
 use super::account::AccountId;
-use super::asset::{FungibleAsset, NonFungibleAsset, TokenSymbol};
+use super::asset::{AssetVaultKey, FungibleAsset, NonFungibleAsset, TokenSymbol};
 use super::crypto::merkle::MerkleError;
 use super::note::NoteId;
 use super::{MAX_BATCHES_PER_BLOCK, MAX_OUTPUT_NOTES_PER_BATCH, Word};
@@ -40,7 +40,7 @@ use crate::note::{
     NoteType,
     Nullifier,
 };
-use crate::transaction::{TransactionEventId, TransactionId};
+use crate::transaction::TransactionId;
 use crate::utils::serde::DeserializationError;
 use crate::vm::EventId;
 use crate::{
@@ -456,11 +456,11 @@ pub enum AssetError {
     #[error("subtracting {subtrahend} from fungible asset amount {minuend} would underflow")]
     FungibleAssetAmountNotSufficient { minuend: u64, subtrahend: u64 },
     #[error(
-        "cannot add fungible asset with issuer {other_issuer} to fungible asset with issuer {original_issuer}"
+        "cannot combine fungible assets with different vault keys: {original_key} and {other_key}"
     )]
-    FungibleAssetInconsistentFaucetIds {
-        original_issuer: AccountId,
-        other_issuer: AccountId,
+    FungibleAssetInconsistentVaultKeys {
+        original_key: AssetVaultKey,
+        other_key: AssetVaultKey,
     },
     #[error("faucet account ID in asset is invalid")]
     InvalidFaucetAccountId(#[source] Box<dyn Error + Send + Sync + 'static>),
@@ -488,6 +488,8 @@ pub enum AssetError {
     NonFungibleFaucetIdTypeMismatch(AccountId),
     #[error("smt proof in asset witness contains invalid key or value")]
     AssetWitnessInvalid(#[source] Box<AssetError>),
+    #[error("invalid native asset callbacks encoding: {0}")]
+    InvalidAssetCallbackFlag(u8),
 }
 
 // TOKEN SYMBOL ERROR
@@ -497,6 +499,11 @@ pub enum AssetError {
 pub enum TokenSymbolError {
     #[error("token symbol value {0} cannot exceed {max}", max = TokenSymbol::MAX_ENCODED_VALUE)]
     ValueTooLarge(u64),
+    #[error(
+        "token symbol value {0} cannot be less than {min}",
+        min = TokenSymbol::MIN_ENCODED_VALUE
+    )]
+    ValueTooSmall(u64),
     #[error("token symbol should have length between 1 and 12 characters, but {0} was provided")]
     InvalidLength(usize),
     #[error("token symbol contains a character that is not uppercase ASCII")]
@@ -785,23 +792,22 @@ pub enum TransactionOutputError {
     TooManyOutputNotes(usize),
     #[error("failed to process account update commitment: {0}")]
     AccountUpdateCommitment(Box<str>),
-    #[error(
-        "output note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
-    )]
-    OutputNoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
 
-// PUBLIC OUTPUT NOTE ERROR
+// OUTPUT NOTE ERROR
 // ================================================================================================
 
 /// Errors that can occur when creating a
-/// [`PublicOutputNote`](crate::transaction::PublicOutputNote).
+/// [`PublicOutputNote`](crate::transaction::PublicOutputNote) or
+/// [`PrivateNoteHeader`](crate::transaction::PrivateNoteHeader).
 #[derive(Debug, Error)]
-pub enum PublicOutputNoteError {
-    #[error("note with id {0} is private but PublicOutputNote requires a public note")]
+pub enum OutputNoteError {
+    #[error("note with id {0} is private but expected a public note")]
     NoteIsPrivate(NoteId),
+    #[error("note with id {0} is public but expected a private note")]
+    NoteIsPublic(NoteId),
     #[error(
-        "note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
+        "public note with id {note_id} has size {note_size} bytes which exceeds maximum note size of {NOTE_MAX_SIZE}"
     )]
     NoteSizeLimitExceeded { note_id: NoteId, note_size: usize },
 }
@@ -812,11 +818,7 @@ pub enum PublicOutputNoteError {
 #[derive(Debug, Error)]
 pub enum TransactionEventError {
     #[error("event id {0} is not a valid transaction event")]
-    InvalidTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} is not a transaction kernel event")]
-    NotTransactionEvent(EventId, Option<&'static str>),
-    #[error("event id {0} can only be emitted from the root context")]
-    NotRootContext(TransactionEventId),
+    InvalidTransactionEvent(EventId),
 }
 
 // TRANSACTION TRACE PARSING ERROR

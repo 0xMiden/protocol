@@ -406,10 +406,10 @@ impl TransactionEvent {
             TransactionEventId::NoteAfterCreated => None,
 
             TransactionEventId::NoteBeforeAddAsset => {
-                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_ptr]
+                // Expected stack state: [event, ASSET_KEY, ASSET_VALUE, note_idx]
                 let asset_key = process.get_stack_word(1);
                 let asset_value = process.get_stack_word(5);
-                let note_ptr = process.get_stack_item(9);
+                let note_idx = process.get_stack_item(9);
 
                 let asset =
                     Asset::from_key_value_words(asset_key, asset_value).map_err(|source| {
@@ -418,7 +418,7 @@ impl TransactionEvent {
                             source,
                         }
                     })?;
-                let note_idx = note_ptr_to_idx(note_ptr)? as usize;
+                let note_idx = note_idx.as_canonical_u64() as usize;
 
                 Some(TransactionEvent::NoteBeforeAddAsset { note_idx, asset })
             },
@@ -576,8 +576,8 @@ fn on_account_vault_asset_accessed<'store, STORE>(
     vault_key: AssetVaultKey,
     vault_root: Word,
 ) -> Result<Option<TransactionEvent>, TransactionKernelError> {
-    let leaf_index =
-        Felt::try_from(vault_key.to_leaf_index().value()).expect("expected key index to be a felt");
+    let leaf_index = Felt::try_from(vault_key.to_leaf_index().position())
+        .expect("expected key index to be a felt");
     let active_account_id = process.get_active_account_id()?;
 
     // For the native account we need to explicitly request the initial vault root, while for
@@ -626,7 +626,7 @@ fn on_account_storage_map_item_accessed<'store, STORE>(
     let leaf_index: Felt = map_key
         .hash()
         .to_leaf_index()
-        .value()
+        .position()
         .try_into()
         .expect("expected key index to be a felt");
 

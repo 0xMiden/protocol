@@ -1,0 +1,9 @@
+# The MASM code of the Ownable2Step Account Component.
+#
+# See the `Ownable2Step` Rust type's documentation for more details.
+
+pub use ::miden::standards::access::ownable2step::get_owner
+pub use ::miden::standards::access::ownable2step::get_nominated_owner
+pub use ::miden::standards::access::ownable2step::transfer_ownership
+pub use ::miden::standards::access::ownable2step::accept_ownership
+pub use ::miden::standards::access::ownable2step::renounce_ownership

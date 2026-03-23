@@ -85,10 +85,17 @@ Example:
 
 Each variable could represent a single value or a sequence of four values (a Word). Variable representing a single value should be written in lowercase, and a variable for the word should be written in uppercase.
 
+For multi-element values that are not exactly one word (4 felts), append `(N)` to indicate the count:
+
+- `value` is a single felt.
+- `value(N)` are N felts (where N is not 4).
+- `VALUE` is a word (4 felts). No `(4)` suffix is needed since uppercase already implies a word.
+
 Example:
 
 ```masm
 #! Inputs: [single_value, SOME_WORD]
+#! Inputs: [dest_address(5), amount_u256(8), pad(2)]
 ```
 
 Variable, which represents a memory address, should have a `_ptr` suffix in its name. For example, `note_script_commitment_ptr`.

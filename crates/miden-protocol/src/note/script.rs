@@ -5,6 +5,7 @@ use core::fmt::Display;
 use core::num::TryFromIntError;
 
 use miden_core::mast::MastNodeExt;
+use miden_mast_package::{MastArtifact, Package};
 
 use super::Felt;
 use crate::assembly::mast::{ExternalNodeBuilder, MastForest, MastForestContributor, MastNodeId};
@@ -137,6 +138,35 @@ impl NoteScript {
         let (mast, entrypoint) = create_external_node_forest(digest);
 
         Ok(Self { mast: Arc::new(mast), entrypoint })
+    }
+
+    /// Creates an [`NoteScript`] from a [`Package`].
+    ///
+    /// # Arguments
+    ///
+    /// * `package` - The package containing the
+    ///   [`Executable`](miden_mast_package::MastArtifact::Executable) or
+    ///   [`Library`](miden_mast_package::MastArtifact::Library).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The package contains a library which does not contain a procedure with the `@note_script`
+    ///   attribute.
+    /// - The package contains a library which contains multiple procedures with the `@note_script`
+    ///   attribute.
+    pub fn from_package(package: &Package) -> Result<Self, NoteError> {
+        match &package.mast {
+            // `NoteScript`s are compiled as executables by the miden compiler's
+            // cargo extension. Source, the "midenc_flags_from_target" function:
+            // https://github.com/0xMiden/compiler/blob/d3cd8cd4a2c1dfeae8a61643aa42734a35e3e840/tools/cargo-miden/src/commands/build.rs#L334
+            MastArtifact::Executable(executable) => {
+                let program = executable.as_ref().clone();
+
+                Ok(NoteScript::new(program))
+            },
+            MastArtifact::Library(library) => Ok(NoteScript::from_library(library))?,
+        }
     }
 
     // PUBLIC ACCESSORS

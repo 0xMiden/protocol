@@ -1,6 +1,8 @@
 use miden_assembly::Library;
-use miden_processor::mast::MastForest;
+use miden_assembly::library::ProcedureExport;
+use miden_processor::mast::{MastForest, MastNodeExt};
 
+use crate::account::AccountProcedureRoot;
 use crate::vm::AdviceMap;
 
 // ACCOUNT COMPONENT CODE
@@ -24,6 +26,22 @@ impl AccountComponentCode {
     /// Consumes `self` and returns the underlying [`Library`]
     pub fn into_library(self) -> Library {
         self.0
+    }
+
+    /// Returns an iterator over the [`AccountProcedureRoot`]s of this component's exported
+    /// procedures.
+    pub fn procedure_roots(&self) -> impl Iterator<Item = AccountProcedureRoot> + '_ {
+        self.0.exports().filter_map(|export| {
+            export.as_procedure().map(|proc_export| {
+                let digest = self.0.mast_forest()[proc_export.node].digest();
+                AccountProcedureRoot::from_raw(digest)
+            })
+        })
+    }
+
+    /// Returns the procedure exports of this component.
+    pub fn exports(&self) -> impl Iterator<Item = &ProcedureExport> + '_ {
+        self.0.exports().filter_map(|export| export.as_procedure())
     }
 
     /// Returns a new [AccountComponentCode] with the provided advice map entries merged into the

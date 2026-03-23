@@ -4,7 +4,6 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::utils::felts_to_bytes;
 use miden_agglayer::{
     AggLayerBridge,
     ExitRoot,
@@ -14,14 +13,12 @@ use miden_agglayer::{
 };
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
 use miden_core_lib::handlers::keccak256::KeccakPreimage;
-use miden_crypto::hash::rpo::Rpo256 as Hasher;
-use miden_crypto::{Felt, FieldElement};
-use miden_protocol::Word;
+use miden_crypto::Felt;
+use miden_processor::utils::{bytes_to_packed_u32_elements, packed_u32_elements_to_bytes};
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::crypto::rand::FeltRng;
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::utils::sync::LazyLock;
 use miden_testing::{Auth, MockChain};
 use miden_tx::utils::hex_to_bytes;
@@ -57,13 +54,15 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
 
     // CREATE BRIDGE ADMIN ACCOUNT (not used in this test, but distinct from GER manager)
     // --------------------------------------------------------------------------------------------
-    let bridge_admin =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
+    let bridge_admin = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE GER MANAGER ACCOUNT (note sender)
     // --------------------------------------------------------------------------------------------
-    let ger_manager =
-        builder.add_existing_wallet(Auth::BasicAuth { auth_scheme: AuthScheme::Falcon512Poseidon2 })?;
+    let ger_manager = builder.add_existing_wallet(Auth::BasicAuth {
+        auth_scheme: AuthScheme::Falcon512Poseidon2,
+    })?;
 
     // CREATE BRIDGE ACCOUNT
     // --------------------------------------------------------------------------------------------
@@ -84,7 +83,7 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let update_ger_note =
         UpdateGerNote::create(ger, ger_manager.id(), bridge_account.id(), builder.rng_mut())?;
 
-    builder.add_output_note(OutputNote::Full(update_ger_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(update_ger_note.clone()));
     let mock_chain = builder.build()?;
 
     // EXECUTE UPDATE_GER NOTE AGAINST BRIDGE ACCOUNT
@@ -99,29 +98,8 @@ async fn update_ger_note_updates_storage() -> anyhow::Result<()> {
     let mut updated_bridge_account = bridge_account.clone();
     updated_bridge_account.apply_delta(executed_transaction.account_delta())?;
 
-    // Compute the expected GER hash: rpo256::merge(GER_UPPER, GER_LOWER)
-    let mut ger_lower: [Felt; 4] = ger.to_elements()[0..4].try_into().unwrap();
-    let mut ger_upper: [Felt; 4] = ger.to_elements()[4..8].try_into().unwrap();
-    // Elements are reversed: rpo256::merge treats stack as if loaded BE from memory
-    // The following will produce matching hashes:
-    // Rust
-    // Hasher::merge(&[a, b, c, d], &[e, f, g, h])
-    // MASM
-    // rpo256::merge(h, g, f, e, d, c, b, a)
-    ger_lower.reverse();
-    ger_upper.reverse();
-
-    let ger_hash = Hasher::merge(&[ger_upper.into(), ger_lower.into()]);
-    // Look up the GER hash in the map storage
-    let ger_storage_slot = AggLayerBridge::ger_map_slot_name();
-    let stored_value = updated_bridge_account
-        .storage()
-        .get_map_item(ger_storage_slot, ger_hash)
-        .expect("GER hash should be stored in the map");
-
-    // The stored value should be [GER_KNOWN_FLAG, 0, 0, 0] = [1, 0, 0, 0]
-    let expected_value: Word = [Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO].into();
-    assert_eq!(stored_value, expected_value, "GER hash should map to [1, 0, 0, 0]");
+    let is_registered = AggLayerBridge::is_ger_registered(ger, updated_bridge_account)?;
+    assert!(is_registered, "GER was not registered in the bridge account");
 
     Ok(())
 }
@@ -167,14 +145,14 @@ async fn compute_ger() -> anyhow::Result<()> {
             .iter()
             .chain(rollup_felts.iter())
             .enumerate()
-            .map(|(idx, f)| format!("push.{} mem_store.{}", f.as_int(), idx))
+            .map(|(idx, f)| format!("push.{} mem_store.{}", f.as_canonical_u64(), idx))
             .collect();
         let mem_init_code = mem_init.join("\n");
 
         let source = format!(
             r#"
                 use miden::core::sys
-                use miden::agglayer::bridge::bridge_in
+                use agglayer::bridge::bridge_in
 
                 begin
                     # Initialize memory with exit roots
@@ -235,29 +213,29 @@ async fn test_compute_ger_basic() -> anyhow::Result<()> {
     let expected_ger_preimage = KeccakPreimage::new(ger_preimage.clone());
     let expected_ger_felts: [Felt; 8] = expected_ger_preimage.digest().as_ref().try_into().unwrap();
 
-    let ger_bytes: [u8; 32] = felts_to_bytes(&expected_ger_felts).try_into().unwrap();
+    let ger_bytes: [u8; 32] = packed_u32_elements_to_bytes(&expected_ger_felts).try_into().unwrap();
 
     let ger = ExitRoot::from(ger_bytes);
     // sanity check
     assert_eq!(ger.to_elements(), expected_ger_felts);
 
     // Convert exit roots to packed u32 felts for memory initialization
-    let mainnet_felts = bytes_to_packed_u32_felts(&mainnet_exit_root);
-    let rollup_felts = bytes_to_packed_u32_felts(&rollup_exit_root);
+    let mainnet_felts = bytes_to_packed_u32_elements(&mainnet_exit_root);
+    let rollup_felts = bytes_to_packed_u32_elements(&rollup_exit_root);
 
     // Build memory initialization: mainnet at ptr 0, rollup at ptr 8
     let mem_init: Vec<String> = mainnet_felts
         .iter()
         .chain(rollup_felts.iter())
         .enumerate()
-        .map(|(i, f)| format!("push.{} mem_store.{}", f.as_int(), i))
+        .map(|(i, f)| format!("push.{} mem_store.{}", f.as_canonical_u64(), i))
         .collect();
     let mem_init_code = mem_init.join("\n");
 
     let source = format!(
         r#"
             use miden::core::sys
-            use miden::agglayer::bridge::bridge_in
+            use agglayer::bridge::bridge_in
 
             begin
                 # Initialize memory with exit roots

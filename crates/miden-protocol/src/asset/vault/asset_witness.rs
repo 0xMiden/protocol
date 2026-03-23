@@ -84,7 +84,7 @@ impl AssetWitness {
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         self.0
             .path()
-            .authenticated_nodes(self.0.leaf().index().value(), self.0.leaf().hash())
+            .authenticated_nodes(self.0.leaf().index().position(), self.0.leaf().hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
 }

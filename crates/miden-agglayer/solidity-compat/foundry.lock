@@ -8,10 +8,22 @@
       "rev": "1801b0541f4fda118a10798fd3486bb7051c5dd6"
     }
   },
+  "lib/openzeppelin-contracts": {
+    "branch": {
+      "name": "release-v5.0",
+      "rev": "dbb6104ce834628e473d2173bbc9d47f81a9eec3"
+    }
+  },
   "lib/openzeppelin-contracts-upgradeable": {
     "branch": {
       "name": "release-v4.9",
       "rev": "2d081f24cac1a867f6f73d512f2022e1fa987854"
+    }
+  },
+  "lib/openzeppelin-contracts-upgradeable5": {
+    "branch": {
+      "name": "release-v5.0",
+      "rev": "723f8cab09cdae1aca9ec9cc1cfa040c2d4b06c1"
     }
   }
 }

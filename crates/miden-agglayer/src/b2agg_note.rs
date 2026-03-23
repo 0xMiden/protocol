@@ -6,8 +6,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use miden_assembly::utils::Deserializable;
-use miden_core::{Felt, Program, Word};
+use miden_assembly::serde::Deserializable;
+use miden_core::program::Program;
+use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::rand::FeltRng;
 use miden_protocol::errors::NoteError;

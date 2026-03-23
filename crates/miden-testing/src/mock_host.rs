@@ -7,7 +7,7 @@ use miden_processor::event::EventError;
 use miden_processor::mast::MastForest;
 use miden_processor::{FutureMaybeSend, Host, ProcessorState};
 use miden_protocol::transaction::TransactionEventId;
-use miden_protocol::vm::EventId;
+use miden_protocol::vm::{EventId, EventName};
 use miden_protocol::{CoreLibrary, Word};
 use miden_tx::TransactionExecutorHost;
 use miden_tx::auth::UnreachableAuth;
@@ -113,5 +113,9 @@ impl<'store> Host for MockHost<'store> {
                 Ok(Vec::new())
             }
         }
+    }
+
+    fn resolve_event(&self, event_id: EventId) -> Option<&EventName> {
+        self.exec_host.resolve_event(event_id)
     }
 }

@@ -13,7 +13,7 @@ pub use storage::*;
 mod code;
 pub use code::AccountComponentCode;
 
-use crate::account::{AccountType, StorageSlot};
+use crate::account::{AccountProcedureRoot, AccountType, StorageSlot};
 use crate::assembly::Path;
 use crate::errors::AccountError;
 use crate::{MastForest, Word};
@@ -196,25 +196,24 @@ impl AccountComponent {
         self.metadata.supported_types().contains(&account_type)
     }
 
-    /// Returns a vector of tuples (digest, is_auth) for all procedures in this component.
+    /// Returns an iterator over ([`AccountProcedureRoot`], is_auth) for all procedures in this
+    /// component.
     ///
     /// A procedure is considered an authentication procedure if it has the `@auth_script`
     /// attribute.
-    pub fn get_procedures(&self) -> Vec<(Word, bool)> {
+    pub fn procedures(&self) -> impl Iterator<Item = (AccountProcedureRoot, bool)> + '_ {
         let library = self.code.as_library();
-        let mut procedures = Vec::new();
-        for export in library.exports() {
-            if let Some(proc_export) = export.as_procedure() {
+        library.exports().filter_map(|export| {
+            export.as_procedure().map(|proc_export| {
                 let digest = library
                     .mast_forest()
                     .get_node_by_id(proc_export.node)
                     .expect("export node not in the forest")
                     .digest();
                 let is_auth = proc_export.attributes.has(AUTH_SCRIPT_ATTRIBUTE);
-                procedures.push((digest, is_auth));
-            }
-        }
-        procedures
+                (AccountProcedureRoot::from_raw(digest), is_auth)
+            })
+        })
     }
 
     /// Returns the digest of the procedure with the specified path, or `None` if it was not found

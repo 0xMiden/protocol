@@ -93,6 +93,11 @@ impl FeltSchema {
         Self::new_typed(SchemaType::u32(), name)
     }
 
+    /// Creates a new required felt field typed as [`SchemaType::bool()`].
+    pub fn bool(name: impl Into<String>) -> Self {
+        Self::new_typed(SchemaType::bool(), name)
+    }
+
     /// Sets the default value of the [`FeltSchema`] and returns `self`.
     pub fn with_default(self, default_value: Felt) -> Self {
         FeltSchema {

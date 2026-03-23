@@ -21,10 +21,11 @@ pub use kernel::{TransactionAdviceInputs, TransactionEventId, TransactionKernel,
 pub use ordered_transactions::OrderedTransactionHeaders;
 pub use outputs::{
     OutputNote,
+    OutputNoteCollection,
     OutputNotes,
-    ProvenOutputNote,
-    ProvenOutputNotes,
+    PrivateNoteHeader,
     PublicOutputNote,
+    RawOutputNote,
     RawOutputNotes,
     TransactionOutputs,
 };

@@ -25,8 +25,8 @@ use miden_protocol::transaction::{
     ExecutedTransaction,
     InputNote,
     InputNotes,
+    OutputNote,
     PartialBlockchain,
-    ProvenOutputNote,
     ProvenTransaction,
     TransactionInputs,
 };
@@ -944,10 +944,10 @@ impl MockChain {
             )
             .context("failed to create inclusion proof for output note")?;
 
-            if let ProvenOutputNote::Public(public_note) = created_note {
+            if let OutputNote::Public(public_note) = created_note {
                 self.committed_notes.insert(
                     public_note.id(),
-                    MockChainNote::Public(public_note.note().clone(), note_inclusion_proof),
+                    MockChainNote::Public(public_note.as_note().clone(), note_inclusion_proof),
                 );
             } else {
                 self.committed_notes.insert(

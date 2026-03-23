@@ -556,12 +556,15 @@ async fn non_fungible_asset_delta() -> anyhow::Result<()> {
         exec.util::create_default_note_with_moved_asset
         # => []
 
-        # remove and re-add asset 3
+        # remove asset 3
         push.{ASSET3_VALUE}
         push.{ASSET3_KEY}
         exec.remove_asset
-        # => [ASSET_VALUE]
+        # => [REMAINING_ASSET_VALUE]
+        dropw
 
+        # re-add asset 3
+        push.{ASSET3_VALUE}
         push.{ASSET3_KEY}
         # => [ASSET_KEY, ASSET_VALUE]
         exec.add_asset dropw

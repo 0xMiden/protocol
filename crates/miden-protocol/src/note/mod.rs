@@ -169,6 +169,14 @@ impl Note {
         self.header.commitment()
     }
 
+    // MUTATORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Reduces the size of the note script by stripping all debug info from it.
+    pub fn minify_script(&mut self) {
+        self.details.minify_script();
+    }
+
     /// Consumes self and returns the underlying parts of the [`Note`].
     pub fn into_parts(self) -> (NoteAssets, NoteMetadata, NoteRecipient) {
         let (assets, recipient) = self.details.into_parts();

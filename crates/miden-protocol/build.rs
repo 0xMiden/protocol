@@ -352,12 +352,21 @@ fn copy_shared_modules<T: AsRef<Path>>(source_dir: T) -> Result<()> {
 /// The generated files are written to `build_dir` (i.e. `OUT_DIR`) and included via `include!`
 /// in the source.
 fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()> {
+    // Shared utils errors
+    // For now these are duplicated in the tx kernel and protocol error module.
+    // ------------------------------------------
+
+    let shared_utils_dir = asm_source_dir.join(SHARED_UTILS_DIR);
+    let shared_utils_errors = shared::extract_all_masm_errors(&shared_utils_dir)
+        .context("failed to extract all masm errors")?;
+
     // Transaction kernel errors
     // ------------------------------------------
 
     let tx_kernel_dir = asm_source_dir.join(ASM_TX_KERNEL_DIR);
-    let errors = shared::extract_all_masm_errors(&tx_kernel_dir)
+    let mut errors = shared::extract_all_masm_errors(&tx_kernel_dir)
         .context("failed to extract all masm errors")?;
+    errors.extend_from_slice(&shared_utils_errors);
     validate_tx_kernel_category(&errors)?;
 
     shared::generate_error_file(
@@ -373,8 +382,9 @@ fn generate_error_constants(asm_source_dir: &Path, build_dir: &str) -> Result<()
     // ------------------------------------------
 
     let protocol_dir = asm_source_dir.join(ASM_PROTOCOL_DIR);
-    let errors = shared::extract_all_masm_errors(&protocol_dir)
+    let mut errors = shared::extract_all_masm_errors(&protocol_dir)
         .context("failed to extract all masm errors")?;
+    errors.extend(shared_utils_errors);
 
     shared::generate_error_file(
         shared::ErrorModule {
@@ -505,34 +515,13 @@ fn generate_event_file_content(
     for (event_path, event_name) in events {
         let value = EventId::from_name(event_path).as_felt().as_canonical_u64();
         debug_assert!(!event_name.is_empty());
-        writeln!(&mut output, "const {}: u64 = {};", event_name, value)?;
-    }
-
-    {
-        writeln!(&mut output)?;
-
-        writeln!(&mut output)?;
-
+        writeln!(&mut output, "const {}_ID: u64 = {};", event_name, value)?;
         writeln!(
             &mut output,
-            r###"
-use alloc::collections::BTreeMap;
-
-pub(crate) static EVENT_NAME_LUT: ::miden_utils_sync::LazyLock<BTreeMap<u64, &'static str>> =
-    ::miden_utils_sync::LazyLock::new(|| {{
-    BTreeMap::from_iter([
-"###
+            "static {}_NAME: ::miden_core::events::EventName = ::miden_core::events::EventName::new(\"{}\");",
+            event_name, event_path
         )?;
-
-        for (event_path, const_name) in events {
-            writeln!(&mut output, "        ({}, \"{}\"),", const_name, event_path)?;
-        }
-
-        writeln!(
-            &mut output,
-            r###"    ])
-}});"###
-        )?;
+        writeln!(&mut output)?;
     }
 
     Ok(output)

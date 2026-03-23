@@ -76,12 +76,17 @@ impl BasicWallet {
     pub fn move_asset_to_note_digest() -> Word {
         *BASIC_WALLET_MOVE_ASSET_TO_NOTE
     }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Basic wallet component for receiving and sending assets")
+    }
 }
 
 impl From<BasicWallet> for AccountComponent {
     fn from(_: BasicWallet) -> Self {
-        let metadata = AccountComponentMetadata::new(BasicWallet::NAME, AccountType::all())
-            .with_description("Basic wallet component for receiving and sending assets");
+        let metadata = BasicWallet::component_metadata();
 
         AccountComponent::new(basic_wallet_library(), vec![], metadata).expect(
             "basic wallet component should satisfy the requirements of a valid account component",

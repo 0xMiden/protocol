@@ -12,7 +12,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{AuthMultisigPsm, AuthMultisigPsmConfig, PsmConfig};
 use miden_standards::account::components::multisig_psm_library;
@@ -150,7 +150,7 @@ async fn test_multisig_psm_signature_required(
     let salt = Word::from([Felt::new(777); 4]);
     let tx_context_init = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt)
         .build()?;
 
@@ -171,7 +171,7 @@ async fn test_multisig_psm_signature_required(
     // Missing PSM signature must fail.
     let without_psm_result = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1.clone())
         .add_signature(public_keys[1].to_commitment(), msg, sig_2.clone())
         .auth_args(salt)
@@ -187,7 +187,7 @@ async fn test_multisig_psm_signature_required(
     // With PSM signature the transaction should succeed.
     let tx_context_execute = mock_chain
         .build_tx_context(multisig_account.id(), &[input_note.id()], &[])?
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .add_signature(psm_public_key.to_commitment(), msg, psm_signature)
@@ -492,7 +492,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_psm_with_output_script.clone())
         .add_note_script(note_script.clone())
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
         .auth_args(salt)
         .build()?;
 
@@ -514,7 +514,7 @@ async fn test_multisig_update_psm_public_key_must_be_called_alone(
         .build_tx_context(multisig_account.id(), &[], &[])?
         .tx_script(update_psm_with_output_script)
         .add_note_script(note_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(output_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note)])
         .add_signature(public_keys[0].to_commitment(), msg, sig_1)
         .add_signature(public_keys[1].to_commitment(), msg, sig_2)
         .auth_args(salt)

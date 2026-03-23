@@ -29,6 +29,7 @@ pub static SCHEMA_TYPE_REGISTRY: LazyLock<SchemaTypeRegistry> = LazyLock::new(||
     registry.register_felt_type::<u8>();
     registry.register_felt_type::<u16>();
     registry.register_felt_type::<u32>();
+    registry.register_felt_type::<Bool>();
     registry.register_felt_type::<Felt>();
     registry.register_felt_type::<TokenSymbol>();
     registry.register_felt_type::<AuthScheme>();
@@ -163,6 +164,11 @@ impl SchemaType {
         SchemaType::new("u32").expect("type is well formed")
     }
 
+    /// Returns the schema type for the native `bool` type.
+    pub fn bool() -> SchemaType {
+        SchemaType::new("bool").expect("type is well formed")
+    }
+
     /// Returns the schema type for auth scheme identifiers.
     pub fn auth_scheme() -> SchemaType {
         SchemaType::new("miden::standards::auth::scheme").expect("type is well formed")
@@ -290,6 +296,35 @@ where
 
 // FELT IMPLS FOR NATIVE TYPES
 // ================================================================================================
+
+/// A boolean felt type: `0` (false) or `1` (true).
+struct Bool;
+
+impl FeltType for Bool {
+    fn type_name() -> SchemaType {
+        SchemaType::bool()
+    }
+
+    fn parse_str(input: &str) -> Result<Felt, SchemaTypeError> {
+        match input {
+            "true" | "1" => Ok(Felt::new(1)),
+            "false" | "0" => Ok(Felt::new(0)),
+            _ => Err(SchemaTypeError::ConversionError(format!(
+                "invalid bool value `{input}`: expected `true`, `false`, `1`, or `0`"
+            ))),
+        }
+    }
+
+    fn display_felt(value: Felt) -> Result<String, SchemaTypeError> {
+        match value.as_canonical_u64() {
+            0 => Ok("false".into()),
+            1 => Ok("true".into()),
+            other => Err(SchemaTypeError::ConversionError(format!(
+                "value `{other}` is not a valid bool (expected 0 or 1)"
+            ))),
+        }
+    }
+}
 
 /// A felt type that represents irrelevant elements in a storage schema definition.
 struct Void;
@@ -449,12 +484,7 @@ impl FeltType for TokenSymbol {
                 value.as_canonical_u64()
             ))
         })?;
-        token.to_string().map_err(|err| {
-            SchemaTypeError::ConversionError(format!(
-                "failed to display token_symbol value `{}`: {err}",
-                value.as_canonical_u64()
-            ))
-        })
+        Ok(token.to_string())
     }
 }
 
@@ -761,7 +791,8 @@ mod tests {
     }
 
     #[test]
-    fn auth_scheme_type_rejects_invalid_values() {
+    fn schema_types_reject_invalid_values() {
+        // Auth scheme rejects out-of-range and unknown values.
         let auth_scheme_type = SchemaType::auth_scheme();
 
         assert!(SCHEMA_TYPE_REGISTRY.try_parse_word(&auth_scheme_type, "9").is_err());
@@ -773,5 +804,19 @@ mod tests {
                 .validate_word_value(&auth_scheme_type, invalid_word)
                 .is_err()
         );
+
+        // Bool type parses "true"/"false"/"1"/"0" and rejects everything else.
+        let bool_type = SchemaType::bool();
+
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "true").unwrap(), Felt::new(1));
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "false").unwrap(), Felt::new(0));
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "1").unwrap(), Felt::new(1));
+        assert_eq!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "0").unwrap(), Felt::new(0));
+        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::new(0)), "false");
+        assert_eq!(SCHEMA_TYPE_REGISTRY.display_felt(&bool_type, Felt::new(1)), "true");
+
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "yes").is_err());
+        assert!(SCHEMA_TYPE_REGISTRY.try_parse_felt(&bool_type, "2").is_err());
+        assert!(SCHEMA_TYPE_REGISTRY.validate_felt_value(&bool_type, Felt::new(2)).is_err());
     }
 }

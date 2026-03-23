@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use assert_matches::assert_matches;
 use miden_processor::ExecutionError;
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::{Account, AccountId};
 use miden_protocol::asset::{Asset, FungibleAsset};
@@ -24,7 +24,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_SENDER,
 };
-use miden_protocol::transaction::{InputNote, OutputNote, TransactionKernel};
+use miden_protocol::transaction::{InputNote, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, Word};
 use miden_standards::note::{
     NoteConsumptionStatus,
@@ -57,7 +57,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let p2ide_note = P2ideNote::create(
@@ -70,7 +70,7 @@ async fn check_note_consumability_standard_notes_success() -> anyhow::Result<()>
         vec![FungibleAsset::mock(10)],
         NoteType::Public,
         Default::default(),
-        &mut RpoRandomCoin::new(Word::from([2u32; 4])),
+        &mut RandomCoin::new(Word::from([2u32; 4])),
     )?;
 
     let notes = vec![p2id_note, p2ide_note];
@@ -354,7 +354,7 @@ async fn check_note_consumability_epilogue_failure_with_new_combination() -> any
     let fail_epilogue_note = NoteBuilder::new(account.id(), &mut rand::rng())
         .add_assets([Asset::from(note_asset)])
         .build()?;
-    builder.add_output_note(OutputNote::Full(fail_epilogue_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(fail_epilogue_note.clone()));
 
     let mock_chain = builder.build()?;
     let notes = vec![
@@ -675,7 +675,7 @@ async fn test_check_note_consumability_static_analysis_receiver(
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
@@ -765,7 +765,7 @@ async fn test_check_note_consumability_static_analysis_sender(
         ],
         sender_account_id,
     );
-    builder.add_output_note(OutputNote::Full(p2ide.clone()));
+    builder.add_output_note(RawOutputNote::Full(p2ide.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain.prove_until_block(3)?;
@@ -805,7 +805,7 @@ fn create_p2ide_note_with_storage(
     storage: impl IntoIterator<Item = u64>,
     sender: AccountId,
 ) -> Note {
-    let serial_num = RpoRandomCoin::new(Default::default()).draw_word();
+    let serial_num = RandomCoin::new(Default::default()).draw_word();
     let note_script = StandardNote::P2IDE.script();
     let recipient = NoteRecipient::new(
         serial_num,

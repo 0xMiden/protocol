@@ -48,6 +48,8 @@ pub enum FungibleFaucetError {
     },
     #[error("unsupported authentication method: {0}")]
     UnsupportedAuthMethod(String),
+    #[error("unsupported access control method: {0}")]
+    UnsupportedAccessControl(String),
     #[error("account creation failed")]
     AccountError(#[source] AccountError),
     #[error("account is not a fungible faucet account")]

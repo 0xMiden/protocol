@@ -1,8 +1,22 @@
-use miden_protocol::account::component::{FeltSchema, StorageSlotSchema};
-use miden_protocol::account::{AccountId, AccountStorage, StorageSlot, StorageSlotName};
+use miden_protocol::account::component::{
+    AccountComponentMetadata,
+    FeltSchema,
+    StorageSchema,
+    StorageSlotSchema,
+};
+use miden_protocol::account::{
+    AccountComponent,
+    AccountId,
+    AccountStorage,
+    AccountType,
+    StorageSlot,
+    StorageSlotName,
+};
 use miden_protocol::errors::AccountIdError;
 use miden_protocol::utils::sync::LazyLock;
 use miden_protocol::{Felt, Word};
+
+use crate::account::components::ownable2step_library;
 
 static OWNER_CONFIG_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::access::ownable2step::owner_config")
@@ -30,6 +44,9 @@ pub struct Ownable2Step {
 }
 
 impl Ownable2Step {
+    /// The name of the component.
+    pub const NAME: &'static str = "miden::standards::components::access::ownable2step";
+
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
@@ -116,6 +133,27 @@ impl Ownable2Step {
             None => (Felt::ZERO, Felt::ZERO),
         };
         [owner_suffix, owner_prefix, nominated_suffix, nominated_prefix].into()
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema =
+            StorageSchema::new([Self::slot_schema()]).expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description("Two-step ownership management component")
+            .with_storage_schema(storage_schema)
+    }
+}
+
+impl From<Ownable2Step> for AccountComponent {
+    fn from(ownership: Ownable2Step) -> Self {
+        let storage_slot = ownership.to_storage_slot();
+        let metadata = Ownable2Step::component_metadata();
+
+        AccountComponent::new(ownable2step_library(), vec![storage_slot], metadata).expect(
+            "Ownable2Step component should satisfy the requirements of a valid account component",
+        )
     }
 }
 

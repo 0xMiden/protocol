@@ -3,7 +3,7 @@
 # This is a thin wrapper that re-exports bridge-related procedures from the
 # agglayer library.
 
-pub use ::miden::agglayer::bridge::bridge_config::register_faucet
-pub use ::miden::agglayer::bridge::bridge_config::update_ger
-pub use ::miden::agglayer::bridge::bridge_in::verify_leaf_bridge
-pub use ::miden::agglayer::bridge::bridge_out::bridge_out
+pub use ::agglayer::bridge::bridge_config::register_faucet
+pub use ::agglayer::bridge::bridge_config::update_ger
+pub use ::agglayer::bridge::bridge_in::claim
+pub use ::agglayer::bridge::bridge_out::bridge_out

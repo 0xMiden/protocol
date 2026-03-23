@@ -1,11 +1,6 @@
 use miden::core::crypto::hashes::keccak256
-
-# TYPE ALIASES
-# =================================================================================================
-
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
-type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
-type MemoryAddress = u32
+use miden::protocol::types::DoubleWord
+use miden::protocol::types::MemoryAddress
 
 # CONSTANTS
 # =================================================================================================

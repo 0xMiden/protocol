@@ -67,7 +67,7 @@ Native account procedures can be used to write to storage, add or remove assets 
 | `set_item`                     | Sets an item in the native account storage.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix, VALUE]`<br/>**Outputs:** `[OLD_VALUE]`                                                                                                 | Native & Account |
 | `set_map_item`                 | Sets VALUE under the specified KEY within the map contained in the given native account storage slot.<br/><br/>**Inputs:** `[slot_id_suffix, slot_id_prefix, KEY, VALUE]`<br/>**Outputs:** `[OLD_VALUE]`                | Native & Account |
 | `add_asset`                    | Adds the specified asset to the vault. For fungible assets, returns the total after addition.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[ASSET_VALUE']`                                                  | Native & Account |
-| `remove_asset`                 | Removes the specified asset from the vault.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[ASSET_VALUE]`                                                                                                     | Native & Account |
+| `remove_asset`                 | Removes the specified asset from the vault and returns the remaining asset value.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[REMAINING_ASSET_VALUE]`                                                                                                     | Native & Account |
 | `was_procedure_called`         | Returns 1 if a native account procedure was called during transaction execution, and 0 otherwise.<br/><br/>**Inputs:** `[PROC_ROOT]`<br/>**Outputs:** `[was_called]`                                                     | Any              |
 
 ## Active Note Procedures (`miden::protocol::active_note`)
@@ -153,7 +153,8 @@ Faucet procedures allow reading and writing to faucet accounts to mint and burn 
 | `create_fungible_asset`        | Creates a fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`                              | Faucet                    |
 | `create_non_fungible_asset`    | Creates a non-fungible asset for the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`                       | Faucet                    |
 | `mint`                         | Mint an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[NEW_ASSET_VALUE]`                                         | Native & Account & Faucet |
-| `burn`                         | Burn an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[ASSET_VALUE]`                                         | Native & Account & Faucet |
+| `burn`                         | Burn an asset from the faucet the transaction is being executed against.<br/><br/>**Inputs:** `[ASSET_KEY, ASSET_VALUE]`<br/>**Outputs:** `[]`                                         | Native & Account & Faucet |
+| `has_callbacks`                | Returns whether the active account defines callbacks.<br/><br/>**Inputs:** `[]`<br/>**Outputs:** `[has_callbacks]`                                                                                | Any                       |
 
 ## Asset Procedures (`miden::protocol::asset`)
 
@@ -161,5 +162,5 @@ Asset procedures provide utilities for creating fungible and non-fungible assets
 
 | Procedure                  | Description                                                                                                                                                          | Context |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]` | Any     |
+| `create_fungible_asset`     | Builds a fungible asset for the specified fungible faucet and amount.<br/><br/>**Inputs:** `[enable_callbacks, faucet_id_suffix, faucet_id_prefix, amount]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]` | Any     |
 | `create_non_fungible_asset` | Builds a non-fungible asset for the specified non-fungible faucet and data hash.<br/><br/>**Inputs:** `[faucet_id_suffix, faucet_id_prefix, DATA_HASH]`<br/>**Outputs:** `[ASSET_KEY, ASSET_VALUE]`     | Any     |

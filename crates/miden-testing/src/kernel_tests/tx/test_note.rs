@@ -8,7 +8,7 @@ use miden_protocol::account::{AccountBuilder, AccountId};
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::crypto::dsa::falcon512_poseidon2::SecretKey;
-use miden_protocol::crypto::rand::{FeltRng, RpoRandomCoin};
+use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
 use miden_protocol::errors::MasmError;
 use miden_protocol::note::{
     Note,
@@ -24,7 +24,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_SENDER,
 };
 use miden_protocol::transaction::memory::ACTIVE_INPUT_NOTE_PTR;
-use miden_protocol::transaction::{OutputNote, TransactionArgs};
+use miden_protocol::transaction::{RawOutputNote, TransactionArgs};
 use miden_protocol::{Felt, Word};
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::code_builder::CodeBuilder;
@@ -452,7 +452,7 @@ pub async fn test_timelock() -> anyhow::Result<()> {
         .dynamically_linked_libraries(CodeBuilder::mock_libraries())
         .build()?;
 
-    builder.add_output_note(OutputNote::Full(timelock_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(timelock_note.clone()));
 
     let mut mock_chain = builder.build()?;
     mock_chain
@@ -514,7 +514,7 @@ async fn test_public_key_as_note_input() -> anyhow::Result<()> {
         .with_component(BasicWallet)
         .build_existing()?;
 
-    let serial_num = RpoRandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
+    let serial_num = RandomCoin::new(Word::from([1, 2, 3, 4u32])).draw_word();
     let tag = NoteTag::with_account_target(target_account.id());
     let metadata = NoteMetadata::new(sender_account.id(), NoteType::Public).with_tag(tag);
     let vault = NoteAssets::new(vec![])?;

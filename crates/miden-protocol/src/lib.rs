@@ -81,7 +81,7 @@ pub mod utils {
 pub mod vm {
     pub use miden_assembly_syntax::ast::{AttributeSet, QualifiedProcedureName};
     pub use miden_core::advice::{AdviceInputs, AdviceMap};
-    pub use miden_core::events::{EventId, SystemEvent};
+    pub use miden_core::events::{EventId, EventName, SystemEvent};
     pub use miden_core::program::{Program, ProgramInfo};
     pub use miden_mast_package::{
         MastArtifact,

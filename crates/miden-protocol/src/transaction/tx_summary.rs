@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::account::AccountDelta;
 use crate::crypto::SequentialCommit;
-use crate::transaction::{InputNote, InputNotes, OutputNotes};
+use crate::transaction::{InputNote, InputNotes, RawOutputNotes};
 use crate::utils::serde::{
     ByteReader,
     ByteWriter,
@@ -20,7 +20,7 @@ use crate::{Felt, Word};
 pub struct TransactionSummary {
     account_delta: AccountDelta,
     input_notes: InputNotes<InputNote>,
-    output_notes: OutputNotes,
+    output_notes: RawOutputNotes,
     salt: Word,
 }
 
@@ -32,7 +32,7 @@ impl TransactionSummary {
     pub fn new(
         account_delta: AccountDelta,
         input_notes: InputNotes<InputNote>,
-        output_notes: OutputNotes,
+        output_notes: RawOutputNotes,
         salt: Word,
     ) -> Self {
         Self {
@@ -57,7 +57,7 @@ impl TransactionSummary {
     }
 
     /// Returns the output notes of this transaction summary.
-    pub fn output_notes(&self) -> &OutputNotes {
+    pub fn output_notes(&self) -> &RawOutputNotes {
         &self.output_notes
     }
 

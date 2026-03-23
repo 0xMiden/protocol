@@ -23,6 +23,7 @@ mod test_array;
 mod test_asset;
 mod test_asset_vault;
 mod test_auth;
+mod test_callbacks;
 mod test_epilogue;
 mod test_faucet;
 mod test_fee;

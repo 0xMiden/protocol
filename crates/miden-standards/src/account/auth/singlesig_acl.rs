@@ -96,7 +96,7 @@ impl Default for AuthSingleSigAclConfig {
 }
 
 /// An [`AccountComponent`] implementing a procedure-based Access Control List (ACL) using either
-/// the EcdsaK256Keccak or Rpo Falcon 512 signature scheme for authentication of transactions.
+/// the EcdsaK256Keccak or Falcon512 Poseidon2 signature scheme for authentication of transactions.
 ///
 /// This component provides fine-grained authentication control based on three conditions:
 /// 1. **Procedure-based authentication**: Requires authentication when any of the specified trigger
@@ -214,8 +214,8 @@ impl AuthSingleSigAcl {
                 "ACL configuration",
                 [
                     FeltSchema::u32("num_trigger_procs").with_default(Felt::new(0)),
-                    FeltSchema::u32("allow_unauthorized_output_notes").with_default(Felt::new(0)),
-                    FeltSchema::u32("allow_unauthorized_input_notes").with_default(Felt::new(0)),
+                    FeltSchema::bool("allow_unauthorized_output_notes").with_default(Felt::new(0)),
+                    FeltSchema::bool("allow_unauthorized_input_notes").with_default(Felt::new(0)),
                     FeltSchema::new_void(),
                 ],
             ),
@@ -240,6 +240,23 @@ impl AuthSingleSigAcl {
                 SchemaType::native_word(),
             ),
         )
+    }
+
+    /// Returns the [`AccountComponentMetadata`] for this component.
+    pub fn component_metadata() -> AccountComponentMetadata {
+        let storage_schema = StorageSchema::new(vec![
+            Self::public_key_slot_schema(),
+            Self::auth_scheme_slot_schema(),
+            Self::config_slot_schema(),
+            Self::trigger_procedure_roots_slot_schema(),
+        ])
+        .expect("storage schema should be valid");
+
+        AccountComponentMetadata::new(Self::NAME, AccountType::all())
+            .with_description(
+                "Authentication component with procedure-based ACL using ECDSA K256 Keccak or Falcon512 Poseidon2 signature scheme",
+            )
+            .with_storage_schema(storage_schema)
     }
 }
 
@@ -287,17 +304,7 @@ impl From<AuthSingleSigAcl> for AccountComponent {
             StorageMap::with_entries(map_entries).unwrap(),
         ));
 
-        let storage_schema = StorageSchema::new(vec![
-            AuthSingleSigAcl::public_key_slot_schema(),
-            AuthSingleSigAcl::auth_scheme_slot_schema(),
-            AuthSingleSigAcl::config_slot_schema(),
-            AuthSingleSigAcl::trigger_procedure_roots_slot_schema(),
-        ])
-        .expect("storage schema should be valid");
-
-        let metadata = AccountComponentMetadata::new(AuthSingleSigAcl::NAME, AccountType::all())
-            .with_description("Authentication component with procedure-based ACL using ECDSA K256 Keccak or Rpo Falcon 512 signature scheme")
-            .with_storage_schema(storage_schema);
+        let metadata = AuthSingleSigAcl::component_metadata();
 
         AccountComponent::new(singlesig_acl_library(), storage_slots, metadata).expect(
             "singlesig ACL component should satisfy the requirements of a valid account component",

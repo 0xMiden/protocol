@@ -338,7 +338,7 @@ impl AccountProcedureBuilder {
     fn add_auth_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
         let mut auth_proc_count = 0;
 
-        for (proc_root, is_auth) in component.get_procedures() {
+        for (proc_root, is_auth) in component.procedures() {
             self.add_procedure(proc_root);
 
             if is_auth {
@@ -358,20 +358,19 @@ impl AccountProcedureBuilder {
     }
 
     fn add_component(&mut self, component: &AccountComponent) -> Result<(), AccountError> {
-        for (proc_mast_root, is_auth) in component.get_procedures() {
+        for (proc_root, is_auth) in component.procedures() {
             if is_auth {
                 return Err(AccountError::AccountCodeMultipleAuthComponents);
             }
-            self.add_procedure(proc_mast_root);
+            self.add_procedure(proc_root);
         }
 
         Ok(())
     }
 
-    fn add_procedure(&mut self, proc_mast_root: Word) {
+    fn add_procedure(&mut self, proc_root: AccountProcedureRoot) {
         // Allow procedures with the same MAST root from different components, but only add them
         // once.
-        let proc_root = AccountProcedureRoot::from_raw(proc_mast_root);
         if !self.procedures.contains(&proc_root) {
             self.procedures.push(proc_root);
         }

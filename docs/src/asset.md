@@ -64,6 +64,65 @@ Non-fungible assets are encoded by hashing the `Asset` data into 32 bytes and pl
 
 Assets in Miden can be burned through various methods, such as rendering them unspendable by storing them in an unconsumable note, or sending them back to their original faucet for burning using it's dedicated function.
 
+### Callbacks
+
+Asset callbacks allow a faucet to execute custom logic whenever one of its assets is added to an account vault or to an output note. This gives asset issuers a mechanism to enforce policies on their assets. For example, maintaining a block list of accounts that are not allowed to receive the asset or globally pausing transfers of assets.
+
+#### How callbacks work
+
+Callbacks involve two parts: a **per-asset flag** and **faucet-level callback procedures**.
+
+**Per-asset callback flag.** Every asset carries a single-bit callback flag in its vault key. When the flag is `Enabled`, the kernel checks for and invokes callbacks on the issuing faucet whenever the asset is added to a vault or note. When the flag is `Disabled`, callbacks are skipped entirely. This flag is set at asset creation time and the protocol does not prevent issuing assets with different flags from the same faucet. Technically, this gives faucets the ability to issue a callback-enabled and a callback-disabled variant of their assets.
+
+:::warning
+Two assets issued by the same faucet with _different_ callback flags are considered completely different assets by the protocol.
+:::
+
+It is recommended that faucets issue all of their assets with the same flag to ensure all assets issued by a faucet are treated as one type of asset. This is ensured when using `faucet::create_fungible_asset` or `faucet::create_non_fungible_asset`.
+
+**Faucet callback procedures.** A faucet registers callbacks by storing the procedure root (hash) of one if its public account procedures in a well-known storage slot. Two callbacks are supported:
+
+| Callback | Storage slot name | Triggered when |
+|---|---|---|
+| `on_before_asset_added_to_account` | `miden::protocol::faucet::callback::on_before_asset_added_to_account` | The asset is added to an account's vault (via `native_account::add_asset`). |
+| `on_before_asset_added_to_note` | `miden::protocol::faucet::callback::on_before_asset_added_to_note` | The asset is added to an output note (via `output_note::add_asset`). |
+
+Account components that need to add callbacks to an account's storage should use the `AssetCallbacks` type, which provides an easy-to-use abstraction over these details.
+
+#### Callback interfaces
+
+The transaction kernel invokes the callback on the issuing faucet and the callback receives the asset key and value and is expected to return the processed asset value.
+
+:::warning
+At this time, the processed asset value must be the same as the asset value, but in the future this limitation may be lifted.
+:::
+
+The **account callback** receives:
+
+```
+Inputs:  [ASSET_KEY, ASSET_VALUE, pad(8)]
+Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+```
+
+The **note callback** receives the additional `note_idx` identifying which output note the asset is being added to:
+
+```
+Inputs:  [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+Outputs: [PROCESSED_ASSET_VALUE, pad(12)]
+```
+
+Both callbacks are invoked via `call`, so they must follow the convention of accepting and returning 16 stack elements (input + padding).
+
+#### Callback skipping
+
+A callback is not invoked in any of these cases:
+
+- The asset's callback flag is `Disabled`.
+- The issuing faucet does not have the corresponding callback storage slot.
+- The callback storage slot contains the empty word.
+
+This means assets with callbacks enabled can still be used even if the faucet has not (yet) registered a callback procedure.
+
 ## Alternative asset models
 
 :::note

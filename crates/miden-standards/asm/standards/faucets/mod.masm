@@ -35,7 +35,7 @@ const METADATA_SLOT_LOCAL=0
 # Layout: [token_supply, max_supply, decimals, token_symbol]
 const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 
-#! Distributes freshly minted fungible assets to the provided recipient by creating a note.
+#! Mints fungible assets to the provided recipient by creating a note.
 #!
 #! Inputs:  [amount, tag, note_type, RECIPIENT]
 #! Outputs: [note_idx]
@@ -56,7 +56,7 @@ const METADATA_SLOT=word("miden::standards::fungible_faucets::metadata")
 #!
 #! Invocation: exec
 @locals(4)
-pub proc distribute
+pub proc mint_and_send
     # Get the configured max supply and the token supply (= current supply).
     # ---------------------------------------------------------------------------------------------
 
@@ -198,7 +198,7 @@ pub proc burn
     # burn the asset
     # this ensures we only burn assets that were issued by this faucet (which implies they are
     # fungible)
-    exec.faucet::burn dropw
+    exec.faucet::burn
     # => [amount, pad(16)]
 
     # Subtract burnt amount from current token_supply in storage.

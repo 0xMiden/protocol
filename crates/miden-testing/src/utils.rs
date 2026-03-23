@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use miden_processor::crypto::random::RpoRandomCoin;
+use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::asset::Asset;
@@ -80,7 +80,7 @@ pub fn create_public_p2any_note(
     sender: AccountId,
     assets: impl IntoIterator<Item = Asset>,
 ) -> Note {
-    let mut rng = RpoRandomCoin::new(Default::default());
+    let mut rng = RandomCoin::new(Default::default());
     create_p2any_note(sender, NoteType::Public, assets, &mut rng)
 }
 
@@ -94,7 +94,7 @@ pub fn create_p2any_note(
     sender: AccountId,
     note_type: NoteType,
     assets: impl IntoIterator<Item = Asset>,
-    rng: &mut RpoRandomCoin,
+    rng: &mut RandomCoin,
 ) -> Note {
     let serial_number = rng.draw_word();
     let assets: Vec<_> = assets.into_iter().collect();

@@ -2,6 +2,7 @@ pub mod asset_conversion;
 mod bridge_in;
 mod bridge_out;
 mod config_bridge;
+mod faucet_helpers;
 mod global_index;
 mod leaf_utils;
 mod mmr_frontier;

@@ -118,7 +118,7 @@ use $kernel::memory
 # ERRORS
 # =================================================================================================
 
-const ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY="map cannot be empty when proving absence after an entry"
+const ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION="empty map requires operation InsertAtHead for set or AbsentAtHead for get"
 
 const ERR_LINK_MAP_PROVIDED_KEY_NOT_EQUAL_TO_ENTRY_KEY="provided key does not match key in map entry"
 
@@ -196,47 +196,55 @@ const LINK_MAP_GET_EVENT=event("miden::protocol::link_map::get")
 #!
 #! Panics if:
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
-#!   update_entry, insert_at_head, insert_after_entry.
+#!   update_entry, insert_at_head, insert_after_entry and assert_empty_map_op_is_at_head.
 pub proc set
     emit.LINK_MAP_SET_EVENT
     adv_push.2
     # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    dup.2 dup.2
-    # => [entry_ptr, map_ptr, operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    dup eq.INSERT_OPERATION_UPDATE swap eq.INSERT_OPERATION_AT_HEAD
+    # => [is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    exec.assert_entry_ptr_is_valid
-    # => [operation, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    dup dup.4
+    # => [map_ptr, is_insert_at_head_op, is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
-    dup eq.INSERT_OPERATION_AT_HEAD swap eq.INSERT_OPERATION_UPDATE
-    # => [is_insert_update_op, is_insert_at_head_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+    exec.assert_empty_map_op_is_at_head
+    # => [is_insert_at_head_op, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
     if.true
-        # update existing entry
-        # drop is_insert_at_head_op and map_ptr from stack
-        drop swap drop
-        # => [entry_ptr, KEY, VALUE0, VALUE1]
+        # drop is_insert_update_op and the unvalidated entry ptr since we can load the entry ptr
+        # at the head of the map securely from map_ptr
+        drop drop
+        # => [map_ptr, KEY, VALUE0, VALUE1]
 
-        exec.update_entry
+        exec.insert_at_head
         # => []
 
-        push.0
+        push.1
         # => [is_new_key]
     else
-        # insert new entry
-        # => [is_insert_at_head_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+        # => [is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+
+        dup.2 dup.2
+        # => [entry_ptr, map_ptr, is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
+
+        # validate the entry pointer
+        # this can be skipped for insert_at_head because the entry_ptr is not used in that branch
+        exec.assert_entry_ptr_is_valid
+        # => [is_insert_update_op, entry_ptr, map_ptr, KEY, VALUE0, VALUE1]
 
         # note: the is_new_key flag logic is duplicated rather than appended after the if-else branch
         # to avoid introducing an extra MAST node
         if.true
-            # drop the entry ptr since we can load the head from map_ptr
-            drop
-            # => [map_ptr, KEY, VALUE0, VALUE1]
+            # update existing entry
+            # drop unused map_ptr
+            swap drop
+            # => [entry_ptr, KEY, VALUE0, VALUE1]
 
-            exec.insert_at_head
+            exec.update_entry
             # => []
 
-            push.1
+            push.0
             # => [is_new_key]
         else
             # insert after existing entry
@@ -263,47 +271,62 @@ end
 #!
 #! Panics if:
 #! - the host provides faulty advice. See panic sections of assert_entry_ptr_is_valid,
-#!   get_existing_value, assert_absent_at_head, assert_absent_after_entry.
+#!   get_existing_value, assert_absent_at_head, assert_absent_after_entry and
+#!   assert_empty_map_op_is_at_head.
 pub proc get
     emit.LINK_MAP_GET_EVENT
     adv_push.2
     # => [get_operation, entry_ptr, map_ptr, KEY]
 
-    dup.2 dup.2
-    # => [entry_ptr, map_ptr, get_operation, entry_ptr, map_ptr, KEY]
+    dup eq.GET_OPERATION_FOUND swap eq.GET_OPERATION_ABSENT_AT_HEAD
+    # => [is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
-    exec.assert_entry_ptr_is_valid
-    # => [get_operation, entry_ptr, map_ptr, KEY]
+    dup dup.4
+    # => [map_ptr, is_absent_at_head, is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
-    dup eq.GET_OPERATION_ABSENT_AT_HEAD swap eq.GET_OPERATION_FOUND
-    # => [is_found, is_absent_at_head, entry_ptr, map_ptr, KEY]
+    exec.assert_empty_map_op_is_at_head
+    # => [is_absent_at_head, is_found, entry_ptr, map_ptr, KEY]
 
     if.true
-        # drop is_absent_at_head and map_ptr from stack
-        drop swap drop
-        # => [entry_ptr, KEY]
+        # drop is_found and the unvalidated entry ptr since we can load the entry ptr
+        # at the head of the map securely from map_ptr
+        drop drop
+        # => [map_ptr, KEY]
 
-        exec.get_existing_value
-        # => [VALUE0, VALUE1]
+        exec.assert_absent_at_head
+        # => []
 
-        push.1
-        # => [contains_key, VALUE0, VALUE1]
+        padw padw push.0
+        # => [contains_key, EMPTY_WORD, EMPTY_WORD]
     else
-        # assert absence of the entry
-        # => [is_absent_at_head, entry_ptr, map_ptr, KEY]
+        # => [is_found, entry_ptr, map_ptr, KEY]
+
+        dup.2 dup.2
+        # => [entry_ptr, map_ptr, is_found, entry_ptr, map_ptr, KEY]
+
+        # validate the entry pointer
+        # this can be skipped for assert_absent_at_head because the entry_ptr is not used in that
+        # branch
+        exec.assert_entry_ptr_is_valid
+        # => [is_found, entry_ptr, map_ptr, KEY]
+
+        # drop unused map_ptr
+        movup.2 drop
+        # => [is_found, entry_ptr, KEY]
 
         # note: the flag and empty word logic is duplicated rather than appended after the if-else
         # branch to avoid introducing an extra MAST node
         if.true
-            drop
-            # => [map_ptr, KEY]
+            # => [entry_ptr, KEY]
 
-            exec.assert_absent_at_head
-            # => []
+            exec.get_existing_value
+            # => [VALUE0, VALUE1]
 
-            padw padw push.0
-            # => [contains_key, EMPTY_WORD, EMPTY_WORD]
+            push.1
+            # => [contains_key, VALUE0, VALUE1]
         else
+            # => [entry_ptr, KEY]
+
             exec.assert_absent_after_entry
             # => []
 
@@ -619,17 +642,13 @@ end
 #! If KEY is greater than the key in the entry and less than the key in entry's next entry, then
 #! that proves the absence of the key.
 #!
-#! Inputs:  [entry_ptr, map_ptr, KEY]
+#! Inputs:  [entry_ptr, KEY]
 #! Outputs: []
 #!
 #! Panics if:
-#! - the map is empty.
 #! - the KEY is not greater than the key in the entry.
 #! - the KEY is not less than the key in entry.next_entry, unless the entry is the last one in the map.
 proc assert_absent_after_entry
-    swap exec.is_empty assertz.err=ERR_LINK_MAP_CANNOT_BE_EMPTY_ON_ABSENCE_AFTER_ENTRY
-    # => [entry_ptr, KEY]
-
     movdn.4 dupw
     # => [KEY, KEY, entry_ptr]
 
@@ -855,18 +874,48 @@ proc assert_key_is_less
     # => []
 end
 
+#! Asserts that if the map is empty, the host-provided operation is the `*AT_HEAD` variant:
+#! - INSERT_OPERATION_AT_HEAD for link_map::set
+#! - GET_OPERATION_ABSENT_AT_HEAD for link_map::get
+#!
+#! This ensures the other operations never have to consider the empty map case to reduce
+#! complexity.
+#!
+#! What we want is:
+#! is_empty_map | !is_at_head_op | outcome
+#! true         | true           | panic
+#! true         | false          | ok
+#! false        | true           | ok
+#! false        | false          | ok
+#!
+#! Inputs:  [map_ptr, is_at_head_op]
+#! Outputs: []
+#!
+#! Panics if:
+#! - the map is empty and the provided operation is not the *AT_HEAD variant.
+proc assert_empty_map_op_is_at_head
+    exec.is_empty
+    # => [is_empty_map, is_at_head_op]
+
+    swap not
+    # => [!is_at_head_op, is_empty_map]
+
+    and assertz.err=ERR_LINK_MAP_EMPTY_MAP_REQUIRES_AT_HEAD_OPERATION
+    # => []
+end
+
 #! Asserts that the given entry ptr is a valid entry in the map identified by map_ptr.
 #!
 #! Inputs:  [entry_ptr, map_ptr]
 #! Outputs: []
 #!
 #! Panics if:
-#! - any of the following conditions is false, except if the map is empty:
+#! - any of the following conditions is false:
 #!   - LINK_MAP_MEMORY_START_PTR <= entry_ptr < LINK_MAP_MEMORY_END_PTR.
 #!   - entry ptr is "link map entry"-aligned, i.e. entry_ptr % LINK_MAP_ENTRY_SIZE == 0. This
 #!     works because every entry ptr is a multiple of LINK_MAP_ENTRY_SIZE.
 #!   - entry's map ptr is equal to the given map_ptr.
-pub proc assert_entry_ptr_is_valid
+proc assert_entry_ptr_is_valid
     # Check entry pointer is in valid memory range.
     # -------------------------------------------------------------------------------------------------
 
@@ -891,16 +940,8 @@ pub proc assert_entry_ptr_is_valid
     u32lt and
     # => [is_entry_ptr_in_valid_range, entry_ptr, map_ptr]
 
-    # we have to skip the assertion if the map is empty
-    dup.2 exec.is_empty
-    # => [is_empty_map, is_entry_ptr_in_valid_range, entry_ptr, map_ptr]
-
-    dup movdn.4
-    # => [is_empty_map, is_entry_ptr_in_valid_range, entry_ptr, map_ptr, is_empty_map]
-
-    # this assertion is always true if is_empty_map is true
-    or assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
-    # => [entry_ptr, map_ptr, is_empty_map]
+    assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_OUTSIDE_VALID_MEMORY_REGION
+    # => [entry_ptr, map_ptr]
 
     # Check that the entry pointer is aligned to link map entries.
     # -------------------------------------------------------------------------------------------------
@@ -910,19 +951,18 @@ pub proc assert_entry_ptr_is_valid
     # we assert that entry_ptr % LINK_MAP_ENTRY_SIZE == 0.
     # note: we previously asserted that entry_ptr fits in a u32
     dup exec.memory::get_link_map_entry_size u32mod eq.0
-    # => [is_entry_ptr_aligned, entry_ptr, map_ptr, is_empty_map]
+    # => [is_entry_ptr_aligned, entry_ptr, map_ptr]
 
-    # this assertion is always true if is_empty_map is true
-    dup.3 or assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED
-    # => [entry_ptr, map_ptr, is_empty_map]
+    assert.err=ERR_LINK_MAP_ENTRY_PTR_IS_NOT_ENTRY_ALIGNED
+    # => [entry_ptr, map_ptr]
 
     # Check entry pointer's map ptr is equal to map_ptr.
     # -------------------------------------------------------------------------------------------------
 
     # check if entry_ptr.map_ptr == map_ptr
     exec.get_map_ptr eq
-    # => [entry_contains_map_ptr, is_empty_map]
+    # => [entry_contains_map_ptr]
 
-    # this assertion is always true if is_empty_map is true
-    or assert.err=ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR
+    assert.err=ERR_LINK_MAP_MAP_PTR_IN_ENTRY_DOES_NOT_MATCH_EXPECTED_MAP_PTR
+    # => []
 end

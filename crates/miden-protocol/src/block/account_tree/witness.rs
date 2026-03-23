@@ -160,7 +160,7 @@ impl AccountWitness {
     pub fn authenticated_nodes(&self) -> impl Iterator<Item = InnerNodeInfo> + '_ {
         let leaf = self.leaf();
         self.path()
-            .authenticated_nodes(leaf.index().value(), leaf.hash())
+            .authenticated_nodes(leaf.index().position(), leaf.hash())
             .expect("leaf index is u64 and should be less than 2^SMT_DEPTH")
     }
 }

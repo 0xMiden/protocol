@@ -12,8 +12,8 @@ use crate::transaction::{
     InputNoteCommitment,
     InputNotes,
     OrderedTransactionHeaders,
+    OutputNote,
     PartialBlockchain,
-    ProvenOutputNote,
     ProvenTransaction,
     TransactionHeader,
 };
@@ -59,8 +59,8 @@ pub struct ProposedBatch {
     input_notes: InputNotes<InputNoteCommitment>,
     /// The output notes of this batch. This consists of all notes created by transactions in the
     /// batch that are not consumed within the same batch. These are sorted by
-    /// [`ProvenOutputNote::id`].
-    output_notes: Vec<ProvenOutputNote>,
+    /// [`OutputNote::id`].
+    output_notes: Vec<OutputNote>,
 }
 
 impl ProposedBatch {
@@ -355,7 +355,7 @@ impl ProposedBatch {
     ///
     /// This is the aggregation of all output notes by the transactions in the batch, except the
     /// ones that were consumed within the batch itself.
-    pub fn output_notes(&self) -> &[ProvenOutputNote] {
+    pub fn output_notes(&self) -> &[OutputNote] {
         &self.output_notes
     }
 
@@ -371,7 +371,7 @@ impl ProposedBatch {
         BatchId,
         BTreeMap<AccountId, BatchAccountUpdate>,
         InputNotes<InputNoteCommitment>,
-        Vec<ProvenOutputNote>,
+        Vec<OutputNote>,
         BlockNumber,
     ) {
         (
@@ -441,12 +441,7 @@ mod tests {
     use crate::account::delta::AccountUpdateDetails;
     use crate::account::{AccountIdVersion, AccountStorageMode, AccountType};
     use crate::asset::FungibleAsset;
-    use crate::transaction::{
-        InputNoteCommitment,
-        ProvenOutputNote,
-        ProvenTransaction,
-        TxAccountUpdate,
-    };
+    use crate::transaction::{InputNoteCommitment, OutputNote, ProvenTransaction, TxAccountUpdate};
 
     #[test]
     fn proposed_batch_serialization() -> anyhow::Result<()> {
@@ -499,7 +494,7 @@ mod tests {
         let tx = ProvenTransaction::new(
             account_update,
             Vec::<InputNoteCommitment>::new(),
-            Vec::<ProvenOutputNote>::new(),
+            Vec::<OutputNote>::new(),
             block_num,
             block_ref,
             FungibleAsset::mock(100).unwrap_fungible(),

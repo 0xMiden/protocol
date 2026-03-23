@@ -3,7 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use miden_core_lib::handlers::bytes_to_packed_u32_felts;
+use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_protocol::Felt;
 use miden_protocol::account::AccountId;
 use miden_protocol::utils::{HexParseError, bytes_to_hex_string, hex_to_bytes};
@@ -82,8 +82,8 @@ impl EthAddressFormat {
         let felts: [Felt; 2] = account_id.into();
 
         let mut out = [0u8; 20];
-        out[4..12].copy_from_slice(&felts[0].as_int().to_be_bytes());
-        out[12..20].copy_from_slice(&felts[1].as_int().to_be_bytes());
+        out[4..12].copy_from_slice(&felts[0].as_canonical_u64().to_be_bytes());
+        out[12..20].copy_from_slice(&felts[1].as_canonical_u64().to_be_bytes());
 
         Self(out)
     }
@@ -121,7 +121,7 @@ impl EthAddressFormat {
     ///
     /// Each limb is interpreted as a little-endian `u32` and stored in a [`Felt`].
     pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_felts(&self.0)
+        bytes_to_packed_u32_elements(&self.0)
     }
 
     /// Converts the Ethereum address format back to an [`AccountId`].
@@ -146,7 +146,7 @@ impl EthAddressFormat {
         let suffix_felt =
             Felt::try_from(suffix).map_err(|_| AddressConversionError::FeltOutOfField)?;
 
-        AccountId::try_from([prefix_felt, suffix_felt])
+        AccountId::try_from_elements(suffix_felt, prefix_felt)
             .map_err(|_| AddressConversionError::InvalidAccountId)
     }
 

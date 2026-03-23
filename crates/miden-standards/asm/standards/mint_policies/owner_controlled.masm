@@ -1,0 +1,18 @@
+use miden::standards::access::ownable2step
+
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Owner-only mint predicate.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#!
+#! Panics if:
+#! - note sender is not owner.
+#!
+#! Invocation: dynexec
+pub proc owner_only
+    exec.ownable2step::assert_sender_is_owner
+    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+end

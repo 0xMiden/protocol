@@ -9,7 +9,7 @@ use miden_protocol::testing::account_id::{
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET_1,
     AccountIdBuilder,
 };
-use miden_protocol::transaction::OutputNote;
+use miden_protocol::transaction::RawOutputNote;
 use miden_standards::code_builder::CodeBuilder;
 use miden_testing::utils::create_p2id_note_exact;
 use miden_testing::{Auth, MockChain};
@@ -59,7 +59,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
         .build_tx_context(sender_account.id(), &[], &[])
         .context("failed to build tx context")?
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(swap_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(swap_note.clone())])
         .build()?
         .execute()
         .await?;
@@ -81,7 +81,7 @@ pub async fn prove_send_swap_note() -> anyhow::Result<()> {
     );
 
     let swap_output_note = create_swap_note_tx.output_notes().iter().next().unwrap();
-    assert_eq!(swap_output_note.assets().unwrap().iter().next().unwrap(), &offered_asset);
+    assert_eq!(swap_output_note.assets().iter().next().unwrap(), &offered_asset);
     assert!(prove_and_verify_transaction(create_swap_note_tx).await.is_ok());
 
     Ok(())
@@ -120,7 +120,7 @@ async fn consume_swap_note_private_payback_note() -> anyhow::Result<()> {
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
     assert!(output_payback_note.id() == payback_note.id());
-    assert_eq!(output_payback_note.assets().unwrap().iter().next().unwrap(), &requested_asset);
+    assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
 
     assert!(target_account.vault().assets().count() == 1);
     assert!(target_account.vault().assets().any(|asset| asset == offered_asset));
@@ -191,7 +191,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
     let consume_swap_note_tx = mock_chain
         .build_tx_context(target_account.id(), &[swap_note.id()], &[])
         .context("failed to build tx context")?
-        .extend_expected_output_notes(vec![OutputNote::Full(payback_p2id_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(payback_p2id_note)])
         .build()?
         .execute()
         .await?;
@@ -200,7 +200,7 @@ async fn consume_swap_note_public_payback_note() -> anyhow::Result<()> {
 
     let output_payback_note = consume_swap_note_tx.output_notes().iter().next().unwrap().clone();
     assert!(output_payback_note.id() == payback_note.id());
-    assert_eq!(output_payback_note.assets().unwrap().iter().next().unwrap(), &requested_asset);
+    assert_eq!(output_payback_note.assets().iter().next().unwrap(), &requested_asset);
 
     assert!(target_account.vault().assets().count() == 1);
     assert!(target_account.vault().assets().any(|asset| asset == offered_asset));
@@ -302,10 +302,10 @@ async fn settle_coincidence_of_wants() -> anyhow::Result<()> {
         .expect("Payback note 2 not found");
 
     // Verify payback note 1 contains exactly the initially requested asset B for account 1
-    assert_eq!(output_payback_1.assets().unwrap().iter().next().unwrap(), &asset_b);
+    assert_eq!(output_payback_1.assets().iter().next().unwrap(), &asset_b);
 
     // Verify payback note 2 contains exactly the initially requested asset A for account 2
-    assert_eq!(output_payback_2.assets().unwrap().iter().next().unwrap(), &asset_a);
+    assert_eq!(output_payback_2.assets().iter().next().unwrap(), &asset_a);
 
     Ok(())
 }
@@ -347,7 +347,7 @@ fn setup_swap_test(payback_note_type: NoteType) -> anyhow::Result<SwapTestSetup>
         .add_swap_note(sender_account.id(), offered_asset, requested_asset, payback_note_type)
         .unwrap();
 
-    builder.add_output_note(OutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
     let mock_chain = builder.build()?;
 
     Ok(SwapTestSetup {

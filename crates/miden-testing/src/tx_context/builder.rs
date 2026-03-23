@@ -18,7 +18,7 @@ use miden_protocol::note::{Note, NoteId, NoteScript};
 use miden_protocol::testing::account_id::ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE;
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_protocol::transaction::{
-    OutputNote,
+    RawOutputNote,
     TransactionArgs,
     TransactionInputs,
     TransactionScript,
@@ -236,11 +236,10 @@ impl TransactionContextBuilder {
     }
 
     /// Extend the expected output notes.
-    pub fn extend_expected_output_notes(mut self, output_notes: Vec<OutputNote>) -> Self {
+    pub fn extend_expected_output_notes(mut self, output_notes: Vec<RawOutputNote>) -> Self {
         let output_notes = output_notes.into_iter().filter_map(|n| match n {
-            OutputNote::Full(note) => Some(note),
-            OutputNote::Partial(_) => None,
-            OutputNote::Header(_) => None,
+            RawOutputNote::Full(note) => Some(note),
+            RawOutputNote::Partial(_) => None,
         });
 
         self.expected_output_notes.extend(output_notes);
@@ -286,7 +285,7 @@ impl TransactionContextBuilder {
 
                 let mut builder = MockChain::builder();
                 for i in self.input_notes {
-                    builder.add_output_note(OutputNote::Full(i));
+                    builder.add_output_note(RawOutputNote::Full(i));
                 }
                 let mut mock_chain = builder.build()?;
 

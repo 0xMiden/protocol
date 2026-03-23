@@ -1,0 +1,12 @@
+# POLICY PROCEDURES
+# ================================================================================================
+
+#! Dummy mint predicate to allow all mints.
+#!
+#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Invocation: dynexec
+pub proc allow_all
+    # Dummy predicate, no checks yet.
+    push.0 drop
+end
