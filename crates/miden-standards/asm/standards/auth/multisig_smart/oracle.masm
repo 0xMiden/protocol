@@ -13,11 +13,13 @@ const ORACLE_CONFIG_SLOT = word("miden::standards::auth::multisig_smart::oracle_
 # [proc_root]
 const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::get_price_proc_root")
 
-#! High-impact action.
+#! Updates the oracle account id and the foreign procedure root used by
+#! `get_price`.
 #!
-#! Updates the oracle configuration and the procedure root used for price reads.
-#! - Stores the oracle id (prefix/suffix) in ORACLE_CONFIG_SLOT as [oracle_id_prefix, oracle_id_suffix, 0, 0]
-#! - Stores the configured foreign price-read procedure root in GET_PRICE_PROC_ROOT_SLOT as [proc_root]
+#! - Stores the oracle id in ORACLE_CONFIG_SLOT as
+#!   [oracle_id_prefix, oracle_id_suffix, 0, 0]
+#! - Stores the configured foreign price-read procedure root in
+#!   GET_PRICE_PROC_ROOT_SLOT as [get_price_proc_root]
 #!
 #! Inputs:  [oracle_id_prefix, oracle_id_suffix, GET_PRICE_PROC_ROOT]
 #! Outputs: []
@@ -35,34 +37,23 @@ const GET_PRICE_PROC_ROOT_SLOT = word("miden::standards::auth::multisig_smart::g
 #! 4: get_price_root_w1
 #! 5: get_price_root_w0
 @locals(6)
-pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
-    # Store oracle_id_prefix
-    loc_store.0
-    # => [oracle_id_suffix, GET_MEDIAN_PROC_ROOT]
+pub proc update_oracle_config_and_proc_root(get_price_proc_root: word)
+    # Store `oracle_id_prefix`
+    loc_store.0 loc_store.1
+    # => [get_price_root_w3, get_price_root_w2, get_price_root_w1, get_price_root_w0]
 
-    # Store oracle_id_suffix
-    loc_store.1
-    # => [GET_MEDIAN_PROC_ROOT]
-
-    # Store oracle get_price proc_root
-    loc_store.2
-    # => [root_w2, root_w1, root_w0]
-
-    loc_store.3
-    # => [root_w1, root_w0]
-
-    loc_store.4
-    # => [root_w0]
-
-    loc_store.5
+    # Store the four limbs of `get_price_proc_root` in locals 2..5.
+    loc_store.2 loc_store.3 loc_store.4 loc_store.5
     # => []
 
-    # ------ Write ORACLE_CONFIG_SLOT = [oracle_id_prefix, oracle_id_suffix, 0, 0]
-    # ------ Reconstruct the stack: [0, 0, oracle_id_suffix, oracle_id_prefix]
+    # Reconstruct [0, 0, oracle_id_suffix, oracle_id_prefix] for ORACLE_CONFIG_SLOT.
     loc_load.0
+    # => [oracle_id_prefix]
+
     loc_load.1
-    push.0
-    push.0
+    # => [oracle_id_suffix, oracle_id_prefix]
+
+    push.0 push.0
     # => [0, 0, oracle_id_suffix, oracle_id_prefix]
 
     push.ORACLE_CONFIG_SLOT[0..2]
@@ -74,15 +65,11 @@ pub proc update_oracle_config_and_proc_root(get_median_proc_root: word)
     dropw
     # => []
 
-    # ------ Write GET_PRICE_PROC_ROOT_SLOT = [GET_MEDIAN_PROC_ROOT]
-    loc_load.5
-    loc_load.4
-    loc_load.3
-    loc_load.2
-    # => [root_w3, root_w2, root_w1, root_w0]
+    loc_load.5 loc_load.4 loc_load.3 loc_load.2
+    # => [get_price_root_w3, get_price_root_w2, get_price_root_w1, get_price_root_w0]
 
     push.GET_PRICE_PROC_ROOT_SLOT[0..2]
-    # => [slot_prefix, slot_suffix, root_w3, root_w2, root_w1, root_w0]
+    # => [slot_prefix, slot_suffix, get_price_root_w3, get_price_root_w2, get_price_root_w1, get_price_root_w0]
 
     exec.native_account::set_item
     # => [OLD_WORD]
