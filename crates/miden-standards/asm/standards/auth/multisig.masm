@@ -38,7 +38,7 @@ const DEFAULT_THRESHOLD_LOC=0
 #   TRANSACTION_MESSAGE => [is_executed, 0, 0, 0]
 #
 # - PROC_POLICY_ROOTS_SLOT (map):
-#   PROC_ROOT => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
+#   PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, 0]
 
 
 # The slot in this component's storage layout where the default signature threshold and
@@ -60,7 +60,7 @@ const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver
 const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
 
 # The slot in this component's storage layout where procedure policies are stored.
-# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
+# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, 0]
 const PROC_POLICY_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_policies")
 
 # Executed Transaction Flag Constant
@@ -85,21 +85,31 @@ const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and pro
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
 
-const ERR_POLICY_BOOL_NOT_BINARY = "procedure policy constraints must be 0 or 1"
+const ERR_POLICY_NOTE_RESTRICTIONS_INVALID = "procedure policy note restrictions must be in the range 0..=3"
 
-const ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD =
-    "procedure policy constraints require an immediate or delayed threshold"
+const ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD = "procedure policy constraints require an immediate or delayed threshold"
 
-const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE =
-    "delayed threshold cannot exceed immediate threshold"
+const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
-#! Inputs:  [value]
+const MAX_PROC_POLICY_NOTE_RESTRICTIONS = 3
+
+#! Inputs:  [note_restrictions]
 #! Outputs: []
-proc assert_binary
-    dup eq.0
-    swap eq.1
-    or
-    assert.err=ERR_POLICY_BOOL_NOT_BINARY
+proc assert_valid_note_restrictions
+    dup
+    # => [note_restrictions, note_restrictions]
+
+    u32assert.err=ERR_POLICY_NOTE_RESTRICTIONS_INVALID
+    # => [note_restrictions]
+
+    dup u32lte.MAX_PROC_POLICY_NOTE_RESTRICTIONS
+    # => [are_note_restrictions_valid, note_restrictions]
+
+    assert.err=ERR_POLICY_NOTE_RESTRICTIONS_INVALID
+    # => [note_restrictions]
+
+    drop
+    # => []
 end
 
 #! Remove old approver public keys and the corresponding scheme ids 
@@ -183,7 +193,7 @@ end
 #! Gets the policy entry for PROC_ROOT from the account's initial state.
 #! 
 #! Inputs:  [proc_root]
-#! Outputs: [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
+#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, 0]
 pub proc get_procedure_policy(proc_root: word)
     push.PROC_POLICY_ROOTS_SLOT[0..2]
     exec.active_account::get_initial_map_item
@@ -214,7 +224,7 @@ end
 #! - any configured procedure threshold is not a u32 value.
 #! - any configured procedure threshold exceeds num_approvers.
 #! - delayed threshold exceeds immediate threshold.
-#! - non-binary flags are stored.
+#! - note_restrictions is not in the range 0..=3.
 #! - constraints are configured without any threshold.
 @locals(5)
 pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
@@ -232,7 +242,7 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
 
         push.PROC_POLICY_ROOTS_SLOT[0..2]
         exec.active_account::get_map_item
-        # => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes, proc_index, num_approvers]
+        # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
         loc_store.3
         loc_store.2
@@ -270,8 +280,7 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
         drop
         # => [proc_index, num_approvers]
 
-        loc_load.1 exec.assert_binary
-        loc_load.0 exec.assert_binary
+        loc_load.1 exec.assert_valid_note_restrictions
         # => [proc_index, num_approvers]
 
         loc_load.3
@@ -285,7 +294,6 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
             # => [proc_index, num_approvers]
 
             loc_load.1 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
-            loc_load.0 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
             # => [proc_index, num_approvers]
         else
             drop
@@ -485,7 +493,7 @@ pub proc compute_max_called_proc_immediate_threshold
             # => [PROC_ROOT, num_procedures-1, max_called_proc_immediate_threshold]
 
             exec.get_procedure_policy
-            # => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes, num_procedures-1, max_called_proc_immediate_threshold]
+            # => [immediate_threshold, delayed_threshold, note_restrictions, 0, num_procedures-1, max_called_proc_immediate_threshold]
 
             movdn.3 drop drop drop dup dup.3
             # => [max_called_proc_immediate_threshold, immediate_threshold, immediate_threshold, num_procedures-1, max_called_proc_immediate_threshold]
@@ -558,23 +566,18 @@ end
 
 #! Sets or clears a per-procedure policy.
 #!
-#! Inputs:
-#!   [immediate_threshold, delayed_threshold, requires_isolated_tx,
-#!    requires_no_input_output_notes, PROC_ROOT]
+#! Inputs: [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
 #! Outputs: []
 #! Invocation: call
-@locals(4)
+@locals(3)
 pub proc set_procedure_policy
     loc_store.0
-    # => [delayed_threshold, requires_isolated_tx, requires_no_input_output_notes, PROC_ROOT]
+    # => [delayed_threshold, note_restrictions, PROC_ROOT]
 
     loc_store.1
-    # => [requires_isolated_tx, requires_no_input_output_notes, PROC_ROOT]
+    # => [note_restrictions, PROC_ROOT]
 
     loc_store.2
-    # => [requires_no_input_output_notes, PROC_ROOT]
-
-    loc_store.3
     # => [PROC_ROOT]
 
     exec.get_current_num_approvers
@@ -607,8 +610,7 @@ pub proc set_procedure_policy
     drop
     # => [PROC_ROOT]
 
-    loc_load.2 exec.assert_binary
-    loc_load.3 exec.assert_binary
+    loc_load.2 exec.assert_valid_note_restrictions
     # => [PROC_ROOT]
 
     loc_load.0
@@ -622,7 +624,6 @@ pub proc set_procedure_policy
         # => [PROC_ROOT]
 
         loc_load.2 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
-        loc_load.3 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
         # => [PROC_ROOT]
     else
         drop
@@ -640,14 +641,14 @@ pub proc set_procedure_policy
         end
     end
 
-    loc_load.3
+    push.0
     loc_load.2
     loc_load.1
     loc_load.0
-    # => [immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes, PROC_ROOT]
+    # => [immediate_threshold, delayed_threshold, note_restrictions, 0, PROC_ROOT]
 
     swapw
-    # => [PROC_ROOT, immediate_threshold, delayed_threshold, requires_isolated_tx, requires_no_input_output_notes]
+    # => [PROC_ROOT, immediate_threshold, delayed_threshold, note_restrictions, 0]
 
     push.PROC_POLICY_ROOTS_SLOT[0..2]
     exec.native_account::set_map_item
@@ -683,6 +684,19 @@ pub proc set_procedure_threshold
     # => []
 
     loc_load.0
+    exec.get_current_num_approvers
+    # => [num_approvers, PROC_ROOT]
+
+    loc_load.1
+    swap
+    # => [num_approvers, proc_threshold, PROC_ROOT]
+
+    dup.1 swap
+    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
+    # => [proc_threshold, PROC_ROOT]
+
+    drop
     # => [PROC_ROOT]
 
     push.0
@@ -693,8 +707,12 @@ pub proc set_procedure_threshold
     loc_load.1
     # => [proc_threshold, 0, 0, 0, PROC_ROOT]
 
-    exec.set_procedure_policy
-    # => []
+    swapw
+    # => [PROC_ROOT, proc_threshold, 0, 0, 0]
+
+    push.PROC_POLICY_ROOTS_SLOT[0..2]
+    exec.native_account::set_map_item
+    dropw
 end
 
 #! Returns signer public key at index i

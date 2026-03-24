@@ -28,40 +28,46 @@ pub enum ProcedurePolicyMode {
 
 /// Additional transaction-shape constraints that may be imposed on a protected procedure call.
 ///
-/// These flags are encoded into the shared multisig procedure-policy map and are interpreted by
-/// smart multisig runtime checks.
+/// The note restrictions are encoded into the shared multisig procedure-policy map and may be
+/// interpreted by advanced multisig runtimes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u32)]
+pub enum ProcedurePolicyNoteRestrictions {
+    #[default]
+    Any = 0,
+    NoInputNotes = 1,
+    NoOutputNotes = 2,
+    NoInputOutputNotes = 3,
+}
+
+/// Additional note-shape constraints that may be imposed on a protected procedure call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProcedurePolicyConstraints {
-    pub isolated_tx: bool,
-    pub no_input_output_notes: bool,
+    pub note_restrictions: ProcedurePolicyNoteRestrictions,
 }
 
 impl ProcedurePolicyConstraints {
     pub const fn none() -> Self {
         Self {
-            isolated_tx: false,
-            no_input_output_notes: false,
+            note_restrictions: ProcedurePolicyNoteRestrictions::Any,
         }
     }
 
-    pub const fn isolated_tx() -> Self {
+    pub const fn no_input_notes() -> Self {
         Self {
-            isolated_tx: true,
-            no_input_output_notes: false,
+            note_restrictions: ProcedurePolicyNoteRestrictions::NoInputNotes,
+        }
+    }
+
+    pub const fn no_output_notes() -> Self {
+        Self {
+            note_restrictions: ProcedurePolicyNoteRestrictions::NoOutputNotes,
         }
     }
 
     pub const fn no_input_output_notes() -> Self {
         Self {
-            isolated_tx: false,
-            no_input_output_notes: true,
-        }
-    }
-
-    pub const fn isolated_no_input_output_notes() -> Self {
-        Self {
-            isolated_tx: true,
-            no_input_output_notes: true,
+            note_restrictions: ProcedurePolicyNoteRestrictions::NoInputOutputNotes,
         }
     }
 }
@@ -69,7 +75,7 @@ impl ProcedurePolicyConstraints {
 /// Shared per-procedure policy configuration used by multisig account variants.
 ///
 /// The policy is encoded into the canonical procedure-policy storage word as:
-/// `[immediate_threshold, delayed_threshold, isolated_tx, no_input_output_notes]`.
+/// `[immediate_threshold, delayed_threshold, note_restrictions, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicy {
     mode: ProcedurePolicyMode,
@@ -207,8 +213,8 @@ impl ProcedurePolicy {
         Word::from([
             immediate_threshold,
             delay_threshold,
-            self.constraints.isolated_tx as u32,
-            self.constraints.no_input_output_notes as u32,
+            self.constraints.note_restrictions as u32,
+            0,
         ])
     }
 }
@@ -217,14 +223,19 @@ impl ProcedurePolicy {
 mod tests {
     use alloc::string::ToString;
 
-    use super::{ProcedurePolicy, ProcedurePolicyConstraints, ProcedurePolicyThresholds};
+    use super::{
+        ProcedurePolicy,
+        ProcedurePolicyConstraints,
+        ProcedurePolicyNoteRestrictions,
+        ProcedurePolicyThresholds,
+    };
 
     #[test]
     fn procedure_policy_word_encoding_matches_storage_layout() {
         let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
-            .with_constraints(ProcedurePolicyConstraints::isolated_no_input_output_notes());
+            .with_constraints(ProcedurePolicyConstraints::no_input_output_notes());
 
-        assert_eq!(policy.to_word(), [4u32, 3, 1, 1].into());
+        assert_eq!(policy.to_word(), [4u32, 3, 3, 0].into());
     }
 
     #[test]
@@ -279,6 +290,26 @@ mod tests {
                 immediate_threshold: None,
                 delay_threshold: Some(2),
             }
+        );
+    }
+
+    #[test]
+    fn procedure_policy_constraints_expose_named_note_restrictions_values() {
+        assert_eq!(
+            ProcedurePolicyConstraints::none().note_restrictions,
+            ProcedurePolicyNoteRestrictions::Any
+        );
+        assert_eq!(
+            ProcedurePolicyConstraints::no_input_notes().note_restrictions,
+            ProcedurePolicyNoteRestrictions::NoInputNotes
+        );
+        assert_eq!(
+            ProcedurePolicyConstraints::no_output_notes().note_restrictions,
+            ProcedurePolicyNoteRestrictions::NoOutputNotes
+        );
+        assert_eq!(
+            ProcedurePolicyConstraints::no_input_output_notes().note_restrictions,
+            ProcedurePolicyNoteRestrictions::NoInputOutputNotes
         );
     }
 }

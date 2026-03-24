@@ -25,6 +25,7 @@ pub use procedure_policies::{
     ProcedurePolicy,
     ProcedurePolicyConstraints,
     ProcedurePolicyMode,
+    ProcedurePolicyNoteRestrictions,
     ProcedurePolicyThresholds,
 };
 
@@ -538,7 +539,7 @@ mod tests {
                 cfg.with_proc_policies(vec![(
                     BasicWallet::receive_asset_digest(),
                     ProcedurePolicy::with_immediate_threshold(1)
-                        .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
+                        .with_constraints(ProcedurePolicyConstraints::no_input_output_notes()),
                 )])
             })
             .and_then(AuthMultisig::new);
