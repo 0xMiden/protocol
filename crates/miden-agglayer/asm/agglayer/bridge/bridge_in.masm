@@ -746,7 +746,7 @@ proc load_destination_address
 end
 
 # Inputs: []
-# Outputs: [U256[0], U256[1]]
+# Outputs: [U256_LO, U256_HI]
 proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
@@ -756,7 +756,7 @@ proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
-    # => [U256[0], U256[1]]
+    # => [U256_LO, U256_HI]
 end
 
 #! Reads the origin token address (5 felts) from the leaf data in memory.
