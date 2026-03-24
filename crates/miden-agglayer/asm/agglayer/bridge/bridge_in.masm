@@ -713,10 +713,11 @@ proc claim_batch_pipe_double_words
     # 1) Verify PROOF_DATA_KEY
     mem_storew_be.CLAIM_PROOF_DATA_KEY_MEM_ADDR
     adv.push_mapval
-    # => [PROOF_DATA_KEY]
+    # => [PROOF_DATA_KEY, LEAF_DATA_KEY]
 
     push.CLAIM_PROOF_DATA_START_PTR push.CLAIM_PROOF_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
+    # => [LEAF_DATA_KEY]
 
     # 2) Verify LEAF_DATA_KEY
     mem_storew_be.CLAIM_LEAF_DATA_KEY_MEM_ADDR
