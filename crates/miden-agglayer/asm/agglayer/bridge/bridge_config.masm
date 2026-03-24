@@ -65,6 +65,7 @@ pub proc update_ger
 
     exec.native_account::set_map_item
     # => [OLD_VALUE, pad(12)]
+    
     dropw
     # => [pad(16)]
 end
@@ -261,8 +262,6 @@ end
 #!
 #! Invocation: exec
 pub proc assert_sender_is_bridge_admin
-    # => [pad(16)]
-
     push.BRIDGE_ADMIN_SLOT[0..2]
     exec.active_account::get_item
     # => [0, 0, admin_suffix, admin_prefix, pad(16)]
@@ -291,8 +290,6 @@ end
 #!
 #! Invocation: exec
 pub proc assert_sender_is_ger_manager
-    # => [pad(16)]
-
     push.GER_MANAGER_SLOT[0..2]
     exec.active_account::get_item
     # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
