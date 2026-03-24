@@ -27,7 +27,7 @@ contract LeafValueTestVectors is Test, DepositContractV2 {
         uint32 originNetwork = 0;
         address originTokenAddress = 0xD9343a049D5DBd89CD19DC6BcA8c48fB3a0a42a7;
         uint32 destinationNetwork = 7;
-        address destinationAddress = 0xD9b20Fe633b609B01081aD0428e81f8Dd604F5C5;
+        address destinationAddress = 0x00000000AA0000000000bb000000cc000000Dd00;
         uint256 amount = 2000000000000000000; // 2e18
 
         // Original metadata from the transaction (ABI encoded: name, symbol, decimals)
