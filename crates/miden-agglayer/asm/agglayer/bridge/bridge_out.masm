@@ -457,6 +457,7 @@ proc write_address_to_memory(mem_ptr: MemoryAddress, address: EthereumAddressFor
     # => [mem_ptr+4, address(1)]
 
     mem_store
+    # => []
 end
 
 #! Computes the SERIAL_NUM of the outputted BURN note.
