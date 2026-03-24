@@ -21,7 +21,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 repository   = "https://github.com/0xMiden/protocol"
 rust-version = "1.90"
-version      = "0.14.0"
+version      = "0.15.0"
 
 [profile.release]
 codegen-units = 1
@@ -37,14 +37,14 @@ lto           = true
 
 [workspace.dependencies]
 # Workspace crates
-miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.14" }
-miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.14" }
-miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.14" }
-miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.14" }
-miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.14" }
-miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.14" }
-miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.14" }
-miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.14" }
+miden-agglayer        = { default-features = false, path = "crates/miden-agglayer", version = "0.15" }
+miden-block-prover    = { default-features = false, path = "crates/miden-block-prover", version = "0.15" }
+miden-protocol        = { default-features = false, path = "crates/miden-protocol", version = "0.15" }
+miden-protocol-macros = { default-features = false, path = "crates/miden-protocol-macros", version = "0.15" }
+miden-standards       = { default-features = false, path = "crates/miden-standards", version = "0.15" }
+miden-testing         = { default-features = false, path = "crates/miden-testing", version = "0.15" }
+miden-tx              = { default-features = false, path = "crates/miden-tx", version = "0.15" }
+miden-tx-batch-prover = { default-features = false, path = "crates/miden-tx-batch-prover", version = "0.15" }
 
 # Miden dependencies
 miden-assembly        = { default-features = false, version = "0.22" }
