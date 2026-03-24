@@ -43,7 +43,7 @@ const IS_CLAIMED_FLAG = [1, 0, 0, 0]
 # -------------------------------------------------------------------------------------------------
 
 # The slot in this component's storage layout where claim nullifiers are stored.
-# Map entries: RPO(leaf_index, source_bridge_network) => [1, 0, 0, 0]
+# Map entries: Poseidon2(leaf_index, source_bridge_network) => [1, 0, 0, 0]
 const CLAIM_NULLIFIERS_SLOT = word("agglayer::bridge::claim_nullifiers")
 
 # Storage slot constants for the CGI (claimed global index) chain hash. 
@@ -420,6 +420,7 @@ pub proc verify_merkle_proof(
     movdn.8 exec.word::eq and
     # => [verification_flag]
 end
+
 #! Verifies that the faucet_mint_amount matches the raw U256 amount from the leaf data,
 #! scaled down by the faucet's scale factor.
 #!
@@ -533,6 +534,7 @@ proc verify_leaf
     # 1. compute GER from mainnet + rollup exit roots
     push.EXIT_ROOTS_PTR
     # => [exit_roots_ptr, LEAF_VALUE[8]]
+    
     exec.compute_ger
     # => [GER[8], LEAF_VALUE[8]]
 
@@ -644,7 +646,7 @@ proc verify_leaf
     # => []
 end
 
-#! Computes the claim nullifier as RPO(leaf_index, source_bridge_network), then checks
+#! Computes the claim nullifier as Poseidon2(leaf_index, source_bridge_network), then checks
 #! that the claim has not been spent and marks it as spent.
 #!
 #! This mimics the Solidity `_setAndCheckClaimed(leafIndex, sourceBridgeNetwork)` function.
@@ -679,7 +681,7 @@ end
 #! Checks that the CLAIM note has not already been spent, and marks it as spent
 #! by storing [1, 0, 0, 0] in the CLAIM_NULLIFIERS_SLOT map.
 #!
-#! The nullifier is computed as RPO(leaf_index, source_bridge_network), which uniquely
+#! The nullifier is computed as Poseidon2(leaf_index, source_bridge_network), which uniquely
 #! identifies a claim in the Global Exit Root (GER) as per the AggLayer protocol.
 #!
 #! Inputs:  [NULLIFIER]
@@ -907,8 +909,6 @@ proc build_mint_recipient
     # => [MINT_RECIPIENT]
 end
 
-
-
 #! Creates the MINT output note and sets the NetworkAccountTarget attachment on it.
 #!
 #! Creates a public output note with no assets, and sets the attachment so only the
@@ -1096,4 +1096,4 @@ proc store_cgi_chain_hash
     push.CGI_CHAIN_HASH_HI_SLOT_NAME[0..2]
     exec.native_account::set_item dropw
     # => []
-end 
+end
