@@ -378,6 +378,7 @@ end
 pub proc compute_ger(exit_roots_ptr: MemoryAddress) -> DoubleWord
     push.64 swap
     # => [exit_roots_ptr, len_bytes]
+
     exec.keccak256::hash_bytes
     # => [GER_ROOT[8]]
 end
@@ -616,7 +617,6 @@ proc verify_leaf
         # => [LOCAL_EXIT_ROOT_LO, LOCAL_EXIT_ROOT_HI, rollup_index, rollup_exit_root_ptr]
         
         push.SMT_PROOF_ROLLUP_EXIT_ROOT_PTR movdn.8
-
         # => [LOCAL_EXIT_ROOT[8], smt_proof_rollup_ptr, rollup_index, rollup_exit_root_ptr]
 
         exec.verify_merkle_proof
@@ -725,6 +725,7 @@ proc claim_batch_pipe_double_words
 
     push.CLAIM_LEAF_DATA_START_PTR push.CLAIM_LEAF_DATA_WORD_LEN
     exec.mem::pipe_double_words_preimage_to_memory drop
+    # => []
 end
 
 #! Extracts the destination account ID as address[5] from memory.
@@ -755,6 +756,7 @@ proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_2
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_1
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_0
+    # => [U256[0], U256[1]]
 end
 
 #! Reads the origin token address (5 felts) from the leaf data in memory.

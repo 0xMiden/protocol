@@ -64,5 +64,4 @@ begin
 
     call.bridge_config::update_ger
     # => [pad(16)]
-
 end

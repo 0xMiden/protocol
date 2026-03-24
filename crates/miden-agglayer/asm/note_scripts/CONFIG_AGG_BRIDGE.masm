@@ -78,6 +78,7 @@ begin
 
     # Register the faucet in the bridge
     # => [addr4, addr3, addr2, addr1, addr0, faucet_id_suffix, faucet_id_prefix, pad(9), pad(7)]
+    
     call.bridge_config::register_faucet
     # => [pad(16), pad(7)]
 

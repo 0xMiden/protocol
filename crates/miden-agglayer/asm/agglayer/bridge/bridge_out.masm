@@ -176,7 +176,7 @@ pub proc bridge_out
     exec.asset::load
     swapw dropw
     # => [ASSET_KEY, PROC_MAST_ROOT, pad(16)]
-    # ASSET layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
+    # ASSET_KEY layout: [0, 0, faucet_id_suffix, faucet_id_prefix]
 
     # Extract faucet ID, drop padding and amount
     drop drop
@@ -188,6 +188,7 @@ pub proc bridge_out
     push.LEAF_DATA_START_PTR push.METADATA_HASH_OFFSET add
     movdn.8
     # => [METADATA_HASH_LO, METADATA_HASH_HI, metadata_hash_ptr, pad(8)]
+
     exec.utils::mem_store_double_word_unaligned
     # => [pad(16)]
 
@@ -215,6 +216,7 @@ pub proc bridge_out
     locaddr.BRIDGE_OUT_BURN_ASSET_LOC
     exec.asset::load
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    
     exec.create_burn_note
     # => [pad(16)]
 end
