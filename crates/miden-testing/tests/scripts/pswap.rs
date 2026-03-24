@@ -957,7 +957,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     assert_eq!(pswap.sender(), alice.id(), "Sender mismatch after roundtrip");
     assert_eq!(pswap.note_type(), NoteType::Public, "Note type mismatch after roundtrip");
     assert_eq!(pswap.assets().num_assets(), 1, "Assets count mismatch after roundtrip");
-    assert_eq!(pswap.storage().requested_amount(), 25, "Requested amount mismatch");
+    assert_eq!(pswap.storage().requested_asset_amount(), 25, "Requested amount mismatch");
     assert_eq!(pswap.storage().swap_count(), 0, "Swap count should be 0");
     assert_eq!(pswap.storage().creator_account_id(), alice.id(), "Creator ID mismatch");
 
@@ -993,7 +993,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
         alice.id(),
         "Remainder creator should be Alice"
     );
-    let remaining_requested = remainder_pswap.storage().requested_amount();
+    let remaining_requested = remainder_pswap.storage().requested_asset_amount();
     assert_eq!(remaining_requested, 15, "Remaining requested should be 15");
 }
 
@@ -1031,5 +1031,5 @@ fn pswap_parse_inputs_roundtrip() {
     assert_eq!(parsed.swap_count(), 0, "Swap count should be 0");
 
     // Verify requested amount from value word
-    assert_eq!(parsed.requested_amount(), 25, "Requested amount should be 25");
+    assert_eq!(parsed.requested_asset_amount(), 25, "Requested amount should be 25");
 }
