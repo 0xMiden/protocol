@@ -272,10 +272,10 @@ proc convert_asset
     # => [faucet_id_suffix, faucet_id_prefix, PROC_MAST_ROOT, amount, pad(15), pad(1)]
 
     exec.tx::execute_foreign_procedure
-    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2), pad(1)]
+    # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network, pad(2)]
 
-    # drop the 3 trailing padding elements
-    repeat.3
+    # drop the 2 trailing padding elements
+    repeat.2
         movup.14 drop
     end
     # => [AMOUNT_U256[0](4), AMOUNT_U256[1](4), origin_addr(5), origin_network]
