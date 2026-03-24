@@ -96,7 +96,15 @@ end
 #!
 #! Invocation: exec
 pub proc assert_no_input_or_output_notes
-    exec.assert_no_input_notes
-    exec.assert_no_output_notes
+    exec.tx::get_num_input_notes
+    # => [num_input_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
+    # => []
+
+    exec.tx::get_num_output_notes
+    # => [num_output_notes]
+
+    assertz.err=ERR_AUTH_TRANSACTION_MUST_NOT_INCLUDE_INPUT_OR_OUTPUT_NOTES
     # => []
 end

@@ -96,9 +96,6 @@ const MAX_PROC_POLICY_NOTE_RESTRICTIONS = 3
 #! Inputs:  [note_restrictions]
 #! Outputs: []
 proc assert_valid_note_restrictions
-    dup
-    # => [note_restrictions, note_restrictions]
-
     u32assert.err=ERR_POLICY_NOTE_RESTRICTIONS_INVALID
     # => [note_restrictions]
 
