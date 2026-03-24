@@ -809,15 +809,15 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
                 Asset::Fungible(FungibleAsset::new(eth_faucet.id(), current_requested)?);
 
             let pswap_tag =
-                PswapNote::build_tag(NoteType::Public, &offered_asset, &requested_asset);
-            let p2id_tag = NoteTag::with_account_target(alice.id());
+                PswapNote::create_tag(NoteType::Public, &offered_asset, &requested_asset);
+            let payback_note_tag = NoteTag::with_account_target(alice.id());
 
             let storage = PswapNoteStorage::from_parts(
                 requested_asset.to_key_word(),
                 requested_asset.to_value_word(),
                 pswap_tag,
-                p2id_tag,
-                current_swap_count,
+                payback_note_tag,
+                current_swap_count as u16,
                 alice.id(),
             );
             let note_assets = NoteAssets::new(vec![offered_asset])?;
