@@ -1,8 +1,8 @@
 use miden::protocol::asset
 use miden::protocol::active_account
-use ::miden::protocol::kernel_proc_offsets::FAUCET_MINT_ASSET_OFFSET
-use ::miden::protocol::kernel_proc_offsets::FAUCET_BURN_ASSET_OFFSET
-use ::miden::protocol::kernel_proc_offsets::FAUCET_HAS_CALLBACKS_OFFSET
+use miden::protocol::kernel_proc_offsets::FAUCET_MINT_ASSET_OFFSET
+use miden::protocol::kernel_proc_offsets::FAUCET_BURN_ASSET_OFFSET
+use miden::protocol::kernel_proc_offsets::FAUCET_HAS_CALLBACKS_OFFSET
 
 #! Creates a fungible asset for the faucet the transaction is being executed against.
 #!

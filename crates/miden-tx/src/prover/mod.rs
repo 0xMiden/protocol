@@ -54,11 +54,14 @@ impl LocalTransactionProver {
         ref_block_commitment: Word,
         proof: ExecutionProof,
     ) -> Result<ProvenTransaction, TransactionProverError> {
+        let fee = tx_outputs.fee();
+        let expiration_block_num = tx_outputs.expiration_block_num();
+        let (account_header, output_notes) = tx_outputs.into_parts();
+
         // erase private note information (convert private full notes to just headers)
-        let output_notes: Vec<_> = tx_outputs
-            .output_notes
-            .iter()
-            .map(|note| note.to_output_note())
+        let output_notes: Vec<_> = output_notes
+            .into_iter()
+            .map(|note| note.into_output_note())
             .collect::<Result<Vec<_>, _>>()
             .map_err(TransactionProverError::OutputNoteShrinkFailed)?;
 
@@ -70,7 +73,7 @@ impl LocalTransactionProver {
         let mut post_fee_account_delta = pre_fee_account_delta;
         post_fee_account_delta
             .vault_mut()
-            .remove_asset(Asset::from(tx_outputs.fee))
+            .remove_asset(Asset::from(fee))
             .map_err(TransactionProverError::RemoveFeeAssetFromDelta)?;
 
         let account_update_details = if account.has_public_state() {
@@ -82,7 +85,7 @@ impl LocalTransactionProver {
         let account_update = TxAccountUpdate::new(
             account.id(),
             account.initial_commitment(),
-            tx_outputs.account.to_commitment(),
+            account_header.to_commitment(),
             pre_fee_delta_commitment,
             account_update_details,
         )
@@ -94,8 +97,8 @@ impl LocalTransactionProver {
             output_notes,
             ref_block_num,
             ref_block_commitment,
-            tx_outputs.fee,
-            tx_outputs.expiration_block_num,
+            fee,
+            expiration_block_num,
             proof,
         )
         .map_err(TransactionProverError::ProvenTransactionBuildFailed)

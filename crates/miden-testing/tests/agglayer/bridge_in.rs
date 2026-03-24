@@ -4,12 +4,13 @@ use alloc::slice;
 use alloc::string::String;
 
 use anyhow::Context;
-use miden_agglayer::claim_note::Keccak256Output;
 use miden_agglayer::errors::ERR_CLAIM_ALREADY_SPENT;
 use miden_agglayer::{
     ClaimNoteStorage,
     ConfigAggBridgeNote,
+    EthEmbeddedAccountId,
     ExitRoot,
+    LeafValue,
     SmtNode,
     UpdateGerNote,
     agglayer_library,
@@ -67,7 +68,7 @@ fn merkle_proof_verification_code(
     let root = ExitRoot::from(hex_to_bytes(&merkle_paths.roots[index]).unwrap());
     let [root_lo, root_hi] = root.to_words();
 
-    let leaf = Keccak256Output::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
+    let leaf = LeafValue::from(hex_to_bytes(&merkle_paths.leaves[index]).unwrap());
     let [leaf_lo, leaf_hi] = leaf.to_words();
 
     format!(
@@ -171,10 +172,9 @@ async fn test_bridge_in_claim_to_p2id(#[case] data_source: ClaimDataSource) -> a
     // Get the destination account ID from the leaf data.
     // This requires the destination_address to be in the embedded Miden AccountId format
     // (first 4 bytes must be zero).
-    let destination_account_id = leaf_data
-        .destination_address
-        .to_account_id()
-        .expect("destination address is not an embedded Miden AccountId");
+    let destination_account_id = EthEmbeddedAccountId::try_from(leaf_data.destination_address)
+        .expect("destination address is not an embedded Miden AccountId")
+        .into_account_id();
 
     // For the simulated/rollup case, create the destination account so we can consume the P2ID note
     let destination_account = if matches!(
