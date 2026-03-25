@@ -1,16 +1,23 @@
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKey};
 use miden_protocol::account::{
-    Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
+    Account,
+    AccountBuilder,
+    AccountId,
+    AccountStorageMode,
+    AccountType,
 };
 use miden_protocol::asset::FungibleAsset;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::testing::account_id::{
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word};
 use miden_standards::account::auth::{
-    AuthGuardedMultisig, AuthGuardedMultisigConfig, GuardianConfig,
+    AuthGuardedMultisig,
+    AuthGuardedMultisigConfig,
+    GuardianConfig,
 };
 use miden_standards::account::components::guarded_multisig_library;
 use miden_standards::account::wallets::BasicWallet;
@@ -310,8 +317,8 @@ async fn test_guarded_multisig_update_guardian_public_key(
     mock_chain.add_pending_executed_transaction(&update_guardian_tx)?;
     mock_chain.prove_next_block()?;
 
-    // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on this same
-    // transaction.
+    // Build one tx summary after key update. Old GUARDIAN must fail and new GUARDIAN must pass on
+    // this same transaction.
     let next_salt = Word::from([Felt::new(992); 4]);
     let tx_context_init_next = mock_chain
         .build_tx_context(updated_multisig_account.id(), &[], &[])?

@@ -3,10 +3,18 @@ use alloc::vec::Vec;
 use miden_protocol::Word;
 use miden_protocol::account::auth::{AuthScheme, PublicKeyCommitment};
 use miden_protocol::account::component::{
-    AccountComponentMetadata, SchemaType, StorageSchema, StorageSlotSchema,
+    AccountComponentMetadata,
+    SchemaType,
+    StorageSchema,
+    StorageSlotSchema,
 };
 use miden_protocol::account::{
-    AccountComponent, AccountType, StorageMap, StorageMapKey, StorageSlot, StorageSlotName,
+    AccountComponent,
+    AccountType,
+    StorageMap,
+    StorageMapKey,
+    StorageSlot,
+    StorageSlotName,
 };
 use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;

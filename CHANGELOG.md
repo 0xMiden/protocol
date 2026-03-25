@@ -50,6 +50,7 @@
 ### Changes
 
 - [BREAKING] Renamed the multisig PSM auth component, procedures, storage paths, and related APIs from `psm` to `guardian`.
+- [BREAKING] Renamed the guarded multisig component-facing APIs from `multisig_guardian` / `AuthMultisigGuardian` to `guarded_multisig` / `AuthGuardedMultisig`, while retaining the `guardian` auth namespace and guardian-specific procedures.
 - Migrated to miden-vm v0.22 and miden-crypto v0.23 ([#2644](https://github.com/0xMiden/protocol/pull/2644)).
 - [BREAKING] Renamed `AccountComponent::get_procedures()` to `procedures()`, returning `impl Iterator<Item = (AccountProcedureRoot, bool)>` ([#2597](https://github.com/0xMiden/protocol/pull/2597)).
 - [BREAKING] Removed `NoteAssets::add_asset`; `OutputNoteBuilder` now accumulates assets in a `Vec` and computes the commitment only when `build()` is called, avoiding rehashing on every asset addition. ([#2577](https://github.com/0xMiden/protocol/pull/2577))
