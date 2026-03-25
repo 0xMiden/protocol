@@ -5,21 +5,22 @@ import "forge-std/Test.sol";
 import "@agglayer/v2/lib/DepositContractV2.sol";
 
 /**
- * @title MMRTestVectors
+ * @title MTFTestVectors
  * @notice Test contract that generates test vectors for verifying compatibility
- *         between Solidity's DepositContractBase and Miden's MMR Frontier implementation.
+ *         between Solidity's DepositContractBase and Miden's Merkle Tree Frontier (MTF) 
+ *         implementation.
  *
  *         Leaves are constructed via getLeafValue using the same hardcoded fields that
  *         bridge_out.masm uses (leafType=0, originNetwork=64, originTokenAddress=fixed random value,
  *         metadataHash=0), parametrised by amount (i+1) and deterministic per-leaf
  *         destination network/address values derived from a fixed seed.
  *
- * Run with: forge test -vv --match-contract MMRTestVectors
+ * Run with: forge test -vv --match-contract MTFTestVectors
  *
- * The output can be compared against the Rust KeccakMmrFrontier32 implementation
- * in crates/miden-testing/tests/agglayer/mmr_frontier.rs
+ * The output can be compared against the Rust MerkleTreeFrontier32 implementation
+ * in crates/miden-testing/tests/agglayer/merkle_tree_frontier.rs
  */
-contract MMRTestVectors is Test, DepositContractV2 {
+contract MTFTestVectors is Test, DepositContractV2 {
     // Constants matching bridge_out.masm hardcoded values
     uint8 constant LEAF_TYPE = 0;
     uint32 constant ORIGIN_NETWORK = 64;
@@ -34,7 +35,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
 
     // Fixed seed for deterministic "random" destination vectors.
     // Keeping this constant ensures everyone regenerates the exact same JSON vectors.
-    uint256 constant VECTOR_SEED = uint256(keccak256("agglayer::mmr_frontier_vectors::v2"));
+    uint256 constant VECTOR_SEED = uint256(keccak256("agglayer::merkle_tree_frontier_vectors::v2"));
 
     /**
      * @notice Builds a leaf hash identical to what bridge_out.masm would produce for the
@@ -84,7 +85,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
     }
 
     /**
-     * @notice Generates MMR frontier vectors (leaf-root pairs) and saves to JSON file.
+     * @notice Generates MTF vectors (leaf-root pairs) and saves to JSON file.
      *         Each leaf is created via _createLeaf(i+1, network[i], address[i]) so that:
      *         - amounts are 1..32
      *         - destination networks/addresses are deterministic per index from VECTOR_SEED
@@ -92,7 +93,7 @@ contract MMRTestVectors is Test, DepositContractV2 {
      *         The destination vectors are also written to JSON so the Rust bridge_out test
      *         can construct matching B2AGG notes.
      *
-     *         Output file: test-vectors/mmr_frontier_vectors.json
+     *         Output file: test-vectors/merkle_tree_frontier_vectors.json
      */
     function test_generateVectors() public {
         bytes32[] memory leaves = new bytes32[](32);
@@ -131,8 +132,8 @@ contract MMRTestVectors is Test, DepositContractV2 {
         string memory json = vm.serializeAddress(obj, "destination_addresses", destinationAddresses);
 
         // Save to file
-        string memory outputPath = "test-vectors/mmr_frontier_vectors.json";
+        string memory outputPath = "test-vectors/merkle_tree_frontier_vectors.json";
         vm.writeJson(json, outputPath);
-        console.log("Saved MMR frontier vectors to:", outputPath);
+        console.log("Saved MTF vectors to:", outputPath);
     }
 }

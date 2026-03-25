@@ -62,16 +62,16 @@ impl ExecutedTransaction {
         tx_measurements: TransactionMeasurements,
     ) -> Self {
         // make sure account IDs are consistent across transaction inputs and outputs
-        assert_eq!(tx_inputs.account().id(), tx_outputs.account.id());
+        assert_eq!(tx_inputs.account().id(), tx_outputs.account().id());
 
         // we create the id from the content, so we cannot construct the
         // `id` value after construction `Self {..}` without moving
         let id = TransactionId::new(
             tx_inputs.account().initial_commitment(),
-            tx_outputs.account.to_commitment(),
+            tx_outputs.account().to_commitment(),
             tx_inputs.input_notes().commitment(),
-            tx_outputs.output_notes.commitment(),
-            tx_outputs.fee,
+            tx_outputs.output_notes().commitment(),
+            tx_outputs.fee(),
         );
 
         Self {
@@ -103,7 +103,7 @@ impl ExecutedTransaction {
 
     /// Returns the header of the account state after the transaction was executed.
     pub fn final_account(&self) -> &AccountHeader {
-        &self.tx_outputs.account
+        self.tx_outputs.account()
     }
 
     /// Returns the notes consumed in this transaction.
@@ -113,17 +113,17 @@ impl ExecutedTransaction {
 
     /// Returns the notes created in this transaction.
     pub fn output_notes(&self) -> &RawOutputNotes {
-        &self.tx_outputs.output_notes
+        self.tx_outputs.output_notes()
     }
 
     /// Returns the fee of the transaction.
     pub fn fee(&self) -> FungibleAsset {
-        self.tx_outputs.fee
+        self.tx_outputs.fee()
     }
 
     /// Returns the block number at which the transaction will expire.
     pub fn expiration_block_num(&self) -> BlockNumber {
-        self.tx_outputs.expiration_block_num
+        self.tx_outputs.expiration_block_num()
     }
 
     /// Returns a reference to the transaction arguments.
