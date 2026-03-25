@@ -200,7 +200,8 @@ pub proc claim
     exec.claim_batch_pipe_double_words
     # => [pad(16)]
 
-    exec.get_destination_account_id_data
+    exec.load_destination_address
+    exec.eth_address::to_account_id
     loc_store.CLAIM_DEST_ID_SUFFIX_LOCAL loc_store.CLAIM_DEST_ID_PREFIX_LOCAL
     # => [pad(16)]
 
@@ -215,7 +216,7 @@ pub proc claim
     # => [pad(16)]
 
     # Look up the faucet account ID from the origin token address
-    exec.get_origin_token_address
+    exec.load_origin_token_address
     # => [origin_token_addr(5), pad(16)]
 
     exec.bridge_config::lookup_faucet_by_token_address
@@ -458,7 +459,7 @@ proc verify_claim_amount
     # => [scale]
 
     # Step 3: Load the raw U256 amount from leaf data memory
-    exec.get_raw_claim_amount
+    exec.load_raw_claim_amount
     # => [x7, x6, x5, x4, x3, x2, x1, x0, scale]
 
     # Step 4: Load faucet_mint_amount (y) and position it for verification
@@ -728,28 +729,24 @@ end
 
 #! Extracts the destination account ID as address[5] from memory.
 #!
-#! This procedure reads the destination address from the leaf data and converts it from
-#! Ethereum address format to AccountId format (suffix, prefix).
+#! Reads the destination address (5 felts) from the leaf data in memory.
 #!
 #! Inputs:  []
-#! Outputs: [suffix, prefix]
+#! Outputs: [address[5]]
 #!
 #! Invocation: exec
-proc get_destination_account_id_data
+proc load_destination_address
     mem_load.DESTINATION_ADDRESS_4
     mem_load.DESTINATION_ADDRESS_3
     mem_load.DESTINATION_ADDRESS_2
     mem_load.DESTINATION_ADDRESS_1
     mem_load.DESTINATION_ADDRESS_0
     # => [address[5]]
-
-    exec.eth_address::to_account_id
-    # => [suffix, prefix]
 end
 
 # Inputs: []
 # Outputs: [U256[0], U256[1]]
-proc get_raw_claim_amount
+proc load_raw_claim_amount
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_7
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_6
     mem_load.OUTPUT_NOTE_ASSET_AMOUNT_MEM_ADDR_5
@@ -766,7 +763,7 @@ end
 #! Outputs: [origin_token_addr(5)]
 #!
 #! Invocation: exec
-proc get_origin_token_address
+proc load_origin_token_address
     mem_load.ORIGIN_TOKEN_ADDRESS_4
     mem_load.ORIGIN_TOKEN_ADDRESS_3
     mem_load.ORIGIN_TOKEN_ADDRESS_2
