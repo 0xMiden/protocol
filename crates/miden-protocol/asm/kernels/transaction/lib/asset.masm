@@ -11,16 +11,16 @@ const ERR_VAULT_ASSET_KEY_ACCOUNT_ID_MUST_BE_FAUCET="account ID in asset vault k
 # CONSTANT ACCESSORS
 # =================================================================================================
 
-pub use ::$kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-pub use ::$kernel::util::asset::ASSET_SIZE
-pub use ::$kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use ::$kernel::util::asset::key_to_faucet_id
-pub use ::$kernel::util::asset::key_into_faucet_id
-pub use ::$kernel::util::asset::key_to_asset_id
-pub use ::$kernel::util::asset::key_into_asset_id
-pub use ::$kernel::util::asset::key_to_callbacks_enabled
-pub use ::$kernel::util::asset::store
-pub use ::$kernel::util::asset::load
+pub use $kernel::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use $kernel::util::asset::ASSET_SIZE
+pub use $kernel::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use $kernel::util::asset::key_to_faucet_id
+pub use $kernel::util::asset::key_into_faucet_id
+pub use $kernel::util::asset::key_to_asset_id
+pub use $kernel::util::asset::key_into_asset_id
+pub use $kernel::util::asset::key_to_callbacks_enabled
+pub use $kernel::util::asset::store
+pub use $kernel::util::asset::load
 
 # PROCEDURES
 # =================================================================================================

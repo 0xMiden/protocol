@@ -564,7 +564,7 @@ impl ToInputNoteCommitments for InputNoteCommitment {
     }
 
     fn note_commitment(&self) -> Option<Word> {
-        self.header.as_ref().map(NoteHeader::commitment)
+        self.header.as_ref().map(NoteHeader::to_commitment)
     }
 }
 
@@ -625,7 +625,7 @@ mod tests {
     use crate::testing::noop_auth_component::NoopAuthComponent;
     use crate::transaction::{InputNoteCommitment, OutputNote, TxAccountUpdate};
     use crate::utils::serde::{Deserializable, Serializable};
-    use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, LexicographicWord, ONE, Word};
+    use crate::{ACCOUNT_UPDATE_MAX_SIZE, EMPTY_WORD, ONE, Word};
 
     fn check_if_sync<T: Sync>() {}
     fn check_if_send<T: Send>() {}
@@ -677,10 +677,7 @@ mod tests {
         // 32 bytes in size.
         let required_entries = ACCOUNT_UPDATE_MAX_SIZE / (2 * 32);
         for _ in 0..required_entries {
-            map.insert(
-                LexicographicWord::new(StorageMapKey::from_raw(rand_value())),
-                rand_value::<Word>(),
-            );
+            map.insert(StorageMapKey::from_raw(rand_value()), rand_value::<Word>());
         }
         let storage_delta = StorageMapDelta::new(map);
 

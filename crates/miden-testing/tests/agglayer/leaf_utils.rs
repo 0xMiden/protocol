@@ -3,8 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::agglayer_library;
-use miden_agglayer::claim_note::Keccak256Output;
+use miden_agglayer::{LeafValue, agglayer_library};
 use miden_assembly::{Assembler, DefaultSourceManager};
 use miden_core_lib::CoreLibrary;
 use miden_crypto::SequentialCommit;
@@ -191,8 +190,7 @@ async fn get_leaf_value() -> anyhow::Result<()> {
     let computed_leaf_value: Vec<Felt> = exec_output.stack[0..8].to_vec();
     let expected_leaf_value_bytes: [u8; 32] =
         hex_to_bytes(&vector.leaf_value).expect("valid leaf value hex");
-    let expected_leaf_value: Vec<Felt> =
-        Keccak256Output::from(expected_leaf_value_bytes).to_elements();
+    let expected_leaf_value: Vec<Felt> = LeafValue::from(expected_leaf_value_bytes).to_elements();
 
     assert_eq!(computed_leaf_value, expected_leaf_value);
     Ok(())

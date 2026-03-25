@@ -4,17 +4,16 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
-use ::miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 use miden::standards::metadata::fungible_faucet::TOKEN_METADATA_SLOT
 
-# CONSTANTS
+# CONSTANTS
 # =================================================================================================
 
 const ASSET_PTR=0
 const PRIVATE_NOTE=2
 
-
-# ERRORS
+# ERRORS
 # =================================================================================================
 
 const ERR_FUNGIBLE_ASSET_TOKEN_SUPPLY_EXCEEDS_MAX_SUPPLY="token supply exceeds max supply"
@@ -68,19 +67,6 @@ pub proc mint_and_send
     # => [max_supply, token_supply, amount, tag, note_type, RECIPIENT]
 
     # Assert that minting does not violate any supply constraints.
-    #
-    # To make sure we cannot mint more than intended, we need to check:
-    # 1) (max_supply - token_supply) <= max_supply, i.e. the subtraction does not wrap around
-    # 2) amount + token_supply does not exceed max_supply
-    # 3) amount + token_supply is less than FUNGIBLE_ASSET_MAX_AMOUNT
-    #
-    # This is done with the following concrete assertions:
-    # - assert token_supply <= max_supply which ensures 1)
-    # - assert max_supply <= FUNGIBLE_ASSET_MAX_AMOUNT to help ensure 3)
-    # - assert amount <= max_mint_amount to ensure 2) as well as 3)
-    #   - this ensures 3) because token_supply + max_mint_amount at most ends up being equal to
-    #     max_supply and we already asserted that max_supply does not exceed
-    #     FUNGIBLE_ASSET_MAX_AMOUNT
     # ---------------------------------------------------------------------------------------------
 
     dup.1 dup.1
@@ -141,9 +127,7 @@ pub proc mint_and_send
     dupw.1 dupw.1
     # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
 
-    # mint the asset; this is needed to satisfy asset preservation logic.
-    # this ensures that the asset's faucet ID matches the native account's ID.
-    # this is ensured because create_fungible_asset creates the asset with the native account's ID
+    # mint the asset
     exec.faucet::mint
     dropw
     # => [ASSET_KEY, ASSET_VALUE, note_idx, note_idx]
@@ -157,27 +141,11 @@ end
 
 #! Burns the fungible asset from the active note.
 #!
-#! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
-#!
-#! This procedure retrieves the asset from the active note and burns it. The note must contain
-#! exactly one asset, which must be a fungible asset issued by this faucet.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
-#!
-#! Panics if:
-#! - the procedure is not called from a note context (active_note::get_assets will fail).
-#! - the note does not contain exactly one asset.
-#! - the transaction is executed against an account which is not a fungible asset faucet.
-#! - the transaction is executed against a faucet which is not the origin of the specified asset.
-#! - the amount about to be burned is greater than the token_supply of the faucet.
-#!
 #! Invocation: call
 pub proc burn
     # Get the asset from the note.
     # ---------------------------------------------------------------------------------------------
 
-    # this will fail if not called from a note context.
     push.ASSET_PTR exec.active_note::get_assets
     # => [num_assets, dest_ptr, pad(16)]
 
@@ -195,8 +163,6 @@ pub proc burn
     # => [ASSET_KEY, ASSET_VALUE, amount, pad(16)]
 
     # burn the asset
-    # this ensures we only burn assets that were issued by this faucet (which implies they are
-    # fungible)
     exec.faucet::burn
     # => [amount, pad(16)]
 

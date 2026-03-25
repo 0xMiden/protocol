@@ -221,7 +221,7 @@ impl MockChainBuilder {
         let proven_notes: Vec<_> = self
             .notes
             .into_iter()
-            .map(|note| note.to_output_note().expect("genesis note should be valid"))
+            .map(|note| note.into_output_note().expect("genesis note should be valid"))
             .collect();
         let note_chunks = proven_notes.into_iter().chunks(MAX_OUTPUT_NOTES_PER_BATCH);
         let output_note_batches: Vec<OutputNoteBatch> = note_chunks
