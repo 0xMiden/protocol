@@ -17,6 +17,13 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
+const IMMEDIATE_THRESHOLD_LOC=0
+const DELAYED_THRESHOLD_LOC=1
+const NOTE_RESTRICTIONS_LOC=2
+
+const SET_PROC_THRESHOLD_PROC_ROOT_LOC=0
+const SET_PROC_THRESHOLD_VALUE_LOC=1
+
 # CONSTANTS
 # =================================================================================================
 
@@ -66,6 +73,9 @@ const PROC_POLICY_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]
 
+# Highest valid encoded value for `note_restrictions`.
+const MAX_PROC_POLICY_NOTE_RESTRICTIONS = 3
+
 # ERRORS
 # =================================================================================================
 
@@ -91,7 +101,7 @@ const ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD = "procedure policy constraints r
 
 const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
 
-const MAX_PROC_POLICY_NOTE_RESTRICTIONS = 3
+const ERR_U32_MAX_INPUTS_NOT_U32 = "u32_max inputs must be u32"
 
 #! Inputs:  [note_restrictions]
 #! Outputs: []
@@ -187,20 +197,32 @@ proc create_approver_map_key
     # => [APPROVER_MAP_KEY]
 end
 
-#! Gets the policy entry for PROC_ROOT from the account's initial state.
+#! Gets the policy entry for a given procedure root from the account's initial state.
 #! 
-#! Inputs:  [proc_root]
+#! Inputs:  [PROC_ROOT]
 #! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, 0]
 pub proc get_procedure_policy(proc_root: word)
     push.PROC_POLICY_ROOTS_SLOT[0..2]
     exec.active_account::get_initial_map_item
 end
 
+#! Gets the immediate threshold from the policy entry for a given procedure root.
+#!
+#! Inputs:  [PROC_ROOT]
+#! Outputs: [immediate_threshold]
+proc get_immediate_threshold(proc_root: word)
+    exec.get_procedure_policy
+    # => [immediate_threshold, delayed_threshold, note_restrictions, 0]
+
+    movdn.3 drop drop drop
+    # => [immediate_threshold]
+end
+
 #! Returns the current number of approvers after any in-transaction signer update has been applied.
 #! 
 #! Inputs:  []
 #! Outputs: [num_approvers]
-pub proc get_current_num_approvers
+proc get_current_num_approvers
     push.THRESHOLD_CONFIG_SLOT[0..2]
     exec.active_account::get_item
     # => [threshold, num_approvers, 0, 0]
@@ -212,19 +234,46 @@ pub proc get_current_num_approvers
     # => [num_approvers]
 end
 
-#! Asserts that all configured per-procedure policies are less than or equal to
-#! number of approvers.
+#! Returns the larger of two u32 values.
+#!
+#! Inputs:  [rhs, lhs]
+#! Outputs: [max(lhs, rhs)]
+#! Panics if:
+#! - lhs is not a u32 value.
+#! - rhs is not a u32 value.
+proc u32_max
+    dup.1
+    dup.1
+    swap
+    # => [lhs, rhs, rhs, lhs]
+
+    u32assert2.err=ERR_U32_MAX_INPUTS_NOT_U32
+    # => [lhs, rhs, rhs, lhs]
+
+    u32gt
+    # => [is_rhs_gt_lhs, rhs, lhs]
+
+    cdrop
+    # => [max(lhs, rhs)]
+end
+
+#! Validates all configured per-procedure policies against the current number of approvers.
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []
+#! Locals:
+#! 0: immediate_threshold
+#! 1: delayed_threshold
+#! 2: note_restrictions
+#! 
 #! Panics if:
 #! - any configured procedure threshold is not a u32 value.
 #! - any configured procedure threshold exceeds num_approvers.
 #! - delayed threshold exceeds immediate threshold.
 #! - note_restrictions is not in the range 0..=3.
-#! - constraints are configured without any threshold.
-@locals(5)
-pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
+#! - note restrictions are configured without any threshold.
+@locals(3)
+pub proc assert_valid_proc_policies(num_approvers: u32)
     exec.active_account::get_num_procedures
     # => [num_procedures, num_approvers]
 
@@ -241,16 +290,17 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
         exec.active_account::get_map_item
         # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
 
-        loc_store.3
-        loc_store.2
-        loc_store.1
-        loc_store.0
+        loc_store.IMMEDIATE_THRESHOLD_LOC
+        loc_store.DELAYED_THRESHOLD_LOC
+        loc_store.NOTE_RESTRICTIONS_LOC
+        drop
+        # locals[0..=2] = [immediate_threshold, delayed_threshold, note_restrictions]
         # => [proc_index, num_approvers]
 
         dup.1
         # => [num_approvers, proc_index, num_approvers]
 
-        loc_load.3
+        loc_load.IMMEDIATE_THRESHOLD_LOC
         swap
         # => [num_approvers, immediate_threshold, proc_index, num_approvers]
 
@@ -265,7 +315,7 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
         dup.1
         # => [num_approvers, proc_index, num_approvers]
 
-        loc_load.2
+        loc_load.DELAYED_THRESHOLD_LOC
         swap
         # => [num_approvers, delayed_threshold, proc_index, num_approvers]
 
@@ -277,11 +327,11 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
         drop
         # => [proc_index, num_approvers]
 
-        loc_load.1 exec.assert_valid_note_restrictions
+        loc_load.NOTE_RESTRICTIONS_LOC exec.assert_valid_note_restrictions
         # => [proc_index, num_approvers]
 
-        loc_load.3
-        loc_load.2
+        loc_load.IMMEDIATE_THRESHOLD_LOC
+        loc_load.DELAYED_THRESHOLD_LOC
         add
         # => [immediate_plus_delayed, proc_index, num_approvers]
 
@@ -290,19 +340,34 @@ pub proc assert_proc_policies_lte_num_approvers(num_approvers: u32)
             drop
             # => [proc_index, num_approvers]
 
-            loc_load.1 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
+            loc_load.NOTE_RESTRICTIONS_LOC
+            assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
             # => [proc_index, num_approvers]
         else
             drop
             # => [proc_index, num_approvers]
 
-            loc_load.3 eq.0
+            loc_load.IMMEDIATE_THRESHOLD_LOC
+            eq.0
+            # => [is_immediate_threshold_zero, proc_index, num_approvers]
             if.false
-                loc_load.2
-                loc_load.3
+                # immediate_threshold != 0, so require delayed_threshold <= immediate_threshold
+
+                loc_load.DELAYED_THRESHOLD_LOC
+                # => [delayed_threshold, proc_index, num_approvers]
+
+                loc_load.IMMEDIATE_THRESHOLD_LOC
+                # => [immediate_threshold, delayed_threshold, proc_index, num_approvers]
+
                 dup.1 swap
+                # => [immediate_threshold, delayed_threshold, delayed_threshold, proc_index, num_approvers]
+
                 u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
+                # => [immediate_threshold, delayed_threshold, proc_index, num_approvers]
+
                 u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
+                # => [delayed_threshold_lte_immediate, proc_index, num_approvers]
+
                 drop
                 # => [proc_index, num_approvers]
             end
@@ -376,7 +441,7 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
     # make sure that all existing procedure policies remain reachable
-    exec.assert_proc_policies_lte_num_approvers
+    exec.assert_valid_proc_policies
     # => [MULTISIG_CONFIG, pad(12)]
 
     push.THRESHOLD_CONFIG_SLOT[0..2]
@@ -489,20 +554,15 @@ pub proc compute_max_called_proc_immediate_threshold
         if.true
             # => [PROC_ROOT, num_procedures-1, max_called_proc_immediate_threshold]
 
-            exec.get_procedure_policy
-            # => [immediate_threshold, delayed_threshold, note_restrictions, 0, num_procedures-1, max_called_proc_immediate_threshold]
+            exec.get_immediate_threshold
+            # => [immediate_threshold, num_procedures-1, max_called_proc_immediate_threshold]
 
-            movdn.3 drop drop drop dup dup.3
-            # => [max_called_proc_immediate_threshold, immediate_threshold, immediate_threshold, num_procedures-1, max_called_proc_immediate_threshold]
+            movup.2 swap
+            # => [immediate_threshold, max_called_proc_immediate_threshold, num_procedures-1]
 
-            u32assert2.err="transaction threshold or procedure threshold are not u32"
-            u32gt
-            # => [is_gt, immediate_threshold, num_procedures-1, max_called_proc_immediate_threshold]
-
-            movup.2 movdn.3
-            # => [is_gt, immediate_threshold, max_called_proc_immediate_threshold, num_procedures-1]
-            cdrop
+            exec.u32_max
             # => [updated_max_called_proc_immediate_threshold, num_procedures-1]
+
             swap
             # => [num_procedures-1, updated_max_called_proc_immediate_threshold]
         else
@@ -565,22 +625,26 @@ end
 #!
 #! Inputs: [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
 #! Outputs: []
+#! Locals:
+#! 0: immediate_threshold
+#! 1: delayed_threshold
+#! 2: note_restrictions
 #! Invocation: call
 @locals(3)
 pub proc set_procedure_policy
-    loc_store.0
+    loc_store.IMMEDIATE_THRESHOLD_LOC
     # => [delayed_threshold, note_restrictions, PROC_ROOT]
 
-    loc_store.1
+    loc_store.DELAYED_THRESHOLD_LOC
     # => [note_restrictions, PROC_ROOT]
 
-    loc_store.2
+    loc_store.NOTE_RESTRICTIONS_LOC
     # => [PROC_ROOT]
 
     exec.get_current_num_approvers
     # => [num_approvers, PROC_ROOT]
 
-    loc_load.0
+    loc_load.IMMEDIATE_THRESHOLD_LOC
     swap
     # => [num_approvers, immediate_threshold, PROC_ROOT]
 
@@ -595,7 +659,7 @@ pub proc set_procedure_policy
     exec.get_current_num_approvers
     # => [num_approvers, PROC_ROOT]
 
-    loc_load.1
+    loc_load.DELAYED_THRESHOLD_LOC
     swap
     # => [num_approvers, delayed_threshold, PROC_ROOT]
 
@@ -607,11 +671,12 @@ pub proc set_procedure_policy
     drop
     # => [PROC_ROOT]
 
-    loc_load.2 exec.assert_valid_note_restrictions
+    loc_load.NOTE_RESTRICTIONS_LOC
+    exec.assert_valid_note_restrictions
     # => [PROC_ROOT]
 
-    loc_load.0
-    loc_load.1
+    loc_load.IMMEDIATE_THRESHOLD_LOC
+    loc_load.DELAYED_THRESHOLD_LOC
     add
     # => [immediate_plus_delayed, PROC_ROOT]
 
@@ -620,28 +685,43 @@ pub proc set_procedure_policy
         drop
         # => [PROC_ROOT]
 
-        loc_load.2 assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
+        loc_load.NOTE_RESTRICTIONS_LOC
+        assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
         # => [PROC_ROOT]
     else
         drop
         # => [PROC_ROOT]
 
-        loc_load.0 eq.0
+        loc_load.IMMEDIATE_THRESHOLD_LOC
+        eq.0
+        # => [is_immediate_threshold_zero, PROC_ROOT]
         if.false
-            loc_load.1
-            loc_load.0
+            # immediate_threshold != 0, so require delayed_threshold <= immediate_threshold
+
+            loc_load.DELAYED_THRESHOLD_LOC
+            # => [delayed_threshold, PROC_ROOT]
+
+            loc_load.IMMEDIATE_THRESHOLD_LOC
+            # => [immediate_threshold, delayed_threshold, PROC_ROOT]
+
             dup.1 swap
+            # => [immediate_threshold, delayed_threshold, delayed_threshold, PROC_ROOT]
+
             u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
+            # => [immediate_threshold, delayed_threshold, PROC_ROOT]
+
             u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
+            # => [delayed_threshold_lte_immediate, PROC_ROOT]
+
             drop
             # => [PROC_ROOT]
         end
     end
 
     push.0
-    loc_load.2
-    loc_load.1
-    loc_load.0
+    loc_load.NOTE_RESTRICTIONS_LOC
+    loc_load.DELAYED_THRESHOLD_LOC
+    loc_load.IMMEDIATE_THRESHOLD_LOC
     # => [immediate_threshold, delayed_threshold, note_restrictions, 0, PROC_ROOT]
 
     swapw
@@ -668,23 +748,27 @@ end
 #! - current num_approvers is not a u32 value.
 #! - proc_threshold > current num_approvers.
 #!
+#! Locals:
+#! 0: proc_root
+#! 1: proc_threshold
+#!
 #! Invocation: call
 @locals(2)
 pub proc set_procedure_threshold
     swap
     # => [PROC_ROOT, proc_threshold]
 
-    loc_store.0
+    loc_store.SET_PROC_THRESHOLD_PROC_ROOT_LOC
     # => [proc_threshold]
 
-    loc_store.1
+    loc_store.SET_PROC_THRESHOLD_VALUE_LOC
     # => []
 
-    loc_load.0
+    loc_load.SET_PROC_THRESHOLD_PROC_ROOT_LOC
     exec.get_current_num_approvers
     # => [num_approvers, PROC_ROOT]
 
-    loc_load.1
+    loc_load.SET_PROC_THRESHOLD_VALUE_LOC
     swap
     # => [num_approvers, proc_threshold, PROC_ROOT]
 
@@ -701,7 +785,7 @@ pub proc set_procedure_threshold
     push.0
     # => [0, 0, 0, PROC_ROOT]
 
-    loc_load.1
+    loc_load.SET_PROC_THRESHOLD_VALUE_LOC
     # => [proc_threshold, 0, 0, 0, PROC_ROOT]
 
     swapw

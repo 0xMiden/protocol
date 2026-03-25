@@ -12,7 +12,6 @@ pub use multisig::{
     AuthMultisig,
     AuthMultisigConfig,
     ProcedurePolicy,
-    ProcedurePolicyConstraints,
     ProcedurePolicyNoteRestrictions,
 };
 

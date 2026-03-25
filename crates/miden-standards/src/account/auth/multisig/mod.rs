@@ -23,10 +23,8 @@ use miden_protocol::errors::AccountError;
 use miden_protocol::utils::sync::LazyLock;
 pub use procedure_policies::{
     ProcedurePolicy,
-    ProcedurePolicyConstraints,
-    ProcedurePolicyMode,
+    ProcedurePolicyExecutionMode,
     ProcedurePolicyNoteRestrictions,
-    ProcedurePolicyThresholds,
 };
 
 use crate::account::components::multisig_library;
@@ -101,48 +99,79 @@ impl AuthMultisigConfig {
         })
     }
 
-    /// Attaches a per-procedure policy map using the shared multisig procedure-policy model.
-    pub fn with_proc_policies(
-        mut self,
-        procedure_policies: Vec<(Word, ProcedurePolicy)>,
-    ) -> Result<Self, AccountError> {
+    fn validate_thresholds_and_approvers(
+        &self,
+        procedure_policies: &[(Word, ProcedurePolicy)],
+    ) -> Result<(), AccountError> {
         let num_approvers = self.approvers.len() as u32;
 
-        for (_, policy) in &procedure_policies {
-            policy.assert_valid_for_num_approvers(num_approvers)?;
-        }
-
-        self.procedure_policies = procedure_policies;
-        Ok(self)
-    }
-
-    /// Attaches a per-procedure threshold map. Each procedure threshold must be at least 1 and
-    /// at most the number of approvers.
-    pub fn with_proc_thresholds(
-        self,
-        proc_thresholds: Vec<(Word, u32)>,
-    ) -> Result<Self, AccountError> {
-        let num_approvers = self.approvers.len() as u32;
-
-        for (_, threshold) in &proc_thresholds {
-            if *threshold == 0 {
-                return Err(AccountError::other("procedure threshold must be at least 1"));
-            }
-            if *threshold > num_approvers {
+        for (_, policy) in procedure_policies {
+            if let Some(immediate_threshold) = policy.immediate_threshold()
+                && immediate_threshold > num_approvers
+            {
                 return Err(AccountError::other(
-                    "procedure threshold cannot be greater than number of approvers",
+                    "procedure policy immediate threshold cannot exceed number of approvers",
+                ));
+            }
+
+            if let Some(delay_threshold) = policy.delay_threshold()
+                && delay_threshold > num_approvers
+            {
+                return Err(AccountError::other(
+                    "procedure policy delay threshold cannot exceed number of approvers",
                 ));
             }
         }
 
-        self.with_proc_policies(
-            proc_thresholds
-                .into_iter()
-                .map(|(proc_root, threshold)| {
-                    (proc_root, ProcedurePolicy::with_immediate_threshold(threshold))
-                })
-                .collect(),
-        )
+        Ok(())
+    }
+
+    fn validate_procedure_policies_auth_multisig(&self) -> Result<(), AccountError> {
+        for (_, policy) in self.procedure_policies() {
+            if !matches!(
+                policy.execution_mode(),
+                ProcedurePolicyExecutionMode::ImmediateOnly { .. }
+            ) {
+                return Err(AccountError::other(
+                    "basic multisig procedure policies must be immediate-only",
+                ));
+            }
+
+            if policy.note_restrictions() != ProcedurePolicyNoteRestrictions::None {
+                return Err(AccountError::other(
+                    "basic multisig procedure policies cannot set note restrictions",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Configures per-procedure policies.
+    pub fn with_proc_policies(
+        mut self,
+        procedure_policies: Vec<(Word, ProcedurePolicy)>,
+    ) -> Result<Self, AccountError> {
+        self.validate_thresholds_and_approvers(&procedure_policies)?;
+        self.procedure_policies = procedure_policies;
+        Ok(self)
+    }
+
+    /// Configures per-procedure threshold overrides. Each procedure threshold must be at least 1
+    /// and at most the number of approvers.
+    pub fn with_proc_thresholds(
+        self,
+        proc_thresholds: Vec<(Word, u32)>,
+    ) -> Result<Self, AccountError> {
+        let procedure_policies = proc_thresholds
+            .into_iter()
+            .map(|(proc_root, threshold)| {
+                ProcedurePolicy::with_immediate_threshold(threshold)
+                    .map(|policy| (proc_root, policy))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.with_proc_policies(procedure_policies)
     }
 
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
@@ -178,20 +207,7 @@ impl AuthMultisig {
 
     /// Creates a new [`AuthMultisig`] component from the provided configuration.
     pub fn new(config: AuthMultisigConfig) -> Result<Self, AccountError> {
-        for (_, policy) in config.procedure_policies() {
-            if !matches!(policy.mode(), ProcedurePolicyMode::ImmediateOnly { .. }) {
-                return Err(AccountError::other(
-                    "basic multisig procedure policies must be immediate-only",
-                ));
-            }
-
-            if policy.constraints() != ProcedurePolicyConstraints::none() {
-                return Err(AccountError::other(
-                    "basic multisig procedure policies cannot set constraints",
-                ));
-            }
-        }
-
+        config.validate_procedure_policies_auth_multisig()?;
         Ok(Self { config })
     }
 
@@ -290,8 +306,8 @@ impl AuthMultisig {
         )
     }
 
-    /// Returns the storage slot schema for the immediate-threshold-compatible procedure policies
-    /// slot.
+    /// Returns the storage slot schema for the procedure policies slot
+    /// which only supports immediate threshold rather than full procedure policies.
     pub fn procedure_thresholds_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         Self::procedure_policies_slot_schema()
     }
@@ -511,6 +527,29 @@ mod tests {
     }
 
     #[test]
+    fn test_multisig_config_rejects_procedure_policies_above_num_approvers() {
+        let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
+        let approvers = vec![
+            (sec_key_1.public_key().to_commitment(), sec_key_1.auth_scheme()),
+            (sec_key_2.public_key().to_commitment(), sec_key_2.auth_scheme()),
+        ];
+
+        let too_large_threshold = AuthMultisigConfig::new(approvers, 2).and_then(|cfg| {
+            cfg.with_proc_policies(vec![(
+                BasicWallet::receive_asset_digest(),
+                ProcedurePolicy::with_delay_threshold(3).unwrap(),
+            )])
+        });
+        assert!(
+            too_large_threshold
+                .unwrap_err()
+                .to_string()
+                .contains("procedure policy delay threshold cannot exceed number of approvers")
+        );
+    }
+
+    #[test]
     fn test_multisig_component_rejects_non_basic_procedure_policies() {
         let sec_key_1 = AuthSecretKey::new_ecdsa_k256_keccak();
         let sec_key_2 = AuthSecretKey::new_ecdsa_k256_keccak();
@@ -523,7 +562,7 @@ mod tests {
             .and_then(|cfg| {
                 cfg.with_proc_policies(vec![(
                     BasicWallet::receive_asset_digest(),
-                    ProcedurePolicy::with_delay_threshold(1),
+                    ProcedurePolicy::with_delay_threshold(1).unwrap(),
                 )])
             })
             .and_then(AuthMultisig::new);
@@ -534,20 +573,21 @@ mod tests {
                 .contains("basic multisig procedure policies must be immediate-only")
         );
 
-        let constrained = AuthMultisigConfig::new(approvers, 2)
+        let note_restricted = AuthMultisigConfig::new(approvers, 2)
             .and_then(|cfg| {
                 cfg.with_proc_policies(vec![(
                     BasicWallet::receive_asset_digest(),
-                    ProcedurePolicy::with_immediate_threshold(1)
-                        .with_constraints(ProcedurePolicyConstraints::no_input_output_notes()),
+                    ProcedurePolicy::with_immediate_threshold(1).unwrap().with_note_restrictions(
+                        ProcedurePolicyNoteRestrictions::NoInputOutputNotes,
+                    ),
                 )])
             })
             .and_then(AuthMultisig::new);
         assert!(
-            constrained
+            note_restricted
                 .unwrap_err()
                 .to_string()
-                .contains("basic multisig procedure policies cannot set constraints")
+                .contains("basic multisig procedure policies cannot set note restrictions")
         );
     }
 
