@@ -824,7 +824,7 @@ mod tests {
         let key_word = asset.to_key_word();
         let value_word = asset.to_value_word();
 
-        let inputs = vec![
+        let storage_items = vec![
             key_word[0],
             key_word[1],
             key_word[2],
@@ -845,7 +845,7 @@ mod tests {
             creator_id.suffix(),
         ];
 
-        let parsed = PswapNoteStorage::try_from(inputs.as_slice()).unwrap();
+        let parsed = PswapNoteStorage::try_from(storage_items.as_slice()).unwrap();
         assert_eq!(parsed.swap_count(), 3);
         assert_eq!(parsed.creator_account_id(), creator_id);
         assert_eq!(
