@@ -5,6 +5,9 @@
 ### Features
 
 - Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
+### Changes
+
+- [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
 
 ## 0.14.0 (2026-03-23)
 
