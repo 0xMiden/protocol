@@ -17,7 +17,8 @@ const ORIGIN_TOKEN_ADDR_4 = 4
 const ERR_CONFIG_AGG_BRIDGE_UNEXPECTED_STORAGE_ITEMS = "CONFIG_AGG_BRIDGE expects exactly 7 note storage items"
 const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note attachment target account does not match consuming account"
 
-#! Registers a faucet in the bridge's faucet registry and token registry.
+#! Agglayer Bridge CONFIG_AGG_BRIDGE script: registers a faucet in the bridge's faucet registry and
+#! token registry.
 #!
 #! This note can only be consumed by the Agglayer Bridge account that is targeted by the note
 #! attachment, and only if the note was sent by the bridge admin.
