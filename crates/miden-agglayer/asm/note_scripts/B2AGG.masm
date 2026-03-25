@@ -36,8 +36,8 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! Outputs: []
 #!
 #! Note storage layout (6 felts total):
-#! - destination_network [0]     : 1 felt
-#! - destination_address [1..5]  : 5 felts
+#! - destination_network [0]    : 1 felt
+#! - destination_address [1..5] : 5 felts
 #!
 #! Where:
 #! - destination_network: Destination network identifier (uint32)
