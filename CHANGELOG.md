@@ -2,6 +2,10 @@
 
 ## v0.15.0 (TBD)
 
+### Features
+
+- Added PSWAP (partial swap) note for decentralized partial-fill asset exchange with remainder note re-creation ([#2636](https://github.com/0xMiden/protocol/pull/2636)).
+
 ## 0.14.0 (2026-03-23)
 
 ### Features

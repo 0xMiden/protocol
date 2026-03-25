@@ -61,8 +61,8 @@ miden-verifier        = { default-features = false, version = "0.22" }
 # External dependencies
 alloy-sol-types = { default-features = false, version = "1.5" }
 anyhow          = { default-features = false, features = ["backtrace", "std"], version = "1.0" }
-bon             = { default-features = false, version = "3" }
 assert_matches  = { default-features = false, version = "1.5" }
+bon             = { default-features = false, version = "3" }
 fs-err          = { default-features = false, version = "3" }
 primitive-types = { default-features = false, version = "0.14" }
 rand            = { default-features = false, version = "0.9" }
