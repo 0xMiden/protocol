@@ -78,7 +78,7 @@ fn token_metadata_with_name_and_description() {
     use miden_protocol::account::{AccountBuilder, AccountType};
 
     use crate::account::auth::NoAuth;
-    use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+    use crate::account::faucets::BasicFungibleFaucet;
 
     let symbol = TokenSymbol::new("POL").unwrap();
     let decimals = 2u8;
@@ -211,7 +211,7 @@ fn token_metadata_from_account_storage() {
     use miden_protocol::account::{AccountBuilder, AccountType};
 
     use crate::account::auth::NoAuth;
-    use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+    use crate::account::faucets::BasicFungibleFaucet;
 
     let symbol = TokenSymbol::new("POL").unwrap();
     let decimals = 2u8;
@@ -243,7 +243,7 @@ fn token_metadata_roundtrip_with_supply() {
     use miden_protocol::account::{AccountBuilder, AccountType};
 
     use crate::account::auth::NoAuth;
-    use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+    use crate::account::faucets::BasicFungibleFaucet;
 
     let symbol = TokenSymbol::new("POL").unwrap();
     let decimals = 2u8;
@@ -379,7 +379,7 @@ fn into_account_component() {
     use miden_protocol::account::{AccountBuilder, AccountType};
 
     use crate::account::auth::NoAuth;
-    use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+    use crate::account::faucets::BasicFungibleFaucet;
 
     let symbol = TokenSymbol::new("TST").unwrap();
     let name = TokenName::new("test token").unwrap();
@@ -415,7 +415,7 @@ fn roundtrip_via_storage_matches_original() {
     use miden_protocol::account::{AccountBuilder, AccountType};
 
     use crate::account::auth::NoAuth;
-    use crate::account::faucets::basic_fungible::BasicFungibleFaucet;
+    use crate::account::faucets::BasicFungibleFaucet;
 
     let symbol = TokenSymbol::new("RND").unwrap();
     let name = TokenName::new("Roundtrip Token").unwrap();
@@ -520,7 +520,7 @@ fn invalid_token_symbol_in_metadata_word() {
     // TokenSymbol::try_from(Felt) fails when the value exceeds MAX_ENCODED_VALUE.
     let bad_symbol = Felt::new(TokenSymbol::MAX_ENCODED_VALUE + 1);
     let bad_word = Word::from([Felt::ZERO, Felt::new(100), Felt::new(2), bad_symbol]);
-    let token_metadata = TokenMetadata::new().with_name(TokenName::default());
+    let token_metadata = TokenMetadata::new(TokenName::default());
     let result =
         FungibleTokenMetadata::from_metadata_word_and_token_metadata(bad_word, token_metadata);
     assert!(matches!(result, Err(FungibleFaucetError::InvalidTokenSymbol(_))));

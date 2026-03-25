@@ -18,14 +18,16 @@ use crate::account::faucets::FungibleFaucetError;
 /// # use miden_standards::account::metadata::{
 /// #     Description, FungibleTokenMetadataBuilder, LogoURI, TokenName,
 /// # };
-/// let name = TokenName::new("My Token").unwrap();
-/// let symbol = TokenSymbol::new("MTK").unwrap();
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let name = TokenName::new("My Token")?;
+/// let symbol = TokenSymbol::new("MTK")?;
 /// let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 8, 1_000_000)
-///     .token_supply(Felt::new(100))
-///     .description(Description::new("A test token").unwrap())
-///     .logo_uri(LogoURI::new("https://example.com/logo.png").unwrap())
-///     .build()
-///     .unwrap();
+///     .token_supply(Felt::from(100u32))
+///     .description(Description::new("A test token")?)
+///     .logo_uri(LogoURI::new("https://example.com/logo.png")?)
+///     .build()?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct FungibleTokenMetadataBuilder {

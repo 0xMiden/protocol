@@ -5,7 +5,5 @@ pub mod standards {
 }
 
 mod code_builder_errors;
-pub mod string_field_error;
 
 pub use code_builder_errors::CodeBuilderError;
-pub use string_field_error::StringFieldError;

@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::account::access::Ownable2StepError;
 
-pub mod basic_fungible;
+mod basic_fungible;
 mod network_fungible;
 mod token_metadata;
 
