@@ -1,4 +1,4 @@
-# The MASM code of the Multi-Signature Authentication Component with Guardian.
+# The MASM code of the Multi-Signature Authentication component integrated with a state guardian.
 #
 # See the `AuthMultisigGuardian` Rust type's documentation for more details.
 
