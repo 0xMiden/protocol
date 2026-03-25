@@ -2,6 +2,10 @@
 
 ## v0.15.0 (TBD)
 
+### Changes
+
+- [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+
 ## 0.14.0 (2026-03-23)
 
 ### Features
