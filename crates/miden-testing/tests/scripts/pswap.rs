@@ -39,32 +39,31 @@ async fn pswap_note_full_fill_test() -> anyhow::Result<()> {
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![offered_asset])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
     let mut mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(swap_note.id(), Word::from([Felt::new(25), Felt::new(0), ZERO, ZERO]));
+    note_args_map.insert(pswap_note.id(), Word::from([Felt::new(25), Felt::new(0), ZERO, ZERO]));
 
-    let pswap = PswapNote::try_from(&swap_note)?;
+    let pswap = PswapNote::try_from(&pswap_note)?;
     let (p2id_note, _remainder) = pswap.execute(bob.id(), 25, 0)?;
 
     let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
         .build()?;
@@ -131,33 +130,32 @@ async fn pswap_note_private_full_fill_test() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new(Word::default());
     // Create a PRIVATE swap note (output notes should also be Private)
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Private)
         .assets(NoteAssets::new(vec![offered_asset])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
     let mut mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(swap_note.id(), Word::from([Felt::new(25), Felt::new(0), ZERO, ZERO]));
+    note_args_map.insert(pswap_note.id(), Word::from([Felt::new(25), Felt::new(0), ZERO, ZERO]));
 
     // Expected P2ID note should inherit Private type from swap note
-    let pswap = PswapNote::try_from(&swap_note)?;
+    let pswap = PswapNote::try_from(&pswap_note)?;
     let (p2id_note, _remainder) = pswap.execute(bob.id(), 25, 0)?;
 
     let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note)])
         .build()?;
@@ -219,34 +217,33 @@ async fn pswap_note_partial_fill_test() -> anyhow::Result<()> {
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![offered_asset])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
     let mut mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(swap_note.id(), Word::from([Felt::new(20), Felt::new(0), ZERO, ZERO]));
+    note_args_map.insert(pswap_note.id(), Word::from([Felt::new(20), Felt::new(0), ZERO, ZERO]));
 
-    let pswap = PswapNote::try_from(&swap_note)?;
+    let pswap = PswapNote::try_from(&pswap_note)?;
     let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), 20, 0)?;
     let remainder_note =
         Note::from(remainder_pswap.expect("partial fill should produce remainder"));
 
     let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(p2id_note),
@@ -314,15 +311,14 @@ async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
 
     // Alice's note: offers 50 USDC, requests 25 ETH
     let alice_requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
-    let alice_swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(alice_requested_asset.to_key_word())
+        .requested_asset_value(alice_requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let alice_pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(alice_requested_asset.to_key_word())
-                .requested_asset_value(alice_requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -331,19 +327,18 @@ async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
         )?)])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(alice_swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(alice_pswap_note.clone()));
 
     // Bob's note: offers 25 ETH, requests 50 USDC
     let bob_requested_asset = Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?);
-    let bob_swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(bob_requested_asset.to_key_word())
+        .requested_asset_value(bob_requested_asset.to_value_word())
+        .creator_account_id(bob.id())
+        .build();
+    let bob_pswap_note: Note = PswapNote::builder()
         .sender(bob.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(bob_requested_asset.to_key_word())
-                .requested_asset_value(bob_requested_asset.to_value_word())
-                .creator_account_id(bob.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -352,25 +347,26 @@ async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
         )?)])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(bob_swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(bob_pswap_note.clone()));
 
     let mock_chain = builder.build()?;
 
     // Note args: pure inflight (input=0, inflight=full amount)
     let mut note_args_map = BTreeMap::new();
     note_args_map
-        .insert(alice_swap_note.id(), Word::from([Felt::new(0), Felt::new(25), ZERO, ZERO]));
-    note_args_map.insert(bob_swap_note.id(), Word::from([Felt::new(0), Felt::new(50), ZERO, ZERO]));
+        .insert(alice_pswap_note.id(), Word::from([Felt::new(0), Felt::new(25), ZERO, ZERO]));
+    note_args_map
+        .insert(bob_pswap_note.id(), Word::from([Felt::new(0), Felt::new(50), ZERO, ZERO]));
 
     // Expected P2ID notes
-    let alice_pswap = PswapNote::try_from(&alice_swap_note)?;
+    let alice_pswap = PswapNote::try_from(&alice_pswap_note)?;
     let (alice_p2id_note, _) = alice_pswap.execute(charlie.id(), 0, 25)?;
 
-    let bob_pswap = PswapNote::try_from(&bob_swap_note)?;
+    let bob_pswap = PswapNote::try_from(&bob_pswap_note)?;
     let (bob_p2id_note, _) = bob_pswap.execute(charlie.id(), 0, 50)?;
 
     let tx_context = mock_chain
-        .build_tx_context(charlie.id(), &[alice_swap_note.id(), bob_swap_note.id()], &[])?
+        .build_tx_context(charlie.id(), &[alice_pswap_note.id(), bob_pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(alice_p2id_note),
@@ -421,15 +417,14 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new(Word::default());
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -438,11 +433,11 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
         )?)])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
     let mock_chain = builder.build()?;
 
-    let tx_context = mock_chain.build_tx_context(alice.id(), &[swap_note.id()], &[])?.build()?;
+    let tx_context = mock_chain.build_tx_context(alice.id(), &[pswap_note.id()], &[])?.build()?;
 
     let executed_transaction = tx_context.execute().await?;
 
@@ -483,15 +478,14 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new(Word::default());
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -500,15 +494,15 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
         )?)])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
     let mock_chain = builder.build()?;
 
     // Try to fill with 30 ETH when only 25 is requested - should fail
     let mut note_args_map = BTreeMap::new();
-    note_args_map.insert(swap_note.id(), Word::from([Felt::new(30), Felt::new(0), ZERO, ZERO]));
+    note_args_map.insert(pswap_note.id(), Word::from([Felt::new(30), Felt::new(0), ZERO, ZERO]));
 
     let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_note_args(note_args_map)
         .build()?;
 
@@ -552,15 +546,14 @@ async fn pswap_note_multiple_partial_fills_test() -> anyhow::Result<()> {
 
         let mut rng = RandomCoin::new(Word::default());
         let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
-        let swap_note: Note = PswapNote::builder()
+        let storage = PswapNoteStorage::builder()
+            .requested_asset_key(requested_asset.to_key_word())
+            .requested_asset_value(requested_asset.to_value_word())
+            .creator_account_id(alice.id())
+            .build();
+        let pswap_note: Note = PswapNote::builder()
             .sender(alice.id())
-            .storage(
-                PswapNoteStorage::builder()
-                    .requested_asset_key(requested_asset.to_key_word())
-                    .requested_asset_value(requested_asset.to_value_word())
-                    .creator_account_id(alice.id())
-                    .build(),
-            )
+            .storage(storage)
             .serial_number(rng.draw_word())
             .note_type(NoteType::Public)
             .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -569,7 +562,7 @@ async fn pswap_note_multiple_partial_fills_test() -> anyhow::Result<()> {
             )?)])?)
             .build()?
             .into();
-        builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+        builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
         let mock_chain = builder.build()?;
 
@@ -577,11 +570,11 @@ async fn pswap_note_multiple_partial_fills_test() -> anyhow::Result<()> {
 
         let mut note_args_map = BTreeMap::new();
         note_args_map.insert(
-            swap_note.id(),
+            pswap_note.id(),
             Word::from([Felt::new(input_amount), Felt::new(0), ZERO, ZERO]),
         );
 
-        let pswap = PswapNote::try_from(&swap_note)?;
+        let pswap = PswapNote::try_from(&pswap_note)?;
         let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), input_amount, 0)?;
 
         let mut expected_notes = vec![RawOutputNote::Full(p2id_note)];
@@ -591,7 +584,7 @@ async fn pswap_note_multiple_partial_fills_test() -> anyhow::Result<()> {
         }
 
         let tx_context = mock_chain
-            .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+            .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
             .extend_expected_output_notes(expected_notes)
             .extend_note_args(note_args_map)
             .build()?;
@@ -636,17 +629,15 @@ async fn pswap_note_non_exact_ratio_partial_fill_test() -> anyhow::Result<()> {
     )?;
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note: Note = PswapNote::builder()
+    let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), requested_total)?);
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage({
-            let requested_asset =
-                Asset::Fungible(FungibleAsset::new(eth_faucet.id(), requested_total)?);
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build()
-        })
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -655,20 +646,20 @@ async fn pswap_note_non_exact_ratio_partial_fill_test() -> anyhow::Result<()> {
         )?)])?)
         .build()?
         .into();
-    builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
     let mock_chain = builder.build()?;
 
     let mut note_args_map = BTreeMap::new();
     note_args_map
-        .insert(swap_note.id(), Word::from([Felt::new(input_amount), Felt::new(0), ZERO, ZERO]));
+        .insert(pswap_note.id(), Word::from([Felt::new(input_amount), Felt::new(0), ZERO, ZERO]));
 
-    let pswap = PswapNote::try_from(&swap_note)?;
+    let pswap = PswapNote::try_from(&pswap_note)?;
     let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), input_amount, 0)?;
     let remainder = Note::from(remainder_pswap.expect("partial fill should produce remainder"));
 
     let tx_context = mock_chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+        .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
         .extend_expected_output_notes(vec![
             RawOutputNote::Full(p2id_note),
             RawOutputNote::Full(remainder),
@@ -754,17 +745,15 @@ async fn pswap_note_partial_fill_non_integer_ratio_fuzz_test() -> anyhow::Result
         )?;
 
         let mut rng = RandomCoin::new(Word::default());
-        let swap_note: Note = PswapNote::builder()
+        let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), *requested_eth)?);
+        let storage = PswapNoteStorage::builder()
+            .requested_asset_key(requested_asset.to_key_word())
+            .requested_asset_value(requested_asset.to_value_word())
+            .creator_account_id(alice.id())
+            .build();
+        let pswap_note: Note = PswapNote::builder()
             .sender(alice.id())
-            .storage({
-                let requested_asset =
-                    Asset::Fungible(FungibleAsset::new(eth_faucet.id(), *requested_eth)?);
-                PswapNoteStorage::builder()
-                    .requested_asset_key(requested_asset.to_key_word())
-                    .requested_asset_value(requested_asset.to_value_word())
-                    .creator_account_id(alice.id())
-                    .build()
-            })
+            .storage(storage)
             .serial_number(rng.draw_word())
             .note_type(NoteType::Public)
             .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
@@ -773,15 +762,15 @@ async fn pswap_note_partial_fill_non_integer_ratio_fuzz_test() -> anyhow::Result
             )?)])?)
             .build()?
             .into();
-        builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+        builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
 
         let mock_chain = builder.build()?;
 
         let mut note_args_map = BTreeMap::new();
         note_args_map
-            .insert(swap_note.id(), Word::from([Felt::new(*fill_eth), Felt::new(0), ZERO, ZERO]));
+            .insert(pswap_note.id(), Word::from([Felt::new(*fill_eth), Felt::new(0), ZERO, ZERO]));
 
-        let pswap = PswapNote::try_from(&swap_note)?;
+        let pswap = PswapNote::try_from(&pswap_note)?;
         let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), *fill_eth, 0)?;
 
         let mut expected_notes = vec![RawOutputNote::Full(p2id_note)];
@@ -792,7 +781,7 @@ async fn pswap_note_partial_fill_non_integer_ratio_fuzz_test() -> anyhow::Result
         }
 
         let tx_context = mock_chain
-            .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+            .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
             .extend_expected_output_notes(expected_notes)
             .extend_note_args(note_args_map)
             .build()?;
@@ -850,13 +839,11 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
         let mut current_requested = *initial_requested;
         let mut total_usdc_to_bob = 0u64;
         let mut total_eth_from_bob = 0u64;
-        let mut current_swap_count = 0u64;
-
         // Track serial for remainder chain
         let mut rng = RandomCoin::new(Word::default());
         let mut current_serial = rng.draw_word();
 
-        for (fill_idx, fill_amount) in fills.iter().enumerate() {
+        for (current_swap_count, fill_amount) in fills.iter().enumerate() {
             let offered_out = PswapNote::calculate_output_amount(
                 current_offered,
                 current_requested,
@@ -912,18 +899,18 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
             let note_storage = NoteStorage::from(storage);
             let recipient = NoteRecipient::new(current_serial, PswapNote::script(), note_storage);
             let metadata = NoteMetadata::new(alice.id(), NoteType::Public).with_tag(pswap_tag);
-            let swap_note = Note::new(note_assets, metadata, recipient);
+            let pswap_note = Note::new(note_assets, metadata, recipient);
 
-            builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
+            builder.add_output_note(RawOutputNote::Full(pswap_note.clone()));
             let mock_chain = builder.build()?;
 
             let mut note_args_map = BTreeMap::new();
             note_args_map.insert(
-                swap_note.id(),
+                pswap_note.id(),
                 Word::from([Felt::new(*fill_amount), Felt::new(0), ZERO, ZERO]),
             );
 
-            let pswap = PswapNote::try_from(&swap_note)?;
+            let pswap = PswapNote::try_from(&pswap_note)?;
             let (p2id_note, remainder_pswap) = pswap.execute(bob.id(), *fill_amount, 0)?;
 
             let mut expected_notes = vec![RawOutputNote::Full(p2id_note)];
@@ -934,7 +921,7 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
             }
 
             let tx_context = mock_chain
-                .build_tx_context(bob.id(), &[swap_note.id()], &[])?
+                .build_tx_context(bob.id(), &[pswap_note.id()], &[])?
                 .extend_expected_output_notes(expected_notes)
                 .extend_note_args(note_args_map)
                 .build()?;
@@ -943,7 +930,7 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
                 anyhow::anyhow!(
                     "Chain {} fill {} failed: {} (offered={}, requested={}, fill={})",
                     chain_idx + 1,
-                    fill_idx + 1,
+                    current_swap_count + 1,
                     e,
                     current_offered,
                     current_requested,
@@ -958,19 +945,19 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
                 expected_count,
                 "Chain {} fill {}",
                 chain_idx + 1,
-                fill_idx + 1
+                current_swap_count + 1
             );
 
             let vault_delta = executed_tx.account_delta().vault();
             let added: Vec<Asset> = vault_delta.added_assets().collect();
-            assert_eq!(added.len(), 1, "Chain {} fill {}", chain_idx + 1, fill_idx + 1);
+            assert_eq!(added.len(), 1, "Chain {} fill {}", chain_idx + 1, current_swap_count + 1);
             if let Asset::Fungible(f) = &added[0] {
                 assert_eq!(
                     f.amount(),
                     offered_out,
                     "Chain {} fill {}: Bob should get {} USDC",
                     chain_idx + 1,
-                    fill_idx + 1,
+                    current_swap_count + 1,
                     offered_out
                 );
             }
@@ -980,7 +967,6 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
             total_eth_from_bob += fill_amount;
             current_offered = remaining_offered;
             current_requested = remaining_requested;
-            current_swap_count += 1;
             // Remainder serial: [0] + 1 (matching MASM LE orientation)
             current_serial = Word::from([
                 Felt::new(current_serial[0].as_canonical_u64() + 1),
@@ -1027,15 +1013,14 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
     // Create swap note using PswapNote builder
     let mut rng = RandomCoin::new(Word::default());
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap());
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(
@@ -1049,7 +1034,7 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
         .into();
 
     // Roundtrip: try_from -> execute -> verify outputs
-    let pswap = PswapNote::try_from(&swap_note).unwrap();
+    let pswap = PswapNote::try_from(&pswap_note).unwrap();
 
     // Verify roundtripped PswapNote preserves key fields
     assert_eq!(pswap.sender(), alice.id(), "Sender mismatch after roundtrip");
@@ -1111,15 +1096,14 @@ fn pswap_parse_inputs_roundtrip() {
 
     let mut rng = RandomCoin::new(Word::default());
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap());
-    let swap_note: Note = PswapNote::builder()
+    let storage = PswapNoteStorage::builder()
+        .requested_asset_key(requested_asset.to_key_word())
+        .requested_asset_value(requested_asset.to_value_word())
+        .creator_account_id(alice.id())
+        .build();
+    let pswap_note: Note = PswapNote::builder()
         .sender(alice.id())
-        .storage(
-            PswapNoteStorage::builder()
-                .requested_asset_key(requested_asset.to_key_word())
-                .requested_asset_value(requested_asset.to_value_word())
-                .creator_account_id(alice.id())
-                .build(),
-        )
+        .storage(storage)
         .serial_number(rng.draw_word())
         .note_type(NoteType::Public)
         .assets(
@@ -1132,7 +1116,7 @@ fn pswap_parse_inputs_roundtrip() {
         .unwrap()
         .into();
 
-    let storage = swap_note.recipient().storage();
+    let storage = pswap_note.recipient().storage();
     let items = storage.items();
 
     let parsed = PswapNoteStorage::try_from(items).unwrap();

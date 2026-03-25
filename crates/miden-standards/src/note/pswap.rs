@@ -1,16 +1,23 @@
 use alloc::vec;
 
-use miden_protocol::Hasher;
 use miden_protocol::account::AccountId;
 use miden_protocol::assembly::Path;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::errors::NoteError;
 use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteAttachmentScheme, NoteMetadata, NoteRecipient,
-    NoteScript, NoteStorage, NoteTag, NoteType,
+    Note,
+    NoteAssets,
+    NoteAttachment,
+    NoteAttachmentScheme,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteStorage,
+    NoteTag,
+    NoteType,
 };
 use miden_protocol::utils::sync::LazyLock;
-use miden_protocol::{Felt, Word, ZERO};
+use miden_protocol::{Felt, Hasher, Word, ZERO};
 
 use crate::StandardsLib;
 use crate::note::P2idNoteStorage;
@@ -241,7 +248,7 @@ where
 
         let offered_asset = note.assets.iter().next().unwrap();
         let requested_asset = note.storage.requested_asset()?;
-        if offered_asset.faucet_id().prefix() == requested_asset.faucet_id().prefix() {
+        if offered_asset.faucet_id() == requested_asset.faucet_id() {
             return Err(NoteError::other(
                 "offered and requested assets must have different faucets",
             ));
@@ -482,8 +489,7 @@ impl PswapNote {
         // Derive P2ID serial matching PSWAP.masm
         let swap_count_word =
             Word::from([Felt::from(self.storage.swap_count + 1), ZERO, ZERO, ZERO]);
-        let p2id_serial_digest =
-            Hasher::merge(&[swap_count_word, self.serial_number]);
+        let p2id_serial_digest = Hasher::merge(&[swap_count_word, self.serial_number]);
         let p2id_serial_num: Word = p2id_serial_digest;
 
         // P2ID recipient targets the creator
@@ -827,7 +833,7 @@ mod tests {
             value_word[1],
             value_word[2],
             value_word[3],
-            Felt::from(0xC0000000u32), // pswap_tag
+            Felt::from(0xc0000000u32), // pswap_tag
             Felt::from(0x80000001u32), // payback_note_tag
             ZERO,
             ZERO,
