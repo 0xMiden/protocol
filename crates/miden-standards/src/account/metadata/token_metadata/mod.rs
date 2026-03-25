@@ -12,8 +12,7 @@ use alloc::vec::Vec;
 use miden_protocol::account::{AccountStorage, StorageSlot, StorageSlotName};
 use miden_protocol::{Felt, Word};
 
-use crate::errors::StringFieldError;
-use crate::utils::string::FixedWidthString;
+use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 pub mod fungible_token;
 
@@ -46,9 +45,9 @@ impl TokenName {
     pub const MAX_BYTES: usize = NAME_UTF8_MAX_BYTES;
 
     /// Creates a token name from a UTF-8 string (at most 32 bytes).
-    pub fn new(s: &str) -> Result<Self, StringFieldError> {
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
         if s.len() > Self::MAX_BYTES {
-            return Err(StringFieldError::TooLong(Self::MAX_BYTES, s.len()));
+            return Err(FixedWidthStringError::TooLong { max: Self::MAX_BYTES, actual: s.len() });
         }
         Ok(Self(FixedWidthString::new(s).expect("length already validated above")))
     }
@@ -64,11 +63,13 @@ impl TokenName {
     }
 
     /// Decodes a token name from a 2-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
-        let inner = FixedWidthString::<2>::try_from_words(words)
-            .map_err(|e| StringFieldError::InvalidUtf8(alloc::format!("{e}")))?;
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        let inner = FixedWidthString::<2>::try_from_words(words)?;
         if inner.as_str().len() > Self::MAX_BYTES {
-            return Err(StringFieldError::TooLong(Self::MAX_BYTES, inner.as_str().len()));
+            return Err(FixedWidthStringError::TooLong {
+                max: Self::MAX_BYTES,
+                actual: inner.as_str().len(),
+            });
         }
         Ok(Self(inner))
     }
@@ -95,7 +96,7 @@ impl TokenName {
 /// [`name_chunk_0_slot`]: TokenMetadata::name_chunk_0_slot
 #[derive(Debug, Clone, Default)]
 pub struct TokenMetadata {
-    name: Option<TokenName>,
+    name: TokenName,
     description: Option<Description>,
     logo_uri: Option<LogoURI>,
     external_link: Option<ExternalLink>,
@@ -106,19 +107,14 @@ pub struct TokenMetadata {
 }
 
 impl TokenMetadata {
-    /// Creates a new empty token metadata (all fields absent, all flags false).
-    pub fn new() -> Self {
-        Self::default()
+    /// Creates a new token metadata with the given name (all optional fields absent, all flags
+    /// false).
+    pub fn new(name: TokenName) -> Self {
+        Self { name, ..Self::default() }
     }
 
     // BUILDERS
     // --------------------------------------------------------------------------------------------
-
-    /// Sets the token name.
-    pub fn with_name(mut self, name: TokenName) -> Self {
-        self.name = Some(name);
-        self
-    }
 
     /// Sets the description and its mutability flag together.
     pub fn with_description(mut self, description: Description, mutable: bool) -> Self {
@@ -168,9 +164,9 @@ impl TokenMetadata {
     // ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns the token name if set.
-    pub fn name(&self) -> Option<&TokenName> {
-        self.name.as_ref()
+    /// Returns the token name.
+    pub fn name(&self) -> &TokenName {
+        &self.name
     }
 
     /// Returns the description if set.
@@ -288,10 +284,7 @@ impl TokenMetadata {
         let (is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable) =
             TokenMetadata::mutability_flags_from_word(mutability_word);
 
-        let mut meta = TokenMetadata::new();
-        if let Some(n) = name {
-            meta = meta.with_name(n);
-        }
+        let mut meta = TokenMetadata::new(name.unwrap_or_default());
         if let Some(d) = description {
             meta = meta.with_description(d, is_desc_mutable);
         }
@@ -313,11 +306,7 @@ impl TokenMetadata {
     pub fn storage_slots(&self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
 
-        let name_words = self
-            .name
-            .as_ref()
-            .map(|n| n.to_words())
-            .unwrap_or_else(|| (0..2).map(|_| Word::default()).collect());
+        let name_words = self.name.to_words();
         slots.push(StorageSlot::with_value(
             TokenMetadata::name_chunk_0_slot().clone(),
             name_words[0],

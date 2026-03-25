@@ -33,7 +33,6 @@
 //!
 //! The name slots hold 2 Words (8 felts, capacity 55 bytes, capped at 32).
 
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use miden_protocol::account::component::{
@@ -57,7 +56,6 @@ use miden_protocol::{Felt, Word};
 use super::{TokenMetadata, TokenName};
 use crate::account::components::fungible_token_metadata_library;
 use crate::account::faucets::FungibleFaucetError;
-use crate::errors::StringFieldError;
 use crate::utils::string::{FixedWidthString, FixedWidthStringError};
 
 pub mod builder;
@@ -246,7 +244,7 @@ impl FungibleTokenMetadata {
             });
         }
 
-        let mut token_metadata = TokenMetadata::new().with_name(name);
+        let mut token_metadata = TokenMetadata::new(name);
         if let Some(desc) = description {
             token_metadata = token_metadata.with_description(desc, false);
         }
@@ -297,7 +295,7 @@ impl FungibleTokenMetadata {
 
     /// Returns the token name.
     pub fn name(&self) -> &TokenName {
-        self.metadata.name().expect("FungibleTokenMetadata always has a name")
+        self.metadata.name()
     }
 
     /// Returns the optional description.
@@ -323,7 +321,7 @@ impl FungibleTokenMetadata {
             StorageSlotSchema::value(
                 "Token metadata",
                 [
-                    FeltSchema::felt("token_supply").with_default(Felt::new(0)),
+                    FeltSchema::felt("token_supply").with_default(Felt::ZERO),
                     FeltSchema::felt("max_supply"),
                     FeltSchema::u8("decimals"),
                     FeltSchema::new_typed(token_symbol_type, "symbol"),
@@ -335,7 +333,7 @@ impl FungibleTokenMetadata {
     /// Returns the single storage slot for the metadata word
     /// `[token_supply, max_supply, decimals, symbol]`. Useful when only this slot is needed (e.g.
     /// for components that extend the fungible metadata with additional slots).
-    pub fn metadata_word_slot(&self) -> StorageSlot {
+    fn metadata_word_slot(&self) -> StorageSlot {
         let word = Word::new([
             self.token_supply,
             self.max_supply,
@@ -410,41 +408,88 @@ impl FungibleTokenMetadata {
         word: Word,
         metadata: TokenMetadata,
     ) -> Result<Self, FungibleFaucetError> {
-        let [token_supply, max_supply, decimals, token_symbol] = *word;
+        let [token_supply, max_supply, decimals_felt, token_symbol] = *word;
         let symbol =
             TokenSymbol::try_from(token_symbol).map_err(FungibleFaucetError::InvalidTokenSymbol)?;
-        let decimals = decimals.as_canonical_u64().try_into().map_err(|_| {
+        let decimals: u8 = decimals_felt.as_canonical_u64().try_into().map_err(|_| {
             FungibleFaucetError::TooManyDecimals {
-                actual: decimals.as_canonical_u64(),
+                actual: decimals_felt.as_canonical_u64(),
                 max: Self::MAX_DECIMALS,
             }
         })?;
-        if max_supply.as_canonical_u64() > FungibleAsset::MAX_AMOUNT {
-            return Err(FungibleFaucetError::MaxSupplyTooLarge {
-                actual: max_supply.as_canonical_u64(),
-                max: FungibleAsset::MAX_AMOUNT,
-            });
-        }
-        if token_supply.as_canonical_u64() > max_supply.as_canonical_u64() {
-            return Err(FungibleFaucetError::TokenSupplyExceedsMaxSupply {
-                token_supply: token_supply.as_canonical_u64(),
-                max_supply: max_supply.as_canonical_u64(),
-            });
-        }
-        Ok(Self {
-            token_supply,
-            max_supply,
-            decimals,
+
+        let name = metadata.name().clone();
+        let description = metadata.description().cloned();
+        let logo_uri = metadata.logo_uri().cloned();
+        let external_link = metadata.external_link().cloned();
+
+        let mut result = Self::new_validated(
             symbol,
-            metadata,
-        })
+            decimals,
+            max_supply,
+            token_supply,
+            name,
+            description,
+            logo_uri,
+            external_link,
+        )?;
+
+        // Replace the freshly-constructed metadata with the original so that the
+        // mutability flags read from storage are preserved.
+        result.metadata = metadata;
+
+        Ok(result)
     }
 }
 
 impl From<FungibleTokenMetadata> for AccountComponent {
     fn from(metadata: FungibleTokenMetadata) -> Self {
-        let storage_schema = StorageSchema::new([FungibleTokenMetadata::metadata_slot_schema()])
-            .expect("storage schema should be valid");
+        let mut schema_entries = vec![FungibleTokenMetadata::metadata_slot_schema()];
+
+        // Name chunks (2 slots)
+        for (i, slot) in NAME_SLOTS.iter().enumerate() {
+            schema_entries.push((
+                slot.clone(),
+                StorageSlotSchema::value(
+                    alloc::format!("Name chunk {i}"),
+                    core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                ),
+            ));
+        }
+
+        // Mutability config (1 slot)
+        schema_entries.push((
+            MUTABILITY_CONFIG_SLOT.clone(),
+            StorageSlotSchema::value(
+                "Mutability config",
+                [
+                    FeltSchema::bool("is_description_mutable"),
+                    FeltSchema::bool("is_logo_uri_mutable"),
+                    FeltSchema::bool("is_external_link_mutable"),
+                    FeltSchema::bool("is_max_supply_mutable"),
+                ],
+            ),
+        ));
+
+        // Description, Logo URI, External link (7 slots each)
+        for (label, slots) in [
+            ("Description", DESCRIPTION_SLOTS.as_slice()),
+            ("Logo URI", LOGO_URI_SLOTS.as_slice()),
+            ("External link", EXTERNAL_LINK_SLOTS.as_slice()),
+        ] {
+            for (i, slot) in slots.iter().enumerate() {
+                schema_entries.push((
+                    slot.clone(),
+                    StorageSlotSchema::value(
+                        alloc::format!("{label} chunk {i}"),
+                        core::array::from_fn(|j| FeltSchema::felt(alloc::format!("data_{j}"))),
+                    ),
+                ));
+            }
+        }
+
+        let storage_schema =
+            StorageSchema::new(schema_entries).expect("storage schema should be valid");
 
         let component_metadata = AccountComponentMetadata::new(
             "miden::standards::components::faucets::fungible_token_metadata",
@@ -493,14 +538,8 @@ impl Description {
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
     /// Creates a description from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, max } => {
-                StringFieldError::TooLong(max, actual)
-            },
-            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
-            _ => StringFieldError::InvalidUtf8(e.to_string()),
-        })
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
     }
 
     /// Returns the description as a string slice.
@@ -514,10 +553,8 @@ impl Description {
     }
 
     /// Decodes a description from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
     }
 }
 
@@ -530,14 +567,8 @@ impl LogoURI {
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
     /// Creates a logo URI from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, max } => {
-                StringFieldError::TooLong(max, actual)
-            },
-            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
-            _ => StringFieldError::InvalidUtf8(e.to_string()),
-        })
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
     }
 
     /// Returns the logo URI as a string slice.
@@ -551,10 +582,8 @@ impl LogoURI {
     }
 
     /// Decodes a logo URI from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
     }
 }
 
@@ -567,14 +596,8 @@ impl ExternalLink {
     pub const MAX_BYTES: usize = FixedWidthString::<7>::CAPACITY;
 
     /// Creates an external link from a UTF-8 string.
-    pub fn new(s: &str) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::new(s).map(Self).map_err(|e| match e {
-            FixedWidthStringError::TooLong { actual, max } => {
-                StringFieldError::TooLong(max, actual)
-            },
-            FixedWidthStringError::InvalidUtf8(e) => StringFieldError::InvalidUtf8(e.to_string()),
-            _ => StringFieldError::InvalidUtf8(e.to_string()),
-        })
+    pub fn new(s: &str) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::new(s).map(Self)
     }
 
     /// Returns the external link as a string slice.
@@ -588,9 +611,7 @@ impl ExternalLink {
     }
 
     /// Decodes an external link from a 7-Word slice.
-    pub fn try_from_words(words: &[Word]) -> Result<Self, StringFieldError> {
-        FixedWidthString::<7>::try_from_words(words)
-            .map(Self)
-            .map_err(|e| StringFieldError::InvalidUtf8(e.to_string()))
+    pub fn try_from_words(words: &[Word]) -> Result<Self, FixedWidthStringError> {
+        FixedWidthString::<7>::try_from_words(words).map(Self)
     }
 }

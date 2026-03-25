@@ -13,7 +13,7 @@ use miden::standards::access::ownable2step
 # CONSTANTS — slot names
 # =================================================================================================
 
-const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_faucet::token_metadata")
+pub const TOKEN_METADATA_SLOT = word("miden::standards::metadata::fungible_faucet::token_metadata")
 const NAME_CHUNK_0_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_0")
 const NAME_CHUNK_1_SLOT = word("miden::standards::metadata::fungible_faucet::name_chunk_1")
 const MUTABILITY_CONFIG_SLOT = word("miden::standards::metadata::fungible_faucet::mutability_config")
@@ -53,7 +53,7 @@ const FIELD_6_LOC = 24
 const ERR_DESCRIPTION_NOT_MUTABLE = "description is not mutable"
 const ERR_LOGO_URI_NOT_MUTABLE = "logo URI is not mutable"
 const ERR_EXTERNAL_LINK_NOT_MUTABLE = "external link is not mutable"
-const ERR_MAX_SUPPLY_IMMUTABLE = "max supply is immutable"
+const ERR_MAX_SUPPLY_NOT_MUTABLE = "max supply is not mutable"
 const ERR_NEW_MAX_SUPPLY_BELOW_TOKEN_SUPPLY = "new max supply is less than current token supply"
 
 # =================================================================================================
@@ -100,10 +100,10 @@ end
 #! Loads the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
 #!
 #! Where:
-#! - is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable are boolean flags
+#! - is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable are boolean flags
 #!   (word[0] on top after get_item, little-endian).
 #!
 #! Invocation: exec
@@ -199,7 +199,7 @@ end
 # NAME (2 words)
 # =================================================================================================
 
-#! Returns the name (2 Words) padded to 16 elements: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)].
+#! Returns the token name.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [NAME_CHUNK_0, NAME_CHUNK_1, pad(8)]
@@ -213,20 +213,20 @@ pub proc get_name
 end
 
 # =================================================================================================
-# MUTABILITY CONFIG — [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+# MUTABILITY CONFIG — [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
 # =================================================================================================
 
 #! Returns the mutability config word.
 #!
 #! Inputs:  [pad(16)]
-#! Outputs: [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(12)]
+#! Outputs: [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
 #!
 #! Invocation: call
 pub proc get_mutability_config
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(16)]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(16)]
     swapw dropw
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable, pad(12)]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable, pad(12)]
 end
 
 # =================================================================================================
@@ -236,43 +236,43 @@ end
 # Private helpers — load the mutability config word and extract a single flag.
 # Used by both the public is_* procedures and the set_* procedures.
 
-#! Extracts the is_desc_mutable flag from the mutability config word.
+#! Extracts the is_description_mutable flag from the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_desc_mutable]
+#! Outputs: [is_description_mutable]
 #!
 #! Invocation: exec
 proc is_description_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     movdn.3 drop drop drop
-    # => [is_desc_mutable]
+    # => [is_description_mutable]
 end
 
-#! Extracts the is_logo_mutable flag from the mutability config word.
+#! Extracts the is_logo_uri_mutable flag from the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_logo_mutable]
+#! Outputs: [is_logo_uri_mutable]
 #!
 #! Invocation: exec
 proc is_logo_uri_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop movdn.2 drop drop
-    # => [is_logo_mutable]
+    # => [is_logo_uri_mutable]
 end
 
-#! Extracts the is_extlink_mutable flag from the mutability config word.
+#! Extracts the is_external_link_mutable flag from the mutability config word.
 #!
 #! Inputs:  []
-#! Outputs: [is_extlink_mutable]
+#! Outputs: [is_external_link_mutable]
 #!
 #! Invocation: exec
 proc is_external_link_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop swap drop
-    # => [is_extlink_mutable]
+    # => [is_external_link_mutable]
 end
 
 #! Extracts the is_max_supply_mutable flag from the mutability config word.
@@ -283,7 +283,7 @@ end
 #! Invocation: exec
 proc is_max_supply_mutable_inner
     exec.get_mutability_config_word
-    # => [is_desc_mutable, is_logo_mutable, is_extlink_mutable, is_max_supply_mutable]
+    # => [is_description_mutable, is_logo_uri_mutable, is_external_link_mutable, is_max_supply_mutable]
     drop drop drop
     # => [is_max_supply_mutable]
 end
@@ -296,9 +296,9 @@ end
 #! Invocation: call
 pub proc is_description_mutable
     exec.is_description_mutable_inner
-    # => [is_desc_mutable, pad(16)]
+    # => [is_description_mutable, pad(16)]
     swap drop
-    # => [is_desc_mutable, pad(15)]
+    # => [is_description_mutable, pad(15)]
 end
 
 #! Returns 1 if logo URI is mutable, and 0 otherwise.
@@ -309,9 +309,9 @@ end
 #! Invocation: call
 pub proc is_logo_uri_mutable
     exec.is_logo_uri_mutable_inner
-    # => [is_logo_mutable, pad(16)]
+    # => [is_logo_uri_mutable, pad(16)]
     swap drop
-    # => [is_logo_mutable, pad(15)]
+    # => [is_logo_uri_mutable, pad(15)]
 end
 
 #! Returns 1 if external link is mutable, and 0 otherwise.
@@ -322,9 +322,9 @@ end
 #! Invocation: call
 pub proc is_external_link_mutable
     exec.is_external_link_mutable_inner
-    # => [is_extlink_mutable, pad(16)]
+    # => [is_external_link_mutable, pad(16)]
     swap drop
-    # => [is_extlink_mutable, pad(15)]
+    # => [is_external_link_mutable, pad(15)]
 end
 
 #! Returns 1 if max supply is mutable, and 0 otherwise.
@@ -341,7 +341,7 @@ pub proc is_max_supply_mutable
 end
 
 # =================================================================================================
-# SET DESCRIPTION (owner-only when desc_mutable == 1)
+# SET DESCRIPTION (owner-only when is_description_mutable == 1)
 # =================================================================================================
 
 #! Updates the description (7 Words) if the description mutability flag is 1
@@ -374,7 +374,7 @@ pub proc set_description
     # => [DESCRIPTION_HASH, pad(12)]
 
     exec.is_description_mutable_inner
-    # => [is_desc_mutable, DESCRIPTION_HASH, pad(12)]
+    # => [is_description_mutable, DESCRIPTION_HASH, pad(12)]
     assert.err=ERR_DESCRIPTION_NOT_MUTABLE
     # => [DESCRIPTION_HASH, pad(12)]
 
@@ -384,9 +384,9 @@ pub proc set_description
     # Pipe 7 words from advice map into local words 0–6, validating the hash.
     adv.push_mapval
     locaddr.0
-    # => [locaddr.0, DESCRIPTION_HASH, pad(12)]
+    # => [locaddr.0, DESCRIPTION_HASH, pad(16)]
     exec.pipe_to_memory
-    # => [pad(12)]
+    # => [pad(16)]
 
     loc_loadw_le.0
     push.DESCRIPTION_0_SLOT[0..2]
@@ -418,7 +418,7 @@ pub proc set_description
 end
 
 # =================================================================================================
-# SET LOGO URI (owner-only when logo_mutable == 1)
+# SET LOGO URI (owner-only when is_logo_uri_mutable == 1)
 # =================================================================================================
 
 #! Updates the logo URI (7 Words) if the logo URI mutability flag is 1
@@ -451,7 +451,7 @@ pub proc set_logo_uri
     # => [LOGO_URI_HASH, pad(12)]
 
     exec.is_logo_uri_mutable_inner
-    # => [is_logo_mutable, LOGO_URI_HASH, pad(12)]
+    # => [is_logo_uri_mutable, LOGO_URI_HASH, pad(12)]
     assert.err=ERR_LOGO_URI_NOT_MUTABLE
     # => [LOGO_URI_HASH, pad(12)]
 
@@ -460,9 +460,9 @@ pub proc set_logo_uri
 
     adv.push_mapval
     locaddr.0
-    # => [locaddr.0, LOGO_URI_HASH, pad(12)]
+    # => [locaddr.0, LOGO_URI_HASH, pad(16)]
     exec.pipe_to_memory
-    # => [pad(12)]
+    # => [pad(16)]
 
     loc_loadw_le.0
     push.LOGO_URI_0_SLOT[0..2]
@@ -494,7 +494,7 @@ pub proc set_logo_uri
 end
 
 # =================================================================================================
-# SET EXTERNAL LINK (owner-only when extlink_mutable == 1)
+# SET EXTERNAL LINK (owner-only when is_external_link_mutable == 1)
 # =================================================================================================
 
 #! Updates the external link (7 Words) if the external link mutability flag is 1
@@ -527,7 +527,7 @@ pub proc set_external_link
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
     exec.is_external_link_mutable_inner
-    # => [is_extlink_mutable, EXTERNAL_LINK_HASH, pad(12)]
+    # => [is_external_link_mutable, EXTERNAL_LINK_HASH, pad(12)]
     assert.err=ERR_EXTERNAL_LINK_NOT_MUTABLE
     # => [EXTERNAL_LINK_HASH, pad(12)]
 
@@ -536,9 +536,9 @@ pub proc set_external_link
 
     adv.push_mapval
     locaddr.0
-    # => [locaddr.0, EXTERNAL_LINK_HASH, pad(12)]
+    # => [locaddr.0, EXTERNAL_LINK_HASH, pad(16)]
     exec.pipe_to_memory
-    # => [pad(12)]
+    # => [pad(16)]
 
     loc_loadw_le.0
     push.EXTERNAL_LINK_0_SLOT[0..2]
@@ -570,7 +570,7 @@ pub proc set_external_link
 end
 
 # =================================================================================================
-# SET MAX SUPPLY (owner-only when max_supply_mutable == 1)
+# SET MAX SUPPLY (owner-only when is_max_supply_mutable == 1)
 # =================================================================================================
 
 #! Updates the max supply if the max supply mutability flag is 1
@@ -589,7 +589,7 @@ pub proc set_max_supply
     # 1. Check max supply mutability
     exec.is_max_supply_mutable_inner
     # => [is_max_supply_mutable, new_max_supply, pad(15)]
-    assert.err=ERR_MAX_SUPPLY_IMMUTABLE
+    assert.err=ERR_MAX_SUPPLY_NOT_MUTABLE
 
     # 2. Verify note sender is the owner
     exec.ownable2step::assert_sender_is_owner

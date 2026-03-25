@@ -36,7 +36,7 @@ use miden_standards::errors::standards::{
     ERR_DESCRIPTION_NOT_MUTABLE,
     ERR_EXTERNAL_LINK_NOT_MUTABLE,
     ERR_LOGO_URI_NOT_MUTABLE,
-    ERR_MAX_SUPPLY_IMMUTABLE,
+    ERR_MAX_SUPPLY_NOT_MUTABLE,
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -615,7 +615,7 @@ fn name_33_bytes_rejected() {
     let result = TokenName::new(&"a".repeat(33));
     assert!(matches!(
         result,
-        Err(miden_standards::errors::StringFieldError::TooLong(32, 33))
+        Err(miden_standards::utils::string::FixedWidthStringError::TooLong { max: 32, actual: 33 })
     ));
 }
 
@@ -1140,7 +1140,7 @@ async fn set_max_supply_immutable_fails() -> anyhow::Result<()> {
         .build()?;
 
     let result = tx_context.execute().await;
-    assert_transaction_executor_error!(result, ERR_MAX_SUPPLY_IMMUTABLE);
+    assert_transaction_executor_error!(result, ERR_MAX_SUPPLY_NOT_MUTABLE);
 
     Ok(())
 }

@@ -11,4 +11,4 @@ pub use token_metadata::fungible_token::{
 };
 pub use token_metadata::{TokenMetadata, TokenName};
 
-pub use crate::errors::StringFieldError;
+pub use crate::utils::string::FixedWidthStringError;
