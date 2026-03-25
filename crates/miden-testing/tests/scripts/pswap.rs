@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::crypto::rand::{FeltRng, RandomCoin};
-use miden_protocol::note::{
-    Note, NoteAssets, NoteAttachment, NoteMetadata, NoteRecipient, NoteStorage, NoteTag, NoteType,
-};
+use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_protocol::transaction::RawOutputNote;
 use miden_protocol::{Felt, Word, ZERO};
 use miden_standards::note::{PswapNote, PswapNoteStorage};
@@ -41,14 +39,20 @@ async fn pswap_note_full_fill_test() -> anyhow::Result<()> {
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        offered_asset,
-        requested_asset,
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![offered_asset])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -127,14 +131,20 @@ async fn pswap_note_private_full_fill_test() -> anyhow::Result<()> {
 
     let mut rng = RandomCoin::new(Word::default());
     // Create a PRIVATE swap note (output notes should also be Private)
-    let swap_note = PswapNote::create(
-        alice.id(),
-        offered_asset,
-        requested_asset,
-        NoteType::Private,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Private)
+        .assets(NoteAssets::new(vec![offered_asset])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -209,14 +219,20 @@ async fn pswap_note_partial_fill_test() -> anyhow::Result<()> {
     let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        offered_asset,
-        requested_asset,
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![offered_asset])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
     let mut mock_chain = builder.build()?;
@@ -297,25 +313,45 @@ async fn pswap_note_inflight_cross_swap_test() -> anyhow::Result<()> {
     let mut rng = RandomCoin::new(Word::default());
 
     // Alice's note: offers 50 USDC, requests 25 ETH
-    let alice_swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let alice_requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
+    let alice_swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(alice_requested_asset.to_key_word())
+                .requested_asset_value(alice_requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+            usdc_faucet.id(),
+            50,
+        )?)])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(alice_swap_note.clone()));
 
     // Bob's note: offers 25 ETH, requests 50 USDC
-    let bob_swap_note = PswapNote::create(
-        bob.id(),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let bob_requested_asset = Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?);
+    let bob_swap_note: Note = PswapNote::builder()
+        .sender(bob.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(bob_requested_asset.to_key_word())
+                .requested_asset_value(bob_requested_asset.to_value_word())
+                .creator_account_id(bob.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+            eth_faucet.id(),
+            25,
+        )?)])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(bob_swap_note.clone()));
 
     let mock_chain = builder.build()?;
@@ -384,14 +420,24 @@ async fn pswap_note_creator_reclaim_test() -> anyhow::Result<()> {
     )?;
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+            usdc_faucet.id(),
+            50,
+        )?)])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
     let mock_chain = builder.build()?;
@@ -436,14 +482,24 @@ async fn pswap_note_invalid_input_test() -> anyhow::Result<()> {
     )?;
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+            usdc_faucet.id(),
+            50,
+        )?)])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
     let mock_chain = builder.build()?;
 
@@ -495,14 +551,24 @@ async fn pswap_note_multiple_partial_fills_test() -> anyhow::Result<()> {
         )?;
 
         let mut rng = RandomCoin::new(Word::default());
-        let swap_note = PswapNote::create(
-            alice.id(),
-            Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50)?),
-            Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?),
-            NoteType::Public,
-            NoteAttachment::default(),
-            &mut rng,
-        )?;
+        let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25)?);
+        let swap_note: Note = PswapNote::builder()
+            .sender(alice.id())
+            .storage(
+                PswapNoteStorage::builder()
+                    .requested_asset_key(requested_asset.to_key_word())
+                    .requested_asset_value(requested_asset.to_value_word())
+                    .creator_account_id(alice.id())
+                    .build(),
+            )
+            .serial_number(rng.draw_word())
+            .note_type(NoteType::Public)
+            .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+                usdc_faucet.id(),
+                50,
+            )?)])?)
+            .build()?
+            .into();
         builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
         let mock_chain = builder.build()?;
@@ -570,14 +636,25 @@ async fn pswap_note_non_exact_ratio_partial_fill_test() -> anyhow::Result<()> {
     )?;
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), offered_total)?),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), requested_total)?),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )?;
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage({
+            let requested_asset =
+                Asset::Fungible(FungibleAsset::new(eth_faucet.id(), requested_total)?);
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build()
+        })
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+            usdc_faucet.id(),
+            offered_total,
+        )?)])?)
+        .build()?
+        .into();
     builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
     let mock_chain = builder.build()?;
@@ -677,14 +754,25 @@ async fn pswap_note_partial_fill_non_integer_ratio_fuzz_test() -> anyhow::Result
         )?;
 
         let mut rng = RandomCoin::new(Word::default());
-        let swap_note = PswapNote::create(
-            alice.id(),
-            Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), *offered_usdc)?),
-            Asset::Fungible(FungibleAsset::new(eth_faucet.id(), *requested_eth)?),
-            NoteType::Public,
-            NoteAttachment::default(),
-            &mut rng,
-        )?;
+        let swap_note: Note = PswapNote::builder()
+            .sender(alice.id())
+            .storage({
+                let requested_asset =
+                    Asset::Fungible(FungibleAsset::new(eth_faucet.id(), *requested_eth)?);
+                PswapNoteStorage::builder()
+                    .requested_asset_key(requested_asset.to_key_word())
+                    .requested_asset_value(requested_asset.to_value_word())
+                    .creator_account_id(alice.id())
+                    .build()
+            })
+            .serial_number(rng.draw_word())
+            .note_type(NoteType::Public)
+            .assets(NoteAssets::new(vec![Asset::Fungible(FungibleAsset::new(
+                usdc_faucet.id(),
+                *offered_usdc,
+            )?)])?)
+            .build()?
+            .into();
         builder.add_output_note(RawOutputNote::Full(swap_note.clone()));
 
         let mock_chain = builder.build()?;
@@ -810,16 +898,14 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
 
             let pswap_tag =
                 PswapNote::create_tag(NoteType::Public, &offered_asset, &requested_asset);
-            let payback_note_tag = NoteTag::with_account_target(alice.id());
 
-            let storage = PswapNoteStorage::from_parts(
-                requested_asset.to_key_word(),
-                requested_asset.to_value_word(),
-                pswap_tag,
-                payback_note_tag,
-                current_swap_count as u16,
-                alice.id(),
-            );
+            let storage = PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .pswap_tag(pswap_tag)
+                .swap_count(current_swap_count as u16)
+                .creator_account_id(alice.id())
+                .build();
             let note_assets = NoteAssets::new(vec![offered_asset])?;
 
             // Create note with the correct serial for this chain position
@@ -918,7 +1004,7 @@ async fn pswap_note_chained_partial_fills_non_integer_ratio_test() -> anyhow::Re
     Ok(())
 }
 
-/// Test that PswapNote::create + try_from + execute roundtrips correctly
+/// Test that PswapNote builder + try_from + execute roundtrips correctly
 #[test]
 fn compare_pswap_create_output_notes_vs_test_helper() {
     let mut builder = MockChain::builder();
@@ -938,17 +1024,29 @@ fn compare_pswap_create_output_notes_vs_test_helper() {
         )
         .unwrap();
 
-    // Create swap note using PswapNote::create
+    // Create swap note using PswapNote builder
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50).unwrap()),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap()),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )
-    .unwrap();
+    let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap());
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(
+            NoteAssets::new(vec![Asset::Fungible(
+                FungibleAsset::new(usdc_faucet.id(), 50).unwrap(),
+            )])
+            .unwrap(),
+        )
+        .build()
+        .unwrap()
+        .into();
 
     // Roundtrip: try_from -> execute -> verify outputs
     let pswap = PswapNote::try_from(&swap_note).unwrap();
@@ -1012,15 +1110,27 @@ fn pswap_parse_inputs_roundtrip() {
         .unwrap();
 
     let mut rng = RandomCoin::new(Word::default());
-    let swap_note = PswapNote::create(
-        alice.id(),
-        Asset::Fungible(FungibleAsset::new(usdc_faucet.id(), 50).unwrap()),
-        Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap()),
-        NoteType::Public,
-        NoteAttachment::default(),
-        &mut rng,
-    )
-    .unwrap();
+    let requested_asset = Asset::Fungible(FungibleAsset::new(eth_faucet.id(), 25).unwrap());
+    let swap_note: Note = PswapNote::builder()
+        .sender(alice.id())
+        .storage(
+            PswapNoteStorage::builder()
+                .requested_asset_key(requested_asset.to_key_word())
+                .requested_asset_value(requested_asset.to_value_word())
+                .creator_account_id(alice.id())
+                .build(),
+        )
+        .serial_number(rng.draw_word())
+        .note_type(NoteType::Public)
+        .assets(
+            NoteAssets::new(vec![Asset::Fungible(
+                FungibleAsset::new(usdc_faucet.id(), 50).unwrap(),
+            )])
+            .unwrap(),
+        )
+        .build()
+        .unwrap()
+        .into();
 
     let storage = swap_note.recipient().storage();
     let items = storage.items();
