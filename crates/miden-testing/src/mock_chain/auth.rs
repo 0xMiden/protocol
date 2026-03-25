@@ -7,7 +7,7 @@ use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
 use miden_standards::account::auth::{
-    AuthMultisig, AuthMultisigConfig, AuthMultisigGuardian, AuthMultisigGuardianConfig,
+    AuthGuardedMultisig, AuthGuardedMultisigConfig, AuthMultisig, AuthMultisigConfig,
     AuthSingleSig, AuthSingleSigAcl, AuthSingleSigAclConfig, GuardianConfig,
 };
 use miden_standards::testing::account_component::{
@@ -31,8 +31,8 @@ pub enum Auth {
         proc_threshold_map: Vec<(Word, u32)>,
     },
 
-    /// Multisig with a guardian.
-    MultisigGuardian {
+    /// Guarded multisig.
+    GuardedMultisig {
         threshold: u32,
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         guardian_config: GuardianConfig,
@@ -89,21 +89,18 @@ impl Auth {
 
                 (component, None)
             },
-            Auth::MultisigGuardian {
+            Auth::GuardedMultisig {
                 threshold,
                 approvers,
                 guardian_config,
                 proc_threshold_map,
             } => {
-                let config = AuthMultisigGuardianConfig::new(
-                    approvers.clone(),
-                    *threshold,
-                    *guardian_config,
-                )
-                .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
-                .expect("invalid multisig guardian config");
-                let component = AuthMultisigGuardian::new(config)
-                    .expect("multisig guardian component creation failed")
+                let config =
+                    AuthGuardedMultisigConfig::new(approvers.clone(), *threshold, *guardian_config)
+                        .and_then(|cfg| cfg.with_proc_thresholds(proc_threshold_map.clone()))
+                        .expect("invalid guarded multisig config");
+                let component = AuthGuardedMultisig::new(config)
+                    .expect("guarded multisig component creation failed")
                     .into();
 
                 (component, None)

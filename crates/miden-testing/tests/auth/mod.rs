@@ -4,4 +4,4 @@ mod multisig;
 
 mod hybrid_multisig;
 
-mod multisig_guardian;
+mod guarded_multisig;

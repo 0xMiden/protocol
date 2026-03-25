@@ -1,6 +1,6 @@
 # The MASM code of the Multi-Signature Authentication component integrated with a state guardian.
 #
-# See the `AuthMultisigGuardian` Rust type's documentation for more details.
+# See the `AuthGuardedMultisig` Rust type's documentation for more details.
 
 use miden::standards::auth::multisig
 use miden::standards::auth::guardian
@@ -22,7 +22,7 @@ pub use guardian::update_guardian_public_key
 #!
 #! Invocation: call
 @auth_script
-pub proc auth_tx_multisig_guardian(salt: word)
+pub proc auth_tx_guarded_multisig(salt: word)
     exec.multisig::auth_tx
     # => [TX_SUMMARY_COMMITMENT]
 
