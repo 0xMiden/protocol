@@ -18,4 +18,4 @@ pub const ATTACHMENT_KIND_ARRAY=2
 pub const PRIVATE_NOTE=0
 
 #! The note type of public notes.
-pub const PUBLIC_NOTE=1
+pub const NOTE_TYPE_PUBLIC=1

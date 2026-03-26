@@ -9,7 +9,7 @@ use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 use miden::core::word
 use miden::protocol::note
-use miden::protocol::note::PUBLIC_NOTE
+use miden::protocol::note::NOTE_TYPE_PUBLIC
 use miden::protocol::output_note
 use miden::protocol::output_note::ATTACHMENT_KIND_NONE
 use miden::protocol::active_account
@@ -915,7 +915,7 @@ end
 #! Invocation: exec
 proc create_mint_note_with_attachment
     # Create the MINT output note targeting the faucet
-    push.PUBLIC_NOTE
+    push.NOTE_TYPE_PUBLIC
     # => [note_type, MINT_RECIPIENT, faucet_id_prefix, faucet_id_suffix]
 
     # Set tag to DEFAULT

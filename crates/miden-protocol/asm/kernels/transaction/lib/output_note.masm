@@ -4,7 +4,7 @@ use $kernel::callbacks
 use $kernel::fungible_asset
 use $kernel::memory
 use $kernel::note
-use $kernel::note::PUBLIC_NOTE
+use $kernel::note::NOTE_TYPE_PUBLIC
 use $kernel::constants::MAX_OUTPUT_NOTES_PER_TX
 use $kernel::util::note::ATTACHMENT_KIND_NONE
 use $kernel::util::note::ATTACHMENT_KIND_ARRAY
@@ -318,7 +318,9 @@ pub proc build_metadata_header
     # Validate that note type is private (0) or public (1).
     # --------------------------------------------------------------------------------------------
 
-    dup.1 u32assert u32lte.PUBLIC_NOTE assert.err=ERR_NOTE_INVALID_TYPE
+    dup.1
+    u32assert.err=ERR_NOTE_INVALID_TYPE u32lte.NOTE_TYPE_PUBLIC
+    assert.err=ERR_NOTE_INVALID_TYPE
     # => [tag, note_type]
 
     # Validate the note tag fits into a u32.
