@@ -3,19 +3,49 @@ use alloc::fmt;
 use super::{Felt, RoleSymbolError, Symbol, SymbolError};
 
 /// Represents a role symbol for role-based access control.
+///
+/// Role symbols can consist of up to 12 uppercase Latin characters and underscores, e.g.
+/// "MINTER", "BURNER", "MINTER_ADMIN".
+///
+/// The symbol is stored as a [`Symbol`] and can be converted to a [`Felt`] encoding via
+/// [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleSymbol(Symbol);
 
 impl RoleSymbol {
+    /// Alphabet used for role symbols (`A-Z` and `_`).
     pub const ALPHABET: &'static [u8; 27] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+
+    /// The length of the set of characters that can be used in a role symbol.
     pub const ALPHABET_LENGTH: u64 = 27;
+
+    /// The minimum integer value of an encoded [`RoleSymbol`].
+    ///
+    /// This value encodes the "A" role symbol.
     pub const MIN_ENCODED_VALUE: u64 = 1;
+
+    /// The maximum integer value of an encoded [`RoleSymbol`].
+    ///
+    /// This value encodes the "____________" role symbol (12 underscores).
     pub const MAX_ENCODED_VALUE: u64 = 4052555153018976252;
 
+    /// Constructs a new [`RoleSymbol`] from a string, panicking on invalid input.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The length of the provided string is less than 1 or greater than 12.
+    /// - The provided role symbol contains characters outside `A-Z` and `_`.
     pub fn new_unchecked(role_symbol: &str) -> Self {
         Self::new(role_symbol).expect("invalid role symbol")
     }
 
+    /// Creates a new [`RoleSymbol`] from the provided role symbol string.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The length of the provided string is less than 1 or greater than 12.
+    /// - The provided role symbol contains characters outside `A-Z` and `_`.
     pub fn new(role_symbol: &str) -> Result<Self, RoleSymbolError> {
         Symbol::new(
             role_symbol,
@@ -26,6 +56,7 @@ impl RoleSymbol {
         .map_err(Into::into)
     }
 
+    /// Returns the [`Felt`] encoding of this role symbol.
     pub fn as_element(&self) -> Felt {
         self.0.as_element(Self::ALPHABET).expect("RoleSymbol alphabet is always valid")
     }
@@ -60,6 +91,7 @@ impl TryFrom<&str> for RoleSymbol {
 impl TryFrom<Felt> for RoleSymbol {
     type Error = RoleSymbolError;
 
+    /// Decodes a [`Felt`] representation of the role symbol into a [`RoleSymbol`].
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
         Symbol::try_from_felt(
             felt,

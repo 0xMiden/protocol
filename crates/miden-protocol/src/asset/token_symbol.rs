@@ -6,7 +6,7 @@ use super::{Felt, Symbol, SymbolError, TokenSymbolError};
 ///
 /// Token Symbols can consist of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
 ///
-/// The symbol is stored as a [`String`] and can be converted to a [`Felt`] encoding via
+/// The symbol is stored as a [`Symbol`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenSymbol(Symbol);

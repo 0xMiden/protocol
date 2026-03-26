@@ -3,7 +3,13 @@ use alloc::string::String;
 
 use super::{Felt, SymbolError};
 
-/// Generic fixed-width symbol encoding over a custom ASCII alphabet.
+/// Represents a generic symbol encoded into a [`Felt`] with a configurable alphabet.
+///
+/// Symbols can consist of up to 12 characters, and are validated by caller-provided rules.
+///
+/// The symbol is stored as a [`String`] and can be converted to a [`Felt`] encoding via
+/// [`as_element()`](Self::as_element), and decoded back via
+/// [`try_from_felt()`](Self::try_from_felt).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbol(String);
 
@@ -11,7 +17,12 @@ impl Symbol {
     /// Maximum allowed symbol length.
     pub const MAX_SYMBOL_LENGTH: usize = 12;
 
-    /// Creates a new symbol with custom character validation.
+    /// Creates a new [`Symbol`] from a string using custom character validation.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The length of the provided string is less than 1 or greater than 12.
+    /// - The provided symbol contains characters rejected by `is_valid_char`.
     pub fn new(
         symbol: &str,
         is_valid_char: impl Fn(u8) -> bool,
@@ -31,7 +42,17 @@ impl Symbol {
         Ok(Self(String::from(symbol)))
     }
 
-    /// Encodes this symbol into a [`Felt`] using a custom alphabet.
+    /// Returns the [`Felt`] encoding of this symbol.
+    ///
+    /// The alphabet used in the encoding process is provided by the `alphabet` argument.
+    ///
+    /// The encoding is performed by multiplying the intermediate encoded value by the length of
+    /// the used alphabet and adding the relative index of each character. At the end of the
+    /// encoding process, the length of the initial symbol string is added to the encoded value.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The symbol contains a character that is not part of the provided alphabet.
     pub fn as_element(&self, alphabet: &[u8]) -> Result<Felt, SymbolError> {
         let alphabet_len = alphabet.len() as u64;
         let mut encoded_value: u64 = 0;
@@ -51,7 +72,18 @@ impl Symbol {
         Ok(Felt::new(encoded_value))
     }
 
-    /// Decodes a symbol from a [`Felt`] using a custom alphabet and encoded bounds.
+    /// Decodes a [`Felt`] representation of a symbol into a [`Symbol`].
+    ///
+    /// The alphabet used in the decoding process is provided by the `alphabet` argument.
+    ///
+    /// The decoding is performed by reading the encoded length from the least-significant digit,
+    /// then repeatedly taking modulus by alphabet length to recover each character index.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The encoded value is outside of the provided `min_encoded_value..=max_encoded_value`.
+    /// - The decoded symbol length is not between 1 and 12.
+    /// - Decoding leaves non-zero trailing data.
     pub fn try_from_felt(
         felt: Felt,
         alphabet: &[u8],
