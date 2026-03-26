@@ -177,7 +177,7 @@ impl AuthGuardedMultisigConfig {
     }
 }
 
-/// An [`AccountComponent`] implementing guarded multisig authentication with a guardian.
+/// An [`AccountComponent`] implementing multisig authentication integrated with a state guardian.
 ///
 /// It enforces a threshold of approver signatures for every transaction, with optional
 /// per-procedure threshold overrides. When a guardian is configured, multisig authorization is
