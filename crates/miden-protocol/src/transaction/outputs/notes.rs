@@ -131,6 +131,16 @@ where
     }
 }
 
+impl<N> IntoIterator for OutputNoteCollection<N> {
+    type Item = N;
+
+    type IntoIter = alloc::vec::IntoIter<N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.notes.into_iter()
+    }
+}
+
 // SERIALIZATION
 // ------------------------------------------------------------------------------------------------
 
@@ -173,8 +183,8 @@ pub type RawOutputNotes = OutputNoteCollection<RawOutputNote>;
 /// - Partial notes (notes created with only recipient digest, not full recipient details)
 ///
 /// During proving, these are converted to [`OutputNote`] via the
-/// [`to_output_note`](Self::to_output_note) method, which enforces size limits on public notes and
-/// converts private/partial notes to headers.
+/// [`into_output_note`](Self::into_output_note) method, which enforces size limits on public notes
+/// and converts private/partial notes to headers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawOutputNote {
     Full(Note),
@@ -241,14 +251,18 @@ impl RawOutputNote {
     ///
     /// # Errors
     /// Returns an error if a public note exceeds the maximum allowed size ([`NOTE_MAX_SIZE`]).
-    pub fn to_output_note(&self) -> Result<OutputNote, OutputNoteError> {
+    pub fn into_output_note(self) -> Result<OutputNote, OutputNoteError> {
         match self {
             Self::Full(note) if note.metadata().is_private() => {
-                Ok(OutputNote::Private(PrivateNoteHeader::new(note.header().clone())?))
+                let note_id = note.id();
+                let (_, metadata, _) = note.into_parts();
+                let note_header = NoteHeader::new(note_id, metadata);
+                Ok(OutputNote::Private(PrivateNoteHeader::new(note_header)?))
             },
-            Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note.clone())?)),
+            Self::Full(note) => Ok(OutputNote::Public(PublicOutputNote::new(note)?)),
             Self::Partial(note) => {
-                Ok(OutputNote::Private(PrivateNoteHeader::new(note.header().clone())?))
+                let (_, header) = note.into_parts();
+                Ok(OutputNote::Private(PrivateNoteHeader::new(header)?))
             },
         }
     }
@@ -582,7 +596,7 @@ impl PrivateNoteHeader {
     /// This value is used primarily for authenticating notes consumed when they are consumed
     /// in a transaction.
     pub fn commitment(&self) -> Word {
-        self.0.commitment()
+        self.0.to_commitment()
     }
 
     /// Returns a reference to the underlying note header.

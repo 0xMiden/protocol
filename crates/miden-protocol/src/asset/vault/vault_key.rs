@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use core::fmt;
 
-use miden_core::LexicographicWord;
 use miden_crypto::merkle::smt::LeafIndex;
 
 use crate::account::AccountId;
@@ -166,9 +165,9 @@ impl From<AssetVaultKey> for Word {
 }
 
 impl Ord for AssetVaultKey {
-    /// Implements comparison based on [`LexicographicWord`].
+    /// Implements comparison based on the [`Word`] representation.
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        LexicographicWord::new(self.to_word()).cmp(&LexicographicWord::new(other.to_word()))
+        self.to_word().cmp(&other.to_word())
     }
 }
 

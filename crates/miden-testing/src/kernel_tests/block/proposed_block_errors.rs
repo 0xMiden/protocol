@@ -424,7 +424,7 @@ async fn proposed_block_fails_on_invalid_proof_or_missing_note_inclusion_referen
     let invalid_note_path = SparseMerklePath::try_from(original_merkle_path).unwrap();
     let invalid_note_proof = NoteInclusionProof::new(
         original_note_proof.location().block_num(),
-        original_note_proof.location().node_index_in_block(),
+        original_note_proof.location().block_note_tree_index(),
         invalid_note_path,
     )
     .unwrap();

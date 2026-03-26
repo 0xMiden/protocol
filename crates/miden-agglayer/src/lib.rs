@@ -30,21 +30,35 @@ pub mod errors;
 pub mod eth_types;
 pub mod faucet;
 pub mod update_ger_note;
+pub mod utils;
 
 pub use b2agg_note::B2AggNote;
 pub use bridge::{AggLayerBridge, AgglayerBridgeError};
-pub use claim_note::{ClaimNoteStorage, ExitRoot, LeafData, ProofData, SmtNode, create_claim_note};
+pub use claim_note::{
+    CgiChainHash,
+    ClaimNoteStorage,
+    ExitRoot,
+    LeafData,
+    LeafValue,
+    ProofData,
+    SmtNode,
+    create_claim_note,
+};
 pub use config_note::ConfigAggBridgeNote;
+#[cfg(any(test, feature = "testing"))]
+pub use eth_types::GlobalIndexExt;
 pub use eth_types::{
-    EthAddressFormat,
+    EthAddress,
     EthAmount,
     EthAmountError,
+    EthEmbeddedAccountId,
     GlobalIndex,
     GlobalIndexError,
     MetadataHash,
 };
 pub use faucet::{AggLayerFaucet, AgglayerFaucetError};
 pub use update_ger_note::UpdateGerNote;
+pub use utils::Keccak256Output;
 
 // AGGLAYER NOTE SCRIPTS
 // ================================================================================================
@@ -126,7 +140,7 @@ fn create_agglayer_faucet_component(
     decimals: u8,
     max_supply: Felt,
     token_supply: Felt,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
     metadata_hash: MetadataHash,
@@ -206,7 +220,7 @@ fn create_agglayer_faucet_builder(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
     metadata_hash: MetadataHash,
@@ -241,7 +255,7 @@ pub fn create_agglayer_faucet(
     decimals: u8,
     max_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
     metadata_hash: MetadataHash,
@@ -275,7 +289,7 @@ pub fn create_existing_agglayer_faucet(
     max_supply: Felt,
     token_supply: Felt,
     bridge_account_id: AccountId,
-    origin_token_address: &EthAddressFormat,
+    origin_token_address: &EthAddress,
     origin_network: u32,
     scale: u8,
     metadata_hash: MetadataHash,
