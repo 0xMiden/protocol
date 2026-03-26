@@ -78,7 +78,7 @@ const ATTACHMENT_KIND_LOC=13
 # -------------------------------------------------------------------------------------------------
 
 const LEAF_TYPE_ASSET=0
-const PUBLIC_NOTE=1
+use miden::protocol::note::PUBLIC_NOTE
 const BURN_NOTE_NUM_STORAGE_ITEMS=0
 
 # PUBLIC INTERFACE
