@@ -9,35 +9,35 @@ use miden_protocol::account::component::{
 use miden_protocol::account::{AccountComponent, AccountType, StorageSlot, StorageSlotName};
 use miden_protocol::utils::sync::LazyLock;
 
-use super::MintPolicyAuthority;
-use crate::account::components::auth_controlled_library;
+use super::BurnPolicyAuthority;
+use crate::account::components::burn_auth_controlled_library;
 use crate::account::policy_manager::AuthControlled;
 use crate::procedure_digest;
 
-// MINT POLICY AUTH CONTROLLED
+// BURN POLICY AUTH CONTROLLED
 // ================================================================================================
 
-// Initialize the digest of the `allow_all` procedure of the mint auth-controlled policy component
+// Initialize the digest of the `allow_all` procedure of the burn auth-controlled policy component
 // only once.
 procedure_digest!(
     ALLOW_ALL_POLICY_ROOT,
-    MintAuthControlled::NAME,
-    MintAuthControlled::ALLOW_ALL_PROC_NAME,
-    auth_controlled_library
+    BurnAuthControlled::NAME,
+    BurnAuthControlled::ALLOW_ALL_PROC_NAME,
+    burn_auth_controlled_library
 );
 
-static ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::active_policy_proc_root")
+static ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::burn_policy_manager::active_policy_proc_root")
         .expect("storage slot name should be valid")
 });
-static ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
-    StorageSlotName::new("miden::standards::mint_policy_manager::allowed_policy_proc_roots")
+static ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
+    StorageSlotName::new("miden::standards::burn_policy_manager::allowed_policy_proc_roots")
         .expect("storage slot name should be valid")
 });
 
-/// Initial policy configuration for the [`MintAuthControlled`] component.
+/// Initial policy configuration for the [`BurnAuthControlled`] component.
 #[derive(Debug, Clone, Copy, Default)]
-pub enum MintAuthControlledConfig {
+pub enum BurnAuthControlledConfig {
     /// Sets the initial policy to `allow_all`.
     #[default]
     AllowAll,
@@ -45,68 +45,67 @@ pub enum MintAuthControlledConfig {
     CustomInitialRoot(Word),
 }
 
-/// An [`AccountComponent`] providing configurable mint-policy management for network faucets.
+/// An [`AccountComponent`] providing configurable burn-policy management for fungible faucets.
 ///
-/// It reexports policy procedures from `miden::standards::mint_policies` and manager procedures
-/// from `miden::standards::mint_policies::policy_manager`:
+/// It reexports policy procedures from `miden::standards::burn_policies` and manager procedures
+/// from `miden::standards::burn_policies::policy_manager`:
 /// - `allow_all`
-/// - `set_mint_policy`
-/// - `get_mint_policy`
+/// - `set_burn_policy`
+/// - `get_burn_policy`
 ///
 /// ## Storage Layout
 ///
-/// - [`Self::active_policy_proc_root_slot`]: Procedure root of the active mint policy.
-/// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed mint policy procedure roots.
+/// - [`Self::active_policy_proc_root_slot`]: Procedure root of the active burn policy.
+/// - [`Self::allowed_policy_proc_roots_slot`]: Set of allowed burn policy procedure roots.
 /// - [`Self::policy_authority_slot`]: Policy authority mode
-///   ([`MintPolicyAuthority::AuthControlled`] = tx auth, [`MintPolicyAuthority::OwnerControlled`] =
+///   ([`BurnPolicyAuthority::AuthControlled`] = tx auth, [`BurnPolicyAuthority::OwnerControlled`] =
 ///   external owner).
 #[derive(Debug, Clone, Copy)]
-pub struct MintAuthControlled(AuthControlled);
+pub struct BurnAuthControlled(AuthControlled);
 
-impl MintAuthControlled {
+impl BurnAuthControlled {
     // CONSTANTS
     // --------------------------------------------------------------------------------------------
 
     /// The name of the component.
-    pub const NAME: &'static str = "miden::standards::components::mint_policies::auth_controlled";
+    pub const NAME: &'static str = "miden::standards::components::burn_policies::auth_controlled";
 
     const ALLOW_ALL_PROC_NAME: &str = "allow_all";
 
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`MintAuthControlled`] component from the provided configuration.
-    pub fn new(policy: MintAuthControlledConfig) -> Self {
+    /// Creates a new [`BurnAuthControlled`] component from the provided configuration.
+    pub fn new(policy: BurnAuthControlledConfig) -> Self {
         let initial_policy_root = match policy {
-            MintAuthControlledConfig::AllowAll => Self::allow_all_policy_root(),
-            MintAuthControlledConfig::CustomInitialRoot(root) => root,
+            BurnAuthControlledConfig::AllowAll => Self::allow_all_policy_root(),
+            BurnAuthControlledConfig::CustomInitialRoot(root) => root,
         };
 
         Self(AuthControlled { initial_policy_root })
     }
 
-    /// Creates a new [`MintAuthControlled`] component with `allow_all` policy as
-    /// default.
+    /// Creates a new [`BurnAuthControlled`] component with `allow_all` policy as default.
     pub fn allow_all() -> Self {
-        Self::new(MintAuthControlledConfig::AllowAll)
+        Self::new(BurnAuthControlledConfig::AllowAll)
     }
 
-    /// Returns the [`StorageSlotName`] where the active mint policy procedure root is stored.
+    /// Returns the [`StorageSlotName`] where the active burn policy procedure root is stored.
     pub fn active_policy_proc_root_slot() -> &'static StorageSlotName {
-        &ACTIVE_MINT_POLICY_PROC_ROOT_SLOT_NAME
+        &ACTIVE_BURN_POLICY_PROC_ROOT_SLOT_NAME
     }
 
     /// Returns the [`StorageSlotName`] where allowed policy roots are stored.
     pub fn allowed_policy_proc_roots_slot() -> &'static StorageSlotName {
-        &ALLOWED_MINT_POLICY_PROC_ROOTS_SLOT_NAME
+        &ALLOWED_BURN_POLICY_PROC_ROOTS_SLOT_NAME
     }
 
-    /// Returns the storage slot schema for the active mint policy root.
+    /// Returns the storage slot schema for the active burn policy root.
     pub fn active_policy_proc_root_slot_schema() -> (StorageSlotName, StorageSlotSchema) {
         (
             Self::active_policy_proc_root_slot().clone(),
             StorageSlotSchema::value(
-                "The procedure root of the active mint policy in the mint policy auth controlled component",
+                "The procedure root of the active burn policy in the burn policy auth controlled component",
                 [
                     FeltSchema::felt("proc_root_0"),
                     FeltSchema::felt("proc_root_1"),
@@ -122,7 +121,7 @@ impl MintAuthControlled {
         (
             Self::allowed_policy_proc_roots_slot().clone(),
             StorageSlotSchema::map(
-                "The set of allowed mint policy procedure roots in the mint policy auth controlled component",
+                "The set of allowed burn policy procedure roots in the burn policy auth controlled component",
                 SchemaType::native_word(),
                 SchemaType::native_word(),
             ),
@@ -131,7 +130,7 @@ impl MintAuthControlled {
 
     /// Returns the [`StorageSlotName`] containing policy authority mode.
     pub fn policy_authority_slot() -> &'static StorageSlotName {
-        MintPolicyAuthority::slot()
+        BurnPolicyAuthority::slot()
     }
 
     /// Returns the storage slot schema for policy authority mode.
@@ -151,9 +150,9 @@ impl MintAuthControlled {
     }
 
     /// Policy authority slot with this component's fixed mode
-    /// ([`MintPolicyAuthority::AuthControlled`]).
+    /// ([`BurnPolicyAuthority::AuthControlled`]).
     pub fn policy_authority_value_slot() -> StorageSlot {
-        StorageSlot::from(MintPolicyAuthority::AuthControlled)
+        StorageSlot::from(BurnPolicyAuthority::AuthControlled)
     }
 
     /// Returns the default `allow_all` policy root.
@@ -162,42 +161,40 @@ impl MintAuthControlled {
     }
 
     /// Returns the policy authority used by this component.
-    pub fn mint_policy_authority(&self) -> MintPolicyAuthority {
-        MintPolicyAuthority::AuthControlled
+    pub fn burn_policy_authority(&self) -> BurnPolicyAuthority {
+        BurnPolicyAuthority::AuthControlled
     }
 }
 
-impl Default for MintAuthControlled {
+impl Default for BurnAuthControlled {
     fn default() -> Self {
         Self::allow_all()
     }
 }
 
-impl From<MintAuthControlled> for AccountComponent {
-    fn from(auth_controlled: MintAuthControlled) -> Self {
+impl From<BurnAuthControlled> for AccountComponent {
+    fn from(auth_controlled: BurnAuthControlled) -> Self {
         let slots = auth_controlled.0.initial_storage_slots(
-            MintAuthControlled::active_policy_proc_root_slot(),
-            MintAuthControlled::allowed_policy_proc_roots_slot(),
-            MintAuthControlled::policy_authority_value_slot(),
-            MintAuthControlled::allow_all_policy_root(),
+            BurnAuthControlled::active_policy_proc_root_slot(),
+            BurnAuthControlled::allowed_policy_proc_roots_slot(),
+            BurnAuthControlled::policy_authority_value_slot(),
+            BurnAuthControlled::allow_all_policy_root(),
         );
 
         let storage_schema = StorageSchema::new(vec![
-            MintAuthControlled::active_policy_proc_root_slot_schema(),
-            MintAuthControlled::allowed_policy_proc_roots_slot_schema(),
-            MintAuthControlled::policy_authority_slot_schema(),
+            BurnAuthControlled::active_policy_proc_root_slot_schema(),
+            BurnAuthControlled::allowed_policy_proc_roots_slot_schema(),
+            BurnAuthControlled::policy_authority_slot_schema(),
         ])
         .expect("storage schema should be valid");
 
         let metadata =
-            AccountComponentMetadata::new(MintAuthControlled::NAME, [AccountType::FungibleFaucet])
-                .with_description(
-                    "Mint policy auth controlled component for network fungible faucets",
-                )
+            AccountComponentMetadata::new(BurnAuthControlled::NAME, [AccountType::FungibleFaucet])
+                .with_description("Burn policy auth controlled component for fungible faucets")
                 .with_storage_schema(storage_schema);
 
-        AccountComponent::new(auth_controlled_library(), slots, metadata).expect(
-            "mint policy auth controlled component should satisfy the requirements of a valid account component",
+        AccountComponent::new(burn_auth_controlled_library(), slots, metadata).expect(
+            "burn policy auth controlled component should satisfy the requirements of a valid account component",
         )
     }
 }

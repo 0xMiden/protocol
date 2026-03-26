@@ -4,6 +4,7 @@ use miden::protocol::faucet
 use miden::protocol::native_account
 use miden::protocol::output_note
 use miden::protocol::asset
+use miden::standards::burn_policies::policy_manager
 use miden::protocol::asset::FUNGIBLE_ASSET_MAX_AMOUNT
 
 # CONSTANTS
@@ -160,13 +161,15 @@ end
 #!
 #! Burning the asset removes it from circulation and reduces the token_supply by the asset's amount.
 #!
-#! This procedure retrieves the asset from the active note and burns it. The note must contain
-#! exactly one asset, which must be a fungible asset issued by this faucet.
+#! This procedure retrieves the asset from the active note, executes the active burn policy
+#! against it, and burns it. The note must contain exactly one asset, which must be a fungible
+#! asset issued by this faucet.
 #!
 #! Inputs:  [pad(16)]
 #! Outputs: [pad(16)]
 #!
 #! Panics if:
+#! - active burn policy validation fails.
 #! - the procedure is not called from a note context (active_note::get_assets will fail).
 #! - the note does not contain exactly one asset.
 #! - the transaction is executed against an account which is not a fungible asset faucet.
@@ -187,6 +190,12 @@ pub proc burn
     # => [dest_ptr, pad(16)]
 
     exec.asset::load
+    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    dupw.1 dupw.1
+    # => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, pad(16)]
+
+    exec.policy_manager::execute_burn_policy
     # => [ASSET_KEY, ASSET_VALUE, pad(16)]
 
     # Burn the asset from the transaction vault

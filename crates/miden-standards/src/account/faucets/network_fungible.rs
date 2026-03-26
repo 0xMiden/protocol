@@ -20,9 +20,10 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
+use crate::account::burn_policies::BurnOwnerControlled;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::mint_policies::OwnerControlled;
+use crate::account::mint_policies::MintOwnerControlled;
 use crate::procedure_digest;
 
 /// The schema type for token symbols.
@@ -57,7 +58,8 @@ procedure_digest!(
 /// - `burn`, which burns the provided asset.
 ///
 /// Both `mint_and_send` and `burn` can only be called from note scripts. `mint_and_send` requires
-/// authentication while `burn` does not require authentication and can be called by anyone.
+/// authentication while `burn` is governed by the active burn policy (which defaults to
+/// `allow_all`).
 /// Thus, this component must be combined with a component providing authentication.
 ///
 /// This component relies on [`crate::account::access::Ownable2Step`] for ownership checks in
@@ -284,7 +286,8 @@ impl TryFrom<&Account> for NetworkFungibleFaucet {
 /// - [`NoAuth`] for authentication
 ///
 /// The storage layout of the faucet account is documented on the [`NetworkFungibleFaucet`] and
-/// [`OwnerControlled`] and [`crate::account::access::Ownable2Step`] component types and
+/// [`MintOwnerControlled`], [`BurnOwnerControlled`], and
+/// [`crate::account::access::Ownable2Step`] component types and
 /// contains no additional storage slots for its auth ([`NoAuth`]).
 pub fn create_network_fungible_faucet(
     init_seed: [u8; 32],
@@ -314,7 +317,8 @@ pub fn create_network_fungible_faucet(
         .with_auth_component(auth_component)
         .with_component(NetworkFungibleFaucet::new(symbol, decimals, max_supply)?)
         .with_component(access_control)
-        .with_component(OwnerControlled::owner_only())
+        .with_component(MintOwnerControlled::owner_only())
+        .with_component(BurnOwnerControlled::allow_all())
         .build()
         .map_err(FungibleFaucetError::AccountError)?;
 

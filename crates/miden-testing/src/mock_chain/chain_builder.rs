@@ -48,11 +48,12 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
+use miden_standards::account::burn_policies::{BurnAuthControlled, BurnOwnerControlled};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::mint_policies::{
-    AuthControlled,
-    OwnerControlled,
-    OwnerControlledInitConfig,
+    MintAuthControlled,
+    MintOwnerControlled,
+    MintOwnerControlledConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -339,7 +340,8 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Public)
             .account_type(AccountType::FungibleFaucet)
             .with_component(basic_faucet)
-            .with_component(AuthControlled::allow_all());
+            .with_component(MintAuthControlled::allow_all())
+            .with_component(BurnAuthControlled::allow_all());
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::New)
     }
@@ -368,7 +370,8 @@ impl MockChainBuilder {
         let account_builder = AccountBuilder::new(self.rng.random())
             .storage_mode(AccountStorageMode::Public)
             .with_component(basic_faucet)
-            .with_component(AuthControlled::allow_all())
+            .with_component(MintAuthControlled::allow_all())
+            .with_component(BurnAuthControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         self.add_account_from_builder(auth_method, account_builder, AccountState::Exists)
@@ -383,7 +386,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: OwnerControlledInitConfig,
+        mint_policy: MintOwnerControlledConfig,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
@@ -399,7 +402,8 @@ impl MockChainBuilder {
             .storage_mode(AccountStorageMode::Network)
             .with_component(network_faucet)
             .with_component(Ownable2Step::new(owner_account_id))
-            .with_component(OwnerControlled::new(mint_policy))
+            .with_component(MintOwnerControlled::new(mint_policy))
+            .with_component(BurnOwnerControlled::allow_all())
             .account_type(AccountType::FungibleFaucet);
 
         // Network faucets always use IncrNonce auth (no authentication)

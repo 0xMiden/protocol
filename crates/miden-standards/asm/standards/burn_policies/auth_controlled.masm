@@ -1,11 +1,12 @@
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Mint policy that accepts every mint request.
+#! Burn policy that accepts every burn request.
 #!
-#! Inputs:  [amount, tag, note_type, RECIPIENT]
-#! Outputs: [amount, tag, note_type, RECIPIENT]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
 #! Invocation: dynexec
 pub proc allow_all
-    push.0 drop
+    dropw dropw
+    # => []
 end
