@@ -18,8 +18,8 @@ use miden_protocol::note::NoteScript;
 use miden_protocol::vm::Program;
 use miden_standards::account::access::Ownable2Step;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::burn_policies::OwnerControlled as BurnOwnerControlled;
-use miden_standards::account::mint_policies::OwnerControlled as MintOwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 use miden_utils_sync::LazyLock;
 
 pub mod b2agg_note;

@@ -48,15 +48,12 @@ use miden_protocol::testing::random_secret_key::random_secret_key;
 use miden_protocol::transaction::{OrderedTransactionHeaders, RawOutputNote, TransactionKernel};
 use miden_protocol::{Felt, MAX_OUTPUT_NOTES_PER_BATCH, Word};
 use miden_standards::account::access::Ownable2Step;
-use miden_standards::account::burn_policies::{
-    AuthControlled as BurnAuthControlled,
-    OwnerControlled as BurnOwnerControlled,
-};
+use miden_standards::account::burn_policies::{BurnAuthControlled, BurnOwnerControlled};
 use miden_standards::account::faucets::{BasicFungibleFaucet, NetworkFungibleFaucet};
 use miden_standards::account::mint_policies::{
-    AuthControlled as MintAuthControlled,
-    OwnerControlled as MintOwnerControlled,
-    OwnerControlledInitConfig,
+    MintAuthControlled,
+    MintOwnerControlled,
+    MintOwnerControlledConfig,
 };
 use miden_standards::account::wallets::BasicWallet;
 use miden_standards::note::{P2idNote, P2ideNote, P2ideNoteStorage, SwapNote};
@@ -389,7 +386,7 @@ impl MockChainBuilder {
         max_supply: u64,
         owner_account_id: AccountId,
         token_supply: Option<u64>,
-        mint_policy: OwnerControlledInitConfig,
+        mint_policy: MintOwnerControlledConfig,
     ) -> anyhow::Result<Account> {
         let max_supply = Felt::try_from(max_supply)?;
         let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;

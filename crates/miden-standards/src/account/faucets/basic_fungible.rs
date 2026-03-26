@@ -20,9 +20,9 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::AuthMethod;
 use crate::account::auth::{AuthSingleSigAcl, AuthSingleSigAclConfig};
-use crate::account::burn_policies::AuthControlled as BurnAuthControlled;
+use crate::account::burn_policies::BurnAuthControlled;
 use crate::account::components::basic_fungible_faucet_library;
-use crate::account::mint_policies::AuthControlled as MintAuthControlled;
+use crate::account::mint_policies::MintAuthControlled;
 
 /// The schema type for token symbols.
 const TOKEN_SYMBOL_TYPE: &str = "miden::standards::fungible_faucets::metadata::token_symbol";

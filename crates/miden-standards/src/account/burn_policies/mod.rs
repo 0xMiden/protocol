@@ -5,8 +5,8 @@ use miden_protocol::utils::sync::LazyLock;
 mod auth_controlled;
 mod owner_controlled;
 
-pub use auth_controlled::{AuthControlled, AuthControlledInitConfig};
-pub use owner_controlled::{OwnerControlled, OwnerControlledInitConfig};
+pub use auth_controlled::{BurnAuthControlled, BurnAuthControlledConfig};
+pub use owner_controlled::{BurnOwnerControlled, BurnOwnerControlledConfig};
 
 static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::burn_policy_manager::policy_authority")

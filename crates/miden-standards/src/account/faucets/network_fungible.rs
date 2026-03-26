@@ -20,10 +20,10 @@ use miden_protocol::{Felt, Word};
 use super::{FungibleFaucetError, TokenMetadata};
 use crate::account::access::AccessControl;
 use crate::account::auth::NoAuth;
-use crate::account::burn_policies::OwnerControlled as BurnOwnerControlled;
+use crate::account::burn_policies::BurnOwnerControlled;
 use crate::account::components::network_fungible_faucet_library;
 use crate::account::interface::{AccountComponentInterface, AccountInterface, AccountInterfaceExt};
-use crate::account::mint_policies::OwnerControlled as MintOwnerControlled;
+use crate::account::mint_policies::MintOwnerControlled;
 use crate::procedure_digest;
 
 /// The schema type for token symbols.

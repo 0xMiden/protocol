@@ -5,8 +5,8 @@ use miden_protocol::utils::sync::LazyLock;
 mod auth_controlled;
 mod owner_controlled;
 
-pub use auth_controlled::{AuthControlled, AuthControlledInitConfig};
-pub use owner_controlled::{OwnerControlled, OwnerControlledInitConfig};
+pub use auth_controlled::{MintAuthControlled, MintAuthControlledConfig};
+pub use owner_controlled::{MintOwnerControlled, MintOwnerControlledConfig};
 
 static POLICY_AUTHORITY_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
     StorageSlotName::new("miden::standards::mint_policy_manager::policy_authority")

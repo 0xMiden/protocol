@@ -15,8 +15,8 @@ use miden_protocol::account::{
 };
 use miden_protocol::transaction::TransactionKernel;
 use miden_standards::account::auth::NoAuth;
-use miden_standards::account::burn_policies::OwnerControlled as BurnOwnerControlled;
-use miden_standards::account::mint_policies::OwnerControlled as MintOwnerControlled;
+use miden_standards::account::burn_policies::BurnOwnerControlled;
+use miden_standards::account::mint_policies::MintOwnerControlled;
 
 // CONSTANTS
 // ================================================================================================
