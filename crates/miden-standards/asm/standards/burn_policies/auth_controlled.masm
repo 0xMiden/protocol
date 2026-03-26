@@ -1,12 +1,12 @@
 # POLICY PROCEDURES
 # ================================================================================================
 
-#! Dummy burn predicate to allow all burns.
+#! Burn policy that accepts every burn request.
 #!
-#! Inputs:  [ASSET_KEY, ASSET_VALUE, pad(16)]
-#! Outputs: [ASSET_KEY, ASSET_VALUE, pad(16)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
 #! Invocation: dynexec
 pub proc allow_all
-    # Dummy predicate, no checks yet.
-    push.0 drop
+    dropw dropw
+    # => []
 end

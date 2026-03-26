@@ -1,7 +1,5 @@
 use miden::core::word
 use miden::protocol::active_account
-use miden::protocol::active_note
-use miden::protocol::asset
 use miden::protocol::native_account
 use miden::standards::access::ownable2step
 
@@ -29,13 +27,8 @@ const ALLOWED_POLICY_PROC_ROOTS_SLOT=word("miden::standards::burn_policy_manager
 const POLICY_AUTHORITY_SLOT=word("miden::standards::burn_policy_manager::policy_authority")
 const POLICY_AUTHORITY_OWNER_CONTROLLED=1
 
-# Asset memory pointer used to read the asset from the active note.
-const ASSET_PTR=0
-
-# Local memory pointers.
+# Local memory pointer used to pass a policy root to `dynexec`.
 const BURN_POLICY_PROC_ROOT_PTR=0
-const BURN_POLICY_ASSET_KEY_PTR=4
-const BURN_POLICY_ASSET_VALUE_PTR=8
 
 # ERRORS
 # ================================================================================================
@@ -43,9 +36,6 @@ const BURN_POLICY_ASSET_VALUE_PTR=8
 const ERR_BURN_POLICY_ROOT_IS_ZERO="burn policy root is zero"
 const ERR_BURN_POLICY_ROOT_NOT_IN_ACCOUNT="burn policy root is not a procedure of this account"
 const ERR_BURN_POLICY_ROOT_NOT_ALLOWED="burn policy root is not allowed"
-const ERR_BURN_POLICY_CHANGED_ASSET_KEY="burn policy changed asset key"
-const ERR_BURN_POLICY_CHANGED_ASSET_VALUE="burn policy changed asset value"
-const ERR_BURN_WRONG_NUMBER_OF_ASSETS="burn requires exactly 1 note asset"
 
 # INTERNAL PROCEDURES
 # ================================================================================================
@@ -122,8 +112,8 @@ end
 
 #! Authorizes policy update based on policy authority mode.
 #!
-#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
-#! Outputs: [NEW_POLICY_ROOT, pad(12)]
+#! Inputs:  [NEW_POLICY_ROOT]
+#! Outputs: [NEW_POLICY_ROOT]
 #!
 #! Panics if:
 #! - POLICY_AUTHORITY = 1 and the sender is not owner.
@@ -131,73 +121,47 @@ end
 #! Invocation: exec
 proc assert_can_set_burn_policy
     exec.get_policy_authority
-    # => [policy_authority, NEW_POLICY_ROOT, pad(12)]
+    # => [policy_authority, NEW_POLICY_ROOT]
 
     eq.POLICY_AUTHORITY_OWNER_CONTROLLED
     if.true
         exec.ownable2step::assert_sender_is_owner
-        # => [NEW_POLICY_ROOT, pad(12)]
+        # => [NEW_POLICY_ROOT]
     end
 end
 
 # PUBLIC INTERFACE
 # ================================================================================================
 
-#! Executes active burn policy by dynamic execution.
+#! Executes active burn policy for the provided asset by dynamic execution.
 #!
-#! This procedure reads the asset from the active note, executes the active burn policy against
-#! that asset, and verifies that the policy does not rewrite the asset being burned.
-#!
-#! Inputs:  [pad(16)]
-#! Outputs: [pad(16)]
+#! Inputs:  [ASSET_KEY, ASSET_VALUE]
+#! Outputs: []
 #!
 #! Panics if:
-#! - the active note does not contain exactly one asset.
 #! - burn policy root is invalid.
 #! - active burn policy validation fails.
-#! - active burn policy mutates the asset key or value.
 #!
 #! Invocation: exec
-@locals(12)
+@locals(4)
 pub proc execute_burn_policy
-    push.ASSET_PTR exec.active_note::get_assets
-    # => [num_assets, dest_ptr, pad(16)]
-
-    assert.err=ERR_BURN_WRONG_NUMBER_OF_ASSETS
-    # => [dest_ptr, pad(16)]
-
-    exec.asset::load
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
-
-    dupw loc_storew_le.BURN_POLICY_ASSET_KEY_PTR dropw
-    dupw.1 loc_storew_le.BURN_POLICY_ASSET_VALUE_PTR dropw
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
-
     exec.get_burn_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     exec.assert_existing_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     exec.assert_allowed_policy_root
-    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [BURN_POLICY_ROOT, ASSET_KEY, ASSET_VALUE]
 
     loc_storew_le.BURN_POLICY_PROC_ROOT_PTR dropw
-    # => [ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [ASSET_KEY, ASSET_VALUE]
 
     locaddr.BURN_POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, ASSET_KEY, ASSET_VALUE, pad(16)]
+    # => [policy_root_ptr, ASSET_KEY, ASSET_VALUE]
 
     dynexec
-    # => [PROCESSED_ASSET_KEY, PROCESSED_ASSET_VALUE, pad(16)]
-
-    padw loc_loadw_le.BURN_POLICY_ASSET_KEY_PTR
-    assert_eqw.err=ERR_BURN_POLICY_CHANGED_ASSET_KEY
-    # => [PROCESSED_ASSET_VALUE, pad(16)]
-
-    padw loc_loadw_le.BURN_POLICY_ASSET_VALUE_PTR
-    assert_eqw.err=ERR_BURN_POLICY_CHANGED_ASSET_VALUE
-    # => [pad(16)]
+    # => []
 end
 
 #! Returns active burn policy root.

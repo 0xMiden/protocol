@@ -117,8 +117,8 @@ end
 
 #! Authorizes policy update based on policy authority mode.
 #!
-#! Inputs:  [NEW_POLICY_ROOT, pad(12)]
-#! Outputs: [NEW_POLICY_ROOT, pad(12)]
+#! Inputs:  [NEW_POLICY_ROOT]
+#! Outputs: [NEW_POLICY_ROOT]
 #!
 #! Panics if:
 #! - POLICY_AUTHORITY = 1 and the sender is not owner.
@@ -126,12 +126,12 @@ end
 #! Invocation: exec
 proc assert_can_set_mint_policy
     exec.get_policy_authority
-    # => [policy_authority, NEW_POLICY_ROOT, pad(12)]
+    # => [policy_authority, NEW_POLICY_ROOT]
 
     eq.POLICY_AUTHORITY_OWNER_CONTROLLED
     if.true
         exec.ownable2step::assert_sender_is_owner
-        # => [NEW_POLICY_ROOT, pad(12)]
+        # => [NEW_POLICY_ROOT]
     end
 end
 
@@ -140,8 +140,8 @@ end
 
 #! Executes active mint policy by dynamic execution.
 #!
-#! Inputs:  [amount, tag, note_type, RECIPIENT, pad(9)]
-#! Outputs: [amount, tag, note_type, RECIPIENT, pad(9)]
+#! Inputs:  [amount, tag, note_type, RECIPIENT]
+#! Outputs: [amount, tag, note_type, RECIPIENT]
 #!
 #! Panics if:
 #! - mint policy root is invalid.
@@ -151,22 +151,22 @@ end
 @locals(4)
 pub proc execute_mint_policy
     exec.get_mint_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     exec.assert_existing_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     exec.assert_allowed_policy_root
-    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [MINT_POLICY_ROOT, amount, tag, note_type, RECIPIENT]
 
     loc_storew_le.MINT_POLICY_PROC_ROOT_PTR dropw
-    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [amount, tag, note_type, RECIPIENT]
 
     locaddr.MINT_POLICY_PROC_ROOT_PTR
-    # => [policy_root_ptr, amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [policy_root_ptr, amount, tag, note_type, RECIPIENT]
 
     dynexec
-    # => [amount, tag, note_type, RECIPIENT, pad(9)]
+    # => [amount, tag, note_type, RECIPIENT]
 end
 
 #! Returns active mint policy root.
