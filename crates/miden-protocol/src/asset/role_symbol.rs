@@ -1,6 +1,6 @@
 use alloc::fmt;
 
-use super::{Felt, RoleSymbolError, Symbol, SymbolError};
+use super::{Felt, RoleSymbolError, Symbol};
 
 /// Represents a role symbol for role-based access control.
 ///
@@ -47,13 +47,7 @@ impl RoleSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided role symbol contains characters outside `A-Z` and `_`.
     pub fn new(role_symbol: &str) -> Result<Self, RoleSymbolError> {
-        Symbol::new(
-            role_symbol,
-            |byte| byte.is_ascii_uppercase() || byte == b'_',
-            SymbolError::InvalidRoleCharacter,
-        )
-        .map(Self)
-        .map_err(Into::into)
+        Symbol::parse_role_symbol(role_symbol).map(Self).map_err(Into::into)
     }
 
     /// Returns the [`Felt`] encoding of this role symbol.
@@ -93,7 +87,7 @@ impl TryFrom<Felt> for RoleSymbol {
 
     /// Decodes a [`Felt`] representation of the role symbol into a [`RoleSymbol`].
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        Symbol::try_from_felt(
+        Symbol::try_from_encoded_felt(
             felt,
             Self::ALPHABET,
             Self::MIN_ENCODED_VALUE,

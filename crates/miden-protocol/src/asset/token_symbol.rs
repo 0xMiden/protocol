@@ -1,6 +1,6 @@
 use alloc::fmt;
 
-use super::{Felt, Symbol, SymbolError, TokenSymbolError};
+use super::{Felt, Symbol, TokenSymbolError};
 
 /// Represents a token symbol (e.g. "POL", "ETH").
 ///
@@ -48,9 +48,7 @@ impl TokenSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided token string contains characters that are not uppercase ASCII.
     pub fn new(symbol: &str) -> Result<Self, TokenSymbolError> {
-        Symbol::new(symbol, |byte| byte.is_ascii_uppercase(), SymbolError::InvalidCharacter)
-            .map(Self)
-            .map_err(Into::into)
+        Symbol::parse_token_symbol(symbol).map(Self).map_err(Into::into)
     }
 
     /// Returns the [`Felt`] encoding of this token symbol.
@@ -115,7 +113,7 @@ impl TryFrom<Felt> for TokenSymbol {
     type Error = TokenSymbolError;
 
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        Symbol::try_from_felt(
+        Symbol::try_from_encoded_felt(
             felt,
             Self::ALPHABET,
             Self::MIN_ENCODED_VALUE,
