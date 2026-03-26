@@ -10,7 +10,7 @@ const MINT_NOTE_NUM_STORAGE_ITEMS_PRIVATE=12
 const MINT_NOTE_MIN_NUM_STORAGE_ITEMS_PUBLIC=16
 
 use miden::protocol::note::NOTE_TYPE_PUBLIC
-use miden::protocol::note::PRIVATE_NOTE
+use miden::protocol::note::NOTE_TYPE_PRIVATE
 
 # Memory Addresses of MINT note storage
 # The attachment is at the same memory address for both private and public storage.
@@ -114,7 +114,7 @@ pub proc main
         # => [RECIPIENT, pad(12)]
 
         # push note_type, and load tag and amount
-        push.PRIVATE_NOTE
+        push.NOTE_TYPE_PRIVATE
         mem_load.0 mem_load.1
         # => [amount, tag, note_type, RECIPIENT, pad(12)]
     end

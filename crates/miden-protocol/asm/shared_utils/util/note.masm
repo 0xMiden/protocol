@@ -15,7 +15,7 @@ pub const ATTACHMENT_KIND_ARRAY=2
 # See NoteType in the Rust protocol crate for details.
 
 #! The note type of private notes.
-pub const PRIVATE_NOTE=0
+pub const NOTE_TYPE_PRIVATE=0
 
 #! The note type of public notes.
 pub const NOTE_TYPE_PUBLIC=1

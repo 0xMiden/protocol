@@ -5,7 +5,7 @@ use miden::core::mem
 # Re-export the max inputs per note constant.
 pub use miden::protocol::util::note::MAX_NOTE_STORAGE_ITEMS
 pub use miden::protocol::util::note::NOTE_TYPE_PUBLIC
-pub use miden::protocol::util::note::PRIVATE_NOTE
+pub use miden::protocol::util::note::NOTE_TYPE_PRIVATE
 
 # ERRORS
 # =================================================================================================
