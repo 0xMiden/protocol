@@ -31,13 +31,13 @@ const ERR_CONFIG_AGG_BRIDGE_TARGET_ACCOUNT_MISMATCH = "CONFIG_AGG_BRIDGE note at
 #! Outputs: [pad(16)]
 #!
 #! NoteStorage layout (7 felts total):
-#! - origin_token_addr_0 [0]: 1 felt
-#! - origin_token_addr_1 [1]: 1 felt
-#! - origin_token_addr_2 [2]: 1 felt
-#! - origin_token_addr_3 [3]: 1 felt
-#! - origin_token_addr_4 [4]: 1 felt
-#! - faucet_id_suffix    [5]: 1 felt
-#! - faucet_id_prefix    [6]: 1 felt
+#! - origin_token_addr_0 [0] : 1 felt
+#! - origin_token_addr_1 [1] : 1 felt
+#! - origin_token_addr_2 [2] : 1 felt
+#! - origin_token_addr_3 [3] : 1 felt
+#! - origin_token_addr_4 [4] : 1 felt
+#! - faucet_id_suffix    [5] : 1 felt
+#! - faucet_id_prefix    [6] : 1 felt
 #!
 #! Where:
 #! - faucet_id_suffix: Suffix felt of the faucet account ID to register.
