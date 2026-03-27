@@ -82,7 +82,7 @@ end
 #! - the GER is not found in storage.
 #!
 #! Invocation: exec
-pub proc assert_valid_ger
+proc assert_valid_ger
     # compute hash(GER)
     exec.poseidon2::merge
     # => [GER_HASH]
@@ -178,7 +178,7 @@ end
 #! - the faucet is not registered in the faucet registry.
 #!
 #! Invocation: exec
-pub proc assert_faucet_registered
+proc assert_faucet_registered
     # Build KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]
     push.0.0
     # => [0, 0, faucet_id_suffix, faucet_id_prefix]
@@ -203,7 +203,7 @@ end
 #! - the token address is not registered in the token registry.
 #!
 #! Invocation: exec
-pub proc lookup_faucet_by_token_address
+proc lookup_faucet_by_token_address
     # Hash the token address
     exec.hash_token_address
     # => [TOKEN_ADDR_HASH]
@@ -261,7 +261,7 @@ end
 #! - the note sender does not match the bridge admin account ID.
 #!
 #! Invocation: exec
-pub proc assert_sender_is_bridge_admin
+proc assert_sender_is_bridge_admin
     push.BRIDGE_ADMIN_SLOT[0..2]
     exec.active_account::get_item
     # => [0, 0, admin_suffix, admin_prefix, pad(16)]
@@ -289,7 +289,7 @@ end
 #! - the note sender does not match the GER manager account ID.
 #!
 #! Invocation: exec
-pub proc assert_sender_is_ger_manager
+proc assert_sender_is_ger_manager
     push.GER_MANAGER_SLOT[0..2]
     exec.active_account::get_item
     # => [0, 0, mgr_suffix, mgr_prefix, pad(16)]
