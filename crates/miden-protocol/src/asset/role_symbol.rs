@@ -47,7 +47,9 @@ impl RoleSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided role symbol contains characters outside `A-Z` and `_`.
     pub fn new(role_symbol: &str) -> Result<Self, RoleSymbolError> {
-        Symbol::parse_role_symbol(role_symbol).map(Self).map_err(Into::into)
+        Symbol::from_ascii_uppercase_and_underscore(role_symbol)
+            .map(Self)
+            .map_err(Into::into)
     }
 
     /// Returns the [`Felt`] encoding of this role symbol.

@@ -5,8 +5,9 @@ use super::{Felt, SymbolError};
 
 /// Represents a generic symbol encoded into a [`Felt`] with a configurable alphabet.
 ///
-/// Use [`Self::parse_token_symbol`] or [`Self::parse_role_symbol`] to construct a validated
-/// symbol (same rules as [`crate::asset::TokenSymbol`] and [`crate::asset::RoleSymbol`]).
+/// Use [`Self::from_ascii_uppercase`] or [`Self::from_ascii_uppercase_and_underscore`] to construct
+/// a validated symbol (same rules as [`crate::asset::TokenSymbol`] and
+/// [`crate::asset::RoleSymbol`]).
 ///
 /// The symbol is stored as a [`String`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element), and decoded back via
@@ -18,13 +19,13 @@ impl Symbol {
     /// Maximum allowed symbol length.
     pub const MAX_SYMBOL_LENGTH: usize = 12;
 
-    /// Parses a token-style symbol: up to 12 uppercase ASCII Latin letters (`A`–`Z`).
+    /// Constructs a symbol up to 12 uppercase ASCII Latin letters (`A`–`Z`).
     ///
     /// # Errors
     /// Returns an error if:
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The string contains a character that is not uppercase ASCII.
-    pub fn parse_token_symbol(s: &str) -> Result<Self, SymbolError> {
+    pub fn from_ascii_uppercase(s: &str) -> Result<Self, SymbolError> {
         let len = s.len();
         if len == 0 || len > Self::MAX_SYMBOL_LENGTH {
             return Err(SymbolError::InvalidLength(len));
@@ -37,13 +38,13 @@ impl Symbol {
         Ok(Self(String::from(s)))
     }
 
-    /// Parses a role-style symbol: up to 12 characters from `A`–`Z` and `_`.
+    /// Constructs a symbol up to 12 characters from `A`–`Z` and `_`.
     ///
     /// # Errors
     /// Returns an error if:
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The string contains a character outside `A`–`Z` and `_`.
-    pub fn parse_role_symbol(s: &str) -> Result<Self, SymbolError> {
+    pub fn from_ascii_uppercase_and_underscore(s: &str) -> Result<Self, SymbolError> {
         let len = s.len();
         if len == 0 || len > Self::MAX_SYMBOL_LENGTH {
             return Err(SymbolError::InvalidLength(len));
@@ -152,7 +153,7 @@ mod tests {
 
     #[test]
     fn symbol_encode_decode_roundtrip() {
-        let symbol = Symbol::parse_token_symbol("MIDEN").unwrap();
+        let symbol = Symbol::from_ascii_uppercase("MIDEN").unwrap();
         let encoded = symbol.as_element(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap();
         let decoded = Symbol::try_from_encoded_felt(
             encoded,
@@ -166,18 +167,21 @@ mod tests {
 
     #[test]
     fn symbol_rejects_invalid_values() {
-        assert_matches!(Symbol::parse_token_symbol("").unwrap_err(), SymbolError::InvalidLength(0));
         assert_matches!(
-            Symbol::parse_token_symbol("ABCDEFGHIJKLM").unwrap_err(),
+            Symbol::from_ascii_uppercase("").unwrap_err(),
+            SymbolError::InvalidLength(0)
+        );
+        assert_matches!(
+            Symbol::from_ascii_uppercase("ABCDEFGHIJKLM").unwrap_err(),
             SymbolError::InvalidLength(13)
         );
         assert_matches!(
-            Symbol::parse_token_symbol("A_B").unwrap_err(),
+            Symbol::from_ascii_uppercase("A_B").unwrap_err(),
             SymbolError::InvalidCharacter
         );
 
         assert_matches!(
-            Symbol::parse_role_symbol("MINTER-ADMIN").unwrap_err(),
+            Symbol::from_ascii_uppercase_and_underscore("MINTER-ADMIN").unwrap_err(),
             SymbolError::InvalidRoleCharacter
         );
 

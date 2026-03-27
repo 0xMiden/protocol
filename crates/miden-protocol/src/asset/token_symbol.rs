@@ -48,7 +48,7 @@ impl TokenSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided token string contains characters that are not uppercase ASCII.
     pub fn new(symbol: &str) -> Result<Self, TokenSymbolError> {
-        Symbol::parse_token_symbol(symbol).map(Self).map_err(Into::into)
+        Symbol::from_ascii_uppercase(symbol).map(Self).map_err(Into::into)
     }
 
     /// Returns the [`Felt`] encoding of this token symbol.
