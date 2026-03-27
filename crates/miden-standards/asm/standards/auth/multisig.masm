@@ -17,13 +17,6 @@ const INIT_NUM_OF_APPROVERS_LOC=1
 
 const DEFAULT_THRESHOLD_LOC=0
 
-const IMMEDIATE_THRESHOLD_LOC=0
-const DELAYED_THRESHOLD_LOC=1
-const NOTE_RESTRICTIONS_LOC=2
-
-const SET_PROC_THRESHOLD_PROC_ROOT_LOC=0
-const SET_PROC_THRESHOLD_VALUE_LOC=1
-
 # CONSTANTS
 # =================================================================================================
 
@@ -44,8 +37,8 @@ const SET_PROC_THRESHOLD_VALUE_LOC=1
 # - EXECUTED_TXS_SLOT (map):
 #   TRANSACTION_MESSAGE => [is_executed, 0, 0, 0]
 #
-# - PROC_POLICY_ROOTS_SLOT (map):
-#   PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, 0]
+# - PROC_THRESHOLD_ROOTS_SLOT (map):
+#   PROC_ROOT => [proc_threshold, 0, 0, 0]
 
 
 # The slot in this component's storage layout where the default signature threshold and
@@ -66,15 +59,12 @@ const APPROVER_SCHEME_ID_SLOT = word("miden::standards::auth::multisig::approver
 # Map entries: transaction_message => [is_executed, 0, 0, 0]
 const EXECUTED_TXS_SLOT = word("miden::standards::auth::multisig::executed_transactions")
 
-# The slot in this component's storage layout where procedure policies are stored.
-# Map entries: PROC_ROOT => [immediate_threshold, delayed_threshold, note_restrictions, 0]
-const PROC_POLICY_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_policies")
+# The slot in this component's storage layout where procedure thresholds are stored.
+# Map entries: PROC_ROOT => [proc_threshold, 0, 0, 0]
+const PROC_THRESHOLD_ROOTS_SLOT = word("miden::standards::auth::multisig::procedure_thresholds")
 
 # Executed Transaction Flag Constant
 const IS_EXECUTED_FLAG = [1, 0, 0, 0]
-
-# Highest valid encoded value for `note_restrictions`.
-const MAX_PROC_POLICY_NOTE_RESTRICTIONS = 3
 
 # ERRORS
 # =================================================================================================
@@ -94,30 +84,6 @@ const ERR_PROC_THRESHOLD_NOT_U32 = "procedure threshold must be u32"
 const ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32 = "number of approvers and procedure threshold must be u32"
 
 const ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS = "procedure threshold exceeds new number of approvers"
-
-const ERR_POLICY_NOTE_RESTRICTIONS_INVALID = "procedure policy note restrictions must be in the range 0..=3"
-
-const ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD = "procedure policy constraints require an immediate or delayed threshold"
-
-const ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE = "delayed threshold cannot exceed immediate threshold"
-
-const ERR_U32_MAX_INPUTS_NOT_U32 = "u32_max inputs must be u32"
-
-#! Inputs:  [note_restrictions]
-#! Outputs: []
-proc assert_valid_note_restrictions
-    u32assert.err=ERR_POLICY_NOTE_RESTRICTIONS_INVALID
-    # => [note_restrictions]
-
-    dup u32lte.MAX_PROC_POLICY_NOTE_RESTRICTIONS
-    # => [are_note_restrictions_valid, note_restrictions]
-
-    assert.err=ERR_POLICY_NOTE_RESTRICTIONS_INVALID
-    # => [note_restrictions]
-
-    drop
-    # => []
-end
 
 #! Remove old approver public keys and the corresponding scheme ids 
 #! from the approver public key and scheme id mappings.
@@ -197,83 +163,15 @@ proc create_approver_map_key
     # => [APPROVER_MAP_KEY]
 end
 
-#! Gets the policy entry for a given procedure root from the account's initial state.
-#! 
-#! Inputs:  [PROC_ROOT]
-#! Outputs: [immediate_threshold, delayed_threshold, note_restrictions, 0]
-pub proc get_procedure_policy(proc_root: word)
-    push.PROC_POLICY_ROOTS_SLOT[0..2]
-    exec.active_account::get_initial_map_item
-end
-
-#! Gets the immediate threshold from the policy entry for a given procedure root.
-#!
-#! Inputs:  [PROC_ROOT]
-#! Outputs: [immediate_threshold]
-proc get_immediate_threshold(proc_root: word)
-    exec.get_procedure_policy
-    # => [immediate_threshold, delayed_threshold, note_restrictions, 0]
-
-    movdn.3 drop drop drop
-    # => [immediate_threshold]
-end
-
-#! Returns the current number of approvers after any in-transaction signer update has been applied.
-#! 
-#! Inputs:  []
-#! Outputs: [num_approvers]
-proc get_current_num_approvers
-    push.THRESHOLD_CONFIG_SLOT[0..2]
-    exec.active_account::get_item
-    # => [threshold, num_approvers, 0, 0]
-
-    movup.2 drop movup.2 drop
-    # => [threshold, num_approvers]
-
-    drop
-    # => [num_approvers]
-end
-
-#! Returns the larger of two u32 values.
-#!
-#! Inputs:  [rhs, lhs]
-#! Outputs: [max(lhs, rhs)]
-#! Panics if:
-#! - lhs is not a u32 value.
-#! - rhs is not a u32 value.
-proc u32_max
-    dup.1
-    dup.1
-    swap
-    # => [lhs, rhs, rhs, lhs]
-
-    u32assert2.err=ERR_U32_MAX_INPUTS_NOT_U32
-    # => [lhs, rhs, rhs, lhs]
-
-    u32gt
-    # => [is_rhs_gt_lhs, rhs, lhs]
-
-    cdrop
-    # => [max(lhs, rhs)]
-end
-
-#! Validates all configured per-procedure policies against the current number of approvers.
+#! Asserts that all configured per-procedure threshold overrides are less than or equal to 
+#! number of approvers 
 #!
 #! Inputs:  [num_approvers]
 #! Outputs: []
-#! Locals:
-#! 0: immediate_threshold
-#! 1: delayed_threshold
-#! 2: note_restrictions
-#! 
 #! Panics if:
 #! - any configured procedure threshold is not a u32 value.
 #! - any configured procedure threshold exceeds num_approvers.
-#! - delayed threshold exceeds immediate threshold.
-#! - note_restrictions is not in the range 0..=3.
-#! - note restrictions are configured without any threshold.
-@locals(3)
-pub proc assert_valid_proc_policies(num_approvers: u32)
+proc assert_proc_thresholds_lte_num_approvers(num_approvers: u32)
     exec.active_account::get_num_procedures
     # => [num_procedures, num_approvers]
 
@@ -286,92 +184,21 @@ pub proc assert_valid_proc_policies(num_approvers: u32)
         exec.active_account::get_procedure_root
         # => [PROC_ROOT, proc_index, num_approvers]
 
-        push.PROC_POLICY_ROOTS_SLOT[0..2]
+        push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+        # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, proc_index, num_approvers]
+
         exec.active_account::get_map_item
-        # => [immediate_threshold, delayed_threshold, note_restrictions, 0, proc_index, num_approvers]
+        # => [[proc_threshold, 0, 0, 0], proc_index, num_approvers]
 
-        loc_store.IMMEDIATE_THRESHOLD_LOC
-        loc_store.DELAYED_THRESHOLD_LOC
-        loc_store.NOTE_RESTRICTIONS_LOC
-        drop
-        # locals[0..=2] = [immediate_threshold, delayed_threshold, note_restrictions]
-        # => [proc_index, num_approvers]
+        movdn.3 drop drop drop
+        # => [proc_threshold, proc_index, num_approvers]
 
-        dup.1
-        # => [num_approvers, proc_index, num_approvers]
+        dup.2
+        # => [num_approvers, proc_threshold, proc_index, num_approvers]
 
-        loc_load.IMMEDIATE_THRESHOLD_LOC
-        swap
-        # => [num_approvers, immediate_threshold, proc_index, num_approvers]
-
-        dup.1 swap
         u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
         u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [immediate_threshold, proc_index, num_approvers]
-
-        drop
         # => [proc_index, num_approvers]
-
-        dup.1
-        # => [num_approvers, proc_index, num_approvers]
-
-        loc_load.DELAYED_THRESHOLD_LOC
-        swap
-        # => [num_approvers, delayed_threshold, proc_index, num_approvers]
-
-        dup.1 swap
-        u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
-        u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-        # => [delayed_threshold, proc_index, num_approvers]
-
-        drop
-        # => [proc_index, num_approvers]
-
-        loc_load.NOTE_RESTRICTIONS_LOC exec.assert_valid_note_restrictions
-        # => [proc_index, num_approvers]
-
-        loc_load.IMMEDIATE_THRESHOLD_LOC
-        loc_load.DELAYED_THRESHOLD_LOC
-        add
-        # => [immediate_plus_delayed, proc_index, num_approvers]
-
-        dup eq.0
-        if.true
-            drop
-            # => [proc_index, num_approvers]
-
-            loc_load.NOTE_RESTRICTIONS_LOC
-            assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
-            # => [proc_index, num_approvers]
-        else
-            drop
-            # => [proc_index, num_approvers]
-
-            loc_load.IMMEDIATE_THRESHOLD_LOC
-            eq.0
-            # => [is_immediate_threshold_zero, proc_index, num_approvers]
-            if.false
-                # immediate_threshold != 0, so require delayed_threshold <= immediate_threshold
-
-                loc_load.DELAYED_THRESHOLD_LOC
-                # => [delayed_threshold, proc_index, num_approvers]
-
-                loc_load.IMMEDIATE_THRESHOLD_LOC
-                # => [immediate_threshold, delayed_threshold, proc_index, num_approvers]
-
-                dup.1 swap
-                # => [immediate_threshold, delayed_threshold, delayed_threshold, proc_index, num_approvers]
-
-                u32assert2.err=ERR_PROC_THRESHOLD_NOT_U32
-                # => [immediate_threshold, delayed_threshold, proc_index, num_approvers]
-
-                u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
-                # => [delayed_threshold_lte_immediate, proc_index, num_approvers]
-
-                drop
-                # => [proc_index, num_approvers]
-            end
-        end
 
         dup neq.0
         # => [should_continue, proc_index, num_approvers]
@@ -440,8 +267,8 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     loc_load.NEW_NUM_OF_APPROVERS_LOC
     # => [num_approvers, MULTISIG_CONFIG, pad(12)]
 
-    # make sure that all existing procedure policies remain reachable
-    exec.assert_valid_proc_policies
+    # make sure that all existing procedure threshold overrides remain reachable
+    exec.assert_proc_thresholds_lte_num_approvers
     # => [MULTISIG_CONFIG, pad(12)]
 
     push.THRESHOLD_CONFIG_SLOT[0..2]
@@ -515,92 +342,92 @@ pub proc update_signers_and_threshold(multisig_config_hash: word)
     # => [pad(12)]
 end
 
-#! Computes max immediate-threshold override across called procedures.
-#!
-#! Inputs:  []
-#! Outputs: [max_called_proc_immediate_threshold]
-#! Invocation: exec
-pub proc compute_max_called_proc_immediate_threshold
-    # 1. initialize max_called_proc_immediate_threshold = 0
-    # 2. iterate through all account procedures
-    #   a. check if the procedure was called during the transaction
-    #   b. if called, read its immediate threshold from the policy map
-    #   c. if immediate_threshold > current_max, update it
-    # 3. return max_called_proc_immediate_threshold (0 means no applicable override)
-    # initialize running max = 0
-    push.0
-    # => [max_called_proc_immediate_threshold]
-
-    # get the number of account procedures
-    exec.active_account::get_num_procedures
-    # => [num_procedures, max_called_proc_immediate_threshold]
-
-    # iterate through account procedures and keep max immediate threshold from called procs
-    dup neq.0
-    # => [should_continue, num_procedures, max_called_proc_immediate_threshold]
-    while.true
-        sub.1 dup
-        # => [num_procedures-1, num_procedures-1, max_called_proc_immediate_threshold]
-
-        # get procedure root of the procedure with index i
-        exec.active_account::get_procedure_root dupw
-        # => [PROC_ROOT, PROC_ROOT, num_procedures-1, max_called_proc_immediate_threshold]
-
-        # check if this procedure has been called in the transaction
-        exec.native_account::was_procedure_called
-        # => [was_called, PROC_ROOT, num_procedures-1, max_called_proc_immediate_threshold]
-
-        # if called, apply max(current_max, immediate_threshold)
-        if.true
-            # => [PROC_ROOT, num_procedures-1, max_called_proc_immediate_threshold]
-
-            exec.get_immediate_threshold
-            # => [immediate_threshold, num_procedures-1, max_called_proc_immediate_threshold]
-
-            movup.2 swap
-            # => [immediate_threshold, max_called_proc_immediate_threshold, num_procedures-1]
-
-            exec.u32_max
-            # => [updated_max_called_proc_immediate_threshold, num_procedures-1]
-
-            swap
-            # => [num_procedures-1, updated_max_called_proc_immediate_threshold]
-        else
-            dropw
-            # => [num_procedures-1, max_called_proc_immediate_threshold]
-        end
-
-        dup neq.0
-        # => [should_continue, num_procedures-1, max_called_proc_immediate_threshold]
-    end
-
-    drop
-    # => [max_called_proc_immediate_threshold]
-end
-
-# Computes the effective transaction threshold based on called procedures and the immediate
-# threshold stored in PROC_POLICY_ROOTS_SLOT. Falls back to default_threshold if no overrides apply.
+# Computes the effective transaction threshold based on called procedures and per-procedure
+# overrides stored in PROC_THRESHOLD_ROOTS_SLOT. Falls back to default_threshold if no
+# overrides apply.
 #
 #! Inputs:  [default_threshold]
 #! Outputs: [transaction_threshold]
 @locals(1)
-proc compute_tx_threshold(default_threshold: u32) -> u32
-    # 1. compute max immediate-threshold override over called procedures
-    # 2. if computed max is 0, revert to using default_threshold
-    # 3. otherwise, use computed max as effective transaction threshold
+proc compute_transaction_threshold(default_threshold: u32) -> u32
+    # 1. initialize transaction_threshold = 0
+    # 2. iterate through all account procedures
+    #   a. check if the procedure was called during the transaction
+    #   b. if called, get the override threshold of that procedure from the config map
+    #   c. if proc_threshold > transaction_threshold, set transaction_threshold = proc_threshold
+    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
+
     # store default_threshold for later
     loc_store.DEFAULT_THRESHOLD_LOC
     # => []
 
-    exec.compute_max_called_proc_immediate_threshold
-    # => [max_called_proc_immediate_threshold]
+    # 1. initialize transaction_threshold = 0
+    push.0
+    # => [transaction_threshold]
+
+    # get the number of account procedures
+    exec.active_account::get_num_procedures
+    # => [num_procedures, transaction_threshold]
+
+    # 2. iterate through all account procedures
+    dup neq.0
+    # => [should_continue, num_procedures, transaction_threshold]
+    while.true
+        sub.1 dup
+        # => [num_procedures-1, num_procedures-1, transaction_threshold]
+
+        # get procedure root of the procedure with index i
+        exec.active_account::get_procedure_root dupw
+        # => [PROC_ROOT, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+        # 2a. check if this procedure has been called in the transaction
+        exec.native_account::was_procedure_called
+        # => [was_called, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+        # if it has been called, get the override threshold of that procedure
+        if.true
+            # => [PROC_ROOT, num_procedures-1, transaction_threshold]
+
+            push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+            # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, num_procedures-1, transaction_threshold]
+
+            # 2b. get the override proc_threshold of that procedure
+            # if the procedure has no override threshold, the returned map item will be [0, 0, 0, 0]
+            exec.active_account::get_initial_map_item
+            # => [[proc_threshold, 0, 0, 0], num_procedures-1, transaction_threshold]
+
+            movdn.3 drop drop drop dup dup.3
+            # => [transaction_threshold, proc_threshold, proc_threshold, num_procedures-1, transaction_threshold]
+
+            u32assert2.err="transaction threshold or procedure threshold are not u32"
+            u32gt
+            # => [is_gt, proc_threshold, num_procedures-1, transaction_threshold]
+            # 2c. if proc_threshold > transaction_threshold, update transaction_threshold
+            movup.2 movdn.3
+            # => [is_gt, proc_threshold, transaction_threshold, num_procedures-1]
+            cdrop
+            # => [updated_transaction_threshold, num_procedures-1]
+            swap
+            # => [num_procedures-1, updated_transaction_threshold]
+        # if it has not been called during this transaction, nothing to do, move to the next procedure
+        else
+            dropw
+            # => [num_procedures-1, transaction_threshold]
+        end
+
+        dup neq.0
+        # => [should_continue, num_procedures-1, transaction_threshold]
+    end
+
+    drop
+    # => [transaction_threshold]
 
     loc_load.DEFAULT_THRESHOLD_LOC
-    # => [default_threshold, max_called_proc_immediate_threshold]
+    # => [default_threshold, transaction_threshold]
 
-    # if no override threshold matched, revert to default_threshold
+    # 3. if transaction_threshold == 0 at the end, revert to using default_threshold
     dup.1 eq.0
-    # => [is_zero, default_threshold, max_called_proc_immediate_threshold]
+    # => [is_zero, default_threshold, transaction_threshold]
 
     cdrop
     # => [effective_transaction_threshold]
@@ -621,117 +448,6 @@ pub proc get_threshold_and_num_approvers
     # => [threshold, num_approvers]
 end
 
-#! Sets or clears a per-procedure policy.
-#!
-#! Inputs: [immediate_threshold, delayed_threshold, note_restrictions, PROC_ROOT]
-#! Outputs: []
-#! Locals:
-#! 0: immediate_threshold
-#! 1: delayed_threshold
-#! 2: note_restrictions
-#! Invocation: call
-@locals(3)
-pub proc set_procedure_policy
-    loc_store.IMMEDIATE_THRESHOLD_LOC
-    # => [delayed_threshold, note_restrictions, PROC_ROOT]
-
-    loc_store.DELAYED_THRESHOLD_LOC
-    # => [note_restrictions, PROC_ROOT]
-
-    loc_store.NOTE_RESTRICTIONS_LOC
-    # => [PROC_ROOT]
-
-    exec.get_current_num_approvers
-    # => [num_approvers, PROC_ROOT]
-
-    loc_load.IMMEDIATE_THRESHOLD_LOC
-    swap
-    # => [num_approvers, immediate_threshold, PROC_ROOT]
-
-    dup.1 swap
-    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [immediate_threshold, PROC_ROOT]
-
-    drop
-    # => [PROC_ROOT]
-
-    exec.get_current_num_approvers
-    # => [num_approvers, PROC_ROOT]
-
-    loc_load.DELAYED_THRESHOLD_LOC
-    swap
-    # => [num_approvers, delayed_threshold, PROC_ROOT]
-
-    dup.1 swap
-    u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-    u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
-    # => [delayed_threshold, PROC_ROOT]
-
-    drop
-    # => [PROC_ROOT]
-
-    loc_load.NOTE_RESTRICTIONS_LOC
-    exec.assert_valid_note_restrictions
-    # => [PROC_ROOT]
-
-    loc_load.IMMEDIATE_THRESHOLD_LOC
-    loc_load.DELAYED_THRESHOLD_LOC
-    add
-    # => [immediate_plus_delayed, PROC_ROOT]
-
-    dup eq.0
-    if.true
-        drop
-        # => [PROC_ROOT]
-
-        loc_load.NOTE_RESTRICTIONS_LOC
-        assertz.err=ERR_POLICY_CONSTRAINTS_REQUIRE_THRESHOLD
-        # => [PROC_ROOT]
-    else
-        drop
-        # => [PROC_ROOT]
-
-        loc_load.IMMEDIATE_THRESHOLD_LOC
-        eq.0
-        # => [is_immediate_threshold_zero, PROC_ROOT]
-        if.false
-            # immediate_threshold != 0, so require delayed_threshold <= immediate_threshold
-
-            loc_load.DELAYED_THRESHOLD_LOC
-            # => [delayed_threshold, PROC_ROOT]
-
-            loc_load.IMMEDIATE_THRESHOLD_LOC
-            # => [immediate_threshold, delayed_threshold, PROC_ROOT]
-
-            dup.1 swap
-            # => [immediate_threshold, delayed_threshold, delayed_threshold, PROC_ROOT]
-
-            u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
-            # => [immediate_threshold, delayed_threshold, PROC_ROOT]
-
-            u32gt assertz.err=ERR_DELAYED_THRESHOLD_EXCEEDS_IMMEDIATE
-            # => [delayed_threshold_lte_immediate, PROC_ROOT]
-
-            drop
-            # => [PROC_ROOT]
-        end
-    end
-
-    push.0
-    loc_load.NOTE_RESTRICTIONS_LOC
-    loc_load.DELAYED_THRESHOLD_LOC
-    loc_load.IMMEDIATE_THRESHOLD_LOC
-    # => [immediate_threshold, delayed_threshold, note_restrictions, 0, PROC_ROOT]
-
-    swapw
-    # => [PROC_ROOT, immediate_threshold, delayed_threshold, note_restrictions, 0]
-
-    push.PROC_POLICY_ROOTS_SLOT[0..2]
-    exec.native_account::set_map_item
-    dropw
-end
-
 #! Sets or clears a per-procedure threshold override.
 #!
 #! Inputs: [proc_threshold, PROC_ROOT]
@@ -748,52 +464,35 @@ end
 #! - current num_approvers is not a u32 value.
 #! - proc_threshold > current num_approvers.
 #!
-#! Locals:
-#! 0: proc_root
-#! 1: proc_threshold
-#!
 #! Invocation: call
-@locals(2)
 pub proc set_procedure_threshold
-    swap
-    # => [PROC_ROOT, proc_threshold]
+    exec.get_threshold_and_num_approvers
+    # => [default_threshold, num_approvers, proc_threshold, PROC_ROOT]
 
-    loc_store.SET_PROC_THRESHOLD_PROC_ROOT_LOC
-    # => [proc_threshold]
-
-    loc_store.SET_PROC_THRESHOLD_VALUE_LOC
-    # => []
-
-    loc_load.SET_PROC_THRESHOLD_PROC_ROOT_LOC
-    exec.get_current_num_approvers
-    # => [num_approvers, PROC_ROOT]
-
-    loc_load.SET_PROC_THRESHOLD_VALUE_LOC
-    swap
+    drop
     # => [num_approvers, proc_threshold, PROC_ROOT]
 
     dup.1 swap
+    # => [num_approvers, proc_threshold, proc_threshold, PROC_ROOT]
+
     u32assert2.err=ERR_NUM_APPROVERS_OR_PROC_THRESHOLD_NOT_U32
     u32gt assertz.err=ERR_PROC_THRESHOLD_EXCEEDS_NUM_APPROVERS
     # => [proc_threshold, PROC_ROOT]
 
-    drop
-    # => [PROC_ROOT]
-
-    push.0
-    push.0
-    push.0
-    # => [0, 0, 0, PROC_ROOT]
-
-    loc_load.SET_PROC_THRESHOLD_VALUE_LOC
-    # => [proc_threshold, 0, 0, 0, PROC_ROOT]
-
+    # Store [proc_threshold, 0, 0, 0] = PROC_THRESHOLD_WORD, where proc_threshold == 0 acts as clear.
+    push.0.0.0
+    movup.3
     swapw
-    # => [PROC_ROOT, proc_threshold, 0, 0, 0]
+    # => [PROC_ROOT, PROC_THRESHOLD_WORD]
 
-    push.PROC_POLICY_ROOTS_SLOT[0..2]
+    push.PROC_THRESHOLD_ROOTS_SLOT[0..2]
+    # => [proc_roots_slot_suffix, proc_roots_slot_prefix, PROC_ROOT, PROC_THRESHOLD_WORD]
+
     exec.native_account::set_map_item
+    # => [OLD_PROC_THRESHOLD_WORD]
+
     dropw
+    # => []
 end
 
 #! Returns signer public key at index i
@@ -1015,7 +714,7 @@ pub proc auth_tx(salt: word)
     movup.5
     # => [default_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
-    exec.compute_tx_threshold
+    exec.compute_transaction_threshold
     # => [transaction_threshold, num_verified_signatures, TX_SUMMARY_COMMITMENT]
 
     u32assert2 u32lt
