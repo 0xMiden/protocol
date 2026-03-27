@@ -1,14 +1,14 @@
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_NUMBER_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_TIMESTAMP_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_INPUT_NOTES_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_NUM_OUTPUT_NOTES_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_PREPARE_FPI_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_EXEC_FOREIGN_PROC_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
-use ::miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_NUMBER_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_BLOCK_TIMESTAMP_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_INPUT_NOTES_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_OUTPUT_NOTES_COMMITMENT_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_NUM_INPUT_NOTES_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_NUM_OUTPUT_NOTES_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_PREPARE_FPI_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_EXEC_FOREIGN_PROC_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_UPDATE_EXPIRATION_BLOCK_DELTA_OFFSET
+use miden::protocol::kernel_proc_offsets::TX_GET_EXPIRATION_DELTA_OFFSET
 
 #! Returns the block number of the transaction reference block.
 #!

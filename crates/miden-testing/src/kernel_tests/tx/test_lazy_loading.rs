@@ -2,7 +2,6 @@
 //!
 //! Once lazy loading is enabled generally, it can be removed and/or integrated into other tests.
 
-use miden_protocol::LexicographicWord;
 use miden_protocol::account::{AccountId, AccountStorage, StorageMapKey, StorageSlotDelta};
 use miden_protocol::asset::{Asset, FungibleAsset};
 use miden_protocol::testing::account_id::{
@@ -243,11 +242,8 @@ async fn setting_map_item_with_lazy_loading_succeeds() -> anyhow::Result<()> {
         .cloned()
         .map(StorageSlotDelta::unwrap_map)
         .unwrap();
-    assert_eq!(map_delta.entries().get(&LexicographicWord::new(existing_key)).unwrap(), &value0);
-    assert_eq!(
-        map_delta.entries().get(&LexicographicWord::new(non_existent_key)).unwrap(),
-        &value1
-    );
+    assert_eq!(map_delta.entries().get(&existing_key).unwrap(), &value0);
+    assert_eq!(map_delta.entries().get(&non_existent_key).unwrap(), &value1);
 
     Ok(())
 }

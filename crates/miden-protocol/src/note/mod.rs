@@ -166,7 +166,7 @@ impl Note {
     /// This value is used primarily for authenticating notes consumed when the are consumed
     /// in a transaction.
     pub fn commitment(&self) -> Word {
-        self.header.commitment()
+        self.header.to_commitment()
     }
 
     // MUTATORS

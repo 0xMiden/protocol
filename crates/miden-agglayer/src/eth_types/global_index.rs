@@ -1,8 +1,4 @@
-use alloc::vec::Vec;
-
-use miden_core::utils::bytes_to_packed_u32_elements;
-use miden_protocol::Felt;
-use miden_protocol::utils::{HexParseError, hex_to_bytes};
+use crate::utils::Keccak256Output;
 
 // ================================================================================================
 // GLOBAL INDEX ERROR
@@ -32,33 +28,43 @@ pub enum GlobalIndexError {
 /// - 32 bits (limb 7): leaf index (deposit index in the local exit tree)
 ///
 /// Bytes are stored in big-endian order, matching Solidity's uint256 representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GlobalIndex([u8; 32]);
+pub type GlobalIndex = Keccak256Output;
 
-impl GlobalIndex {
-    /// Creates a [`GlobalIndex`] from a hex string (with or without "0x" prefix).
-    ///
-    /// The hex string should represent a Solidity uint256 in big-endian format
-    /// (64 hex characters for 32 bytes).
-    pub fn from_hex(hex_str: &str) -> Result<Self, HexParseError> {
-        let bytes: [u8; 32] = hex_to_bytes(hex_str)?;
-        Ok(Self(bytes))
-    }
-
-    /// Creates a new [`GlobalIndex`] from a 32-byte array (big-endian).
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
+/// Extension trait for [`GlobalIndex`] providing AggLayer-specific field accessors and validation.
+///
+/// These methods interpret the underlying 32-byte Keccak256 output as a structured global index
+/// with mainnet flag, rollup index, and leaf index fields.
+#[cfg(any(test, feature = "testing"))]
+pub trait GlobalIndexExt {
     /// Validates this global index.
     ///
     /// Checks that:
     /// - The top 160 bits (bytes 0-19) are zero
     /// - The mainnet flag (bytes 20-23) is exactly 0 or 1
     /// - For mainnet deposits (flag = 1): the rollup index is 0
-    pub fn validate(&self) -> Result<(), GlobalIndexError> {
+    fn validate(&self) -> Result<(), GlobalIndexError>;
+
+    /// Returns the raw mainnet flag value (limb 5, bytes 20-23).
+    ///
+    /// Valid values are 0 (rollup) or 1 (mainnet).
+    fn mainnet_flag(&self) -> u32;
+
+    /// Returns the leaf index (limb 7, lowest 32 bits).
+    fn leaf_index(&self) -> u32;
+
+    /// Returns the rollup index (limb 6).
+    fn rollup_index(&self) -> u32;
+
+    /// Returns true if this is a mainnet deposit (mainnet flag = 1).
+    fn is_mainnet(&self) -> bool;
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl GlobalIndexExt for GlobalIndex {
+    fn validate(&self) -> Result<(), GlobalIndexError> {
+        let bytes = self.as_bytes();
         // Check leading 160 bits are zero
-        if self.0[0..20].iter().any(|&b| b != 0) {
+        if bytes[0..20].iter().any(|&b| b != 0) {
             return Err(GlobalIndexError::LeadingBitsNonZero);
         }
 
@@ -76,36 +82,23 @@ impl GlobalIndex {
         Ok(())
     }
 
-    /// Returns the raw mainnet flag value (limb 5, bytes 20-23).
-    ///
-    /// Valid values are 0 (rollup) or 1 (mainnet).
-    pub fn mainnet_flag(&self) -> u32 {
-        u32::from_be_bytes([self.0[20], self.0[21], self.0[22], self.0[23]])
+    fn mainnet_flag(&self) -> u32 {
+        let bytes = self.as_bytes();
+        u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]])
     }
 
-    /// Returns the leaf index (limb 7, lowest 32 bits).
-    pub fn leaf_index(&self) -> u32 {
-        u32::from_be_bytes([self.0[28], self.0[29], self.0[30], self.0[31]])
+    fn leaf_index(&self) -> u32 {
+        let bytes = self.as_bytes();
+        u32::from_be_bytes([bytes[28], bytes[29], bytes[30], bytes[31]])
     }
 
-    /// Returns the rollup index (limb 6).
-    pub fn rollup_index(&self) -> u32 {
-        u32::from_be_bytes([self.0[24], self.0[25], self.0[26], self.0[27]])
+    fn rollup_index(&self) -> u32 {
+        let bytes = self.as_bytes();
+        u32::from_be_bytes([bytes[24], bytes[25], bytes[26], bytes[27]])
     }
 
-    /// Returns true if this is a mainnet deposit (mainnet flag = 1).
-    pub fn is_mainnet(&self) -> bool {
+    fn is_mainnet(&self) -> bool {
         self.mainnet_flag() == 1
-    }
-
-    /// Converts to field elements for note storage / MASM processing.
-    pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_elements(&self.0)
-    }
-
-    /// Returns the raw 32-byte array (big-endian).
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
     }
 }
 
@@ -169,6 +162,8 @@ mod tests {
 
     #[test]
     fn test_mainnet_global_indices_from_production() {
+        use miden_protocol::Felt;
+
         // Real mainnet global indices from production
         // Format: (1 << 64) + leaf_index for mainnet deposits
         // 18446744073709786619 = 0x1_0000_0000_0003_95FB (leaf_index = 235003)

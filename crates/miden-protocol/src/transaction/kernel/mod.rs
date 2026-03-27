@@ -367,13 +367,13 @@ impl TransactionKernel {
             });
         }
 
-        Ok(TransactionOutputs {
+        Ok(TransactionOutputs::new(
             account,
             account_delta_commitment,
             output_notes,
             fee,
             expiration_block_num,
-        })
+        ))
     }
 
     /// Returns the final account commitment and account delta commitment extracted from the account

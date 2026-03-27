@@ -31,7 +31,7 @@ pub use miden_core::{EMPTY_WORD, Felt, ONE, WORD_SIZE, ZERO, field};
 pub use miden_core_lib::CoreLibrary;
 pub use miden_crypto::hash::poseidon2::Poseidon2 as Hasher;
 pub use miden_crypto::word;
-pub use miden_crypto::word::{LexicographicWord, Word, WordError};
+pub use miden_crypto::word::{Word, WordError};
 pub use protocol::ProtocolLib;
 
 pub mod assembly {

@@ -2,7 +2,6 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use miden_core::utils::bytes_to_packed_u32_elements;
 use miden_core::{Felt, Word};
 use miden_protocol::account::AccountId;
 use miden_protocol::crypto::SequentialCommit;
@@ -11,56 +10,23 @@ use miden_protocol::errors::NoteError;
 use miden_protocol::note::{Note, NoteAssets, NoteMetadata, NoteRecipient, NoteStorage, NoteType};
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 
-use crate::{EthAddressFormat, EthAmount, GlobalIndex, MetadataHash, claim_script};
+use crate::utils::Keccak256Output;
+use crate::{EthAddress, EthAmount, GlobalIndex, MetadataHash, claim_script};
 
-// CLAIM NOTE STRUCTURES
+// CLAIM NOTE TYPE ALIASES
 // ================================================================================================
-
-/// Keccak256 output representation (32-byte hash)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Keccak256Output([u8; 32]);
-
-impl Keccak256Output {
-    /// Creates a new Keccak256 output from a 32-byte array
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the inner 32-byte array
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
-    /// Converts the Keccak256 output to 8 Felt elements (32-byte value as 8 u32 values in
-    /// little-endian)
-    pub fn to_elements(&self) -> Vec<Felt> {
-        bytes_to_packed_u32_elements(&self.0)
-    }
-
-    /// Converts the Keccak256 output to two [`Word`]s: `[lo, hi]`.
-    ///
-    /// - `lo` contains the first 4 u32-packed felts (bytes 0..16).
-    /// - `hi` contains the last  4 u32-packed felts (bytes 16..32).
-    #[cfg(any(test, feature = "testing"))]
-    pub fn to_words(&self) -> [Word; 2] {
-        let elements = self.to_elements();
-        let lo: [Felt; 4] = elements[0..4].try_into().expect("to_elements returns 8 felts");
-        let hi: [Felt; 4] = elements[4..8].try_into().expect("to_elements returns 8 felts");
-        [Word::new(lo), Word::new(hi)]
-    }
-}
-
-impl From<[u8; 32]> for Keccak256Output {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self::new(bytes)
-    }
-}
 
 /// SMT node representation (32-byte Keccak256 hash)
 pub type SmtNode = Keccak256Output;
 
 /// Exit root representation (32-byte Keccak256 hash)
 pub type ExitRoot = Keccak256Output;
+
+/// Leaf value representation (32-byte Keccak256 hash)
+pub type LeafValue = Keccak256Output;
+
+/// Claimed Global Index (CGI) chain hash representation (32-byte Keccak256 hash)
+pub type CgiChainHash = Keccak256Output;
 
 /// Proof data for CLAIM note creation.
 /// Contains SMT proofs and root hashes using typed representations.
@@ -112,11 +78,11 @@ pub struct LeafData {
     /// Origin network identifier (uint32)
     pub origin_network: u32,
     /// Origin token address
-    pub origin_token_address: EthAddressFormat,
+    pub origin_token_address: EthAddress,
     /// Destination network identifier (uint32)
     pub destination_network: u32,
     /// Destination address
-    pub destination_address: EthAddressFormat,
+    pub destination_address: EthAddress,
     /// Amount of tokens (uint256)
     pub amount: EthAmount,
     /// Metadata hash (32 bytes)

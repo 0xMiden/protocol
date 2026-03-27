@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 
 use miden_processor::advice::AdviceMutation;
 use miden_processor::{ContextId, ExecutionOutput, ProcessorState};
-use miden_protocol::{Felt, LexicographicWord, Word, ZERO};
+use miden_protocol::{Felt, Word, ZERO};
 
 // LINK MAP
 // ================================================================================================
@@ -50,7 +50,7 @@ impl<'process> LinkMap<'process> {
         let mem_viewer = MemoryViewer::ProcessState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
 
-        let (set_op, entry_ptr) = link_map.compute_set_operation(LexicographicWord::from(map_key));
+        let (set_op, entry_ptr) = link_map.compute_set_operation(map_key);
 
         vec![AdviceMutation::extend_stack([Felt::from(entry_ptr), Felt::from(set_op as u8)])]
     }
@@ -65,7 +65,7 @@ impl<'process> LinkMap<'process> {
 
         let mem_viewer = MemoryViewer::ProcessState(process);
         let link_map = LinkMap::new(map_ptr, &mem_viewer);
-        let (get_op, entry_ptr) = link_map.compute_get_operation(LexicographicWord::from(map_key));
+        let (get_op, entry_ptr) = link_map.compute_get_operation(map_key);
 
         vec![AdviceMutation::extend_stack([Felt::from(entry_ptr), Felt::from(get_op as u8)])]
     }
@@ -119,12 +119,10 @@ impl<'process> LinkMap<'process> {
     }
 
     /// Returns the key of the entry at the given pointer.
-    fn key(&self, entry_ptr: u32) -> LexicographicWord {
-        LexicographicWord::from(
-            self.mem
-                .get_kernel_mem_word(entry_ptr + 4)
-                .expect("entry pointer should be valid"),
-        )
+    fn key(&self, entry_ptr: u32) -> Word {
+        self.mem
+            .get_kernel_mem_word(entry_ptr + 4)
+            .expect("entry pointer should be valid")
     }
 
     /// Returns the values of the entry at the given pointer.
@@ -171,7 +169,7 @@ impl<'process> LinkMap<'process> {
     /// ([`SetOperation::InsertAfterEntry`]) in which case the key must be greater than the entry's
     /// key after which it is inserted and smaller than the entry before which it is inserted
     /// (unless it is the end of the map).
-    fn compute_set_operation(&self, key: LexicographicWord) -> (SetOperation, u32) {
+    fn compute_set_operation(&self, key: Word) -> (SetOperation, u32) {
         let Some(current_head) = self.head() else {
             return (SetOperation::InsertAtHead, 0);
         };
@@ -209,7 +207,7 @@ impl<'process> LinkMap<'process> {
     ///
     /// The way to compute this is the same as a set operation, so this function simply remaps its
     /// output.
-    fn compute_get_operation(&self, key: LexicographicWord) -> (GetOperation, u32) {
+    fn compute_get_operation(&self, key: Word) -> (GetOperation, u32) {
         let (set_op, entry_ptr) = self.compute_set_operation(key);
         let get_op = match set_op {
             SetOperation::Update => GetOperation::Found,
@@ -255,7 +253,7 @@ impl<'process> Iterator for LinkMapIter<'process> {
 pub struct Entry {
     pub ptr: u32,
     pub metadata: EntryMetadata,
-    pub key: LexicographicWord,
+    pub key: Word,
     pub value0: Word,
     pub value1: Word,
 }

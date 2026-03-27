@@ -192,7 +192,7 @@ impl StorageMap {
     pub fn apply_delta(&mut self, delta: &StorageMapDelta) -> Result<Word, AccountError> {
         // apply the updated and cleared leaves to the storage map
         for (&key, &value) in delta.entries().iter() {
-            self.insert(key.into_inner(), value)?;
+            self.insert(key, value)?;
         }
 
         Ok(self.root())

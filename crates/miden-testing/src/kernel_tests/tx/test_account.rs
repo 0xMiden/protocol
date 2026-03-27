@@ -7,7 +7,6 @@ use anyhow::Context;
 use assert_matches::assert_matches;
 use miden_crypto::rand::test_utils::rand_value;
 use miden_processor::{ExecutionError, Word};
-use miden_protocol::LexicographicWord;
 use miden_protocol::account::auth::AuthScheme;
 use miden_protocol::account::component::AccountComponentMetadata;
 use miden_protocol::account::delta::AccountUpdateDetails;
@@ -940,11 +939,7 @@ async fn prove_account_creation_with_non_empty_storage() -> anyhow::Result<()> {
     assert_matches!(
         tx.account_delta().storage().get(&slot_name2).unwrap(),
         StorageSlotDelta::Map(map_delta) => {
-            let expected = &BTreeMap::from_iter(
-            map_entries
-                .into_iter()
-                .map(|(key, value)| { (LexicographicWord::new(key), value) })
-            );
+            let expected = &BTreeMap::from_iter(map_entries);
             assert_eq!(expected, map_delta.entries())
         }
     );

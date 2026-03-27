@@ -34,7 +34,6 @@ const METADATA_HASH_HI_SLOT = word("agglayer::faucet::metadata_hash_hi")
 #!
 #! Invocation: exec
 pub proc get_origin_token_address
-    # TODO(migration): this procedure name is the same as the one in the bridge account, but they have different functions.
     push.CONVERSION_INFO_1_SLOT[0..2]
     exec.active_account::get_item
     # => [addr0, addr1, addr2, addr3]

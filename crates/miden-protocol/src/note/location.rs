@@ -18,8 +18,9 @@ pub struct NoteLocation {
     /// The block number the note was created in.
     block_num: BlockNumber,
 
-    /// The index of the note in the note Merkle tree of the block the note was created in.
-    node_index_in_block: u16,
+    /// The index of the note in the [`BlockNoteTree`](crate::block::BlockNoteTree) of the block
+    /// the note was created in.
+    block_note_tree_index: u16,
 }
 
 impl NoteLocation {
@@ -28,14 +29,15 @@ impl NoteLocation {
         self.block_num
     }
 
-    /// Returns the index of the note in the note Merkle tree of the block the note was created in.
+    /// Returns the index of the note in the [`BlockNoteTree`](crate::block::BlockNoteTree) of the
+    /// block the note was created in.
     ///
     /// # Note
     ///
     /// The height of the Merkle tree is [crate::constants::BLOCK_NOTE_TREE_DEPTH].
     /// Thus, the maximum index is `2 ^ BLOCK_NOTE_TREE_DEPTH - 1`.
-    pub fn node_index_in_block(&self) -> u16 {
-        self.node_index_in_block
+    pub fn block_note_tree_index(&self) -> u16 {
+        self.block_note_tree_index
     }
 }
 
@@ -53,18 +55,18 @@ impl NoteInclusionProof {
     /// Returns a new [NoteInclusionProof].
     pub fn new(
         block_num: BlockNumber,
-        node_index_in_block: u16,
+        block_note_tree_index: u16,
         note_path: SparseMerklePath,
     ) -> Result<Self, NoteError> {
         const HIGHEST_INDEX: usize = MAX_BATCHES_PER_BLOCK * MAX_OUTPUT_NOTES_PER_BATCH - 1;
-        if node_index_in_block as usize > HIGHEST_INDEX {
-            return Err(NoteError::NoteLocationIndexOutOfBounds {
-                node_index_in_block,
+        if block_note_tree_index as usize > HIGHEST_INDEX {
+            return Err(NoteError::BlockNoteTreeIndexOutOfBounds {
+                block_note_tree_index,
                 highest_index: HIGHEST_INDEX,
             });
         }
 
-        let location = NoteLocation { block_num, node_index_in_block };
+        let location = NoteLocation { block_num, block_note_tree_index };
 
         Ok(Self { location, note_path })
     }
@@ -91,7 +93,7 @@ impl NoteInclusionProof {
     ) -> impl Iterator<Item = InnerNodeInfo> {
         // SAFETY: expect() is fine here because we check index consistency in the constructor
         self.note_path
-            .authenticated_nodes(self.location.node_index_in_block().into(), note_commitment)
+            .authenticated_nodes(self.location.block_note_tree_index().into(), note_commitment)
             .expect("note index is not out of bounds")
     }
 }
@@ -102,16 +104,16 @@ impl NoteInclusionProof {
 impl Serializable for NoteLocation {
     fn write_into<W: ByteWriter>(&self, target: &mut W) {
         target.write(self.block_num);
-        target.write_u16(self.node_index_in_block);
+        target.write_u16(self.block_note_tree_index);
     }
 }
 
 impl Deserializable for NoteLocation {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {
         let block_num = source.read()?;
-        let node_index_in_block = source.read_u16()?;
+        let block_note_tree_index = source.read_u16()?;
 
-        Ok(Self { block_num, node_index_in_block })
+        Ok(Self { block_num, block_note_tree_index })
     }
 }
 

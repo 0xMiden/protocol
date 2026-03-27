@@ -2,7 +2,7 @@ extern crate alloc;
 
 use miden_agglayer::{
     AggLayerFaucet,
-    EthAddressFormat,
+    EthAddress,
     MetadataHash,
     create_existing_agglayer_faucet,
     create_existing_bridge_account,
@@ -36,9 +36,8 @@ fn test_faucet_helper_methods() -> anyhow::Result<()> {
     let max_supply = Felt::new(FungibleAsset::MAX_AMOUNT);
     let token_supply = Felt::new(123_456);
 
-    let origin_token_address =
-        EthAddressFormat::from_hex("0x0102030405060708090a0b0c0d0e0f1011121314")
-            .expect("invalid token address");
+    let origin_token_address = EthAddress::from_hex("0x0102030405060708090a0b0c0d0e0f1011121314")
+        .expect("invalid token address");
     let origin_network = 42u32;
     let scale = 6u8;
 

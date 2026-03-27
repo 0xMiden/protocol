@@ -4,9 +4,10 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use miden_agglayer::claim_note::{Keccak256Output, ProofData, SmtNode};
+use miden_agglayer::claim_note::{ProofData, SmtNode};
 use miden_agglayer::{
-    EthAddressFormat,
+    CgiChainHash,
+    EthAddress,
     EthAmount,
     ExitRoot,
     GlobalIndex,
@@ -62,9 +63,10 @@ pub const MERKLE_PROOF_VECTORS_JSON: &str =
 pub const CANONICAL_ZEROS_JSON: &str =
     include_str!("../../../miden-agglayer/solidity-compat/test-vectors/canonical_zeros.json");
 
-/// MMR frontier vectors JSON from the Foundry-generated file.
-pub const MMR_FRONTIER_VECTORS_JSON: &str =
-    include_str!("../../../miden-agglayer/solidity-compat/test-vectors/mmr_frontier_vectors.json");
+/// Merkle Tree Frontier (MTF) vectors JSON from the Foundry-generated file.
+pub const MTF_VECTORS_JSON: &str = include_str!(
+    "../../../miden-agglayer/solidity-compat/test-vectors/merkle_tree_frontier_vectors.json"
+);
 
 // SERDE HELPERS
 // ================================================================================================
@@ -125,10 +127,10 @@ impl LeafValueVector {
     pub fn to_leaf_data(&self) -> LeafData {
         LeafData {
             origin_network: self.origin_network,
-            origin_token_address: EthAddressFormat::from_hex(&self.origin_token_address)
+            origin_token_address: EthAddress::from_hex(&self.origin_token_address)
                 .expect("valid origin token address hex"),
             destination_network: self.destination_network,
-            destination_address: EthAddressFormat::from_hex(&self.destination_address)
+            destination_address: EthAddress::from_hex(&self.destination_address)
                 .expect("valid destination address hex"),
             amount: EthAmount::from_uint_str(&self.amount).expect("valid amount uint string"),
             metadata_hash: MetadataHash::new(
@@ -177,10 +179,10 @@ impl ProofValueVector {
             smt_proof_rollup_exit_root: smt_proof_rollup,
             global_index: GlobalIndex::from_hex(&self.global_index)
                 .expect("valid global index hex"),
-            mainnet_exit_root: Keccak256Output::new(
+            mainnet_exit_root: ExitRoot::new(
                 hex_to_bytes(&self.mainnet_exit_root).expect("valid mainnet exit root hex"),
             ),
-            rollup_exit_root: Keccak256Output::new(
+            rollup_exit_root: ExitRoot::new(
                 hex_to_bytes(&self.rollup_exit_root).expect("valid rollup exit root hex"),
             ),
         }
@@ -214,7 +216,7 @@ pub struct CanonicalZerosFile {
     pub canonical_zeros: Vec<String>,
 }
 
-/// Deserialized MMR frontier vectors from Solidity DepositContractV2.
+/// Deserialized Merkle Tree Frontier vectors from Solidity DepositContractV2.
 ///
 /// Each leaf is produced by `getLeafValue` using the same hardcoded fields as `bridge_out.masm`
 /// (leafType=0, originNetwork=64), parametrised by
@@ -224,7 +226,7 @@ pub struct CanonicalZerosFile {
 ///
 /// Amounts are serialized as uint256 values (JSON numbers).
 #[derive(Debug, Deserialize)]
-pub struct MmrFrontierVectorsFile {
+pub struct MTFVectorsFile {
     pub leaves: Vec<String>,
     pub roots: Vec<String>,
     pub counts: Vec<u32>,
@@ -272,10 +274,9 @@ pub static SOLIDITY_CANONICAL_ZEROS: LazyLock<CanonicalZerosFile> = LazyLock::ne
     serde_json::from_str(CANONICAL_ZEROS_JSON).expect("failed to parse canonical zeros JSON")
 });
 
-/// Lazily parsed MMR frontier vectors from the JSON file.
-pub static SOLIDITY_MMR_FRONTIER_VECTORS: LazyLock<MmrFrontierVectorsFile> = LazyLock::new(|| {
-    serde_json::from_str(MMR_FRONTIER_VECTORS_JSON)
-        .expect("failed to parse MMR frontier vectors JSON")
+/// Lazily parsed Merkle Tree frontier (MTF) vectors from the JSON file.
+pub static SOLIDITY_MTF_VECTORS: LazyLock<MTFVectorsFile> = LazyLock::new(|| {
+    serde_json::from_str(MTF_VECTORS_JSON).expect("failed to parse MTF vectors JSON")
 });
 
 // HELPER FUNCTIONS
@@ -293,8 +294,8 @@ pub enum ClaimDataSource {
 }
 
 impl ClaimDataSource {
-    /// Returns the `(ProofData, LeafData, ExitRoot)` tuple for this data source.
-    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, Keccak256Output) {
+    /// Returns the `(ProofData, LeafData, ExitRoot, CgiChainHash)` tuple for this data source.
+    pub fn get_data(self) -> (ProofData, LeafData, ExitRoot, CgiChainHash) {
         let vector = match self {
             ClaimDataSource::Real => &*CLAIM_ASSET_VECTOR,
             ClaimDataSource::Simulated => &*CLAIM_ASSET_VECTOR_LOCAL,
@@ -303,7 +304,7 @@ impl ClaimDataSource {
         let ger = ExitRoot::new(
             hex_to_bytes(&vector.proof.global_exit_root).expect("valid global exit root hex"),
         );
-        let cgi_chain_hash = Keccak256Output::new(
+        let cgi_chain_hash = CgiChainHash::new(
             hex_to_bytes(&vector.proof.claimed_global_index_hash_chain)
                 .expect("invalid CGI chain hash"),
         );

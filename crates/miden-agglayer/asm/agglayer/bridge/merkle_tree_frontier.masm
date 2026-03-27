@@ -3,24 +3,27 @@ use ::agglayer::bridge::canonical_zeros::load_zeros_to_memory
 use ::agglayer::common::utils::mem_store_double_word
 use ::agglayer::common::utils::mem_load_double_word
 
-# An MMR Frontier is a data structure based on an MMR, which combines some features of an MMR and an
-# SMT.
+# A Merkle Tree Frontier (MTF) is a data structure based on an Merkle Mountain Range (MMR), which
+# combines some features of an MMR and an SMT.
 #
 # # Basics & Terminology
 #
-#
-# The main entity in this structure is a _frontier_: it is a set of roots of all individual trees in 
-# the MMR. Let's consider the tree below as an example.
+# The main entity in this structure is a _frontier_: it could be described either as a set of roots
+# of all individual trees in the MMR, or as a Merkle Path to the last added leaf to the append-only,
+# fixed-depth, canonical-zero initialized Merkle Tree. 
+# In the AggLayer code this value is called "branch" (see here: <https://github.com/agglayer/agglayer-contracts/blob/918f9609c56faa8263e58202980f3d9ec5a2c33b/contracts/v2/lib/DepositContractBase.sol#L25>)
+# Let's consider the MMR below as an example.
 #
 #        7
+#      /   \
 #     /     \
 #    3       6       10
 #   /  \    /  \    /  \
 #  1    2  4    5  8    9  11 
 #
 # The frontier will consist of nodes 7, 10, and 11, because they represent roots of each subtree and
-# they are sufficient to compute the root of the entire MMR. If we add another node, the tree will
-# become a full binary one and will look like so:
+# they are sufficient to compute the root of the entire MMR. If we add another node, the MMR will
+# become a full binary tree and will look like so:
 #
 #                15
 #              /    \
@@ -28,67 +31,74 @@ use ::agglayer::common::utils::mem_load_double_word
 #          /            \
 #        7               14
 #      /   \            /   \ 
+#     /     \          /     \
 #    3       6       10       13
 #   /  \    /  \    /  \     /  \
 #  1    2  4    5  8    9  11    12 
 #
 # So in that case the frontier will consist of just one node 15.
 # 
-# An MMR frontier consists of the current number of leaves in the range and the array containing the
-# frontier. 
-# For the sake of simplicity, this array has a fixed length, equal to the maximum tree height.
+# An MTF consists of the leaves number currently pushed to the structure and the array containing
+# the frontier.
+#
+# For the sake of simplicity, this frontier array has a fixed length, equal to the maximum height of
+# the hypothetical corresponding Merkle Tree. Currently this height is set to 32.
 # Indexes of 1's in the binary representation of the total leaves number show the indexes of the 
 # relevant frontier values in the frontier array for the current height. For example, if we have 10
 # leaves (1010 in binary representation), relevant frontier values will be stored at frontier[1] and
 # frontier[3].
 #
-# To compute the hash of two MMR nodes, a Keccak256 hash function is used.
+# To compute the hash of two MTF nodes, a Keccak256 hash function is used.
 # 
-# Each node in this MMR is represented by the Keccak256Digest. Notice that this hash is canonically
-# represented on the stack by the 8 u32 values, or two words. So each node of the MMR will occupy 
+# Each node in an MTF is represented by the Keccak256Digest. Notice that this hash is canonically
+# represented on the stack by the 8 u32 values, or two words. So each node of the MTF will occupy 
 # two words on the stack, while being only a 256 bit value.
 #
-# Each state of the MMR frontier is represented by the root. This root is essentially equal to the
-# root of the SMT which has the height equal to the maximum height of the current MMR (for this 
-# implementation this maximum height is set to 32), and the leaves equal to the MMR frontier leaves
-# plus the "zero hash" leaves (Keccak256::hash(&[0u8; 32])) for all other ones.
+# Each state of the MTF is represented by the root. This root corresponds to (is equal to) a root of
+# the fixed-depth, canonical-zero initialized Merkle Tree. For this implementation this depth is set
+# to 32. "Canonical-zero initialized" here means that every value of height `h` in this Tree is 
+# initialized with `value_{h} = Keccak256::hash(value_{h-1}, value_{h-1})`, where `value_0` (a leaf 
+# value) is a plain 0.
 #
 # # Layout
 #
-# The memory layout of the MMR frontier looks like so:
+# The memory layout of the MTF looks like so:
 # 
-# [num_leaves, 0, 0, 0, [FRONTIER_VALUE_DW]]
+# [num_leaves, x, x, x, [FRONTIER_VALUE_DW]]
+#
+# Notice that the three values after `num_leaves` are never accessed and are only needed to 
+# word-align the frontier array. Therefore, these three values can be any field element.
 # 
 # Where: 
-# - num_leaves is the number of leaves in the MMR before adding the new leaf.
-# - [FRONTIER_VALUE_DW] is an array containing the double words which represent the frontier MMR 
-#   nodes. Notice that the index of a frontier value in this array represent its height in the tree.
+# - num_leaves is the number of leaves in the MTF before adding the new leaf.
+# - [FRONTIER_VALUE_DW] is an array containing the double words which represent the frontier nodes
+#   of this MTF. Notice that the index of a frontier value in this array represent its height in the
+#   tree.
 #
-# Zero hashes which are used during the root computation are stored in the local memory of the 
-# `append_and_update_frontier` procedure.
+# Canonical zero hashes which are used during the root computation are stored in the local memory of
+# the `append_and_update_frontier` procedure.
 
 # ERRORS
 # =================================================================================================
 
-const ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT = "number of leaves in the MMR of the MMR Frontier would exceed 4294967295 (2^32 - 1)"
+const ERR_MTF_LEAVES_NUM_EXCEED_LIMIT = "number of leaves in the MTF would exceed 4294967295 (2^32 - 1)"
 
 # CONSTANTS
 # =================================================================================================
 
-# The maximum number of leaves which could be added to the MMR.
+# The maximum number of leaves which could be added to the MTF.
 #
 # If the height is 32, the leaves num will be equal to 4294967295 (2**32 - 1)
 const MAX_LEAVES_NUM = 4294967295
 const MAX_LEAVES_MINUS_1 = 4294967294
 
-# The total height of the full MMR tree, whose root represents the commitment to the current
-# frontier.
+# The total height of the full MTF, whose root represents the commitment to the current frontier.
 const TREE_HEIGHT = 32
 
 # The number of the stack elements which one node occupy.
 const NODE_SIZE = 8
 
-# The offset of the number of leaves in the current MMR state.
+# The offset of the number of leaves in the current MTF memory state.
 const NUM_LEAVES_OFFSET = 0
 
 # The offset of the array of the frontier nodes of respective heights.
@@ -109,10 +119,10 @@ const CANONICAL_ZEROES_LOCAL = 8
 # PUBLIC API
 # =================================================================================================
 
-#! Updates the existing frontier with the new leaf, returns a new leaf count and a new MMR root.
+#! Updates the existing frontier with the new leaf, returns a new leaf count and a new MTF root.
 #!
-#! The memory layout at the `mmr_frontier_ptr` is expected to be:
-#! [num_leaves, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
+#! The memory layout at the `mtf_ptr` is expected to be:
+#! [num_leaves, 0, 0, 0, [[FRONTIER_NODE_LO, FRONTIER_NODE_HI]; 32]]
 #! Empty uninitialized memory is a valid state for the frontier in the case where there are no
 #! leaves.
 #!
@@ -121,83 +131,83 @@ const CANONICAL_ZEROES_LOCAL = 8
 #! So the first 8 felt values is occupied by the current Keccak256 hash, and next 32 * 8 felt values
 #! is occupied by the canonical zeros, 8 values each, 32 zeros total.
 #!
-#! Inputs:  [NEW_LEAF_LO, NEW_LEAF_HI, mmr_frontier_ptr]
+#! Inputs:  [NEW_LEAF_LO, NEW_LEAF_HI, mtf_ptr]
 #! Outputs: [NEW_ROOT_LO, NEW_ROOT_HI, new_leaf_count]
 #!
 #! Where:
 #! - [NEW_LEAF_LO, NEW_LEAF_HI] is the new leaf, represented as Keccak256 hash, which will be added
-#!   to the MMR.
-#! - mmr_frontier_ptr is the pointer to the memory where the MMR Frontier structure is located.
-#! - [NEW_ROOT_LO, NEW_ROOT_HI] is the new root of the MMR, represented as Keccak256 hash.
-#! - new_leaf_count is the number of leaves in the MMR after the new leaf was added.
+#!   to the MTF.
+#! - mtf_ptr is the pointer to the memory where the MTF structure is located.
+#! - [NEW_ROOT_LO, NEW_ROOT_HI] is the new root of the MTF, represented as Keccak256 hash.
+#! - new_leaf_count is the number of leaves in the MTF after the new leaf was added.
 #!
 #! Panics if:
-#! - The number of leaves in the MMR has reached the maximum limit of 2^32.
+#! - The number of leaves in the MTF has reached the maximum limit of 2^32.
 @locals(264) # new_leaf/curr_hash + canonical_zeros
 pub proc append_and_update_frontier
     # set CUR_HASH = NEW_LEAF and store to local memory
     loc_storew_le.CUR_HASH_LO_LOCAL dropw
     loc_storew_le.CUR_HASH_HI_LOCAL dropw
-    # => [mmr_frontier_ptr]
+    # => [mtf_ptr]
 
     # get the current leaves number
     dup add.NUM_LEAVES_OFFSET mem_load
-    # => [num_leaves, mmr_frontier_ptr]
+    # => [num_leaves, mtf_ptr]
 
-    # make sure that the MMR is not full yet and we still can store the new leaf
-    # the MMR is full when the number of leaves is equal to 2^TREE_HEIGHT - 1 (as per the
+    # make sure that the MTF is not full yet and we still can store the new leaf
+    # the MTF is full when the number of leaves is equal to 2^TREE_HEIGHT - 1 (as per the
     # Solidity implementation), so the last call to this procedure will be when the number of
     # leaves would be equal to 2^32 - 2.
     # first assert that the number of leaves is a valid u32, else the u32lt assertion is undefined
-    u32assert.err=ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT
-    dup u32lte.MAX_LEAVES_MINUS_1 assert.err=ERR_MMR_FRONTIER_LEAVES_NUM_EXCEED_LIMIT
-    # => [num_leaves, mmr_frontier_ptr]
+    u32assert.err=ERR_MTF_LEAVES_NUM_EXCEED_LIMIT
+    dup u32lte.MAX_LEAVES_MINUS_1 assert.err=ERR_MTF_LEAVES_NUM_EXCEED_LIMIT
+    # => [num_leaves, mtf_ptr]
 
     # get the memory pointer where the canonical zeros will be stored
     locaddr.CANONICAL_ZEROES_LOCAL
-    # => [zeros_ptr, num_leaves, mmr_frontier_ptr]
+    # => [zeros_ptr, num_leaves, mtf_ptr]
 
     # load the canonical zeros into the memory
     exec.load_zeros_to_memory
-    # => [num_leaves, mmr_frontier_ptr]
+    # => [num_leaves, mtf_ptr]
     
     # update the leaves number and store it into the memory
     dup add.1 dup.2 add.NUM_LEAVES_OFFSET
-    # => [num_leaves_ptr, num_leaves+1, num_leaves, mmr_frontier_ptr]
+    # => [num_leaves_ptr, num_leaves+1, num_leaves, mtf_ptr]
 
     mem_store
-    # => [num_leaves, mmr_frontier_ptr]
+    # => [num_leaves, mtf_ptr]
 
     # iterate `TREE_HEIGHT` times to get the root of the tree
     #
     # iter_counter in that case will show the current tree height
     push.0 push.1
-    # => [loop_flag=1, iter_counter=0, num_leaves, mmr_frontier_ptr]
+    # => [loop_flag=1, iter_counter=0, num_leaves, mtf_ptr]
 
     while.true
-        # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
+        # => [curr_tree_height, num_leaves, mtf_ptr]
 
         # get the pointer to the frontier node of the current height
         #
         # notice that the initial state of the frontier array is zeros
         dup.2 add.FRONTIER_OFFSET dup.1 mul.NODE_SIZE add
-        # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr]
+        # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mtf_ptr]
 
         # determine whether the last `num_leaves` bit is 1 (is `num_leaves` odd)
         dup.2 u32and.1
         # => [
-        #     is_odd, frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr
+        #     is_odd, frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mtf_ptr
         #    ]
 
         if.true
-            # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mtf_ptr]
             #
             # this height already had a subtree root stored in frontier[curr_tree_height], merge
             # into parent.
             exec.mem_load_double_word
             # => [
             #     FRONTIER[curr_tree_height]_LO, FRONTIER[curr_tree_height]_HI, curr_tree_height, 
-            #     num_leaves, mmr_frontier_ptr
+            #     num_leaves, mtf_ptr
             #    ]
 
             # load the current hash from the local memory back to the stack
@@ -208,83 +218,83 @@ pub proc append_and_update_frontier
             swapdw
             # => [
             #     FRONTIER[curr_tree_height]_LO, FRONTIER[curr_tree_height]_HI, CUR_HASH_LO, 
-            #     CUR_HASH_HI, curr_tree_height, num_leaves, mmr_frontier_ptr
+            #     CUR_HASH_HI, curr_tree_height, num_leaves, mtf_ptr
             #    ]
 
             # merge the frontier node of this height with the current hash to get the current hash
             # of the next height (merge(frontier[h], cur))
             exec.keccak256::merge
-            # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mtf_ptr]
 
             # store the current hash of the next height back to the local memory
             loc_storew_le.CUR_HASH_LO_LOCAL dropw
             loc_storew_le.CUR_HASH_HI_LOCAL dropw
-            # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [curr_tree_height, num_leaves, mtf_ptr]
         else
-            # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [frontier[curr_tree_height]_ptr, curr_tree_height, num_leaves, mtf_ptr]
             #
-            # this height wasn't "occupied" yet: store the current hash as the subtree root 
-            # (frontier node) at height `curr_tree_height`
+            # this height wasn't "occupied" yet: store the current hash as the frontier node at
+            # height `curr_tree_height`
             padw loc_loadw_le.CUR_HASH_HI_LOCAL
             padw loc_loadw_le.CUR_HASH_LO_LOCAL
             # => [
             #     CUR_HASH_LO, CUR_HASH_HI, frontier[curr_tree_height]_ptr, curr_tree_height,
-            #     num_leaves, mmr_frontier_ptr
+            #     num_leaves, mtf_ptr
             #    ]
 
             # store the CUR_HASH to the frontier[curr_tree_height]_ptr
             exec.mem_store_double_word movup.8 drop
-            # => [CUR_HASH_LO, CUR_HASH_HI, curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [CUR_HASH_LO, CUR_HASH_HI, curr_tree_height, num_leaves, mtf_ptr]
 
             # get the pointer to the canonical zero node of the current height
             locaddr.CANONICAL_ZEROES_LOCAL dup.9 mul.NODE_SIZE add
             # => [
             #     zeros[curr_tree_height], CUR_HASH_LO, CUR_HASH_HI, curr_tree_height, num_leaves, 
-            #     mmr_frontier_ptr
+            #     mtf_ptr
             #    ]
 
             # load the zero node to the stack
             exec.mem_load_double_word swapdw
             # => [
             #     CUR_HASH_LO, CUR_HASH_HI, ZERO_H_LO, ZERO_H_HI, curr_tree_height, num_leaves, 
-            #     mmr_frontier_ptr
+            #     mtf_ptr
             #    ]
 
             # merge the current hash with the zero node of this height to get the current hash of
             # the next height (merge(cur, zeroes[h]))
             exec.keccak256::merge
-            # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [CUR_HASH_LO', CUR_HASH_HI', curr_tree_height, num_leaves, mtf_ptr]
 
             # store the current hash of the next height back to the local memory
             loc_storew_le.CUR_HASH_LO_LOCAL dropw
             loc_storew_le.CUR_HASH_HI_LOCAL dropw
-            # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
+            # => [curr_tree_height, num_leaves, mtf_ptr]
         end
-        # => [curr_tree_height, num_leaves, mmr_frontier_ptr]
+        # => [curr_tree_height, num_leaves, mtf_ptr]
 
         # update the current tree height
         add.1
-        # => [curr_tree_height+1, num_leaves, mmr_frontier_ptr]
+        # => [curr_tree_height+1, num_leaves, mtf_ptr]
 
         # update the `num_leaves` (shift it right by 1 bit)
         swap u32shr.1 swap
-        # => [curr_tree_height+1, num_leaves>>1, mmr_frontier_ptr]
+        # => [curr_tree_height+1, num_leaves>>1, mtf_ptr]
 
         # compute the cycle flag
         dup neq.TREE_HEIGHT
-        # => [loop_flag, curr_tree_height+1, num_leaves>>1, mmr_frontier_ptr]
+        # => [loop_flag, curr_tree_height+1, num_leaves>>1, mtf_ptr]
     end
-    # => [curr_tree_height=TREE_HEIGHT, num_leaves=0, mmr_frontier_ptr]
+    # => [curr_tree_height=TREE_HEIGHT, num_leaves=0, mtf_ptr]
 
     # clean the stack
     drop drop
-    # => [mmr_frontier_ptr]
+    # => [mtf_ptr]
 
     # load the final number of leaves onto the stack
     add.NUM_LEAVES_OFFSET mem_load
     # => [new_leaf_count]
 
-    # The current (final) hash represents the root of the whole tree.
+    # The current (final) hash represents the root of the whole MTF.
     #
     # Notice that there is no need to update the frontier[tree_height] value, which in theory could
     # represent the frontier in case the tree is full. The frontier nodes are used only for the 

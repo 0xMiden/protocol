@@ -542,7 +542,7 @@ fn validate_is_in_block(
     proof: &NoteInclusionProof,
     block_header: &BlockHeader,
 ) -> Result<(), TransactionInputError> {
-    let note_index = proof.location().node_index_in_block().into();
+    let note_index = proof.location().block_note_tree_index().into();
     let note_commitment = note.commitment();
     proof
         .note_path()

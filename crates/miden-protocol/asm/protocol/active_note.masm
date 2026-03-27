@@ -1,12 +1,12 @@
 use miden::core::crypto::hashes::poseidon2
 use miden::core::mem
 
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_RECIPIENT_OFFSET
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
-use ::miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_ASSETS_INFO_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_RECIPIENT_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_STORAGE_INFO_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_METADATA_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SERIAL_NUMBER_OFFSET
+use miden::protocol::kernel_proc_offsets::INPUT_NOTE_GET_SCRIPT_ROOT_OFFSET
 use miden::protocol::note
 
 # ERRORS

@@ -51,7 +51,7 @@ impl NoteHeader {
     ///
     /// This value is used primarily for authenticating notes consumed when they are consumed
     /// in a transaction.
-    pub fn commitment(&self) -> Word {
+    pub fn to_commitment(&self) -> Word {
         compute_note_commitment(self.id(), self.metadata())
     }
 }

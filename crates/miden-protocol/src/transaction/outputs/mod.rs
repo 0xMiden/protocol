@@ -33,15 +33,15 @@ mod tests;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionOutputs {
     /// Information related to the account's final state.
-    pub account: AccountHeader,
+    account: AccountHeader,
     /// The commitment to the delta computed by the transaction kernel.
-    pub account_delta_commitment: Word,
+    account_delta_commitment: Word,
     /// Set of output notes created by the transaction.
-    pub output_notes: RawOutputNotes,
+    output_notes: RawOutputNotes,
     /// The fee of the transaction.
-    pub fee: FungibleAsset,
+    fee: FungibleAsset,
     /// Defines up to which block the transaction is considered valid.
-    pub expiration_block_num: BlockNumber,
+    expiration_block_num: BlockNumber,
 }
 
 impl TransactionOutputs {
@@ -69,6 +69,62 @@ impl TransactionOutputs {
 
     /// The index of the item at which the expiration block height is stored on the output stack.
     pub const EXPIRATION_BLOCK_ELEMENT_IDX: usize = 11;
+
+    // CONSTRUCTOR
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns a new [`TransactionOutputs`] instantiated from the provided data.
+    pub fn new(
+        account: AccountHeader,
+        account_delta_commitment: Word,
+        output_notes: RawOutputNotes,
+        fee: FungibleAsset,
+        expiration_block_num: BlockNumber,
+    ) -> Self {
+        Self {
+            account,
+            account_delta_commitment,
+            output_notes,
+            fee,
+            expiration_block_num,
+        }
+    }
+
+    // PUBLIC ACCESSORS
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns the header of the account's final state.
+    pub fn account(&self) -> &AccountHeader {
+        &self.account
+    }
+
+    /// Returns the commitment to the delta computed by the transaction kernel.
+    pub fn account_delta_commitment(&self) -> Word {
+        self.account_delta_commitment
+    }
+
+    /// Returns the set of output notes created by the transaction.
+    pub fn output_notes(&self) -> &RawOutputNotes {
+        &self.output_notes
+    }
+
+    /// Returns the fee of the transaction.
+    pub fn fee(&self) -> FungibleAsset {
+        self.fee
+    }
+
+    /// Returns the block number at which the transaction will expire.
+    pub fn expiration_block_num(&self) -> BlockNumber {
+        self.expiration_block_num
+    }
+
+    // CONVERSIONS
+    // --------------------------------------------------------------------------------------------
+
+    /// Consumes self and returns the individual parts (that are non-Copy).
+    pub fn into_parts(self) -> (AccountHeader, RawOutputNotes) {
+        (self.account, self.output_notes)
+    }
 }
 
 impl Serializable for TransactionOutputs {

@@ -44,7 +44,7 @@ use miden_protocol::testing::constants::{
 };
 use miden_protocol::testing::storage::{MOCK_MAP_SLOT, MOCK_VALUE_SLOT0};
 use miden_protocol::transaction::TransactionScript;
-use miden_protocol::{EMPTY_WORD, Felt, LexicographicWord, Word, ZERO};
+use miden_protocol::{EMPTY_WORD, Felt, Word, ZERO};
 use miden_standards::code_builder::CodeBuilder;
 use miden_standards::testing::account_component::MockAccountComponent;
 use miden_tx::LocalTransactionProver;
@@ -374,11 +374,11 @@ async fn storage_delta_for_map_slots() -> anyhow::Result<()> {
         .into_map();
 
     assert_eq!(map0_delta.len(), 2);
-    assert_eq!(map0_delta.remove(&LexicographicWord::new(key0)).unwrap(), key0_final_value);
-    assert_eq!(map0_delta.remove(&LexicographicWord::new(key1)).unwrap(), key1_final_value);
+    assert_eq!(map0_delta.remove(&key0).unwrap(), key0_final_value);
+    assert_eq!(map0_delta.remove(&key1).unwrap(), key1_final_value);
 
     assert_eq!(map1_delta.len(), 1);
-    assert_eq!(map1_delta.remove(&LexicographicWord::new(key3)).unwrap(), key3_final_value);
+    assert_eq!(map1_delta.remove(&key3).unwrap(), key3_final_value);
 
     Ok(())
 }
@@ -792,10 +792,7 @@ async fn asset_and_storage_delta() -> anyhow::Result<()> {
         .cloned()
         .map(StorageSlotDelta::unwrap_map)
         .unwrap();
-    assert_eq!(
-        *map_delta.entries().get(&LexicographicWord::new(updated_map_key)).unwrap(),
-        updated_map_value
-    );
+    assert_eq!(*map_delta.entries().get(&updated_map_key).unwrap(), updated_map_value);
 
     // vault delta
     // --------------------------------------------------------------------------------------------
@@ -912,11 +909,7 @@ async fn proven_tx_storage_maps_matches_executed_tx_for_new_account() -> anyhow:
             .map(StorageSlotDelta::unwrap_map)
             .unwrap();
         assert_eq!(
-            map_delta
-                .entries()
-                .iter()
-                .map(|(key, value)| (key.inner(), value))
-                .collect::<BTreeMap<_, _>>(),
+            map_delta.entries().iter().collect::<BTreeMap<_, _>>(),
             expected_map.entries().collect(),
             "map delta does not match for slot {slot_name}",
         );

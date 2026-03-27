@@ -28,7 +28,7 @@ use miden_protocol::vm::Program;
 use miden_standards::note::{NetworkAccountTarget, NoteExecutionHint};
 use miden_utils_sync::LazyLock;
 
-use crate::EthAddressFormat;
+use crate::EthAddress;
 
 // NOTE SCRIPT
 // ================================================================================================
@@ -93,7 +93,7 @@ impl ConfigAggBridgeNote {
     /// Returns an error if note creation fails.
     pub fn create<R: FeltRng>(
         faucet_account_id: AccountId,
-        origin_token_address: &EthAddressFormat,
+        origin_token_address: &EthAddress,
         sender_account_id: AccountId,
         target_account_id: AccountId,
         rng: &mut R,

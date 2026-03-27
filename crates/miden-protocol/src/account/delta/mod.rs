@@ -192,8 +192,7 @@ impl AccountDelta {
     /// ## Computation
     ///
     /// The delta is a sequential hash over a vector of field elements which starts out empty and
-    /// is appended to in the following way. Whenever sorting is expected, it is that of a
-    /// [`LexicographicWord`](crate::LexicographicWord). The WORD layout is in memory-order.
+    /// is appended to in the following way. Whenever sorting is expected, it is that of a [`Word`].
     ///
     /// - Append `[[nonce_delta, 0, account_id_suffix, account_id_prefix], EMPTY_WORD]`, where
     ///   `account_id_{prefix,suffix}` are the prefix and suffix felts of the native account id and

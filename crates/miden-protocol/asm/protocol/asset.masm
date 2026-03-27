@@ -4,19 +4,19 @@ use miden::protocol::util::asset
 # RE-EXPORTS
 # =================================================================================================
 
-pub use ::miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
-pub use ::miden::protocol::util::asset::ASSET_SIZE
-pub use ::miden::protocol::util::asset::ASSET_VALUE_MEMORY_OFFSET
-pub use ::miden::protocol::util::asset::key_to_faucet_id
-pub use ::miden::protocol::util::asset::key_into_faucet_id
-pub use ::miden::protocol::util::asset::key_to_asset_id
-pub use ::miden::protocol::util::asset::key_into_asset_id
-pub use ::miden::protocol::util::asset::key_to_callbacks_enabled
-pub use ::miden::protocol::util::asset::store
-pub use ::miden::protocol::util::asset::load
-pub use ::miden::protocol::util::asset::fungible_value_into_amount
-pub use ::miden::protocol::util::asset::fungible_to_amount
-pub use ::miden::protocol::util::asset::create_fungible_key
+pub use miden::protocol::util::asset::FUNGIBLE_ASSET_MAX_AMOUNT
+pub use miden::protocol::util::asset::ASSET_SIZE
+pub use miden::protocol::util::asset::ASSET_VALUE_MEMORY_OFFSET
+pub use miden::protocol::util::asset::key_to_faucet_id
+pub use miden::protocol::util::asset::key_into_faucet_id
+pub use miden::protocol::util::asset::key_to_asset_id
+pub use miden::protocol::util::asset::key_into_asset_id
+pub use miden::protocol::util::asset::key_to_callbacks_enabled
+pub use miden::protocol::util::asset::store
+pub use miden::protocol::util::asset::load
+pub use miden::protocol::util::asset::fungible_value_into_amount
+pub use miden::protocol::util::asset::fungible_to_amount
+pub use miden::protocol::util::asset::create_fungible_key
 
 # ERRORS
 # =================================================================================================
