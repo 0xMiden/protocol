@@ -43,6 +43,8 @@ end
 #!
 #! Inputs:  [WORD_1, WORD_2, ptr]
 #! Outputs: [WORD_1, WORD_2, ptr]
+#!
+#! Total cycles: 28
 proc mem_store_double_word(
     double_word_to_store: DoubleWord,
     mem_ptr: MemoryAddress
