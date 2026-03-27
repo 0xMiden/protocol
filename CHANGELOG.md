@@ -5,6 +5,7 @@
 ### Changes
 
 - [BREAKING] Renamed `ProvenBatch::new` to `new_unchecked` ([#2687](https://github.com/0xMiden/miden-base/issues/2687)).
+- Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
 
 ## 0.14.0 (2026-03-23)
 
@@ -119,15 +120,6 @@
 - Explicitly use `get_native_account_active_storage_slots_ptr` in `account::set_item` and `account::set_map_item`.
 - [BREAKING] Introduced `PrivateNoteHeader` for output notes and removed `RawOutputNote::Header` variant ([#2569](https://github.com/0xMiden/protocol/pull/2569)).
 - [BREAKING] Changed `asset::create_fungible_asset` and `faucet::create_fungible_asset` signature to take `enable_callbacks` flag ([#2571](https://github.com/0xMiden/protocol/pull/2571)).
-- [BREAKING] Fixed `TokenSymbol::try_from(Felt)` to reject values below `MIN_ENCODED_VALUE`; implemented `Display` for `TokenSymbol` replacing the fallible `to_string()` method; removed `Default` derive ([#2464](https://github.com/0xMiden/protocol/issues/2464)).
-- Moved `AccountSchemaCommitment` component into a sub-module ([#2603](https://github.com/0xMiden/protocol/pull/2603)).
-- [BREAKING] `AssetVault::remove_asset` returns the asset value remaining in the vault `Option<Asset>` rather than the removed value `Asset` ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
-- [BREAKING] `miden::protocol::faucet::burn` no longer returns the burnt asset value ([#2626](https://github.com/0xMiden/protocol/pull/2626)).
-- Fixed overlap in initial and active account storage slot memory region ([#2557](https://github.com/0xMiden/protocol/pull/2557)).
-- Fixed link map entry pointer validation bypass ([#2556](https://github.com/0xMiden/protocol/pull/2556)).
-- Added foreign account ID assertion in `account::load_foreign_account` ([#2560](https://github.com/0xMiden/protocol/pull/2560)).
-- Added shared `ProcedurePolicy` for AuthMultisig ([#2670](https://github.com/0xMiden/protocol/pull/2670)).
-- Added Ownable2Step as an Account Component ([#2572](https://github.com/0xMiden/protocol/pull/2572)).
 
 ### Fixes
 

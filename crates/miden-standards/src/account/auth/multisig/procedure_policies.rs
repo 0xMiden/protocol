@@ -23,33 +23,40 @@ pub enum ProcedurePolicyExecutionMode {
 /// or create output notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
-pub enum ProcedurePolicyNoteRestrictions {
+pub enum ProcedurePolicyNoteRestriction {
     #[default]
     None = 0,
     NoInputNotes = 1,
     NoOutputNotes = 2,
-    NoInputOutputNotes = 3,
+    NoInputOrOutputNotes = 3,
 }
 
 /// Defines a per-procedure multisig policy.
 ///
-/// A procedure policy can override the default multisig threshold for a specific procedure.
-/// It consists of:
-/// - an execution mode, which determines whether the procedure uses an immediate threshold, a
-///   delayed threshold, or both
-/// - note restrictions, which limit whether a transaction calling the procedure may consume input
+/// A procedure policy can override the default multisig requirements for a specific procedure.
+/// It specifies:
+/// - an execution mode, which determines whether the procedure can be executed immediately, after a
+///   delay, or both
+/// - note restrictions, which limit whether a transaction invoking the procedure may consume input
 ///   notes or create output notes
 ///
-/// In this context:
-/// - the immediate threshold is the signature threshold required for direct execution
-/// - the delayed threshold is the signature threshold required for delayed execution
+/// Execution modes:
+/// - Immediate execution: the action is authorized and executed within the current transaction.
+/// - Delayed execution: the action is proposed first, and can only be executed after a required
+///   time delay has elapsed.
+///
+/// Thresholds:
+/// - Immediate threshold: the number of signatures required to authorize immediate execution.
+/// - Delayed threshold: the number of signatures required to authorize a delayed action.
+///
+/// The thresholds for immediate and delayed execution may differ.
 ///
 /// The policy is encoded into the procedure-policy storage word as:
 /// `[immediate_threshold, delayed_threshold, note_restrictions, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicy {
     execution_mode: ProcedurePolicyExecutionMode,
-    note_restrictions: ProcedurePolicyNoteRestrictions,
+    note_restrictions: ProcedurePolicyNoteRestriction,
 }
 
 impl ProcedurePolicy {
@@ -59,7 +66,7 @@ impl ProcedurePolicy {
     /// configure note restrictions afterwards via [`ProcedurePolicy::with_note_restrictions`].
     pub fn new(
         execution_mode: ProcedurePolicyExecutionMode,
-        note_restrictions: ProcedurePolicyNoteRestrictions,
+        note_restrictions: ProcedurePolicyNoteRestriction,
     ) -> Result<Self, AccountError> {
         Self::validate_execution_mode(execution_mode)?;
         Ok(Self { execution_mode, note_restrictions })
@@ -68,14 +75,14 @@ impl ProcedurePolicy {
     pub fn with_immediate_threshold(immediate_threshold: u32) -> Result<Self, AccountError> {
         Self::new(
             ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold },
-            ProcedurePolicyNoteRestrictions::None,
+            ProcedurePolicyNoteRestriction::None,
         )
     }
 
     pub fn with_delay_threshold(delay_threshold: u32) -> Result<Self, AccountError> {
         Self::new(
             ProcedurePolicyExecutionMode::DelayOnly { delay_threshold },
-            ProcedurePolicyNoteRestrictions::None,
+            ProcedurePolicyNoteRestriction::None,
         )
     }
 
@@ -85,13 +92,13 @@ impl ProcedurePolicy {
     ) -> Result<Self, AccountError> {
         Self::new(
             ProcedurePolicyExecutionMode::ImmediateOrDelay { immediate_threshold, delay_threshold },
-            ProcedurePolicyNoteRestrictions::None,
+            ProcedurePolicyNoteRestriction::None,
         )
     }
 
     pub const fn with_note_restrictions(
         mut self,
-        note_restrictions: ProcedurePolicyNoteRestrictions,
+        note_restrictions: ProcedurePolicyNoteRestriction,
     ) -> Self {
         self.note_restrictions = note_restrictions;
         self
@@ -101,7 +108,7 @@ impl ProcedurePolicy {
         self.execution_mode
     }
 
-    pub const fn note_restrictions(&self) -> ProcedurePolicyNoteRestrictions {
+    pub const fn note_restrictions(&self) -> ProcedurePolicyNoteRestriction {
         self.note_restrictions
     }
 
@@ -154,6 +161,10 @@ impl ProcedurePolicy {
                         "immediate and delayed thresholds must both be at least 1",
                     ));
                 }
+                // Delayed execution is the lower-quorum option while immediate execution is
+                // higher-quorum path. If the delay threshold were greater than the
+                // immediate threshold, the "fast" path would be easier to satisfy
+                // than the delayed path, which contradicts that model.
                 if delay_threshold > immediate_threshold {
                     return Err(AccountError::other(
                         "delay threshold cannot exceed immediate threshold",
@@ -177,13 +188,13 @@ impl ProcedurePolicy {
 mod tests {
     use alloc::string::ToString;
 
-    use super::{ProcedurePolicy, ProcedurePolicyNoteRestrictions};
+    use super::{ProcedurePolicy, ProcedurePolicyNoteRestriction};
 
     #[test]
     fn procedure_policy_word_encoding_matches_storage_layout() {
         let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
             .unwrap()
-            .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes);
+            .with_note_restrictions(ProcedurePolicyNoteRestriction::NoInputOrOutputNotes);
 
         assert_eq!(policy.to_word(), [4u32, 3, 3, 0].into());
     }
@@ -224,15 +235,12 @@ mod tests {
     fn procedure_policy_note_restrictions_are_exposed_with_getters() {
         let procedure_policy = ProcedurePolicy::with_immediate_threshold(2)
             .unwrap()
-            .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputNotes);
+            .with_note_restrictions(ProcedurePolicyNoteRestriction::NoInputNotes);
 
-        assert_eq!(
-            ProcedurePolicyNoteRestrictions::default(),
-            ProcedurePolicyNoteRestrictions::None
-        );
+        assert_eq!(ProcedurePolicyNoteRestriction::default(), ProcedurePolicyNoteRestriction::None);
         assert_eq!(
             procedure_policy.note_restrictions(),
-            ProcedurePolicyNoteRestrictions::NoInputNotes
+            ProcedurePolicyNoteRestriction::NoInputNotes
         );
     }
 }
