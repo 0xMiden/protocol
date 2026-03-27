@@ -1,15 +1,15 @@
 use alloc::fmt;
 
-use super::{Felt, Symbol, TokenSymbolError};
+use super::{Felt, ShortCapitalString, TokenSymbolError};
 
 /// Represents a token symbol (e.g. "POL", "ETH").
 ///
 /// Token Symbols can consist of up to 12 capital Latin characters, e.g. "C", "ETH", "MIDEN".
 ///
-/// The symbol is stored as a [`Symbol`] and can be converted to a [`Felt`] encoding via
+/// The label is stored as a [`ShortCapitalString`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TokenSymbol(Symbol);
+pub struct TokenSymbol(ShortCapitalString);
 
 impl TokenSymbol {
     pub const ALPHABET: &'static [u8; 26] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -48,7 +48,7 @@ impl TokenSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided token string contains characters that are not uppercase ASCII.
     pub fn new(symbol: &str) -> Result<Self, TokenSymbolError> {
-        Symbol::from_ascii_uppercase(symbol).map(Self).map_err(Into::into)
+        ShortCapitalString::from_ascii_uppercase(symbol).map(Self).map_err(Into::into)
     }
 
     /// Returns the [`Felt`] encoding of this token symbol.
@@ -113,7 +113,7 @@ impl TryFrom<Felt> for TokenSymbol {
     type Error = TokenSymbolError;
 
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        Symbol::try_from_encoded_felt(
+        ShortCapitalString::try_from_encoded_felt(
             felt,
             Self::ALPHABET,
             Self::MIN_ENCODED_VALUE,

@@ -512,16 +512,15 @@ pub enum TokenSymbolError {
     DataNotFullyDecoded,
 }
 
-impl From<SymbolError> for TokenSymbolError {
-    fn from(value: SymbolError) -> Self {
+impl From<ShortCapitalStringError> for TokenSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
         match value {
-            SymbolError::ValueTooLarge(v) => Self::ValueTooLarge(v),
-            SymbolError::ValueTooSmall(v) => Self::ValueTooSmall(v),
-            SymbolError::InvalidLength(v) => Self::InvalidLength(v),
-            SymbolError::InvalidCharacter | SymbolError::InvalidRoleCharacter => {
-                Self::InvalidCharacter
-            },
-            SymbolError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter
+            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
 }
@@ -543,36 +542,37 @@ pub enum RoleSymbolError {
     DataNotFullyDecoded,
 }
 
-impl From<SymbolError> for RoleSymbolError {
-    fn from(value: SymbolError) -> Self {
+impl From<ShortCapitalStringError> for RoleSymbolError {
+    fn from(value: ShortCapitalStringError) -> Self {
         match value {
-            SymbolError::ValueTooLarge(v) => Self::ValueTooLarge(v),
-            SymbolError::ValueTooSmall(v) => Self::ValueTooSmall(v),
-            SymbolError::InvalidLength(v) => Self::InvalidLength(v),
-            SymbolError::InvalidCharacter | SymbolError::InvalidRoleCharacter => {
-                Self::InvalidCharacter
-            },
-            SymbolError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
+            ShortCapitalStringError::ValueTooLarge(v) => Self::ValueTooLarge(v),
+            ShortCapitalStringError::ValueTooSmall(v) => Self::ValueTooSmall(v),
+            ShortCapitalStringError::InvalidLength(v) => Self::InvalidLength(v),
+            ShortCapitalStringError::InvalidCharacter
+            | ShortCapitalStringError::InvalidRoleCharacter => Self::InvalidCharacter,
+            ShortCapitalStringError::DataNotFullyDecoded => Self::DataNotFullyDecoded,
         }
     }
 }
 
-// SYMBOL ERROR
+// SHORT CAPITAL STRING ERROR
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum SymbolError {
-    #[error("symbol value {0} is too large")]
+pub enum ShortCapitalStringError {
+    #[error("short capital string value {0} is too large")]
     ValueTooLarge(u64),
-    #[error("symbol value {0} is too small")]
+    #[error("short capital string value {0} is too small")]
     ValueTooSmall(u64),
-    #[error("symbol should have length between 1 and 12 characters, but {0} was provided")]
+    #[error(
+        "short capital string should have length between 1 and 12 characters, but {0} was provided"
+    )]
     InvalidLength(usize),
-    #[error("symbol contains an invalid character")]
+    #[error("short capital string contains an invalid character")]
     InvalidCharacter,
-    #[error("symbol contains a character that is not uppercase ASCII or underscore")]
+    #[error("short capital string contains a character that is not uppercase ASCII or underscore")]
     InvalidRoleCharacter,
-    #[error("symbol data left after decoding the specified number of characters")]
+    #[error("short capital string data left after decoding the specified number of characters")]
     DataNotFullyDecoded,
 }
 

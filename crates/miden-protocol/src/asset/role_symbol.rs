@@ -1,16 +1,16 @@
 use alloc::fmt;
 
-use super::{Felt, RoleSymbolError, Symbol};
+use super::{Felt, RoleSymbolError, ShortCapitalString};
 
 /// Represents a role symbol for role-based access control.
 ///
 /// Role symbols can consist of up to 12 uppercase Latin characters and underscores, e.g.
 /// "MINTER", "BURNER", "MINTER_ADMIN".
 ///
-/// The symbol is stored as a [`Symbol`] and can be converted to a [`Felt`] encoding via
+/// The label is stored as a [`ShortCapitalString`] and can be converted to a [`Felt`] encoding via
 /// [`as_element()`](Self::as_element).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RoleSymbol(Symbol);
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RoleSymbol(ShortCapitalString);
 
 impl RoleSymbol {
     /// Alphabet used for role symbols (`A-Z` and `_`).
@@ -47,7 +47,7 @@ impl RoleSymbol {
     /// - The length of the provided string is less than 1 or greater than 12.
     /// - The provided role symbol contains characters outside `A-Z` and `_`.
     pub fn new(role_symbol: &str) -> Result<Self, RoleSymbolError> {
-        Symbol::from_ascii_uppercase_and_underscore(role_symbol)
+        ShortCapitalString::from_ascii_uppercase_and_underscore(role_symbol)
             .map(Self)
             .map_err(Into::into)
     }
@@ -89,7 +89,7 @@ impl TryFrom<Felt> for RoleSymbol {
 
     /// Decodes a [`Felt`] representation of the role symbol into a [`RoleSymbol`].
     fn try_from(felt: Felt) -> Result<Self, Self::Error> {
-        Symbol::try_from_encoded_felt(
+        ShortCapitalString::try_from_encoded_felt(
             felt,
             Self::ALPHABET,
             Self::MIN_ENCODED_VALUE,
