@@ -23,7 +23,6 @@ use miden_protocol::{Felt, Word};
 use super::ProcedurePolicy;
 use super::config::{OracleReaderConfig, SpendingPolicyConfig, TimelockControllerConfig};
 use super::types::{AmountLimits, OracleId, TierThresholds};
-use crate::account::auth::multisig::AuthMultisigConfig;
 use crate::account::components::multisig_smart_library;
 
 // CONSTANTS
@@ -115,7 +114,9 @@ static PENDING_EXECUTE_SLOT_NAME: LazyLock<StorageSlotName> = LazyLock::new(|| {
 /// Configuration for [`AuthMultisigSmart`] component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthMultisigSmartConfig {
-    multisig: AuthMultisigConfig,
+    approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
+    default_threshold: u32,
+    procedure_policies: Vec<(Word, ProcedurePolicy)>,
     spending_policy: SpendingPolicyConfig,
     timelock_controller: TimelockControllerConfig,
     oracle_reader: OracleReaderConfig,
@@ -129,8 +130,25 @@ impl AuthMultisigSmartConfig {
         approvers: Vec<(PublicKeyCommitment, AuthScheme)>,
         default_threshold: u32,
     ) -> Result<Self, AccountError> {
+        if default_threshold == 0 {
+            return Err(AccountError::other("threshold must be at least 1"));
+        }
+        if default_threshold > approvers.len() as u32 {
+            return Err(AccountError::other(
+                "threshold cannot be greater than number of approvers",
+            ));
+        }
+
+        let unique_approvers: alloc::collections::BTreeSet<_> =
+            approvers.iter().map(|(pk, _)| pk).collect();
+        if unique_approvers.len() != approvers.len() {
+            return Err(AccountError::other("duplicate approver public keys are not allowed"));
+        }
+
         Ok(Self {
-            multisig: AuthMultisigConfig::new(approvers, default_threshold)?,
+            approvers,
+            default_threshold,
+            procedure_policies: vec![],
             spending_policy: SpendingPolicyConfig::default(),
             timelock_controller: TimelockControllerConfig::default(),
             oracle_reader: OracleReaderConfig::default(),
@@ -142,7 +160,8 @@ impl AuthMultisigSmartConfig {
         mut self,
         proc_policies: Vec<(Word, ProcedurePolicy)>,
     ) -> Result<Self, AccountError> {
-        self.multisig = self.multisig.with_proc_policies(proc_policies)?;
+        validate_proc_policies(self.approvers.len() as u32, &proc_policies)?;
+        self.procedure_policies = proc_policies;
         Ok(self)
     }
 
@@ -219,15 +238,15 @@ impl AuthMultisigSmartConfig {
     }
 
     pub fn approvers(&self) -> &[(PublicKeyCommitment, AuthScheme)] {
-        self.multisig.approvers()
+        &self.approvers
     }
 
     pub fn default_threshold(&self) -> u32 {
-        self.multisig.default_threshold()
+        self.default_threshold
     }
 
     pub fn procedure_policies(&self) -> &[(Word, ProcedurePolicy)] {
-        self.multisig.procedure_policies()
+        &self.procedure_policies
     }
 
     pub fn spending_policy(&self) -> SpendingPolicyConfig {
@@ -746,11 +765,11 @@ mod tests {
     use miden_protocol::account::auth::AuthSecretKey;
 
     use super::*;
-    use crate::account::auth::ProcedurePolicyConstraints;
     use crate::account::auth::multisig_smart::{
         AmountLimits,
         OracleId,
         OracleReaderConfig,
+        ProcedurePolicyNoteRestrictions,
         SpendingPolicyConfig,
         TierThresholds,
         TimelockControllerConfig,
@@ -770,7 +789,8 @@ mod tests {
             .expect("invalid multisig smart config")
             .with_proc_policies(vec![(
                 BasicWallet::receive_asset_digest(),
-                ProcedurePolicy::with_immediate_threshold(1),
+                ProcedurePolicy::with_immediate_threshold(1)
+                    .expect("procedure policy should be valid"),
             )])
             .expect("procedure policy config should be valid")
             .with_spending(SpendingPolicyConfig::new(
@@ -858,10 +878,8 @@ mod tests {
         ];
 
         let result = AuthMultisigSmartConfig::new(approvers.clone(), 2).and_then(|cfg| {
-            cfg.with_proc_policies(vec![(
-                Word::from([1u32, 2, 3, 4]),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2),
-            )])
+            let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2)?;
+            cfg.with_proc_policies(vec![(Word::from([1u32, 2, 3, 4]), policy)])
         });
         assert!(
             result
@@ -871,17 +889,15 @@ mod tests {
         );
 
         let result = AuthMultisigSmartConfig::new(approvers, 2).and_then(|cfg| {
-            cfg.with_proc_policies(vec![(
-                Word::from([4u32, 3, 2, 1]),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(0, 0)
-                    .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
-            )])
+            let policy = ProcedurePolicy::with_immediate_threshold(0)?
+                .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputNotes);
+            cfg.with_proc_policies(vec![(Word::from([4u32, 3, 2, 1]), policy)])
         });
         assert!(
             result
                 .unwrap_err()
                 .to_string()
-                .contains("immediate and delayed thresholds must both be at least 1")
+                .contains("procedure policy immediate threshold must be at least 1")
         );
     }
 

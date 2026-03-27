@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use miden_protocol::Word;
 
-use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyConstraints};
+use super::{AuthMultisigSmart, ProcedurePolicy, ProcedurePolicyNoteRestrictions};
 use crate::account::components::multisig_smart_library;
 use crate::procedure_digest;
 
@@ -50,24 +50,28 @@ impl AuthMultisigSmartPresets {
             (
                 Self::update_signers_and_threshold(),
                 ProcedurePolicy::with_delay_threshold(1)
-                    .with_constraints(ProcedurePolicyConstraints::isolated_no_input_output_notes()),
+                    .expect("preset policy should be valid")
+                    .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes),
             ),
             (
                 Self::update_threshold_config(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_spending_limits(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_oracle_config_and_proc_root(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_timelock_controller(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(2, 1)
-                    .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
+                    .expect("preset policy should be valid"),
             ),
         ]
     }
@@ -77,24 +81,28 @@ impl AuthMultisigSmartPresets {
             (
                 Self::update_signers_and_threshold(),
                 ProcedurePolicy::with_delay_threshold(3)
-                    .with_constraints(ProcedurePolicyConstraints::isolated_no_input_output_notes()),
+                    .expect("preset policy should be valid")
+                    .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes),
             ),
             (
                 Self::update_threshold_config(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_spending_limits(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_oracle_config_and_proc_root(),
-                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3),
+                ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
+                    .expect("preset policy should be valid"),
             ),
             (
                 Self::update_timelock_controller(),
                 ProcedurePolicy::with_immediate_and_delay_thresholds(5, 4)
-                    .with_constraints(ProcedurePolicyConstraints::isolated_tx()),
+                    .expect("preset policy should be valid"),
             ),
         ]
     }

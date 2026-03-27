@@ -1,19 +1,12 @@
 use miden_protocol::Word;
 use miden_protocol::errors::AccountError;
 
-/// Describes which signature thresholds are available for a procedure policy.
+/// Defines which execution modes a procedure policy supports and the corresponding threshold
+/// values for each mode.
 ///
-/// `immediate_threshold` applies to the direct execution lane, while `delay_threshold` applies
-/// to the delayed execute lane. A missing threshold means that lane is not available.
+/// A procedure can require the immediate threshold, the delayed threshold, or support both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProcedurePolicyThresholds {
-    pub immediate_threshold: Option<u32>,
-    pub delay_threshold: Option<u32>,
-}
-
-/// Selects how a protected procedure may be executed and which threshold each lane requires.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcedurePolicyMode {
+pub enum ProcedurePolicyExecutionMode {
     ImmediateOnly {
         immediate_threshold: u32,
     },
@@ -26,140 +19,136 @@ pub enum ProcedurePolicyMode {
     },
 }
 
-/// Additional transaction-shape constraints that may be imposed on a protected procedure call.
-///
-/// These flags are encoded into the shared multisig procedure-policy map and are interpreted by
-/// smart multisig runtime checks.
+/// Note Restrictions on whether transactions that call a procedure may consume input notes
+/// or create output notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ProcedurePolicyConstraints {
-    pub isolated_tx: bool,
-    pub no_input_output_notes: bool,
+#[repr(u8)]
+pub enum ProcedurePolicyNoteRestrictions {
+    #[default]
+    None = 0,
+    NoInputNotes = 1,
+    NoOutputNotes = 2,
+    NoInputOutputNotes = 3,
 }
 
-impl ProcedurePolicyConstraints {
-    pub const fn none() -> Self {
-        Self {
-            isolated_tx: false,
-            no_input_output_notes: false,
-        }
-    }
-
-    pub const fn isolated_tx() -> Self {
-        Self {
-            isolated_tx: true,
-            no_input_output_notes: false,
-        }
-    }
-
-    pub const fn no_input_output_notes() -> Self {
-        Self {
-            isolated_tx: false,
-            no_input_output_notes: true,
-        }
-    }
-
-    pub const fn isolated_no_input_output_notes() -> Self {
-        Self {
-            isolated_tx: true,
-            no_input_output_notes: true,
-        }
-    }
-}
-
-/// Shared per-procedure policy configuration used by multisig account variants.
+/// Defines a per-procedure multisig policy.
 ///
-/// The policy is encoded into the canonical procedure-policy storage word as:
-/// `[immediate_threshold, delayed_threshold, isolated_tx, no_input_output_notes]`.
+/// A procedure policy can override the default multisig threshold for a specific procedure.
+/// It consists of:
+/// - an execution mode, which determines whether the procedure uses an immediate threshold, a
+///   delayed threshold, or both
+/// - note restrictions, which limit whether a transaction calling the procedure may consume input
+///   notes or create output notes
+///
+/// In this context:
+/// - the immediate threshold is the signature threshold required for direct execution
+/// - the delayed threshold is the signature threshold required for delayed execution
+///
+/// The policy is encoded into the procedure-policy storage word as:
+/// `[immediate_threshold, delayed_threshold, note_restrictions, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcedurePolicy {
-    mode: ProcedurePolicyMode,
-    constraints: ProcedurePolicyConstraints,
+    execution_mode: ProcedurePolicyExecutionMode,
+    note_restrictions: ProcedurePolicyNoteRestrictions,
 }
 
 impl ProcedurePolicy {
-    /// Creates an explicit policy from a mode/constraint pair.
+    /// Creates an explicit procedure policy from an execution mode and note restriction pair.
     ///
-    /// Common cases should generally prefer the `with_*_threshold...` helpers and attach
-    /// constraints afterwards via [`ProcedurePolicy::with_constraints`].
-    pub const fn new(mode: ProcedurePolicyMode, constraints: ProcedurePolicyConstraints) -> Self {
-        Self { mode, constraints }
+    /// Common multisig cases should generally prefer the `with_*_threshold...` helpers and
+    /// configure note restrictions afterwards via [`ProcedurePolicy::with_note_restrictions`].
+    pub fn new(
+        execution_mode: ProcedurePolicyExecutionMode,
+        note_restrictions: ProcedurePolicyNoteRestrictions,
+    ) -> Result<Self, AccountError> {
+        Self::validate_execution_mode(execution_mode)?;
+        Ok(Self { execution_mode, note_restrictions })
     }
 
-    pub const fn with_immediate_threshold(immediate_threshold: u32) -> Self {
+    pub fn with_immediate_threshold(immediate_threshold: u32) -> Result<Self, AccountError> {
         Self::new(
-            ProcedurePolicyMode::ImmediateOnly { immediate_threshold },
-            ProcedurePolicyConstraints::none(),
+            ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold },
+            ProcedurePolicyNoteRestrictions::None,
         )
     }
 
-    pub const fn with_delay_threshold(delay_threshold: u32) -> Self {
+    pub fn with_delay_threshold(delay_threshold: u32) -> Result<Self, AccountError> {
         Self::new(
-            ProcedurePolicyMode::DelayOnly { delay_threshold },
-            ProcedurePolicyConstraints::none(),
+            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold },
+            ProcedurePolicyNoteRestrictions::None,
         )
     }
 
-    pub const fn with_immediate_and_delay_thresholds(
+    pub fn with_immediate_and_delay_thresholds(
         immediate_threshold: u32,
         delay_threshold: u32,
-    ) -> Self {
+    ) -> Result<Self, AccountError> {
         Self::new(
-            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold },
-            ProcedurePolicyConstraints::none(),
+            ProcedurePolicyExecutionMode::ImmediateOrDelay { immediate_threshold, delay_threshold },
+            ProcedurePolicyNoteRestrictions::None,
         )
     }
 
-    pub const fn with_constraints(mut self, constraints: ProcedurePolicyConstraints) -> Self {
-        self.constraints = constraints;
+    pub const fn with_note_restrictions(
+        mut self,
+        note_restrictions: ProcedurePolicyNoteRestrictions,
+    ) -> Self {
+        self.note_restrictions = note_restrictions;
         self
     }
 
-    pub const fn mode(&self) -> ProcedurePolicyMode {
-        self.mode
+    pub const fn execution_mode(&self) -> ProcedurePolicyExecutionMode {
+        self.execution_mode
     }
 
-    pub const fn constraints(&self) -> ProcedurePolicyConstraints {
-        self.constraints
+    pub const fn note_restrictions(&self) -> ProcedurePolicyNoteRestrictions {
+        self.note_restrictions
     }
 
-    pub const fn thresholds(&self) -> ProcedurePolicyThresholds {
-        match self.mode {
-            ProcedurePolicyMode::ImmediateOnly { immediate_threshold } => {
-                ProcedurePolicyThresholds {
-                    immediate_threshold: Some(immediate_threshold),
-                    delay_threshold: None,
-                }
+    pub const fn immediate_threshold(&self) -> Option<u32> {
+        match self.execution_mode {
+            ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold } => {
+                Some(immediate_threshold)
             },
-            ProcedurePolicyMode::DelayOnly { delay_threshold } => ProcedurePolicyThresholds {
-                immediate_threshold: None,
-                delay_threshold: Some(delay_threshold),
-            },
-            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold } => {
-                ProcedurePolicyThresholds {
-                    immediate_threshold: Some(immediate_threshold),
-                    delay_threshold: Some(delay_threshold),
-                }
+            ProcedurePolicyExecutionMode::DelayOnly { .. } => None,
+            ProcedurePolicyExecutionMode::ImmediateOrDelay { immediate_threshold, .. } => {
+                Some(immediate_threshold)
             },
         }
     }
 
-    fn assert_valid_shape(&self) -> Result<(), AccountError> {
-        match self.mode {
-            ProcedurePolicyMode::ImmediateOnly { immediate_threshold } => {
+    pub const fn delay_threshold(&self) -> Option<u32> {
+        match self.execution_mode {
+            ProcedurePolicyExecutionMode::ImmediateOnly { .. } => None,
+            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold } => Some(delay_threshold),
+            ProcedurePolicyExecutionMode::ImmediateOrDelay { delay_threshold, .. } => {
+                Some(delay_threshold)
+            },
+        }
+    }
+
+    fn validate_execution_mode(
+        execution_mode: ProcedurePolicyExecutionMode,
+    ) -> Result<(), AccountError> {
+        match execution_mode {
+            ProcedurePolicyExecutionMode::ImmediateOnly { immediate_threshold } => {
                 if immediate_threshold == 0 {
                     return Err(AccountError::other(
                         "procedure policy immediate threshold must be at least 1",
                     ));
                 }
             },
-            ProcedurePolicyMode::DelayOnly { delay_threshold } => {
+            ProcedurePolicyExecutionMode::DelayOnly { delay_threshold } => {
                 if delay_threshold == 0 {
                     return Err(AccountError::other(
                         "procedure policy delay threshold must be at least 1",
                     ));
                 }
             },
-            ProcedurePolicyMode::ImmediateOrDelay { immediate_threshold, delay_threshold } => {
+            ProcedurePolicyExecutionMode::ImmediateOrDelay {
+                immediate_threshold,
+                delay_threshold,
+            } => {
                 if immediate_threshold == 0 || delay_threshold == 0 {
                     return Err(AccountError::other(
                         "immediate and delayed thresholds must both be at least 1",
@@ -177,39 +166,32 @@ impl ProcedurePolicy {
     }
 
     pub fn assert_valid_for_num_approvers(&self, num_approvers: u32) -> Result<(), AccountError> {
-        let thresholds = self.thresholds();
+        Self::validate_execution_mode(self.execution_mode)?;
 
-        self.assert_valid_shape()?;
-
-        if let Some(immediate_threshold) = thresholds.immediate_threshold {
-            if immediate_threshold > num_approvers {
-                return Err(AccountError::other(
-                    "procedure policy immediate threshold cannot exceed number of approvers",
-                ));
-            }
+        if let Some(immediate_threshold) = self.immediate_threshold()
+            && immediate_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy immediate threshold cannot exceed number of approvers",
+            ));
         }
-        if let Some(delay_threshold) = thresholds.delay_threshold {
-            if delay_threshold > num_approvers {
-                return Err(AccountError::other(
-                    "procedure policy delay threshold cannot exceed number of approvers",
-                ));
-            }
+
+        if let Some(delay_threshold) = self.delay_threshold()
+            && delay_threshold > num_approvers
+        {
+            return Err(AccountError::other(
+                "procedure policy delay threshold cannot exceed number of approvers",
+            ));
         }
 
         Ok(())
     }
 
     pub fn to_word(&self) -> Word {
-        let thresholds = self.thresholds();
-        let immediate_threshold = thresholds.immediate_threshold.unwrap_or(0);
-        let delay_threshold = thresholds.delay_threshold.unwrap_or(0);
+        let immediate_threshold = self.immediate_threshold().unwrap_or(0);
+        let delay_threshold = self.delay_threshold().unwrap_or(0);
 
-        Word::from([
-            immediate_threshold,
-            delay_threshold,
-            self.constraints.isolated_tx as u32,
-            self.constraints.no_input_output_notes as u32,
-        ])
+        Word::from([immediate_threshold, delay_threshold, self.note_restrictions as u32, 0])
     }
 }
 
@@ -217,52 +199,47 @@ impl ProcedurePolicy {
 mod tests {
     use alloc::string::ToString;
 
-    use super::{ProcedurePolicy, ProcedurePolicyConstraints, ProcedurePolicyThresholds};
+    use super::{ProcedurePolicy, ProcedurePolicyNoteRestrictions};
 
     #[test]
     fn procedure_policy_word_encoding_matches_storage_layout() {
         let policy = ProcedurePolicy::with_immediate_and_delay_thresholds(4, 3)
-            .with_constraints(ProcedurePolicyConstraints::isolated_no_input_output_notes());
+            .unwrap()
+            .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputOutputNotes);
 
-        assert_eq!(policy.to_word(), [4u32, 3, 1, 1].into());
+        assert_eq!(policy.to_word(), [4u32, 3, 3, 0].into());
     }
 
     #[test]
-    fn procedure_policy_validation_rejects_invalid_combinations() {
-        let policy_with_zero_immediate_threshold = ProcedurePolicy::with_immediate_threshold(0);
+    fn procedure_policy_construction_rejects_invalid_combinations() {
         assert!(
-            policy_with_zero_immediate_threshold
-                .assert_valid_shape()
+            ProcedurePolicy::with_immediate_threshold(0)
                 .unwrap_err()
                 .to_string()
                 .contains("procedure policy immediate threshold must be at least 1")
         );
 
-        let policy_with_zero_delay_threshold =
-            ProcedurePolicy::with_immediate_and_delay_thresholds(1, 0);
         assert!(
-            policy_with_zero_delay_threshold
-                .assert_valid_shape()
+            ProcedurePolicy::with_immediate_and_delay_thresholds(1, 0)
                 .unwrap_err()
                 .to_string()
                 .contains("immediate and delayed thresholds must both be at least 1")
         );
 
-        let policy_with_delay_above_immediate_threshold =
-            ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2);
         assert!(
-            policy_with_delay_above_immediate_threshold
-                .assert_valid_shape()
+            ProcedurePolicy::with_immediate_and_delay_thresholds(1, 2)
                 .unwrap_err()
                 .to_string()
                 .contains("delay threshold cannot exceed immediate threshold")
         );
+    }
 
-        let num_approvers_under_test = 2;
-        let policy_exceeding_num_approvers = ProcedurePolicy::with_delay_threshold(3);
+    #[test]
+    fn procedure_policy_rejects_thresholds_above_num_approvers() {
         assert!(
-            policy_exceeding_num_approvers
-                .assert_valid_for_num_approvers(num_approvers_under_test)
+            ProcedurePolicy::with_delay_threshold(3)
+                .unwrap()
+                .assert_valid_for_num_approvers(2)
                 .unwrap_err()
                 .to_string()
                 .contains("procedure policy delay threshold cannot exceed number of approvers")
@@ -270,15 +247,26 @@ mod tests {
     }
 
     #[test]
-    fn procedure_policy_thresholds_are_exposed_with_named_fields() {
-        let procedure_policy = ProcedurePolicy::with_delay_threshold(2);
+    fn procedure_policy_thresholds_are_exposed_with_getters() {
+        let procedure_policy = ProcedurePolicy::with_delay_threshold(2).unwrap();
+
+        assert_eq!(procedure_policy.immediate_threshold(), None);
+        assert_eq!(procedure_policy.delay_threshold(), Some(2));
+    }
+
+    #[test]
+    fn procedure_policy_note_restrictions_are_exposed_with_getters() {
+        let procedure_policy = ProcedurePolicy::with_immediate_threshold(2)
+            .unwrap()
+            .with_note_restrictions(ProcedurePolicyNoteRestrictions::NoInputNotes);
 
         assert_eq!(
-            procedure_policy.thresholds(),
-            ProcedurePolicyThresholds {
-                immediate_threshold: None,
-                delay_threshold: Some(2),
-            }
+            ProcedurePolicyNoteRestrictions::default(),
+            ProcedurePolicyNoteRestrictions::None
+        );
+        assert_eq!(
+            procedure_policy.note_restrictions(),
+            ProcedurePolicyNoteRestrictions::NoInputNotes
         );
     }
 }

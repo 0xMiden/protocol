@@ -8,7 +8,7 @@ mod singlesig_acl;
 pub use singlesig_acl::{AuthSingleSigAcl, AuthSingleSigAclConfig};
 
 pub mod multisig;
-pub use multisig::{AuthMultisig, AuthMultisigConfig, ProcedurePolicy, ProcedurePolicyConstraints};
+pub use multisig::{AuthMultisig, AuthMultisigConfig};
 
 pub mod multisig_smart;
 pub use multisig_smart::{AuthMultisigSmart, AuthMultisigSmartConfig, AuthMultisigSmartPresets};

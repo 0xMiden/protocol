@@ -6,6 +6,7 @@ use miden_protocol::Word;
 use miden_protocol::account::AccountComponent;
 use miden_protocol::account::auth::{AuthScheme, AuthSecretKey, PublicKeyCommitment};
 use miden_protocol::testing::noop_auth_component::NoopAuthComponent;
+use miden_standards::account::auth::multisig_smart::ProcedurePolicy;
 use miden_standards::account::auth::{
     AuthMultisig,
     AuthMultisigConfig,
@@ -16,7 +17,6 @@ use miden_standards::account::auth::{
     AuthSingleSig,
     AuthSingleSigAcl,
     AuthSingleSigAclConfig,
-    ProcedurePolicy,
     PsmConfig,
 };
 use miden_standards::testing::account_component::{
