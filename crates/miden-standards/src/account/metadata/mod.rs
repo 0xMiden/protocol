@@ -10,5 +10,3 @@ pub use token_metadata::fungible_token::{
     LogoURI,
 };
 pub use token_metadata::{TokenMetadata, TokenName};
-
-pub use crate::utils::string::FixedWidthStringError;

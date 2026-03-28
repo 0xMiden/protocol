@@ -684,9 +684,13 @@ fn add_faucet_with_callbacks(
         callbacks = callbacks.on_before_asset_added_to_note(proc_root);
     }
 
-    let faucet_metadata =
-        FungibleTokenMetadataBuilder::new(TokenName::default(), "SYM".try_into()?, 8, 1_000_000u64)
-            .build()?;
+    let faucet_metadata = FungibleTokenMetadataBuilder::new(
+        TokenName::new("").expect("empty string is a valid token name"),
+        "SYM".try_into()?,
+        8,
+        1_000_000u64,
+    )
+    .build()?;
 
     let callback_storage_slots = callbacks.into_storage_slots();
     let callback_metadata =

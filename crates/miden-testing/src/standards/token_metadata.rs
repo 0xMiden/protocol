@@ -8,11 +8,14 @@ use alloc::vec::Vec;
 use miden_crypto::hash::poseidon2::Poseidon2;
 use miden_processor::crypto::random::RandomCoin;
 use miden_protocol::account::{
+    Account,
     AccountBuilder,
+    AccountComponent,
     AccountId,
     AccountIdVersion,
     AccountStorageMode,
     AccountType,
+    StorageSlotName,
 };
 use miden_protocol::assembly::DefaultSourceManager;
 use miden_protocol::asset::TokenSymbol;
@@ -40,6 +43,7 @@ use miden_standards::errors::standards::{
     ERR_SENDER_NOT_OWNER,
 };
 use miden_standards::testing::note::NoteBuilder;
+use miden_standards::utils::FixedWidthStringError;
 
 use crate::{MockChain, TransactionContextBuilder, assert_transaction_executor_error};
 
@@ -58,7 +62,8 @@ fn network_faucet_metadata(
     external_link: Option<([Word; 7], bool)>,
 ) -> anyhow::Result<FungibleTokenMetadata> {
     let token_supply = Felt::try_from(token_supply.unwrap_or(0))?;
-    let name = TokenName::new(token_symbol).unwrap_or_else(|_| TokenName::default());
+    let name = TokenName::new(token_symbol)
+        .unwrap_or_else(|_| TokenName::new("").expect("empty string is a valid token name"));
     let token_symbol = TokenSymbol::new(token_symbol)?;
 
     let mut builder = FungibleTokenMetadataBuilder::new(name, token_symbol, 10, max_supply)
@@ -150,7 +155,7 @@ fn build_pol_faucet_metadata() -> FungibleTokenMetadata {
 }
 
 /// Build a basic faucet account with POL metadata.
-fn build_pol_faucet_account() -> miden_protocol::account::Account {
+fn build_pol_faucet_account() -> Account {
     AccountBuilder::new([4u8; 32])
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Public)
@@ -178,7 +183,7 @@ fn compute_field_hash(data: &[Word; 7]) -> Word {
 
 /// Execute a tx script against the given account and assert success.
 async fn execute_tx_script(
-    account: miden_protocol::account::Account,
+    account: Account,
     tx_script_code: impl AsRef<str>,
 ) -> anyhow::Result<()> {
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -236,7 +241,7 @@ async fn get_name_from_masm() -> anyhow::Result<()> {
 async fn get_name_zeros_returns_empty() -> anyhow::Result<()> {
     // Build a faucet with an empty name to verify get_name returns zero words.
     let metadata = FungibleTokenMetadataBuilder::new(
-        TokenName::default(),
+        TokenName::new("").expect("empty string is a valid token name"),
         "TST".try_into().unwrap(),
         2,
         1_000u64,
@@ -613,10 +618,7 @@ fn name_32_bytes_accepted() {
 #[test]
 fn name_33_bytes_rejected() {
     let result = TokenName::new(&"a".repeat(33));
-    assert!(matches!(
-        result,
-        Err(miden_standards::utils::string::FixedWidthStringError::TooLong { max: 32, actual: 33 })
-    ));
+    assert!(matches!(result, Err(FixedWidthStringError::TooLong { max: 32, actual: 33 })));
 }
 
 #[test]
@@ -655,7 +657,7 @@ fn verify_faucet_with_max_name_and_description(
     symbol: &str,
     max_supply: u64,
     storage_mode: AccountStorageMode,
-    extra_components: Vec<miden_protocol::account::AccountComponent>,
+    extra_components: Vec<AccountComponent>,
 ) {
     let max_name = "a".repeat(TokenName::MAX_BYTES);
     let desc_text = "a".repeat(Description::MAX_BYTES);
@@ -886,7 +888,7 @@ async fn test_field_setter_immutable_fails(
 async fn test_field_setter_owner_succeeds(
     proc_name: &str,
     args: FieldSetterFaucetArgs,
-    slot_fn: fn(usize) -> &'static miden_protocol::account::StorageSlotName,
+    slot_fn: fn(usize) -> &'static StorageSlotName,
 ) -> anyhow::Result<()> {
     let mut builder = MockChain::builder();
     let owner = owner_account_id();

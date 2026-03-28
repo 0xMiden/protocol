@@ -67,7 +67,7 @@ fn token_metadata_builder_with_optionals() {
     assert_eq!(metadata.description(), Some(&description));
     assert_eq!(metadata.logo_uri(), Some(&logo_uri));
     assert_eq!(metadata.external_link(), Some(&external_link));
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
     let config_word = slots[3].value();
     assert_eq!(config_word[0], Felt::from(1u32), "is_desc_mutable");
     assert_eq!(config_word[3], Felt::from(1u32), "is_max_supply_mutable");
@@ -285,7 +285,7 @@ fn mutability_builders() {
         .build()
         .unwrap();
 
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
 
     // Slot layout (no owner slot): [0]=metadata, [1]=name_0, [2]=name_1, [3]=mutability_config
     let config_slot = &slots[3];
@@ -303,7 +303,7 @@ fn mutability_defaults_to_false() {
 
     let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, 1_000u64).build().unwrap();
 
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
     let config_word = slots[3].value();
     assert_eq!(config_word[0], Felt::ZERO, "is_desc_mutable default");
     assert_eq!(config_word[1], Felt::ZERO, "is_logo_mutable default");
@@ -319,7 +319,7 @@ fn storage_slots_includes_metadata_word() {
     let metadata = FungibleTokenMetadataBuilder::new(name, symbol.clone(), 2, 123u64)
         .build()
         .unwrap();
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
 
     // First slot is the metadata word [token_supply, max_supply, decimals, symbol]
     let metadata_word = slots[0].value();
@@ -336,7 +336,7 @@ fn storage_slots_includes_name() {
     let expected_words = name.to_words();
 
     let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, 100u64).build().unwrap();
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
 
     // Slot layout: [0]=metadata, [1]=name_0, [2]=name_1
     assert_eq!(slots[1].value(), expected_words[0]);
@@ -354,7 +354,7 @@ fn storage_slots_includes_description() {
         .description(description)
         .build()
         .unwrap();
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
 
     // Slots 4..11 are description (7 words): after metadata(1) + name(2) + config(1)
     for (i, expected) in expected_words.iter().enumerate() {
@@ -368,7 +368,7 @@ fn storage_slots_total_count() {
     let name = TokenName::new("T").unwrap();
 
     let metadata = FungibleTokenMetadataBuilder::new(name, symbol, 2, 100u64).build().unwrap();
-    let slots = metadata.storage_slots();
+    let slots = metadata.into_storage_slots();
 
     // 1 metadata + 2 name + 1 config + 7 description + 7 logo + 7 external_link = 25
     assert_eq!(slots.len(), 25);
@@ -453,7 +453,7 @@ fn roundtrip_via_storage_matches_original() {
     assert_eq!(restored.description(), Some(&description));
     assert_eq!(restored.logo_uri(), Some(&logo_uri));
     assert_eq!(restored.external_link(), Some(&external_link));
-    let slots = restored.storage_slots();
+    let slots = restored.into_storage_slots();
     let config = slots[3].value();
     assert_eq!(config[0], Felt::from(1u32), "is_desc_mutable");
     assert_eq!(config[1], Felt::ZERO, "is_logo_mutable");
@@ -520,7 +520,7 @@ fn invalid_token_symbol_in_metadata_word() {
     // TokenSymbol::try_from(Felt) fails when the value exceeds MAX_ENCODED_VALUE.
     let bad_symbol = Felt::new(TokenSymbol::MAX_ENCODED_VALUE + 1);
     let bad_word = Word::from([Felt::ZERO, Felt::new(100), Felt::new(2), bad_symbol]);
-    let token_metadata = TokenMetadata::new(TokenName::default());
+    let token_metadata = TokenMetadata::new(TokenName::new("test").unwrap());
     let result =
         FungibleTokenMetadata::from_metadata_word_and_token_metadata(bad_word, token_metadata);
     assert!(matches!(result, Err(FungibleFaucetError::InvalidTokenSymbol(_))));
