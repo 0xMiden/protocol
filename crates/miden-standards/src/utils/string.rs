@@ -320,4 +320,27 @@ mod tests {
         let s: FixedWidthString<2> = FixedWidthString::default();
         assert_eq!(s.as_str(), "");
     }
+
+    #[test]
+    fn empty_string_encodes_to_7_empty_words() {
+        // An empty FixedWidthString encodes to all-zero words because the length prefix is 0
+        // and the rest of the buffer is zero-padded. This property is relied upon by
+        // `TokenMetadata::storage_slots` to encode absent optional fields as empty word slices.
+        let s = FixedWidthString::<7>::new("").unwrap();
+        let words = s.to_words();
+        assert_eq!(words.len(), 7);
+        for word in &words {
+            assert_eq!(*word, Word::default());
+        }
+    }
+
+    #[test]
+    fn empty_string_encodes_to_9_empty_words() {
+        let s = FixedWidthString::<9>::new("").unwrap();
+        let words = s.to_words();
+        assert_eq!(words.len(), 9);
+        for word in &words {
+            assert_eq!(*word, Word::default());
+        }
+    }
 }

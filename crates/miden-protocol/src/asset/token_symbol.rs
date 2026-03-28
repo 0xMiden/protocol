@@ -144,6 +144,7 @@ impl TryFrom<Felt> for TokenSymbol {
         if encoded_value < Self::MIN_ENCODED_VALUE {
             return Err(TokenSymbolError::ValueTooSmall(encoded_value));
         }
+
         if encoded_value > Self::MAX_ENCODED_VALUE {
             return Err(TokenSymbolError::ValueTooLarge(encoded_value));
         }

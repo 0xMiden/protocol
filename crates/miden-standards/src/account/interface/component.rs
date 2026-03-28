@@ -19,6 +19,9 @@ pub enum AccountComponentInterface {
     /// Exposes procedures from the [`BasicWallet`][crate::account::wallets::BasicWallet] module.
     BasicWallet,
     /// Exposes procedures from the
+    /// [`FungibleTokenMetadata`][crate::account::metadata::FungibleTokenMetadata] module.
+    FungibleTokenMetadata,
+    /// Exposes procedures from the
     /// [`BasicFungibleFaucet`][crate::account::faucets::BasicFungibleFaucet] module.
     BasicFungibleFaucet,
     /// Exposes procedures from the
@@ -57,6 +60,9 @@ impl AccountComponentInterface {
     pub fn name(&self) -> String {
         match self {
             AccountComponentInterface::BasicWallet => "Basic Wallet".to_string(),
+            AccountComponentInterface::FungibleTokenMetadata => {
+                "Fungible Token Metadata".to_string()
+            },
             AccountComponentInterface::BasicFungibleFaucet => "Basic Fungible Faucet".to_string(),
             AccountComponentInterface::NetworkFungibleFaucet => {
                 "Network Fungible Faucet".to_string()
