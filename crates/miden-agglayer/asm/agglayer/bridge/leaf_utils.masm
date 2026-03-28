@@ -27,6 +27,7 @@ const PACKED_DATA_NUM_ELEMENTS = 29
 pub proc compute_leaf_value(leaf_data_start_ptr: MemoryAddress) -> DoubleWord
     dup
     # => [leaf_data_start_ptr, leaf_data_start_ptr]
+    
     exec.pack_leaf_data
     # => [leaf_data_start_ptr]
 

@@ -306,27 +306,3 @@ pub proc append_and_update_frontier
     padw loc_loadw_le.CUR_HASH_LO_LOCAL
     # => [NEW_ROOT_LO, NEW_ROOT_HI, new_leaf_count]
 end
-
-# HELPER PROCEDURES
-# =================================================================================================
-
-#! Stores the canonical zeros from the advice map to the memory at the provided address.
-#!
-#! Inputs:  [zeros_ptr]
-#! Outputs: []
-proc store_canonical_zeros
-    # prepare the stack for the adv_pipe instruction
-    padw padw padw 
-    # => [PAD, PAD, PAD, zeros_ptr]
-
-    # TODO: use constant once constant usage will be implemented
-    repeat.32 
-        adv_pipe
-        # => [ZERO_I_L, ZERO_I_R, PAD, zeros_ptr+8]
-    end
-    # => [ZERO_31_L, ZERO_31_R, PAD, zeros_ptr+256]
-
-    # clean the stack
-    dropw dropw dropw drop
-    # => []
-end
