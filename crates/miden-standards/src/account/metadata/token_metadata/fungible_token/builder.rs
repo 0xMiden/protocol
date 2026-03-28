@@ -1,7 +1,7 @@
 use miden_protocol::Felt;
-use miden_protocol::asset::TokenSymbol;
+use miden_protocol::asset::{FungibleAsset, TokenSymbol};
 
-use super::super::TokenName;
+use super::super::{TokenMetadata, TokenName};
 use super::{Description, ExternalLink, FungibleTokenMetadata, LogoURI};
 use crate::account::faucets::FungibleFaucetError;
 
@@ -123,22 +123,41 @@ impl FungibleTokenMetadataBuilder {
 
     /// Builds [`FungibleTokenMetadata`].
     pub fn build(self) -> Result<FungibleTokenMetadata, FungibleFaucetError> {
+        if self.max_supply > FungibleAsset::MAX_AMOUNT {
+            return Err(FungibleFaucetError::MaxSupplyTooLarge {
+                actual: self.max_supply,
+                max: FungibleAsset::MAX_AMOUNT,
+            });
+        }
+        // SAFETY: max_supply is validated above to be <= MAX_AMOUNT (2^63 - 1),
+        // which is well below the Goldilocks prime, so Felt::new will not wrap.
         let max_supply = Felt::new(self.max_supply);
-        let mut meta = FungibleTokenMetadata::new_validated(
+
+        let mut token_metadata = TokenMetadata::new(self.name);
+        if let Some(desc) = self.description {
+            token_metadata = token_metadata.with_description(desc, self.is_description_mutable);
+        } else {
+            token_metadata = token_metadata.with_description_mutable(self.is_description_mutable);
+        }
+        if let Some(uri) = self.logo_uri {
+            token_metadata = token_metadata.with_logo_uri(uri, self.is_logo_uri_mutable);
+        } else {
+            token_metadata = token_metadata.with_logo_uri_mutable(self.is_logo_uri_mutable);
+        }
+        if let Some(link) = self.external_link {
+            token_metadata = token_metadata.with_external_link(link, self.is_external_link_mutable);
+        } else {
+            token_metadata =
+                token_metadata.with_external_link_mutable(self.is_external_link_mutable);
+        }
+        token_metadata = token_metadata.with_max_supply_mutable(self.is_max_supply_mutable);
+
+        FungibleTokenMetadata::new_validated(
             self.symbol,
             self.decimals,
             max_supply,
             self.token_supply,
-            self.name,
-            self.description,
-            self.logo_uri,
-            self.external_link,
-        )?;
-        meta = meta
-            .with_description_mutable(self.is_description_mutable)
-            .with_logo_uri_mutable(self.is_logo_uri_mutable)
-            .with_external_link_mutable(self.is_external_link_mutable)
-            .with_max_supply_mutable(self.is_max_supply_mutable);
-        Ok(meta)
+            token_metadata,
+        )
     }
 }

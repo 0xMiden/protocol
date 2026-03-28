@@ -56,7 +56,7 @@ use miden_protocol::{Felt, Word};
 use super::{TokenMetadata, TokenName};
 use crate::account::components::fungible_token_metadata_library;
 use crate::account::faucets::FungibleFaucetError;
-use crate::utils::string::{FixedWidthString, FixedWidthStringError};
+use crate::utils::{FixedWidthString, FixedWidthStringError};
 
 pub mod builder;
 
@@ -218,10 +218,7 @@ impl FungibleTokenMetadata {
         decimals: u8,
         max_supply: Felt,
         token_supply: Felt,
-        name: TokenName,
-        description: Option<Description>,
-        logo_uri: Option<LogoURI>,
-        external_link: Option<ExternalLink>,
+        metadata: TokenMetadata,
     ) -> Result<Self, FungibleFaucetError> {
         if decimals > Self::MAX_DECIMALS {
             return Err(FungibleFaucetError::TooManyDecimals {
@@ -244,23 +241,12 @@ impl FungibleTokenMetadata {
             });
         }
 
-        let mut token_metadata = TokenMetadata::new(name);
-        if let Some(desc) = description {
-            token_metadata = token_metadata.with_description(desc, false);
-        }
-        if let Some(uri) = logo_uri {
-            token_metadata = token_metadata.with_logo_uri(uri, false);
-        }
-        if let Some(link) = external_link {
-            token_metadata = token_metadata.with_external_link(link, false);
-        }
-
         Ok(Self {
             token_supply,
             max_supply,
             decimals,
             symbol,
-            metadata: token_metadata,
+            metadata,
         })
     }
 
@@ -343,12 +329,12 @@ impl FungibleTokenMetadata {
         StorageSlot::with_value(Self::metadata_slot().clone(), word)
     }
 
-    /// Returns all the storage slots for this component (metadata word + name + config +
-    /// description + logo_uri + external_link).
-    pub fn storage_slots(&self) -> Vec<StorageSlot> {
+    /// Consumes `self` and returns all storage slots for this component (metadata word + name +
+    /// config + description + logo_uri + external_link).
+    pub fn into_storage_slots(self) -> Vec<StorageSlot> {
         let mut slots: Vec<StorageSlot> = Vec::new();
         slots.push(self.metadata_word_slot());
-        slots.extend(self.metadata.storage_slots());
+        slots.extend(self.metadata.into_storage_slots());
         slots
     }
 
@@ -418,27 +404,7 @@ impl FungibleTokenMetadata {
             }
         })?;
 
-        let name = metadata.name().clone();
-        let description = metadata.description().cloned();
-        let logo_uri = metadata.logo_uri().cloned();
-        let external_link = metadata.external_link().cloned();
-
-        let mut result = Self::new_validated(
-            symbol,
-            decimals,
-            max_supply,
-            token_supply,
-            name,
-            description,
-            logo_uri,
-            external_link,
-        )?;
-
-        // Replace the freshly-constructed metadata with the original so that the
-        // mutability flags read from storage are preserved.
-        result.metadata = metadata;
-
-        Ok(result)
+        Self::new_validated(symbol, decimals, max_supply, token_supply, metadata)
     }
 }
 
@@ -500,7 +466,7 @@ impl From<FungibleTokenMetadata> for AccountComponent {
 
         AccountComponent::new(
             fungible_token_metadata_library(),
-            metadata.storage_slots(),
+            metadata.into_storage_slots(),
             component_metadata,
         )
         .expect("fungible token metadata component should satisfy the requirements of a valid account component")
@@ -520,7 +486,7 @@ impl TryFrom<&AccountStorage> for FungibleTokenMetadata {
             }
         })?;
 
-        let token_metadata = TokenMetadata::try_from_storage(storage);
+        let token_metadata = TokenMetadata::try_from_storage(storage)?;
 
         Self::from_metadata_word_and_token_metadata(metadata_word, token_metadata)
     }
