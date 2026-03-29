@@ -106,7 +106,7 @@ end
 #!
 #! 1. Writes `KEY -> [1, 0, 0, 0]` into the `faucet_registry` map, where
 #!    `KEY = [0, 0, faucet_id_suffix, faucet_id_prefix]`.
-#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]` into the 
+#! 2. Writes `hash(tokenAddress[5]) -> [faucet_id_suffix, faucet_id_prefix, 0, 0]` into the
 #!    `token_registry` map.
 #!
 #! Inputs:  [origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)]
@@ -131,14 +131,14 @@ pub proc register_faucet
     # set_map_item expects [slot_id(2), KEY, VALUE] and returns [OLD_VALUE].
     # Build KEY = [0, 0, suffix, prefix] and VALUE = [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0]
     push.0.0.0.IS_FAUCET_REGISTERED_FLAG
-    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0, 
+    # => [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0,
     #     faucet_id_suffix, faucet_id_prefix, origin_token_addr(5),
     #     faucet_id_suffix, faucet_id_prefix, pad(9)]
 
     movup.5 movup.5 push.0.0
     # => [
-    #     [0, 0, faucet_id_suffix, faucet_id_prefix], 
-    #     [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0], 
+    #     [0, 0, faucet_id_suffix, faucet_id_prefix],
+    #     [IS_FAUCET_REGISTERED_FLAG, 0, 0, 0],
     #      origin_token_addr(5), faucet_id_suffix, faucet_id_prefix, pad(9)
     #    ]
 
@@ -217,7 +217,7 @@ proc lookup_faucet_by_token_address
 
     # Assert the token is registered: faucet_id_prefix is always non-zero for valid account IDs.
     dup.3 dup.3 push.0.0
-    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix] 
+    # => [0, 0, faucet_id_suffix, faucet_id_prefix, 0, 0, faucet_id_suffix, faucet_id_prefix]
 
     exec.account_id::is_equal
     # => [is_id_zero, 0, 0, faucet_id_suffix, faucet_id_prefix]

@@ -58,11 +58,6 @@ const CGI_CHAIN_HASH_HI_SLOT_NAME = word("agglayer::bridge::cgi_chain_hash_hi")
 const CLAIM_PROOF_DATA_WORD_LEN = 134
 const CLAIM_LEAF_DATA_WORD_LEN = 8
 
-#! Note storage layout (6 felts total):
-#! - destination_network [0]    : 1 felt
-#! - destination_address [1..5] : 5 felts
-
-
 # MINT note storage layout (public mode, 18 felts total):
 # - tag               [0]      : 1 felt
 # - amount            [1]      : 1 felt
@@ -164,11 +159,11 @@ const CLAIM_DEST_ID_SUFFIX_LOCAL = 1
 # PUBLIC INTERFACE
 # =================================================================================================
 
-#! Validates a claim against the AggLayer bridge and creates a MINT note for the Agglayer faucet.
+#! Validates a claim against the AggLayer bridge and creates a MINT note for the AggLayer faucet.
 #!
 #! This procedure is called by the CLAIM note script. It validates the Merkle proof and then
 #! looks up the faucet account ID from the token registry using the origin token address from
-#! the leaf data, and creates a MINT note targeting the Agglayer Faucet.
+#! the leaf data, and creates a MINT note targeting the AggLayer Faucet.
 #!
 #! The MINT note uses the standard MINT note pattern (public mode) with 18 storage items.
 #! See `write_mint_note_storage` for the full storage layout.
@@ -240,7 +235,7 @@ pub proc claim
     exec.verify_claim_amount
     # => [faucet_id_suffix, faucet_id_prefix, pad(16)]
     
-    # Build MINT output note targeting the aggfaucet
+    # Build MINT output note targeting the AggLayer faucet
     loc_load.CLAIM_DEST_ID_PREFIX_LOCAL loc_load.CLAIM_DEST_ID_SUFFIX_LOCAL
     # => [destination_id_suffix, destination_id_prefix, faucet_id_suffix, faucet_id_prefix, pad(16)]
 
@@ -798,10 +793,10 @@ proc load_origin_token_address
     # => [origin_token_addr(5)]
 end
 
-#! Builds a PUBLIC MINT output note targeting the Agglayer Faucet.
+#! Builds a PUBLIC MINT output note targeting the AggLayer Faucet.
 #!
-#! The MINT note uses public mode (18 storage items) so the AggFaucet creates a PUBLIC P2ID note on
-#! consumption. This procedure orchestrates three steps:
+#! The MINT note uses public mode (18 storage items) so the AggLayer Faucet creates a PUBLIC P2ID
+#! note on consumption. This procedure orchestrates three steps:
 #! 1. Write all 18 MINT note storage items to global memory.
 #! 2. Build the MINT note recipient digest from the storage.
 #! 3. Create the output note, and set the attachment.
