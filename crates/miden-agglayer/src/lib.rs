@@ -28,6 +28,8 @@ pub mod config_note;
 pub mod errors;
 pub mod eth_types;
 pub mod faucet;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod update_ger_note;
 pub mod utils;
 
