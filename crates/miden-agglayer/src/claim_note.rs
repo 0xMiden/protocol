@@ -162,7 +162,7 @@ impl TryFrom<ClaimNoteStorage> for NoteStorage {
 // ================================================================================================
 
 /// Generates a CLAIM note - a note that instructs the bridge to validate a claim and create
-/// a MINT note for the aggfaucet.
+/// a MINT note for the AggLayer Faucet.
 ///
 /// # Parameters
 /// - `storage`: The core storage for creating the CLAIM note

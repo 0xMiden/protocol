@@ -3,19 +3,17 @@ use miden::protocol::account_id
 use miden::protocol::active_account
 use miden::protocol::active_note
 use miden::protocol::asset
-use miden::protocol::asset::ASSET_VALUE_MEMORY_OFFSET
-use miden::protocol::note
 use miden::standards::attachments::network_account_target
 use miden::standards::wallets::basic->basic_wallet
 
 # CONSTANTS
 # =================================================================================================
 
-const ASSET_PTR=0
-const B2AGG_NOTE_NUM_STORAGE_ITEMS=6
+const B2AGG_NOTE_ASSETS_PTR = 0
+const B2AGG_NOTE_NUM_ASSETS = 1
 
-const STORAGE_START_PTR=8
-const STORAGE_END_PTR=STORAGE_START_PTR + 8
+const B2AGG_NOTE_STORAGE_PTR = 8
+const B2AGG_NOTE_NUM_STORAGE_ITEMS = 6
 
 # ERRORS
 # =================================================================================================
@@ -29,7 +27,8 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! Bridge-to-AggLayer (B2AGG) note script: bridges assets from Miden to an AggLayer-connected chain.
 #!
 #! This note can be consumed in two ways:
-#! - If the consuming account is the sender (reclaim): the note's assets are added back to the consuming account.
+#! - If the consuming account is the sender (reclaim case): the note's assets are added back to the
+#!   consuming account.
 #! - If the consuming account is the Agglayer Bridge: the note's assets are moved to a BURN note,
 #!   and the note details are hashed into a leaf and appended to the Local Exit Tree.
 #!
@@ -37,8 +36,8 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! Outputs: []
 #!
 #! Note storage layout (6 felts total):
-#! - destination_network [0]     : 1 felt
-#! - destination_address [1..5]  : 5 felts
+#! - destination_network [0]    : 1 felt
+#! - destination_address [1..5] : 5 felts
 #!
 #! Where:
 #! - destination_network: Destination network identifier (uint32)
@@ -51,7 +50,6 @@ const ERR_B2AGG_TARGET_ACCOUNT_MISMATCH="B2AGG note attachment target account do
 #! - The note does not contain exactly 6 storage items.
 #! - The note does not contain exactly 1 asset.
 #! - The note attachment does not target the consuming account.
-#!
 begin
     dropw
     # => [pad(16)]
@@ -77,26 +75,27 @@ begin
         # => [pad(16)]
 
         # Store note storage -> mem[8..14]
-        push.STORAGE_START_PTR exec.active_note::get_storage
-        # => [num_storage_items, dest_ptr, pad(16)]
+        push.B2AGG_NOTE_STORAGE_PTR exec.active_note::get_storage
+        # => [num_storage_items, storage_ptr, pad(16)]
 
-        push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS drop
-        # => [pad(16)]
+        # Validate the number of storage items
+        push.B2AGG_NOTE_NUM_STORAGE_ITEMS assert_eq.err=ERR_B2AGG_UNEXPECTED_NUMBER_OF_STORAGE_ITEMS
+        # => [storage_ptr, pad(16)]
 
-        # Store note assets -> mem[0..8]
-        push.ASSET_PTR exec.active_note::get_assets
-        # => [num_assets, ptr, pad(16)]
-
-        # Must be exactly 1 asset
-        push.1 assert_eq.err=ERR_B2AGG_WRONG_NUMBER_OF_ASSETS drop
-        # => [pad(16)]
-
-        # load the 6 B2AGG felts from note storage as two words
-        push.STORAGE_START_PTR add.4 mem_loadw_le swapw mem_loadw_le.STORAGE_START_PTR
+        # load the 6 B2AGG felts from B2AGG_NOTE_STORAGE_PTR as two words
+        add.4 mem_loadw_le swapw mem_loadw_le.B2AGG_NOTE_STORAGE_PTR
         # => [dest_network, dest_address(5), pad(10)]
 
-        # Load asset onto the stack from ASSET_PTR
-        push.ASSET_PTR exec.asset::load
+        # Store note assets -> mem[0..8]
+        push.B2AGG_NOTE_ASSETS_PTR exec.active_note::get_assets
+        # => [num_assets, assets_ptr, dest_network, dest_address(5), pad(10)]
+
+        # Must be exactly 1 asset
+        push.B2AGG_NOTE_NUM_ASSETS assert_eq.err=ERR_B2AGG_WRONG_NUMBER_OF_ASSETS
+        # => [assets_ptr, dest_network, dest_address(5), pad(10)]
+
+        # Load asset onto the stack from B2AGG_NOTE_ASSETS_PTR
+        exec.asset::load
         # => [ASSET_KEY, ASSET_VALUE, dest_network, dest_address(5), pad(10)]
 
         call.bridge_out::bridge_out
