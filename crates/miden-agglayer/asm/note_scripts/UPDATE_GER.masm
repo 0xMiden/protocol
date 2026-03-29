@@ -32,8 +32,8 @@ const ERR_UPDATE_GER_TARGET_ACCOUNT_MISMATCH = "UPDATE_GER note attachment targe
 #! Outputs: [pad(16)]
 #!
 #! NoteStorage layout (8 felts total):
-#! - GER_LOWER [0..3]
-#! - GER_UPPER [4..7]
+#! - GER_LOWER [0..3] : 4 felts
+#! - GER_UPPER [4..7] : 4 felts
 #!
 #! Panics if:
 #! - account does not expose update_ger procedure.

@@ -37,20 +37,20 @@ const ERR_CLAIM_TARGET_ACCT_MISMATCH = "CLAIM note attachment target account doe
 #! Outputs: [pad(16)]
 #!
 #! NoteStorage layout (569 felts total):
-#! - smtProofLocalExitRoot      [0..255]  : 256 felts
-#! - smtProofRollupExitRoot     [256..511]: 256 felts
-#! - globalIndex                [512..519]: 8 felts
-#! - mainnetExitRoot            [520..527]: 8 felts
-#! - rollupExitRoot             [528..535]: 8 felts
-#! - leafType                   [536]     : 1 felt
-#! - originNetwork              [537]     : 1 felt
-#! - originTokenAddress         [538..542]: 5 felts
-#! - destinationNetwork         [543]     : 1 felt
-#! - destinationAddress         [544..548]: 5 felts
-#! - amount                     [549..556]: 8 felts
-#! - metadata                   [557..564]: 8 felts
-#! - padding                    [565..567]: 3 felts
-#! - miden_claim_amount         [568]     : 1 felt
+#! - smtProofLocalExitRoot  [0..255]   : 256 felts
+#! - smtProofRollupExitRoot [256..511] : 256 felts
+#! - globalIndex            [512..519] : 8 felts
+#! - mainnetExitRoot        [520..527] : 8 felts
+#! - rollupExitRoot         [528..535] : 8 felts
+#! - leafType               [536]      : 1 felt
+#! - originNetwork          [537]      : 1 felt
+#! - originTokenAddress     [538..542] : 5 felts
+#! - destinationNetwork     [543]      : 1 felt
+#! - destinationAddress     [544..548] : 5 felts
+#! - amount                 [549..556] : 8 felts
+#! - metadata               [557..564] : 8 felts
+#! - padding                [565..567] : 3 felts
+#! - miden_claim_amount     [568]      : 1 felt
 #!
 #! Where:
 #! - smtProofLocalExitRoot: SMT proof for local exit root (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH])
